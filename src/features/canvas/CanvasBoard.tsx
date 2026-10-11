@@ -16,6 +16,16 @@ import {
   type Ref,
 } from 'react';
 import { BoardControls, type ZoomCommand } from './BoardControls';
+import { useBoardAnnouncer } from './boardAnnouncer';
+import {
+  frameHeaderOf,
+  frameStep,
+  isBoardControl,
+  isBoardEditor,
+  modeShortcut,
+  readingOrder,
+  zoomShortcut,
+} from './boardKeys';
 import {
   alignRects,
   arrowDirection,
@@ -49,6 +59,8 @@ const ARROW_PAN_PX = 32;
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
   focusFrame: (frameId: string) => void;
+  /** Hands keyboard focus back to a frame's label, as a closing source panel does. */
+  focusLabel: (frameId: string) => void;
 }
 
 export interface CanvasBoardProps {
@@ -157,8 +169,37 @@ export function CanvasBoard({
     dispatch({ type: 'frames', designIds });
   }, [designIds, dispatch]);
 
+  // The frames share one tab stop: the label focus last rested on, else the
+  // selection, else the first frame a reader meets.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const order = readingOrder(drawn);
+  const tabStopId = [focusedId, interaction.selectedFrameIds.at(0), order.at(0)].find(
+    (designId) => designId != null && order.includes(designId),
+  );
+  const focusLabel = useCallback((designId: string) => {
+    board.current
+      ?.querySelector<HTMLElement>(
+        `[data-design-frame="${CSS.escape(designId)}"] [data-frame-header]`,
+      )
+      ?.focus({ preventScroll: true });
+  }, []);
+  const onFocusLabel = (frame: CanvasFrame) => {
+    setFocusedId(frame.designId);
+    // A focused label must not scroll the clipped board under its transform.
+    if (board.current) board.current.scrollTop = board.current.scrollLeft = 0;
+    view.reveal(gestures.rectFor(frame));
+  };
+  const announcement = useBoardAnnouncer({
+    frames,
+    selectedFrameIds: interaction.selectedFrameIds,
+    focusedId,
+    scale: view.viewport.scale,
+  });
+
   const [focusRequest, setFocusRequest] = useState<string | null>(null);
-  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame: setFocusRequest }), []);
+  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame: setFocusRequest, focusLabel }), [
+    focusLabel,
+  ]);
 
   // A focus asked for before its frame arrived waits for it rather than being
   // dropped: Open on an artifact card reaches the pane before the snapshot does.
@@ -248,56 +289,76 @@ export function CanvasBoard({
     else view.stepZoom(command === 'in' ? 1 : -1);
   };
 
-  const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    // Inputs and editors keep their shortcuts, including Escape.
-    if (isBoardEditor(event.target)) return;
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      // A gesture consumes the first Escape before mode or selection changes.
-      if (!gestures.cancel()) dispatch({ type: 'escape' });
-      return;
-    }
-    // Other board commands belong to the board and its frame headers. Its own
-    // tools take the zoom and mode keys too, so a key still works after one was
-    // clicked; Space, Enter and the arrows stay theirs.
-    const onBoard = event.target === event.currentTarget || isFrameHeader(event.target);
-    if (!onBoard && !isBoardControl(event.target)) return;
+  /** Escape: a gesture first, then mode or selection; from a frame in Select, back to the board. */
+  const onEscape = (header: string | null) => {
+    if (gestures.cancel()) return;
+    dispatch({ type: 'escape' });
+    if (header !== null && interaction.mode === 'select')
+      board.current?.focus({ preventScroll: true });
+  };
+
+  /** The zoom and mode keys, which the board's own tools take as well. */
+  const runShortcut = (event: React.KeyboardEvent): boolean => {
     const zoom = zoomShortcut(event);
-    if (zoom) {
-      event.preventDefault();
-      onZoom(zoom);
-      return;
+    if (zoom) onZoom(zoom);
+    const mode = zoom ? null : modeShortcut(event);
+    if (mode) onMode(mode);
+    return zoom !== null || mode !== null;
+  };
+
+  /**
+   * A key on the board or a frame's label. On a label the arrows, Home and End
+   * move to another frame and select it, so Enter acts on the frame the
+   * keyboard is on; there ⌥ and the arrows move the selection instead.
+   */
+  const runBoardKey = (event: React.KeyboardEvent, header: string | null): boolean => {
+    const next = header === null ? null : frameStep(event, order, header);
+    if (next !== null) {
+      if (next !== header) {
+        dispatch({ type: 'pick', designId: next, additive: false });
+        focusLabel(next);
+      }
+      return true;
     }
-    const mode = modeShortcut(event);
-    if (mode) {
-      event.preventDefault();
-      onMode(mode);
-      return;
-    }
-    if (!onBoard) return;
     if (event.key === ' ') {
-      event.preventDefault();
       gestures.holdSpace(true);
-      return;
+      return true;
     }
     if (event.key === 'Enter' && interaction.selectedFrameIds.length === 1) {
-      event.preventDefault();
       dispatch({ type: 'interact', designId: interaction.selectedFrameIds[0] });
-      return;
+      return true;
     }
     const direction = arrowDirection(event.key);
-    if (!direction) return;
-    event.preventDefault();
+    if (!direction || (header !== null && !event.altKey)) return false;
     if (interaction.selectedFrameIds.length === 0) {
       view.markNavigated();
       view.stopAnimating();
       view.panByScreen({ x: -direction.x * ARROW_PAN_PX, y: -direction.y * ARROW_PAN_PX });
-      return;
+      return true;
     }
     const step = nudgeStep(direction, event.shiftKey);
     placeSelection((rects) =>
       rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
     );
+    return true;
+  };
+
+  const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Inputs and editors keep their shortcuts, including Escape.
+    if (isBoardEditor(event.target)) return;
+    const header = frameHeaderOf(event.target);
+    // Board commands belong to the board and its frame labels. Its own tools take
+    // the zoom and mode keys too, so a key still works after one was clicked;
+    // Space, Enter and the arrows stay theirs.
+    const onBoard = event.target === event.currentTarget || header !== null;
+    let handled = false;
+    if (event.key === 'Escape') {
+      onEscape(header);
+      handled = true;
+    } else if (onBoard || isBoardControl(event.target)) {
+      handled = runShortcut(event) || (onBoard && runBoardKey(event, header));
+    }
+    if (handled) event.preventDefault();
   };
 
   return (
@@ -371,6 +432,8 @@ export function CanvasBoard({
             onInteract={(picked) => {
               dispatch({ type: 'interact', designId: picked.designId });
             }}
+            tabStop={frame.designId === tabStopId}
+            onFocusLabel={onFocusLabel}
           />
         ))}
       </div>
@@ -393,6 +456,10 @@ export function CanvasBoard({
           placeSelection((rects) => distributeRects(rects, axis));
         }}
       />
+
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
     </div>
   );
 }
@@ -425,40 +492,4 @@ function showsTools(interaction: BoardInteraction, designId: string): boolean {
   return interaction.mode === 'select' && interaction.selectedFrameIds.length === 1
     ? interaction.selectedFrameIds[0] === designId
     : false;
-}
-
-/** The zoom keys a design tool uses: + and −, and ⇧1, ⇧2 and ⇧0. */
-function zoomShortcut(event: React.KeyboardEvent): ZoomCommand | null {
-  if (event.metaKey || event.ctrlKey || event.altKey) return null;
-  // The shifted digits go by key position first: on some layouts ⇧1 types +.
-  if (event.shiftKey && event.code === 'Digit1') return 'fit';
-  if (event.shiftKey && event.code === 'Digit2') return 'selection';
-  if (event.shiftKey && event.code === 'Digit0') return 'actual';
-  if (event.key === '+' || event.key === '=') return 'in';
-  if (event.key === '-' || event.key === '_') return 'out';
-  return null;
-}
-
-/** V for Select and I for Interact, as the rail's tips say. */
-function modeShortcut(event: React.KeyboardEvent): BoardMode | null {
-  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
-  if (event.key === 'v' || event.key === 'V') return 'select';
-  if (event.key === 'i' || event.key === 'I') return 'interact';
-  return null;
-}
-
-function isFrameHeader(target: EventTarget): boolean {
-  return target instanceof HTMLElement && target.dataset.frameHeader !== undefined;
-}
-
-function isBoardControl(target: EventTarget): boolean {
-  return target instanceof HTMLElement && target.closest('[data-board-controls]') !== null;
-}
-
-function isBoardEditor(target: EventTarget): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable ||
-      target.closest('input, textarea, select, [role="textbox"]') !== null)
-  );
 }

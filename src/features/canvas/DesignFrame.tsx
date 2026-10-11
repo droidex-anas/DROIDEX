@@ -13,6 +13,7 @@ import { AlertTriangle, Check, MessageThread, Play } from '@droidex/icons';
 import type { FrameHandle } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
+import { FrameLabel } from './FrameLabel';
 import { FrameThumbnail } from './FrameThumbnail';
 import { PendingBloom } from './PendingBloom';
 import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
@@ -68,6 +69,9 @@ export interface DesignFrameProps {
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
+  /** This frame's label holds the frames' one tab stop. */
+  tabStop: boolean;
+  onFocusLabel: (frame: CanvasFrame) => void;
   onExitInteract: () => void;
   onOpenSource?: (designId: string) => void;
   /** The frame is pinned to the chat's next prompt. */
@@ -170,61 +174,6 @@ function toolsPlacement({ rect, scale, roomRight, onToggleChat }: DesignFramePro
   const width = TOOLS_PX + (onToggleChat ? CHAT_TOOL_PX : 0);
   if (rect.width * scale >= width + LABEL_ROOM_PX) return { width };
   return { width, stacked: roomRight >= width ? 'start' : 'end' };
-}
-
-/**
- * The frame's name above the sheet, and the handle that drags it in either
- * mode (spec §4). It sits outside the Select overlay, so a drag is always
- * available even while the preview owns the pointer.
- *
- * It is also the keyboard's way onto the board: the labels are the frames'
- * tab stops, and the board reads arrows, Escape and Enter from whichever one
- * holds focus.
- */
-function FrameLabel({
-  frame,
-  width,
-  selected,
-  interacted,
-  held,
-  onHold,
-  onPick,
-  onInteract,
-}: DesignFrameProps & { width: number }) {
-  return (
-    <div
-      data-frame-header
-      role="button"
-      tabIndex={0}
-      aria-pressed={selected}
-      className="canvas-frame-label canvas-chrome"
-      style={{ cursor: held ? 'grabbing' : 'grab', width: Math.max(0, width) }}
-      onPointerDown={(event) => {
-        if (event.button !== 0) return;
-        event.stopPropagation();
-        onPick(frame, event.shiftKey);
-        if (!event.shiftKey) onHold(frame, 'move', event);
-      }}
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        onInteract(frame);
-      }}
-      // The keyboard's route to spec §4's click and double-click: Enter picks
-      // the frame and Enter on one already picked starts interacting with it,
-      // while Space toggles it in a multiple selection.
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.key === ' ') onPick(frame, true);
-        else if (selected) onInteract(frame);
-        else onPick(frame, false);
-      }}
-    >
-      <span className="canvas-frame-name">{frame.name}</span>
-      {interacted && <span className="canvas-frame-note">Interacting</span>}
-    </div>
-  );
 }
 
 /** The selected frame's actions: run it, read its source, add it to the chat, or return to Select. */
