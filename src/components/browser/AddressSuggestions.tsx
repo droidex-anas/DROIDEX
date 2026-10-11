@@ -4,7 +4,6 @@ import type { BrowserHistoryEntry } from '../../lib/browserHistory';
 import { describeLink } from '../../lib/linkPresentation';
 import { HoverTooltip } from '../HoverTooltip';
 import { LinkBadge } from '../transcript/LinkBadge';
-import { normalizeUrl } from './browserViewport';
 import type { AddressRow } from './historySuggestions';
 
 // Under the address pill, its width and its left edge, so the rows' icons sit
@@ -77,7 +76,9 @@ export function AddressSuggestions({
 function TypedRow({ text, search }: { text: string; search: boolean }) {
   return (
     <>
-      {search ? <Search className={ICON} /> : <SiteIcon url={normalizeUrl(text)} />}
+      {/* A typed address is not fetched for its icon: that would reach every
+          half-typed host. */}
+      {search ? <Search className={ICON} /> : <Globe className={ICON} />}
       <span className="flex min-w-0 flex-1 gap-1 pr-2">
         <span className="min-w-0 truncate text-droid-text-muted">
           {search ? 'Search Google for' : 'Go to'}
@@ -119,6 +120,7 @@ function HistoryRow({
         <button
           type="button"
           tabIndex={-1}
+          aria-hidden
           aria-label="Remove from history"
           onClick={(event) => {
             event.stopPropagation();
