@@ -12,7 +12,7 @@
 
 ### Architecture Description
 
-Droid Control is an Electron desktop application that allows users to run Factory Droid AI agent sessions, manage mission workspaces, and connect the React UI to a local Droid sidecar process. PR #55 introduced a mission-scoped utility pane that bundles four tools per mission: Review (git diff/PR), Browser (native embedded browser automation), Files (root-confined file browser with preview), and Terminal (PTY-backed xterm.js workspace). The system is built using Electron 39, React 19, TypeScript, Vite, and a Node.js sidecar, and consists of five main components:
+Droid Control is an Electron desktop application that allows users to run Factory Droid AI agent sessions, manage mission workspaces, and connect the React UI to a local Droid sidecar process. PR #55 introduced a mission-scoped utility pane that bundles four tools per mission: Review (git diff/PR), Browser (native embedded browser automation), Files (root-confined file browser with preview), and Terminal (PTY-backed xterm.js workspace). The system is built using Electron 43, React 19, TypeScript, Vite, and a Node.js sidecar, and consists of five main components:
 
 1. **React Renderer** (`src/`) - The user-facing UI rendered in the Electron BrowserWindow. Contains the conversation view, mission management, onboarding, and the mission-scoped utility pane (Review/Browser/Files/Terminal tabs). Communicates with the main process exclusively through the preload bridge and with the sidecar over a loopback WebSocket.
 

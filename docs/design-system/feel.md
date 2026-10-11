@@ -70,7 +70,7 @@ Motion explains change. It shows where something came from, where it went, and t
   ```
 
   For big moves, a slightly curved path feels more physical than a straight line. Motion's `arc()` helper does this, if the Motion version in use has it; otherwise use x/y keyframes with a small offset at the midpoint. Keep the curve subtle.
-- **Expand and collapse.** Never animate `height: auto` with JavaScript measurements. Wrap the content in a grid and animate `grid-template-rows: 0fr` → `1fr`, with `overflow: hidden` on the child. Electron 39's Chromium also supports `interpolate-size: allow-keywords`, which lets `height: auto` transition directly.
+- **Expand and collapse.** Never animate `height: auto` with JavaScript measurements. Wrap the content in a grid and animate `grid-template-rows: 0fr` → `1fr`, with `overflow: hidden` on the child. Electron 43's Chromium also supports `interpolate-size: allow-keywords`, which lets `height: auto` transition directly.
 - **Text stays text.** Inside a resizing container, text moves but never stretches (`layout="position"`; see [engineering.md](engineering.md)).
 
 ## Edges and scrolling
