@@ -27,8 +27,11 @@ function createNativeBrowserViewFactory({
     // Electron preserves Chromium's native client-hint metadata with this override.
     const defaultUserAgent = ses.getUserAgent();
     const platform = defaultUserAgent.match(/^Mozilla\/5\.0 \([^)]+\)/)[0];
-    const chrome = defaultUserAgent.match(/Chrome\/[^ ]+/)[0];
-    ses.setUserAgent(`${platform} AppleWebKit/537.36 (KHTML, like Gecko) ${chrome} Safari/537.36`);
+    // Desktop Chrome reports only its major version, as the touch agent does.
+    const major = defaultUserAgent.match(/Chrome\/(\d+)/)[1];
+    ses.setUserAgent(
+      `${platform} AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`,
+    );
     // Keep Electron's safe defaults: deny WebHID/WebUSB device access for the
     // embedded browser. WebAuthn / passkeys are handled by Chromium natively and
     // do not flow through these handlers, so granting HID/USB to arbitrary sites

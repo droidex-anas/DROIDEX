@@ -81,13 +81,15 @@ async function take(contents, guest, change) {
     guest.device = UNKNOWN;
     if (touch && !contents.isDestroyed()) setUserAgent(deviceOf(guest.settings).userAgent);
     throw error;
+  } finally {
+    // Back to no device, the attachment goes even when the reset failed.
+    if (!device.userAgent && !device.scheme) {
+      guest.releaseDebugger?.();
+      guest.releaseDebugger = undefined;
+    }
   }
   guest.settings = settings;
   guest.device = device;
-  if (!device.userAgent && !device.scheme) {
-    guest.releaseDebugger?.();
-    guest.releaseDebugger = undefined;
-  }
 }
 
 // Gives a guest that was just mounted what its entry asks for, and resolves

@@ -86,7 +86,7 @@ test('browser pages use their own persistent partition and are denied every perm
   const ses = sessions.get('persist:droidex-browser');
   assert.equal(
     ses.getUserAgent(),
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.7444.175 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
   );
   assert.equal(ses.device({ deviceType: 'hid' }), false);
   assert.equal(ses.check(null, 'media'), false);
