@@ -5,13 +5,7 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const {
-  send,
-  documentFrames,
-  frameHolds,
-  focusedFrame,
-  ELEMENT_TAKES_TEXT,
-} = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame, ELEMENT_TAKES_TEXT } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
@@ -187,9 +181,7 @@ function createBrowserActions({
         return result?.value;
       };
       const page = await scrolled(undefined, target);
-      if (!target.sessionId) return page;
-      const sessionId = await sessionForTarget(dbg, target);
-      return `${page};${await scrolled(sessionId, target.local)}`;
+      return target.sessionId ? `${page};${await scrolled(target.sessionId, target.local)}` : page;
     });
   }
 
@@ -285,28 +277,17 @@ function createBrowserActions({
   // ref document stops the gesture.
   function dispatchMouse(contents, step, target, events) {
     return runWithWebContentsDebugger(contents, async (dbg, holding) => {
-      const sessionId = await sessionForTarget(dbg, target);
-      const stillOn = onSamePage(dbg, holding, sessionId, target.document);
+      const stillOn = onSamePage(dbg, holding, target.sessionId, target.document);
       for (const event of events) {
         // A press that went out is always released, on the page that took it.
         if (event.type === 'mouseReleased') {
           if (await stillOn()) await dbg.sendCommand('Input.dispatchMouseEvent', event);
           continue;
         }
-        await inputReady(dbg, step, holding, sessionId, target.document);
+        await inputReady(dbg, step, holding, target.sessionId, target.document);
         await dbg.sendCommand('Input.dispatchMouseEvent', event);
       }
     });
-  }
-
-  // A cross-site target keeps its document identity, but gets a new CDP session
-  // each time the debugger attaches. Resolve it again before sending input.
-  async function sessionForTarget(dbg, target) {
-    if (!target.sessionId) return undefined;
-    const frames = await documentFrames(dbg);
-    const frame = frames.find((candidate) => candidate.loaderId === target.document);
-    if (!frame) throw new Error(PAGE_CHANGED);
-    return frame.sessionId;
   }
 
   // Whether the page that took a press is still there, so the press can be

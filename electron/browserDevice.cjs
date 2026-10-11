@@ -6,10 +6,7 @@
 // given it again. It reaches the page's own process: a cross-site frame keeps
 // its own touch and scheme, and takes the user agent like the rest.
 
-const {
-  runWithWebContentsDebugger,
-  holdWebContentsDebugger,
-} = require('./nativeBrowserEmulation.cjs');
+const { runWithWebContentsDebugger } = require('./nativeBrowserEmulation.cjs');
 
 // Chrome for Android's user agent at this Chromium's version; a tablet's has
 // no "Mobile".
@@ -69,9 +66,6 @@ async function take(contents, guest, change) {
   const device = deviceOf(settings);
   const had = guest.device;
   const touch = had.userAgent !== device.userAgent;
-  if (device.userAgent || device.scheme) {
-    guest.releaseDebugger ??= holdWebContentsDebugger(contents);
-  }
   const setUserAgent = (userAgent) =>
     contents.setUserAgent(userAgent ?? contents.session.getUserAgent());
   if (touch) setUserAgent(device.userAgent);
@@ -81,12 +75,6 @@ async function take(contents, guest, change) {
     guest.device = UNKNOWN;
     if (touch && !contents.isDestroyed()) setUserAgent(deviceOf(guest.settings).userAgent);
     throw error;
-  } finally {
-    // Back to no device, the attachment goes even when the reset failed.
-    if (!device.userAgent && !device.scheme) {
-      guest.releaseDebugger?.();
-      guest.releaseDebugger = undefined;
-    }
   }
   guest.settings = settings;
   guest.device = device;

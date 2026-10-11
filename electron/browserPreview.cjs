@@ -9,7 +9,6 @@ const JPEG_QUALITY = 50;
 // base64 text it is sent as. A still page sends its one frame at once.
 const FRAME_MS = 250;
 const BYTES_PER_SECOND = 150_000;
-const { holdWebContentsDebugger } = require('./nativeBrowserEmulation.cjs');
 
 function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, sendToRenderer }) {
   const watched = new Set(); // browser sessions a card is watching
@@ -44,7 +43,6 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
 
   function start(contents, browserSessionId) {
     const dbg = contents.debugger;
-    const releaseDebugger = holdWebContentsDebugger(contents);
     const command = (method, params) =>
       runWithWebContentsDebugger(contents, (attached) =>
         attached.sendCommand(method, params),
@@ -94,7 +92,7 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
       clearTimeout(timer);
       if (latest) show(true);
       dbg.off('message', onMessage);
-      void command('Page.stopScreencast').finally(releaseDebugger);
+      void command('Page.stopScreencast');
     };
   }
 
