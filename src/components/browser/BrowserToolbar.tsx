@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -17,6 +17,8 @@ import {
 import { describeLink } from '../../lib/linkPresentation';
 import { HoverTooltip } from '../HoverTooltip';
 import { LinkBadge } from '../transcript/LinkBadge';
+import { AddressSuggestions } from './AddressSuggestions';
+import { addressRows, useHistorySuggestions, type AddressRow } from './historySuggestions';
 import { BrowserWorkingMark } from './BrowserWorkingMark';
 import { browserAddressValue } from './browserUrlSafety';
 import { normalizeUrl, SEARCH_URL } from './browserViewport';
@@ -36,7 +38,8 @@ interface BrowserToolbarProps {
   pencilMode: boolean;
   expanded?: boolean;
   onUrlInputChange: (value: string) => void;
-  onOpen: () => void;
+  /** Opens typed text or an address, as the address bar's Enter does. */
+  onOpen: (address: string) => void;
   onGoBack: () => void;
   onGoForward: () => void;
   onReload: () => void;
@@ -172,6 +175,8 @@ export function BrowserToolbar({
 // puts back the page's address. Focused, the pill only lifts a touch, with a
 // faint hairline, rather than wearing a ring; reached from the keyboard it
 // also takes the app's quiet 1px focus ring, so the focus can be found.
+// Typing lists what Enter will do and the visited pages that match; Esc
+// closes the list before it puts the address back.
 function AddressBar({
   inputRef,
   value,
@@ -185,7 +190,7 @@ function AddressBar({
   pageUrl: string;
   agentWorking: boolean;
   onChange: (value: string) => void;
-  onOpen: () => void;
+  onOpen: (address: string) => void;
 }) {
   const link = useMemo(() => describeLink(pageUrl), [pageUrl]);
   const secure = link !== null && /^https:/i.test(pageUrl);
@@ -195,13 +200,31 @@ function AddressBar({
   // A click that focuses the field selects the address instead of placing the caret.
   const selectOnRelease = useRef(false);
   const [keyboardFocus, setKeyboardFocus] = useState(false);
+  // The page the user was on when they typed: navigating anywhere closes the list.
+  const [suggestingOn, setSuggestingOn] = useState<string | null>(null);
+  const suggesting = suggestingOn === pageUrl && value.trim() !== '';
+  const history = useHistorySuggestions(suggesting ? value : null);
+  const rows = suggesting ? addressRows(value, history.entries) : [];
+  const [highlight, setHighlight] = useState(0);
+  const highlighted = Math.min(highlight, rows.length - 1);
+  const listId = useId();
+
+  const close = () => {
+    setSuggestingOn(null);
+  };
+  const choose = (row: AddressRow) => {
+    close();
+    onOpen(row.kind === 'typed' ? value : row.entry.url);
+  };
 
   return (
     <form
-      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-droid-elevated/60 pl-3.5 pr-1 transition-[background-color,box-shadow] duration-150 ${EASE} hover:bg-droid-elevated focus-within:!bg-droid-raised focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--droid-text)_5%,transparent)] motion-reduce:transition-none ${keyboardFocus ? 'ring-1 ring-droid-accent/40' : ''}`}
+      className={`group relative mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-droid-elevated/60 pl-3.5 pr-1 transition-[background-color,box-shadow] duration-150 ${EASE} hover:bg-droid-elevated focus-within:!bg-droid-raised focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--droid-text)_5%,transparent)] motion-reduce:transition-none ${keyboardFocus ? 'ring-1 ring-droid-accent/40' : ''}`}
       onSubmit={(event) => {
         event.preventDefault();
-        onOpen();
+        const row = rows.at(highlighted);
+        if (row) choose(row);
+        else onOpen(value);
       }}
     >
       {searching ? (
@@ -215,8 +238,15 @@ function AddressBar({
         <input
           ref={inputRef}
           value={value}
+          role="combobox"
+          aria-expanded={suggesting}
+          aria-controls={suggesting ? listId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={suggesting ? `${listId}-${String(highlighted)}` : undefined}
           onChange={(event) => {
             onChange(event.target.value);
+            setSuggestingOn(pageUrl);
+            setHighlight(0);
           }}
           onMouseDown={(event) => {
             selectOnRelease.current = document.activeElement !== event.currentTarget;
@@ -230,15 +260,32 @@ function AddressBar({
             setKeyboardFocus(!selectOnRelease.current);
             event.currentTarget.select();
           }}
+          // Leaving the window blurs the field too, so this also closes the list then.
           onBlur={() => {
             setKeyboardFocus(false);
+            close();
           }}
           onKeyDown={(event) => {
-            // An input method still composing keeps its own Escape.
-            if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            onChange(browserAddressValue(pageUrl));
-            event.currentTarget.blur();
+            // An input method still composing keeps its own keys.
+            if (event.nativeEvent.isComposing) return;
+            const row = rows.at(highlighted);
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              if (!suggesting) return;
+              event.preventDefault();
+              const step = event.key === 'ArrowDown' ? 1 : -1;
+              setHighlight(Math.max(0, Math.min(rows.length - 1, highlighted + step)));
+            } else if (event.key === 'Delete' && event.shiftKey && row?.kind === 'history') {
+              event.preventDefault();
+              history.remove(row.entry.url);
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              if (suggesting) {
+                close();
+                return;
+              }
+              onChange(browserAddressValue(pageUrl));
+              event.currentTarget.blur();
+            }
           }}
           spellCheck={false}
           className="peer absolute inset-0 h-full w-full min-w-0 bg-transparent text-[13px] text-transparent outline-none ring-0 placeholder:text-droid-text-muted focus:text-droid-text focus:outline-none focus-visible:outline-none focus-visible:ring-0"
@@ -277,6 +324,18 @@ function AddressBar({
           <CornerDownLeft className="h-3.5 w-3.5" />
         </button>
       </HoverTooltip>
+      <AnimatePresence>
+        {suggesting && (
+          <AddressSuggestions
+            id={listId}
+            rows={rows}
+            highlighted={highlighted}
+            onHighlight={setHighlight}
+            onChoose={choose}
+            onRemove={history.remove}
+          />
+        )}
+      </AnimatePresence>
     </form>
   );
 }

@@ -282,8 +282,8 @@ export default function BrowserWorkspace({
       });
   };
 
-  const openCurrentUrl = async () => {
-    const normalizedUrl = normalizeUrl(urlInput);
+  const openAddress = async (address: string) => {
+    const normalizedUrl = normalizeUrl(address);
     if (browserKey && isSelfBrowserUrl(normalizedUrl, appOrigin)) {
       setUrlInput(normalizedUrl);
       dispatch({
@@ -398,13 +398,13 @@ export default function BrowserWorkspace({
         pencilMode={pencilMode}
         expanded={expanded}
         onUrlInputChange={setUrlInput}
-        onOpen={() => void openCurrentUrl()}
+        onOpen={(address) => void openAddress(address)}
         onGoBack={() => void navigateHistory('back')}
         onGoForward={() => void navigateHistory('forward')}
         onReload={() => {
           startLoading();
           if (browserKey && browser) reloadBrowser(browserKey);
-          else void openCurrentUrl();
+          else void openAddress(urlInput);
         }}
         onToggleDesignMode={() => {
           if (browserKey) dispatch({ type: 'TOGGLE_DESIGN_MODE', appSessionId: browserKey });
@@ -440,7 +440,7 @@ export default function BrowserWorkspace({
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
               startLoading();
               if (browserKey && browser) reloadBrowser(browserKey);
-              else void openCurrentUrl();
+              else void openAddress(urlInput);
             }}
           >
             Retry
