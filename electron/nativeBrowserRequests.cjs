@@ -61,7 +61,6 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   const waiting = new Map(); // browserSessionId -> requests in flight
   const painting = new Map(); // browserSessionId -> its first paint after waking
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
-  const agentActions = new Set(); // requests currently executing against a page
 
   // A message from the sidecar; only a well-formed browser request is answered.
   // `runEnded` says whether the sidecar run that sent it has exited or been
@@ -129,8 +128,6 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       return result(request, false, {
         error: error instanceof Error ? error.message : String(error),
       });
-    } finally {
-      agentActions.delete(request);
     }
   }
 
@@ -221,7 +218,6 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       if (Date.now() >= request.startBy || request.runEnded()) throw new Error(LATE);
     };
     stillWanted();
-    if (request.initiator !== 'user') agentActions.add(request);
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
       await manager.waitForPage(browserSessionId);
@@ -286,8 +282,6 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   return {
     handle,
     workingSessions: () => [...waiting.keys()],
-    isAgentActive: (browserSessionId) =>
-      [...agentActions].some((request) => request.browserSessionId === browserSessionId),
   };
 }
 

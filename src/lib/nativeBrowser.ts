@@ -45,14 +45,9 @@ export type NativeBrowserDownload = {
   totalBytes: number;
 } & (
   | { state: 'completed'; filePath: string }
-  | { state: 'failed' | 'blocked'; error: string }
+  | { state: 'failed'; error: string }
   | {
-      state:
-        | 'awaiting-approval'
-        | 'awaiting-location'
-        | 'progressing'
-        | 'cancelled'
-        | 'interrupted';
+      state: 'awaiting-approval' | 'awaiting-location' | 'progressing' | 'cancelled';
     }
 );
 

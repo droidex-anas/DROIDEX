@@ -17,20 +17,19 @@ function sanitizeDownloadFilename(filename) {
   );
 }
 
-function reserveDownloadPath(directory, filename, reservedPaths) {
-  const safeName = sanitizeDownloadFilename(filename);
-  const extension = path.extname(safeName);
-  const stem = path.basename(safeName, extension);
-  let candidate = path.join(directory, safeName);
-  for (
-    let index = 2;
-    fs.existsSync(candidate) || reservedPaths.has(downloadReservationKey(candidate));
-    index += 1
-  ) {
-    candidate = path.join(directory, `${stem} ${index}${extension}`);
+function reserveDownloadPath(directory, download, reservedPaths) {
+  const extension = path.extname(download.filename);
+  const stem = path.basename(download.filename, extension);
+  for (;;) {
+    const index = download.nextFilenameIndex++;
+    const name = index === 1 ? download.filename : `${stem} ${index}${extension}`;
+    const candidate = path.join(directory, name);
+    const key = downloadReservationKey(candidate);
+    if (fs.existsSync(candidate) || reservedPaths.has(key)) continue;
+    reservedPaths.add(key);
+    download.reservation = candidate;
+    return candidate;
   }
-  reservedPaths.add(downloadReservationKey(candidate));
-  return candidate;
 }
 
 function downloadReservationKey(filePath) {
@@ -57,7 +56,7 @@ function truncateUtf8(value, maxBytes) {
   return result;
 }
 
-// Agent downloads cannot install applications or run scripts, even after approval.
+// Executables and scripts require explicit approval regardless of who starts them.
 const EXECUTABLE_EXTENSIONS = new Set([
   '.exe',
   '.msi',
@@ -69,6 +68,8 @@ const EXECUTABLE_EXTENSIONS = new Set([
   '.vbs',
   '.vbe',
   '.js',
+  '.cjs',
+  '.mjs',
   '.jse',
   '.wsf',
   '.wsh',
@@ -125,6 +126,7 @@ function createBrowserDownloads({
 }) {
   const downloads = new Set();
   const reservedPaths = new Set();
+  let shuttingDown = false;
 
   function emit(download, state, fields = {}) {
     sendToRenderer('native-browser-download', {
@@ -140,6 +142,10 @@ function createBrowserDownloads({
   }
 
   function handleWillDownload(event, item, contents) {
+    if (shuttingDown) {
+      event.preventDefault();
+      return;
+    }
     const context = contents && getContext(contents);
     if (!context) {
       event.preventDefault();
@@ -153,18 +159,15 @@ function createBrowserDownloads({
       filename,
       browserSessionId: context.browserSessionId,
       origin: downloadOrigin(item.getURL()),
-      agentStarted: context.agentActive,
+      working: context.working,
+      requiresApproval: isExecutableDownload(item, filename),
+      nextFilenameIndex: 1,
       receivedBytes: item.getReceivedBytes(),
       totalBytes: item.getTotalBytes(),
       abort: new AbortController(),
       published: false,
       accepted: false,
     };
-    if (download.agentStarted && isExecutableDownload(item, filename)) {
-      event.preventDefault();
-      emit(download, 'blocked', { error: 'Agents cannot download executable files.' });
-      return;
-    }
     try {
       // Electron requires setSavePath during this synchronous callback. Staging
       // preserves POST/blob downloads while approval and the file picker await.
@@ -185,12 +188,18 @@ function createBrowserDownloads({
       download.receivedBytes = item.getReceivedBytes();
       download.totalBytes = item.getTotalBytes();
       download.sourceFinished = true;
+      if (state === 'interrupted') failInterrupted(download);
       download.finished.resolve(state);
     };
     download.onUpdated = (_event, state) => {
       download.receivedBytes = item.getReceivedBytes();
       download.totalBytes = item.getTotalBytes();
-      if (download.accepted && !download.abort.signal.aborted) emit(download, state);
+      if (download.abort.signal.aborted) return;
+      if (state === 'interrupted') {
+        failInterrupted(download);
+        return;
+      }
+      if (download.accepted) emit(download, state);
     };
     item.once('done', download.onDone);
     item.on('updated', download.onUpdated);
@@ -208,6 +217,11 @@ function createBrowserDownloads({
     download.finished.resolve('cancelled');
   }
 
+  function failInterrupted(download) {
+    download.failure = 'Download interrupted. Try downloading the file again.';
+    cancel(download);
+  }
+
   function requireCurrent(download) {
     download.abort.signal.throwIfAborted();
     if (getContext(download.contents)?.browserSessionId !== download.browserSessionId) {
@@ -221,15 +235,15 @@ function createBrowserDownloads({
     let savePath;
     let selectedStagingPath;
     try {
-      if (download.agentStarted) {
+      if (download.requiresApproval) {
         emit(download, 'awaiting-approval');
         const size = download.totalBytes;
         const answer = await showPrompt(
           {
             kind: 'permission',
             title: 'Allow download?',
-            message: `An agent wants to download ${download.filename}.`,
-            detail: `Origin: ${download.origin}\n${size > 0 ? `Size: ${size.toLocaleString('en-US')} bytes` : 'Size: unknown'}`,
+            message: `Download ${download.filename}?`,
+            detail: `Site: ${download.origin}\n${size > 0 ? `Size: ${size.toLocaleString('en-US')} bytes` : 'Size: unknown'}${download.working ? '\nAn agent is working on this page.' : ''}`,
             buttons: ['Allow once', 'Cancel'],
             defaultId: 1,
             cancelId: 1,
@@ -270,12 +284,7 @@ function createBrowserDownloads({
         savePath = result.filePath;
       } else {
         requireCurrent(download);
-        savePath = reserveDownloadPath(
-          settings.downloadDirectory,
-          download.filename,
-          reservedPaths,
-        );
-        download.reservation = savePath;
+        savePath = reserveDownloadPath(settings.downloadDirectory, download, reservedPaths);
       }
       download.accepted = true;
       emit(download, 'progressing');
@@ -306,12 +315,7 @@ function createBrowserDownloads({
         } catch (error) {
           if (error.code !== 'EEXIST') throw error;
           reservedPaths.delete(downloadReservationKey(savePath));
-          savePath = reserveDownloadPath(
-            settings.downloadDirectory,
-            download.filename,
-            reservedPaths,
-          );
-          download.reservation = savePath;
+          savePath = reserveDownloadPath(settings.downloadDirectory, download, reservedPaths);
         }
         abort.signal.throwIfAborted();
       }
@@ -324,7 +328,8 @@ function createBrowserDownloads({
     } catch (error) {
       const cancelled = abort.signal.aborted;
       cancel(download);
-      if (cancelled) emit(download, 'cancelled');
+      if (download.failure) emit(download, 'failed', { error: download.failure });
+      else if (cancelled) emit(download, 'cancelled');
       else {
         let message = 'Cannot save download. Choose a writable folder and try again.';
         if (error.code === 'EACCES' || error.code === 'EPERM')
@@ -355,7 +360,8 @@ function createBrowserDownloads({
     }
   }
 
-  function cancelAll() {
+  function shutdown() {
+    shuttingDown = true;
     for (const download of downloads) cancel(download);
     return Promise.all([...downloads].map((download) => download.task));
   }
@@ -363,7 +369,7 @@ function createBrowserDownloads({
   return {
     handleWillDownload,
     cancelPendingForContents,
-    cancelAll,
+    shutdown,
     hasPending: () => downloads.size > 0,
   };
 }
@@ -390,9 +396,4 @@ function isExecutableDownload(item, filename) {
   return names.some((name) => EXECUTABLE_EXTENSIONS.has(path.extname(name).toLowerCase()));
 }
 
-module.exports = {
-  createBrowserDownloads,
-  downloadReservationKey,
-  reserveDownloadPath,
-  sanitizeDownloadFilename,
-};
+module.exports = { createBrowserDownloads };

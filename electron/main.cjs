@@ -217,7 +217,10 @@ const browserDownloads = createBrowserDownloads({
   getContext: (contents) => {
     const browserSessionId = nativeBrowserManager.sessionIdForWebContents(contents);
     return browserSessionId
-      ? { browserSessionId, agentActive: nativeBrowserRequests.isAgentActive(browserSessionId) }
+      ? {
+          browserSessionId,
+          working: nativeBrowserRequests.workingSessions().includes(browserSessionId),
+        }
       : undefined;
   },
   showPrompt: browserPrompts.request,
@@ -294,10 +297,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
-  if (browserDownloads.hasPending()) {
-    event.preventDefault();
-    downloadShutdown ??= browserDownloads.cancelAll().then(() => app.quit());
-  }
+  const pendingDownloads = browserDownloads.hasPending();
+  downloadShutdown ??= browserDownloads.shutdown().then(() => {
+    if (pendingDownloads) app.quit();
+  });
+  if (pendingDownloads) event.preventDefault();
   browserSettings.cancelPendingUpdates();
   browserPrompts.setRendererReady(false);
   sidecarSupervisor.stop();

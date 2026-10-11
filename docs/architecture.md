@@ -74,20 +74,25 @@ without restoring the old engine's services or claiming unsupported capabilities
 `electron/browserDownloads.cjs` handles `will-download` only on
 `persist:droidex-browser`. It ports #215's filename sanitization and unique names,
 using the existing `askDownloadLocation` and `downloadDirectory` settings. Files
-are paused in a private temporary folder while an agent download awaits the
-in-app prompt queue (filename, size when known, and download origin). Without a
-registered prompt UI, approval fails closed. Agent attribution comes from
-executing private browser requests, never Chromium's user-gesture flag. Agent
-executable downloads are blocked by extension (including redirect URLs) and MIME
-type. These safeguards assume honest pages and a possibly prompt-injected agent;
+are paused in a private temporary folder while executable or script downloads
+await explicit user approval in the in-app prompt card, whoever started them.
+The card shows filename, size when known, and download site. If the tab's existing
+working state is active, it adds "An agent is working on this page." as context;
+that state never controls approval. Without a registered prompt UI, these
+approvals cancel without a native-dialog fallback. One extension list (including
+`.cjs`, `.mjs` and redirect URLs) and MIME types classify executables and scripts.
+These safeguards assume honest pages and a possibly prompt-injected agent;
 hostile pages mislabeling payloads or racing their own forms are out of scope.
 
-After approval, the save-location setting opens a file picker or reserves a
-unique name in the configured directory. Automatic destination creation is
-exclusive and retries a colliding name without overwriting. The file picker owns
-confirmation of a selected overwrite; its file is published atomically after
-copying succeeds. Closing or replacing a guest cancels pending approvals and choices;
-accepted transfers continue independently. Shutdown cancels all transfers.
+After any required approval, the save-location setting opens a file picker or
+reserves a unique name in the configured directory. Automatic destination creation
+is exclusive and advances the name after every collision, including dangling
+symlinks, without overwriting. The file picker owns confirmation of a selected
+overwrite; its file is published atomically after copying succeeds. Closing or
+replacing a guest cancels pending approvals and choices; accepted transfers
+continue independently. Interrupted transfers are cancelled and reported as
+`failed` with an actionable error, including terminal `done: interrupted` events.
+Shutdown stops admission before cancelling transfers and awaiting cleanup.
 Staging files, reservations and listeners are released on settlement. Main sends
 plain `native-browser-download` data with a stable download ID, browser session
 ID, filename, origin, byte counts and state; successful completion adds `filePath`
