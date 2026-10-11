@@ -28,6 +28,10 @@ interface BoardHarness {
   buildReady: () => void;
   /** A frame joins the open board, the way an agent's create lands. */
   arrive: () => void;
+  /** The pane narrows or widens around the board. */
+  resize: (width: number) => void;
+  /** Closes the source drawer the way the workspace does, focus included. */
+  closeSource: () => void;
 }
 
 declare global {
@@ -94,6 +98,8 @@ const readArtifact = () => Promise.resolve({ artifactId: 'a'.repeat(64), html: '
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
   const [interaction, setInteraction] = useState(SELECT_MODE);
+  const [width, setWidth] = useState(1000);
+  const [sourceOpen, setSourceOpen] = useState<string | null>(null);
   const board = useRef<CanvasBoardHandle>(null);
   const live = useRef(interaction);
   live.current = interaction;
@@ -119,6 +125,12 @@ function Harness() {
     },
     interaction: () => live.current,
     previewClicks,
+    resize: setWidth,
+    closeSource: () => {
+      const opener = sourceOpen;
+      setSourceOpen(null);
+      if (opener) requestAnimationFrame(() => board.current?.focusLabel(opener));
+    },
     arrive: () => {
       setSnapshot((current) => ({
         ...current,
@@ -155,7 +167,7 @@ function Harness() {
       <button type="button" id="outside" aria-pressed={interaction.selectedFrameIds.length > 0}>
         Outside board
       </button>
-      <div style={{ width: 1000, height: 800, marginTop: 12 }}>
+      <div style={{ display: 'flex', width, height: 800, marginTop: 12 }}>
         <CanvasBoard
           ref={board}
           snapshot={snapshot}
@@ -186,7 +198,13 @@ function Harness() {
             calls.push(input);
             return new Promise<void>((resolve, reject) => replies.push({ resolve, reject }));
           }}
+          onOpenSource={setSourceOpen}
         />
+        {sourceOpen && (
+          <aside data-harness-source={sourceOpen} style={{ width: 280, flexShrink: 0 }}>
+            Source of {sourceOpen}
+          </aside>
+        )}
       </div>
     </div>
   );
