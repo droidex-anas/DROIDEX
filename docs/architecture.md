@@ -66,11 +66,13 @@ waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
 context keeps concurrent agent tools from inheriting that permission. Navigation,
-diagnostics, downloads, homepage and cursor policies are retained for subsequent
-runtime ports. The agent access switch and site permission policy are enforced.
+diagnostics, downloads and homepage policies are retained for subsequent runtime
+ports. The agent access switch and site permission policy are enforced.
 Saved-login use enforces the existing `loginFillApproval` policy; `never` disables
-saving and filling. Removed cursor overlay settings and cookie import receipts are
-absent.
+saving and filling. The renderer's agent cursor follows `showAgentCursor`,
+`agentCursorStyle` and `agentCursorSize` through the shared snapshot store in
+`src/lib/browserSettings.ts`, which Settings > Browser updates with every saved
+change. Cookie import receipts are absent.
 
 `electron/browserPermissions.cjs` handles both permission requests and checks on
 `persist:droidex-browser`. Camera, microphone, location, notifications, clipboard
@@ -109,7 +111,6 @@ and revokes one with `browserSitePermissionRevoke(origin, permission)`. Revocati
 returns the updated snapshot, cancels affected pending approvals, clears temporary
 grants and prevents a queued approval from restoring the revoked permission. It
 affects subsequent access; reload or close a page to stop an already active capture.
-The renderer contract exposes data and commands without implementing settings UI.
 Older settings versions stop startup with the existing explicit recovery
 message; no grants or settings are silently migrated or reset.
 
@@ -120,7 +121,7 @@ legacy ciphertext reader or consent-file migration. Invalid storage reports reco
 steps instead of resetting it. `browserCredentialsList` returns origins and OS
 capabilities only; `browserCredentialsDelete(origin)` deletes one exact site's login.
 Both commands require the trusted main renderer, with types in
-`src/lib/browserSettings.ts`. The settings UI is a separate stack change.
+`src/lib/browserSettings.ts`. Settings > Browser lists them with a Delete for each.
 
 Capture takes its origin from the registered guest's main frame, requires HTTPS
 (except localhost/loopback), and considers only the submitted form's current
