@@ -1,5 +1,5 @@
 type BrowserNavigationApproval = 'follow_autonomy' | 'always_ask' | 'new_sites' | 'never_ask';
-type BrowserLoginFillApproval = 'always_ask' | 'never';
+export type BrowserLoginFillApproval = 'always_ask' | 'never';
 type BrowserSitePermissionMode = 'block' | 'ask';
 
 type BrowserSitePermission =
@@ -44,7 +44,15 @@ export type BrowserSettingsPatch = Partial<
   >
 >;
 
+export interface BrowserCredentialsSnapshot {
+  origins: string[];
+  keychainAvailable: boolean;
+  touchIdAvailable: boolean;
+}
+
 export interface BrowserSettingsCommands {
+  browserCredentialsList: () => Promise<BrowserCredentialsSnapshot>;
+  browserCredentialsDelete: (origin: string) => Promise<BrowserCredentialsSnapshot>;
   browserSettingsGet: () => Promise<BrowserSettingsSnapshot>;
   browserSettingsUpdate: (patch: BrowserSettingsPatch) => Promise<BrowserSettingsSnapshot>;
   browserSitePermissionRevoke: (

@@ -92,14 +92,13 @@ export interface StartedLocalMcpResources {
   configs: McpServerConfig[];
   inAppServers?: SdkMcpServer[];
 }
-export interface SessionPrompt {
+// Only steers retain a queue display, whether the harness holds them or they
+// wait on the queue until the model takes them in.
+export type SessionPrompt = {
   text: string;
   mentions?: ProviderMention[];
   // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
   notice?: string;
-  // Set on a prompt sent as a steer. It is listed as pending until the model
-  // takes it in, whether the harness holds it or it waits on the queue.
-  steerId?: string;
   // When it was sent, relative to the chat's other prompts.
   order: number;
   // Nobody typed it (a scheduled delivery, a message from another chat), so
@@ -108,7 +107,10 @@ export interface SessionPrompt {
   // The sender's guard on a message from another chat. Once it turns false the
   // prompt is dropped wherever it waits, as a Stop drops it.
   isCurrent?: () => boolean;
-}
+} & (
+  | { steerId: string; display: ReturnType<typeof userPromptDisplay> }
+  | { steerId?: undefined; display?: undefined }
+);
 
 interface LiveTurnState {
   streaming: boolean;
@@ -1739,12 +1741,12 @@ function sessionPrompt(
   mentions?: ProviderMention[],
   steerId?: string,
 ): SessionPrompt {
-  return {
+  const prompt = {
     text,
     ...(mentions?.length ? { mentions } : {}),
-    ...(steerId ? { steerId } : {}),
     order: ++promptOrder,
   };
+  return steerId ? { ...prompt, steerId, display: userPromptDisplay(text) } : prompt;
 }
 
 function isWithdrawn(prompt: SessionPrompt): boolean {
@@ -1758,9 +1760,17 @@ function queueSummary(
 ): Pick<SessionSummary, 'queuedSends' | 'pendingSteers'> {
   const pendingSteers = [...liveSession.steers, ...liveSession.pendingSends]
     .sort((a, b) => a.order - b.order)
-    .flatMap(({ steerId, text }) =>
-      steerId ? [{ id: steerId, text: userPromptDisplay(text).text }] : [],
-    );
+    .flatMap(({ steerId, display }) => {
+      if (steerId === undefined) return [];
+      return [
+        {
+          id: steerId,
+          text: display.text,
+          ...(display.browserRefs ? { browserRefs: display.browserRefs } : {}),
+          ...(display.sideChatReplies ? { sideChatReplies: display.sideChatReplies } : {}),
+        },
+      ];
+    });
   return { queuedSends: liveSession.pendingSends.length, pendingSteers };
 }
 

@@ -140,12 +140,6 @@ const browserPrompts = createBrowserPromptController({
   send: (prompt) => mainWindow.webContents.send('browser-permission-prompt', prompt),
   dismiss: (requestId) =>
     mainWindow?.webContents.send('browser-permission-prompt-dismiss', requestId),
-  showNative: ({ kind, ...prompt }, signal) =>
-    dialog.showMessageBox(mainWindow, {
-      ...prompt,
-      type: kind === 'warning' ? 'warning' : 'question',
-      signal,
-    }),
 });
 const browserPermissions = createBrowserPermissionController({
   isNativeBrowserContents: (contents) =>
@@ -169,6 +163,8 @@ const nativeBrowserManager = createNativeBrowserManager({
   session,
   nativeImage,
   safeStorage,
+  systemPreferences,
+  getSettings: () => browserSettings.snapshot(),
   permissions: browserPermissions,
   showPrompt: browserPrompts.request,
   onBrowserInput: nativeBrowserShortcuts.handleInput,
@@ -183,6 +179,7 @@ const nativeBrowserManager = createNativeBrowserManager({
 app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
+  showPrompt: browserPrompts.request,
   assertAgentAccess: () => browserSettings.assertAgentAccess(),
   notifyRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
@@ -978,6 +975,14 @@ function registerIpc() {
     assertMainRenderer(event);
     return browserSettings.update(patch);
   });
+  ipcMain.handle('browser-credentials-list', (event) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.listCredentials();
+  });
+  ipcMain.handle('browser-credentials-delete', (event, origin) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.deleteCredential(origin);
+  });
   ipcMain.handle('browser-site-permission-revoke', (event, { origin, permission }) => {
     assertMainRenderer(event);
     return browserPermissions.revokeSitePermission(origin, permission);
@@ -1059,8 +1064,17 @@ function registerIpc() {
       .catch(() => undefined)
       .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
+  ipcMain.on('native-browser-credential-fill-valid', (event, token) => {
+    event.returnValue = nativeBrowserManager.canFillCredential(
+      event.sender,
+      event.senderFrame,
+      token,
+    );
+  });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
-    void nativeBrowserManager.handleCredentialCapture(event.sender, payload);
+    void nativeBrowserManager
+      .handleCredentialCapture(event.sender, event.senderFrame, payload)
+      .catch((error) => console.error('Could not save browser login:', error.message));
   });
 }
 

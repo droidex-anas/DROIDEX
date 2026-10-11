@@ -1362,7 +1362,12 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = [{ text: 'preserve unless user closes', order: 0 }];
+  live.pendingSends = [
+    {
+      text: 'preserve unless user closes',
+      order: 0,
+    },
+  ];
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1536,7 +1541,10 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.pendingSends.push({ text: 'user prompt', order: 0 });
+  live.pendingSends.push({
+    text: 'user prompt',
+    order: 0,
+  });
   await busy();
   assert.deepEqual(
     live.pendingSends.map((pending) => pending.text),

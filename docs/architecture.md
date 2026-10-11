@@ -52,13 +52,14 @@ permissions. Timeout, cancellation, renderer replacement and shutdown choose the
 declared cancel action with `cancelled: true`; only explicit user decisions are
 remembered for developer-tools and site permissions. The prompt UI must subscribe to both prompt
 events before calling `browserPermissionPromptReady(true)`, then call it with
-`false` on unmount.
-Only the trusted main renderer can register or answer the active prompt. Until the
-prompt UI ships in the next agent-controls stack PR, an unregistered UI uses the
-existing native dialogs with the same buttons and defaults. Remove that temporary
-presentation when the UI is mounted for every desktop session. This foundation
-routes saved-login, developer-tools and site permission questions through the queue; it adds no
-visible settings or prompt components.
+`false` on unmount. Only the trusted main renderer can register or answer the
+active prompt. A request with no usable window is declined at once; otherwise it
+waits for that registration, deadline still running, and is never shown as a
+native dialog. Each prompt carries its `expiresAt` and, when it concerns one site,
+its `origin`. The renderer's `src/components/browserPrompt/` shows a protection
+change as a modal dialog and an agent's request as a card over the browser pane, or
+in the window corner when no pane is showing; the card never takes focus by itself.
+Settings > Browser (`src/components/browserSettings/`) shows only enforced settings.
 
 Agent access is enforced at the private browser request boundary, including work
 waiting for its turn or guest restoration, and before returning page content.
@@ -110,6 +111,66 @@ The renderer contract exposes data and commands without implementing settings UI
 Older settings versions stop startup with the existing explicit recovery
 message; no grants or settings are silently migrated or reset.
 
+Saved logins use `electron/browserCredentialVault.cjs`: OS encryption with queued,
+atomic writes to `browser-credentials.enc`, at most 500 exact origins. Electron 39
+provides synchronous encryption APIs; file I/O remains asynchronous. There is no
+legacy ciphertext reader or consent-file migration. Invalid storage reports recovery
+steps instead of resetting it. `browserCredentialsList` returns origins and OS
+capabilities only; `browserCredentialsDelete(origin)` deletes one exact site's login.
+Both commands require the trusted main renderer, with types in
+`src/lib/browserSettings.ts`. The settings UI is a separate stack change.
+
+Threat model: A saved secret may be filled only into a page whose real origin owns
+it, after user approval, and must never be sent to the sidecar or model. On an
+ordinary page, even a prompt-injected agent must obtain approval or hand off before
+signing in, creating an account, using passkeys or OAuth, paying, or entering
+passwords, one-time codes or card details. Hostile pages racing their own forms are
+out of scope: their scripts can already submit forms, rewrite destinations, and
+read or exfiltrate anything typed into the page.
+
+Capture takes its security origin from the registered guest's main frame, rejects
+opaque origins (including sandboxed HTTPS pages), requires HTTPS
+(except localhost/loopback), and considers only the submitted form's current
+password. New-password and ambiguous forms are not saved. Each save asks first.
+There is no page-load autofill. `browser_fill_login` asks through the credential
+priority queue on every use, then requires Touch ID when available on macOS.
+DROIDEX sends the login to the preload's isolated world for filling, never to the
+sidecar or model. A document token prevents a delayed fill from reaching a new page,
+even at the same URL. A revocable use token is checked synchronously with main immediately
+before each write; navigation, closure, cancellation, expiry and policy changes
+invalidate it. Capture revalidates the document and policy immediately before
+scheduling the vault rename that publishes a saved login.
+
+`browser_fill_login` returns only success. Agent text results, snapshots, titles,
+accessibility reads, inspections and console/network diagnostics redact the exact
+filled values for that document until navigation. Existing field and screenshot
+masking remains in place. A hostile page that receives a login can still leak it,
+including through encoding or painting it outside a field; these protections do
+not make an untrusted site safe to receive a password.
+
+Agent type, fill and editing keys share the read path's sensitive-field classifier
+and refuse password, one-time-code, payment-card and other secret fields. Type and
+fill also refuse button controls. Click, Enter and Space inspect sign-in, sign-up,
+OAuth, passkey and payment controls,
+request single-use approval, then recheck the real focus or activation target
+immediately before dispatch, including the destination before mouse release.
+Clicks classify the hit-tested control at the click point, even for ancestor refs.
+Implicit Enter submissions use the default submit button's action and method overrides.
+Control wording includes whitespace-normalized accessible names from referenced
+labels (their ARIA label, image alternative, or text), ARIA labels and image
+alternatives. Only button-like inputs contribute their value as wording.
+Direct agent navigation to sign-in paths or OAuth authorization
+URLs uses the same single-use approval; OAuth detection uses authorization query
+parameters or endpoint paths, without a provider list. Malformed path escapes are
+inspected as raw text. The sidecar publishes the current URL until an open completes,
+so mounting a guest cannot restore the requested target before approval.
+Detection uses form fields and control wording, so sites with custom controls may
+need a user handoff. CDP inspects and fills in isolated worlds; unreadable input
+focus is refused. These checks run only on agent actions; direct user input is not
+gated. Actions that can ask approval receive an additional 120 seconds in the
+sidecar request deadline, and abandoned requests dismiss their queued prompts.
+OAuth popup handling, passkey sheets and site permissions belong to later ports.
+
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.
 - Main owns every browser page. The renderer mounts each chat's page as a `<webview>` only with a one-time token main issues, and main binds, hardens and navigates it. The sidecar's browser tools reach main directly over a private IPC channel opened when main spawns it (`sidecar/src/browser/desktopBrowserChannel.ts`, `electron/nativeBrowserRequests.cjs`): each request carries its own id and is answered on the same sidecar run, nothing is replayed after a restart, and while main works on a page it tells the renderer's Browser host to keep that page mounted and awake, pane open or not. A page is laid out at its session's viewport: Fit follows the pane, and a standard size (desktop, laptop, tablet, mobile) keeps its own CSS size in the pane, drawn scaled down with a CSS transform, so the user sees what the agent reads. Agents read pages from Chromium's accessibility tree, cross-site frames included through their own debugger sessions (`electron/browserReading.cjs`, `electron/browserFrames.cjs`), and screenshots have sensitive fields painted over in main before the image leaves (`electron/browserScreenshot.cjs`, `electron/browserMasking.cjs`). Agent actions are trusted CDP input sent from main (`electron/browserActions.cjs`, `electron/browserKeys.cjs`), keys to the frame that holds the focus. Actions that move a page on, and waits, run one at a time per page, in the order they came, while reads run alongside; `browser_wait` is checked in main as the page changes (`electron/browserWait.cjs`). The page script is called only in the preload's isolated world (`electron/browserPageScript.cjs`), never through the page's own world.
@@ -137,6 +198,7 @@ message; no grants or settings are silently migrated or reset.
 - Approval `detail` carries concrete tool input separately from the provider's explanatory `title`; file changes may carry `diff`. `canAlwaysAllow` requires a grant signature and provider permission, and `SessionInteractions` enforces it on both grant reuse and settlement. `refuse` declines an action without interrupting Claude or Codex; `cancel` stops the turn. Droid's SDK exposes only `Cancel` for refusal.
 - `SessionEventFlow` owns stream and notification normalization, per-app/per-source terminal gating, and transcript-before-side-effect ordering. It has one callback into Manager for the coupled policy that remains there.
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, pending steers, Send now, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
+- Prompts sent as steers retain their parsed queue display, including design references and side-chat replies. A queued design prompt starts a design turn with TodoWrite disabled on Droid. A steered design prompt joins the running turn and keeps its tool policy. Other providers keep their own tool sets.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
 ### Chat preferences

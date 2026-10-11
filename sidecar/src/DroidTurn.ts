@@ -52,8 +52,9 @@ export class DroidTurn {
   }
 
   steer(client: DroidClient, text: string): Promise<boolean> {
-    // Embedded slash commands can fail without a delivery or discard notice.
-    if (!this.acceptingSteers || this.interrupting || /(^|\s)\//.test(text))
+    // Standalone /command tokens can fail without a delivery or discard notice.
+    // A slash inside a path or followed by another path segment is ordinary text.
+    if (!this.acceptingSteers || this.interrupting || /(^|\s)\/[A-Za-z][\w:-]*(?=\s|$)/.test(text))
       return Promise.resolve(false);
     const messageId = randomUUID();
     const delivered = new Promise<boolean>((resolve) => this.deliveries.set(messageId, resolve));
