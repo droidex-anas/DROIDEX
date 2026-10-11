@@ -28,7 +28,8 @@ const githubPrConversation = require('./githubPrConversation.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
 const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
-const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createNativeBrowserManager, BROWSER_PARTITION } = require('./nativeBrowser.cjs');
+const { createBrowserDownloads } = require('./browserDownloads.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createBrowserPromptController } = require('./browserPrompt.cjs');
@@ -167,6 +168,7 @@ const nativeBrowserManager = createNativeBrowserManager({
   getSettings: () => browserSettings.snapshot(),
   permissions: browserPermissions,
   showPrompt: browserPrompts.request,
+  onGuestReleased: (contents) => browserDownloads.cancelPendingForContents(contents),
   onBrowserInput: nativeBrowserShortcuts.handleInput,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
   getHostAppUrl: () => process.env.ELECTRON_START_URL || mainWindow?.webContents.getURL(),
@@ -227,6 +229,25 @@ const browserSettings = createBrowserSettingsController({
   showPrompt: browserPrompts.request,
   onSitePermissionModeChanged: browserPermissions.revokeAll,
 });
+const browserDownloads = createBrowserDownloads({
+  getSettings: browserSettings.downloadSettings,
+  getContext: (contents) => {
+    const browserSessionId = nativeBrowserManager.sessionIdForWebContents(contents);
+    return browserSessionId
+      ? {
+          browserSessionId,
+          working: nativeBrowserRequests.workingSessions().includes(browserSessionId),
+        }
+      : undefined;
+  },
+  showPrompt: browserPrompts.request,
+  showSaveDialog: (options) => dialog.showSaveDialog(mainWindow, options),
+  tempPath: app.getPath('temp'),
+  sendToRenderer: (channel, payload) => {
+    if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
+  },
+});
+let downloadShutdown;
 const hardwareAccelerationPreferencePath = hardwareAccelerationPreferenceFilePath(
   app.getPath('userData'),
 );
@@ -250,6 +271,7 @@ app.whenReady().then(async () => {
     app.exit(1);
     return;
   }
+  session.fromPartition(BROWSER_PARTITION).on('will-download', browserDownloads.handleWillDownload);
   installApplicationMenu({
     Menu,
     app,
@@ -291,8 +313,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   browserPermissions.revokeAll();
+  const pendingDownloads = browserDownloads.hasPending();
+  downloadShutdown ??= browserDownloads.shutdown().then(() => {
+    if (pendingDownloads) app.quit();
+  });
+  if (pendingDownloads) event.preventDefault();
   browserSettings.cancelPendingUpdates();
   browserPrompts.setRendererReady(false);
   sidecarSupervisor.stop();

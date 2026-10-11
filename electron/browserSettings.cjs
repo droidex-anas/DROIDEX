@@ -135,6 +135,11 @@ function createBrowserSettingsController({
     }
   }
 
+  function downloadSettings() {
+    const { askDownloadLocation, downloadDirectory } = requireSettings();
+    return { askDownloadLocation, downloadDirectory };
+  }
+
   return {
     settingsPath,
     initialize,
@@ -142,6 +147,7 @@ function createBrowserSettingsController({
     update,
     cancelPendingUpdates,
     assertAgentAccess,
+    downloadSettings,
     getSitePermissionDecision,
     setSitePermissionDecision,
   };

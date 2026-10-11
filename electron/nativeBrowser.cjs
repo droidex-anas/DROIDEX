@@ -124,6 +124,7 @@ function createNativeBrowserManager(options) {
   function releaseNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    options.onGuestReleased?.(entry.contents);
     options.permissions.revokeForContents(entry.contents);
     guests.release(entry.browserSessionId);
     entry.contents = null;
@@ -135,6 +136,7 @@ function createNativeBrowserManager(options) {
 
   function bindNativeBrowserGuest(browserSessionId, contents) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
+    options.onGuestReleased?.(entry.contents);
     forgetLoad(entry);
     forgetLoadWaiters(entry);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
@@ -240,6 +242,7 @@ function createNativeBrowserManager(options) {
   function closeNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    options.onGuestReleased?.(entry.contents);
     options.permissions.revokeForContents(entry.contents);
     // A restore still waiting on the guest's setup never runs, and an action
     // still waiting on the page never reaches it.
@@ -395,6 +398,7 @@ function createNativeBrowserManager(options) {
     options.permissions.revokeAll();
     preview.forget();
     for (const entry of nativeBrowsers.values()) {
+      options.onGuestReleased?.(entry.contents);
       entry.contents = null;
       forgetLoad(entry);
       guests.release(entry.browserSessionId);

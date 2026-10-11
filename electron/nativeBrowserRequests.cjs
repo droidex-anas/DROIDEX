@@ -237,6 +237,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
     const stillWanted = () => {
       if (Date.now() >= request.startBy || request.runEnded()) throw new Error(LATE);
     };
+    stillWanted();
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
       const entry = await manager.waitForPage(browserSessionId);
