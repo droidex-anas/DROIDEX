@@ -40,6 +40,7 @@ import {
   placeIssues,
   type SourceIssue,
 } from './canvasSourceIssues';
+import { SOFT_FOCUS } from './CanvasSourceCode';
 import { CompareCaption, ConflictBar, ConflictCompare } from './CanvasSourceConflict';
 import type { CanvasFrame, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
@@ -174,7 +175,7 @@ export function CanvasSourcePanel({
             // A low-alpha accent tint, not `elevated`: on a dark theme `raised`
             // resolves to the elevated rung, and the pane's primary action
             // would read as plain text (05a's note).
-            className="rounded-lg bg-droid-accent/10 px-2.5 py-1 text-[11px] text-droid-text transition-colors enabled:hover:bg-droid-accent/20 disabled:bg-transparent disabled:text-droid-text-muted"
+            className={`rounded-lg bg-droid-accent/10 px-2.5 py-1 text-[11px] text-droid-text transition-colors enabled:hover:bg-droid-accent/20 disabled:bg-transparent disabled:text-droid-text-muted ${SOFT_FOCUS}`}
           >
             {saveLabel(state)}
           </button>
@@ -185,7 +186,7 @@ export function CanvasSourcePanel({
               if (unsaved.length > 0) setConfirmingClose(true);
               else close();
             }}
-            className="rounded-lg px-2 py-1 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+            className={`rounded-lg px-2 py-1 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-accent/10 hover:text-droid-text ${SOFT_FOCUS}`}
           >
             Close
           </button>
@@ -236,7 +237,7 @@ export function CanvasSourcePanel({
                   {conflict && comparing ? <CompareCaption>Yours · unsaved</CompareCaption> : null}
                   <Suspense
                     fallback={
-                      <div aria-hidden className="min-h-0 flex-1 rounded-xl bg-droid-surface" />
+                      <div aria-hidden className="min-h-0 flex-1 rounded-xl bg-droid-code" />
                     }
                   >
                     <LazyEditor
@@ -304,7 +305,7 @@ function EmptyEditor({ reason }: { reason: EmptyReason }) {
   return (
     <p
       role={reason === 'reading' ? 'status' : undefined}
-      className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-surface text-[12px] text-droid-text-secondary"
+      className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-code text-[12px] text-droid-text-secondary"
     >
       {EMPTY_MESSAGE[reason]}
     </p>
@@ -328,7 +329,7 @@ function ReadFailure({
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-elevated px-3 py-2 text-[11px] text-droid-text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-accent/[0.07] px-3 py-2 text-[11px] text-droid-text-secondary"
     >
       <span className="min-w-0 flex-1">
         <span className="text-droid-red">{message}</span>
@@ -336,7 +337,7 @@ function ReadFailure({
       </span>
       <button
         onClick={onRetry}
-        className="rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25"
+        className={`rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25 ${SOFT_FOCUS}`}
       >
         Try again
       </button>
@@ -357,10 +358,7 @@ function FileList({
 }) {
   if (paths.length === 0) return null;
   return (
-    <nav
-      aria-label="Source files"
-      className="scrollbar-on-hover w-44 shrink-0 overflow-y-auto rounded-xl bg-droid-surface p-1"
-    >
+    <nav aria-label="Source files" className="scrollbar-on-hover w-44 shrink-0 overflow-y-auto">
       {paths.map((path) => {
         const faults = issues.filter((issue) => issue.path === path).length;
         const open = path === source.activePath;
@@ -371,10 +369,10 @@ function FileList({
               onSelect(path);
             }}
             aria-current={open}
-            className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] transition-colors ${
+            className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] transition-colors ${SOFT_FOCUS} ${
               open
-                ? 'bg-droid-active text-droid-text'
-                : 'text-droid-text-secondary hover:bg-droid-elevated'
+                ? 'bg-droid-accent/[0.07] font-medium text-droid-text'
+                : 'text-droid-text-secondary hover:bg-droid-accent/5 hover:text-droid-text'
             }`}
           >
             <span className="min-w-0 flex-1 truncate" title={path}>
@@ -408,7 +406,7 @@ function DiscardBar({
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-elevated px-3 py-1.5 text-[11px] text-droid-text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-accent/[0.07] px-3 py-1.5 text-[11px] text-droid-text-secondary"
     >
       <span className="min-w-0 flex-1">
         {frames === 1
@@ -417,13 +415,13 @@ function DiscardBar({
       </span>
       <button
         onClick={onCancel}
-        className="rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25"
+        className={`rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25 ${SOFT_FOCUS}`}
       >
         Keep editing
       </button>
       <button
         onClick={onDiscard}
-        className="rounded-lg px-2 py-1 text-droid-red transition-colors hover:bg-droid-accent/10"
+        className={`rounded-lg px-2 py-1 text-droid-red transition-colors hover:bg-droid-accent/10 ${SOFT_FOCUS}`}
       >
         Discard
       </button>
@@ -447,7 +445,7 @@ function IssueList({
   return (
     <ul
       aria-label="Build problems"
-      className="scrollbar-on-hover max-h-28 shrink-0 overflow-y-auto rounded-xl bg-droid-surface p-1"
+      className="scrollbar-on-hover max-h-28 shrink-0 overflow-y-auto"
     >
       {issues.map((issue, index) => (
         <li key={`${issue.diagnostic.code}-${String(index)}`}>
@@ -456,7 +454,7 @@ function IssueList({
               onReveal(issue);
             }}
             disabled={issue.path === null}
-            className="flex w-full gap-2 rounded-lg px-2 py-1 text-left font-mono text-[11px] leading-5 text-droid-text-secondary transition-colors enabled:hover:bg-droid-elevated disabled:cursor-default"
+            className={`flex w-full gap-2 rounded-lg px-2 py-1 text-left font-mono text-[11px] leading-5 text-droid-text-secondary transition-colors hover:bg-droid-accent/5 disabled:cursor-default disabled:bg-transparent ${SOFT_FOCUS}`}
           >
             <span className="shrink-0 text-droid-red">
               {issue.path === null

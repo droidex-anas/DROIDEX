@@ -21,6 +21,7 @@ export default {
           field: v('--droid-field'),
           active: v('--droid-active'),
           raised: v('--droid-raised'),
+          code: v('--droid-code-bg'),
           border: v('--droid-border'),
           'border-hover': v('--droid-border-hover'),
           text: v('--droid-text'),
