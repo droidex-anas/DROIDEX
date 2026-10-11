@@ -35,11 +35,20 @@ test('browser policies default safely and persist across restarts', async (t) =>
   assert.equal(snapshot.diagnosticsEnabled, false);
   assert.equal(snapshot.askDownloadLocation, true);
   assert.equal(snapshot.showAgentCursor, true);
+  assert.equal(snapshot.agentCursorStyle, 'droidex');
+  assert.equal(snapshot.agentCursorSize, 36);
   assert.equal(snapshot.homePage, 'https://www.google.com/');
-  await controller.update({ showAgentCursor: false, agentAccessEnabled: false });
+  await controller.update({
+    showAgentCursor: false,
+    agentCursorStyle: 'light',
+    agentCursorSize: 64,
+    agentAccessEnabled: false,
+  });
   const restarted = createBrowserSettingsController(options);
   await restarted.initialize();
   assert.equal(restarted.snapshot().showAgentCursor, false);
+  assert.equal(restarted.snapshot().agentCursorStyle, 'light');
+  assert.equal(restarted.snapshot().agentCursorSize, 64);
   assert.throws(() => restarted.assertAgentAccess(), /Agent browser access is off/);
   const saved = JSON.parse(await fs.readFile(controller.settingsPath, 'utf8'));
   assert.equal(saved.version, 6);
@@ -106,7 +115,9 @@ test('invalid patches and persisted settings fail without replacing the settings
     { navigationApproval: 'sometimes' },
     { homePage: 'https://user:password@example.test/' },
     { homePage: 'file:///tmp/page' },
-    { agentCursorSize: 52 },
+    { agentCursorSize: 65 },
+    { agentCursorSize: 36.5 },
+    { agentCursorStyle: 'neon' },
     { approvedAgentOrigins: ['https://example.test'] },
   ]) {
     assert.throws(() => controller.update(patch));

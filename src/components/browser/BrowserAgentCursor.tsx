@@ -1,12 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { useBrowserSettings, type BrowserAgentCursorStyle } from '../../lib/browserSettings';
 import { onNativeBrowserAgentPoint } from '../../lib/nativeBrowser';
+import { AgentCursorGlyph } from './AgentCursorGlyph';
 import design from './browserAgentCursorDesign.json';
-
-const ARTWORK = design.styles.droidex;
-// The artwork's glow, with a soft contact shadow under it so the pale glyph
-// still has an edge on a white page.
-const GLYPH_FILTER = `${ARTWORK.overlayFilter} drop-shadow(0 1px 1.5px rgba(16, 32, 90, 0.45))`;
 // The glyph's tip, where the agent points, as a share of the artwork's box.
 const TIP = {
   x: design.hotspot.x / design.viewBoxSize,
@@ -25,29 +22,12 @@ interface Point {
   y: number;
 }
 
-/**
- * The agent's cursor over a page, in the pane or on the picture in the
- * transcript's Browser card. It shows while an agent's turn uses the page,
- * resting where it last pointed (or near the middle before it has pointed)
- * and drifting a little while the model thinks. A new point is reached on a
- * gentle arc, eased in and out; a click lands with a press and a soft ring.
- * Beside it a chip names the step in the working line's words. When the turn
- * ends it lingers a moment and fades. The app draws it above the page, so it
- * is never part of the page or of the agent's screenshots, and input never
- * waits for it. It draws only while shown, and takes the agent's points only
- * then, or always when it is to `follow` them.
- */
-export function BrowserAgentCursor({
-  browserSessionId,
-  scale,
-  shown,
-  present,
-  step = null,
-  named = false,
-  follow = false,
-  rest,
-  size = design.size.default,
-}: {
+interface CursorLook {
+  cursorStyle: BrowserAgentCursorStyle;
+  size: number;
+}
+
+interface CursorProps {
   browserSessionId: string;
   /** How large the page is drawn. */
   scale: number;
@@ -62,9 +42,40 @@ export function BrowserAgentCursor({
   follow?: boolean;
   /** Where it waits before the agent first points, in the page's pixels. */
   rest?: Point;
-  /** The glyph's size; smaller on a small picture of the page. */
-  size?: number;
-}) {
+  /** On a small picture of the page, the glyph is two-thirds of the chosen size. */
+  small?: boolean;
+}
+
+/**
+ * The agent's cursor over a page, in the pane or on the picture in the
+ * transcript's Browser card. It shows while an agent's turn uses the page,
+ * resting where it last pointed (or near the middle before it has pointed)
+ * and drifting a little while the model thinks. A new point is reached on a
+ * gentle arc, eased in and out; a click lands with a press and a soft ring.
+ * Beside it a chip names the step in the working line's words. When the turn
+ * ends it lingers a moment and fades. The app draws it above the page, so it
+ * is never part of the page or of the agent's screenshots, and input never
+ * waits for it. It draws only while shown, and takes the agent's points only
+ * then, or always when it is to `follow` them. Its look is the user's, from
+ * Settings > Browser; hidden there, nothing of it is mounted, so it neither
+ * draws nor follows.
+ */
+export function BrowserAgentCursor(props: CursorProps) {
+  const look = useCursorLook(props.small === true);
+  return look && <PageCursor {...props} look={look} />;
+}
+
+function PageCursor({
+  browserSessionId,
+  scale,
+  shown,
+  present,
+  step = null,
+  named = false,
+  follow = false,
+  rest,
+  look: { cursorStyle, size },
+}: CursorProps & { look: CursorLook }) {
   const point = useAgentPoint(browserSessionId, shown || follow);
   const target = point ?? rest ?? null;
   const visible = shown && target !== null;
@@ -77,7 +88,15 @@ export function BrowserAgentCursor({
       aria-hidden
       data-present={present}
       className="agent-cursor pointer-events-none absolute left-0 top-0"
-      style={{ width: size, height: size, opacity: present ? 1 : 0, transformOrigin: TIP_ORIGIN }}
+      style={
+        {
+          width: size,
+          height: size,
+          opacity: present ? 1 : 0,
+          transformOrigin: TIP_ORIGIN,
+          '--agent-cursor-glow': design.styles[cursorStyle].glow,
+        } as CSSProperties
+      }
     >
       <span
         ref={ringRef}
@@ -93,25 +112,23 @@ export function BrowserAgentCursor({
         className={`h-full w-full ${present ? 'agent-cursor-drift' : ''}`}
         style={{ transformOrigin: TIP_ORIGIN }}
       >
-        <svg
-          viewBox={`0 0 ${String(design.viewBoxSize)} ${String(design.viewBoxSize)}`}
-          className="block h-full w-full"
-          style={{ filter: GLYPH_FILTER }}
-        >
-          <path
-            d={design.path}
-            fill={ARTWORK.fill}
-            fillOpacity={ARTWORK.fillOpacity}
-            stroke={ARTWORK.stroke}
-            strokeWidth={design.strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <AgentCursorGlyph cursorStyle={cursorStyle} page className="block h-full w-full" />
       </div>
-      {named && <StepChip step={step} present={present} size={size} />}
+      {named && <StepChip step={step} present={present} size={size} cursorStyle={cursorStyle} />}
     </div>
   );
+}
+
+// The look chosen in Settings > Browser, or null while hidden there or not
+// yet loaded.
+function useCursorLook(small: boolean): CursorLook | null {
+  const settings = useBrowserSettings();
+  if (!settings?.showAgentCursor) return null;
+  const size = settings.agentCursorSize;
+  return {
+    cursorStyle: settings.agentCursorStyle,
+    size: small ? Math.round((size * 2) / 3) : size,
+  };
 }
 
 // The step's name tag. It keeps the last step's words while it fades, so a
@@ -120,10 +137,12 @@ function StepChip({
   step,
   present,
   size,
+  cursorStyle,
 }: {
   step: string | null;
   present: boolean;
   size: number;
+  cursorStyle: BrowserAgentCursorStyle;
 }) {
   const [shown, setShown] = useState(step);
   if (step && step !== shown) setShown(step);
@@ -134,8 +153,8 @@ function StepChip({
       data-on={Boolean(step) && present}
       style={
         {
-          background: ARTWORK.fill,
-          color: design.styles.dark.fill,
+          background: design.styles[cursorStyle].chip.fill,
+          color: design.styles[cursorStyle].chip.text,
           '--chip-at': `${String(size * 0.8)}px`,
         } as CSSProperties
       }

@@ -41,6 +41,8 @@ function createBrowserSettingsController({
       sitePermissionMode: current.sitePermissionMode,
       askDownloadLocation: current.askDownloadLocation,
       showAgentCursor: current.showAgentCursor,
+      agentCursorStyle: current.agentCursorStyle,
+      agentCursorSize: current.agentCursorSize,
       homePage: current.homePage,
       downloadDirectoryLabel:
         current.downloadDirectory === downloadsPath

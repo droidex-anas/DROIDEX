@@ -14,6 +14,9 @@ const SITE_PERMISSIONS = [
 const NAVIGATION_APPROVALS = new Set(['follow_autonomy', 'always_ask', 'new_sites', 'never_ask']);
 const LOGIN_FILL_APPROVALS = new Set(['always_ask', 'never']);
 const SITE_PERMISSION_MODES = new Set(['block', 'ask']);
+// The renderer draws these from src/components/browser/browserAgentCursorDesign.json.
+const AGENT_CURSOR_STYLES = new Set(['droidex', 'dark', 'light']);
+const AGENT_CURSOR_SIZE = { min: 24, max: 64 };
 function createDefaultBrowserSettings(downloadDirectory) {
   return {
     version: SETTINGS_VERSION,
@@ -24,6 +27,8 @@ function createDefaultBrowserSettings(downloadDirectory) {
     sitePermissionMode: 'ask',
     askDownloadLocation: true,
     showAgentCursor: true,
+    agentCursorStyle: 'droidex',
+    agentCursorSize: 36,
     homePage: 'https://www.google.com/',
     downloadDirectory,
     approvedAgentOrigins: [],
@@ -82,6 +87,8 @@ function validateSettingsPatch(patch, complete = false) {
     'sitePermissionMode',
     'askDownloadLocation',
     'showAgentCursor',
+    'agentCursorStyle',
+    'agentCursorSize',
     'homePage',
   ]);
   if (!complete && Object.keys(patch).some((key) => !allowed.has(key))) {
@@ -105,11 +112,19 @@ function validateSettingsPatch(patch, complete = false) {
     ['navigationApproval', NAVIGATION_APPROVALS],
     ['loginFillApproval', LOGIN_FILL_APPROVALS],
     ['sitePermissionMode', SITE_PERMISSION_MODES],
+    ['agentCursorStyle', AGENT_CURSOR_STYLES],
   ]) {
     if (complete || key in patch) {
       if (!values.has(patch[key])) throw new Error(`Browser setting ${key} has an invalid value.`);
       out[key] = patch[key];
     }
+  }
+  if (complete || 'agentCursorSize' in patch) {
+    const size = patch.agentCursorSize;
+    if (!Number.isInteger(size) || size < AGENT_CURSOR_SIZE.min || size > AGENT_CURSOR_SIZE.max) {
+      throw new Error('Browser setting agentCursorSize has an invalid value.');
+    }
+    out.agentCursorSize = size;
   }
   if (complete || 'homePage' in patch) out.homePage = validateHomePage(patch.homePage);
   return out;

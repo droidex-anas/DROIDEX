@@ -424,12 +424,12 @@
   /* The ring a click sends out from the tip; script plays it. */
   .agent-cursor-ring {
     position: absolute;
-    border: 2px solid rgba(80, 139, 255, 0.85);
+    border: 2px solid rgba(var(--agent-cursor-glow), 0.85);
     border-radius: 9999px;
-    background: rgba(80, 139, 255, 0.12);
+    background: rgba(var(--agent-cursor-glow), 0.12);
     opacity: 0;
     transform: translate(-50%, -50%);
-    box-shadow: 0 0 10px rgba(80, 139, 255, 0.45);
+    box-shadow: 0 0 10px rgba(var(--agent-cursor-glow), 0.45);
   }
 
   /* The step's name tag, below and to the right of the glyph, its corner
@@ -449,7 +449,7 @@
     white-space: nowrap;
     /* The cursor's own glow, over the theme's small shadow. */
     box-shadow:
-      0 0 12px rgba(80, 139, 255, 0.35),
+      0 0 12px rgba(var(--agent-cursor-glow), 0.35),
       var(--droid-shadow-sm);
     transition:
       opacity 160ms ease-out,

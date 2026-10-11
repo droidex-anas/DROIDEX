@@ -19,21 +19,36 @@
       "fillOpacity": "1",
       "stroke": "none",
       "overlayFilter": "drop-shadow(0 0 1.5px rgba(255,255,255,.9))",
-      "iconFilter": null
+      "iconFilter": null,
+      "chip": {
+        "fill": "#111111",
+        "text": "#ffffff"
+      },
+      "glow": "17, 17, 17"
     },
     "light": {
       "fill": "none",
       "fillOpacity": "1",
       "stroke": "#111111",
       "overlayFilter": "drop-shadow(0 0 1.5px rgba(255,255,255,.9))",
-      "iconFilter": null
+      "iconFilter": null,
+      "chip": {
+        "fill": "#ffffff",
+        "text": "#111111"
+      },
+      "glow": "17, 17, 17"
     },
     "droidex": {
       "fill": "#bbccff",
       "fillOpacity": "1",
       "stroke": "none",
       "overlayFilter": "drop-shadow(0 0 5px rgba(80,139,255,.75)) drop-shadow(0 0 12px rgba(80,139,255,.35))",
-      "iconFilter": "drop-shadow(0 0 3px rgba(80, 139, 255, 0.75))"
+      "iconFilter": "drop-shadow(0 0 3px rgba(80, 139, 255, 0.75))",
+      "chip": {
+        "fill": "#bbccff",
+        "text": "#111111"
+      },
+      "glow": "80, 139, 255"
     }
   }
 }

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useDocumentVisible } from '../../hooks/useDocumentVisible';
 import { watchNativeBrowser, type NativeBrowserFrame } from '../../lib/nativeBrowser';
 import { BrowserAgentCursor } from './BrowserAgentCursor';
-import design from './browserAgentCursorDesign.json';
 
 // The last picture each card showed, so a card that scrolls away and back, or
 // whose turn has ended, still shows the page as it last was. Kept in memory
@@ -102,7 +101,7 @@ export function BrowserPreview({
             follow={live && onScreen && visible}
             present={live}
             rest={frame ? { x: frame.width / 2, y: frame.height / 2 } : undefined}
-            size={design.size.min}
+            small
           />
         )}
       </div>
