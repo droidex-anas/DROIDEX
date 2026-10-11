@@ -36,7 +36,7 @@ import {
 } from './schema.js';
 
 /** The most items one listing answers with, newest first. */
-export const LIBRARY_LIST_LIMIT = 50;
+const LIBRARY_LIST_LIMIT = 50;
 
 const ITEM_FILE = 'item.json';
 const SOURCE_DIRECTORY = 'files';
@@ -149,7 +149,7 @@ export async function saveLibraryItem(
 }
 
 /** Items whose name contains the query, ignoring case; an empty query lists all. */
-export async function listLibraryItems(query: string): Promise<LibraryItem[]> {
+async function listLibraryItems(query: string): Promise<LibraryItem[]> {
   const needle = query.trim().toLocaleLowerCase();
   const root = canvasLibraryDir();
   let names: string[];
