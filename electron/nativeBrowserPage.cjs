@@ -21,6 +21,7 @@ function createNativeBrowserPage({
   sendToRenderer,
   findEntryForContents,
   nativeImage,
+  navigation: navigationApproval,
   showPrompt,
   getSettings,
 }) {
@@ -39,6 +40,7 @@ function createNativeBrowserPage({
     reading,
     runWithWebContentsDebugger,
     credentials,
+    navigationApproval,
     showPrompt,
     unthrottled,
     redactUrl: redactBrowserPageUrl,
@@ -149,6 +151,7 @@ function createNativeBrowserPage({
               if (Date.now() >= request.startBy || request.runEnded())
                 throw new Error('The browser page did not finish in time.');
               navigation = observeNavigation(contents);
+              navigationApproval.recordAction(entry, contents, request);
             })
             .then(
               (result) => ({ result }),
@@ -159,6 +162,7 @@ function createNativeBrowserPage({
           // whose page went before it returned has only its failure to show.
           if (navigation && !navigation.started())
             await navigation.startsWithin(NAVIGATION_GRACE_MS);
+          await navigationApproval.waitForApprovals(contents, request.requestId);
           if (!navigation?.started()) {
             if (ran.error) throw ran.error;
             return ran.result;
@@ -167,6 +171,7 @@ function createNativeBrowserPage({
           return ran.error ? ran.error.message : ran.result;
         });
         stillOpen();
+        navigationApproval.takeFailure(contents, request.requestId);
         const after = await actions.act(contents, entry, { ...request, action: 'snapshot' });
         return { ...after, text: `${value}\n${after.text}` };
       } finally {

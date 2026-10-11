@@ -14,6 +14,19 @@ const BROWSER_REQUEST_TIMEOUT_MS = boundedInt(
   60_000,
 );
 
+// Agent actions that can open another website, and so wait for its approval.
+const NAVIGATION_APPROVAL_ACTIONS = new Set([
+  'open',
+  'reload',
+  'goBack',
+  'goForward',
+  'click',
+  'type',
+  'press',
+  'fill',
+  'evaluate',
+]);
+
 export type RequestBrowser = (request: BrowserNativeRequest) => Promise<BrowserNativeResult>;
 
 export type BrowserChannelProcess = Pick<NodeJS.Process, 'on' | 'send' | 'connected'>;
@@ -56,6 +69,7 @@ export function createDesktopBrowserChannel(
     // A wait is given its own length on top. Main gets the expiry too, so the
     // time a request spends on the way counts against it.
     const mayAskApproval =
+      (request.initiator !== 'user' && NAVIGATION_APPROVAL_ACTIONS.has(request.action)) ||
       ['open', 'fillCredentials', 'click', 'press'].includes(request.action) ||
       (request.action === 'type' && request.submit);
     const limitMs = timeoutMs + (mayAskApproval ? 120_000 : 0) + (request.waitMs ?? 0);

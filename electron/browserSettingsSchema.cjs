@@ -26,7 +26,6 @@ function createDefaultBrowserSettings(downloadDirectory) {
     showAgentCursor: true,
     homePage: 'https://www.google.com/',
     downloadDirectory,
-    approvedAgentOrigins: [],
     sitePermissions: [],
   };
 }
@@ -65,7 +64,6 @@ function validateSettings(value, defaults) {
     ...validateSettingsPatch(value, true),
     version: SETTINGS_VERSION,
     downloadDirectory: validateAbsoluteDirectory(value.downloadDirectory),
-    approvedAgentOrigins: validateOriginList(value.approvedAgentOrigins),
     sitePermissions: validateSitePermissions(value.sitePermissions),
   };
 }
@@ -130,13 +128,6 @@ function validateExactOrigin(value) {
   const origin = exactHttpOrigin(value);
   if (origin !== value) throw new Error('Browser site grant must be an exact origin.');
   return origin;
-}
-
-function validateOriginList(value) {
-  if (!Array.isArray(value) || value.length > 500) {
-    throw new Error('Invalid browser settings: site grants must be an array.');
-  }
-  return [...new Set(value.map(validateExactOrigin))];
 }
 
 function validateSitePermissions(value) {
@@ -266,4 +257,6 @@ module.exports = {
   validateSettingsPatch,
   browserProtectionReductions,
   writeSettings,
+  exactHttpOrigin,
+  effectiveNavigationApproval,
 };

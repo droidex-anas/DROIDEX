@@ -173,6 +173,11 @@ function fixture() {
       prompts.push(prompt);
       return answer(prompt, options);
     },
+    navigationApproval: {
+      recordAction: () => {},
+      waitForApprovals: async () => {},
+      takeFailure: () => {},
+    },
     unthrottled: (_contents, run) => run(),
     redactUrl: (value) => value,
     onPoint: (_entry, point) => points.push({ point, writes: input.length }),
@@ -610,5 +615,20 @@ test('fill and type report the target centre as a click before writing, includin
   assert.deepEqual(
     f.input.map((event) => event.text),
     ['typed', 'focused'],
+  );
+});
+
+test('agent activation refuses a javascript link hit inside a closed shadow root before input', async () => {
+  const f = fixture();
+  const { node: link } = f.element('a', { href: 'javascript:alert(1)' });
+  link.href = 'javascript:alert(1)';
+  const { node: label } = f.element('span');
+  label.getRootNode = () => ({ host: link });
+  await assert.rejects(f.act({ action: 'click', x: 10, y: 10 }), /http\(s\)/);
+  label.focus();
+  await assert.rejects(f.act({ action: 'press', key: 'Enter' }), /http\(s\)/);
+  assert.deepEqual(
+    f.input.filter(({ type }) => type !== 'mouseMoved'),
+    [],
   );
 });

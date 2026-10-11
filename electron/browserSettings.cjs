@@ -6,6 +6,8 @@ const {
   validateSettingsPatch,
   browserProtectionReductions,
   writeSettings,
+  exactHttpOrigin,
+  effectiveNavigationApproval,
   SITE_PERMISSIONS,
   validateSitePermissionSelection,
   validateSiteDecision,
@@ -20,6 +22,7 @@ function createBrowserSettingsController({
 }) {
   const settingsPath = path.join(userDataPath, 'browser-settings.json');
   let settings;
+  const approvedOrigins = new Set();
   let writes = Promise.resolve();
   let pendingUpdates = new AbortController();
 
@@ -47,7 +50,7 @@ function createBrowserSettingsController({
         current.downloadDirectory === downloadsPath
           ? 'System Downloads folder'
           : 'Custom download folder',
-      approvedAgentOrigins: [...current.approvedAgentOrigins].sort(),
+      approvedAgentOrigins: [...approvedOrigins].sort(),
       sitePermissionRules: current.sitePermissions
         .map((rule) => ({ ...rule }))
         .sort((left, right) => left.origin.localeCompare(right.origin)),
@@ -147,6 +150,37 @@ function createBrowserSettingsController({
     return snapshot();
   }
 
+  async function authorizeAgentOrigin(url, autonomy, signal) {
+    const origin = exactHttpOrigin(url);
+    assertAgentAccess();
+    signal.throwIfAborted();
+    const approval = effectiveNavigationApproval(requireSettings().navigationApproval, autonomy);
+    if (approval === 'never_ask') return;
+    if (approval === 'new_sites' && approvedOrigins.has(origin)) return;
+    const mayRemember = approval === 'new_sites';
+    const cancelId = mayRemember ? 2 : 1;
+    const { response, cancelled } = await showPrompt(
+      {
+        kind: 'question',
+        buttons: mayRemember
+          ? ['Allow once', 'Always allow this site', 'Cancel']
+          : ['Allow once', 'Cancel'],
+        defaultId: cancelId,
+        cancelId,
+        title: 'Allow agent website access?',
+        message: `Allow the agent to open ${origin}?`,
+        detail:
+          'Approval applies to this exact website origin. Passwords and cookie values remain hidden from the agent.',
+      },
+      { signal },
+    );
+    signal.throwIfAborted();
+    assertAgentAccess();
+    if (cancelled || response === cancelId)
+      throw new Error(`Agent website access was denied for ${origin}.`);
+    if (mayRemember && response === 1) approvedOrigins.add(origin);
+  }
+
   function assertAgentAccess(action) {
     const current = requireSettings();
     if (!current.agentAccessEnabled) {
@@ -170,6 +204,7 @@ function createBrowserSettingsController({
     cancelPendingUpdates,
     assertAgentAccess,
     downloadSettings,
+    authorizeAgentOrigin,
     getSitePermissionDecision,
     setSitePermissionDecision,
   };

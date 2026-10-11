@@ -9,6 +9,8 @@ const {
   validateAgentAuthenticationIntent,
   approveAuthentication,
 } = require('./browserAuthenticationIntent.cjs');
+const { navigationDestination } = require('./browserNavigationIntent.cjs');
+const { exactHttpOrigin } = require('./browserSettingsSchema.cjs');
 
 const INSPECT = `function (activation, requireFocus) {
   if (requireFocus) {
@@ -19,7 +21,8 @@ const INSPECT = `function (activation, requireFocus) {
   const sensitiveKind = (field) => (${sensitiveFieldKind})(field, ${sensitiveFieldDescription});
   return {
     sensitive: sensitiveKind(this),
-    intent: activation ? (${inspectAuthenticationIntent})(this, activation, sensitiveKind) : null
+    intent: activation ? (${inspectAuthenticationIntent})(this, activation, sensitiveKind) : null,
+    destination: activation ? (${navigationDestination})(this, activation) : null
   };
 }`;
 
@@ -51,13 +54,15 @@ function createBrowserAgentSafety({ showPrompt }) {
       });
       if (exceptionDetails || !result?.value)
         throw new Error('The input target could not be inspected. Hand this step to the user.');
-      const { sensitive, intent } = result.value;
+      const { sensitive, intent, destination } = result.value;
+      if (destination) exactHttpOrigin(destination);
       const inspected = {
         backendNodeId,
         sessionId,
         document,
         sensitive,
         intent: intent ? validateAgentAuthenticationIntent(intent, frame.url) : null,
+        destination,
       };
       // Dispatch before releasing the object or making any other CDP request.
       return dispatch ? await dispatch(inspected) : inspected;

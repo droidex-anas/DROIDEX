@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
+  Autonomy,
   BrowserNativeRequest,
   ClientCommand,
   ProviderMention,
@@ -42,6 +43,7 @@ export interface SessionBrowserDependencies {
   ) => Promise<void>;
   /** Runs a request in the desktop app, which owns the pages. */
   requestBrowser: RequestBrowser;
+  autonomyFor: (appSessionId: string) => Autonomy;
 }
 
 let nativeBrowserSeq = 0;
@@ -146,9 +148,14 @@ export class SessionBrowser {
   }
 
   private async requestNativeBrowser(request: BrowserNativeRequest) {
+    const initiator = this.initiator.getStore() ?? 'agent';
     const result = await this.d.requestBrowser({
       ...request,
-      initiator: this.initiator.getStore() ?? 'agent',
+      initiator,
+      autonomy:
+        initiator === 'agent' && request.action !== 'close'
+          ? this.d.autonomyFor(request.appSessionId)
+          : undefined,
     });
     if (!result.ok) throw new Error(result.error ?? 'DROIDEX browser action failed.');
     return result;

@@ -161,6 +161,7 @@ const browserPermissions = createBrowserPermissionController({
   openExternal: (url) => shell.openExternal(url),
 });
 const nativeBrowserManager = createNativeBrowserManager({
+  authorizeAgentOrigin: (...args) => browserSettings.authorizeAgentOrigin(...args),
   history: browserHistory,
   app,
   appName: APP_NAME,

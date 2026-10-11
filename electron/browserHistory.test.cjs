@@ -32,7 +32,12 @@ function browserWithHistory(history) {
     setDevicePermissionHandler() {},
     setPermissionCheckHandler() {},
     setPermissionRequestHandler() {},
-    webRequest: { onSendHeaders() {}, onCompleted() {}, onErrorOccurred() {} },
+    webRequest: {
+      onBeforeRequest() {},
+      onSendHeaders() {},
+      onCompleted() {},
+      onErrorOccurred() {},
+    },
   };
   const manager = createNativeBrowserManager({
     app: { getPath: () => '/unused-browser-test-profile' },

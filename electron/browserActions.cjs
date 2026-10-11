@@ -12,6 +12,7 @@ const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.
 const { createBrowserCover } = require('./browserCover.cjs');
 const { createBrowserAgentSafety, refuseSensitiveInput } = require('./browserAgentSafety.cjs');
 const { FILL } = require('./browserFill.cjs');
+const { createBrowserActionResult } = require('./browserActionResult.cjs');
 
 const PAGE_CHANGED = 'The page changed before the action ran; call browser_read_page.';
 const LATE = 'The browser page did not finish in time.';
@@ -25,6 +26,7 @@ function createBrowserActions({
   runWithWebContentsDebugger,
   credentials,
   showPrompt,
+  navigationApproval,
   unthrottled,
   redactUrl,
   onPoint,
@@ -32,6 +34,7 @@ function createBrowserActions({
 }) {
   const safety = createBrowserAgentSafety({ showPrompt });
   const { refuseCovered } = createBrowserCover({ reading });
+  const result = createBrowserActionResult({ runWithWebContentsDebugger, redactUrl, getSettings });
 
   async function act(contents, entry, request) {
     // After a navigation or a wait, errors count from when the request came.
@@ -53,6 +56,7 @@ function createBrowserActions({
           startBy: request.startBy,
           runEnded: request.runEnded,
           isCurrent: () => entry.contents === contents && !contents.isDestroyed(),
+          claimNavigation: () => navigationApproval.recordAction(entry, contents, request),
         };
         // The action's own input ends before it reports, even when a navigation
         // settles first, so nothing of it lands under the next one.
@@ -71,7 +75,9 @@ function createBrowserActions({
           (request.action === 'type' && request.submit);
         if (mayNavigate && step.sent && !navigation.started())
           await navigation.startsWithin(NAVIGATION_GRACE_MS);
+        await navigationApproval.waitForApprovals(contents, request.requestId);
         if (navigation.started()) await navigation.wait();
+        navigationApproval.takeFailure(contents, request.requestId);
         return result(request, contents, entry, since, urlBefore);
       });
     } finally {
@@ -437,47 +443,16 @@ function createBrowserActions({
     });
   }
 
-  // The page after an action, with what the agent reads about it: what
-  // changed besides the action itself, then the [Title · url] footer.
-  async function result(request, contents, entry, since, urlBefore = contents.getURL()) {
-    const snapshot = await pageSnapshot(contents);
-    const notes = [];
-    if (snapshot.url !== urlBefore) notes.push('The page went to a new address.');
-    const errors = entry.errorTimes.filter((at) => at >= since).length;
-    if (errors) {
-      const where = getSettings().diagnosticsEnabled ? '; browser_console has them' : '';
-      notes.push(`${errors} new console error${errors === 1 ? '' : 's'}${where}.`);
-    }
-    notes.push(`[${snapshot.title || 'Untitled'} · ${redactUrl(snapshot.url)}]`);
-    return { requestId: request.requestId, ok: true, snapshot, text: notes.join('\n') };
-  }
-
-  // Where the page is, read by main rather than asked of the page.
-  async function pageSnapshot(contents) {
-    if (contents.isDestroyed()) throw new Error('The browser page closed.');
-    const metrics = await runWithWebContentsDebugger(contents, (dbg) =>
-      dbg.sendCommand('Page.getLayoutMetrics'),
-    ).catch(() => undefined);
-    const view = metrics?.cssVisualViewport;
-    const history = contents.navigationHistory;
-    return {
-      url: contents.getURL(),
-      title: contents.getTitle(),
-      scroll: { x: Math.round(view?.pageX ?? 0), y: Math.round(view?.pageY ?? 0) },
-      canGoBack: history.canGoBack(),
-      canGoForward: history.canGoForward(),
-    };
-  }
-
-  return { act, pageSnapshot };
+  return { act };
 }
 
 // Called right before an action changes the page. No input goes out once
-// its caller has given up.
+// its caller has given up, and a navigation the input starts is the agent's.
 function startInput(step) {
   if (step.navigation.started()) throw new Error(PAGE_CHANGED);
   notLate(step);
   step.sent = true;
+  step.claimNavigation();
 }
 
 // Nothing more is done to the page once the caller has given up, or once the

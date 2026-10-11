@@ -9,6 +9,7 @@ function observeNavigation(contents) {
   let started = false;
   let settled = false;
   let timeout;
+  const approvals = new Set();
   let resolveCompletion;
   let resolveStart;
   const completion = new Promise((resolve) => {
@@ -27,7 +28,7 @@ function observeNavigation(contents) {
     if (!isMainFrame || isInPlace || started) return;
     started = true;
     resolveStart();
-    timeout = setTimeout(finish, NAVIGATION_WAIT_MS);
+    if (approvals.size === 0) timeout = setTimeout(finish, NAVIGATION_WAIT_MS);
   };
   const onFinish = () => {
     if (started) finish();
@@ -35,6 +36,19 @@ function observeNavigation(contents) {
   const onFail = (_event, errorCode, _description, _url, isMainFrame) => {
     if (started && isMainFrame && errorCode !== -3) finish();
   };
+  // A question uses the prompt budget, not the page load timeout.
+  const onApprovalStart = (approval) => {
+    approvals.add(approval);
+    clearTimeout(timeout);
+  };
+  const onApprovalEnd = (approval) => {
+    approvals.delete(approval);
+    if (approvals.size === 0 && started && !settled)
+      timeout = setTimeout(finish, NAVIGATION_WAIT_MS);
+  };
+  contents.on('droidex-navigation-approval-start', onApprovalStart);
+  contents.on('droidex-navigation-approval-end', onApprovalEnd);
+  contents.on('droidex-navigation-denied', onFinish);
   contents.on('did-start-navigation', onStart);
   contents.on('did-finish-load', onFinish);
   contents.on('did-fail-load', onFail);
@@ -53,6 +67,9 @@ function observeNavigation(contents) {
     },
     dispose: () => {
       clearTimeout(timeout);
+      contents.removeListener('droidex-navigation-approval-start', onApprovalStart);
+      contents.removeListener('droidex-navigation-approval-end', onApprovalEnd);
+      contents.removeListener('droidex-navigation-denied', onFinish);
       contents.removeListener('did-start-navigation', onStart);
       contents.removeListener('did-finish-load', onFinish);
       contents.removeListener('did-fail-load', onFail);

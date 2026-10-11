@@ -73,9 +73,35 @@ Agent access is enforced at the private browser request boundary, including work
 waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
-context keeps concurrent agent tools from inheriting that permission. Navigation,
-navigation and downloads policies are retained for subsequent runtime ports. The
-agent access switch and site permission policy are enforced. Agent inspect, network
+context keeps concurrent agent tools from inheriting that permission. Website
+opening approval is enforced by `electron/browserNavigationApproval.cjs` before an
+agent opens, reloads or steps through history, and before top-level requests leave
+Chromium, including links, form submissions and redirects. Pausing the original
+request preserves POST bodies; window.open keeps the rewritten engine's same-pane
+behavior after approval. `browserNavigationProvenance.cjs` gives a navigation to the
+agent input that dispatched it: each agent input claims the next navigation of its
+guest and document for one second, and physical input cannot take that claim over.
+Otherwise a physical click, Enter or Space claims it for the user, and one claim
+covers both the frame and request checks. Trusted renderer commands bypass the gate,
+and unclaimed page transitions use low autonomy, never a previous agent's level.
+Follow autonomy maps off/low to Always ask, medium to Ask for new sites, and high to
+Full site access. Always allow this site remembers only the exact HTTP(S) origin in
+memory until app exit; it is never written to the settings file. The questions go
+through the in-app prompt queue above and are never shown as a native dialog.
+Agents cannot open non-HTTP(S) destinations, even with Full site access: before an
+agent click, Enter or Space goes out, `browserAgentSafety.cjs` reads the link or
+form target of the hit-tested node in its own document, including frames and closed
+shadow roots, and refuses others such as `javascript:`. Approval-bearing agent tools
+include the queue's 120-second deadline in their request budget, and reload, Back
+and Forward answer only once approval settles and the page loads; a denial fails
+them. A user navigation on the same tab cancels agent work still in flight there,
+including its pending question. Closing, replacing, crashing or navigating away from
+the owning guest also cancels pending approval.
+
+These guarantees cover honest pages and a possibly prompt-injected agent. A hostile
+page racing its own navigation handlers or forms is outside this threat model.
+
+The agent access switch and site permission policy are enforced. Agent inspect, network
 and console requests require `diagnosticsEnabled`, including before dispatch and
 before returning results. Turning off `showAgentCursor` stops main from computing
 and sending points; fill, type and saved-login fill report field centres with

@@ -16,6 +16,7 @@ test('user browser commands retain their origin across awaits without granting c
   });
   const controller = new SessionBrowser({
     browsers,
+    autonomyFor: (id) => (id === 'agent-chat' ? 'medium' : 'low'),
     emit: () => {},
     framePrompt: (_id, text) => text,
     sendPrompt: async () => {},
@@ -53,5 +54,10 @@ test('user browser commands retain their origin across awaits without granting c
       ['reload', 'user'],
       ['reload', 'agent'],
     ],
+  );
+  assert.ok(
+    requests
+      .filter(({ appSessionId }) => appSessionId === 'agent-chat')
+      .every(({ autonomy }) => autonomy === 'medium'),
   );
 });
