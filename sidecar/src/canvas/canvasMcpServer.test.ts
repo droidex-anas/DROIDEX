@@ -13,6 +13,7 @@ import {
   observedFileSystem,
   holdManifestWrite,
 } from '../testing/canvasStorageSupport.js';
+import { saveLibraryItem } from './canvasLibrary.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
@@ -533,6 +534,27 @@ test('Canvas create preserves seeded variant placement and mutation retry identi
     'invalid_input',
   );
   assert.equal(h.workspace.snapshot(canvasId).frames.length, 2);
+
+  // A library item the user named inserts through the same tool and schema.
+  const ref = { designId, revisionId: written.receipt.revisionId };
+  const item = { itemId: 'mcp-hey', name: 'Hey', sourceCanvasId: canvasId, source: ref };
+  await saveLibraryItem(item, () => h.workspace.copyRevision(canvasId, ref));
+  const seeded = (itemId: string) => [{ ...frame, seed: { kind: 'library', itemId } }];
+  const inserted = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'in',
+    frames: seeded('mcp-hey'),
+  });
+  const copy = inserted.created?.frames[0];
+  assert.ok(copy?.revisionId);
+  const copyRef = { designId: copy.designId, revisionId: copy.revisionId };
+  assert.deepEqual({ ...(await h.workspace.readFiles(canvasId, copyRef)) }, files);
+  const refused = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'x',
+    frames: seeded('../x'),
+  });
+  assert.equal(refused.code, 'invalid_input');
 });
 
 for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_theme'] as const) {
