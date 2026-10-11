@@ -89,7 +89,7 @@ export class CodexToolBridge {
           server.name === SESSIONS_MCP_SERVER_NAME
             ? "DROIDEX app tools: start chats and threads, keep a project plan, and list, read, message, stop or settle the chats in the user's sidebar, including what needs the user."
             : server.name === CANVAS_MCP_SERVER_NAME
-              ? 'DROIDEX Canvas: make exploration, comparison, and visualization interactive. Read the attached canvas, create named frames, write complete files, inspect builds, arrange frames, and read or apply design systems.'
+              ? 'DROIDEX Canvas: make exploration, comparison, and visualization interactive. Read the attached canvas, create named frames, write complete files, inspect builds, arrange frames, annotate the board, and read or apply design systems.'
               : 'DROIDEX automations: schedule a prompt or a recurring task, and list, change, pause, run now or remove scheduled ones.',
         tools,
       };

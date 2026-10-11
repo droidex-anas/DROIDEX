@@ -120,16 +120,13 @@ export const annotateCanvasInputSchema = z
       .max(ANNOTATION_LIMITS.maxDeletesPerChange, DELETE_COUNT_MESSAGE),
   })
   .strict()
-  .refine((input) => input.upserts.length + input.deletes.length > 0, {
-    message: EMPTY_CHANGE_MESSAGE,
-  })
-  .refine(
-    (input) => {
-      const ids = [...input.upserts.map((draft) => draft.id), ...input.deletes];
-      return new Set(ids).size === ids.length;
-    },
-    { message: REPEAT_MESSAGE },
-  );
+  .superRefine((input, ctx) => {
+    const ids = [...input.upserts.map((draft) => draft.id), ...input.deletes];
+    if (ids.length === 0)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: EMPTY_CHANGE_MESSAGE });
+    if (new Set(ids).size !== ids.length)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: REPEAT_MESSAGE });
+  });
 
 export type AnnotationPoint = z.infer<typeof pointSchema>;
 export type AnnotationAuthor = z.infer<typeof authorSchema>;
@@ -211,7 +208,7 @@ function douglasPeucker(points: readonly AnnotationPoint[], tolerance: number): 
 }
 
 /** How far `point` lies from the segment between `start` and `end`. */
-export function segmentDistance(
+function segmentDistance(
   point: AnnotationPoint,
   start: AnnotationPoint,
   end: AnnotationPoint,

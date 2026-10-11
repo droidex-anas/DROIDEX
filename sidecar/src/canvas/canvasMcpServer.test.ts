@@ -23,7 +23,7 @@ import {
 
 const frame = { name: 'Hey', width: 720, height: 520, designSystem: DEFAULT_DESIGN_SYSTEM_REF };
 
-test('six Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
+test('seven Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
   const h = await harness(t);
   assert.equal(h.server.name, CANVAS_MCP_SERVER_NAME);
   assert.deepEqual(
@@ -535,7 +535,13 @@ test('Canvas create preserves seeded variant placement and mutation retry identi
   assert.equal(h.workspace.snapshot(canvasId).frames.length, 2);
 });
 
-for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_theme'] as const) {
+for (const name of [
+  'canvas_create',
+  'canvas_write',
+  'canvas_arrange',
+  'canvas_annotate',
+  'canvas_theme',
+] as const) {
   test(`a published ${name} keeps its MCP success after turn revocation`, async (t) => {
     const held = holdManifestWrite('published');
     const h = await harness(t, held.fs);
@@ -585,6 +591,21 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_t
           { designId, expectedLayoutVersion: 0, rect: { x: 800, y: 0, width: 720, height: 520 } },
         ],
       },
+      canvas_annotate: {
+        scopeId,
+        mutationId: 'published-annotate',
+        expectedAnnotationsVersion: 0,
+        upserts: [
+          {
+            id: 'ann_note',
+            kind: 'note',
+            color: 'yellow',
+            rect: { x: 0, y: -200, width: 200, height: 120 },
+            text: 'Here',
+          },
+        ],
+        deletes: [],
+      },
       canvas_theme: {
         scopeId,
         operation: 'apply',
@@ -611,6 +632,7 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_t
       assert.equal(snapshot.frames[0]?.revisionId, result.receipt.revisionId);
     }
     if (name === 'canvas_arrange') assert.equal(snapshot.frames[0]?.rect.x, 800);
+    if (name === 'canvas_annotate') assert.equal(snapshot.annotations.length, 1);
     if (name === 'canvas_theme') assert.equal(snapshot.frames[0]?.designSystem.mode, 'dark');
   });
 }
@@ -778,4 +800,56 @@ test('a delayed theme validation refusal cannot disclose source after its turn i
   assert.equal(reply.code, 'invalid_input');
   assert.ok(!JSON.stringify(reply).includes('SOURCE_SENTINEL'));
   assert.deepEqual(h.workspace.snapshot(canvasId), before);
+});
+
+test('a read shows the user’s note by its frame, and canvas_annotate keeps it read-only', async (t) => {
+  const { scopeId, ...h } = await openTurn(t);
+  const created = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'initial',
+    frames: [frame],
+  });
+  assert.ok(created.created);
+  const { canvasId } = created.created;
+  // A pane annotate runs under a request scope the bridge registers, as here.
+  const userScope = {
+    origin: 'user',
+    scopeId: 'user:1',
+    appSessionId: 'chat-one',
+    canvasId,
+    allowedDesignIds: 'canvas',
+  } as const;
+  h.scopes.register(userScope);
+  await h.workspace.annotations.annotate(
+    userScope,
+    {
+      mutationId: 'user-note',
+      expectedAnnotationsVersion: 0,
+      upserts: [
+        {
+          id: 'ann_user',
+          kind: 'note',
+          color: 'yellow',
+          rect: { x: 0, y: 560, width: 200, height: 120 },
+          text: 'Taller',
+        },
+      ],
+      deletes: [],
+    },
+  );
+  const read = await h.call('canvas_read', { scopeId });
+  assert.equal(read.annotationsVersion, 1);
+  assert.deepEqual(
+    read.annotations?.map(({ author, near }) => ({ author, near })),
+    [{ author: 'user', near: created.created.frames[0]?.designId }],
+  );
+  const refused = await h.call('canvas_annotate', {
+    scopeId,
+    mutationId: 'agent-delete',
+    expectedAnnotationsVersion: 1,
+    upserts: [],
+    deletes: ['ann_user'],
+  });
+  assert.equal(refused.code, 'invalid_input');
+  assert.match(refused.message ?? '', /read-only to you: ann_user/);
 });

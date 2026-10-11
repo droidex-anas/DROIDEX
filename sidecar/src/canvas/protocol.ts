@@ -195,6 +195,9 @@ export interface CanvasChange {
   annotations?: AnnotationChange;
 }
 
+/** What an annotate answers: a change that always carries its annotation delta. */
+export type AnnotatedChange = CanvasChange & { annotations: AnnotationChange };
+
 export interface CanvasSummary {
   canvasId: string;
   name: string;

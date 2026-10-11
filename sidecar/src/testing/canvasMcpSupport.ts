@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
+import type { AgentAnnotation } from '../canvas/canvasAnnotationReport.js';
 import type { CanvasCapture } from '../canvas/canvasCaptures.js';
 import { canvasError } from '../canvas/canvasError.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
@@ -33,6 +34,8 @@ export interface Reply {
   systems?: { id: string; version: number }[];
   designSystem?: { primitives: string[] };
   designSystemAdherence?: string;
+  annotationsVersion?: number;
+  annotations?: AgentAnnotation[];
   build?: {
     status: string;
     diagnostics?: { file?: string; line?: number }[];

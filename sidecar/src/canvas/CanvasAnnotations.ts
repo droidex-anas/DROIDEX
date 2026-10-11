@@ -16,7 +16,7 @@ import type { CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import { mutationFingerprint, recordMutation } from './canvasManifest.js';
 import { recordedAnnotate } from './canvasReceipts.js';
-import type { CanvasChange, CanvasScope } from './protocol.js';
+import type { AnnotatedChange, CanvasScope } from './protocol.js';
 
 /** How many identifiers one refusal names before it only counts the rest. */
 const NAMED_IDS = 8;
@@ -28,7 +28,7 @@ export class CanvasAnnotations {
     private readonly commits: CanvasCommits,
   ) {}
 
-  annotate(scope: CanvasScope, input: AnnotateCanvasInput): Promise<CanvasChange> {
+  annotate(scope: CanvasScope, input: AnnotateCanvasInput): Promise<AnnotatedChange> {
     return this.commits.admit(async () => {
       this.commits.requireOpen();
       const fingerprint = mutationFingerprint(input);
@@ -91,7 +91,7 @@ export class CanvasAnnotations {
           this.commits.requireOpen();
           this.leases.requireScopedCanvas(scope);
         });
-        const change: CanvasChange = {
+        const change: AnnotatedChange = {
           canvasId: next.canvasId,
           sequence: next.sequence,
           frames: [],

@@ -3,6 +3,8 @@ import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { applyDesignSystem } from './applyDesignSystem.js';
 import { agentFrame, buildReport, renderedPreview, settledFrame } from './canvasAgentReport.js';
+import { agentAnnotation } from './canvasAnnotationReport.js';
+import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
@@ -62,6 +64,9 @@ const writeSchema = z
   .object({ ...writeFilesInputSchema.innerType().shape, ...mutationScopeShape })
   .strict();
 const arrangeSchema = arrangeFramesInputSchema.extend(mutationScopeShape).strict();
+const annotateSchema = z
+  .object({ ...annotateCanvasInputSchema.innerType().shape, ...mutationScopeShape })
+  .strict();
 const inspectSchema = z
   .object({
     ...scopeShape,
@@ -215,6 +220,10 @@ export function createCanvasMcpServer(
               frames: snapshot.frames
                 .slice(input.offset, input.offset + input.limit)
                 .map((frame) => agentFrame(frame, previews.reportFor(snapshot.canvasId, frame))),
+              annotationsVersion: snapshot.annotationsVersion,
+              annotations: snapshot.annotations.map((annotation) =>
+                agentAnnotation(annotation, snapshot.frames, scope.appSessionId),
+              ),
             };
           }
           if (!input.designId || !input.revisionId)
@@ -359,12 +368,38 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_arrange',
-      'Move or resize existing frames using the scopeId from this turn’s canvas_read and their current layout versions. This changes board layout only.',
+      'Move or resize existing frames using the scopeId from this turn’s canvas_read and their current layout versions: each frame takes the full new rect, so a new width or height resizes it. This changes board layout only.',
       arrangeSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
           const { mutationId, frames } = arrangeSchema.parse(raw);
           return { change: await (await workspace()).arrange(scope, { mutationId, frames }) };
+        }),
+    ),
+    tool(
+      'canvas_annotate',
+      'Draw on the board beside the frames using the scopeId and annotationsVersion from this turn’s canvas_read: rect, ellipse, line (arrowStart/arrowEnd), path, text or note, in board coordinates, with a colour token. Upsert by id to redraw and list ids in deletes to remove, but only annotations whose author is you; the user’s are read-only. A stale annotationsVersion is a revision_conflict: read again and retry. Annotations never change frames or source.',
+      annotateSchema.shape,
+      (raw) =>
+        dispatch(raw, 'mutation', async (scope) => {
+          const { mutationId, expectedAnnotationsVersion, upserts, deletes } =
+            annotateSchema.parse(raw);
+          const input = annotateCanvasInputSchema.parse({
+            mutationId,
+            expectedAnnotationsVersion,
+            upserts,
+            deletes,
+          });
+          const owner = await workspace();
+          const { annotations } = await owner.annotations.annotate(scope, input);
+          const frames = (await board(scope))?.frames ?? [];
+          return {
+            annotationsVersion: annotations.version,
+            annotations: annotations.upserted.map((annotation) =>
+              agentAnnotation(annotation, frames, scope.appSessionId),
+            ),
+            removedIds: annotations.removedIds,
+          };
         }),
     ),
     tool(

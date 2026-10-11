@@ -3,7 +3,12 @@
 // cannot tell the caller something its original request did not do.
 
 import { findMutation, toFrame, type BuildStates, type CanvasManifest } from './canvasManifest.js';
-import type { CanvasChange, CreateFramesResult, WriteReceipt } from './protocol.js';
+import type {
+  AnnotatedChange,
+  CanvasChange,
+  CreateFramesResult,
+  WriteReceipt,
+} from './protocol.js';
 
 export function recordedCreate(
   manifest: CanvasManifest,
@@ -99,7 +104,7 @@ export function recordedAnnotate(
   manifest: CanvasManifest,
   mutationId: string,
   fingerprint: string,
-): CanvasChange | null {
+): AnnotatedChange | null {
   const record = findMutation(manifest, mutationId, 'annotate', fingerprint);
   if (record?.kind !== 'annotate') return null;
   return {

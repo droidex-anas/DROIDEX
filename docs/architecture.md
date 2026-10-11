@@ -388,8 +388,10 @@ successfully; build publication checks the captured job at the final manifest re
 
 ### Canvas agent tools
 
-Each chat gets one local `droidex-canvas` MCP server with six tools: read, create,
-write, inspect, arrange, and theme. `CanvasTurns` mints a scope when a turn starts;
+Each chat gets one local `droidex-canvas` MCP server with seven tools: read, create,
+write, inspect, arrange, annotate, and theme. Annotations are the board's own layer,
+versioned apart from frames; `canvas_read` relates each one to the frames it is
+over, near or points at, and an agent may change only the annotations its chat drew. `CanvasTurns` mints a scope when a turn starts;
 call `canvas_read` with no arguments first to obtain that chat's newest live lease.
 Reads may then name a returned `scopeId` to retain its pinned references across
 steers; Claude's read hook relies on this to bind retries to their original lease.

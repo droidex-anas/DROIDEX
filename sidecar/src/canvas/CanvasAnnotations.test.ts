@@ -14,13 +14,13 @@ function userScope(canvasId: string): CanvasScope {
   };
 }
 
-function note(id: string): AnnotationDraft {
+function note(id: string, text = 'Bigger'): AnnotationDraft {
   return {
     id,
     kind: 'note',
     color: 'yellow',
     rect: { x: 800, y: 0, width: 200, height: 120 },
-    text: 'Bigger',
+    text,
   };
 }
 
@@ -95,13 +95,13 @@ test('an agent changes only what its own chat drew', async (t) => {
     code: 'invalid_input',
     message: /read-only to you: ann_user, ann_mine\./,
   });
-  await assert.rejects(annotate(mine, 2, [{ ...note('ann_user'), text: 'Mine now' }], []), {
+  await assert.rejects(annotate(mine, 2, [note('ann_user', 'Mine now')], []), {
     message: /read-only to you: ann_user\./,
   });
   await assert.rejects(annotate(mine, 2, [], ['ann_gone']), { code: 'not_found' });
 
   // Its own note it may redraw and remove; the user may remove anything.
-  await annotate(mine, 2, [{ ...note('ann_mine'), text: 'Smaller' }], []);
+  await annotate(mine, 2, [note('ann_mine', 'Smaller')], []);
   await annotate(mine, 3, [], ['ann_mine']);
   await annotate(userScope(canvasId), 4, [], ['ann_user']);
   assert.deepEqual(workspace.snapshot(canvasId).annotations, []);
