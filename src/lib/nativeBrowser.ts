@@ -78,6 +78,7 @@ export interface NativeBrowserAgentPoint {
   browserSessionId: string;
   x: number;
   y: number;
+  kind?: 'move' | 'click' | 'scroll';
 }
 
 /** One frame of a page's small live picture, for the transcript's Browser card. */

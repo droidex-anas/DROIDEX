@@ -5,7 +5,7 @@
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
-const { send, frameHolds, focusedFrame } = require('./browserFrames.cjs');
+const { send, frameHolds, focusedFrame, pointForNode } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
 const { keyOf, modifiersOf, pressKey } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
@@ -78,7 +78,7 @@ function createBrowserActions({
     }
   }
 
-  function perform(contents, entry, request, step) {
+  async function perform(contents, entry, request, step) {
     switch (request.action) {
       case 'click':
       case 'hover':
@@ -89,8 +89,11 @@ function createBrowserActions({
         return type(contents, entry, request, step);
       case 'press':
         return press(contents, entry, request, step);
-      case 'fill':
+      case 'fill': {
         if (!request.ref) throw new Error('Filling a field needs its ref from browser_read_page.');
+        const point = await reading.pointForRef(contents, entry, request.ref, () => notLate(step));
+        notLate(step);
+        onPoint(entry, { x: point.x, y: point.y, kind: 'click' });
         return reading.callOnRef(
           contents,
           entry,
@@ -99,6 +102,7 @@ function createBrowserActions({
           FILL,
           () => startInput(step),
         );
+      }
       default:
         throw new Error(`Unsupported browser action: ${request.action}`);
     }
@@ -108,7 +112,7 @@ function createBrowserActions({
     const target = await targetOf(contents, entry, request, step);
     const { x, y } = target;
     // Where the pane draws the agent's cursor; the input does not wait for it.
-    onPoint(entry, { x, y });
+    onPoint(entry, { x, y, kind: request.action === 'click' ? 'click' : 'move' });
     const modifiers = modifiersOf(request.modifiers);
     await dispatchMouse(contents, step, target, [{ type: 'mouseMoved', x, y, modifiers }]);
     if (request.action !== 'click') return;
@@ -163,7 +167,7 @@ function createBrowserActions({
     const target = request.ref
       ? await reading.pointForRef(contents, entry, request.ref, () => notLate(step))
       : await targetOf(contents, entry, request, step);
-    onPoint(entry, { x: target.x, y: target.y });
+    onPoint(entry, { x: target.x, y: target.y, kind: 'scroll' });
     const pixels = Math.max(1, Math.round(Number(request.pixels) || 500));
     const sign = request.direction === 'up' || request.direction === 'left' ? -1 : 1;
     const horizontal = request.direction === 'left' || request.direction === 'right';
@@ -257,7 +261,9 @@ function createBrowserActions({
       if (request.ref && focused.backendNodeId !== refNode)
         throw new Error(`${request.ref} lost the focus; read the page again.`);
       const stillOn = onSamePage(dbg, holding, sessionId, document);
+      const point = await pointForNode(dbg, sessionId, focused.backendNodeId);
       await inputReady(dbg, step, holding, sessionId, document);
+      onPoint(entry, { ...point, kind: 'click' });
       if (text)
         await safety.inspectFocus(dbg, request.submit ? 'enter' : null, (current) => {
           safety.verify(inspected, current);

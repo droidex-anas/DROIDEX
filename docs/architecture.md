@@ -45,6 +45,12 @@ A change that reduces protection requires main-owned confirmation naming each
 reduced setting and its old and new values. `browserSettingsGet` and
 `browserSettingsUpdate` expose a secret-free snapshot through the desktop preload
 API; their contracts live in `src/lib/browserSettings.ts`.
+`browserDataClear` requires the main renderer and confirms through the in-app
+prompt queue. If the prompt UI is unavailable, it cancels
+without opening a native dialog. Approval cancels browser work, closes tabs and
+clears cookies, local storage, IndexedDB, service workers, cache storage, HTTP
+cache and HTTP auth cache from `persist:droidex-browser`. New tabs are blocked
+until clearing finishes. Saved logins and exact-site decisions remain intact.
 
 `electron/browserPrompt.cjs` owns browser approvals: one active prompt, at most 32
 waiting, a 120-second deadline from enqueue, and credentials ahead of queued
@@ -65,8 +71,13 @@ waiting for its turn or guest restoration, and before returning page content.
 Closing remains allowed for cleanup. Trusted renderer navigation and resizing are
 marked as user requests by `SessionBrowser`; async
 context keeps concurrent agent tools from inheriting that permission. Navigation,
-diagnostics, site permissions, downloads, homepage and cursor policies
-are retained for subsequent runtime ports. Saved-login use enforces the existing
+site permissions and downloads policies are retained for subsequent runtime
+ports. Agent inspect, network and console requests require `diagnosticsEnabled`,
+including before dispatch and before returning results. Turning off
+`showAgentCursor` stops main from sending points; fill, type and saved-login fill
+report field centres with `kind: "click"` before writing. New tabs use `homePage`
+unless restoring a saved HTTP(S) URL; `nativeBrowserHome` opens the current home setting.
+Saved-login use enforces the existing
 `loginFillApproval` policy; `never` disables saving and filling. The removed native
 cursor overlay's style and size fields are absent
 from schema version 4. Grants and cookie import receipts remain validated data,

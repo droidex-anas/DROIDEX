@@ -29,6 +29,9 @@ function fixture() {
       this.id = fields.size + 1;
       fields.set(this.id, this);
     }
+    getBoundingClientRect() {
+      return { x: 20, y: 30, width: 100, height: 40 };
+    }
     getAttribute(name) {
       return this.attributes[name] ?? null;
     }
@@ -78,6 +81,7 @@ function fixture() {
   const frame = { id: 'frame', loaderId: 'document', url: 'https://example.test/login' };
   const entry = { documents: 1, errorTimes: [], networkEvents: [], consoleEvents: [] };
   const input = [];
+  const points = [];
   const prompts = [];
   let hit;
   let answer = async () => ({ response: 1 });
@@ -97,6 +101,8 @@ function fixture() {
     if (method === 'Page.createIsolatedWorld') return { executionContextId: 2 };
     if (method === 'Page.getLayoutMetrics') return { cssLayoutViewport: { pageX: 0, pageY: 0 } };
     if (method === 'DOM.getNodeForLocation') return { backendNodeId: hit.id, frameId: frame.id };
+    if (method === 'DOM.scrollIntoViewIfNeeded') return {};
+    if (method === 'DOM.getContentQuads') return { quads: [[20, 30, 120, 30, 120, 70, 20, 70]] };
     if (method === 'DOM.focus') {
       fields.get(params.backendNodeId).focus();
       return {};
@@ -173,7 +179,7 @@ function fixture() {
     },
     unthrottled: (_contents, run) => run(),
     redactUrl: (value) => value,
-    onPoint: () => {},
+    onPoint: (_entry, point) => points.push({ point, writes: input.length }),
   });
   const request = new AbortController();
   const act = (action) =>
@@ -205,6 +211,7 @@ function fixture() {
     button,
     act,
     input,
+    points,
     prompts,
     entry,
     contents,
@@ -585,5 +592,23 @@ test('a label associated with a submit control requires sign-in approval', async
   assert.equal(
     f.input.some((event) => event.type === 'mousePressed'),
     false,
+  );
+});
+
+test('fill and type report the target centre as a click before writing, including focused typing', async () => {
+  const f = fixture();
+  const { node, ref } = f.field({});
+  await f.act({ action: 'fill', ref, value: 'filled' });
+  assert.equal(node.value, 'filled');
+  await f.act({ action: 'type', ref, text: 'typed' });
+  await f.act({ action: 'type', text: 'focused' });
+  assert.deepEqual(f.points, [
+    { point: { x: 70, y: 50, kind: 'click' }, writes: 0 },
+    { point: { x: 70, y: 50, kind: 'click' }, writes: 0 },
+    { point: { x: 70, y: 50, kind: 'click' }, writes: 1 },
+  ]);
+  assert.deepEqual(
+    f.input.map((event) => event.text),
+    ['typed', 'focused'],
   );
 });

@@ -269,3 +269,27 @@ test('developer tools retry automatic cancellations and remember an explicit use
   await assert.rejects(evaluate(), /not allowed developer tools/);
   assert.equal(sent.length, 3);
 });
+
+test('renderer-only confirmations cancel when the prompt UI is unavailable without a native dialog', async () => {
+  let nativePrompts = 0;
+  const controller = createBrowserPromptController({
+    isAvailable: () => true,
+    showNative: async () => {
+      nativePrompts++;
+      return { response: 0 };
+    },
+  });
+  const answer = await controller.request(
+    {
+      kind: 'warning',
+      title: 'Clear browser data?',
+      message: 'Clear data?',
+      buttons: ['Clear data', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+    },
+    { rendererOnly: true },
+  );
+  assert.deepEqual(answer, { response: 1, cancelled: true });
+  assert.equal(nativePrompts, 0);
+});

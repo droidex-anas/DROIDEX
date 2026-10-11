@@ -8,7 +8,12 @@ const {
   writeSettings,
 } = require('./browserSettingsSchema.cjs');
 
-function createBrowserSettingsController({ userDataPath, downloadsPath, showPrompt }) {
+function createBrowserSettingsController({
+  userDataPath,
+  downloadsPath,
+  showPrompt,
+  clearBrowsingData,
+}) {
   const settingsPath = path.join(userDataPath, 'browser-settings.json');
   let settings;
   let writes = Promise.resolve();
@@ -91,13 +96,41 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     pendingUpdates = new AbortController();
   }
 
-  function assertAgentAccess() {
-    if (!requireSettings().agentAccessEnabled) {
-      throw new Error('Agent browser access is off. Enable it in Settings > Browser.');
-    }
+  async function clearData() {
+    const { response, cancelled } = await showPrompt(
+      {
+        kind: 'warning',
+        title: 'Clear browser data?',
+        message:
+          'Open browser tabs will close. Cookies, cache, and site storage will be removed, so you may be signed out.',
+        buttons: ['Clear data', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      },
+      { rendererOnly: true },
+    );
+    if (response === 0 && !cancelled) await clearBrowsingData();
+    return snapshot();
   }
 
-  return { settingsPath, initialize, snapshot, update, cancelPendingUpdates, assertAgentAccess };
+  function assertAgentAccess(action) {
+    const current = requireSettings();
+    if (!current.agentAccessEnabled) {
+      throw new Error('Agent browser access is off. Enable it in Settings > Browser.');
+    }
+    if (['inspect', 'network', 'console'].includes(action) && !current.diagnosticsEnabled)
+      throw new Error('Agent browser diagnostics are off. Enable them in Settings > Browser.');
+  }
+
+  return {
+    settingsPath,
+    initialize,
+    snapshot,
+    update,
+    clearData,
+    cancelPendingUpdates,
+    assertAgentAccess,
+  };
 }
 
 module.exports = { createBrowserSettingsController };

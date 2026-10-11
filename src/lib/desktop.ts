@@ -312,6 +312,7 @@ interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands
   nativeBrowserWorkingSessions: () => Promise<string[]>;
   nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
   nativeBrowserWatch: (browserSessionId: string, watching: boolean) => Promise<void>;
+  nativeBrowserHome: (browserSessionId: string) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserSetDesignState: (

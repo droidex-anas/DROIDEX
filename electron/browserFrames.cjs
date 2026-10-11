@@ -98,6 +98,19 @@ async function viewportMapping(dbg, sessionId) {
   return (quad) => outer(toParent(quad));
 }
 
+// A field's centre in page coordinates, including a cross-site frame's transform.
+async function pointForNode(dbg, sessionId, backendNodeId) {
+  const { quads } = await send(dbg, sessionId, 'DOM.getContentQuads', { backendNodeId });
+  const quad = quads?.[0];
+  if (!quad) throw new Error('The focused field has no visible box.');
+  const toViewport = await viewportMapping(dbg, sessionId);
+  const points = toViewport(quad);
+  return {
+    x: (points[0] + points[2] + points[4] + points[6]) / 4,
+    y: (points[1] + points[3] + points[5] + points[7]) / 4,
+  };
+}
+
 // One step out of a cross-site frame: the iframe that owns it, in its parent's
 // session, and how points in the frame land in the parent, through that
 // iframe's content box, which may be scaled or rotated. Points are flat
@@ -312,6 +325,7 @@ module.exports = {
   send,
   documentFrames,
   viewportMapping,
+  pointForNode,
   framePainted,
   frameHolds,
   focusedFrame,

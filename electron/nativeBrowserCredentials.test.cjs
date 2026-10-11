@@ -29,6 +29,7 @@ async function fixture(t) {
   const entry = { contents, documents: 1, errorTimes: [], consoleEvents: [], networkEvents: [] };
   const settings = { loginFillApproval: 'always_ask' };
   const filled = [];
+  const points = [];
   const prompts = [];
   let answer = async () => ({ response: 0 });
   const page = {
@@ -57,6 +58,7 @@ async function fixture(t) {
       return answer(prompt);
     },
     getSettings: () => settings,
+    onPoint: (_entry, point) => points.push(point),
     findEntry: (candidate) => (candidate === entry.contents ? entry : undefined),
   });
   const capture = (payload = {}) =>
@@ -81,6 +83,7 @@ async function fixture(t) {
     settings,
     prompts,
     filled,
+    points,
     capture,
     fill,
     answer: (fn) => {
@@ -279,4 +282,30 @@ test('agent page reads redact filled secrets in titles, text, accessibility, ins
   f.contents.emit('did-navigate', {}, f.contents.url);
   assert.equal(JSON.stringify(await read('console')).includes('saved-secret'), false);
   assert.equal((await read('snapshot')).snapshot.title, 'Title saved-secret');
+});
+
+test('login points require a live fill token and contain only coordinates', async (t) => {
+  const f = await fixture(t);
+  await f.capture();
+  f.page.__droidexFillCredentials = (payload) => {
+    assert.equal(
+      f.credentials.canFill(f.contents, f.contents.mainFrame, 'invalid', { x: 1, y: 2 }),
+      false,
+    );
+    assert.equal(
+      f.credentials.canFill(f.contents, f.contents.mainFrame, payload.token, { x: 1, y: NaN }),
+      false,
+    );
+    assert.equal(
+      f.credentials.canFill(f.contents, f.contents.mainFrame, payload.token, {
+        x: 60,
+        y: 30,
+        password: 'saved-secret',
+      }),
+      true,
+    );
+    return { ok: true };
+  };
+  await f.fill();
+  assert.deepEqual(f.points, [{ x: 60, y: 30, kind: 'click' }]);
 });
