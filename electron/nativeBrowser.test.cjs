@@ -28,6 +28,7 @@ function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
   };
   const manager = createNativeBrowserManager({
     app: { getPath: () => '/unused-browser-test-profile' },
+    history: { recordVisit: async () => {}, updateTitle: async () => {} },
     appName: 'DROIDEX',
     session,
     dialog: {},

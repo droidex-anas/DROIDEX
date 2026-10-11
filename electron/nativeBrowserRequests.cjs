@@ -63,6 +63,7 @@ const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
 const MAX_SIDECAR_TIMEOUT_MS = 180_000;
 
 function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess, showPrompt }) {
+  const typedUrls = new Map(); // appSessionId -> submitted omnibox URL
   const waiting = new Map(); // browserSessionId -> requests in flight
   const activeRequests = new Map(); // browserSessionId -> AbortControllers
   const painting = new Map(); // browserSessionId -> its first paint after waking
@@ -74,7 +75,14 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   // for a later run is left alone.
   async function handle(message, reply, runEnded) {
     const request = browserRequestFrom(message);
-    if (!request || runEnded()) return;
+    if (!request) return;
+    const typed =
+      request.action === 'open' &&
+      typedUrls.has(request.appSessionId) &&
+      typedUrls.get(request.appSessionId) === request.url;
+    if (request.action === 'open' || request.action === 'close')
+      typedUrls.delete(request.appSessionId);
+    if (runEnded()) return;
     const timeoutMs = sidecarTimeoutMs(message.timeoutMs);
     const receivedAt = Date.now();
     // Nothing starts once the caller has given up, by its own expiry when it
@@ -94,6 +102,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
         result: await perform(
           {
             ...request,
+            typed,
             receivedAt,
             startBy,
             signal: controller.signal,
@@ -259,7 +268,10 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
             throw new Error('The page changed before the action completed.');
         };
       }
-      await manager.open(browserSessionId, url, beforeOpen);
+      await manager.open(browserSessionId, url, () => {
+        beforeOpen();
+        if (request.typed) manager.recordTyped(browserSessionId, url);
+      });
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
@@ -318,6 +330,17 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
 
   return {
     handle,
+    recordTyped(appSessionId, url) {
+      if (
+        typeof appSessionId !== 'string' ||
+        !appSessionId ||
+        typeof url !== 'string' ||
+        url.length > 16_384 ||
+        !URL.canParse(url)
+      )
+        throw new Error('Invalid typed browser address.');
+      typedUrls.set(appSessionId, url);
+    },
     workingSessions: () => [...waiting.keys()],
   };
 }

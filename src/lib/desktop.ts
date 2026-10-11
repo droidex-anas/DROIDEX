@@ -9,6 +9,7 @@ import type {
   NativeBrowserFrame,
   NativeBrowserWorking,
 } from './nativeBrowser';
+import type { BrowserHistoryApi } from './browserHistory';
 import type { NativeBrowserChord } from './shortcuts';
 import type { BrowserSettingsCommands } from './browserSettings';
 import type { BrowserPromptCommands } from './browserPrompt';
@@ -304,6 +305,7 @@ interface DroidControlApi extends BrowserSettingsCommands, BrowserPromptCommands
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
+  browserHistory: BrowserHistoryApi;
   nativeBrowserReserve: (
     browserSessionId: string,
     savedUrl?: string,

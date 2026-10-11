@@ -30,6 +30,7 @@ const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
 const { createNativeBrowserManager, BROWSER_PARTITION } = require('./nativeBrowser.cjs');
 const { createBrowserDownloads } = require('./browserDownloads.cjs');
+const { createBrowserHistory } = require('./browserHistory.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createBrowserPromptController } = require('./browserPrompt.cjs');
@@ -136,6 +137,7 @@ let appIconMode = 'system';
 let pendingNotificationOpen = null;
 const PENDING_NOTIFICATION_OPEN_MS = 30_000;
 const nativeBrowserShortcuts = createNativeBrowserShortcuts({ getMainWindow: () => mainWindow });
+const browserHistory = createBrowserHistory({ userData: () => app.getPath('userData') });
 const browserPrompts = createBrowserPromptController({
   isAvailable: () => isWindowUsable(mainWindow),
   send: (prompt) => mainWindow.webContents.send('browser-permission-prompt', prompt),
@@ -159,6 +161,7 @@ const browserPermissions = createBrowserPermissionController({
   openExternal: (url) => shell.openExternal(url),
 });
 const nativeBrowserManager = createNativeBrowserManager({
+  history: browserHistory,
   app,
   appName: APP_NAME,
   session,
@@ -328,6 +331,23 @@ app.on('before-quit', (event) => {
   terminalManager.closeAll();
   terminalSubscriptions.clear();
   filesRootAccess.clear();
+});
+
+let historyFlushedForQuit = false;
+app.on('will-quit', (event) => {
+  if (historyFlushedForQuit) return;
+  event.preventDefault();
+  void browserHistory
+    .flush()
+    .catch(() => {
+      console.error(
+        'Could not flush browser history before quitting. Check the app profile directory permissions.',
+      );
+    })
+    .finally(() => {
+      historyFlushedForQuit = true;
+      app.quit();
+    });
 });
 
 app.on('activate', () => {
@@ -888,7 +908,7 @@ function registerIpc() {
   });
   ipcMain.handle('app-relaunch', (event) => {
     assertMainRenderer(event);
-    relaunchApp();
+    return relaunchApp();
   });
   ipcMain.handle('app-set-icon', (event, payload) => {
     assertMainRenderer(event);
@@ -994,6 +1014,22 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
+  ipcMain.handle('browser-history-suggest', (event, { input, limit }) => {
+    assertMainRenderer(event);
+    return browserHistory.suggest(input, limit);
+  });
+  ipcMain.handle('browser-history-record-typed', (event, { appSessionId, url }) => {
+    assertMainRenderer(event);
+    return nativeBrowserRequests.recordTyped(appSessionId, url);
+  });
+  ipcMain.handle('browser-history-remove', (event, { url }) => {
+    assertMainRenderer(event);
+    return browserHistory.remove(url);
+  });
+  ipcMain.handle('browser-history-clear', (event) => {
+    assertMainRenderer(event);
+    return browserHistory.clear();
+  });
   ipcMain.handle('browser-settings-get', (event) => {
     assertMainRenderer(event);
     return browserSettings.snapshot();
@@ -1376,7 +1412,8 @@ function setOnboarding(patch) {
   return run;
 }
 
-function relaunchApp() {
+async function relaunchApp() {
+  await browserHistory.flush();
   app.relaunch();
   app.exit(0);
 }
