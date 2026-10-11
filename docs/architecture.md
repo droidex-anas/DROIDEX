@@ -52,13 +52,14 @@ permissions. Timeout, cancellation, renderer replacement and shutdown choose the
 declared cancel action with `cancelled: true`; only explicit user decisions are
 remembered for developer-tools access. The prompt UI must subscribe to both prompt
 events before calling `browserPermissionPromptReady(true)`, then call it with
-`false` on unmount.
-Only the trusted main renderer can register or answer the active prompt. Until the
-prompt UI ships in the next agent-controls stack PR, an unregistered UI uses the
-existing native dialogs with the same buttons and defaults. Remove that temporary
-presentation when the UI is mounted for every desktop session. This foundation
-routes saved-login and developer-tools questions through the queue; it adds no
-visible settings or prompt components.
+`false` on unmount. Only the trusted main renderer can register or answer the
+active prompt. A request with no usable window is declined at once; otherwise it
+waits for that registration, deadline still running, and is never shown as a
+native dialog. Each prompt carries its `expiresAt` and, when it concerns one site,
+its `origin`. The renderer's `src/components/browserPrompt/` shows a protection
+change as a modal dialog and an agent's request as a card over the browser pane, or
+in the window corner when no pane is showing; the card never takes focus by itself.
+Settings > Browser (`src/components/browserSettings/`) shows only enforced settings.
 
 Agent access is enforced at the private browser request boundary, including work
 waiting for its turn or guest restoration, and before returning page content.

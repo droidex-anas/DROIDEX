@@ -132,16 +132,11 @@ test('a failed settings write leaves the active policy intact and later writes c
   assert.throws(() => controller.assertAgentAccess(), /Agent browser access is off/);
 });
 
-test('renderer teardown cancels active and queued settings changes without native prompts or writes', async (t) => {
+test('renderer teardown cancels active and queued settings changes without writes', async (t) => {
   const shown = Promise.withResolvers();
-  let nativePrompts = 0;
   const prompts = createBrowserPromptController({
     isAvailable: () => true,
     send: shown.resolve,
-    showNative: async () => {
-      nativePrompts++;
-      return { response: 0 };
-    },
   });
   t.after(() => prompts.cancelAll());
   prompts.setRendererReady(true);
@@ -159,7 +154,6 @@ test('renderer teardown cancels active and queued settings changes without nativ
   prompts.setRendererReady(false);
   await Promise.all(cancelled);
 
-  assert.equal(nativePrompts, 0);
   assert.equal(controller.snapshot().diagnosticsEnabled, false);
   assert.equal(controller.snapshot().showAgentCursor, true);
   assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), saved);
