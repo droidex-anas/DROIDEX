@@ -35,7 +35,12 @@ export interface SessionBrowserDependencies {
   emit: Emit;
   /** Frames a prompt's text for its chat: an App request or a side-chat question. */
   framePrompt: (appSessionId: string, text: string, responseFormat?: ResponseFormat) => string;
-  sendPrompt: (appSessionId: string, prompt: string, mentions?: ProviderMention[]) => Promise<void>;
+  sendPrompt: (
+    appSessionId: string,
+    prompt: string,
+    mentions?: ProviderMention[],
+    steerId?: string,
+  ) => Promise<void>;
   /** Runs a request in the desktop app, which owns the pages. */
   requestBrowser: RequestBrowser;
   autonomyFor: (appSessionId: string) => Autonomy;
@@ -138,7 +143,7 @@ export class SessionBrowser {
         appSessionId,
         frame: (instruction) => this.d.framePrompt(appSessionId, instruction, cmd.responseFormat),
       });
-      await this.d.sendPrompt(appSessionId, prompt, cmd.mentions);
+      await this.d.sendPrompt(appSessionId, prompt, cmd.mentions, cmd.steerId);
     });
   }
 

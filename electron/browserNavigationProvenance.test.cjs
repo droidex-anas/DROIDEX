@@ -26,19 +26,22 @@ test('physical navigation is single-use and cannot cross documents, destinations
   assert.equal(provenance.consume(entry, {}, 'https://site.test/').initiator, 'agent');
 });
 
-test('input carries its own autonomy and unrelated user input is never inherited from agent work', async () => {
-  const provenance = createBrowserNavigationProvenance();
+test('physical input never takes over a navigation the agent dispatched', () => {
+  let now = 1_000;
+  const provenance = createBrowserNavigationProvenance({ now: () => now });
   const entry = { documents: 1 };
   const contents = {};
-  const input = { type: 'mousePressed', x: 20, y: 30, button: 'left' };
-  const nativeInput = { ...input, type: 'mouseDown' };
-  await provenance.dispatch(entry, contents, { autonomy: 'high' }, input, async () => {
-    provenance.physicalInput(entry, contents, nativeInput);
-    assert.equal(provenance.consume(entry, contents, 'https://site.test/').autonomy, 'high');
-    provenance.physicalInput(entry, contents, { ...nativeInput, x: 50 });
-    assert.equal(provenance.consume(entry, contents, 'https://site.test/').initiator, 'user');
-  });
-  const stale = provenance.consume(entry, contents, 'https://site.test/');
-  assert.equal(stale.initiator, 'agent');
-  assert.equal(stale.autonomy, 'low');
+  const take = () => provenance.consume(entry, contents, 'https://site.test/');
+  provenance.record(entry, contents, { initiator: 'agent', autonomy: 'high' });
+  // An honest submit handler awaits validation while the user keeps typing.
+  provenance.physicalInput(entry, contents, { type: 'keyDown', key: 'ArrowDown' });
+  provenance.physicalInput(entry, contents, { type: 'mouseDown' });
+  const claimed = take();
+  assert.deepEqual([claimed.initiator, claimed.autonomy], ['agent', 'high']);
+  assert.equal(take().autonomy, 'low');
+  now += 1_001;
+  provenance.physicalInput(entry, contents, { type: 'keyDown', key: 'ArrowDown' });
+  assert.equal(take().initiator, 'agent');
+  provenance.physicalInput(entry, contents, { type: 'keyDown', key: 'Enter' });
+  assert.equal(take().initiator, 'user');
 });

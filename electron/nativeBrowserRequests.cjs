@@ -4,6 +4,11 @@
 // keeps the page mounted and rendering while it is above zero, whether or not
 // the pane is open.
 
+const {
+  authenticationIntentForUrl,
+  approveAuthentication,
+} = require('./browserAuthenticationIntent.cjs');
+
 const ACTIONS = new Set([
   'open',
   'reload',
@@ -46,19 +51,21 @@ const TURN_ACTIONS = new Set([
   'awaitViewport',
   'evaluate',
 ]);
+const USER_NAVIGATIONS = new Set(['open', 'reload', 'goBack', 'goForward']);
 const LATE = 'The browser page did not finish in time.';
 const CLOSED = 'The browser was closed.';
 const MAX_WAITING_PER_PAGE = 8;
-const LOAD_WAIT_MS = 8_000;
 // Work still running a little past the sidecar's own timeout stops holding its
 // page, and whatever it does afterwards is dropped.
 const DEADLINE_MARGIN_MS = 3_000;
 const DEFAULT_SIDECAR_TIMEOUT_MS = 12_000;
-// The longest request includes 120 seconds for a queued approval.
+// The sidecar's longest timeout and wait, plus two minutes for an approval.
 const MAX_SIDECAR_TIMEOUT_MS = 195_000;
 
-function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess }) {
+function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAccess, showPrompt }) {
+  const typedUrls = new Map(); // appSessionId -> submitted omnibox URL
   const waiting = new Map(); // browserSessionId -> requests in flight
+  const activeRequests = new Map(); // browserSessionId -> Map<AbortController, initiator>
   const painting = new Map(); // browserSessionId -> its first paint after waking
   const queues = new Map(); // browserSessionId -> { over, closed } for the actions queued on it
 
@@ -68,7 +75,14 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
   // for a later run is left alone.
   async function handle(message, reply, runEnded) {
     const request = browserRequestFrom(message);
-    if (!request || runEnded()) return;
+    if (!request) return;
+    const typed =
+      request.action === 'open' &&
+      typedUrls.has(request.appSessionId) &&
+      typedUrls.get(request.appSessionId) === request.url;
+    if (request.action === 'open' || request.action === 'close')
+      typedUrls.delete(request.appSessionId);
+    if (runEnded()) return;
     const timeoutMs = sidecarTimeoutMs(message.timeoutMs);
     const receivedAt = Date.now();
     // Nothing starts once the caller has given up, by its own expiry when it
@@ -77,31 +91,52 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       receivedAt + timeoutMs,
       Number.isFinite(message.expiresAt) ? message.expiresAt : Infinity,
     );
-    reply({
-      type: 'browser.result',
-      id: request.requestId,
-      result: await perform(
-        {
-          ...request,
-          receivedAt,
-          startBy,
-          runEnded: () => {
-            assertAccess(request);
-            return runEnded();
+    // The user's own navigation never queues behind agent work, such as a
+    // website question still waiting for an answer.
+    if (request.initiator === 'user' && USER_NAVIGATIONS.has(request.action)) {
+      for (const [controller, initiator] of activeRequests.get(request.browserSessionId) ?? [])
+        if (initiator !== 'user') controller.abort();
+    }
+    const controller = new AbortController();
+    const active = activeRequests.get(request.browserSessionId) ?? new Map();
+    active.set(controller, request.initiator);
+    activeRequests.set(request.browserSessionId, active);
+    try {
+      reply({
+        type: 'browser.result',
+        id: request.requestId,
+        result: await perform(
+          {
+            ...request,
+            typed,
+            receivedAt,
+            startBy,
+            signal: controller.signal,
+            runEnded: () => {
+              assertAccess(request);
+              return controller.signal.aborted || runEnded();
+            },
           },
-        },
-        timeoutMs,
-      ),
-    });
+          timeoutMs,
+        ),
+      });
+    } finally {
+      controller.abort();
+      active.delete(controller);
+      if (!active.size && activeRequests.get(request.browserSessionId) === active)
+        activeRequests.delete(request.browserSessionId);
+    }
   }
 
   function assertAccess(request) {
-    if (request.initiator !== 'user') assertAgentAccess();
+    if (request.initiator !== 'user') assertAgentAccess(request.action);
   }
 
   async function perform(request, timeoutMs) {
     try {
       if (request.action === 'close') {
+        for (const controller of activeRequests.get(request.browserSessionId)?.keys() ?? [])
+          controller.abort();
         // Actions still queued on it never start.
         const queue = queues.get(request.browserSessionId);
         if (queue) queue.closed = true;
@@ -217,27 +252,48 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
     const stillWanted = () => {
       if (Date.now() >= request.startBy || request.runEnded()) throw new Error(LATE);
     };
+    stillWanted();
     if (request.action === 'open') {
       const url = request.url ?? 'about:blank';
-      await manager.waitForPage(browserSessionId);
+      const entry = await manager.waitForPage(browserSessionId);
       stillWanted();
-      await manager.open(browserSessionId, url, stillWanted, request);
+      let beforeOpen = stillWanted;
+      const intent = request.initiator !== 'user' && authenticationIntentForUrl(url);
+      if (intent) {
+        const { contents, documents } = entry;
+        const currentUrl = contents.getURL();
+        await approveAuthentication(showPrompt, contents, entry, request, intent);
+        beforeOpen = () => {
+          stillWanted();
+          if (
+            entry.contents !== contents ||
+            entry.documents !== documents ||
+            contents.isDestroyed() ||
+            contents.getURL() !== currentUrl
+          )
+            throw new Error('The page changed before the action completed.');
+        };
+      }
+      await manager.open(
+        browserSessionId,
+        url,
+        () => {
+          beforeOpen();
+          if (request.typed) manager.recordTyped(browserSessionId, url);
+        },
+        request,
+      );
       return result(request, true, await snapshotAfter(request, url));
     }
     if (request.action === 'reload') {
       await manager.waitForPage(browserSessionId);
-      const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
       await manager.reload(browserSessionId, stillWanted, request);
-      return result(request, true, await snapshotAfter(request, (await loaded)?.url));
+      return result(request, true, await snapshotAfter(request));
     }
     if (request.action === 'goBack' || request.action === 'goForward') {
-      const loaded = manager.nextLoad(browserSessionId, LOAD_WAIT_MS);
-      const moved =
-        request.action === 'goBack'
-          ? await manager.goBack(browserSessionId, stillWanted, request)
-          : await manager.goForward(browserSessionId, stillWanted, request);
-      const url = moved ? (await loaded)?.url : undefined;
-      return result(request, true, await snapshotAfter(request, url));
+      if (request.action === 'goBack') await manager.goBack(browserSessionId, stillWanted, request);
+      else await manager.goForward(browserSessionId, stillWanted, request);
+      return result(request, true, await snapshotAfter(request));
     }
     return performAction(request);
   }
@@ -246,6 +302,7 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
     assertAccess(request);
     const outcome = await manager.runAgentAction(agentAction(request));
     assertAccess(request);
+    if (outcome.ok && request.runEnded()) throw new Error(LATE);
     return result(request, outcome.ok, {
       snapshot: outcome.snapshot,
       inspection: outcome.inspection,
@@ -278,7 +335,29 @@ function createNativeBrowserRequests({ manager, notifyRenderer, assertAgentAcces
       : { snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 } } };
   }
 
-  return { handle, workingSessions: () => [...waiting.keys()] };
+  function cancelAll() {
+    for (const controllers of activeRequests.values())
+      for (const controller of controllers.keys()) controller.abort();
+    for (const queue of queues.values()) queue.closed = true;
+    queues.clear();
+  }
+
+  return {
+    handle,
+    cancelAll,
+    recordTyped(appSessionId, url) {
+      if (
+        typeof appSessionId !== 'string' ||
+        !appSessionId ||
+        typeof url !== 'string' ||
+        url.length > 16_384 ||
+        !URL.canParse(url)
+      )
+        throw new Error('Invalid typed browser address.');
+      typedUrls.set(appSessionId, url);
+    },
+    workingSessions: () => [...waiting.keys()],
+  };
 }
 
 function sidecarTimeoutMs(value) {
@@ -323,6 +402,7 @@ function agentAction(request) {
     receivedAt: request.receivedAt,
     startBy: request.startBy,
     runEnded: request.runEnded,
+    signal: request.signal,
     value: request.value,
     submit: request.submit,
     key: request.key,

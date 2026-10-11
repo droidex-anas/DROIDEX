@@ -2,7 +2,6 @@ const ACTIVATION_TTL_MS = 1_000;
 
 function createBrowserNavigationProvenance({ now = Date.now } = {}) {
   const activations = new WeakMap();
-  const dispatches = new WeakMap();
 
   function record(entry, contents, request, destinationUrl) {
     activations.set(contents, {
@@ -16,23 +15,15 @@ function createBrowserNavigationProvenance({ now = Date.now } = {}) {
     });
   }
 
-  // Electron can report CDP input too. Match only the event being dispatched;
-  // unrelated physical input gets its own user activation, even during agent work.
+  // A navigation belongs to the agent input that dispatched it: physical input
+  // never takes over a live agent claim. Only a click, Enter or Space is a
+  // gesture that can start a user navigation; Electron also reports CDP input
+  // here, which the agent's own claim covers.
   function physicalInput(entry, contents, input) {
-    const expected = dispatches.get(contents);
-    if (expected && matchesInput(expected, input)) return;
-    if (!['mouseDown', 'mouseUp', 'keyDown'].includes(input.type)) return;
+    if (!startsNavigation(input)) return;
+    const claim = activations.get(contents);
+    if (claim?.initiator === 'agent' && isLive(claim, entry)) return;
     record(entry, contents, { initiator: 'user' });
-  }
-
-  async function dispatch(entry, contents, request, input, send) {
-    dispatches.set(contents, input);
-    if (!['mouseReleased', 'keyUp'].includes(input.type)) record(entry, contents, request);
-    try {
-      return await send();
-    } finally {
-      if (dispatches.get(contents) === input) dispatches.delete(contents);
-    }
   }
 
   function consume(entry, contents, url) {
@@ -40,36 +31,27 @@ function createBrowserNavigationProvenance({ now = Date.now } = {}) {
     activations.delete(contents);
     if (
       !activation ||
-      activation.document !== entry.documents ||
-      activation.expiresAt < now() ||
+      !isLive(activation, entry) ||
       (activation.destinationUrl && activation.destinationUrl !== new URL(url).href)
     )
       return { initiator: 'agent', autonomy: 'low' };
     return activation;
   }
 
+  function isLive(activation, entry) {
+    return activation.document === entry.documents && activation.expiresAt >= now();
+  }
+
   function forget(contents) {
     activations.delete(contents);
-    dispatches.delete(contents);
   }
 
-  return { record, physicalInput, dispatch, consume, forget };
+  return { record, physicalInput, consume, forget };
 }
 
-function matchesInput(expected, actual) {
-  if (expected.type === 'mousePressed' || expected.type === 'mouseReleased') {
-    return (
-      actual.type === (expected.type === 'mousePressed' ? 'mouseDown' : 'mouseUp') &&
-      actual.x === expected.x &&
-      actual.y === expected.y &&
-      actual.button === expected.button
-    );
-  }
-  return (
-    ['keyDown', 'rawKeyDown', 'keyUp'].includes(expected.type) &&
-    actual.type === (expected.type === 'keyUp' ? 'keyUp' : 'keyDown') &&
-    actual.key === expected.key
-  );
+function startsNavigation(input) {
+  if (input.type === 'mouseDown' || input.type === 'mouseUp') return true;
+  return input.type === 'keyDown' && (input.key === 'Enter' || input.key === ' ');
 }
 
 module.exports = { createBrowserNavigationProvenance };

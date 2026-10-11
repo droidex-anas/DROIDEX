@@ -5,13 +5,16 @@ import { BrowserAgentCursor } from './BrowserAgentCursor';
 import {
   closeBrowserPage,
   isBrowserPageAwake,
+  remountBrowserPages,
   setBrowserPageCrashed,
   setBrowserPageWorking,
   useBrowserHost,
   type BrowserHostState,
   type BrowserPage,
 } from '../../lib/browserHost';
+import { browserStepLabel } from '../../lib/browserTools';
 import { addDesignReference } from '../../lib/commands';
+import { browserAtWork, currentTurn } from './browserTurn';
 import {
   addDesignMark,
   attachDesignShot,
@@ -24,6 +27,7 @@ import {
 import {
   listWorkingNativeBrowsers,
   onNativeBrowserClosed,
+  onNativeBrowserDataCleared,
   onNativeBrowserDesignEvent,
   onNativeBrowserLoadFailed,
   onNativeBrowserLoaded,
@@ -38,7 +42,6 @@ interface PageSize {
 }
 
 const DEFAULT_PAGE_SIZE: PageSize = { width: 1280, height: 800 };
-
 /**
  * The Browser host layer: every live chat browser page, mounted once at the
  * app root and never moved (see lib/browserHost.ts).
@@ -55,7 +58,16 @@ export function BrowserHost() {
       bySession.set(browser.browserSessionId, browser.viewport);
     return bySession;
   }, [browsers]);
-
+  const chats = useMemo(
+    () =>
+      new Map(
+        Object.entries(browsers).map(([appSessionId, browser]) => [
+          browser.browserSessionId,
+          appSessionId,
+        ]),
+      ),
+    [browsers],
+  );
   // Marks picked in a browser go when it closes. Marks a queued prompt brings
   // back to the composer after that stay: they are its own snapshots.
   const shownBrowsers = useRef(browsers);
@@ -73,9 +85,12 @@ export function BrowserHost() {
       Object.keys(browsersRef.current).find(
         (key) => browsersRef.current[key].browserSessionId === browserSessionId,
       );
-    const setWorking = (browserSessionId: string, working: boolean) => {
+    const savedFor = (browserSessionId: string) => {
       const appSessionId = appSessionIdFor(browserSessionId);
-      const saved = appSessionId ? browsersRef.current[appSessionId] : undefined;
+      return appSessionId ? browsersRef.current[appSessionId] : undefined;
+    };
+    const setWorking = (browserSessionId: string, working: boolean) => {
+      const saved = savedFor(browserSessionId);
       setBrowserPageWorking(browserSessionId, working, saved?.url, saved?.viewportMode);
     };
     const heard = new Set<string>();
@@ -88,6 +103,9 @@ export function BrowserHost() {
       }),
       onNativeBrowserClosed(({ browserSessionId }) => {
         closeBrowserPage(browserSessionId);
+      }),
+      onNativeBrowserDataCleared(() => {
+        remountBrowserPages(savedFor);
       }),
       onNativeBrowserDesignEvent((event) => {
         if (event.type === 'shot') {
@@ -147,7 +165,7 @@ export function BrowserHost() {
             key={page.key}
             page={page}
             placement={placementOf(host, page.browserSessionId)}
-            working={page.browserSessionId in host.working}
+            appSessionId={chats.get(page.browserSessionId)}
             anchor={slot?.anchor}
             radius={slot?.radius ?? '0'}
             scale={slot?.scale}
@@ -162,7 +180,7 @@ export function BrowserHost() {
 function BrowserPageFrame({
   page,
   placement,
-  working,
+  appSessionId,
   anchor,
   radius,
   scale,
@@ -170,8 +188,8 @@ function BrowserPageFrame({
 }: {
   page: BrowserPage;
   placement: Placement;
-  /** An agent has work in flight on the page. */
-  working: boolean;
+  /** The chat whose browser the page is. */
+  appSessionId?: string;
   anchor?: string;
   radius: string;
   scale?: number;
@@ -179,6 +197,17 @@ function BrowserPageFrame({
 }) {
   const webviewRef = useRef<HTMLWebViewElement>(null);
   const shown = placement === 'shown';
+  const present = useStoreSelector(
+    (state) =>
+      appSessionId !== undefined &&
+      browserAtWork(state.sessions[appSessionId], state.transcripts[appSessionId]),
+  );
+  // The step in flight in the chat's current turn.
+  const step = useStoreSelector((state) =>
+    present && shown && appSessionId && Object.hasOwn(state.transcripts, appSessionId)
+      ? browserStepLabel(currentTurn(state.transcripts[appSessionId]).events)
+      : null,
+  );
 
   useEffect(() => {
     // A page leaving the pane must not keep the keyboard.
@@ -198,7 +227,11 @@ function BrowserPageFrame({
         browserSessionId={page.browserSessionId}
         scale={scale ?? 1}
         shown={shown}
-        working={working}
+        present={present}
+        step={step}
+        named
+        rest={{ x: size.width / 2, y: size.height / 2 }}
+        follow
       />
     </div>
   );

@@ -142,6 +142,27 @@ export function closeBrowserPage(browserSessionId: string): void {
   update({ pages: state.pages.filter((page) => page.browserSessionId !== browserSessionId) });
 }
 
+/**
+ * Clearing browsing data closed every page in main. The pages go, and the
+ * shown and working ones mount again on fresh guests at their saved URL.
+ */
+export function remountBrowserPages(
+  savedFor: (
+    browserSessionId: string,
+  ) => { url: string; viewportMode: BrowserViewportMode } | undefined,
+): void {
+  const awake = new Set(Object.keys(state.working));
+  if (state.slot) awake.add(state.slot.browserSessionId);
+  reserving.clear();
+  update({ pages: [], crashed: {} });
+  for (const browserSessionId of awake) {
+    const saved = savedFor(browserSessionId);
+    void ensureBrowserPage(browserSessionId, saved?.url, saved?.viewportMode).catch(
+      () => undefined,
+    );
+  }
+}
+
 export function setBrowserPageCrashed(browserSessionId: string, crashed: boolean): void {
   if (browserSessionId in state.crashed === crashed) return;
   update({

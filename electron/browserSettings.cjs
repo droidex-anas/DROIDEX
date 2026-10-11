@@ -8,9 +8,18 @@ const {
   writeSettings,
   exactHttpOrigin,
   effectiveNavigationApproval,
+  SITE_PERMISSIONS,
+  validateSitePermissionSelection,
+  validateSiteDecision,
 } = require('./browserSettingsSchema.cjs');
 
-function createBrowserSettingsController({ userDataPath, downloadsPath, showPrompt }) {
+function createBrowserSettingsController({
+  userDataPath,
+  downloadsPath,
+  showPrompt,
+  clearBrowsingData,
+  onSitePermissionModeChanged,
+}) {
   const settingsPath = path.join(userDataPath, 'browser-settings.json');
   let settings;
   const approvedOrigins = new Set();
@@ -52,9 +61,7 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     const validatedPatch = validateSettingsPatch(patch);
     const { signal } = pendingUpdates;
     // Check protection against the state this write replaces, including earlier queued writes.
-    const run = writes.then(async () => {
-      signal.throwIfAborted();
-      const current = requireSettings();
+    return queueMutation(async (current) => {
       const reductions = browserProtectionReductions(current, validatedPatch);
       if (reductions.length > 0) {
         const { response } = await showPrompt(
@@ -70,14 +77,24 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
           { signal },
         );
         signal.throwIfAborted();
-        if (response !== 0) return snapshot();
+        if (response !== 0) return undefined;
       }
-      const next = validateSettings(
-        { ...current, ...validatedPatch },
-        createDefaultBrowserSettings(downloadsPath),
-      );
+      return { ...current, ...validatedPatch };
+    }, signal);
+  }
+
+  function queueMutation(mutate, signal) {
+    const run = writes.then(async () => {
+      signal.throwIfAborted();
+      const current = requireSettings();
+      const changed = await mutate(current);
+      signal.throwIfAborted();
+      if (!changed) return snapshot();
+      const next = validateSettings(changed, createDefaultBrowserSettings(downloadsPath));
       await writeSettings(settingsPath, next, signal);
+      // writeSettings resolves only after commitment. Cancellation cannot undo that write.
       settings = next;
+      if (current.sitePermissionMode !== next.sitePermissionMode) onSitePermissionModeChanged?.();
       return snapshot();
     });
     writes = run.then(
@@ -87,6 +104,28 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     return run;
   }
 
+  function getSitePermissionDecision(origin, permission) {
+    const current = requireSettings();
+    if (current.sitePermissionMode === 'block') return 'deny';
+    return current.sitePermissions.find((rule) => rule.origin === origin)?.[permission] ?? 'ask';
+  }
+
+  function setSitePermissionDecision({ origin, permissions, decision }, signal) {
+    validateSitePermissionSelection(origin, permissions);
+    validateSiteDecision(decision);
+    const writeSignal = AbortSignal.any([pendingUpdates.signal, signal]);
+    return queueMutation((current) => {
+      const previous = current.sitePermissions.find((rule) => rule.origin === origin);
+      const rule = previous
+        ? { ...previous }
+        : { origin, ...Object.fromEntries(SITE_PERMISSIONS.map((key) => [key, 'ask'])) };
+      for (const permission of permissions) rule[permission] = decision;
+      const sitePermissions = current.sitePermissions.filter((entry) => entry.origin !== origin);
+      if (SITE_PERMISSIONS.some((key) => rule[key] !== 'ask')) sitePermissions.push(rule);
+      return { ...current, sitePermissions };
+    }, writeSignal);
+  }
+
   function cancelPendingUpdates() {
     pendingUpdates.abort(
       new Error('Browser settings update cancelled because its renderer closed.'),
@@ -94,10 +133,21 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     pendingUpdates = new AbortController();
   }
 
-  function assertAgentAccess() {
-    if (!requireSettings().agentAccessEnabled) {
-      throw new Error('Agent browser access is off. Enable it in Settings > Browser.');
-    }
+  async function clearData() {
+    const { response, cancelled } = await showPrompt(
+      {
+        kind: 'warning',
+        title: 'Clear browser data?',
+        message:
+          'Open browser tabs will close. Cookies, cache, and site storage will be removed, so you may be signed out.',
+        buttons: ['Clear data', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      },
+      { rendererOnly: true },
+    );
+    if (response === 0 && !cancelled) await clearBrowsingData();
+    return snapshot();
   }
 
   async function authorizeAgentOrigin(url, autonomy, signal) {
@@ -131,14 +181,32 @@ function createBrowserSettingsController({ userDataPath, downloadsPath, showProm
     if (mayRemember && response === 1) approvedOrigins.add(origin);
   }
 
+  function assertAgentAccess(action) {
+    const current = requireSettings();
+    if (!current.agentAccessEnabled) {
+      throw new Error('Agent browser access is off. Enable it in Settings > Browser.');
+    }
+    if (['inspect', 'network', 'console'].includes(action) && !current.diagnosticsEnabled)
+      throw new Error('Agent browser diagnostics are off. Enable them in Settings > Browser.');
+  }
+
+  function downloadSettings() {
+    const { askDownloadLocation, downloadDirectory } = requireSettings();
+    return { askDownloadLocation, downloadDirectory };
+  }
+
   return {
     settingsPath,
     initialize,
     snapshot,
     update,
+    clearData,
     cancelPendingUpdates,
     assertAgentAccess,
+    downloadSettings,
     authorizeAgentOrigin,
+    getSitePermissionDecision,
+    setSitePermissionDecision,
   };
 }
 

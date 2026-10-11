@@ -1,5 +1,6 @@
 const { exactHttpOrigin } = require('./browserSettingsSchema.cjs');
 const { createBrowserNavigationProvenance } = require('./browserNavigationProvenance.cjs');
+const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 
 function createBrowserNavigationApproval({ authorizeAgentOrigin, loadUrl, reportFailure }) {
   const provenance = createBrowserNavigationProvenance();
@@ -21,12 +22,16 @@ function createBrowserNavigationApproval({ authorizeAgentOrigin, loadUrl, report
     contents.on('before-mouse-event', (_event, input) => {
       if (isCurrent(binding)) provenance.physicalInput(entry, contents, input);
     });
-    // Non-network schemes never reach the HTTP request gate.
+    // Agents cannot reach other schemes. A user's own navigation keeps its
+    // provenance for the request gate, which sees file:// requests too.
     contents.on('will-frame-navigate', (event) => {
       if (!event.isMainFrame || !isCurrent(binding)) return;
       if (/^https?:/i.test(event.url)) return;
       const context = provenance.consume(entry, contents, event.url);
-      if (context.initiator === 'user') return;
+      if (context.initiator === 'user') {
+        binding.userNavigation = { url: event.url, document: entry.documents, context };
+        return;
+      }
       event.preventDefault();
       fail(
         binding,
@@ -86,10 +91,14 @@ function createBrowserNavigationApproval({ authorizeAgentOrigin, loadUrl, report
           Math.max(0, expiresAt - Date.now()),
         )
       : undefined;
+    // The question also ends with the agent request that asked it.
+    const signal = context.request?.signal
+      ? AbortSignal.any([pending.signal, context.request.signal])
+      : pending.signal;
     binding.contents.emit('droidex-navigation-approval-start', pending);
     try {
-      await authorizeAgentOrigin(url, context.autonomy, pending.signal);
-      pending.signal.throwIfAborted();
+      await authorizeAgentOrigin(url, context.autonomy, signal);
+      signal.throwIfAborted();
       if (!isCurrent(binding) || binding.entry.documents !== document)
         throw new Error('Browser navigation was canceled because the browser page changed.');
       check(context);
@@ -111,7 +120,9 @@ function createBrowserNavigationApproval({ authorizeAgentOrigin, loadUrl, report
     if (!navigation) {
       navigation = {
         binding,
-        context: provenance.consume(entry, contents, details.url),
+        context:
+          takeUserNavigation(binding, details.url) ??
+          provenance.consume(entry, contents, details.url),
         origin: originOf(contents.getURL()),
         document: entry.documents,
       };
@@ -140,6 +151,14 @@ function createBrowserNavigationApproval({ authorizeAgentOrigin, loadUrl, report
         callback({ cancel: true });
       },
     );
+  }
+
+  function takeUserNavigation(binding, url) {
+    const claimed = binding.userNavigation;
+    binding.userNavigation = null;
+    if (claimed?.url === url && claimed.document === binding.entry.documents)
+      return claimed.context;
+    return null;
   }
 
   async function popup(binding, url, context, referrer, postBody) {
@@ -225,6 +244,22 @@ function createBrowserNavigationApproval({ authorizeAgentOrigin, loadUrl, report
     takeFailure(contents, requestId);
   }
 
+  // A request's reload or history step answers with the page it reached: after
+  // any approval a redirect asks for, and failing when one is denied.
+  async function settle(contents, requestId, move) {
+    if (requestId === undefined) return move();
+    const moving = observeNavigation(contents);
+    try {
+      await move();
+      if (!moving.started()) await moving.startsWithin(NAVIGATION_GRACE_MS);
+      await waitForApprovals(contents, requestId);
+      if (moving.started()) await moving.wait();
+      takeFailure(contents, requestId);
+    } finally {
+      moving.dispose();
+    }
+  }
+
   function fail(binding, url, error, context) {
     if (!isCurrent(binding)) return;
     if (context?.request?.requestId) binding.failures.set(context.request.requestId, error);
@@ -268,9 +303,9 @@ function createBrowserNavigationApproval({ authorizeAgentOrigin, loadUrl, report
     retry,
     takeFailure,
     waitForApprovals,
+    settle,
     invalidate,
     cancelPending,
-    dispatch: provenance.dispatch,
     recordAction: (entry, contents, request) => provenance.record(entry, contents, request),
     complete: (id) => requests.delete(id),
   };

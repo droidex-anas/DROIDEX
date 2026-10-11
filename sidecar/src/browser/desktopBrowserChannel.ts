@@ -14,7 +14,8 @@ const BROWSER_REQUEST_TIMEOUT_MS = boundedInt(
   60_000,
 );
 
-const APPROVAL_ACTIONS = new Set([
+// Agent actions that can open another website, and so wait for its approval.
+const NAVIGATION_APPROVAL_ACTIONS = new Set([
   'open',
   'reload',
   'goBack',
@@ -25,7 +26,6 @@ const APPROVAL_ACTIONS = new Set([
   'fill',
   'evaluate',
 ]);
-const APPROVAL_WAIT_MS = 120_000;
 
 export type RequestBrowser = (request: BrowserNativeRequest) => Promise<BrowserNativeResult>;
 
@@ -68,9 +68,11 @@ export function createDesktopBrowserChannel(
     }
     // A wait is given its own length on top. Main gets the expiry too, so the
     // time a request spends on the way counts against it.
-    const approvalMs =
-      request.initiator !== 'user' && APPROVAL_ACTIONS.has(request.action) ? APPROVAL_WAIT_MS : 0;
-    const limitMs = timeoutMs + (request.waitMs ?? 0) + approvalMs;
+    const mayAskApproval =
+      (request.initiator !== 'user' && NAVIGATION_APPROVAL_ACTIONS.has(request.action)) ||
+      ['open', 'fillCredentials', 'click', 'press'].includes(request.action) ||
+      (request.action === 'type' && request.submit);
+    const limitMs = timeoutMs + (mayAskApproval ? 120_000 : 0) + (request.waitMs ?? 0);
     const expiresAt = Date.now() + limitMs;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

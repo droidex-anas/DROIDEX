@@ -1,4 +1,4 @@
-function createBrowserActionResult({ runWithWebContentsDebugger, redactUrl }) {
+function createBrowserActionResult({ runWithWebContentsDebugger, redactUrl, getSettings }) {
   // The page after an action, with what the agent reads about it: what
   // changed besides the action itself, then the [Title · url] footer.
   async function result(request, contents, entry, since, urlBefore = contents.getURL()) {
@@ -6,10 +6,10 @@ function createBrowserActionResult({ runWithWebContentsDebugger, redactUrl }) {
     const notes = [];
     if (snapshot.url !== urlBefore) notes.push('The page went to a new address.');
     const errors = entry.errorTimes.filter((at) => at >= since).length;
-    if (errors)
-      notes.push(
-        `${errors} new console error${errors === 1 ? '' : 's'}; browser_console has them.`,
-      );
+    if (errors) {
+      const where = getSettings().diagnosticsEnabled ? '; browser_console has them' : '';
+      notes.push(`${errors} new console error${errors === 1 ? '' : 's'}${where}.`);
+    }
     notes.push(`[${snapshot.title || 'Untitled'} · ${redactUrl(snapshot.url)}]`);
     return { requestId: request.requestId, ok: true, snapshot, text: notes.join('\n') };
   }

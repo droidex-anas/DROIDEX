@@ -13,6 +13,7 @@ const {
   safeStorage,
   session,
   shell,
+  systemPreferences,
   webContents,
 } = require('electron');
 const fs = require('node:fs');
@@ -27,11 +28,14 @@ const githubPrConversation = require('./githubPrConversation.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
 const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
-const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createNativeBrowserManager, BROWSER_PARTITION } = require('./nativeBrowser.cjs');
+const { createBrowserDownloads } = require('./browserDownloads.cjs');
+const { createBrowserHistory } = require('./browserHistory.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createBrowserPromptController } = require('./browserPrompt.cjs');
 const { createBrowserSettingsController } = require('./browserSettings.cjs');
+const { createBrowserPermissionController } = require('./browserPermissions.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
@@ -133,26 +137,43 @@ let appIconMode = 'system';
 let pendingNotificationOpen = null;
 const PENDING_NOTIFICATION_OPEN_MS = 30_000;
 const nativeBrowserShortcuts = createNativeBrowserShortcuts({ getMainWindow: () => mainWindow });
+const browserHistory = createBrowserHistory({ userData: () => app.getPath('userData') });
 const browserPrompts = createBrowserPromptController({
   isAvailable: () => isWindowUsable(mainWindow),
   send: (prompt) => mainWindow.webContents.send('browser-permission-prompt', prompt),
   dismiss: (requestId) =>
     mainWindow?.webContents.send('browser-permission-prompt-dismiss', requestId),
-  showNative: ({ kind, ...prompt }, signal) =>
-    dialog.showMessageBox(mainWindow, {
-      ...prompt,
-      type: kind === 'warning' ? 'warning' : 'question',
-      signal,
-    }),
+});
+const browserPermissions = createBrowserPermissionController({
+  isNativeBrowserContents: (contents) =>
+    Boolean(nativeBrowserManager.sessionIdForWebContents(contents)),
+  listContents: () => webContents.getAllWebContents(),
+  isWorking: (contents) =>
+    nativeBrowserRequests
+      .workingSessions()
+      .includes(nativeBrowserManager.sessionIdForWebContents(contents)),
+  getSiteDecision: (origin, permission) =>
+    browserSettings.getSitePermissionDecision(origin, permission),
+  persistSiteDecision: (decision, signal) =>
+    browserSettings.setSitePermissionDecision(decision, signal),
+  showPrompt: browserPrompts.request,
+  systemPreferences,
+  openExternal: (url) => shell.openExternal(url),
 });
 const nativeBrowserManager = createNativeBrowserManager({
   authorizeAgentOrigin: (...args) => browserSettings.authorizeAgentOrigin(...args),
+  history: browserHistory,
   app,
   appName: APP_NAME,
   session,
   nativeImage,
   safeStorage,
+  systemPreferences,
+  getSettings: () => browserSettings.snapshot(),
+  cancelBrowserRequests: () => nativeBrowserRequests.cancelAll(),
+  permissions: browserPermissions,
   showPrompt: browserPrompts.request,
+  onGuestReleased: (contents) => browserDownloads.cancelPendingForContents(contents),
   onBrowserInput: nativeBrowserShortcuts.handleInput,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
   getHostAppUrl: () => process.env.ELECTRON_START_URL || mainWindow?.webContents.getURL(),
@@ -165,7 +186,8 @@ const nativeBrowserManager = createNativeBrowserManager({
 app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
-  assertAgentAccess: () => browserSettings.assertAgentAccess(),
+  showPrompt: browserPrompts.request,
+  assertAgentAccess: (action) => browserSettings.assertAgentAccess(action),
   notifyRenderer: (channel, payload) => {
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
   },
@@ -209,8 +231,29 @@ app.setPath('userData', userDataPath);
 const browserSettings = createBrowserSettingsController({
   userDataPath,
   downloadsPath: app.getPath('downloads'),
+  clearBrowsingData: () => nativeBrowserManager.clearBrowsingData(),
   showPrompt: browserPrompts.request,
+  onSitePermissionModeChanged: browserPermissions.revokeAll,
 });
+const browserDownloads = createBrowserDownloads({
+  getSettings: browserSettings.downloadSettings,
+  getContext: (contents) => {
+    const browserSessionId = nativeBrowserManager.sessionIdForWebContents(contents);
+    return browserSessionId
+      ? {
+          browserSessionId,
+          working: nativeBrowserRequests.workingSessions().includes(browserSessionId),
+        }
+      : undefined;
+  },
+  showPrompt: browserPrompts.request,
+  showSaveDialog: (options) => dialog.showSaveDialog(mainWindow, options),
+  tempPath: app.getPath('temp'),
+  sendToRenderer: (channel, payload) => {
+    if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
+  },
+});
+let downloadShutdown;
 const hardwareAccelerationPreferencePath = hardwareAccelerationPreferenceFilePath(
   app.getPath('userData'),
 );
@@ -234,6 +277,7 @@ app.whenReady().then(async () => {
     app.exit(1);
     return;
   }
+  session.fromPartition(BROWSER_PARTITION).on('will-download', browserDownloads.handleWillDownload);
   installApplicationMenu({
     Menu,
     app,
@@ -275,7 +319,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  browserPermissions.revokeAll();
+  const pendingDownloads = browserDownloads.hasPending();
+  downloadShutdown ??= browserDownloads.shutdown().then(() => {
+    if (pendingDownloads) app.quit();
+  });
+  if (pendingDownloads) event.preventDefault();
   browserSettings.cancelPendingUpdates();
   browserPrompts.setRendererReady(false);
   sidecarSupervisor.stop();
@@ -284,6 +334,23 @@ app.on('before-quit', () => {
   terminalManager.closeAll();
   terminalSubscriptions.clear();
   filesRootAccess.clear();
+});
+
+let historyFlushedForQuit = false;
+app.on('will-quit', (event) => {
+  if (historyFlushedForQuit) return;
+  event.preventDefault();
+  void browserHistory
+    .flush()
+    .catch(() => {
+      console.error(
+        'Could not flush browser history before quitting. Check the app profile directory permissions.',
+      );
+    })
+    .finally(() => {
+      historyFlushedForQuit = true;
+      app.quit();
+    });
 });
 
 app.on('activate', () => {
@@ -375,16 +442,8 @@ function createMainWindow() {
   powerTier.attachWindow(mainWindow);
 }
 
-// Voice mode records only while the user holds a conversation open, and only
-// the app's own window may ask. Every other permission stays denied, and the
-// Browser pane's partition is untouched, so a web page there cannot reach the
-// microphone.
-// The app had no permission handler until voice needed the microphone, so
-// everything a page asked for was granted by default. Adding one closes that,
-// which means the app's own needs have to be named here: the microphone for a
-// voice conversation, the clipboard for copy and paste, and notifications for
-// a finished turn. Everything else is refused, and so is every window that is
-// not the app's own, including the pages the embedded browser loads.
+// The app shell needs voice, clipboard and turn notifications. Browser pages
+// use a separate partition and the exact-site policy in browserPermissions.
 const WINDOW_PERMISSIONS = new Set([
   'clipboard-read',
   'clipboard-sanitized-write',
@@ -852,7 +911,7 @@ function registerIpc() {
   });
   ipcMain.handle('app-relaunch', (event) => {
     assertMainRenderer(event);
-    relaunchApp();
+    return relaunchApp();
   });
   ipcMain.handle('app-set-icon', (event, payload) => {
     assertMainRenderer(event);
@@ -958,6 +1017,22 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
+  ipcMain.handle('browser-history-suggest', (event, { input, limit }) => {
+    assertMainRenderer(event);
+    return browserHistory.suggest(input, limit);
+  });
+  ipcMain.handle('browser-history-record-typed', (event, { appSessionId, url }) => {
+    assertMainRenderer(event);
+    return nativeBrowserRequests.recordTyped(appSessionId, url);
+  });
+  ipcMain.handle('browser-history-remove', (event, { url }) => {
+    assertMainRenderer(event);
+    return browserHistory.remove(url);
+  });
+  ipcMain.handle('browser-history-clear', (event) => {
+    assertMainRenderer(event);
+    return browserHistory.clear();
+  });
   ipcMain.handle('browser-settings-get', (event) => {
     assertMainRenderer(event);
     return browserSettings.snapshot();
@@ -966,9 +1041,28 @@ function registerIpc() {
     assertMainRenderer(event);
     return browserSettings.update(patch);
   });
+  ipcMain.handle('browser-data-clear', (event) => {
+    assertMainRenderer(event);
+    return browserSettings.clearData();
+  });
+  ipcMain.handle('browser-credentials-list', (event) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.listCredentials();
+  });
+  ipcMain.handle('browser-credentials-delete', (event, origin) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.deleteCredential(origin);
+  });
+  ipcMain.handle('browser-site-permission-revoke', (event, { origin, permission }) => {
+    assertMainRenderer(event);
+    return browserPermissions.revokeSitePermission(origin, permission);
+  });
   ipcMain.handle('browser-permission-prompt-ready', (event, ready) => {
     assertMainRenderer(event);
-    if (ready === false) browserSettings.cancelPendingUpdates();
+    if (ready === false) {
+      browserPermissions.revokeAll();
+      browserSettings.cancelPendingUpdates();
+    }
     browserPrompts.setRendererReady(ready);
   });
   ipcMain.handle('browser-permission-prompt-resolve', (event, { requestId, response }) => {
@@ -1000,6 +1094,10 @@ function registerIpc() {
   ipcMain.handle('native-browser-watch', (event, { browserSessionId, watching }) => {
     assertMainRenderer(event);
     return nativeBrowserManager.watch(browserSessionId, watching);
+  });
+  ipcMain.handle('native-browser-home', (event, { browserSessionId }) => {
+    assertMainRenderer(event);
+    return nativeBrowserManager.openHome(browserSessionId);
   });
   ipcMain.handle('native-browser-go-back', (event, { browserSessionId }) => {
     assertMainRenderer(event);
@@ -1040,8 +1138,18 @@ function registerIpc() {
       .catch(() => undefined)
       .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
+  ipcMain.on('native-browser-credential-fill-valid', (event, token, point) => {
+    event.returnValue = nativeBrowserManager.canFillCredential(
+      event.sender,
+      event.senderFrame,
+      token,
+      point,
+    );
+  });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
-    void nativeBrowserManager.handleCredentialCapture(event.sender, payload);
+    void nativeBrowserManager
+      .handleCredentialCapture(event.sender, event.senderFrame, payload)
+      .catch((error) => console.error('Could not save browser login:', error.message));
   });
 }
 
@@ -1152,6 +1260,7 @@ function installMainRendererLifecycle(contents) {
   let cleanedForNavigation = false;
 
   const cleanupForRendererReplacement = () => {
+    browserPermissions.revokeAll();
     browserSettings.cancelPendingUpdates();
     browserPrompts.setRendererReady(false);
     if (!hasLoadedMainFrame || cleanedForNavigation) return;
@@ -1315,7 +1424,8 @@ function setOnboarding(patch) {
   return run;
 }
 
-function relaunchApp() {
+async function relaunchApp() {
+  await browserHistory.flush();
   app.relaunch();
   app.exit(0);
 }

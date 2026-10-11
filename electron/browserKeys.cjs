@@ -1,7 +1,5 @@
 // Keys and chords for agent typing, sent through CDP as trusted key events.
 
-const { send } = require('./browserFrames.cjs');
-
 const ALT = 1;
 const CONTROL = 2;
 const META = 4;
@@ -93,20 +91,16 @@ function modifiersOf(names) {
 
 // The key is released only while `held()` says the page that took the press
 // is still there: a press that navigates leaves nothing to release.
-async function pressOn(dbg, sessionId, key, held, dispatch) {
+async function pressKey(key, held, dispatch) {
   const { text, commands, ...base } = key;
-  const press = {
+  await dispatch({
     ...base,
     type: text ? 'keyDown' : 'rawKeyDown',
     text,
     unmodifiedText: text,
     commands,
-  };
-  await dispatch(press, () => send(dbg, sessionId, 'Input.dispatchKeyEvent', press));
-  if (await held()) {
-    const release = { ...base, type: 'keyUp' };
-    await dispatch(release, () => send(dbg, sessionId, 'Input.dispatchKeyEvent', release));
-  }
+  });
+  if (await held()) await dispatch({ ...base, type: 'keyUp' });
 }
 
-module.exports = { keyOf, modifiersOf, pressOn };
+module.exports = { keyOf, modifiersOf, pressKey };

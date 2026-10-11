@@ -37,14 +37,10 @@ function fixture() {
     startBy: Infinity,
     runEnded: () => false,
   };
-  const dispatch = (send) =>
-    gate.dispatch(
-      entry,
-      contents,
-      request,
-      { type: 'mousePressed', x: 20, y: 30, button: 'left' },
-      send,
-    );
+  const dispatch = (send) => {
+    gate.recordAction(entry, contents, request);
+    return send();
+  };
   const navigate = (url, id = 1, overrides = {}) =>
     new Promise((resolve) =>
       gate.beforeRequest({ url, id, resourceType: 'mainFrame', ...overrides }, resolve, entry),
@@ -117,6 +113,10 @@ test('user input and its redirects bypass approval even while an agent question 
   f.contents.emit('before-mouse-event', {}, { type: 'mouseDown', x: 80, y: 40, button: 'left' });
   assert.deepEqual(await f.navigate('https://user.test/', 2), {});
   assert.deepEqual(await f.navigate('https://user-redirect.test/', 2), {});
+  f.contents.emit('before-mouse-event', {}, { type: 'mouseUp', x: 80, y: 40, button: 'left' });
+  const frame = { url: 'file:///tmp/page', isMainFrame: true, preventDefault: assert.fail };
+  f.contents.emit('will-frame-navigate', frame);
+  assert.deepEqual(await f.navigate('file:///tmp/page', 3), {});
   assert.equal(f.approvals.length, 1);
   f.entry.documents++;
   f.contents.emit('did-navigate');
