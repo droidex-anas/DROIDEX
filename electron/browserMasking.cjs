@@ -1,15 +1,8 @@
-// What agents never see: the value of a sensitive field, whether they read the
-// page or look at it. A field is sensitive when its type, autocomplete, name,
-// id, label or placeholder says so, or when its value is the login saved for
-// the site (agents never see what browser_fill_login filled in). A field that
-// cannot be checked counts as sensitive.
-//
-// This covers fields as pages show them: their values and contents, and the
-// names Chromium builds from them. A page that copies a value somewhere else
-// (into other text, an attribute, a label it points at a hidden field) shows
-// it like any other text; nothing here can hide what the page itself prints.
+// Sensitive field values are masked in text and screenshots. Filled secrets
+// copied into page text are also redacted at the agent response boundary.
 
 const { send, documentFrames, viewportMapping, axTree, boundsOf } = require('./browserFrames.cjs');
+const { sensitiveFieldDescription } = require('./browserFormSafety.cjs');
 const { cleanText } = require('./browserText.cjs');
 const { dropRef } = require('./browserRefs.cjs');
 
@@ -23,10 +16,6 @@ const VALUE_ROLES = new Set([
   'spinbutton',
   'slider',
 ]);
-// A field holding one of these never shows its value to an agent.
-const SENSITIVE_FIELD =
-  /pass|otp|one.?time|verif|2fa|mfa|token|secret|credential|auth(?!or)|authori[sz]|api.?key|access.?key|private.?key|\bkey\b|cvc|cvv|csc|card.?num|cc-|security.?code|\bpin\b|ssn|iban/i;
-
 function createBrowserMasking({ savedSecretsFor }) {
   // Field lines from browser_read_page show their value or the mask. What is
   // inside a masked field, such as a select's options, is hidden and its refs
@@ -127,7 +116,7 @@ function createBrowserMasking({ savedSecretsFor }) {
 
   async function isSensitive(dbg, field, logins) {
     const { backendNodeId, name, value, sessionId, origin } = field;
-    if ((await logins(origin)).has(value) || SENSITIVE_FIELD.test(name)) return true;
+    if ((await logins(origin)).has(value) || sensitiveFieldDescription(name)) return true;
     const described =
       backendNodeId &&
       (await send(dbg, sessionId, 'DOM.describeNode', { backendNodeId }).catch(() => undefined));
@@ -301,7 +290,7 @@ function isSensitiveField(attributes) {
     const [name, value] = [attributes[i].toLowerCase(), String(attributes[i + 1] ?? '')];
     if (
       ['type', 'autocomplete', 'name', 'id', 'aria-label', 'placeholder'].includes(name) &&
-      SENSITIVE_FIELD.test(value)
+      sensitiveFieldDescription(value)
     )
       return true;
   }

@@ -1,0 +1,282 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { EventEmitter } = require('node:events');
+const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
+const { createNativeBrowserPage } = require('./nativeBrowserPage.cjs');
+
+function fixture(authorize) {
+  const actions = [];
+  const events = [];
+  const prompts = [];
+  let answer = async () => ({ response: 1 });
+  const contents = Object.assign(new EventEmitter(), {
+    getURL: () => 'about:blank',
+    isDestroyed: () => false,
+  });
+  const entry = { contents, documents: 1 };
+  let enabled = true;
+  const manager = {
+    waitForPaint: async () => {},
+    waitForPage: async () => entry,
+    open: async (_id, _url, before) => {
+      before();
+      actions.push('open');
+    },
+    close: () => actions.push('close'),
+    abandonWork: () => {},
+    runAgentAction: async (request) => {
+      actions.push(request.action);
+      return { ok: true, snapshot: { url: 'https://example.test/', scroll: { x: 0, y: 0 } } };
+    },
+  };
+  const requests = createNativeBrowserRequests({
+    manager,
+    showPrompt: async (prompt, options) => {
+      prompts.push(prompt);
+      return answer(prompt, options);
+    },
+    notifyRenderer: (channel, payload) => events.push({ channel, ...payload }),
+    assertAgentAccess: (action) => {
+      authorize?.(action);
+      if (!enabled)
+        throw new Error('Agent browser access is off. Enable it in Settings > Browser.');
+    },
+  });
+  let sequence = 0;
+  async function send(action, initiator = 'agent', url) {
+    const id = `request-${++sequence}`;
+    let reply;
+    await requests.handle(
+      {
+        type: 'browser.request',
+        id,
+        request: {
+          requestId: id,
+          appSessionId: 'app',
+          browserSessionId: 'browser',
+          action,
+          initiator,
+          url,
+        },
+      },
+      (message) => (reply = message.result),
+      () => false,
+    );
+    return reply;
+  }
+  return {
+    manager,
+    actions,
+    events,
+    requests,
+    send,
+    prompts,
+    disable: () => (enabled = false),
+    answer: (fn) => {
+      answer = fn;
+    },
+  };
+}
+
+test('agent navigation to sign-in and OAuth URLs requires single-use approval before opening', async () => {
+  for (const path of [
+    '/session?client_id=app&redirect_uri=https%3A%2F%2Fapp.test%2Fcallback',
+    '/session?client_id=app&response_type=code',
+    '/tenant/authorize',
+    '/tenant/%61uthorize',
+    '/oauth2/auth',
+    '/account/sign-in',
+    '/login',
+  ]) {
+    const f = fixture();
+    const url = `https://identity.test${path}`;
+    const denied = await f.send('open', 'agent', url);
+    assert.equal(denied.ok, false, path);
+    assert.match(denied.error, /Sensitive action was denied/);
+    assert.deepEqual(f.actions, []);
+    assert.equal(f.prompts[0].kind, 'credential');
+    assert.match(
+      f.prompts[0].message,
+      /(?:start an OAuth sign-in|submit a sign-in) on https:\/\/identity.test/,
+    );
+
+    f.answer(async () => ({ response: 0 }));
+    assert.equal((await f.send('open', 'agent', url)).ok, true);
+    assert.deepEqual(f.actions, ['open', 'snapshot']);
+    assert.equal(f.prompts.length, 2);
+    assert.equal((await f.send('open', 'user', url)).ok, true);
+    assert.equal(f.prompts.length, 2);
+    assert.equal(
+      (await f.send('open', 'agent', 'https://identity.test/help?client_id=app')).ok,
+      true,
+    );
+    assert.equal(f.prompts.length, 2);
+  }
+});
+
+test('agent navigation tolerates malformed URL escapes while still checking the raw path', async () => {
+  const f = fixture();
+  for (const path of ['/files/%E9', '/discount/50%off']) {
+    const result = await f.send('open', 'agent', `https://example.test${path}`);
+    assert.equal(result.ok, true, result.error);
+  }
+  assert.deepEqual(f.actions, ['open', 'snapshot', 'open', 'snapshot']);
+  assert.deepEqual(f.prompts, []);
+
+  const result = await f.send('open', 'agent', 'https://identity.test/%E9/authorize');
+  assert.equal(result.ok, false);
+  assert.match(result.error, /Sensitive action was denied/);
+  assert.equal(f.prompts.length, 1);
+  assert.deepEqual(f.actions, ['open', 'snapshot', 'open', 'snapshot']);
+});
+
+test('disabled agent requests cannot wake pages or read diagnostics, while closing stays available', async () => {
+  const { actions, events, send, disable } = fixture();
+  disable();
+  for (const action of ['open', 'click', 'readPage', 'network', 'evaluate', 'fillCredentials']) {
+    const reply = await send(action);
+    assert.equal(reply.ok, false);
+    assert.match(reply.error, /Agent browser access is off/);
+  }
+  assert.deepEqual(actions, []);
+  assert.deepEqual(events, []);
+  assert.equal((await send('close')).ok, true);
+  assert.deepEqual(actions, ['close']);
+});
+
+test('user navigation stays available when agent access is off', async () => {
+  const { actions, send, disable } = fixture();
+  disable();
+  const reply = await send('open', 'user');
+  assert.equal(reply.ok, true, reply.error);
+  assert.deepEqual(actions, ['open', 'snapshot']);
+});
+
+test('disabling agent access stops input already waiting on a page to paint', async () => {
+  const { manager, actions, requests, send, disable } = fixture();
+  const paint = Promise.withResolvers();
+  manager.waitForPaint = () => paint.promise;
+  const clicking = send('click');
+  disable();
+  paint.resolve();
+  const reply = await clicking;
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /Agent browser access is off/);
+  assert.deepEqual(actions, []);
+  assert.deepEqual(requests.workingSessions(), []);
+});
+
+test('disabling agent access during guest restoration prevents reading the restored page', async () => {
+  const { manager, requests, send, disable } = fixture();
+  const restoring = Promise.withResolvers();
+  const started = Promise.withResolvers();
+  let reads = 0;
+  const page = createNativeBrowserPage({
+    appName: 'DROIDEX',
+    restoreForAction: () => {
+      started.resolve();
+      return restoring.promise;
+    },
+    liveContents: () => ({}),
+    credentials: {},
+    runWithWebContentsDebugger: async () => {
+      reads++;
+      throw new Error('The revoked request reached the page.');
+    },
+  });
+  manager.runAgentAction = page.runAgentAction;
+  const reading = send('readPage');
+  await started.promise;
+  disable();
+  restoring.resolve({});
+
+  const reply = await reading;
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /Agent browser access is off/);
+  assert.equal(reply.text, undefined);
+  assert.equal(reads, 0);
+  assert.deepEqual(requests.workingSessions(), []);
+});
+
+test('closing a browser aborts its pending approval before it can send input', async () => {
+  const { manager, send, requests } = fixture();
+  const shown = Promise.withResolvers();
+  manager.runAgentAction = (request) =>
+    new Promise((resolve) => {
+      shown.resolve();
+      request.signal.addEventListener(
+        'abort',
+        () => resolve({ ok: false, error: 'approval canceled' }),
+        { once: true },
+      );
+    });
+  const pending = send('fillCredentials');
+  await shown.promise;
+  await send('close', 'user');
+  const result = await pending;
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'approval canceled');
+  assert.deepEqual(requests.workingSessions(), []);
+});
+
+test('diagnostics disabled before dispatch or before the result returns refuse without exposing content', async (t) => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { createBrowserSettingsController } = require('./browserSettings.cjs');
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'ac11-diagnostics-'));
+  t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
+  const settings = createBrowserSettingsController({
+    userDataPath,
+    downloadsPath: userDataPath,
+    showPrompt: async () => ({ response: 0 }),
+  });
+  await settings.initialize();
+  const { manager, send, actions, events } = fixture(settings.assertAgentAccess);
+  for (const action of ['inspect', 'network', 'console']) {
+    const denied = await send(action);
+    assert.equal(denied.ok, false);
+    assert.match(denied.error, /Agent browser diagnostics are off/);
+  }
+  assert.deepEqual(actions, []);
+  assert.deepEqual(events, []);
+  await settings.update({ diagnosticsEnabled: true });
+  const started = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  manager.runAgentAction = async () => {
+    started.resolve();
+    await resume.promise;
+    return { ok: true, text: 'private diagnostic content' };
+  };
+  const inspecting = send('inspect');
+  await started.promise;
+  await settings.update({ diagnosticsEnabled: false });
+  resume.resolve();
+  const denied = await inspecting;
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Agent browser diagnostics are off/);
+  assert.equal(denied.text, undefined);
+});
+
+test('clearing cancels queued work and drops results from an abandoned page', async () => {
+  const { manager, requests, send, actions } = fixture();
+  const started = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  manager.runAgentAction = async () => {
+    started.resolve();
+    await resume.promise;
+    return { ok: true, text: 'abandoned page' };
+  };
+  const typing = send('type');
+  await started.promise;
+  const queued = send('click');
+  requests.cancelAll();
+  resume.resolve();
+  const results = await Promise.all([typing, queued]);
+  assert.equal(
+    results.every((result) => result.ok === false && result.text === undefined),
+    true,
+  );
+  assert.deepEqual(actions, []);
+  assert.deepEqual(requests.workingSessions(), []);
+});

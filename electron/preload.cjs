@@ -231,6 +231,19 @@ contextBridge.exposeInMainWorld('droidControl', {
     clear: () => ipcRenderer.invoke('browser-history-clear'),
   },
 
+  browserCredentialsList: () => ipcRenderer.invoke('browser-credentials-list'),
+  browserCredentialsDelete: (origin) => ipcRenderer.invoke('browser-credentials-delete', origin),
+  browserDataClear: () => ipcRenderer.invoke('browser-data-clear'),
+  browserSettingsGet: () => ipcRenderer.invoke('browser-settings-get'),
+  browserSettingsUpdate: (patch) => ipcRenderer.invoke('browser-settings-update', patch),
+  browserSitePermissionRevoke: (origin, permission) =>
+    ipcRenderer.invoke('browser-site-permission-revoke', { origin, permission }),
+  browserPermissionPromptReady: (ready) =>
+    ipcRenderer.invoke('browser-permission-prompt-ready', ready),
+  browserPermissionPromptResolve: (requestId, response) =>
+    ipcRenderer.invoke('browser-permission-prompt-resolve', { requestId, response }),
+  onBrowserPermissionPrompt: (handler) => on('browser-permission-prompt', handler),
+  onBrowserPermissionPromptDismiss: (handler) => on('browser-permission-prompt-dismiss', handler),
   nativeBrowserReserve: (browserSessionId, savedUrl, savedMode) =>
     ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl, savedMode }),
   nativeBrowserRelease: (browserSessionId) =>
@@ -240,6 +253,8 @@ contextBridge.exposeInMainWorld('droidControl', {
     ipcRenderer.invoke('native-browser-shown', { browserSessionId, shown }),
   nativeBrowserWatch: (browserSessionId, watching) =>
     ipcRenderer.invoke('native-browser-watch', { browserSessionId, watching }),
+  nativeBrowserHome: (browserSessionId) =>
+    ipcRenderer.invoke('native-browser-home', { browserSessionId }),
   nativeBrowserGoBack: (browserSessionId) =>
     ipcRenderer.invoke('native-browser-go-back', { browserSessionId }),
   nativeBrowserGoForward: (browserSessionId) =>
@@ -251,10 +266,12 @@ contextBridge.exposeInMainWorld('droidControl', {
 
   onNativeBrowserDesignEvent: (handler) => on('native-browser-design-event', handler),
   onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
+  onNativeBrowserDownload: (handler) => on('native-browser-download', handler),
   onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
   onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
   onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),
   onNativeBrowserFrame: (handler) => on('native-browser-frame', handler),
   onNativeBrowserClosed: (handler) => on('native-browser-closed', handler),
+  onNativeBrowserDataCleared: (handler) => on('native-browser-data-cleared', handler),
   onNativeBrowserShortcut: (handler) => on('native-browser-shortcut', handler),
 });

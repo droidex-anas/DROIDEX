@@ -107,6 +107,8 @@ const invokeContract = [
     'git-adopt-turn-baseline',
     { dir: '/repo', clientRef: 'client-1', appSessionId: 'app-1' },
   ],
+  ['browserDataClear', [], 'browser-data-clear', undefined],
+  ['nativeBrowserHome', ['browser-1'], 'native-browser-home', { browserSessionId: 'browser-1' }],
   ['setAppIcon', ['dark'], 'app-set-icon', { mode: 'dark' }],
   [
     'saveAttachment',
@@ -220,4 +222,16 @@ test('preload queues stay bounded before a consumer attaches and report dropped 
   assert.ok(queuedBytes <= 2 * 1024 * 1024);
   assert.ok(received.some((payload) => payload.truncated === true && payload.droppedBytes > 0));
   assert.ok(received.length < flood);
+});
+
+test('browser download subscriptions expose data only and can be removed', () => {
+  const { api, listeners, removedListeners } = loadApi();
+  const received = [];
+  const unsubscribe = api.onNativeBrowserDownload((payload) => received.push(payload));
+  const payload = { downloadId: 'download', browserSessionId: 'browser', state: 'completed' };
+  assert.equal(listeners[0].channel, 'native-browser-download');
+  listeners[0].listener({ sender: 'private' }, payload);
+  assert.deepEqual(received, [payload]);
+  unsubscribe();
+  assert.equal(removedListeners[0].listener, listeners[0].listener);
 });

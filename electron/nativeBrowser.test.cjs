@@ -2,20 +2,32 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
+const { createBrowserPermissionController } = require('./browserPermissions.cjs');
 
 const ERROR_PAGE = 'chrome-error://chromewebdata/';
 const HOST = { id: 1 };
 
 // Guests are the <webview> contents the renderer mounts; loading a URL listed
 // in `unreachable` lands on Chromium's error page, as an unreachable host does.
-function createBrowser() {
+function createBrowser({ showPrompt = async () => ({ response: 1 }) } = {}) {
   const unreachable = new Set();
   const loads = [];
   const loadFailures = [];
   const sessions = new Map();
+  const events = [];
+  const settings = { homePage: 'https://www.google.com/', showAgentCursor: true };
+  const cleared = [];
   const session = {
     fromPartition(partition) {
+      if (sessions.has(partition)) return sessions.get(partition);
       const ses = {
+        clearStorageData: async (options) => cleared.push(options),
+        clearCache: async () => cleared.push('cache'),
+        clearAuthCache: async () => cleared.push('auth'),
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) DROIDEX/1.3.7 Chrome/142.0.7444.175 Electron/39.2.6 Safari/537.36',
+        getUserAgent: () => ses.userAgent,
+        setUserAgent: (userAgent) => (ses.userAgent = userAgent),
         setDevicePermissionHandler: (handler) => (ses.device = handler),
         setPermissionCheckHandler: (handler) => (ses.check = handler),
         setPermissionRequestHandler: (handler) => (ses.request = handler),
@@ -26,24 +38,34 @@ function createBrowser() {
     },
   };
   const manager = createNativeBrowserManager({
-    app: {},
+    app: { getPath: () => '/unused-browser-test-profile' },
     history: { recordVisit: async () => {}, updateTitle: async () => {} },
     appName: 'DROIDEX',
     session,
     dialog: {},
     safeStorage: {},
+    getSettings: () => settings,
+    cancelBrowserRequests() {},
+    permissions: createBrowserPermissionController({
+      isNativeBrowserContents: (contents) => Boolean(manager.sessionIdForWebContents(contents)),
+      isWorking: () => false,
+      getSiteDecision: () => 'ask',
+      showPrompt,
+      systemPreferences: { getMediaAccessStatus: () => 'granted' },
+    }),
     getMainWindow: () => ({ isDestroyed: () => false }),
     onBrowserInput() {},
     preloadPath: '/app/nativeBrowserPreload.cjs',
     getHostAppUrl: () => 'http://localhost:5173/',
     sendToRenderer: (channel, payload) => {
+      events.push({ channel, ...payload });
       if (channel === 'native-browser-load-failed') loadFailures.push(payload.error);
     },
   });
 
   // What the renderer and Electron do when the pane mounts a page.
-  function mountGuest(browserSessionId) {
-    const { src } = manager.reserve(browserSessionId, HOST);
+  function mountGuest(browserSessionId, savedUrl) {
+    const { src } = manager.reserve(browserSessionId, HOST, savedUrl);
     const webPreferences = {};
     manager.handleWillAttach({ preventDefault() {} }, webPreferences, { src }, HOST);
     const guest = new EventEmitter();
@@ -51,7 +73,11 @@ function createBrowser() {
       url: 'about:blank',
       webPreferences,
       getType: () => 'webview',
-      isDestroyed: () => false,
+      isDestroyed: () => guest.destroyed === true,
+      close: () => {
+        guest.destroyed = true;
+        guest.emit('destroyed');
+      },
       getURL: () => guest.url,
       navigationHistory: {
         getActiveIndex: () => 0,
@@ -66,26 +92,110 @@ function createBrowser() {
       setWindowOpenHandler() {},
       setBackgroundThrottling() {},
     });
+    guest.mainFrame = {
+      get url() {
+        return guest.url;
+      },
+      get origin() {
+        return new URL(guest.url).origin;
+      },
+      processId: 1,
+      routingId: 1,
+      detached: false,
+      isDestroyed: () => false,
+    };
+    guest.mainFrame.framesInSubtree = [guest.mainFrame];
     manager.handleCreated(guest);
     manager.handleAttached(guest);
     return guest;
   }
 
-  return { manager, mountGuest, unreachable, loads, loadFailures, sessions };
+  return {
+    manager,
+    mountGuest,
+    unreachable,
+    loads,
+    loadFailures,
+    sessions,
+    settings,
+    events,
+    cleared,
+  };
 }
 
-test('browser pages use their own persistent partition and are denied every permission', async () => {
+test('browser partition permissions require an owned page and navigation or release clears one-time grants', async () => {
   const { manager, mountGuest, sessions } = createBrowser();
   const guest = mountGuest('tab');
   await manager.open('tab', 'https://example.test/');
 
   assert.equal(guest.webPreferences.partition, 'persist:droidex-browser');
   const ses = sessions.get('persist:droidex-browser');
+  assert.equal(
+    ses.getUserAgent(),
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+  );
   assert.equal(ses.device({ deviceType: 'hid' }), false);
   assert.equal(ses.check(null, 'media'), false);
   let granted;
   ses.request(null, 'geolocation', (value) => (granted = value));
   assert.equal(granted, false);
+  const origin = 'https://example.test';
+  const request = () =>
+    new Promise((resolve) => {
+      ses.request(guest, 'media', resolve, {
+        requestingUrl: guest.url,
+        isMainFrame: true,
+        mediaTypes: ['video'],
+      });
+    });
+  const check = () =>
+    ses.check(guest, 'media', origin, {
+      requestingUrl: guest.url,
+      isMainFrame: true,
+      mediaType: 'video',
+    });
+  assert.equal(await request(), true);
+  assert.equal(check(), true);
+  guest.emit('did-start-navigation', {}, guest.url, false, true);
+  assert.equal(check(), false);
+  assert.equal(await request(), true);
+  manager.release('tab');
+  assert.equal(check(), false);
+});
+
+test('same-origin document commits cancel late prompts and clear allow-once grants', async () => {
+  const answer = Promise.withResolvers();
+  let promptSignal;
+  let nextAnswer = answer.promise;
+  const { manager, mountGuest, sessions } = createBrowser({
+    showPrompt: (_prompt, { signal }) => {
+      promptSignal = signal;
+      return nextAnswer;
+    },
+  });
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://example.test/');
+  const ses = sessions.get('persist:droidex-browser');
+  const details = { requestingUrl: guest.url, isMainFrame: true };
+  const request = () =>
+    new Promise((resolve) => ses.request(guest, 'geolocation', resolve, details));
+  const check = () => ses.check(guest, 'geolocation', 'https://example.test', details);
+  guest.emit('did-start-navigation', {}, guest.url, false, true);
+  const pending = request();
+  // Same URL and frame IDs can survive a reload; the commit replaces the document.
+  guest.emit('did-frame-navigate', {}, guest.url, 200, 'OK', true, 1, 1);
+  answer.resolve({ response: 1 });
+  assert.equal(await pending, false);
+  assert.equal(promptSignal.aborted, true);
+  assert.equal(check(), false);
+  nextAnswer = Promise.resolve({ response: 1 });
+  assert.equal(await request(), true);
+  assert.equal(check(), true);
+  guest.emit('did-navigate', {}, guest.url);
+  assert.equal(check(), false);
+  assert.equal(await request(), true);
+  guest.mainFrame.routingId++;
+  assert.equal(check(), false);
 });
 
 test('a remounted page reopens its URL, but not one that failed until it is retried', async () => {
@@ -149,4 +259,55 @@ test('a page action still waiting on a load does nothing once the browser closes
   finishLoad();
   await assert.rejects(back, /browser is not open/);
   await opening;
+});
+
+test('only the first blank open of a new tab uses Home; a mounted guest loads its saved page or none', async () => {
+  const { manager, mountGuest, settings, loads } = createBrowser();
+  settings.homePage = 'https://home.test/';
+  const opening = manager.open('new', 'about:blank');
+  mountGuest('new');
+  await opening;
+  mountGuest('blank', 'about:blank');
+  await new Promise(setImmediate);
+  mountGuest('restored', 'https://saved.test/');
+  await new Promise(setImmediate);
+  settings.homePage = 'https://next-home.test/';
+  await manager.openHome('restored');
+  await manager.open('restored', 'about:blank');
+  assert.deepEqual(loads, [
+    'https://home.test/',
+    'https://saved.test/',
+    'https://next-home.test/',
+    'about:blank',
+  ]);
+});
+
+test('clearing closes pages and clears only the browser partition before allowing a new tab', async () => {
+  const { manager, mountGuest, sessions, cleared, events } = createBrowser();
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://app.test/');
+  const started = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  sessions.get('persist:droidex-browser').clearStorageData = async (options) => {
+    cleared.push(options);
+    started.resolve();
+    await resume.promise;
+  };
+  const clearing = manager.clearBrowsingData();
+  await started.promise;
+  assert.equal(guest.isDestroyed(), true);
+  assert.equal(manager.resourceCounts().sessions, 0);
+  assert.throws(() => mountGuest('replacement'), /data is being cleared/);
+  assert.equal(events.length, 0);
+  resume.resolve();
+  await clearing;
+  assert.deepEqual(events, [{ channel: 'native-browser-data-cleared' }]);
+  assert.deepEqual(cleared, [
+    { storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] },
+    'cache',
+    'auth',
+  ]);
+  assert.deepEqual([...sessions.keys()], ['persist:droidex-browser']);
+  mountGuest('replacement');
+  await new Promise(setImmediate);
 });

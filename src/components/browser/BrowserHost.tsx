@@ -5,6 +5,7 @@ import { BrowserAgentCursor } from './BrowserAgentCursor';
 import {
   closeBrowserPage,
   isBrowserPageAwake,
+  remountBrowserPages,
   setBrowserPageCrashed,
   setBrowserPageWorking,
   useBrowserHost,
@@ -26,6 +27,7 @@ import {
 import {
   listWorkingNativeBrowsers,
   onNativeBrowserClosed,
+  onNativeBrowserDataCleared,
   onNativeBrowserDesignEvent,
   onNativeBrowserLoadFailed,
   onNativeBrowserLoaded,
@@ -83,9 +85,12 @@ export function BrowserHost() {
       Object.keys(browsersRef.current).find(
         (key) => browsersRef.current[key].browserSessionId === browserSessionId,
       );
-    const setWorking = (browserSessionId: string, working: boolean) => {
+    const savedFor = (browserSessionId: string) => {
       const appSessionId = appSessionIdFor(browserSessionId);
-      const saved = appSessionId ? browsersRef.current[appSessionId] : undefined;
+      return appSessionId ? browsersRef.current[appSessionId] : undefined;
+    };
+    const setWorking = (browserSessionId: string, working: boolean) => {
+      const saved = savedFor(browserSessionId);
       setBrowserPageWorking(browserSessionId, working, saved?.url, saved?.viewportMode);
     };
     const heard = new Set<string>();
@@ -98,6 +103,9 @@ export function BrowserHost() {
       }),
       onNativeBrowserClosed(({ browserSessionId }) => {
         closeBrowserPage(browserSessionId);
+      }),
+      onNativeBrowserDataCleared(() => {
+        remountBrowserPages(savedFor);
       }),
       onNativeBrowserDesignEvent((event) => {
         if (event.type === 'shot') {

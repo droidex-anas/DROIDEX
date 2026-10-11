@@ -1,0 +1,337 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { createBrowserSettingsController } = require('./browserSettings.cjs');
+const { createBrowserPromptController } = require('./browserPrompt.cjs');
+const { createBrowserPermissionController } = require('./browserPermissions.cjs');
+
+async function fixture(t, overrides = {}) {
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'droidex-browser-settings-'));
+  t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
+  const prompts = [];
+  const responses = [];
+  const options = {
+    userDataPath,
+    downloadsPath: path.join(userDataPath, 'Downloads'),
+    showPrompt: async (prompt) => {
+      prompts.push(prompt);
+      return { response: responses.shift() ?? prompt.cancelId };
+    },
+    ...overrides,
+  };
+  const controller = createBrowserSettingsController(options);
+  await controller.initialize();
+  return { controller, options, prompts, responses };
+}
+
+test('browser policies default safely and persist across restarts', async (t) => {
+  const { controller, options } = await fixture(t);
+  const snapshot = controller.snapshot();
+  assert.equal(snapshot.navigationApproval, 'follow_autonomy');
+  assert.equal(snapshot.loginFillApproval, 'always_ask');
+  assert.equal(snapshot.sitePermissionMode, 'ask');
+  assert.equal(snapshot.diagnosticsEnabled, false);
+  assert.equal(snapshot.askDownloadLocation, true);
+  assert.equal(snapshot.showAgentCursor, true);
+  assert.equal(snapshot.homePage, 'https://www.google.com/');
+  await controller.update({ showAgentCursor: false, agentAccessEnabled: false });
+  const restarted = createBrowserSettingsController(options);
+  await restarted.initialize();
+  assert.equal(restarted.snapshot().showAgentCursor, false);
+  assert.throws(() => restarted.assertAgentAccess(), /Agent browser access is off/);
+  const saved = JSON.parse(await fs.readFile(controller.settingsPath, 'utf8'));
+  assert.equal(saved.version, 6);
+  assert.equal(saved.agentAccessEnabled, false);
+  assert.equal((await fs.stat(controller.settingsPath)).mode & 0o777, 0o600);
+});
+
+test('each protection-reducing setting requires explicit approval', async (t) => {
+  const { controller, prompts, responses } = await fixture(t);
+  await controller.update({
+    agentAccessEnabled: false,
+    loginFillApproval: 'never',
+    sitePermissionMode: 'block',
+  });
+  for (const patch of [
+    { agentAccessEnabled: true },
+    { diagnosticsEnabled: true },
+    { loginFillApproval: 'always_ask' },
+    { sitePermissionMode: 'ask' },
+    { askDownloadLocation: false },
+  ]) {
+    const before = controller.snapshot();
+    assert.deepEqual(await controller.update(patch), before);
+    assert.equal(prompts.at(-1).defaultId, 1);
+    assert.equal(prompts.at(-1).cancelId, 1);
+    responses.push(0);
+    assert.deepEqual(await controller.update(patch), { ...before, ...patch });
+  }
+  assert.equal(prompts.length, 10);
+});
+
+test('each navigation approval reduction requires confirmation', async (t) => {
+  const { controller, prompts, responses } = await fixture(t);
+  let snapshot = await controller.update({ navigationApproval: 'new_sites' });
+  assert.equal(snapshot.navigationApproval, 'follow_autonomy');
+  await controller.update({ navigationApproval: 'always_ask' });
+  for (const navigationApproval of ['new_sites', 'follow_autonomy', 'never_ask']) {
+    snapshot = await controller.update({ navigationApproval });
+    assert.equal(snapshot.navigationApproval, 'always_ask');
+  }
+  responses.push(0);
+  snapshot = await controller.update({ navigationApproval: 'new_sites' });
+  assert.equal(snapshot.navigationApproval, 'new_sites');
+  snapshot = await controller.update({ navigationApproval: 'follow_autonomy' });
+  assert.equal(snapshot.navigationApproval, 'new_sites');
+  assert.equal(prompts.length, 6);
+});
+
+test('concurrent updates cannot bypass confirmation of a queued protection increase', async (t) => {
+  const { controller, prompts } = await fixture(t);
+  const disabling = controller.update({ agentAccessEnabled: false });
+  const enabling = controller.update({ agentAccessEnabled: true });
+  await Promise.all([disabling, enabling]);
+  assert.equal(controller.snapshot().agentAccessEnabled, false);
+  assert.equal(prompts.length, 1);
+});
+
+test('invalid patches and persisted settings fail without replacing the settings file', async (t) => {
+  const { controller, options } = await fixture(t);
+  await controller.update({ showAgentCursor: false });
+  const saved = await fs.readFile(controller.settingsPath, 'utf8');
+  for (const patch of [
+    { agentAccessEnabled: 'true' },
+    { navigationApproval: 'sometimes' },
+    { homePage: 'https://user:password@example.test/' },
+    { homePage: 'file:///tmp/page' },
+    { agentCursorSize: 52 },
+    { approvedAgentOrigins: ['https://example.test'] },
+  ]) {
+    assert.throws(() => controller.update(patch));
+  }
+  assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), saved);
+  for (const contents of [
+    '{',
+    JSON.stringify({ ...JSON.parse(saved), version: 3 }),
+    JSON.stringify({ ...JSON.parse(saved), approvedAgentOrigins: ['https://example.test/path'] }),
+    JSON.stringify({ ...JSON.parse(saved), sitePermissions: [{ origin: 'https://example.test' }] }),
+    JSON.stringify({ ...JSON.parse(saved), lastCookieImport: { cookies: ['secret'] } }),
+  ]) {
+    await fs.writeFile(controller.settingsPath, contents);
+    await assert.rejects(createBrowserSettingsController(options).initialize());
+    assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), contents);
+  }
+});
+
+test('a failed settings write leaves the active policy intact and later writes can succeed', async (t) => {
+  const { controller } = await fixture(t);
+  t.mock.method(fs, 'writeFile', async () => {
+    throw new Error('disk unavailable');
+  });
+  await assert.rejects(controller.update({ agentAccessEnabled: false }), /disk unavailable/);
+  controller.assertAgentAccess();
+  t.mock.restoreAll();
+  await controller.update({ agentAccessEnabled: false });
+  assert.throws(() => controller.assertAgentAccess(), /Agent browser access is off/);
+});
+
+test('renderer teardown cancels active and queued settings changes without writes', async (t) => {
+  const shown = Promise.withResolvers();
+  const prompts = createBrowserPromptController({
+    isAvailable: () => true,
+    send: shown.resolve,
+  });
+  t.after(() => prompts.cancelAll());
+  prompts.setRendererReady(true);
+  const { controller } = await fixture(t, { showPrompt: prompts.request });
+  await controller.update({ showAgentCursor: true });
+  const saved = await fs.readFile(controller.settingsPath, 'utf8');
+  const updates = [
+    controller.update({ diagnosticsEnabled: true }),
+    controller.update({ navigationApproval: 'never_ask' }),
+    controller.update({ showAgentCursor: false }),
+  ];
+  const cancelled = updates.map((update) => assert.rejects(update, /renderer closed/));
+  await shown.promise;
+  controller.cancelPendingUpdates();
+  prompts.setRendererReady(false);
+  await Promise.all(cancelled);
+
+  assert.equal(controller.snapshot().diagnosticsEnabled, false);
+  assert.equal(controller.snapshot().showAgentCursor, true);
+  assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), saved);
+  await controller.update({ showAgentCursor: false });
+  assert.equal(controller.snapshot().showAgentCursor, false);
+});
+
+test('protection confirmation names every reduced setting and its previous and requested values', async (t) => {
+  const { controller, prompts } = await fixture(t);
+  await controller.update({
+    agentAccessEnabled: false,
+    loginFillApproval: 'never',
+    navigationApproval: 'always_ask',
+    sitePermissionMode: 'block',
+  });
+  const before = controller.snapshot();
+  assert.deepEqual(
+    await controller.update({
+      agentAccessEnabled: true,
+      diagnosticsEnabled: true,
+      navigationApproval: 'never_ask',
+      loginFillApproval: 'always_ask',
+      sitePermissionMode: 'ask',
+      askDownloadLocation: false,
+      showAgentCursor: false,
+    }),
+    before,
+  );
+  assert.deepEqual(prompts[0].detail.split('\n\n')[0].split('\n'), [
+    'Agent browser access: Off → On',
+    'Agent browser diagnostics: Off → On',
+    'Website opening approval: Always ask → Full site access',
+    'Agent login fill: Never use → Always ask',
+    'Site permissions: Block → Ask me',
+    'Ask where to save downloads: On → Off',
+  ]);
+  assert.equal(prompts.length, 1);
+});
+
+test('diagnostics require the existing opt-in without disabling ordinary page reads', async (t) => {
+  const { controller, responses } = await fixture(t);
+  for (const action of ['inspect', 'network', 'console'])
+    assert.throws(() => controller.assertAgentAccess(action), /Agent browser diagnostics are off/);
+  controller.assertAgentAccess('readPage');
+  responses.push(0);
+  await controller.update({ diagnosticsEnabled: true });
+  for (const action of ['inspect', 'network', 'console']) controller.assertAgentAccess(action);
+});
+
+test('clearing browser data requires explicit confirmation and preserves settings', async (t) => {
+  let cleared = 0;
+  const { controller, prompts, responses } = await fixture(t, {
+    clearBrowsingData: async () => cleared++,
+  });
+  const before = controller.snapshot();
+  assert.deepEqual(await controller.clearData(), before);
+  assert.equal(cleared, 0);
+  assert.equal(prompts[0].title, 'Clear browser data?');
+  assert.equal(prompts[0].defaultId, prompts[0].cancelId);
+  responses.push(0);
+  assert.deepEqual(await controller.clearData(), before);
+  assert.equal(cleared, 1);
+});
+
+test('site decisions persist per origin and permission, serialize with settings and revoke to ask', async (t) => {
+  const { controller, options } = await fixture(t);
+  const signal = new AbortController().signal;
+  await Promise.all([
+    controller.setSitePermissionDecision(
+      { origin: 'https://site.test', permissions: ['camera', 'notifications'], decision: 'allow' },
+      signal,
+    ),
+    controller.setSitePermissionDecision(
+      { origin: 'https://site.test', permissions: ['microphone'], decision: 'deny' },
+      signal,
+    ),
+    controller.update({ showAgentCursor: false }),
+  ]);
+  const restarted = createBrowserSettingsController(options);
+  await restarted.initialize();
+  assert.deepEqual(restarted.snapshot(), controller.snapshot());
+  assert.equal(restarted.getSitePermissionDecision('https://site.test', 'camera'), 'allow');
+  assert.equal(restarted.getSitePermissionDecision('https://site.test', 'microphone'), 'deny');
+  assert.equal(restarted.getSitePermissionDecision('https://other.test', 'camera'), 'ask');
+  await restarted.setSitePermissionDecision(
+    {
+      origin: 'https://site.test',
+      permissions: ['camera', 'notifications', 'microphone'],
+      decision: 'ask',
+    },
+    signal,
+  );
+  assert.deepEqual(restarted.snapshot().sitePermissionRules, []);
+  await restarted.update({ sitePermissionMode: 'block' });
+  assert.equal(restarted.getSitePermissionDecision('https://site.test', 'camera'), 'deny');
+  for (const selection of [
+    { origin: 'https://site.test/path', permissions: ['camera'] },
+    { origin: 'https://site.test', permissions: ['usb'] },
+  ]) {
+    assert.throws(() =>
+      restarted.setSitePermissionDecision({ ...selection, decision: 'allow' }, signal),
+    );
+  }
+});
+
+test('a site grant cancelled during a disk write never becomes active or replaces the file', async (t) => {
+  const { controller } = await fixture(t);
+  await controller.update({ showAgentCursor: false });
+  const saved = await fs.readFile(controller.settingsPath, 'utf8');
+  const writing = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const writeFile = fs.writeFile;
+  t.mock.method(fs, 'writeFile', async (...args) => {
+    await writeFile(...args);
+    writing.resolve();
+    await release.promise;
+  });
+  const abort = new AbortController();
+  const grant = controller.setSitePermissionDecision(
+    { origin: 'https://site.test', permissions: ['camera'], decision: 'allow' },
+    abort.signal,
+  );
+  const rejected = assert.rejects(grant, { name: 'AbortError' });
+  await writing.promise;
+  abort.abort();
+  release.resolve();
+  await rejected;
+  assert.deepEqual(controller.snapshot().sitePermissionRules, []);
+  assert.equal(await fs.readFile(controller.settingsPath, 'utf8'), saved);
+});
+
+test('teardown during rename reports the committed permission in the callback, memory and disk', async (t) => {
+  const { controller, options } = await fixture(t);
+  const renaming = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const rename = fs.rename;
+  t.mock.method(fs, 'rename', async (...args) => {
+    renaming.resolve();
+    await release.promise;
+    await rename(...args);
+  });
+  const frame = {
+    url: 'https://site.test/page',
+    origin: 'https://site.test',
+    processId: 1,
+    routingId: 1,
+    detached: false,
+    isDestroyed: () => false,
+  };
+  frame.framesInSubtree = [frame];
+  const contents = { mainFrame: frame, isDestroyed: () => false, getURL: () => frame.url };
+  const permissions = createBrowserPermissionController({
+    isNativeBrowserContents: (page) => page === contents,
+    isWorking: () => false,
+    getSiteDecision: controller.getSitePermissionDecision,
+    persistSiteDecision: controller.setSitePermissionDecision,
+    showPrompt: async () => ({ response: 0 }),
+  });
+  const granted = new Promise((resolve) =>
+    permissions.handleRequest(contents, 'geolocation', resolve, {
+      requestingUrl: frame.url,
+      isMainFrame: true,
+    }),
+  );
+  await renaming.promise;
+  permissions.revokeAll();
+  controller.cancelPendingUpdates();
+  release.resolve();
+  assert.equal(await granted, true);
+  assert.equal(controller.getSitePermissionDecision(frame.origin, 'geolocation'), 'allow');
+  const saved = JSON.parse(await fs.readFile(controller.settingsPath, 'utf8'));
+  assert.equal(saved.sitePermissions[0].geolocation, 'allow');
+  const restarted = createBrowserSettingsController(options);
+  await restarted.initialize();
+  assert.equal(restarted.getSitePermissionDecision(frame.origin, 'geolocation'), 'allow');
+});

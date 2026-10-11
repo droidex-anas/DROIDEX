@@ -25,6 +25,7 @@ const VIEWPORT_MODES = ['fit', 'desktop', 'laptop', 'tablet', 'mobile'];
 // guest bound to the session loads it again.
 function createNativeBrowserManager(options) {
   const nativeBrowsers = new Map();
+  let clearingBrowsingData = false;
   const loadWaiters = new Map(); // browserSessionId -> Set<(loaded) => void>
   const urls = createNativeBrowserUrlPolicy({
     appName: options.appName,
@@ -34,8 +35,11 @@ function createNativeBrowserManager(options) {
     app: options.app,
     appName: options.appName,
     safeStorage: options.safeStorage,
-    dialog: options.dialog,
-    getMainWindow: options.getMainWindow,
+    showPrompt: options.showPrompt,
+    systemPreferences: options.systemPreferences,
+    getSettings: options.getSettings,
+    findEntry: findNativeBrowserEntryForWebContents,
+    onPoint: (entry, point) => page.sendAgentPoint(entry, point),
   });
   const guests = createBrowserGuests({
     partition: BROWSER_PARTITION,
@@ -45,6 +49,7 @@ function createNativeBrowserManager(options) {
   const views = createNativeBrowserViewFactory({
     session: options.session,
     partition: BROWSER_PARTITION,
+    permissions: options.permissions,
     normalizeBrowserConsoleMessage,
     redactBrowserDiagnosticUrl,
     urls,
@@ -52,7 +57,6 @@ function createNativeBrowserManager(options) {
     emitLoaded: emitNativeBrowserLoaded,
     emitLoadFailed: emitNativeBrowserLoadFailed,
     applyDesignState: (entry) => page.applyDesignState(entry),
-    autofill: (contents) => credentials.autofill(contents),
     onCrashed: reportNativeBrowserCrash,
     onInput: options.onBrowserInput,
     listEntries: () => nativeBrowsers.values(),
@@ -60,8 +64,7 @@ function createNativeBrowserManager(options) {
   });
   const devTools = createBrowserDevTools({
     appName: options.appName,
-    dialog: options.dialog,
-    getMainWindow: options.getMainWindow,
+    showPrompt: options.showPrompt,
     isHostAppUrl: urls.isHostAppUrl,
     runWithWebContentsDebugger,
   });
@@ -76,6 +79,8 @@ function createNativeBrowserManager(options) {
     sendToRenderer: options.sendToRenderer,
     findEntryForContents: findNativeBrowserEntryForWebContents,
     nativeImage: options.nativeImage,
+    showPrompt: options.showPrompt,
+    getSettings: options.getSettings,
   });
 
   const preview = createBrowserPreview({
@@ -85,6 +90,8 @@ function createNativeBrowserManager(options) {
   });
 
   function ensureNativeBrowserEntry(browserSessionId) {
+    if (clearingBrowsingData)
+      throw new Error('Browser data is being cleared. Try again when it finishes.');
     browserSessionId = urls.normalizeNativeBrowserSessionId(browserSessionId);
     let entry = nativeBrowsers.get(browserSessionId);
     if (!entry) {
@@ -105,7 +112,8 @@ function createNativeBrowserManager(options) {
   // again: the URL if allowed, the size's name for the device it asks for.
   function reserveNativeBrowser(browserSessionId, host, savedUrl, savedMode) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
-    if (!entry.targetUrl && savedUrl && isAllowedUrl(savedUrl)) entry.targetUrl = savedUrl;
+    if (!entry.targetUrl && savedUrl && isAllowedUrl(savedUrl))
+      entry.targetUrl = urls.restorableUrlForEntry(entry, savedUrl) ?? null;
     if (!entry.viewportMode && VIEWPORT_MODES.includes(savedMode)) entry.viewportMode = savedMode;
     return guests.reserve(entry.browserSessionId, host);
   }
@@ -123,6 +131,8 @@ function createNativeBrowserManager(options) {
   function releaseNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    options.onGuestReleased?.(entry.contents);
+    options.permissions.revokeForContents(entry.contents);
     guests.release(entry.browserSessionId);
     entry.contents = null;
     preview.sync(entry.browserSessionId);
@@ -133,6 +143,7 @@ function createNativeBrowserManager(options) {
 
   function bindNativeBrowserGuest(browserSessionId, contents) {
     const entry = ensureNativeBrowserEntry(browserSessionId);
+    options.onGuestReleased?.(entry.contents);
     forgetLoad(entry);
     forgetLoadWaiters(entry);
     const restoreUrl = urls.restorableUrlForEntry(entry, entry.targetUrl);
@@ -210,10 +221,15 @@ function createNativeBrowserManager(options) {
   }
 
   // `before` runs right before the page moves, and throws when it should not.
+  // A new tab's first blank page is the home page. Only an open applies it, so
+  // a guest an agent is about to load never starts on the home page.
   async function openNativeBrowser(browserSessionId, url, before) {
-    const entry = await requireNativeBrowserGuest(browserSessionId);
+    const entry = ensureNativeBrowserEntry(browserSessionId);
+    const isFirstOpen = !entry.targetUrl;
+    await requireNativeBrowserGuest(browserSessionId);
     urls.rejectHostAppUrl(url);
     url = urls.normalizeNativeBrowserUrl(entry, url);
+    if (url === 'about:blank' && isFirstOpen) url = options.getSettings().homePage;
     urls.validateUrl(url);
     entry.failedRestoreUrl = null;
     // A guest still taking its device loads this page once it has it, in place
@@ -242,6 +258,8 @@ function createNativeBrowserManager(options) {
   function closeNativeBrowser(browserSessionId) {
     const entry = nativeBrowsers.get(urls.normalizeNativeBrowserSessionId(browserSessionId));
     if (!entry) return;
+    options.onGuestReleased?.(entry.contents);
+    options.permissions.revokeForContents(entry.contents);
     // A restore still waiting on the guest's setup never runs, and an action
     // still waiting on the page never reaches it.
     forgetLoad(entry);
@@ -393,15 +411,43 @@ function createNativeBrowserManager(options) {
   }
 
   function closeAllNativeBrowsers() {
+    options.permissions.revokeAll();
     preview.forget();
     for (const entry of nativeBrowsers.values()) {
+      options.onGuestReleased?.(entry.contents);
+      entry.contents = null;
       forgetLoad(entry);
       guests.release(entry.browserSessionId);
     }
     nativeBrowsers.clear();
   }
 
+  // Every page closes first, so none writes to storage while it is cleared;
+  // the renderer then mounts the pages it still shows on fresh guests.
+  async function clearBrowsingData() {
+    if (clearingBrowsingData) throw new Error('Browser data is already being cleared.');
+    clearingBrowsingData = true;
+    try {
+      options.cancelBrowserRequests();
+      const contents = [...nativeBrowsers.values()].map(liveContents).filter(Boolean);
+      closeAllNativeBrowsers();
+      for (const guest of contents) guest.close();
+      const browserSession = options.session.fromPartition(BROWSER_PARTITION);
+      await browserSession.clearStorageData({
+        storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'],
+      });
+      await browserSession.clearCache();
+      await browserSession.clearAuthCache();
+    } finally {
+      clearingBrowsingData = false;
+      options.sendToRenderer('native-browser-data-cleared');
+    }
+  }
+
   return {
+    clearBrowsingData,
+    openHome: (browserSessionId) =>
+      openNativeBrowser(browserSessionId, options.getSettings().homePage),
     reserve: reserveNativeBrowser,
     release: releaseNativeBrowser,
     handleWillAttach: guests.handleWillAttach,
@@ -435,6 +481,9 @@ function createNativeBrowserManager(options) {
     forgetWatchers: preview.forget,
     captureDesignSelection: page.captureDesignSelection,
     handleCredentialCapture: credentials.handleCapture,
+    canFillCredential: credentials.canFill,
+    listCredentials: credentials.list,
+    deleteCredential: credentials.deleteLogin,
     sessionIdForWebContents: guests.sessionIdFor,
     closeAll: closeAllNativeBrowsers,
     resourceCounts: () => {
