@@ -899,7 +899,7 @@ export default function ChatView({
           <div
             ref={scrollRef}
             onScroll={onScroll}
-            className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden ${
+            className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] ${
               besidePane ? 'scrollbar-while-scrolling' : ''
             }`}
             style={{

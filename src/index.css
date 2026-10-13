@@ -46,79 +46,63 @@
   filter: blur(0);
   transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0)) scale(1);
 }
-@media (prefers-reduced-motion: reduce) {
-  .inbox-mark,
-  .inbox-mark-control {
-    transition: none !important;
-  }
-}
 /* ModelIcon paints its own text colour; sidebar marks follow the row's tone. */
 .harness-mark > svg {
   color: inherit !important;
 }
 
 @layer base {
+  /* The Default dark theme exactly as applyTheme writes it (deriveThemeTokens),
+     so the frame before the bundle runs paints the same tokens. */
   :root {
     --bg: #0a0a0a;
     --surface: #111111;
     --elevated: #1e1e1e;
-    /* Input fields inside cards; dark fallback, applyTheme derives per theme. */
     --field: #1e1e1e;
-    /* One step above elevated: the lightest neutral, for selected/active rows so
-       the surface ramp reads bg < surface < elevated < active. */
-    --active: #292929;
-    /* Floating layers: the elevated rung on dark, near-white on light. */
+    --active: #2b2b2b;
     --raised: #1e1e1e;
-    --divider: #161616;
-    --divider-strong: #222222;
+    --sidebar: #111111;
+    --sidebar-blur: none;
+    --divider: rgba(237, 237, 237, 0.07);
+    --divider-strong: rgba(237, 237, 237, 0.12);
     --text: #ededed;
-    --text-secondary: #9a9a9a;
-    --text-muted: #5c5c5c;
-    /* Accent defaults to a theme-matched neutral (near-white in dark, near-black
-       in light) so the UI reads as a monochrome tonal scale rather than a fixed
-       hue. applyTheme overrides this from the active theme; users can still pick
-       a colored accent from Appearance. */
+    --text-secondary: #cfcfcf;
+    --text-muted: #bbbbbb;
     --accent: #f2f2f2;
-    /* Skill invocations stay blue, with applyTheme selecting the accessible
-       light-theme shade. */
+    --focus-ring: rgba(242, 242, 242, 0.4);
+    --link: #7cb2ff;
     --skill: #93c5fd;
-    /* Chip marks beside the skill label: rose Rosette, pink Visualize. */
     --skill-mark: #ed4772;
     --visualize-mark: #f472b6;
-    /* Links stay blue for the same reason skills do: the neutral accent is
-       near-white in dark themes, so accent-coloured links read as body text. */
-    --link: #7cb2ff;
-    /* The top reasoning level reads by hue for the same reason; applyTheme
-       selects the accessible light-theme shade. */
     --ultra: #bba6ff;
-    /* Fixed semantic status colors: success green, warning amber, and danger red
-       stay vivid across every theme (including monochrome) so diffs, status, and
-       callouts always read by hue. The neutral accent governs UI chrome only and
-       must never tint these signals. */
     --success: #4fae82;
+    --success-soft: rgba(79, 174, 130, 0.12);
     --warning: #d9913a;
-    /* Standard diff colors (GitHub-style), shared by every diff surface. */
-    --diff-add-fg: #3fb950;
-    --diff-add-bg: rgba(46, 160, 67, 0.15);
-    --diff-add-gutter: rgba(46, 160, 67, 0.28);
-    --diff-del-fg: #f85149;
-    --diff-del-bg: rgba(248, 81, 73, 0.15);
-    --diff-del-gutter: rgba(248, 81, 73, 0.28);
-    --diff-hunk-bg: rgba(56, 139, 253, 0.1);
-    --diff-hunk-fg: #79b8ff;
-    /* Fixed semantic danger color: stays red across accent/monochrome themes so
-       errors and P-level callouts always read as alarming, never accent-tinted. */
-    --danger: #cf5d54;
-    /* The sidebar update pill keeps this fixed blue in both schemes, for the same
-       reason the status colors do. */
+    --warning-soft: rgba(217, 145, 58, 0.12);
+    --danger: #d6766e;
+    --danger-soft: rgba(214, 118, 110, 0.12);
     --update: #005fc8;
     --update-hover: #0054b2;
+    --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.28);
+    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.35);
+    --diff-add-fg: #73c991;
+    --diff-add-bg: rgba(46, 160, 67, 0.14);
+    --diff-add-gutter: rgba(46, 160, 67, 0.26);
+    --diff-del-fg: #ff7b72;
+    --diff-del-bg: rgba(248, 81, 73, 0.14);
+    --diff-del-gutter: rgba(248, 81, 73, 0.26);
+    --diff-hunk-bg: rgba(56, 139, 253, 0.1);
+    --diff-hunk-fg: #79b8ff;
     --ui-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --ui-font-size: 14px;
     --ui-zoom: 1;
     --code-font-size: 12px;
-    --sidebar: var(--surface);
-    --sidebar-blur: none;
+    /* Theme-independent tokens. Brand colours belong to the mark, the app icon
+       and marketing surfaces, never to app chrome or state. */
+    --shadow-focus-update: 0 0 0 1.5px color-mix(in srgb, var(--update) 60%, transparent);
+    --brand-ink: #141310;
+    --brand-paper: #f2efe9;
+    --brand-orange: #ff4d00;
   }
 
   html,
@@ -178,23 +162,45 @@
     -webkit-app-region: no-drag;
   }
 
+  /* Keyboard focus only: a click never draws a ring. Utilities that style
+     their own focus state still win over this base rule. */
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 1.5px solid var(--focus-ring);
+  }
+
+  /* Scrollbars stay out of sight at rest: no track, and a 6px pill that shows
+     while its scroller moves (`data-scrolling`, set by useScrollingAttribute)
+     or is dragged. Only some scrollers report `data-scrolling` so far, so
+     hovering a scroller reveals its pill too; `scrollbar-while-scrolling`
+     opts out of that, for a scroller that ends mid-window (the chat beside an
+     open pane), where a bar would read as a divider the layout does not have. */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  /* Thumbs derive from the theme text color so they stay subtle in both dark
-     (dim white) and light (soft grey) instead of a fixed dark-mode grey. */
-  ::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--text) 16%, transparent);
-    border-radius: 3px;
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
-  ::-webkit-scrollbar-thumb:hover {
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  :hover:not(.scrollbar-while-scrolling)::-webkit-scrollbar-thumb,
+  [data-scrolling]::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text) 16%, transparent);
+  }
+
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
     background: color-mix(in srgb, var(--text) 26%, transparent);
   }
 
@@ -204,36 +210,6 @@
 
   .no-scrollbar::-webkit-scrollbar {
     display: none;
-  }
-
-  /* Horizontal overflow inside a message (code cards, tables) scrolls quietly:
-     the thumb shows while the reader is over the block, not as a permanent bar
-     under every wide snippet. */
-  .scrollbar-on-hover::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-
-  .scrollbar-on-hover:hover::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--text) 16%, transparent);
-  }
-
-  .scrollbar-on-hover::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--text) 26%, transparent);
-  }
-
-  /* A scroller that ends mid-window (the chat beside an open utility pane)
-     keeps its thumb out of sight until it moves: a permanent bar there reads as
-     a divider the layout does not have. `useScrollingAttribute` sets the flag. */
-  .scrollbar-while-scrolling::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-
-  .scrollbar-while-scrolling[data-scrolling]::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--text) 16%, transparent);
-  }
-
-  .scrollbar-while-scrolling::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--text) 26%, transparent);
   }
 
   /* A block wider than its frame fades at the edge it continues past, so it
@@ -424,10 +400,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .agent-cursor {
-      transition: opacity 200ms ease-out;
-    }
-
     .agent-cursor-tilt {
       animation: none;
     }
@@ -460,12 +432,6 @@
     .title-marquee {
       animation: none;
     }
-  }
-
-  /* DROIDEX brand pixel font (Silkscreen, loaded from Google Fonts in
-     index.html). Falls back to the mono stack when offline. */
-  .font-pixel {
-    font-family: 'Silkscreen', 'JetBrains Mono', monospace;
   }
 
   /* Gentle rise-in used to stagger the welcome screen elements. */
@@ -658,7 +624,16 @@
     .review-pane *,
     .files-workspace * {
       scroll-behavior: auto !important;
-      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* Reduced motion removes every transition; infinite animations opt out
+     individually above, so functional spinners keep turning. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
     }
   }
 
@@ -683,7 +658,7 @@
 
   .update-pill:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--update) 35%, transparent);
+    box-shadow: var(--shadow-focus-update);
   }
 
   .update-pill-icon {
@@ -720,14 +695,6 @@
   .update-pill[data-swapping='true'] .update-pill-label {
     opacity: 0;
     transition: opacity 90ms ease-in;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .update-pill,
-    .update-pill-icon,
-    .update-pill-label {
-      transition: none;
-    }
   }
 
   .pr-workspace-scroll {
@@ -912,15 +879,11 @@
      surface (e.g. the left sidebar) that should read as a rounded, elevated
      card rather than an edge-to-edge rectangle. */
   .droid-card {
-    @apply flex flex-col rounded-xl border border-divider bg-surface overflow-hidden;
-    /* Theme-derived (see applyTheme): strong on dark, soft and diffuse on light. */
-    box-shadow: var(--shadow-lg, 0 10px 40px rgba(0, 0, 0, 0.35));
+    @apply flex flex-col rounded-xl border border-divider bg-surface overflow-hidden shadow-lg;
   }
 
   .droid-tool-panel {
-    @apply overflow-hidden rounded-lg border border-divider bg-elevated/50;
-
-    box-shadow: var(--shadow-sm, 0 4px 16px rgba(0, 0, 0, 0.28));
+    @apply overflow-hidden rounded-lg border border-divider bg-elevated/50 shadow-sm;
   }
 
   .droid-button {
