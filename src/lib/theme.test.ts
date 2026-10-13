@@ -1,26 +1,31 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   BUILT_IN_THEMES,
+  CUSTOM_THEME_ID,
+  DEFAULT_THEME,
+  detectPresetId,
+  newCustomThemeId,
+  parseCustomThemes,
+  parseThemePresetImport,
+  removeCustomTheme,
+  resolveVariant,
+  upsertCustomTheme,
+  type ThemeColors,
+  type ThemePreset,
+} from './theme';
+import {
   SKILL_COLORS,
   ULTRA_COLORS,
   UPDATE_COLORS,
   contrastRatio,
-  CUSTOM_THEME_ID,
-  DEFAULT_THEME,
-  detectPresetId,
+  deriveThemeTokens,
   elevatedSurfaceColor,
-  newCustomThemeId,
-  parseCustomThemes,
-  parseThemePresetImport,
+  readableStatusColor,
   relativeLuminance,
-  removeCustomTheme,
-  resolveVariant,
-  statusColorOnLight,
   surfaceStep,
-  upsertCustomTheme,
-  type ThemePreset,
-} from './theme';
+} from './themeTokens';
 
 const EXAMPLE_CUSTOM: ThemePreset = {
   id: 'custom-test',
@@ -91,23 +96,84 @@ describe('BUILT_IN_THEMES', () => {
   });
 });
 
-describe('statusColorOnLight', () => {
-  it('keeps light status text at WCAG AA on every preset canvas', () => {
-    for (const preset of BUILT_IN_THEMES) {
-      for (const tuned of ['#1f7a4d', '#9a5a0f']) {
-        const shade = statusColorOnLight(tuned, preset.light.bg);
-        assert.ok(
-          contrastRatio(shade, preset.light.bg) >= 4.5,
-          `${preset.id} status ${shade} on ${preset.light.bg} should reach 4.5:1`,
-        );
+describe('readableStatusColor', () => {
+  it('returns a shade that already reads on its canvas untouched', () => {
+    const { bg } = DEFAULT_THEME.light;
+    assert.equal(readableStatusColor('#1f7a4d', bg), '#1f7a4d');
+    assert.equal(readableStatusColor('#9a5a0f', bg), '#9a5a0f');
+  });
+});
+
+const tokensFor = (colors: ThemeColors) =>
+  deriveThemeTokens({ ...colors, diffStyle: 'soft', translucentSidebar: false });
+
+const EVERY_VARIANT = BUILT_IN_THEMES.flatMap((preset) =>
+  (['light', 'dark'] as const).map((scheme) => ({
+    name: `${preset.id} ${scheme}`,
+    tokens: tokensFor(preset[scheme]),
+  })),
+);
+
+describe('deriveThemeTokens', () => {
+  it('keeps muted, secondary and status text at AA on every surface, active included', () => {
+    const surfaces = [
+      '--bg',
+      '--surface',
+      '--elevated',
+      '--field',
+      '--active',
+      '--raised',
+      '--sidebar',
+    ] as const;
+    const texts = [
+      '--text-secondary',
+      '--text-muted',
+      '--success',
+      '--warning',
+      '--danger',
+    ] as const;
+    for (const { name, tokens } of EVERY_VARIANT) {
+      for (const text of texts) {
+        for (const surface of surfaces) {
+          const ratio = contrastRatio(tokens[text], tokens[surface]);
+          assert.ok(ratio >= 4.5, `${name} ${text} on ${surface} is ${ratio.toFixed(2)}:1`);
+        }
       }
+      const onActive = (token: `--${string}`) => contrastRatio(tokens[token], tokens['--active']);
+      assert.ok(
+        onActive('--text') >= onActive('--text-secondary') &&
+          onActive('--text-secondary') > onActive('--text-muted'),
+        `${name} text tones should step down text > secondary > muted`,
+      );
     }
   });
 
-  it('returns a shade that already reads on its canvas untouched', () => {
-    const { bg } = DEFAULT_THEME.light;
-    assert.equal(statusColorOnLight('#1f7a4d', bg), '#1f7a4d');
-    assert.equal(statusColorOnLight('#9a5a0f', bg), '#9a5a0f');
+  it('draws dividers as translucent tints of the text colour', () => {
+    for (const { name, tokens } of EVERY_VARIANT) {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(tokens['--text'].slice(i, i + 2), 16));
+      const alphaOf = (token: `--${string}`) => {
+        const match = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(tokens[token]);
+        assert.ok(match, `${name} ${token} should be an rgba tint, got ${tokens[token]}`);
+        assert.deepEqual(match.slice(1, 4).map(Number), [r, g, b], `${name} ${token} tint`);
+        return Number(match[4]);
+      };
+      const divider = alphaOf('--divider');
+      const strong = alphaOf('--divider-strong');
+      assert.ok(divider > 0 && divider < strong && strong <= 0.2, `${name} divider alphas`);
+    }
+  });
+
+  it('derives the Default preset exactly as docs/design-system/tokens.json specifies', () => {
+    const spec = JSON.parse(
+      readFileSync(new URL('../../docs/design-system/tokens.json', import.meta.url), 'utf8'),
+    ) as { color: { tokens: { name: string; value: { dark: string; light: string } }[] } };
+    for (const scheme of ['dark', 'light'] as const) {
+      const tokens = tokensFor(DEFAULT_THEME[scheme]);
+      // Brand colours are fixed :root values in index.css, not theme-derived.
+      for (const { name, value } of spec.color.tokens.filter((t) => !t.name.startsWith('brand-'))) {
+        assert.equal(tokens[`--${name}`], value[scheme], `${scheme} ${name}`);
+      }
+    }
   });
 });
 
