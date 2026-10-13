@@ -39,4 +39,4 @@ A quiet, raised card for results, errors and updates. Colour lives only in its 1
 - Toast what the UI already shows. Copy shows a check in place, and a selected row is visibly selected.
 - Show more than 5 at once. The oldest is dismissed first.
 
-A working implementation, ready to move into the app, is in [Toast.reference.md](Toast.reference.md).
+The app's toaster is `src/components/ui/Toaster.tsx`. A fuller implementation with the remaining variants and behaviour, ready to move into the app, is in [Toast.reference.md](Toast.reference.md).

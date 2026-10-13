@@ -9,4 +9,4 @@ The context panel's one row language: a section header, rows of a 16px icon, a 1
 - **Divider**: 1px of the translucent `divider`, inset `space-3`, with `space-1.5` above and below.
 - The consumer provides the icon, label, meta, `onClick` and active state.
 
-Hand-written from `src/components/environment/primitives.tsx`.
+Implemented by `Row` and `SectionHeader` in `src/components/ui/Row.tsx`.
