@@ -23,7 +23,7 @@ import {
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
 import { useOpenAgent } from './agents/useOpenAgent';
-import { Row, SectionHeader, Divider } from './environment/primitives';
+import { Row, SectionHeader, Divider } from './ui/Row';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
 import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '../types/bridge';
@@ -166,7 +166,7 @@ export default function RightPanel() {
           remaining height change is the environment rows landing after mount. */}
       <div className="droid-card pointer-events-auto w-full max-h-full">
         {/* Header (no close button — the top toolbar button toggles this panel) */}
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-divider/70 pl-4 pr-3">
+        <div className="flex h-11 shrink-0 items-center justify-between bg-bg/40 pl-4 pr-3">
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-primary">Context</span>
           {working && <span className="shimmer-text text-[11px] font-medium">Working</span>}
         </div>

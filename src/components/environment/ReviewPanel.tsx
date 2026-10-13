@@ -6,18 +6,19 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
-  Columns2,
+  Columns,
+  Ellipsis,
   Eye,
-  GitCommitHorizontal,
+  GitCommit,
   GitPullRequest,
-  MoreHorizontal,
   RefreshCw,
   WrapText,
   X,
-} from 'lucide-react';
+} from '@droidex/icons';
 import { Copy, PanelLeft, Spinner } from '@droidex/icons';
-import { useDismiss } from '../ui/useDismiss';
 import { Popover } from '../ui/Popover';
+import { Menu } from '../ui/Menu';
+import { Row } from '../ui/Row';
 import { DiffFileSection } from './DiffFileSection';
 import { CommitSheet } from './CommitSheet';
 import { CreatePrSheet } from './CreatePrSheet';
@@ -42,51 +43,62 @@ function ScopeSelector() {
   const dispatch = useStoreDispatch();
   const reviewScope = useStoreSelector((state) => state.reviewScope);
   const [open, setOpen] = useState(false);
-  const ref = useDismiss(
-    open,
-    useCallback(() => {
-      setOpen(false);
-    }, []),
-  );
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const close = () => {
+    setOpen(false);
+  };
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={anchorRef}
+        type="button"
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className="flex items-center gap-1.5 rounded-md bg-elevated px-2.5 py-1.5 text-[12px] text-primary transition-colors hover:bg-elevated/70"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`flex h-control-md select-none items-center gap-1.5 rounded-md px-2.5 text-label text-primary transition-colors duration-150 ease-out ${
+          open ? 'bg-active' : 'bg-elevated hover:bg-active'
+        }`}
       >
-        <span>{reviewScopeLabel(reviewScope)}</span>
+        <span className="truncate">{reviewScopeLabel(reviewScope)}</span>
         <ChevronDown
-          className={`h-3 w-3 text-muted/60 transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+          className={`size-icon-sm shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-60 rounded-lg border border-divider bg-surface p-1.5 shadow-lg">
-          {REVIEW_SCOPE_OPTIONS.map((option) => (
-            <button
-              key={option.scope}
-              onClick={() => {
-                dispatch({ type: 'SET_REVIEW_SCOPE', scope: option.scope });
-                setOpen(false);
-              }}
-              className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 ${
-                option.scope === reviewScope ? 'bg-elevated/50' : ''
-              }`}
-            >
-              <span className="text-[13px] text-primary">{option.label}</span>
-              <span className="text-[11px] text-muted">{option.hint}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+      <Menu
+        open={open}
+        onClose={close}
+        anchorRef={anchorRef}
+        label="Review scope"
+        placement="bottom-start"
+        width={240}
+      >
+        {REVIEW_SCOPE_OPTIONS.map((option) => (
+          <Menu.Item
+            key={option.scope}
+            onSelect={() => {
+              dispatch({ type: 'SET_REVIEW_SCOPE', scope: option.scope });
+            }}
+          >
+            <span className="flex min-w-0 flex-1 flex-col py-0.5">
+              <span className="truncate text-body text-primary">{option.label}</span>
+              <span className="truncate text-caption text-muted">{option.hint}</span>
+            </span>
+            {option.scope === reviewScope && (
+              <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
+            )}
+          </Menu.Item>
+        ))}
+      </Menu>
+    </>
   );
 }
 
 const VIEW_TOGGLE_ITEMS = [
   { mode: 'unified' as const, icon: AlignLeft, title: 'Unified' },
-  { mode: 'split' as const, icon: Columns2, title: 'Split' },
+  { mode: 'split' as const, icon: Columns, title: 'Split' },
 ];
 
 function ViewToggle() {
@@ -101,11 +113,13 @@ function ViewToggle() {
             dispatch({ type: 'SET_DIFF_VIEW', mode });
           }}
           title={title}
+          aria-label={title}
+          aria-pressed={diffView === mode}
           className={`rounded-sm p-1.5 transition-colors ${
-            diffView === mode ? 'bg-bg text-primary' : 'text-muted hover:text-primary'
+            diffView === mode ? 'bg-active text-primary' : 'text-muted hover:text-primary'
           }`}
         >
-          <Icon className="h-3.5 w-3.5" />
+          <Icon className="size-icon-sm" />
         </button>
       ))}
     </div>
@@ -119,6 +133,7 @@ function ToolbarButton({
   active,
   onClick,
   innerRef,
+  ...rest
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label?: string;
@@ -126,47 +141,21 @@ function ToolbarButton({
   active?: boolean;
   onClick: () => void;
   innerRef?: RefObject<HTMLButtonElement | null>;
-}) {
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       ref={innerRef}
       onClick={onClick}
       title={title}
-      className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] transition-colors ${
-        active ? 'bg-active text-primary' : 'text-muted hover:bg-elevated/60 hover:text-primary'
+      aria-label={label ? undefined : title}
+      aria-pressed={active}
+      {...rest}
+      className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-label transition-colors duration-150 ease-out ${
+        active ? 'bg-active text-primary' : 'text-muted hover:bg-elevated hover:text-primary'
       }`}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <Icon className="size-icon-sm shrink-0" />
       {label && <span className="review-toolbar-label">{label}</span>}
-    </button>
-  );
-}
-
-function MenuItem({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  active?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
-      <span className="flex-1 truncate">{label}</span>
-      {active && (
-        <Check
-          className="h-3.5 w-3.5 shrink-0"
-          style={{ color: 'var(--accent)' }}
-          strokeWidth={3}
-        />
-      )}
     </button>
   );
 }
@@ -187,29 +176,30 @@ const FileRow = memo(function FileRow({
   const dir = slash >= 0 ? display.slice(0, slash + 1) : '';
   const name = slash >= 0 ? display.slice(slash + 1) : display;
   return (
-    <button
+    <Row
       onClick={() => {
         onSelect(file.path);
       }}
+      active={selected}
       title={file.path}
-      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${
-        selected ? 'bg-active' : 'hover:bg-elevated/50'
-      }`}
-    >
-      <FileTypeIcon filename={file.path} className="h-3.5 w-3.5" />
-      <span className="min-w-0 flex-1 truncate text-[13px]">
-        {dir && <span className="text-muted/70">{dir}</span>}
-        <span className="text-primary">{name}</span>
-      </span>
-      <span className="shrink-0 font-mono text-[11px]">
-        {file.additions > 0 && (
-          <span style={{ color: 'var(--diff-add-fg)' }}>+{file.additions}</span>
-        )}{' '}
-        {file.deletions > 0 && (
-          <span style={{ color: 'var(--diff-del-fg)' }}>-{file.deletions}</span>
-        )}
-      </span>
-    </button>
+      icon={<FileTypeIcon filename={file.path} className="size-icon-sm" />}
+      label={
+        <>
+          {dir && <span className="text-muted/70">{dir}</span>}
+          <span className="text-primary">{name}</span>
+        </>
+      }
+      trailing={
+        <span className="shrink-0 font-mono text-code-sm">
+          {file.additions > 0 && (
+            <span style={{ color: 'var(--diff-add-fg)' }}>+{file.additions}</span>
+          )}{' '}
+          {file.deletions > 0 && (
+            <span style={{ color: 'var(--diff-del-fg)' }}>-{file.deletions}</span>
+          )}
+        </span>
+      }
+    />
   );
 });
 
@@ -230,12 +220,12 @@ function DetachedFilePreview({ path, content }: { path: string; content: string 
       {MARKDOWN_EXTENSIONS.has(ext) ? (
         <Markdown allowGeneratedContent={false}>{text}</Markdown>
       ) : (
-        <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-secondary">
+        <pre className="whitespace-pre-wrap break-words font-mono text-code text-secondary">
           {text}
         </pre>
       )}
       {truncated && (
-        <div className="mt-2 text-[11px] text-muted">
+        <div className="mt-2 text-caption text-muted">
           Preview truncated at {Math.round(PREVIEW_CHAR_LIMIT / 1000)}k characters
         </div>
       )}
@@ -261,12 +251,12 @@ function DetachedFocusPane({
       : 'No diff in this scope, showing the file on disk';
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-divider bg-bg/40 px-3">
-        <FileTypeIcon filename={path} className="h-3.5 w-3.5 shrink-0" />
-        <span className="shrink-0 text-[12px] font-medium text-secondary">{name}</span>
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted">{note}</span>
+      <div className="flex h-9 shrink-0 items-center gap-2 bg-surface px-3">
+        <FileTypeIcon filename={path} className="size-icon-sm shrink-0" />
+        <span className="shrink-0 text-label text-secondary">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-caption text-muted">{note}</span>
         {focus.kind === 'change' && (
-          <span className="shrink-0 text-[11px] tabular-nums">
+          <span className="shrink-0 text-caption tabular-nums">
             <span style={{ color: 'var(--diff-add-fg)' }}>+{focus.change.added}</span>{' '}
             <span style={{ color: 'var(--diff-del-fg)' }}>−{focus.change.removed}</span>
           </span>
@@ -275,9 +265,10 @@ function DetachedFocusPane({
           type="button"
           onClick={onClose}
           title="Close"
-          className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+          aria-label="Close"
+          className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="size-icon-sm" />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
@@ -286,8 +277,8 @@ function DetachedFocusPane({
             <DiffLines ops={focus.change.ops} />
           </div>
         ) : focus.content === null ? (
-          <div className="flex h-full items-center justify-center gap-2 text-[13px] text-muted">
-            <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" /> Loading…
+          <div className="flex h-full items-center justify-center gap-2 text-body text-muted">
+            <Spinner className="size-icon-md motion-safe:animate-spin-slow" /> Loading…
           </div>
         ) : (
           <DetachedFilePreview path={focus.path} content={focus.content} />
@@ -594,7 +585,6 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
   ]);
 
   const copyPatch = () => {
-    setMoreOpen(false);
     // at()/the explicit undefined branch keep the empty-list and
     // not-yet-loaded cases typed honestly (index lookups claim always-present).
     const path = activePath ?? review.files.at(0)?.path ?? null;
@@ -612,11 +602,11 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
 
   return (
     <div ref={rootRef} className="review-pane flex h-full flex-col bg-bg">
-      <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-divider px-2">
+      <div className="flex h-9 shrink-0 items-center gap-1.5 bg-surface px-2">
         <ScopeSelector />
         <div className="flex-1" />
         <ToolbarButton
-          icon={GitCommitHorizontal}
+          icon={GitCommit}
           label="Commit"
           title="Commit changes"
           innerRef={commitRef}
@@ -652,13 +642,14 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
           }}
         />
         <ToolbarButton
-          icon={MoreHorizontal}
+          icon={Ellipsis}
           title="More options"
           innerRef={moreRef}
           active={moreOpen}
           onClick={() => {
             setMoreOpen((v) => !v);
           }}
+          aria-haspopup="menu"
         />
         {onClose && (
           <button
@@ -667,9 +658,10 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
               onClose();
             }}
             title="Close review"
-            className="rounded-sm p-1.5 text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+            aria-label="Close review"
+            className="rounded-sm p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
           >
-            <X className="h-4 w-4" />
+            <X className="size-icon-md" />
           </button>
         )}
 
@@ -714,7 +706,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
             }}
           />
         </Popover>
-        <Popover
+        <Menu
           open={moreOpen}
           onClose={() => {
             setMoreOpen(false);
@@ -724,34 +716,41 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
           label="Review options"
           width={224}
         >
-          <div className="p-1.5">
-            <MenuItem
-              icon={RefreshCw}
-              label="Refresh"
-              onClick={() => {
-                setMoreOpen(false);
-                review.refresh();
-              }}
-            />
-            <MenuItem
-              icon={WrapText}
-              label="Word wrap"
-              active={wrap}
-              onClick={() => {
-                setWrap((v) => !v);
-              }}
-            />
-            <MenuItem
-              icon={Eye}
-              label="Hide whitespace"
-              active={hideWhitespace}
-              onClick={() => {
-                setHideWhitespace((v) => !v);
-              }}
-            />
-            <MenuItem icon={Copy} label="Copy patch" onClick={copyPatch} />
-          </div>
-        </Popover>
+          <Menu.Item
+            icon={RefreshCw}
+            onSelect={() => {
+              review.refresh();
+            }}
+          >
+            <span className="flex-1 truncate">Refresh</span>
+          </Menu.Item>
+          <Menu.Item
+            icon={WrapText}
+            onSelect={() => {
+              setWrap((v) => !v);
+            }}
+          >
+            <span className="flex-1 truncate">Word wrap</span>
+            {wrap && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
+          </Menu.Item>
+          <Menu.Item
+            icon={Eye}
+            onSelect={() => {
+              setHideWhitespace((v) => !v);
+            }}
+          >
+            <span className="flex-1 truncate">Hide whitespace</span>
+            {hideWhitespace && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
+          </Menu.Item>
+          <Menu.Item
+            icon={Copy}
+            onSelect={() => {
+              copyPatch();
+            }}
+          >
+            <span className="flex-1 truncate">Copy patch</span>
+          </Menu.Item>
+        </Menu>
       </div>
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -760,7 +759,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
             <motion.button
               type="button"
               aria-label="Close changed files"
-              className="absolute inset-0 z-20 bg-black/20"
+              className="absolute inset-0 z-20 bg-bg/60"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -773,13 +772,13 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
           {filesOpen && (
             <motion.nav
               aria-label="Changed files"
-              className="review-file-sidebar flex shrink-0 flex-col border-r border-divider"
+              className="review-file-sidebar flex shrink-0 flex-col bg-surface"
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="flex items-center justify-between px-2.5 py-1.5 text-[11px] text-muted">
+              <div className="flex items-center justify-between px-3 py-1.5 text-caption text-muted">
                 <span>
                   {review.files.length} file{review.files.length === 1 ? '' : 's'}
                 </span>
@@ -788,9 +787,9 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
                   <span style={{ color: 'var(--diff-del-fg)' }}>-{totalDel}</span>
                 </span>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
                 {review.files.length === 0 ? (
-                  <div className="px-2.5 py-3 text-[12px] text-muted">
+                  <div className="px-3 py-3 text-body text-muted">
                     {review.loadingList ? 'Loading…' : 'No changes in this scope'}
                   </div>
                 ) : (
@@ -809,7 +808,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
                         onClick={() => {
                           setRenderLimit((cur) => cur + FILE_RENDER_CAP);
                         }}
-                        className="w-full px-2.5 py-2 text-left text-[12px] text-accent transition-colors hover:bg-elevated/50"
+                        className="w-full rounded-md px-3 py-2 text-left text-body text-accent transition-colors hover:bg-elevated"
                       >
                         Show {Math.min(FILE_RENDER_CAP, review.files.length - renderLimit)} more
                         files…
@@ -832,10 +831,10 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
               }}
             />
           ) : review.files.length === 0 ? (
-            <div className="flex h-full items-center justify-center gap-2 text-[13px] text-muted">
+            <div className="flex h-full items-center justify-center gap-2 text-body text-muted">
               {review.loadingList ? (
                 <>
-                  <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" /> Loading…
+                  <Spinner className="size-icon-md motion-safe:animate-spin-slow" /> Loading…
                 </>
               ) : (
                 'No changes in this scope'
@@ -862,7 +861,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
                   onClick={() => {
                     setRenderLimit((cur) => cur + FILE_RENDER_CAP);
                   }}
-                  className="w-full px-3 py-2.5 text-left text-[13px] text-accent transition-colors hover:bg-elevated/40"
+                  className="w-full px-3 py-2.5 text-left text-body text-accent transition-colors hover:bg-elevated"
                 >
                   Show {Math.min(FILE_RENDER_CAP, review.files.length - renderLimit)} more files…
                 </button>
