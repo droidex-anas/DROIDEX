@@ -42,10 +42,14 @@ export function Popover({
   className,
   style,
   onKeyDown,
+  onMouseDown,
   children,
   ...rest
 }: PopoverProps) {
-  const panelRef = useDismiss(open, onClose, anchorRef);
+  // React routes a press inside a nested layer (a menu opened from this panel,
+  // portaled beside it) through this panel too, so it does not dismiss it.
+  const insidePressRef = useRef<Event | null>(null);
+  const panelRef = useDismiss(open, onClose, anchorRef, insidePressRef);
   const mergedRef = useMergeRefs([panelRef, ref]);
   const { setFloating, floatingStyles, side, isPositioned, anchorHidden } = usePopoverPosition({
     open,
@@ -75,9 +79,12 @@ export function Popover({
     };
     track();
     // Nothing inside took focus (an autoFocus input, a menu): move it in so
-    // the first Tab is trapped rather than walking out of the portal.
+    // the first Tab is trapped rather than walking out of the portal. Items
+    // out of the tab order (a menu's) wait for the keyboard or pointer.
     if (!focusInsideRef.current) {
-      const first = panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      const first = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).find(
+        (element) => element.tabIndex >= 0,
+      );
       (first ?? panel).focus({ preventScroll: true });
       track();
     }
@@ -109,6 +116,10 @@ export function Popover({
         data-side={side}
         {...rest}
         onKeyDown={handleKeyDown}
+        onMouseDown={(event) => {
+          onMouseDown?.(event);
+          insidePressRef.current = event.nativeEvent;
+        }}
         style={{ ...style, width }}
         className={cn(
           'floating-layer flex flex-col overflow-hidden rounded-lg bg-raised shadow-lg',

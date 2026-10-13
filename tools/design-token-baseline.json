@@ -28,9 +28,6 @@
     "arbitrary-value": 12,
     "border-width": 1
   },
-  "src/components/AutonomySelector.tsx": {
-    "arbitrary-value": 8
-  },
   "src/components/ChatView.tsx": {
     "arbitrary-value": 17,
     "focus-ring": 2,
@@ -44,9 +41,6 @@
   },
   "src/components/CommandPalette.tsx": {
     "arbitrary-value": 1
-  },
-  "src/components/ContextWindowMenu.tsx": {
-    "arbitrary-value": 5
   },
   "src/components/ConversationList.tsx": {
     "arbitrary-value": 2
@@ -133,12 +127,6 @@
   },
   "src/components/ModelCategoryFilter.tsx": {
     "arbitrary-value": 2
-  },
-  "src/components/ModelSelectorPopover.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/components/ModelSliderPopover.tsx": {
-    "arbitrary-value": 4
   },
   "src/components/NotesSection.tsx": {
     "arbitrary-value": 16,
@@ -347,17 +335,6 @@
     "arbitrary-value": 4
   },
   "src/components/chat.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/components/composer/AddMenu.tsx": {
-    "arbitrary-value": 6,
-    "uppercase": 1
-  },
-  "src/components/composer/SelectionMenu.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 1
-  },
-  "src/components/effortSlider/EffortHelpCard.tsx": {
     "arbitrary-value": 3
   },
   "src/components/environment/BranchMenu.tsx": {

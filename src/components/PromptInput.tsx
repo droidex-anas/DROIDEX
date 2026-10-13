@@ -9,7 +9,6 @@ import {
   useCallback,
   type SetStateAction,
 } from 'react';
-import { AnimatePresence } from 'framer-motion';
 import {
   shallowEqual,
   useStoreApi,
@@ -149,6 +148,7 @@ import {
   supportsSpecMode,
 } from '../features/providers/providerIdentity';
 import AutonomySelector from './AutonomySelector';
+import { Popover } from './ui/Popover';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
   buildVisibleChildSettingsTarget,
@@ -363,6 +363,7 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
+  const modelChipRef = useRef<HTMLButtonElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
@@ -427,7 +428,6 @@ export default function PromptInput({
       composerRevisionRef.current += 1;
     }, []),
   );
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
   // Skills and plugins live on the draft's first line; attachments keep their own
   // row above it. Backspace on an empty draft unwinds both.
   const hasAttachmentChips =
@@ -2538,8 +2538,6 @@ export default function PromptInput({
               It wraps on narrow windows rather than pushing controls offscreen. */}
           <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-1">
             <AddMenu
-              open={addMenuOpen}
-              onOpenChange={setAddMenuOpen}
               visualizeSelected={visualizeSelected}
               // Both rows hand focus to the draft, which is where the prompt
               // continues once the menu has added to it.
@@ -2572,7 +2570,7 @@ export default function PromptInput({
               </span>
             ) : activeSession ? (
               <AutonomySelector
-                align="start"
+                placement="top-start"
                 scope="session"
                 provider={activeSession.provider}
                 value={state.pendingAutonomy?.autonomy ?? activeSession.autonomy}
@@ -2594,7 +2592,7 @@ export default function PromptInput({
               />
             ) : (
               <AutonomySelector
-                align="start"
+                placement="top-start"
                 scope="draft"
                 provider={composerProvider}
                 value={draftAutonomy}
@@ -2609,122 +2607,119 @@ export default function PromptInput({
                 right edge instead of dropping it to the row start. flex-auto
                 (not flex-1) so its content width is what triggers the wrap. */}
             <div className="flex min-w-0 flex-auto items-center justify-end gap-1">
-              <div className="relative shrink-0">
-                <button
-                  onPointerEnter={() => {
-                    void (state.modelSelectorStyle === 'slider'
-                      ? loadModelSliderPopover()
-                      : loadModelSelectorPopover());
-                  }}
-                  onClick={() => {
-                    setModelsOpen((v) => !v);
-                  }}
-                  className={`flex h-control-sm max-w-52 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${
-                    modelsOpen
-                      ? 'bg-active text-primary'
-                      : 'text-secondary hover:bg-active/60 hover:text-primary'
-                  }`}
-                  title={
-                    childSettingsTarget
-                      ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
-                      : missionPreview
-                        ? 'Configure orchestrator / worker / validator models'
-                        : 'Select chat model'
-                  }
-                >
-                  {childSettingsTarget ? (
-                    <>
-                      <ModelIcon
-                        provider={providerOf(
-                          state.models.find((model) => model.id === childSettingsTarget.modelId),
-                          childSettingsTarget.modelId,
-                        )}
-                        size={14}
-                      />
-                      <span className="truncate">{childSettingsTarget.label}</span>
-                    </>
-                  ) : missionPreview ? (
-                    <>
-                      <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-                      <span>Models</span>
-                    </>
-                  ) : (
-                    <>
-                      <ModelIcon
-                        provider={resolveModelProvider(
-                          chipModel,
-                          primaryModelId,
-                          PROVIDER_MARKS[composerProvider],
-                        )}
-                        size={14}
-                      />
-                      {isDroidProxyModel(chipModel, primaryModelId) && (
-                        <span className="shrink-0 flex items-center">
-                          <DroidProxyMark size={12} />
-                        </span>
+              <button
+                ref={modelChipRef}
+                onPointerEnter={() => {
+                  void (state.modelSelectorStyle === 'slider'
+                    ? loadModelSliderPopover()
+                    : loadModelSelectorPopover());
+                }}
+                onClick={() => {
+                  setModelsOpen((v) => !v);
+                }}
+                className={`flex h-control-sm max-w-52 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${
+                  modelsOpen
+                    ? 'bg-active text-primary'
+                    : 'text-secondary hover:bg-active/60 hover:text-primary'
+                }`}
+                title={
+                  childSettingsTarget
+                    ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
+                    : missionPreview
+                      ? 'Configure orchestrator / worker / validator models'
+                      : 'Select chat model'
+                }
+              >
+                {childSettingsTarget ? (
+                  <>
+                    <ModelIcon
+                      provider={providerOf(
+                        state.models.find((model) => model.id === childSettingsTarget.modelId),
+                        childSettingsTarget.modelId,
                       )}
-                      <span className="truncate font-medium text-primary">
-                        {shortModelName(selectedModelLabel)}
+                      size={14}
+                    />
+                    <span className="truncate">{childSettingsTarget.label}</span>
+                  </>
+                ) : missionPreview ? (
+                  <>
+                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                    <span>Models</span>
+                  </>
+                ) : (
+                  <>
+                    <ModelIcon
+                      provider={resolveModelProvider(
+                        chipModel,
+                        primaryModelId,
+                        PROVIDER_MARKS[composerProvider],
+                      )}
+                      size={14}
+                    />
+                    {isDroidProxyModel(chipModel, primaryModelId) && (
+                      <span className="shrink-0 flex items-center">
+                        <DroidProxyMark size={12} />
                       </span>
-                      {fastMode && offersFastMode(composerProvider) && (
-                        <Zap
-                          size={11}
-                          fill="currentColor"
-                          className="shrink-0 text-accent"
-                          aria-label={`Fast mode: ${FAST_MODE_HINT}`}
-                        />
-                      )}
-                      {primaryReasoning && (
-                        <span
-                          className={`shrink-0 capitalize ${
-                            primaryReasoning === 'ultra' ? 'text-ultra' : 'text-muted'
-                          }`}
-                          title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
-                        >
-                          {reasoningEffortLabel(primaryReasoning, composerProvider)}
-                        </span>
-                      )}
-                      {contextWindowTokens !== undefined &&
-                        offersContextWindow(composerProvider) && (
-                          <span
-                            className="shrink-0 text-muted"
-                            title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
-                          >
-                            {primaryReasoning ? '· ' : ''}
-                            {contextWindowLabel(contextWindowTokens)}
-                          </span>
-                        )}
-                    </>
-                  )}
-                </button>
+                    )}
+                    <span className="truncate font-medium text-primary">
+                      {shortModelName(selectedModelLabel)}
+                    </span>
+                    {fastMode && offersFastMode(composerProvider) && (
+                      <Zap
+                        size={11}
+                        fill="currentColor"
+                        className="shrink-0 text-accent"
+                        aria-label={`Fast mode: ${FAST_MODE_HINT}`}
+                      />
+                    )}
+                    {primaryReasoning && (
+                      <span
+                        className={`shrink-0 capitalize ${
+                          primaryReasoning === 'ultra' ? 'text-ultra' : 'text-muted'
+                        }`}
+                        title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
+                      >
+                        {reasoningEffortLabel(primaryReasoning, composerProvider)}
+                      </span>
+                    )}
+                    {contextWindowTokens !== undefined && offersContextWindow(composerProvider) && (
+                      <span
+                        className="shrink-0 text-muted"
+                        title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
+                      >
+                        {primaryReasoning ? '· ' : ''}
+                        {contextWindowLabel(contextWindowTokens)}
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
 
-                <AnimatePresence>
-                  <Suspense fallback={null}>
-                    {modelsOpen &&
-                      // The slider style is a chat-composer picker; Mission Control
-                      // and exact-child editors keep the classic popover's semantics.
-                      (state.modelSelectorStyle === 'slider' &&
-                      !missionPreview &&
-                      !childSettingsTarget ? (
-                        <ModelSliderPopover
-                          appSessionId={appSessionId}
-                          onClose={() => {
-                            setModelsOpen(false);
-                          }}
-                        />
-                      ) : (
-                        <ModelSelectorPopover
-                          appSessionId={appSessionId}
-                          onClose={() => {
-                            setModelsOpen(false);
-                          }}
-                          singleAgent={!missionPreview}
-                          childTarget={childSettingsTarget}
-                        />
-                      ))}
-                  </Suspense>
-                </AnimatePresence>
-              </div>
+              <Popover
+                open={modelsOpen}
+                onClose={() => {
+                  setModelsOpen(false);
+                }}
+                anchorRef={modelChipRef}
+                label={missionPreview ? 'Models' : 'Model'}
+                placement="top-end"
+              >
+                <Suspense fallback={null}>
+                  {/* The slider style is a chat-composer picker; Mission Control
+                        and exact-child editors keep the classic popover's semantics. */}
+                  {state.modelSelectorStyle === 'slider' &&
+                  !missionPreview &&
+                  !childSettingsTarget ? (
+                    <ModelSliderPopover appSessionId={appSessionId} />
+                  ) : (
+                    <ModelSelectorPopover
+                      appSessionId={appSessionId}
+                      singleAgent={!missionPreview}
+                      childTarget={childSettingsTarget}
+                    />
+                  )}
+                </Suspense>
+              </Popover>
 
               <div ref={scheduleAnchorRef} className="shrink-0">
                 {voiceHere ? (

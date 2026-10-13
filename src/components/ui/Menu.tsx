@@ -19,7 +19,8 @@ const TYPEAHEAD_RESET_MS = 500;
 // The select blink: highlight off, then on, then close (feel.md).
 const SELECT_BLINK_MS = 90;
 
-const ENABLED_ITEM = '[role="menuitem"]:not([aria-disabled="true"])';
+// Items may pass role="menuitemcheckbox" or "menuitemradio" with aria-checked.
+const ENABLED_ITEM = '[role^="menuitem"]:not([aria-disabled="true"])';
 
 interface MenuContextValue {
   listRef: RefObject<HTMLDivElement | null>;
