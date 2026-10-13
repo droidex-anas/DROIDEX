@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
 import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
-import { pushEscapeLayer } from '../../components/environment/usePopover';
+import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { MessageBody } from '../../components/MessageBody';
 import InlineInteractions from '../../components/InlineInteractions';
 import { SpokenMark } from '../../components/transcript/primitives';
@@ -104,7 +104,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
       animate={{ opacity: 1, scale: 1 }}
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 1.01 }}
       transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed inset-0 z-[1200] flex flex-col bg-bg text-primary"
+      className="fixed inset-0 z-dialog flex flex-col bg-bg text-primary"
     >
       {/* Nothing is titled here: the orb is the subject. The row exists so the
           window can be dragged and so the macOS controls have their space. */}

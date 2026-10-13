@@ -16,8 +16,8 @@ import {
   X,
 } from 'lucide-react';
 import { Copy, PanelLeft, Spinner } from '@droidex/icons';
-import { usePopover } from './usePopover';
-import { Popover } from './Popover';
+import { useDismiss } from '../ui/useDismiss';
+import { Popover } from '../ui/Popover';
 import { DiffFileSection } from './DiffFileSection';
 import { CommitSheet } from './CommitSheet';
 import { CreatePrSheet } from './CreatePrSheet';
@@ -42,7 +42,7 @@ function ScopeSelector() {
   const dispatch = useStoreDispatch();
   const reviewScope = useStoreSelector((state) => state.reviewScope);
   const [open, setOpen] = useState(false);
-  const ref = usePopover(
+  const ref = useDismiss(
     open,
     useCallback(() => {
       setOpen(false);
@@ -679,6 +679,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
             setCommitOpen(false);
           }}
           anchorRef={commitRef}
+          placement="bottom-end"
           label="Commit changes"
           width={320}
         >
@@ -696,6 +697,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
             setPrOpen(false);
           }}
           anchorRef={prRef}
+          placement="bottom-end"
           label="Create pull request"
           width={340}
         >
@@ -718,6 +720,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
             setMoreOpen(false);
           }}
           anchorRef={moreRef}
+          placement="bottom-end"
           label="Review options"
           width={224}
         >

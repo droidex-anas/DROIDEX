@@ -7,7 +7,7 @@ import { Moon, Sun, X } from 'lucide-react';
 import { useStoreSelector } from '../hooks/useStore';
 import { applyTheme, resolveScheme, type ThemeColors } from '../lib/theme';
 import { ColorField } from './ColorPicker';
-import { pushEscapeLayer } from './environment/usePopover';
+import { pushEscapeLayer } from './ui/escapeStack';
 import { MiniAppFrame, ThemeSwatches } from './ThemePreview';
 
 export interface ThemeDraft {
@@ -67,7 +67,7 @@ export function ThemeEditor({
     };
   }, []);
 
-  // Cancel is an Escape layer (shared LIFO stack, see usePopover.ts): color
+  // Cancel is an Escape layer (shared LIFO stack, see ui/escapeStack.ts): color
   // popovers opened from this dialog push above it, so Escape always closes
   // only the innermost layer instead of discarding every edit at once. The
   // layer is pushed ONCE with a stable callback reading the latest onCancel —

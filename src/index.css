@@ -173,7 +173,7 @@
   }
 
   /* Scrollbars stay out of sight at rest: no track, and a 6px pill that shows
-     while its scroller moves (`data-scrolling`, set by useScrollingAttribute)
+     while its scroller moves (`data-scrolling`, set by useScrolling)
      or is dragged. Only some scrollers report `data-scrolling` so far, so
      hovering a scroller reveals its pill too; `scrollbar-while-scrolling`
      opts out of that, for a scroller that ends mid-window (the chat beside an
@@ -563,29 +563,6 @@
     }
   }
 
-  /* Toast TTL hairline: drains across the toast's lifetime (duration is set
-     inline per toast). Hovering the toast pauses the drain. */
-  @keyframes droid-toast-ttl {
-    from {
-      transform: scaleX(1);
-    }
-    to {
-      transform: scaleX(0);
-    }
-  }
-
-  .droid-toast-ttl {
-    animation-name: droid-toast-ttl;
-    animation-timing-function: linear;
-    animation-fill-mode: forwards;
-    opacity: 0.45;
-  }
-
-  .group:hover .droid-toast-ttl,
-  .group:focus-within .droid-toast-ttl {
-    animation-play-state: paused;
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .droid-rise {
       animation: none !important;
@@ -696,6 +673,56 @@
   .update-pill[data-swapping='true'] .update-pill-label {
     opacity: 0;
     transition: opacity 90ms ease-in;
+  }
+
+  /* A floating layer's content box (ui/Popover, ui/Tooltip). It portals to
+     <body>, outside #root's zoom, so it applies the UI zoom itself, and its
+     max height converts the room usePopoverPosition measured in screen
+     pixels into its own zoomed units. */
+  .floating-layer {
+    zoom: var(--ui-zoom);
+    max-height: calc(var(--available-height, 100vh) / var(--ui-zoom));
+  }
+
+  /* Enter from the side the layer actually landed on (data-side): fade in
+     while rising 4px away from the anchor, growing from its edge. */
+  @keyframes floating-layer-enter {
+    from {
+      opacity: 0;
+      transform: translate(var(--enter-x, 0), var(--enter-y, 0)) scale(var(--enter-scale, 0.98));
+    }
+  }
+
+  .floating-layer-enter {
+    animation: floating-layer-enter 140ms var(--ease-smooth-out);
+  }
+
+  .floating-layer-enter[data-side='bottom'] {
+    --enter-y: -4px;
+    transform-origin: top;
+  }
+
+  .floating-layer-enter[data-side='top'] {
+    --enter-y: 4px;
+    transform-origin: bottom;
+  }
+
+  .floating-layer-enter[data-side='left'] {
+    --enter-x: 4px;
+    transform-origin: right;
+  }
+
+  .floating-layer-enter[data-side='right'] {
+    --enter-x: -4px;
+    transform-origin: left;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .floating-layer-enter[data-side] {
+      --enter-x: 0;
+      --enter-y: 0;
+      --enter-scale: 1;
+    }
   }
 
   .pr-workspace-scroll {

@@ -1,5 +1,5 @@
 import { Maximize, Minimize } from '@droidex/icons';
-import { HoverTooltip } from '../HoverTooltip';
+import { Tooltip } from '../ui/Tooltip';
 
 /* Gives the agent the whole content row, and hands it back. */
 export function AgentPaneExpand({
@@ -12,7 +12,7 @@ export function AgentPaneExpand({
   const label = expanded ? 'Collapse' : 'Expand';
   const Icon = expanded ? Minimize : Maximize;
   return (
-    <HoverTooltip label={label} placement="bottom">
+    <Tooltip label={label} placement="bottom">
       <button
         type="button"
         aria-label={label}
@@ -22,6 +22,6 @@ export function AgentPaneExpand({
       >
         <Icon className="h-3.5 w-3.5" />
       </button>
-    </HoverTooltip>
+    </Tooltip>
   );
 }

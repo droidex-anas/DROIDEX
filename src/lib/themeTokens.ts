@@ -213,7 +213,7 @@ function hardestSurface(fg: string, surfaces: string[]): string {
   );
 }
 
-function isDarkCanvas(bg: string): boolean {
+export function isDarkCanvas(bg: string): boolean {
   return colorLuminance(bg) < 0.4;
 }
 

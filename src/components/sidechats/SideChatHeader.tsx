@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { ArrowLeft } from '@droidex/icons';
-import { HoverTooltip } from '../HoverTooltip';
+import { Tooltip } from '../ui/Tooltip';
 
 // Marks the header a floating side-chat window is dragged by.
 export const SIDE_CHAT_DRAG_HANDLE = 'data-side-chat-drag-handle';
@@ -52,7 +52,7 @@ export function SideChatHeaderButton({
   children: ReactNode;
 }) {
   return (
-    <HoverTooltip label={label} placement="bottom">
+    <Tooltip label={label} placement="bottom">
       <button
         type="button"
         aria-label={label}
@@ -63,6 +63,6 @@ export function SideChatHeaderButton({
       >
         {children}
       </button>
-    </HoverTooltip>
+    </Tooltip>
   );
 }

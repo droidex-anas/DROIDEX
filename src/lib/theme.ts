@@ -1,4 +1,4 @@
-import { deriveThemeTokens } from './themeTokens';
+import { deriveThemeTokens, isDarkCanvas } from './themeTokens';
 
 // The five colors every theme is built from; deriveThemeTokens builds the
 // token layer from them. `border` no longer feeds the app's dividers, which are
@@ -382,6 +382,9 @@ export function applyTheme(theme: ThemeSettings) {
   for (const [name, value] of Object.entries(deriveThemeTokens(theme))) {
     root.style.setProperty(name, value);
   }
+  // Drives Tailwind's `dark:` variant, for the few styles that differ by
+  // scheme beyond what the tokens carry (a highlight on the raised layer).
+  root.setAttribute('data-theme', isDarkCanvas(theme.bg) ? 'dark' : 'light');
   root.setAttribute('data-diff-style', theme.diffStyle);
   root.setAttribute('data-translucent', theme.translucentSidebar ? 'true' : 'false');
 

@@ -2,7 +2,7 @@ import { useMemo, useState, type RefObject } from 'react';
 import { Check, ChevronLeft, Plus, Search } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
 import { GitBranchIcon } from './GithubIcons';
-import { Popover } from './Popover';
+import { Popover } from '../ui/Popover';
 import { checkoutGitBranch, createGitBranch, stripRemotePrefix } from '../../lib/git';
 import { useGitFetchOnOpen } from '../../hooks/useGitFetchOnOpen';
 import { useBusyAction } from '../../hooks/useBusyAction';
@@ -168,7 +168,7 @@ export function StartBranchMenu({
       onClose={close}
       anchorRef={anchorRef}
       label={popoverLabel}
-      align="left"
+      placement="bottom-start"
       width={320}
     >
       {pending ? (

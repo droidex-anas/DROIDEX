@@ -15,7 +15,7 @@ import {
   Spinner,
 } from '@droidex/icons';
 import { describeLink } from '../../lib/linkPresentation';
-import { HoverTooltip } from '../HoverTooltip';
+import { Tooltip } from '../ui/Tooltip';
 import { LinkBadge } from '../transcript/LinkBadge';
 import { browserAddressValue } from './browserUrlSafety';
 import { normalizeUrl, SEARCH_URL } from './browserViewport';
@@ -241,10 +241,7 @@ function AddressBar({
           <Lock className="h-3.5 w-3.5" />
         </span>
       )}
-      <HoverTooltip
-        label="Open address (↵)"
-        className="hidden shrink-0 group-focus-within:inline-flex"
-      >
+      <Tooltip label="Open address (↵)" className="hidden shrink-0 group-focus-within:inline-flex">
         <button
           type="submit"
           aria-label="Open address"
@@ -256,7 +253,7 @@ function AddressBar({
         >
           <CornerDownLeft className="h-3.5 w-3.5" />
         </button>
-      </HoverTooltip>
+      </Tooltip>
     </form>
   );
 }
@@ -322,7 +319,7 @@ function IconButton({
   children: ReactNode;
 }) {
   return (
-    <HoverTooltip label={title}>
+    <Tooltip label={title}>
       <button
         type="button"
         aria-label={title}
@@ -337,7 +334,7 @@ function IconButton({
       >
         {children}
       </button>
-    </HoverTooltip>
+    </Tooltip>
   );
 }
 
@@ -359,7 +356,7 @@ function ToolButton({
   children: ReactNode;
 }) {
   return (
-    <HoverTooltip label={title}>
+    <Tooltip label={title}>
       <button
         type="button"
         aria-label={title}
@@ -374,6 +371,6 @@ function ToolButton({
       >
         {children}
       </button>
-    </HoverTooltip>
+    </Tooltip>
   );
 }

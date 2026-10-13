@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'framer-motion';
 import { ChevronDown, ChevronUp, MessageSquareText, Mic, MicOff, X } from 'lucide-react';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { VoiceOrb } from './VoiceOrb';
 import { voiceStatusLabel } from './voiceStatus';
@@ -153,6 +153,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
         open={panel}
         onClose={closePanel}
         anchorRef={barRef}
+        placement="bottom-end"
         label="What was said"
         width={PANEL_WIDTH_PX}
       >

@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Check, Plus, Search, TriangleAlert } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
 import { GitBranchIcon, GitCommitIcon } from './GithubIcons';
-import { Popover } from './Popover';
+import { Popover } from '../ui/Popover';
 import { Row, RowCaret } from './primitives';
 import { checkoutGitBranch, createGitBranch, aheadBehindLabel } from '../../lib/git';
 import { useGitFetchOnOpen } from '../../hooks/useGitFetchOnOpen';
@@ -142,7 +142,7 @@ export function BranchMenu({
         onClose={close}
         anchorRef={anchorRef}
         label="Switch branch"
-        align="right"
+        placement="bottom-end"
         width={288}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-divider/70 px-2.5 py-2">

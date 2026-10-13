@@ -3,7 +3,7 @@ import { ChevronDown, FolderOpen, FileDiff, Check } from 'lucide-react';
 import { listEditors, notify, openProject } from '../lib/desktop';
 import { toast } from '../lib/toast';
 import { EditorIcon } from './EditorIcon';
-import { usePopover } from './environment/usePopover';
+import { useDismiss } from './ui/useDismiss';
 import {
   EDITOR_OPTIONS,
   editorLabel,
@@ -51,7 +51,7 @@ export default function EditorOpenMenu({
   const close = useCallback(() => {
     setOpen(false);
   }, []);
-  const ref = usePopover(open, close);
+  const ref = useDismiss(open, close);
   const hasCwd = Boolean(cwd);
 
   // Only offer editors that are actually present on this machine. If detection
