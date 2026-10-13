@@ -219,7 +219,6 @@ const ACCENT = 'var(--accent)';
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
 // The app reads the account itself, so this never reaches a harness as a prompt.
 const USAGE_COMMAND = '/usage';
-const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'steer';
 
 export function shouldStopTurnStarting({
@@ -2394,16 +2393,10 @@ export default function PromptInput({
           </Suspense>
         )}
 
-        <div
-          className={`relative z-10 rounded-xl bg-elevated shadow-sm transition-shadow ${isSpecMode && !missionPreview ? 'ring-1 ring-warning/40' : ''}`}
-          style={
-            missionPreview
-              ? {
-                  boxShadow: `var(--shadow-sm), 0 0 0 1px ${accentMix(20)}, 0 0 0 4px ${accentMix(6)}`,
-                }
-              : undefined
-          }
-        >
+        {/* No stroke at rest or in focus: focus lifts the fill a touch with a
+            translucent layer over the elevated rung (raised on light; text on
+            dark, where raised is the elevated rung). */}
+        <div className="relative z-10 rounded-xl bg-elevated shadow-sm focus-within:bg-gradient-to-b focus-within:from-raised/60 focus-within:to-raised/60 dark:focus-within:from-text/5 dark:focus-within:to-text/5">
           {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
               {designMarks.map((mark) => (

@@ -25,11 +25,8 @@ export function DesignMarkChip({
   return (
     <span
       className="group relative flex max-w-56 shrink-0 items-center rounded-lg transition-colors"
-      // The mark's own colour edges the chip, as it edges the mark on the page.
-      style={{
-        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 55%, transparent)`,
-        backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
-      }}
+      // A tint of the mark's own colour ties the chip to the mark on the page.
+      style={{ backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)` }}
     >
       <button
         type="button"

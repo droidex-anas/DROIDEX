@@ -19,8 +19,6 @@ const RAIL_WIDTH_PX = 44;
 // Inside the window's 8px floating-layer margin on both sides.
 const MAX_WIDTH = 'calc(100vw - 16px)';
 
-const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
-
 const AGENTS: { kind: AgentKind; label: string; hint: string }[] = [
   { kind: 'primary', label: 'Primary', hint: 'Runs the session' },
   { kind: 'worker', label: 'Worker', hint: 'Executes each feature' },
@@ -146,7 +144,7 @@ export default function ModelSelectorPopover({
           {/* Agent tabs */}
           {!singleAgent && !childTarget && (
             <div className="px-3">
-              <div className="flex gap-1 p-0.5 rounded-lg bg-bg/60 border border-divider">
+              <div className="flex gap-1 rounded-lg bg-bg/60 p-0.5">
                 {AGENTS.map((a) => {
                   const on = a.kind === agent;
                   return (
@@ -156,9 +154,8 @@ export default function ModelSelectorPopover({
                         setAgent(a.kind);
                       }}
                       className={`flex-1 truncate rounded-md px-2 py-1.5 text-label transition-colors ${
-                        on ? 'bg-surface text-primary' : 'text-muted hover:text-secondary'
+                        on ? 'bg-raised text-primary shadow-sm' : 'text-muted hover:text-secondary'
                       }`}
-                      style={on ? { boxShadow: `inset 0 0 0 1px ${accentMix(33)}` } : undefined}
                     >
                       {a.label}
                     </button>
