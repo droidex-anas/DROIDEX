@@ -163,6 +163,22 @@ describe('deriveThemeTokens', () => {
     }
   });
 
+  it('keeps the focus ring visible when the accent is close to the surfaces', () => {
+    const tokens = tokensFor({ ...DEFAULT_THEME.light, accent: '#fcfcfc' });
+    const match = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(tokens['--focus-ring']);
+    assert.ok(match, `focus ring should be an rgba colour, got ${tokens['--focus-ring']}`);
+    const [r, g, b, alpha] = match.slice(1).map(Number);
+    for (const surface of ['--bg', '--surface', '--active'] as const) {
+      const ground = [1, 3, 5].map((i) => parseInt(tokens[surface].slice(i, i + 2), 16));
+      const ring = [r, g, b].map((channel, i) =>
+        Math.round(ground[i] * (1 - alpha) + channel * alpha),
+      );
+      const ringHex = `#${ring.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+      const ratio = contrastRatio(ringHex, tokens[surface]);
+      assert.ok(ratio >= 3, `focus ring on ${surface} is ${ratio.toFixed(2)}:1`);
+    }
+  });
+
   it('derives the Default preset exactly as docs/design-system/tokens.json specifies', () => {
     const spec = JSON.parse(
       readFileSync(new URL('../../docs/design-system/tokens.json', import.meta.url), 'utf8'),

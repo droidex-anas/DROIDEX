@@ -138,7 +138,7 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     '--text-secondary': textTone(theme.fg, ground, scheme, 30, secondaryFloor),
     '--text-muted': textTone(theme.fg, ground, scheme, 50, AA_TEXT),
     '--accent': theme.accent,
-    '--focus-ring': focusRingColor(theme.accent, ground, FOCUS_RING_ALPHA[scheme]),
+    '--focus-ring': focusRingColor(theme.accent, theme.fg, ground, FOCUS_RING_ALPHA[scheme]),
     '--link': LINK_COLORS[scheme],
     '--skill': SKILL_COLORS[scheme],
     '--skill-mark': MARK_COLORS.skill[scheme],
@@ -189,14 +189,22 @@ function textTone(fg: string, ground: string, scheme: Scheme, darkStep: number, 
 
 // The accent at the scheme's resting alpha, raised in 5% steps only as far as a
 // focus indicator's 3:1 needs: a coloured accent needs more than a neutral one.
-function focusRingColor(accent: string, ground: string, restingAlpha: number): string {
-  for (let percent = Math.round(restingAlpha * 100); percent < 100; percent += 5) {
+// An accent close to the surfaces (a near-white Quick accent on a light theme)
+// never gets there, so the ring falls back to the text colour, which always can.
+function focusRingColor(accent: string, fg: string, ground: string, restingAlpha: number): string {
+  return (
+    ringAtContrast(accent, ground, restingAlpha) ?? ringAtContrast(fg, ground, restingAlpha) ?? fg
+  );
+}
+
+function ringAtContrast(color: string, ground: string, restingAlpha: number): string | undefined {
+  for (let percent = Math.round(restingAlpha * 100); percent <= 100; percent += 5) {
     const alpha = percent / 100;
-    if (contrastRatio(mixHex(ground, accent, alpha), ground) >= FOCUS_RING_CONTRAST) {
-      return withAlpha(accent, alpha);
+    if (contrastRatio(mixHex(ground, color, alpha), ground) >= FOCUS_RING_CONTRAST) {
+      return withAlpha(color, alpha);
     }
   }
-  return accent;
+  return undefined;
 }
 
 function hardestSurface(fg: string, surfaces: string[]): string {
