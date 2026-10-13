@@ -122,7 +122,7 @@ export function Popover({
         }}
         style={{ ...style, width }}
         className={cn(
-          'floating-layer flex flex-col overflow-hidden rounded-lg bg-raised shadow-lg',
+          'floating-layer flex flex-col overflow-hidden rounded-lg bg-raised shadow-lg outline-none',
           isPositioned ? 'floating-layer-enter' : 'opacity-0',
           className,
         )}

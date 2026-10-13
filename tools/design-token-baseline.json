@@ -656,10 +656,6 @@
   "src/features/providers/HarnessRail.tsx": {
     "border-width": 2
   },
-  "src/features/providers/HarnessSegments.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
   "src/features/pull-requests/PullRequestsView.tsx": {
     "arbitrary-value": 2
   },
