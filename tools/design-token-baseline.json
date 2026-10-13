@@ -157,7 +157,7 @@
   },
   "src/components/RightPanel.tsx": {
     "arbitrary-value": 8,
-    "border-width": 4
+    "border-width": 2
   },
   "src/components/RunningProcessesMenu.tsx": {
     "arbitrary-value": 4,
@@ -267,8 +267,7 @@
     "arbitrary-value": 20
   },
   "src/components/TurnChangesPanel.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 4
+    "arbitrary-value": 4
   },
   "src/components/UnreadFilterActions.tsx": {
     "arbitrary-value": 2
