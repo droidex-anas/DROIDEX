@@ -1,18 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronRight } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { ChevronRight, Spinner } from '@droidex/icons';
 import { worktreeName } from '../lib/git';
 import { worktreeChatStatus } from '../lib/worktreeSettings';
 import type { SessionSummary } from '../types/bridge';
 import type { GitWorktree, PullRequest } from '../types/vcs';
-
-function GitHubMergedIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-label="Merged" role="img" className="h-3.5 w-3.5 fill-[#a371f7]">
-      <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z" />
-    </svg>
-  );
-}
+import { PrStateIcon } from './environment/GithubIcons';
+import { Badge } from './ui/Badge';
 
 function ChatStatus({
   session,
@@ -23,7 +16,7 @@ function ChatStatus({
 }) {
   const label = worktreeChatStatus(session, activeAppSessionId);
   return (
-    <span className="rounded-xs bg-elevated px-1.5 py-0.5 text-[11px] text-muted">{label}</span>
+    <span className="rounded-xs bg-elevated px-1.5 py-0.5 text-caption text-muted">{label}</span>
   );
 }
 
@@ -41,24 +34,17 @@ function WorktreeAction({
   onRequestRemoval: () => void;
 }) {
   if (isInUse) {
-    return (
-      <span
-        title="An open or working chat is using this worktree"
-        className="shrink-0 rounded-full bg-elevated/70 px-2 py-0.5 text-[11px] text-muted"
-      >
-        in use
-      </span>
-    );
+    return <Badge title="An open or working chat is using this worktree">in use</Badge>;
   }
   return (
     <button
       onClick={onRequestRemoval}
       disabled={removing !== null || checking !== null}
       title="Remove worktree"
-      className="shrink-0 rounded-sm px-2 py-1 text-[11px] font-medium text-muted transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 active:scale-[0.94] disabled:opacity-40"
+      className="shrink-0 rounded-sm px-2 py-1 text-label text-muted transition duration-150 hover:bg-danger-soft hover:text-danger enabled:active:scale-97 disabled:opacity-40"
     >
       {checking === worktree.path || removing === worktree.path ? (
-        <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
+        <Spinner className="size-3 motion-safe:animate-spin-slow" />
       ) : (
         'Delete'
       )}
@@ -89,26 +75,24 @@ function WorktreeSummary({
       className="flex min-w-0 flex-1 items-start gap-2.5 text-left transition-opacity duration-150 active:opacity-70 disabled:cursor-default"
     >
       <ChevronRight
-        className={`mt-0.5 h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ${
+        className={`mt-0.5 size-icon-sm shrink-0 text-muted transition-transform duration-200 ${
           isExpanded ? 'rotate-90' : ''
         } ${linkedSessionCount === 0 ? 'invisible' : ''}`}
       />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate text-[13px] font-medium text-primary">
-            {worktreeName(worktree)}
-          </span>
-          {isMerged && <GitHubMergedIcon />}
+          <span className="truncate text-body-strong text-primary">{worktreeName(worktree)}</span>
+          {isMerged && <PrStateIcon kind="merged" size={14} />}
           {pullRequest && (
-            <span className="rounded-full border border-accent/15 bg-accent/[0.07] px-1.5 py-0.5 text-[11px] text-accent">
+            <Badge>
               #{pullRequest.number}{' '}
               {pullRequest.isDraft ? 'draft' : pullRequest.state.toLowerCase()}
-            </span>
+            </Badge>
           )}
         </span>
-        <span className="mt-0.5 block truncate text-[11px] text-muted">{worktree.path}</span>
+        <span className="mt-0.5 block truncate text-caption text-muted">{worktree.path}</span>
         {linkedSessionCount > 0 && (
-          <span className="mt-1 block text-[11px] text-muted">
+          <span className="mt-1 block text-caption text-muted">
             {String(linkedSessionCount)}{' '}
             {linkedSessionCount === 1 ? 'conversation' : 'conversations'}
           </span>
@@ -128,7 +112,7 @@ function ConversationList({
   onOpenChat: (appSessionId: string) => void;
 }) {
   return (
-    <div className="ml-[22px] mt-2 border-l border-divider/70 pl-2.5">
+    <div className="ml-6 mt-2 border-l border-divider pl-2.5">
       {linkedSessions.map((session) => (
         <motion.button
           key={session.appSessionId}
@@ -137,11 +121,9 @@ function ConversationList({
           onClick={() => {
             onOpenChat(session.appSessionId);
           }}
-          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-150 hover:bg-elevated/60 active:scale-[0.995] active:bg-elevated/80"
+          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors duration-150 hover:bg-elevated active:bg-active"
         >
-          <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">
-            {session.title}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-label text-secondary">{session.title}</span>
           <ChatStatus session={session} activeAppSessionId={activeAppSessionId} />
         </motion.button>
       ))}
@@ -181,7 +163,7 @@ export function WorktreeSettingsRow({
     <motion.div
       layout="position"
       transition={{ layout: { duration: 0.16, ease: [0.16, 1, 0.3, 1] } }}
-      className="group px-3.5 py-3 transition-colors hover:bg-elevated/25"
+      className="group px-3.5 py-3"
     >
       <div className="flex items-start gap-2">
         <WorktreeSummary

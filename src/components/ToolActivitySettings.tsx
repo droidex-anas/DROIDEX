@@ -7,7 +7,7 @@ import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { TranscriptEvent } from '../types/bridge';
 import type { FileChange } from '../lib/diff';
 import type { ToolActivityDensity, ToolActivitySettings } from '../lib/toolActivity';
-import { SettingRow } from './settingsKit';
+import { GroupLabel, SettingRow } from './settingsKit';
 import { Switch } from './Switch';
 import { DiffGroup, ToolGroupItem } from './transcript/groups';
 
@@ -97,10 +97,10 @@ export function ToolActivitySettings() {
   const current = DENSITY_STOPS[stopIndex];
 
   return (
-    <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
+    <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
       <div className="px-4 py-3.5">
-        <div className="text-[13px] text-primary">Tool activity</div>
-        <div className="text-[11px] text-muted mt-0.5">
+        <div className="text-body text-primary">Tool activity</div>
+        <div className="mt-0.5 text-caption text-muted">
           How much working detail the transcript shows. {current.hint}
         </div>
         <input
@@ -127,7 +127,7 @@ export function ToolActivitySettings() {
                 update({ density: stop.value });
               }}
               aria-pressed={stop.value === settings.density}
-              className={`text-[11px] transition-colors ${
+              className={`text-caption transition-colors ${
                 stop.value === settings.density
                   ? 'font-medium text-primary'
                   : 'text-muted hover:text-secondary'
@@ -151,14 +151,12 @@ export function ToolActivitySettings() {
         />
       </SettingRow>
       <div className="px-4 py-3.5">
-        <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-          Preview
-        </div>
+        <GroupLabel>Preview</GroupLabel>
         {/* Remount on any change so disclosure state re-initializes from the
             new defaults and the preview always reflects the pending setting. */}
         <div
           key={`${settings.density}:${String(settings.inlineDiffs)}`}
-          className="space-y-3 rounded-md border border-divider bg-bg/60 p-3"
+          className="space-y-3 rounded-md bg-bg p-3"
         >
           <ToolGroupItem events={PREVIEW_TOOL_EVENTS} density={settings.density} />
           <DiffGroup changes={PREVIEW_DIFF} inlineDiffs={settings.inlineDiffs} />
