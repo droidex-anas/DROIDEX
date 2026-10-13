@@ -37,7 +37,7 @@ const CASES = [
   ['arbitrary-value', 'text-secondary px-3 rounded-lg', 'text-[12.5px]'],
   ['hex-color', 'bg-surface', '#1c6f46'],
   ['palette-color', 'text-danger', 'bg-red-500'],
-  ['border-width', 'border-t border-divider', 'border-t'],
+  ['border-width', 'divide-y divide-divider', 'border-divider'],
   ['font-weight', 'font-semibold', 'font-bold'],
   ['focus-ring', 'focus-visible:ring-focus-ring', 'focus-visible:ring-accent/60'],
   ['uppercase', 'tracking-wide', 'uppercase'],
@@ -96,36 +96,85 @@ test('strips variants and ! outside brackets and catches remaining default colou
   );
 });
 
-test('a divider colour exempts only same-variant border widths in the same branch', () => {
-  assert.deepEqual(messageIds(lintDesignTokens('<div className="border-t border-divider" />')), []);
-  assert.deepEqual(messageIds(lintDesignTokens('<div className="hover:border-t hover:border-divider" />')), []);
+test('flags surface edges regardless of side, width, colour or state', () => {
+  for (const cls of [
+    'border',
+    'border-t',
+    'border-b-2',
+    'border-l-divider',
+    'border-r-accent/40',
+    'border-x-4',
+    'border-y-divider',
+    'border-divider/70',
+    'hover:!border-divider',
+    'focus-within:ring-1',
+    'ring-focus-ring',
+    'ring-inset',
+    'outline',
+    'outline-2',
+    'focus:outline-divider',
+    'border-dashed',
+  ]) {
+    assert.deepEqual(messageIds(lintDesignTokens(`<div className="${cls}" />`)), ['border-width'], cls);
+  }
+});
+
+test('allows edge resets and keyboard focus, but still requires focus colour tokens', () => {
   assert.deepEqual(
-    messageIds(lintDesignTokens('<div className="border-t hover:border-divider" />')),
-    ['border-width'],
+    messageIds(lintDesignTokens(`<div className="border-0 border-none ring-0 outline-none outline-hidden
+      focus-visible:border-divider focus-visible:ring-1 focus-visible:ring-focus-ring focus-visible:outline-2" />`)),
+    [],
   );
-  assert.deepEqual(messageIds(lintDesignTokens('<div className={`border-t ${tone} border-divider`} />')), []);
-  assert.deepEqual(
-    messageIds(lintDesignTokens('<div className={wide ? "border-t border-divider" : "border-t"} />')),
-    ['border-width'],
-  );
-  assert.deepEqual(messageIds(lintDesignTokens('<div className="border border-accent" />')), [
-    'border-width',
+  assert.deepEqual(messageIds(lintDesignTokens('<div className="focus-visible:ring-accent/60" />')), [
+    'focus-ring',
   ]);
 });
 
-test('conditional branches inherit divider allowances from unconditional parts', () => {
+test('row dividers inherit only same-variant colours from unconditional parts', () => {
   assert.deepEqual(
-    messageIds(lintDesignTokens("const cls = cn('border-divider', active && 'border-t');\n<div className={cls} />")),
+    messageIds(lintDesignTokens("const cls = cn('divide-divider', active && 'divide-y');\n<div className={cls} />")),
     [],
   );
   assert.deepEqual(
-    messageIds(lintDesignTokens('<div className={`border-divider ${wide ? "border-t" : "border-t-2"}`} />')),
+    messageIds(lintDesignTokens('<div className="divide-x divide-divider hover:divide-y hover:divide-divider" />')),
+    [],
+  );
+  for (const code of [
+    '<div className="divide-y hover:divide-divider" />',
+    '<div className={wide ? "divide-y" : "divide-divider"} />',
+    '<div className="divide-y-2 divide-divider" />',
+  ]) {
+    assert.deepEqual(messageIds(lintDesignTokens(code)), ['border-width']);
+  }
+});
+
+test('documented semantic outlines use a reasoned inline directive, not a divider allowance', () => {
+  const code = `// eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat instruction: marks the speaker
+<div className="border border-divider" />`;
+  assert.deepEqual(messageIds(lintDesignTokens(code)), []);
+  const jsx = `<div>
+  {/* eslint-disable-next-line design-policy/design-tokens -- dashed drop target: drag cue */}
+  <div className="border border-dashed border-divider-strong" />
+</div>`;
+  assert.deepEqual(messageIds(lintDesignTokens(jsx)), []);
+  const withDebt = `${code};\n<div className="border-t" />`;
+  assert.deepEqual(
+    messageIds(lintDesignTokens(withDebt, {
+      baseline: { 'src/components/Case.tsx': { 'border-width': 1 } },
+      rootDir: ROOT,
+    })),
     [],
   );
   assert.deepEqual(
-    messageIds(lintDesignTokens('<div className={wide ? "border-t" : "border-divider"} />')),
+    messageIds(lintDesignTokens(`${withDebt};\n<div className="border-b" />`, {
+      baseline: { 'src/components/Case.tsx': { 'border-width': 1 } },
+      rootDir: ROOT,
+    })),
     ['border-width'],
   );
+  assert.deepEqual(messageIds(lintDesignTokens('<div className="border border-divider" />')), [
+    'border-width', 'border-width',
+  ]);
 });
 
 test('a baseline suppresses reports up to its count per category', () => {

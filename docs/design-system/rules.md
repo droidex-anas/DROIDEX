@@ -7,13 +7,24 @@ The checkable rulebook. Anyone building DROIDEX UI, person or agent, follows the
 1. **Only tokens.** Every colour, size, space, radius and shadow comes from this system. No hex, no `[13.5px]`, no `rounded-[5px]`.
 2. **Eleven type styles, nothing else.** See the table below. If text needs to look different, it is a different style, not a tweak.
 3. **Three weights.** 400 for reading, 500 for anything you click or label, 600 for headings. Never 300 or 700.
-4. **No borders.** Separate with tone, space and shadow. The only line is `divider`, between groups.
+4. **Borders only where necessary.** Default: no outline or stroke around cards, panels, the composer, chips, menus, popovers, sheets, dialogs or inputs. Separate surfaces by a tone step (`bg` → `surface` → `elevated` → `raised`), with shadow when they float. Hover, active and focused surfaces change tone, never add a stroke or ring. Keep keyboard focus on individual controls via `:focus-visible`. An outline is allowed only where it carries meaning tone cannot; see the cases below.
 5. **Colour is a signal.** Neutral by default. Colour appears only for links, status, destructive or confirming actions, and the brand mark.
 6. **One primary action per surface.** Everything else is secondary or ghost.
 7. **Radius grows with size.** 8px controls inside 12px menus inside 16px cards inside 24px dialogs.
 8. **Every state, every time.** Rest, hover, pressed, keyboard focus, disabled, plus loading, empty and error where they can happen.
 9. **Nothing jumps.** Content that changes size animates or reserves its space. Numbers use tabular figures.
 10. **Keyboard first.** Everything reachable, focus visible only for the keyboard, Escape always backs out.
+
+## Lines that carry meaning
+
+- Agent-to-agent reports and instruction messages in project chats keep their hairline: it marks who is speaking.
+- A dashed drop-target outline is an interaction cue, only while dragging.
+- Diff line and gutter markers encode data.
+- `divide-y` / `divide-x` with `divide-divider` separates rows of a dense list only when space alone would hurt scanning.
+- `divider-strong` is only for a split that must survive a busy area, such as a docked panel beside the transcript.
+- The keyboard focus ring belongs to individual controls, only on `:focus-visible`.
+
+No hairline under a header, above a footer or around a group. A sidebar or panel footer uses a soft blur/fade where content scrolls under it, not a line. Leave surfaces that already work without lines alone.
 
 ## Type: what to use where
 
@@ -180,7 +191,7 @@ If a screen has more than three colours besides the neutrals, something is decor
 ## Before shipping a screen
 
 - [ ] Only tokens, and only the type styles above.
-- [ ] No borders except `divider` between groups.
+- [ ] Surfaces separate by tone, with shadow when floating; no outlines except the meaningful cases in rule 4. Dense-row dividers only, no header, footer or group hairlines.
 - [ ] Hover, pressed, keyboard focus and disabled all checked, with no ring on mouse click.
 - [ ] Loading, empty and error states designed, not left blank.
 - [ ] Popovers stay inside the window at every edge.

@@ -164,9 +164,9 @@ export default function RightPanel() {
           that used to arrive late and grow it — PR detection, notes pad,
           subagent list — now share fixed slots or start collapsed, so the one
           remaining height change is the environment rows landing after mount. */}
-      <div className="droid-card pointer-events-auto w-full max-h-full">
+      <div className="pointer-events-auto flex w-full max-h-full flex-col overflow-hidden rounded-xl bg-surface shadow-lg">
         {/* Header (no close button — the top toolbar button toggles this panel) */}
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-divider/70 pl-4 pr-3">
+        <div className="mb-1 flex h-11 shrink-0 items-center justify-between pl-4 pr-3">
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-primary">Context</span>
           {working && <span className="shimmer-text text-[11px] font-medium">Working</span>}
         </div>

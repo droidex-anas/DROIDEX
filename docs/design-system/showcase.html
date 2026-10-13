@@ -189,7 +189,7 @@ section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
 .row-btn .meta { flex: none; font: 400 12px/16px var(--font-sans); letter-spacing: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-4) var(--space-3) var(--space-1); font: 500 12px/16px var(--font-sans); color: var(--text-muted); }
 .sec-h span:last-child { font: 400 11px/16px var(--font-sans); letter-spacing: 0.06px; }
-.divider { height: 1px; margin: var(--space-1-5) var(--space-3); background: var(--divider); }
+.divider { margin: var(--space-2) var(--space-3); }
 
 /* ---------- the app mock ---------- */
 .app { position: relative; display: grid; grid-template-columns: 248px minmax(0, 1fr) 272px; height: 640px; border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow-lg); overflow: hidden; }
@@ -272,7 +272,7 @@ section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
 .mi.danger, .mi.danger .ico { color: var(--danger); }
 .mi.danger:hover, .mi.danger.hl { background: var(--danger-soft) !important; }
 .mi .kbd { margin-left: auto; }
-.mdiv { height: 1px; margin: var(--space-1) var(--space-2); background: var(--divider); }
+.mdiv { margin: var(--space-2); }
 
 /* foundations */
 .ramp { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
@@ -595,7 +595,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
   <section class="s" id="surfaces">
     <div class="s-head">
       <div><div class="k">05 / Surfaces</div><h2>No hard lines</h2></div>
-      <p>Edges come from tone and shadow. The only line left is the translucent divider. Focus shows only for the keyboard, as a soft 1.5px ring. Never a dark outline on click.</p>
+      <p>Surfaces separate by tone, with shadow when floating. Lines stay only when they carry meaning: agent reports and instructions in project chats, drop targets, diff markers, dense rows and busy panel splits. Focus shows only for the keyboard, never on click.</p>
     </div>
     <div class="dd">
       <div class="panel">
@@ -743,7 +743,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
       <li><div><b>Only tokens</b><p>No hex values, no <code>[13.5px]</code>, no one-off radii.</p></div></li>
       <li><div><b>Eleven type styles</b><p>If text needs to look different, it's a different style, not a tweak.</p></div></li>
       <li><div><b>Three weights</b><p>400 to read, 500 to click, 600 for headings.</p></div></li>
-      <li><div><b>No borders</b><p>Tone, space and shadow. The only line is the divider.</p></div></li>
+      <li><div><b>Borders only where necessary</b><p>Tone, space and floating shadow. Only the meaningful lines in rule 4; no header, footer or group hairlines.</p></div></li>
       <li><div><b>Colour is a signal</b><p>Links, status, consequential actions, the brand mark.</p></div></li>
       <li><div><b>One primary per surface</b><p>Everything else is secondary or ghost.</p></div></li>
       <li><div><b>Radius grows with size</b><p>8 → 12 → 16 → 24.</p></div></li>
