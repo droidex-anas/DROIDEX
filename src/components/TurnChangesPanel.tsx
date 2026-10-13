@@ -45,7 +45,7 @@ export default function TurnChangesPanel({
   const [open, setOpen] = useState(true);
   const { files, added, removed } = item;
   return (
-    <div className="overflow-hidden rounded-lg border border-divider bg-surface">
+    <div className="overflow-hidden rounded-xl bg-surface">
       <button
         onClick={() => {
           setOpen((current) => !current);
@@ -67,7 +67,7 @@ export default function TurnChangesPanel({
         </span>
       </button>
       <Expand open={open}>
-        <div className="border-t border-divider">
+        <div className="pt-1">
           {files.map((file) => {
             const display = displayPath(file.path, cwd);
             return (
