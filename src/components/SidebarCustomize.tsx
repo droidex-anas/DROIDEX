@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { Popover } from './ui/Popover';
@@ -165,18 +172,20 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
   const movingRight = useRef(false);
   const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clearTimers = () => {
+  const clearTimers = useCallback(() => {
     if (switchTimer.current) clearTimeout(switchTimer.current);
     if (closeTimer.current) clearTimeout(closeTimer.current);
     switchTimer.current = null;
     closeTimer.current = null;
-  };
-  useEffect(() => clearTimers, []);
-  const close = () => {
+  }, []);
+  useEffect(() => clearTimers, [clearTimers]);
+  // Stable so the popover keeps its place in the Escape stack across
+  // rerenders; a new identity would re-push it above an open flyout.
+  const close = useCallback(() => {
     clearTimers();
     setOpen(false);
     setSubmenu(null);
-  };
+  }, [clearTimers]);
   // Pointer intent for the cascade. The last horizontal movement says whether
   // the pointer is heading for the open flyout (rightward) or browsing rows.
   const hoverRow = (id: Submenu) => {
