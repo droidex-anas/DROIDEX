@@ -40,7 +40,7 @@ export function BrowserReferenceChip({ reference }: { reference: BrowserTranscri
         {open && (
           <ImageLightbox
             src={reference.imageDataUrl}
-            label={title}
+            label={reference.label}
             onClose={() => {
               setOpen(false);
             }}
