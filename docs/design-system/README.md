@@ -49,7 +49,7 @@ Text colours use `text-primary` rather than `text-text`; the colour itself is al
 
 - **Neutral ramp.** Paint the window `bg`, cards and side panels `surface`, hover fills, chips and the composer `elevated`, inputs `field`, and selected rows and pressed controls `active`. The ramp always reads bg < surface < elevated < active. Floating layers (menus, popovers, tooltips, toasts) use `raised`, which lifts to near-white on light instead of darkening.
 - **Text.** `text` for primary copy and icons, `text-secondary` for supporting text and resting icons, `text-muted` for meta, timestamps and placeholders. All three, and every status colour, hold at least 4.5:1 on every surface, `active` included, in both themes. Don't go lighter than muted for anything that must be read.
-- **No borders.** Surfaces separate by tone and by shadow. `shadow-sm` and `shadow-lg` each carry a faint ring (white on dark, ink on light) that gives floating things their edge. The only line left is `divider`, a translucent hairline between groups in lists and menus, so it tints whatever it sits on and never reads as a hard dark rule. `divider-strong` is for the rare split that has to survive a busy area.
+- **Borders only where necessary.** Surfaces separate by tone, with shadow when floating, not an added outline. State changes use fill. Keep only the meaningful lines in [rule 4](rules.md#lines-that-carry-meaning), including agent reports and instructions in project chats. `divider` separates dense rows, never headers, footers or groups; `divider-strong` is for the rare split that has to survive a busy area.
 - **Accent is neutral.** `accent` is near-white on dark and ink on light. It drives selection, toggles, sliders and the `focus-ring`, never status.
 - **Hue means something.** Links `link`; skills `skill` with `skill-mark`; the Visualize chip `visualize-mark`; the top reasoning level `ultra`.
 - **Actions with consequences get colour.** `success`, `warning` and `danger` each come with a `-soft` fill. A destructive menu item or button shows `danger` text at rest and a `danger-soft` fill on hover; a danger button fills solid `danger` on hover so the click confirms itself. Approve, merge and accept work the same way in `success`. Status badges pair the soft fill with the text colour. Always pair a status hue with a word or an icon.
@@ -101,7 +101,7 @@ The scale is a cleaned-up version of what the code uses today. Sizes 9, 11.5, 12
 
 ## Elevation
 
-Two shadows only. Use `shadow-sm` for tool panels, floating chips and the composer, and `shadow-lg` for cards, popovers, menus and dialogs. Both are tuned per theme: dark gets a deep near-black drop with a 4–5% white ring, and light gets a barely-there lift with a 2.5% ink ring that blends into the paper canvas. That ring is the edge. Don't add a border on top of it. `shadow-focus-update` is only for the update pill's focus halo.
+Two shadows only. Use `shadow-sm` for floating tool panels, chips and the composer, and `shadow-lg` for floating cards, popovers, menus and dialogs. Both are tuned per theme: dark gets a deep near-black drop with a faint highlight, and light gets a barely-there lift that blends into the paper canvas. Tone is the surface edge; never add a border or state ring on top. `shadow-focus-update` is only for the update pill's keyboard focus halo.
 
 ## Focus and states
 
@@ -115,7 +115,7 @@ Every interactive thing has the same five states, and none of them adds a line:
 | Keyboard focus | A 1.5px `focus-ring`, only on `:focus-visible`. Never show a ring or outline on mouse click. Set `outline: none` on `:focus` and draw the ring only for `:focus-visible` |
 | Disabled | 40% opacity, a not-allowed cursor, no hover |
 
-Invalid fields get a `danger-soft` fill, a 1.5px `danger` ring and a `caption` hint that says how to fix it.
+Invalid fields get a `danger-soft` fill and a `caption` hint that says how to fix it, not a danger ring. The composer changes tone when active; only its individual controls get a keyboard focus ring.
 
 ## Motion
 

@@ -4,30 +4,33 @@
   },
   "src/components/AppBlockExpandableSurface.tsx": {
     "arbitrary-value": 3,
+    "border-width": 2,
     "palette-color": 1
   },
   "src/components/AppBlockRepair.tsx": {
     "arbitrary-value": 5,
-    "focus-ring": 4
+    "focus-ring": 3
   },
   "src/components/AppLoadingSurface.tsx": {
     "arbitrary-value": 1
   },
   "src/components/AskUserInline.tsx": {
     "arbitrary-value": 12,
-    "border-width": 1
+    "border-width": 8
   },
   "src/components/AutonomySelector.tsx": {
-    "arbitrary-value": 8
+    "arbitrary-value": 8,
+    "border-width": 2
   },
   "src/components/ChatView.tsx": {
     "arbitrary-value": 17,
-    "focus-ring": 2,
+    "border-width": 6,
+    "focus-ring": 1,
     "uppercase": 1
   },
   "src/components/ColorPicker.tsx": {
     "arbitrary-value": 9,
-    "border-width": 2,
+    "border-width": 18,
     "palette-color": 2,
     "uppercase": 1
   },
@@ -38,39 +41,44 @@
     "arbitrary-value": 6
   },
   "src/components/ContextWindowMenu.tsx": {
-    "arbitrary-value": 5
+    "arbitrary-value": 5,
+    "border-width": 2
   },
   "src/components/ConversationList.tsx": {
     "arbitrary-value": 2
   },
   "src/components/ConversationTimeline.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 2
   },
   "src/components/DiffView.tsx": {
-    "arbitrary-value": 11
+    "arbitrary-value": 11,
+    "border-width": 4
   },
   "src/components/EditorOpenMenu.tsx": {
     "arbitrary-value": 7,
+    "border-width": 2,
     "uppercase": 1
   },
   "src/components/FeedbackModal.tsx": {
     "arbitrary-value": 33,
-    "border-width": 2,
+    "border-width": 20,
     "palette-color": 3,
     "uppercase": 1
   },
   "src/components/HardwareAccelerationSetting.tsx": {
     "arbitrary-value": 7,
+    "border-width": 5,
     "palette-color": 1
   },
   "src/components/JsonRender.tsx": {
     "arbitrary-value": 22,
-    "border-width": 1,
+    "border-width": 20,
     "uppercase": 3
   },
   "src/components/Markdown.tsx": {
     "arbitrary-value": 17,
-    "border-width": 1,
+    "border-width": 6,
     "uppercase": 1
   },
   "src/components/MarkdownCode.tsx": {
@@ -81,18 +89,24 @@
   },
   "src/components/MarkdownTable.tsx": {
     "arbitrary-value": 2,
-    "border-width": 1
+    "border-width": 7
   },
   "src/components/McpServerForm.tsx": {
     "arbitrary-value": 20,
-    "focus-ring": 6,
+    "border-width": 13,
+    "focus-ring": 3,
     "palette-color": 1
   },
+  "src/components/McpServersSettings.tsx": {
+    "border-width": 2
+  },
   "src/components/MessageFeed.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 6
   },
   "src/components/MissionControl.tsx": {
     "arbitrary-value": 50,
+    "border-width": 19,
     "palette-color": 1,
     "uppercase": 6
   },
@@ -100,57 +114,78 @@
     "arbitrary-value": 6
   },
   "src/components/ModelCategoryFilter.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 2,
+    "border-width": 2
   },
   "src/components/ModelSelectorPopover.tsx": {
-    "arbitrary-value": 6
+    "arbitrary-value": 6,
+    "border-width": 7
   },
   "src/components/ModelSliderCatalogList.tsx": {
     "arbitrary-value": 3
   },
   "src/components/ModelSliderPopover.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 5
   },
   "src/components/NotesSection.tsx": {
     "arbitrary-value": 16,
+    "border-width": 8,
     "uppercase": 3
+  },
+  "src/components/NotificationsSettings.tsx": {
+    "border-width": 4
   },
   "src/components/PaletteShell.tsx": {
     "arbitrary-value": 7,
     "palette-color": 1
   },
   "src/components/PermissionInline.tsx": {
-    "arbitrary-value": 7
+    "arbitrary-value": 7,
+    "border-width": 7
   },
   "src/components/PlanApprovalInline.tsx": {
-    "arbitrary-value": 6
+    "arbitrary-value": 6,
+    "border-width": 7
   },
   "src/components/PromptInput.tsx": {
     "arbitrary-value": 12,
-    "border-width": 1
+    "border-width": 7
   },
   "src/components/RightPanel.tsx": {
-    "arbitrary-value": 8
+    "arbitrary-value": 8,
+    "border-width": 2
   },
   "src/components/RunningProcessesMenu.tsx": {
     "arbitrary-value": 4,
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/components/RuntimeStatusBanner.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 2
   },
   "src/components/SessionContextMenu.tsx": {
-    "arbitrary-value": 12
+    "arbitrary-value": 12,
+    "border-width": 2
+  },
+  "src/components/SettingsPanel.tsx": {
+    "border-width": 4
+  },
+  "src/components/SidebarSessionRow.tsx": {
+    "border-width": 2
   },
   "src/components/SpecModal.tsx": {
     "arbitrary-value": 6,
+    "border-width": 4,
     "palette-color": 1
   },
   "src/components/SpecOutline.tsx": {
-    "arbitrary-value": 6
+    "arbitrary-value": 6,
+    "border-width": 9
   },
   "src/components/SpecRenderer.tsx": {
     "arbitrary-value": 3,
+    "border-width": 5,
     "uppercase": 1
   },
   "src/components/StreamingCaret.tsx": {
@@ -164,11 +199,12 @@
   },
   "src/components/ThemeEditor.tsx": {
     "arbitrary-value": 10,
+    "border-width": 16,
     "palette-color": 1
   },
   "src/components/ThemePresetCard.tsx": {
     "arbitrary-value": 10,
-    "border-width": 1,
+    "border-width": 14,
     "uppercase": 1
   },
   "src/components/ThemePreview.tsx": {
@@ -184,24 +220,33 @@
     "arbitrary-value": 8
   },
   "src/components/WorktreeCreatedCard.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 2,
+    "border-width": 2
   },
   "src/components/WorktreeRemovalDialog.tsx": {
     "arbitrary-value": 16,
-    "border-width": 1,
+    "border-width": 6,
     "palette-color": 7
+  },
+  "src/components/WorktreeSettingsRow.tsx": {
+    "border-width": 2
+  },
+  "src/components/WorktreesSettings.tsx": {
+    "border-width": 2
   },
   "src/components/agents/AgentLifecycleLine.tsx": {
     "arbitrary-value": 1
   },
   "src/components/agents/AgentMonitorCard.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 3
   },
   "src/components/agents/AgentPaneDetail.tsx": {
-    "arbitrary-value": 6
+    "arbitrary-value": 6,
+    "border-width": 2
   },
   "src/components/agents/AgentPaneExpand.tsx": {
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/components/agents/AgentPaneList.tsx": {
     "arbitrary-value": 6
@@ -223,42 +268,55 @@
     "arbitrary-value": 1
   },
   "src/components/browser/BrowserActivityLine.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 2
   },
   "src/components/browser/BrowserCard.tsx": {
     "arbitrary-value": 6,
-    "focus-ring": 4
+    "border-width": 2,
+    "focus-ring": 2
   },
   "src/components/browser/BrowserPreview.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 2
   },
   "src/components/browser/BrowserToolbar.tsx": {
-    "arbitrary-value": 6
+    "arbitrary-value": 6,
+    "border-width": 2
   },
   "src/components/browser/BrowserWorkspace.tsx": {
     "arbitrary-value": 3,
+    "border-width": 6,
     "palette-color": 1
   },
   "src/components/browser/DesignModePill.tsx": {
     "arbitrary-value": 8,
-    "border-width": 1,
-    "focus-ring": 2
+    "border-width": 4,
+    "focus-ring": 1
+  },
+  "src/components/browser/DesignQuickPrompt.tsx": {
+    "border-width": 2
   },
   "src/components/browser/NativeBrowserSurface.tsx": {
+    "border-width": 2,
     "palette-color": 1
   },
   "src/components/browser/ViewportMenu.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 2
   },
   "src/components/chat.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 2
   },
   "src/components/composer/AddMenu.tsx": {
     "arbitrary-value": 6,
+    "border-width": 2,
     "uppercase": 1
   },
   "src/components/composer/AgentDockLine.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 2
   },
   "src/components/composer/CatalogRowIcon.tsx": {
     "arbitrary-value": 1
@@ -267,63 +325,71 @@
     "arbitrary-value": 3
   },
   "src/components/composer/ComposerSendButton.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 2,
+    "border-width": 2
   },
   "src/components/composer/ComposerTab.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 2
   },
   "src/components/composer/CropOverlay.tsx": {
     "arbitrary-value": 1,
-    "border-width": 1
+    "border-width": 2
   },
   "src/components/composer/DesignMarkChip.tsx": {
     "arbitrary-value": 5,
-    "border-width": 1,
-    "focus-ring": 4
+    "border-width": 6,
+    "focus-ring": 2
   },
   "src/components/composer/DraftSelections.tsx": {
     "arbitrary-value": 1,
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/components/composer/FileChip.tsx": {
     "arbitrary-value": 4,
-    "focus-ring": 4
+    "border-width": 6,
+    "focus-ring": 2
   },
   "src/components/composer/ImageChip.tsx": {
     "arbitrary-value": 3,
-    "focus-ring": 2
+    "border-width": 6,
+    "focus-ring": 1
   },
   "src/components/composer/ImageViewerModal.tsx": {
     "arbitrary-value": 4,
     "palette-color": 1
   },
   "src/components/composer/PendingPromptPreview.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 2,
+    "border-width": 4
   },
   "src/components/composer/PlanSteps.tsx": {
-    "arbitrary-value": 6
+    "arbitrary-value": 6,
+    "border-width": 5
   },
   "src/components/composer/QueuedPrompts.tsx": {
     "arbitrary-value": 2,
-    "border-width": 1,
-    "focus-ring": 4
+    "border-width": 3,
+    "focus-ring": 2
   },
   "src/components/composer/SelectionMenu.tsx": {
     "arbitrary-value": 3,
-    "border-width": 1
+    "border-width": 2
   },
   "src/components/composer/UsageLimitTab.tsx": {
     "arbitrary-value": 4,
-    "focus-ring": 6
+    "focus-ring": 2
   },
   "src/components/composer/UsagePanel.tsx": {
     "arbitrary-value": 1
   },
   "src/components/effortSlider/EffortHelpCard.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 2
   },
   "src/components/environment/BranchMenu.tsx": {
     "arbitrary-value": 13,
+    "border-width": 4,
     "uppercase": 2
   },
   "src/components/environment/CommitSheet.tsx": {
@@ -336,7 +402,8 @@
     "arbitrary-value": 6
   },
   "src/components/environment/DiffFileSection.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 4
   },
   "src/components/environment/DiffStat.tsx": {
     "arbitrary-value": 4
@@ -345,25 +412,31 @@
     "arbitrary-value": 2
   },
   "src/components/environment/GitActionsBar.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 2,
+    "border-width": 2
   },
   "src/components/environment/GithubSetupCard.tsx": {
     "arbitrary-value": 12,
-    "focus-ring": 8
+    "border-width": 10,
+    "focus-ring": 4
   },
   "src/components/environment/ReviewPanel.tsx": {
     "arbitrary-value": 18,
+    "border-width": 8,
     "palette-color": 1
   },
   "src/components/environment/StartBranchMenu.tsx": {
     "arbitrary-value": 18,
+    "border-width": 4,
     "uppercase": 2
   },
   "src/components/environment/StartInBar.tsx": {
-    "arbitrary-value": 12
+    "arbitrary-value": 12,
+    "border-width": 2
   },
   "src/components/environment/WorktreeMenu.tsx": {
     "arbitrary-value": 13,
+    "border-width": 2,
     "uppercase": 2
   },
   "src/components/environment/primitives.tsx": {
@@ -371,31 +444,36 @@
   },
   "src/components/files/FilePreviewPane.tsx": {
     "arbitrary-value": 37,
+    "border-width": 25,
     "palette-color": 10
   },
   "src/components/files/FilesWorkspace.tsx": {
     "arbitrary-value": 7,
-    "focus-ring": 4,
+    "border-width": 10,
+    "focus-ring": 2,
     "palette-color": 3
   },
   "src/components/media/GeneratedImageCard.tsx": {
     "arbitrary-value": 3
   },
   "src/components/media/ImageAttachmentChip.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 5
   },
   "src/components/media/ImageLightboxContent.tsx": {
     "arbitrary-value": 9,
     "palette-color": 1
   },
   "src/components/media/TranscriptImage.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 5
   },
   "src/components/media/viewerChrome.tsx": {
     "arbitrary-value": 1
   },
   "src/components/messageFeedRows.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 2
   },
   "src/components/modelListParts.tsx": {
     "arbitrary-value": 2
@@ -404,38 +482,42 @@
     "arbitrary-value": 2
   },
   "src/components/onboarding/SetupBanner.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 2,
+    "border-width": 2
   },
   "src/components/onboarding/kit.tsx": {
     "arbitrary-value": 9,
-    "focus-ring": 16,
+    "border-width": 2,
+    "focus-ring": 12,
     "uppercase": 1
   },
   "src/components/onboarding/steps/CoverStep.tsx": {
     "arbitrary-value": 4,
-    "focus-ring": 4
+    "focus-ring": 3
   },
   "src/components/onboarding/steps/DoneStep.tsx": {
     "arbitrary-value": 8,
-    "focus-ring": 4
+    "border-width": 2,
+    "focus-ring": 3
   },
   "src/components/onboarding/steps/InstallStep.tsx": {
     "arbitrary-value": 6,
-    "border-width": 1
+    "border-width": 7
   },
   "src/components/onboarding/steps/PreferencesStep.tsx": {
     "arbitrary-value": 5,
-    "border-width": 1
+    "border-width": 4
   },
   "src/components/onboarding/steps/SignInStep.tsx": {
-    "arbitrary-value": 7
+    "arbitrary-value": 7,
+    "border-width": 4
   },
   "src/components/onboarding/steps/SystemStep.tsx": {
     "arbitrary-value": 3
   },
   "src/components/sidechats/SideChatCloseDialog.tsx": {
     "arbitrary-value": 6,
-    "focus-ring": 3,
+    "focus-ring": 1,
     "palette-color": 5
   },
   "src/components/sidechats/SideChatComposer.tsx": {
@@ -446,10 +528,10 @@
   },
   "src/components/sidechats/SideChatHarnessPicker.tsx": {
     "arbitrary-value": 1,
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/components/sidechats/SideChatHeader.tsx": {
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/components/sidechats/SideChatHome.tsx": {
     "arbitrary-value": 1
@@ -459,215 +541,266 @@
   },
   "src/components/sidechats/SideChatRestoreButton.tsx": {
     "arbitrary-value": 1,
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/components/skeletons/WorkspaceSkeletons.tsx": {
     "arbitrary-value": 1,
+    "border-width": 14,
     "palette-color": 1
   },
   "src/components/terminal/TerminalCloseConfirm.tsx": {
     "arbitrary-value": 3,
-    "focus-ring": 2
+    "border-width": 2,
+    "focus-ring": 1
   },
   "src/components/terminal/TerminalWorkspace.tsx": {
     "arbitrary-value": 4,
-    "focus-ring": 4
+    "border-width": 4,
+    "focus-ring": 2
   },
   "src/components/transcript/ChildSessionLine.tsx": {
     "arbitrary-value": 7
   },
   "src/components/transcript/ClampedBlock.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 3
   },
   "src/components/transcript/LinkBadge.tsx": {
     "arbitrary-value": 1
   },
   "src/components/transcript/ProseFileLink.tsx": {
     "arbitrary-value": 8,
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/components/transcript/ResponseActions.tsx": {
     "arbitrary-value": 2
   },
   "src/components/transcript/UserBubble.tsx": {
-    "arbitrary-value": 8
+    "arbitrary-value": 8,
+    "border-width": 3
   },
   "src/components/transcript/commandCard.tsx": {
-    "arbitrary-value": 8
+    "arbitrary-value": 8,
+    "border-width": 6
   },
   "src/components/transcript/groups.tsx": {
     "arbitrary-value": 10,
-    "focus-ring": 2
+    "border-width": 4,
+    "focus-ring": 1
   },
   "src/components/transcript/primitives.tsx": {
     "arbitrary-value": 17,
     "uppercase": 2
   },
   "src/components/transcript/rows.tsx": {
-    "arbitrary-value": 16
+    "arbitrary-value": 16,
+    "border-width": 2
   },
   "src/components/transcript/webCards.tsx": {
-    "arbitrary-value": 11
+    "arbitrary-value": 11,
+    "border-width": 2
+  },
+  "src/components/ui/Field.tsx": {
+    "border-width": 2
   },
   "src/components/utility/UtilityPane.tsx": {
     "arbitrary-value": 4,
-    "focus-ring": 2
+    "border-width": 5,
+    "focus-ring": 1
   },
   "src/components/utility/UtilityToolPicker.tsx": {
     "arbitrary-value": 3,
-    "focus-ring": 4
+    "border-width": 3,
+    "focus-ring": 2
   },
   "src/features/automations/AnchoredPopover.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 2
   },
   "src/features/automations/AutomationEditor.tsx": {
-    "arbitrary-value": 11
+    "arbitrary-value": 11,
+    "border-width": 13
   },
   "src/features/automations/AutomationList.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 2
   },
   "src/features/automations/AutomationModelPicker.tsx": {
     "arbitrary-value": 12,
-    "border-width": 1,
-    "focus-ring": 4,
+    "border-width": 13,
+    "focus-ring": 2,
     "uppercase": 1
   },
   "src/features/automations/AutomationProposalCard.tsx": {
     "arbitrary-value": 14,
+    "border-width": 12,
     "uppercase": 1
   },
   "src/features/automations/AutomationRow.tsx": {
     "arbitrary-value": 4,
-    "border-width": 1,
-    "focus-ring": 2
+    "border-width": 3,
+    "focus-ring": 1
   },
   "src/features/automations/AutomationSessionBadge.tsx": {
-    "border-width": 1
+    "border-width": 3
   },
   "src/features/automations/AutomationsView.tsx": {
-    "arbitrary-value": 19
+    "arbitrary-value": 19,
+    "border-width": 14
   },
   "src/features/automations/ScheduleControls.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 5
   },
   "src/features/automations/SchedulePromptPopover.tsx": {
-    "arbitrary-value": 10
+    "arbitrary-value": 10,
+    "border-width": 4
   },
   "src/features/automations/ScheduledPrompts.tsx": {
     "arbitrary-value": 3,
+    "border-width": 2,
     "palette-color": 2
   },
   "src/features/automations/SelectMenu.tsx": {
     "arbitrary-value": 9,
-    "border-width": 1
+    "border-width": 7
   },
   "src/features/automations/TimeFields.tsx": {
-    "arbitrary-value": 7
+    "arbitrary-value": 7,
+    "border-width": 12
   },
   "src/features/projects/ProjectPlan.tsx": {
     "arbitrary-value": 4,
     "uppercase": 1
   },
   "src/features/projects/ProjectThreads.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 4
   },
   "src/features/projects/ProjectsIntro.tsx": {
     "arbitrary-value": 6,
-    "border-width": 2
+    "border-width": 10
   },
   "src/features/projects/ProjectsRoute.tsx": {
-    "arbitrary-value": 11
+    "arbitrary-value": 11,
+    "border-width": 5
   },
   "src/features/projects/ThreadDetail.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "border-width": 2
   },
   "src/features/projects/ThreadList.tsx": {
-    "arbitrary-value": 10
+    "arbitrary-value": 10,
+    "border-width": 7
   },
   "src/features/projects/ThreadNoticeCards.tsx": {
-    "arbitrary-value": 5
+    "arbitrary-value": 5,
+    "border-width": 6
   },
   "src/features/projects/ThreadRow.tsx": {
-    "arbitrary-value": 5
+    "arbitrary-value": 5,
+    "border-width": 2
   },
   "src/features/projects/ThreadSpawnLine.tsx": {
     "arbitrary-value": 6
   },
   "src/features/projects/ThreadsWaiting.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 2,
+    "border-width": 2
+  },
+  "src/features/providers/HarnessRail.tsx": {
+    "border-width": 2
   },
   "src/features/providers/HarnessSegments.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 2
   },
   "src/features/pull-requests/PullRequestsView.tsx": {
     "arbitrary-value": 2
   },
+  "src/features/pull-requests/components/GithubAvatar.tsx": {
+    "border-width": 3
+  },
   "src/features/pull-requests/components/PrBody.tsx": {
-    "arbitrary-value": 7
+    "arbitrary-value": 7,
+    "border-width": 2
   },
   "src/features/pull-requests/components/PrCollapse.tsx": {
     "arbitrary-value": 3
   },
   "src/features/pull-requests/components/PrCommentCard.tsx": {
     "arbitrary-value": 6,
-    "focus-ring": 2
+    "border-width": 4,
+    "focus-ring": 1
   },
   "src/features/pull-requests/components/PrCommentContent.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 6
   },
   "src/features/pull-requests/components/PrComposer.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 3
   },
   "src/features/pull-requests/components/PrDetail.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "border-width": 2
   },
   "src/features/pull-requests/components/PrDiff.tsx": {
     "arbitrary-value": 4
   },
   "src/features/pull-requests/components/PrHeader.tsx": {
-    "arbitrary-value": 7
+    "arbitrary-value": 7,
+    "border-width": 2
   },
   "src/features/pull-requests/components/PrInbox.tsx": {
     "arbitrary-value": 13,
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/features/pull-requests/components/PrMergeButton.tsx": {
     "arbitrary-value": 3,
+    "border-width": 2,
     "hex-color": 2,
     "palette-color": 1
   },
   "src/features/pull-requests/components/PrReviewButton.tsx": {
     "arbitrary-value": 6,
+    "border-width": 4,
     "uppercase": 1
   },
   "src/features/pull-requests/components/PrSection.tsx": {
     "arbitrary-value": 2,
-    "focus-ring": 2
+    "focus-ring": 1
   },
   "src/features/pull-requests/components/PrSummary.tsx": {
-    "arbitrary-value": 11
+    "arbitrary-value": 11,
+    "border-width": 4
   },
   "src/features/pull-requests/components/PrTimeline.tsx": {
-    "arbitrary-value": 9
+    "arbitrary-value": 9,
+    "border-width": 6
   },
   "src/features/pull-requests/components/PrWorkspaceEmpty.tsx": {
     "arbitrary-value": 7,
-    "focus-ring": 8
+    "focus-ring": 4
   },
   "src/features/transcript-reach/TranscriptReachBar.tsx": {
-    "arbitrary-value": 9
+    "arbitrary-value": 9,
+    "border-width": 10
   },
   "src/features/voice/VoiceMiniBar.tsx": {
-    "arbitrary-value": 9
+    "arbitrary-value": 9,
+    "border-width": 2
   },
   "src/features/voice/VoiceOrbDock.tsx": {
     "arbitrary-value": 1
   },
   "src/features/voice/VoiceSettingsSheet.tsx": {
-    "arbitrary-value": 9
+    "arbitrary-value": 9,
+    "border-width": 4
   },
   "src/features/voice/VoiceSurface.tsx": {
-    "arbitrary-value": 5
+    "arbitrary-value": 5,
+    "border-width": 2
   },
   "src/features/voice/VoiceTakeoverPopover.tsx": {
     "arbitrary-value": 3
