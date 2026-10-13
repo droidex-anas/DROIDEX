@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { ArchiveRestore, Trash2 } from 'lucide-react';
+import { ArchiveRestore, Trash } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { archivedChats, chatDisplayTitle } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
 import { workspaceName } from '../lib/workspaces';
+import { SectionTitle } from './settingsKit';
+import { Button } from './ui/Button';
 
 // Settings > Archived chats: chats hidden from the sidebar live here. Restore
 // brings a chat back to the normal list; delete removes it from the app
@@ -25,18 +27,16 @@ export function ArchivedChatsSettings() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="mb-4">
-        <h2 className="text-[16px] font-semibold text-primary">Archived chats</h2>
-        <p className="text-[12px] text-muted mt-0.5">
-          Hidden from your sidebar. Restore a chat to bring it back, or delete it for good.
-        </p>
-      </div>
+      <SectionTitle
+        title="Archived chats"
+        sub="Hidden from your sidebar. Restore a chat to bring it back, or delete it for good."
+      />
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-divider bg-surface/40 p-10 text-center">
-          <p className="text-[13px] text-secondary">No archived chats.</p>
+        <div className="rounded-xl bg-surface p-10 text-center">
+          <p className="text-body text-secondary">No archived chats.</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-divider bg-surface/40 divide-y divide-divider overflow-hidden">
+        <div className="divide-y divide-divider overflow-hidden rounded-xl bg-surface shadow-lg">
           {rows.map(({ session, archivedAt }) => {
             const title = chatDisplayTitle(session, chatMetadata[session.appSessionId]);
             return (
@@ -46,64 +46,62 @@ export function ArchivedChatsSettings() {
                 className="flex items-center gap-3 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] text-primary">{title}</div>
-                  <div className="mt-0.5 truncate text-[11px] text-muted">
+                  <div className="truncate text-body text-primary">{title}</div>
+                  <div className="mt-0.5 truncate text-caption text-muted">
                     Archived {formatRelativeTime(archivedAt, now)}
                     {session.cwd ? ` · ${workspaceName(session.cwd)}` : ''}
                   </div>
                 </div>
                 {confirmingDelete === session.appSessionId ? (
                   <div className="flex shrink-0 items-center gap-2">
-                    <span aria-live="polite" className="text-[11px] text-red-400">
+                    <span aria-live="polite" className="text-caption text-danger">
                       Delete permanently?
                     </span>
-                    <button
-                      type="button"
+                    <Button
+                      variant="danger"
+                      size="sm"
                       onClick={() => {
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
-                      className="rounded-sm px-2 py-1 text-[11px] font-medium text-red-300 bg-red-500/15 transition-colors hover:bg-red-500/25"
                     >
                       Delete
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       // The trash button unmounts when the confirm opens, so
                       // focus the safe action to keep keyboard users in place.
                       autoFocus
                       onClick={() => {
                         setConfirmingDelete(null);
                       }}
-                      className="rounded-sm px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-elevated hover:text-primary"
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 ) : (
                   <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={ArchiveRestore}
                       title="Restore to sidebar"
                       aria-label={`Restore ${title}`}
                       onClick={() => {
                         dispatch({ type: 'RESTORE_CHAT', appSessionId: session.appSessionId });
                       }}
-                      className="rounded-sm p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
-                    >
-                      <ArchiveRestore className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={Trash}
                       title="Delete permanently"
                       aria-label={`Delete ${title} permanently`}
                       onClick={() => {
                         setConfirmingDelete(session.appSessionId);
                       }}
-                      className="rounded-sm p-1.5 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    />
                   </div>
                 )}
               </div>

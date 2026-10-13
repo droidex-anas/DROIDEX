@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getAutomaticDiagnostics, setAutomaticDiagnostics } from '../lib/rendererDiagnostics';
 import { getUsageAnalyticsPreference, setUsageAnalyticsPreference } from '../lib/usageAnalytics';
+import { GroupLabel, SectionTitle } from './settingsKit';
 import { Switch } from './Switch';
 
 interface Preference {
@@ -70,23 +71,17 @@ export function DiagnosticsSettings() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-7">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-primary">
-          Privacy & diagnostics
-        </h1>
-        <p className="mt-1.5 max-w-xl text-[12px] leading-5 text-muted">
-          Control the automatic operational data DROIDEX sends to its private Sentry project.
-        </p>
-      </div>
+      <SectionTitle
+        title="Privacy & diagnostics"
+        sub="Control the automatic operational data DROIDEX sends to its private Sentry project."
+      />
 
-      <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted">
-        Automatic diagnostics
-      </div>
-      <div className="rounded-lg border border-divider bg-surface">
+      <GroupLabel>Automatic diagnostics</GroupLabel>
+      <div className="rounded-xl bg-surface shadow-lg">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
-            <div className="text-[13px] text-primary">Crash reports and Release Health</div>
-            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-muted">
+            <div className="text-body text-primary">Crash reports and Release Health</div>
+            <p className="mt-1 max-w-xl text-body text-muted">
               Sends app version, runtime and device context, crash stacks, native crash dumps, and a
               random local profile ID. Crash material can contain incidental sensitive data. It does
               not intentionally attach account identity as structured data. A minidump can still
@@ -104,25 +99,25 @@ export function DiagnosticsSettings() {
         </div>
       </div>
 
-      <p className="mt-3 text-[11px] leading-[17px] text-muted">
+      <p className="mt-3 text-body text-muted">
         Changes apply immediately. Turning it off stops automatic reporting and deletes the local
         profile ID. Reports you explicitly submit through <span className="font-mono">/bug</span> or{' '}
         <span className="font-mono">/feedback</span> are still sent when you choose Submit.
       </p>
       {diagnostics.error && (
-        <p role="alert" className="mt-3 text-[12px] text-red-400">
+        <p role="alert" className="mt-3 text-body text-danger">
           {diagnostics.error}
         </p>
       )}
 
-      <div className="mb-3 mt-8 text-[11px] font-medium uppercase tracking-wider text-muted">
-        Anonymous usage analytics
+      <div className="mt-8">
+        <GroupLabel>Anonymous usage analytics</GroupLabel>
       </div>
-      <div className="rounded-lg border border-divider bg-surface">
+      <div className="rounded-xl bg-surface shadow-lg">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
-            <div className="text-[13px] text-primary">Count this installation</div>
-            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-muted">
+            <div className="text-body text-primary">Count this installation</div>
+            <p className="mt-1 max-w-xl text-body text-muted">
               Records that the app was opened, so DROIDEX knows how many installations are active.
               It sends a random installation ID, the app version, your platform and architecture,
               and which channel the build came from. It never sends your name, email, prompts,
@@ -143,12 +138,12 @@ export function DiagnosticsSettings() {
         </div>
       </div>
 
-      <p className="mt-3 text-[11px] leading-[17px] text-muted">
+      <p className="mt-3 text-body text-muted">
         Turning it off stops the counting and deletes the stored installation ID. Turning it back on
         creates a new one, which counts as a separate installation.
       </p>
       {analytics.error && (
-        <p role="alert" className="mt-3 text-[12px] text-red-400">
+        <p role="alert" className="mt-3 text-body text-danger">
           {analytics.error}
         </p>
       )}

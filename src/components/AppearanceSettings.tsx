@@ -3,7 +3,7 @@
 // selector, and the typography/behavior card. Manual color edits still work
 // directly; they become an unsaved "custom" look until saved as a theme.
 
-import { Check, Monitor, Moon, Sun } from 'lucide-react';
+import { Check, Monitor, Moon, Sun } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ThemeConfig } from '../hooks/persistedThemePreferences';
 import {
@@ -18,6 +18,7 @@ import {
 import { Dropdown, GroupLabel, SectionTitle } from './settingsKit';
 import { ThemePresetCard } from './ThemePresetCard';
 import { SchemePreview } from './ThemePreview';
+import { Switch } from './Switch';
 
 /* ── shared controls ── */
 function ModeButton({
@@ -36,11 +37,11 @@ function ModeButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[11px] transition-colors ${
-        active ? 'bg-elevated text-primary border border-divider' : 'text-muted hover:text-primary'
+      className={`flex h-control-sm select-none items-center gap-1.5 rounded-md px-2.5 text-label transition-colors duration-150 ease-out ${
+        active ? 'bg-active text-primary' : 'text-muted hover:bg-elevated hover:text-primary'
       }`}
     >
-      <Icon className="w-3.5 h-3.5" />
+      <Icon aria-hidden="true" className="size-icon-sm" />
       {label}
     </button>
   );
@@ -64,10 +65,10 @@ function Slider({
   suffix?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-divider">
+    <div className="flex items-center justify-between gap-3 py-2.5">
       <div>
-        <div className="text-[13px] text-primary">{label}</div>
-        {sub && <div className="text-[11px] text-muted">{sub}</div>}
+        <div className="text-body text-primary">{label}</div>
+        {sub && <div className="text-caption text-muted">{sub}</div>}
       </div>
       <div className="flex items-center gap-2">
         <input
@@ -82,46 +83,11 @@ function Slider({
           className="w-32 h-1 rounded-full cursor-pointer"
           style={{ accentColor: 'var(--accent)' }}
         />
-        <span className="font-mono text-[11px] text-muted w-8 text-right">
+        <span className="w-8 text-right text-caption tabular-nums text-muted">
           {value}
           {suffix}
         </span>
       </div>
-    </div>
-  );
-}
-
-function Toggle({
-  label,
-  sub,
-  checked,
-  onChange,
-}: {
-  label: string;
-  sub?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between py-2.5 border-b border-divider">
-      <div>
-        <div className="text-[13px] text-primary">{label}</div>
-        {sub && <div className="text-[11px] text-muted">{sub}</div>}
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={() => {
-          onChange(!checked);
-        }}
-        className={`w-10 h-6 rounded-full transition-colors shrink-0 flex items-center p-0.5 ${checked ? 'bg-accent' : 'bg-divider'}`}
-      >
-        <span
-          className={`w-5 h-5 rounded-full shadow-[0_1px_2px_0_rgb(0_0_0/0.05)] transition-transform ${checked ? 'bg-bg translate-x-4' : 'bg-secondary translate-x-0'}`}
-        />
-      </button>
     </div>
   );
 }
@@ -143,16 +109,14 @@ function SchemeCard({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`rounded-lg border p-2 text-left transition-colors ${
-        active ? 'border-accent/50 bg-elevated' : 'border-divider hover:border-divider-strong'
+      className={`select-none rounded-xl p-2 text-left transition-colors duration-150 ease-out ${
+        active ? 'bg-active' : 'bg-surface hover:bg-elevated'
       }`}
     >
-      <div className="h-24 overflow-hidden rounded-md border border-divider">{children}</div>
+      <div className="h-24 overflow-hidden rounded-md shadow-sm">{children}</div>
       <div className="mt-2 flex items-center justify-between px-0.5 pb-0.5">
-        <span className={`text-[12px] ${active ? 'text-primary' : 'text-secondary'}`}>{label}</span>
-        {active && (
-          <Check className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} strokeWidth={3} />
-        )}
+        <span className={`text-label ${active ? 'text-primary' : 'text-secondary'}`}>{label}</span>
+        {active && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
       </div>
     </button>
   );
@@ -218,11 +182,11 @@ export function AppearanceSection() {
       <ThemePresetCard resolvedScheme={resolvedScheme} />
 
       {/* App icon */}
-      <div className="rounded-lg border border-divider bg-surface p-4 mb-6">
+      <div className="rounded-xl bg-surface shadow-lg p-4 mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-[13px] text-primary">App icon</div>
-            <div className="text-[11px] text-muted">
+            <div className="text-body text-primary">App icon</div>
+            <div className="text-caption text-muted">
               Match the system, or pick the light or dark DROIDEX icon
             </div>
           </div>
@@ -257,11 +221,11 @@ export function AppearanceSection() {
 
       {/* Typography + behavior */}
       <GroupLabel>Typography & behavior</GroupLabel>
-      <div className="rounded-lg border border-divider bg-surface px-4 [&>*:last-child]:border-b-0">
-        <div className="flex items-center justify-between py-2.5 border-b border-divider">
+      <div className="divide-y divide-divider rounded-xl bg-surface px-4 shadow-lg">
+        <div className="flex items-center justify-between py-2.5">
           <div>
-            <div className="text-[13px] text-primary">UI font</div>
-            <div className="text-[11px] text-muted">
+            <div className="text-body text-primary">UI font</div>
+            <div className="text-caption text-muted">
               Typeface for the whole app (defaults to your OS font)
             </div>
           </div>
@@ -307,14 +271,19 @@ export function AppearanceSection() {
             updateTheme({ contrast: v });
           }}
         />
-        <Toggle
-          label="Translucent sidebar"
-          sub="Blur and lighten the sidebar surface"
-          checked={theme.translucentSidebar}
-          onChange={(v) => {
-            updateTheme({ translucentSidebar: v });
-          }}
-        />
+        <div className="flex items-center justify-between gap-3 py-2.5">
+          <div>
+            <div className="text-body text-primary">Translucent sidebar</div>
+            <div className="text-caption text-muted">Blur and lighten the sidebar surface</div>
+          </div>
+          <Switch
+            label="Translucent sidebar"
+            checked={theme.translucentSidebar}
+            onChange={(v) => {
+              updateTheme({ translucentSidebar: v });
+            }}
+          />
+        </div>
       </div>
     </div>
   );
