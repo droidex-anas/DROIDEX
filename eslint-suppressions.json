@@ -174,14 +174,6 @@
       "count": 1
     }
   },
-  "src/components/environment/usePopover.ts": {
-    "@typescript-eslint/array-type": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
   "src/features/pull-requests/lib/prBacklog.ts": {
     "@typescript-eslint/restrict-template-expressions": {
       "count": 1

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Check, FolderGit2, FolderPlus } from 'lucide-react';
-import { Popover } from './Popover';
+import { Popover } from '../ui/Popover';
 import { WorktreeIcon } from '../icons/WorktreeIcon';
 
 // Custom composer-bar glyphs (16x16, currentColor) that replace the stock
@@ -206,7 +206,7 @@ export function StartInBar({
         }}
         anchorRef={repoRef}
         label="Projects"
-        align="left"
+        placement="bottom-start"
         width={264}
       >
         <div className="max-h-[260px] overflow-y-auto py-1">
@@ -277,7 +277,7 @@ export function StartInBar({
             }}
             anchorRef={locRef}
             label="Worktrees"
-            align="left"
+            placement="bottom-start"
             width={280}
           >
             <div className="max-h-[260px] overflow-y-auto py-1">

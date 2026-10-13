@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Pipette } from 'lucide-react';
-import { pushEscapeLayer } from './environment/usePopover';
+import { pushEscapeLayer } from './ui/escapeStack';
 
 /* ── color math ── */
 interface HSV {
@@ -250,7 +250,7 @@ export function ColorPopover({
       if (ref.current && !ref.current.contains(e.target as Node) && e.target !== anchor)
         onCloseRef.current();
     };
-    // Escape goes through the shared LIFO layer stack (see usePopover.ts) so a
+    // Escape goes through the shared LIFO layer stack (see ui/escapeStack.ts) so a
     // single keystroke closes only this innermost popover — a per-instance
     // window listener would race the theme editor's own Escape handler (which
     // registered first) and cancel the whole editor, discarding every edit.

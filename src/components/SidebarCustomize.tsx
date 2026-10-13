@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from 'lucide-react';
-import { Popover } from './environment/Popover';
+import { Popover } from './ui/Popover';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import {
   DEFAULT_SIDEBAR_PREFERENCES,
@@ -270,7 +270,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         open={open}
         onClose={close}
         anchorRef={trigger}
-        align="left"
+        placement="bottom-start"
         label="View options"
         width={256}
         className="overflow-visible"

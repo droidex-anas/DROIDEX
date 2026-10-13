@@ -5,7 +5,7 @@ import { Copy, Download, Spinner } from '@droidex/icons';
 import type { GithubAvailability } from '../../types/vcs';
 import type { GithubSetupAction } from '../../hooks/useGithubSetup';
 import { useGithubAuthCodeCopy } from '../../hooks/useGithubAuthCodeCopy';
-import { Popover } from './Popover';
+import { Popover } from '../ui/Popover';
 
 export interface GithubSetupCardProps {
   availability: GithubAvailability | null;
@@ -200,7 +200,7 @@ export function GithubSetupCard({
               onClose={onCloseAuthPrompt}
               anchorRef={actionRef}
               label="GitHub sign-in code"
-              align="left"
+              placement="bottom-start"
               width={320}
             >
               <GithubAuthPromptContent

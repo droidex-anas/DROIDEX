@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { ChangesIcon } from '@droidex/icons';
-import { Popover } from './Popover';
+import { Popover } from '../ui/Popover';
 import { RowCaret } from './primitives';
 import { DIFF_MODES, diffModeLabel } from '../../lib/git';
 import type { DiffStatMode, GitDiffStat } from '../../types/vcs';
@@ -109,7 +109,7 @@ export function DiffStat({
         }}
         anchorRef={anchorRef}
         label="Diff mode"
-        align="right"
+        placement="bottom-end"
         width={224}
       >
         <div className="p-1.5">

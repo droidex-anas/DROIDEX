@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ExternalLink, Plus, Trash2, X } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
-import { Popover } from './Popover';
+import { Popover } from '../ui/Popover';
 import { Row, RowCaret } from './primitives';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { createGitWorktree, isWorktreeInUse, removeGitWorktree, worktreeName } from '../../lib/git';
@@ -194,7 +194,7 @@ export function WorktreeMenu({
         }}
         anchorRef={anchorRef}
         label="Worktrees"
-        align="right"
+        placement="bottom-end"
         width={288}
       >
         <div className="min-h-0 flex-1 overflow-y-auto py-1">

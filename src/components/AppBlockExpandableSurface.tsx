@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
-import { HoverTooltip } from './HoverTooltip';
+import { Tooltip } from './ui/Tooltip';
 
 export interface AppExpansion {
   // The transcript row keeps the inline height while the App sits in the top
@@ -133,7 +133,7 @@ export function ExpandableAppSurface({
       {/* Outside the frame, so the button never covers the App's own controls. */}
       {canExpand && (
         <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
-          <HoverTooltip label="Full screen">
+          <Tooltip label="Full screen">
             <button
               ref={expandButtonRef}
               type="button"
@@ -148,7 +148,7 @@ export function ExpandableAppSurface({
             >
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
-          </HoverTooltip>
+          </Tooltip>
         </div>
       )}
     </div>

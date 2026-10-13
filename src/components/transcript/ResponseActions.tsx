@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowUp, Check, X } from 'lucide-react';
 import { Copy, GitFork } from '@droidex/icons';
 import { useRelativeTimeNow } from '../../hooks/useRelativeTimeNow';
-import { HoverTooltip } from '../HoverTooltip';
+import { Tooltip } from '../ui/Tooltip';
 import { useCopiedFlash } from './primitives';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -77,7 +77,7 @@ function RecentPromptTime({ ts }: { ts: number }) {
 function CopyButton({ text, label }: { text: string; label: string }) {
   const { copied, copy } = useCopiedFlash();
   return (
-    <HoverTooltip label={copied ? 'Copied' : 'Copy'}>
+    <Tooltip label={copied ? 'Copied' : 'Copy'}>
       <button
         type="button"
         aria-label={label}
@@ -88,7 +88,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </button>
-    </HoverTooltip>
+    </Tooltip>
   );
 }
 
@@ -113,7 +113,7 @@ export function PromptActions({
         {ts !== undefined ? <PromptTime ts={ts} /> : null}
         <CopyButton text={text} label="Copy prompt" />
         {onWithdraw ? (
-          <HoverTooltip label="Edit before sending">
+          <Tooltip label="Edit before sending">
             <button
               type="button"
               aria-label="Take back to edit"
@@ -122,14 +122,14 @@ export function PromptActions({
             >
               <X className="h-3.5 w-3.5" />
             </button>
-          </HoverTooltip>
+          </Tooltip>
         ) : null}
         {onSendNow ? (
-          <HoverTooltip label="Send now">
+          <Tooltip label="Send now">
             <button type="button" aria-label="Send now" onClick={onSendNow} className={buttonClass}>
               <ArrowUp className="h-3.5 w-3.5" />
             </button>
-          </HoverTooltip>
+          </Tooltip>
         ) : null}
       </div>
       {onSendNow ? <span className="px-1.5 text-[12px] text-muted">Unread</span> : null}
@@ -158,7 +158,7 @@ export function ResponseActions({
     <div className="-ml-1.5 mt-1.5 flex h-7 items-center gap-0.5">
       <CopyButton text={text} label="Copy response" />
       {onFork ? (
-        <HoverTooltip label={forking ? 'Forking…' : 'Fork into a new chat'}>
+        <Tooltip label={forking ? 'Forking…' : 'Fork into a new chat'}>
           <button
             type="button"
             aria-label="Fork chat"
@@ -169,7 +169,7 @@ export function ResponseActions({
           >
             <GitFork className="h-3.5 w-3.5" />
           </button>
-        </HoverTooltip>
+        </Tooltip>
       ) : null}
       {children}
       <MessageTime ts={ts} />

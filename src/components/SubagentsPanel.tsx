@@ -12,7 +12,7 @@ import {
   workingFirstChildSessions,
 } from '../lib/childSessions';
 import { AgentAvatar } from './AgentAvatar';
-import { Popover } from './environment/Popover';
+import { Popover } from './ui/Popover';
 import { RowCaret, SectionHeader } from './environment/primitives';
 
 // Avatars shown side by side on the summary line before a "+N" overflow count.
@@ -185,7 +185,7 @@ export function SubagentsSection({
         }}
         anchorRef={anchorRef}
         label="Subagents"
-        align="right"
+        placement="bottom-end"
         width={264}
       >
         <div className="max-h-72 overflow-y-auto p-1.5">

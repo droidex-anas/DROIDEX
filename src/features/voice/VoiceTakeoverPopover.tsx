@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 
 /**
  * One conversation at a time. The orb stays offered on every chat that can
@@ -26,6 +26,7 @@ export default function VoiceTakeoverPopover({
       open={open}
       onClose={onClose}
       anchorRef={anchorRef}
+      placement="bottom-end"
       label="Voice is in use"
       width={272}
     >

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { HoverTooltip } from '../../components/HoverTooltip';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { useStoreSelector } from '../../hooks/useStore';
 import { sessionAttention } from '../../lib/sessionAttention';
 import { sessionIsLive } from '../../lib/sessions';
@@ -40,7 +40,7 @@ export function ThreadsWaiting({ appSessionId }: { appSessionId: string }) {
   // A held project moves only when the user resumes it.
   if (names.length === 0 || project?.paused) return null;
   return (
-    <HoverTooltip label={names.join(', ')}>
+    <Tooltip label={names.join(', ')}>
       <span
         data-testid="threads-waiting"
         className="ml-1.5 flex items-center gap-1.5 px-1 text-[12px] font-medium"
@@ -53,6 +53,6 @@ export function ThreadsWaiting({ appSessionId }: { appSessionId: string }) {
           Waiting for {plural(names.length, 'thread', 'threads')}
         </span>
       </span>
-    </HoverTooltip>
+    </Tooltip>
   );
 }

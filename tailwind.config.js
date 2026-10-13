@@ -22,6 +22,8 @@ export default {
     // Plain CSS for the effort slider's shadow root, not Tailwind markup.
     '!./src/components/effortSlider/effortSliderStyles.ts',
   ],
+  // applyTheme marks <html data-theme="dark|light"> from the applied canvas.
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     // The design-system radius scale replaces Tailwind's; there is no bare
     // `rounded`. Off-scale radii stay arbitrary values (`rounded-[2px]`).
@@ -111,6 +113,12 @@ export default {
       size: sizes,
       minHeight: sizes,
       minWidth: sizes,
+      // Interaction values from feel.md and the README's states: the 0.97
+      // button press, the 1.5px ring (focus, invalid fields) and the smooth-out
+      // curve for anything that moves or opens.
+      scale: { 97: '0.97' },
+      ringWidth: { 1.5: '1.5px' },
+      transitionTimingFunction: { 'smooth-out': 'var(--ease-smooth-out)' },
       // Floating layers stack popovers < dialogs < toasts < tooltips.
       zIndex: {
         popover: '1000',

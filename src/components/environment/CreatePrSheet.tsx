@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
-import { usePopover } from './usePopover';
+import { useDismiss } from '../ui/useDismiss';
 import { createPullRequest } from '../../lib/github';
 import { baseDescriptor, gitPush, stripRemotePrefix } from '../../lib/git';
 import { openExternal } from '../../lib/onboarding';
@@ -38,7 +38,7 @@ export function CreatePrSheet({
   // run() guards re-entry synchronously so a second Cmd+Enter fired in the
   // same tick can't push/create twice.
   const { busy, run } = useBusyAction();
-  const basePickerRef = usePopover(
+  const basePickerRef = useDismiss(
     pickingBase,
     useCallback(() => {
       setPickingBase(false);
