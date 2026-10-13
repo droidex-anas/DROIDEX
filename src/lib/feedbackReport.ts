@@ -18,7 +18,7 @@ export async function submitFeedbackReport(
 ): Promise<FeedbackReportReceipt> {
   if (typeof window === 'undefined')
     throw new Error('Feedback is available only in the desktop app.');
-  const desktop = window.droidControl;
+  const desktop = window.droidex;
   if (!desktop) throw new Error('DROIDEX desktop bridge is unavailable.');
 
   const enriched: FeedbackReportRequest = { ...report };

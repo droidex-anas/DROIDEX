@@ -2,10 +2,10 @@ import { expect, test } from '@playwright/test';
 
 const appUrl = process.env.DROIDEX_TEST_URL || '/';
 
-test('loads the Droid Control shell', async ({ page }) => {
+test('loads the DROIDEX shell', async ({ page }) => {
   await page.goto(appUrl);
 
-  await expect(page).toHaveTitle(/Droid Control/);
+  await expect(page).toHaveTitle(/DROIDEX/);
   await expect(page.locator('#root')).toBeVisible();
 });
 
@@ -27,7 +27,7 @@ test('slash feedback returns a durable copyable report receipt', async ({ page, 
   await expect(details).toBeFocused();
 
   await page.evaluate(() => {
-    Reflect.set(window, 'droidControl', {
+    Reflect.set(window, 'droidex', {
       submitFeedbackReport: async () => ({
         reportId: 'RPT-20260804-A1B2C3D4E5F6',
         userId: 'USR-123456781234',

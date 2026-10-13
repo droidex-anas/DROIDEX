@@ -19,9 +19,9 @@ export interface AppUpdateInfo {
   installMode: 'automatic' | 'sparkle';
 }
 
-function bridge(): NonNullable<Window['droidControl']> {
-  const api = window.droidControl;
-  if (!api) throw new Error('droidControl bridge unavailable');
+function bridge(): NonNullable<Window['droidex']> {
+  const api = window.droidex;
+  if (!api) throw new Error('droidex bridge unavailable');
   return api;
 }
 

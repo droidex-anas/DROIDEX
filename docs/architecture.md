@@ -331,7 +331,7 @@ Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and
   process memory/CPU; the renderer reads it through
-  `window.droidControl.getPerformanceMetrics()`.
+  `window.droidex.getPerformanceMetrics()`.
 
 ### Replay harness
 

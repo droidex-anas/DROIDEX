@@ -24,7 +24,7 @@ export function isGithubAuthCodeCopied(
 }
 
 function githubApi() {
-  return typeof window === 'undefined' ? undefined : window.droidControl;
+  return typeof window === 'undefined' ? undefined : window.droidex;
 }
 
 const unavailableSetup = (): GithubSetupResult => ({

@@ -92,7 +92,7 @@ let previousGlobals: { window: Window & typeof globalThis; WebSocket: typeof Web
 beforeEach(() => {
   previousGlobals = { window: globalThis.window, WebSocket: globalThis.WebSocket };
   FakeWebSocket.instances = [];
-  Object.assign(globalThis, { window: { droidControl: {} }, WebSocket: FakeWebSocket });
+  Object.assign(globalThis, { window: { droidex: {} }, WebSocket: FakeWebSocket });
 });
 
 afterEach(() => {
@@ -172,7 +172,7 @@ test('[R1] Renderer command round trip', async () => {
   const baselineAdoptions: unknown[][] = [];
   Object.assign(globalThis, {
     window: {
-      droidControl: {
+      droidex: {
         bridgeInfo: async () => ({ port: 43123, token: 'r1-token' }),
         gitAdoptTurnBaseline: async (...args: unknown[]) => {
           baselineAdoptions.push(args);

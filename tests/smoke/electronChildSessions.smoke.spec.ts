@@ -214,7 +214,7 @@ test('[E2] parent-scoped child navigation and visible commands', async () => {
     resources.app = app;
     const page = await app.firstWindow();
     await page.evaluate(async () => {
-      await window.droidControl!.setOnboarding({
+      await window.droidex!.setOnboarding({
         completed: true,
         cliAutoUpdate: false,
         appAutoUpdate: false,

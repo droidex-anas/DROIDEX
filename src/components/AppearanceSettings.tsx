@@ -193,7 +193,7 @@ export function AppearanceSection() {
     <div className="max-w-2xl mx-auto">
       <SectionTitle
         title="Appearance"
-        sub="Choose how Droid Control looks. Use a built-in theme or make your own."
+        sub="Choose how DROIDEX looks. Use a built-in theme or make your own."
       />
 
       {/* Color scheme */}
@@ -277,7 +277,7 @@ export function AppearanceSection() {
         </div>
         <Slider
           label="UI font size"
-          sub="Base size used across the Droid Control UI"
+          sub="Base size used across the DROIDEX UI"
           value={theme.uiFontSize}
           min={12}
           max={18}

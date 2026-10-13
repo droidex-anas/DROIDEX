@@ -222,7 +222,7 @@ export class Bridge {
 
   private adoptTurnBaseline(event: ServerEvent): void {
     if (event.type !== 'session.created' || !event.session.cwd) return;
-    const api = globalThis.window.droidControl;
+    const api = globalThis.window.droidex;
     if (!api || !canAdoptTurnBaseline(api)) return;
     void api
       .gitAdoptTurnBaseline(event.session.cwd, event.clientRef, event.session.appSessionId)
