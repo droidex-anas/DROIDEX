@@ -93,7 +93,7 @@ export function ArchivedChatsSettings() {
                       }}
                     />
                     <Button
-                      variant="ghost"
+                      variant="danger"
                       size="sm"
                       icon={Trash}
                       title="Delete permanently"

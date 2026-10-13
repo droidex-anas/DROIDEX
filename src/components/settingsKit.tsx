@@ -82,7 +82,17 @@ export function Dropdown({
     const selected =
       list?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]') ??
       list?.querySelector<HTMLElement>('[role="option"]');
-    selected?.focus({ preventScroll: true });
+    if (!list || !selected) return;
+    selected.focus({ preventScroll: true });
+    // The popover's position pass sizes the list after this effect runs, so
+    // reveal the selected option whenever the list's box settles.
+    const observer = new ResizeObserver(() => {
+      selected.scrollIntoView({ block: 'nearest' });
+    });
+    observer.observe(list);
+    return () => {
+      observer.disconnect();
+    };
   }, [open]);
 
   const onListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
