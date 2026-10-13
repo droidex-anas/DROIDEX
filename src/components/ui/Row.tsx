@@ -103,13 +103,6 @@ export function SectionHeader({ label, trailing, className, ...rest }: SectionHe
   );
 }
 
-// The only line in the system: a translucent hairline between groups.
-export function Divider({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div role="separator" {...rest} className={cn('mx-3 my-1.5 h-px bg-divider', className)} />
-  );
-}
-
 // The disclosure caret expandable rows carry on their trailing edge, so every
 // fold rotates and dims identically.
 export function RowCaret({ open }: { open: boolean }) {

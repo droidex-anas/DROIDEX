@@ -23,7 +23,7 @@ import {
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
 import { useOpenAgent } from './agents/useOpenAgent';
-import { Row, SectionHeader, Divider } from './ui/Row';
+import { Row, SectionHeader } from './ui/Row';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
 import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '../types/bridge';
@@ -164,9 +164,9 @@ export default function RightPanel() {
           that used to arrive late and grow it — PR detection, notes pad,
           subagent list — now share fixed slots or start collapsed, so the one
           remaining height change is the environment rows landing after mount. */}
-      <div className="droid-card pointer-events-auto w-full max-h-full">
+      <div className="pointer-events-auto flex w-full max-h-full flex-col overflow-hidden rounded-xl bg-surface shadow-lg">
         {/* Header (no close button — the top toolbar button toggles this panel) */}
-        <div className="flex h-11 shrink-0 items-center justify-between bg-bg/40 pl-4 pr-3">
+        <div className="mb-1 flex h-11 shrink-0 items-center justify-between pl-4 pr-3">
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-primary">Context</span>
           {working && <span className="shimmer-text text-[11px] font-medium">Working</span>}
         </div>
@@ -228,7 +228,6 @@ export default function RightPanel() {
               on a session switch instead of leaking into the next session. */}
           {activeSession && childSessions.length > 0 && (
             <div>
-              <Divider />
               <SubagentsSection
                 key={activeSession.appSessionId}
                 childSessions={childSessions}
@@ -244,7 +243,6 @@ export default function RightPanel() {
           {/* Spec — opens the full wiki reader for sessions that produced one */}
           {activeSession && activeSpec && (
             <div>
-              <Divider />
               <SectionHeader label="Spec" />
               <Row
                 icon={<FileText className="h-4 w-4" />}
@@ -265,7 +263,6 @@ export default function RightPanel() {
               session switch instead of leaking into the next session. */}
           {activeSession && (
             <div>
-              <Divider />
               <NotesSection
                 key={activeSession.appSessionId}
                 appSessionId={activeSession.appSessionId}
@@ -303,10 +300,7 @@ export default function RightPanel() {
                       {f.preconditions.length > 0 && (
                         <div className="space-y-1">
                           {f.preconditions.map((p, i) => (
-                            <div
-                              key={i}
-                              className="text-[12px] text-muted pl-3 border-l-2 border-divider"
-                            >
+                            <div key={i} className="pl-3 text-caption text-muted">
                               {p}
                             </div>
                           ))}

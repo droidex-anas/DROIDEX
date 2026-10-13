@@ -46,6 +46,7 @@ const toKey = (file) => relative(root, file).replaceAll('\\', '/');
 
 // Same rule as eslint.config.js, without the baseline option, so every
 // violation is reported and the counts here can never drift from lint's.
+// Reasoned inline disables for the spec's semantic edges apply in both scans.
 // Unused-disable reports are off because inline directives for other rules
 // never run in this minimal config.
 const linter = new Linter({ configType: 'flat' });

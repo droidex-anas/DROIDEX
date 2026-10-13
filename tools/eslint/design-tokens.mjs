@@ -12,7 +12,7 @@ import { relative } from 'node:path';
 
 // Ring classes the focus-ring token makes legal: components that opt out of
 // the global :focus-visible outline (src/index.css) ring with this token.
-const ALLOWED_FOCUS_CLASSES = ['ring-focus-ring'];
+const ALLOWED_FOCUS_CLASSES = ['ring', 'ring-0', 'ring-1', 'ring-2', 'ring-inset', 'ring-focus-ring'];
 
 // Functions whose string arguments are class values, wherever they are called.
 const CLASS_HELPERS = new Set(['cn', 'clsx', 'twMerge', 'classnames']);
@@ -26,9 +26,11 @@ const HEX_COLOR = /#[0-9a-fA-F]{3,8}\b/;
 const PALETTE_COLOR =
   /^(?:text|bg|border|ring|divide|fill|stroke|from|to|via|outline|decoration|caret|accent|shadow|placeholder)-(?:black|white|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d{2,3})?(?:\/\d+)?$/;
 const ARBITRARY_VALUE = /-\[[^\]]*\]/;
-const BORDER_WIDTH = /^border(?:-[trblxy]{1,2})?(?:-[2-8])?$/;
-const BORDER_DIVIDER_COLOR = /^border(?:-[trblxy]{1,2})?-divider(?:\/\d+)?$/;
-const DIVIDE_WIDTH = /^divide-[xy](?:-[2-8])?$/;
+const SURFACE_EDGE = /^(?:border|ring|outline)(?:-|$)/;
+const EDGE_RESETS = new Set([
+  'border-0', 'border-none', 'ring-0', 'outline-none', 'outline-hidden', 'outline-0',
+]);
+const DIVIDE_WIDTH = /^divide-[xy](?:-\d+)?$/;
 const DIVIDE_DIVIDER_COLOR = /^divide-divider(?:\/\d+)?$/;
 const FONT_WEIGHT = /^font-(?:bold|light|thin|extralight|extrabold|black)$/;
 const FOCUS_VISIBLE = /(^|:)focus-visible:/;
@@ -48,13 +50,17 @@ function splitClassToken(token) {
   return { prefix: cut === -1 ? '' : token.slice(0, cut), cls: cls.replace(/^!/, '') };
 }
 
-function categoryOf(token, borderDividers, divideDividers) {
+function categoryOf(token, divideDividers) {
   const { prefix, cls } = splitClassToken(token);
   if (HEX_COLOR.test(cls)) return 'hex-color';
   if (PALETTE_COLOR.test(cls)) return 'palette-color';
   if (ARBITRARY_VALUE.test(cls)) return 'arbitrary-value';
-  if (BORDER_WIDTH.test(cls) && !borderDividers.has(prefix)) return 'border-width';
-  if (DIVIDE_WIDTH.test(cls) && !divideDividers.has(prefix)) return 'border-width';
+  if (SURFACE_EDGE.test(cls) && !EDGE_RESETS.has(cls) && !FOCUS_VISIBLE.test(token)) {
+    return 'border-width';
+  }
+  if (DIVIDE_WIDTH.test(cls) && (!/^divide-[xy]$/.test(cls) || !divideDividers.has(prefix))) {
+    return 'border-width';
+  }
   if (FONT_WEIGHT.test(cls)) return 'font-weight';
   if (FOCUS_VISIBLE.test(token) && /^ring/.test(cls) && !ALLOWED_FOCUS_CLASSES.includes(cls)) {
     return 'focus-ring';
@@ -199,11 +205,11 @@ export default {
       'arbitrary-value':
         "Arbitrary Tailwind value '{{cls}}'. Use a design-system token (type styles, radius, spacing, z-index) or add one in the token layer.{{note}}",
       'hex-color':
-        "Hex colour '{{cls}}'. Use a theme token (bg-surface, text-secondary, border-divider, text-danger).{{note}}",
+        "Hex colour '{{cls}}'. Use a theme token (bg-surface, text-secondary, text-danger).{{note}}",
       'palette-color':
         "Tailwind default palette '{{cls}}'. Use a theme token (bg-active, text-secondary, text-danger).{{note}}",
       'border-width':
-        "Border width '{{cls}}'. Separate with tone, space and shadow; the only hairline is a border-divider colour with the same variant in the same className.{{note}}",
+        "Surface edge '{{cls}}'. Separate with tone, space and floating shadow. Use divide-y/divide-x with divide-divider for dense rows; document semantic exceptions with a reasoned inline directive (docs/design-system/rules.md).{{note}}",
       'font-weight': "Font weight '{{cls}}'. Use font-medium or font-semibold.{{note}}",
       'focus-ring':
         "Focus ring '{{cls}}'. Use the focus-ring token (ALLOWED_FOCUS_CLASSES in tools/eslint/design-tokens.mjs).{{note}}",
@@ -218,31 +224,39 @@ export default {
     const resolve = makeConstResolver(context);
     const findings = [];
     const seen = new Set();
+    // Semantic edges must not consume the file's debt allowance. Still report
+    // them so ESLint applies the directive and knows it was used.
+    const disabledLines = new Set(
+      context.sourceCode.getDisableDirectives().directives
+        .filter((directive) =>
+          directive.type === 'disable-next-line' &&
+          directive.value.split(',').some((ruleId) => ruleId.trim() === context.id),
+        )
+        .map((directive) => directive.node.loc.end.line + 1),
+    );
 
     // Dividers from unconditional parts apply inside conditional forks;
     // sibling alternatives never exempt each other.
     const reportGroup = (group, inherited) => {
-      const border = new Set(inherited.border);
-      const divide = new Set(inherited.divide);
+      const divide = new Set(inherited);
       for (const token of group.parts.flatMap((part) => part.text.split(/\s+/))) {
         if (!token) continue;
         const { prefix, cls } = splitClassToken(token);
-        if (BORDER_DIVIDER_COLOR.test(cls)) border.add(prefix);
         if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
       }
       for (const part of group.parts) {
         for (const token of part.text.split(/\s+/)) {
-          const category = token && categoryOf(token, border, divide);
+          const category = token && categoryOf(token, divide);
           if (category) findings.push({ category, cls: token, node: part.node });
         }
       }
-      for (const forked of group.forks) reportGroup(forked, { border, divide });
+      for (const forked of group.forks) reportGroup(forked, divide);
     };
 
     const visitValue = (node) => {
       const root = newGroup(null);
       collectClassStrings(node, root, resolve, seen);
-      if (root.parts.length > 0 || root.forks.length > 0) reportGroup(root, { border: new Set(), divide: new Set() });
+      if (root.parts.length > 0 || root.forks.length > 0) reportGroup(root, new Set());
     };
 
     return {
@@ -267,7 +281,12 @@ export default {
         }
         for (const [category, list] of byCategory) {
           const allowed = fileBaseline[category] ?? 0;
-          for (const finding of list.slice(allowed)) {
+          let remaining = allowed;
+          for (const finding of list) {
+            if (!disabledLines.has(finding.node.loc.start.line) && remaining > 0) {
+              remaining--;
+              continue;
+            }
             context.report({
               node: finding.node,
               messageId: category,
