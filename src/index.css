@@ -194,8 +194,9 @@
     border-radius: 9999px;
   }
 
-  :hover:not(.scrollbar-while-scrolling)::-webkit-scrollbar-thumb,
-  [data-scrolling]::-webkit-scrollbar-thumb {
+  /* :where() keeps the reveal at the plain thumb's specificity, so the
+     hover and drag emphasis below still wins over it. */
+  :where(:hover:not(.scrollbar-while-scrolling), [data-scrolling])::-webkit-scrollbar-thumb {
     background: color-mix(in srgb, var(--text) 16%, transparent);
   }
 
