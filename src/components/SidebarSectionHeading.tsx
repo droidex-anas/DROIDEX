@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight } from '@droidex/icons';
 
 // A collapsible sidebar section label: text with a trailing chevron, no fill.
 // The label brightens on hover; an optional trailing action (e.g. "+") sits
@@ -25,16 +25,14 @@ export function SidebarSectionHeading({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          className="group/heading flex w-full cursor-pointer items-center gap-1 rounded-sm text-left text-[13px] font-medium text-muted transition-colors hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
+          className="group/heading flex w-full cursor-pointer items-center gap-1 rounded-sm text-left text-label text-muted transition-colors hover:text-secondary"
         >
           <span className="truncate">{label}</span>
           <ChevronRight
-            className={`h-3 w-3 shrink-0 opacity-50 transition-[transform,opacity] group-hover/heading:opacity-100 ${open ? 'rotate-90' : ''}`}
-            strokeWidth={2}
-            aria-hidden="true"
+            className={`size-icon-sm shrink-0 opacity-50 transition group-hover/heading:opacity-100 ${open ? 'rotate-90' : ''}`}
           />
           {!open && count !== undefined && (
-            <span className="ml-auto text-[11px] font-normal tabular-nums opacity-70">{count}</span>
+            <span className="ml-auto text-caption tabular-nums opacity-70">{count}</span>
           )}
         </button>
       </h3>

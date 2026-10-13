@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from 'lucide-react';
+import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from '@droidex/icons';
+import { Button } from './ui/Button';
+import { Menu } from './ui/Menu';
 import { Popover } from './ui/Popover';
+import { Tooltip } from './ui/Tooltip';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import {
   DEFAULT_SIDEBAR_PREFERENCES,
@@ -20,9 +23,9 @@ interface Option<T> {
   icon?: ReactNode;
 }
 
-const ICON = 'h-4 w-4';
+const ICON = 'size-icon-md';
 const VIEWS: Option<SidebarActivityPreferences['view']>[] = [
-  { value: 'workspaces', label: 'Workspace', icon: <Folder className={ICON} strokeWidth={1.5} /> },
+  { value: 'workspaces', label: 'Workspace', icon: <Folder className={ICON} /> },
   {
     value: 'activity',
     label: 'Activity',
@@ -31,7 +34,7 @@ const VIEWS: Option<SidebarActivityPreferences['view']>[] = [
   {
     value: 'pull-requests',
     label: 'Pull request',
-    icon: <GitPullRequest className={ICON} strokeWidth={1.5} />,
+    icon: <GitPullRequest className={ICON} />,
   },
 ];
 const ORDER: Option<SidebarActivityPreferences['order']>[] = [
@@ -53,8 +56,10 @@ const STATUS: Option<SidebarActivityPreferences['filter']>[] = [
   { value: 'settled', label: 'Settled' },
 ];
 
+// The Menu item look; the cascade is hand-rolled because Menu has no submenus.
+const ROW_HIGHLIGHT = 'bg-elevated dark:bg-active';
 const ROW =
-  'flex w-full items-center gap-3 px-3.5 py-2 text-left text-[13px] text-primary transition-colors hover:bg-elevated/70 focus-visible:bg-elevated/70 focus-visible:outline-none';
+  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary outline-none transition-colors enabled:hover:bg-elevated enabled:focus-visible:bg-elevated dark:enabled:hover:bg-active dark:enabled:focus-visible:bg-active';
 
 type Submenu = 'view' | 'order' | 'limit' | 'filter';
 
@@ -106,7 +111,7 @@ function FlyoutRow<T extends string | number>({
       }}
     >
       <button
-        className={`${ROW} ${isOpen ? 'bg-elevated/70' : ''}`}
+        className={`${ROW} ${isOpen ? ROW_HIGHLIGHT : ''}`}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={() => {
@@ -116,17 +121,13 @@ function FlyoutRow<T extends string | number>({
         <span className="flex-1">{label}</span>
         {showValue && <span className="text-muted">{current?.label}</span>}
         {marked && <span className="h-1.5 w-1.5 rounded-full bg-secondary" />}
-        <ChevronRight className="h-4 w-4 text-muted" strokeWidth={1.5} />
+        <ChevronRight className="size-icon-md text-muted" />
       </button>
       {isOpen && (
         // The gap to the flyout is padding on a wrapper, not a margin, so the
         // pointer never leaves the menu while crossing it.
         <div className="absolute -top-1.5 left-full pl-1.5" onMouseEnter={onSettle}>
-          <div
-            role="menu"
-            aria-label={label}
-            className="w-[220px] rounded-lg border border-divider bg-surface py-1.5 shadow-lg"
-          >
+          <div role="menu" aria-label={label} className="w-56 rounded-lg bg-raised p-1.5 shadow-lg">
             {options.map((option) => {
               const selected = option.value === value;
               return (
@@ -145,7 +146,7 @@ function FlyoutRow<T extends string | number>({
                     </span>
                   )}
                   <span className="flex-1">{option.label}</span>
-                  {selected && <Check className="h-4 w-4" strokeWidth={2} />}
+                  {selected && <Check className="size-icon-md" />}
                 </button>
               );
             })}
@@ -247,25 +248,25 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
 
   return (
     <div className="mb-1 ml-5 mr-3 flex items-center justify-between">
-      <span className="text-[13px] font-medium text-muted">
+      <span className="text-label text-muted">
         {VIEWS.find((view) => view.value === preferences.view)?.label}
       </span>
-      <button
-        ref={trigger}
-        onClick={() => {
-          if (open) close();
-          else setOpen(true);
-        }}
-        title="View options"
-        aria-label="View options"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={`cursor-pointer rounded-sm p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
-          open || customized ? 'text-primary' : 'text-muted hover:text-primary'
-        }`}
-      >
-        <ListFilter className="h-4 w-4" strokeWidth={1.5} />
-      </button>
+      <Tooltip label="View options">
+        <Button
+          ref={trigger}
+          variant="ghost"
+          size="sm"
+          icon={ListFilter}
+          onClick={() => {
+            if (open) close();
+            else setOpen(true);
+          }}
+          aria-label="View options"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          data-selected={customized || undefined}
+        />
+      </Tooltip>
       <Popover
         open={open}
         onClose={close}
@@ -276,7 +277,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         className="overflow-visible"
       >
         <div
-          className="py-1.5"
+          className="p-1.5"
           onKeyDown={onKeyDown}
           onMouseMove={(event) => {
             movingRight.current = event.clientX > lastX.current;
@@ -335,12 +336,12 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('limit', limit);
             }}
           />
-          <div className="mx-3.5 my-1.5 border-t border-divider" />
-          <div className="flex items-center px-3.5 py-1.5 text-[13px] text-muted">
+          <Menu.Divider />
+          <div className="flex items-center px-2 pb-1 pt-1.5 text-label text-muted">
             <span className="flex-1">Filters</span>
             {customized && (
               <button
-                className="transition-colors hover:text-primary"
+                className="rounded-xs transition-colors hover:text-primary"
                 onClick={() => {
                   onChange({
                     ...DEFAULT_SIDEBAR_PREFERENCES,
@@ -369,9 +370,9 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('filter', filter);
             }}
           />
-          <div className="mx-3.5 my-1.5 border-t border-divider" />
+          <Menu.Divider />
           <button
-            className={`${ROW} disabled:text-muted disabled:hover:bg-transparent`}
+            className={`${ROW} disabled:text-muted`}
             disabled={unreadCount === 0}
             onMouseEnter={closeSubmenu}
             onClick={() => {

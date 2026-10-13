@@ -83,6 +83,7 @@
     --danger-soft: rgba(214, 118, 110, 0.12);
     --update: #005fc8;
     --update-hover: #0054b2;
+    --on-update: #ffffff;
     --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.28);
     --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.35);
     --diff-add-fg: #73c991;
@@ -650,10 +651,10 @@
     transform: translateX(70%);
     -webkit-mask-image: linear-gradient(
       to right,
-      #000 calc(100% - 9px),
+      #000 calc(100% - 8px),
       transparent calc(100% - 3px)
     );
-    mask-image: linear-gradient(to right, #000 calc(100% - 9px), transparent calc(100% - 3px));
+    mask-image: linear-gradient(to right, #000 calc(100% - 8px), transparent calc(100% - 3px));
     transition:
       opacity 120ms ease-out,
       transform 380ms cubic-bezier(0.32, 0.72, 0, 1);
