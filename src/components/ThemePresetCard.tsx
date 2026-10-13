@@ -12,7 +12,6 @@ import { persistCustomThemes, type ThemeConfig } from '../hooks/persistedThemePr
 import {
   applyTheme,
   BUILT_IN_THEMES,
-  contrastRatio,
   CUSTOM_THEME_ID,
   DEFAULT_THEME,
   findPreset,
@@ -24,6 +23,7 @@ import {
   type ThemeColors,
   type ThemePreset,
 } from '../lib/theme';
+import { contrastRatio } from '../lib/themeTokens';
 import { ColorPicker, ColorPopover } from './ColorPicker';
 import { Dropdown } from './settingsKit';
 import { ThemeEditor, type ThemeDraft } from './ThemeEditor';
