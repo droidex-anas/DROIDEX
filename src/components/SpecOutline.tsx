@@ -16,7 +16,7 @@ function extractOutline(markdown: string): OutlineHeading[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const match = line.match(/^(#{1,3})\s+(.+)$/);
+    const match = /^(#{1,3})\s+(.+)$/.exec(line);
     if (match) {
       if (currentHeading) {
         headings.push({
@@ -80,7 +80,9 @@ export function SpecOutline({
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   const highlight = (text: string) => {
@@ -110,13 +112,17 @@ export function SpecOutline({
           <input
             ref={searchRef}
             value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => {
+              onSearchChange(e.target.value);
+            }}
             placeholder="Find in outline…"
             className="flex-1 min-w-0 bg-transparent text-[12px] text-droid-text placeholder-droid-text-muted focus:outline-none"
           />
           {searchQuery && (
             <button
-              onClick={() => onSearchChange('')}
+              onClick={() => {
+                onSearchChange('');
+              }}
               className="p-0.5 rounded text-droid-text-muted/60 hover:text-droid-text transition-colors"
               title="Clear"
             >
@@ -138,7 +144,9 @@ export function SpecOutline({
             return (
               <button
                 key={h.id}
-                onClick={() => onSelect(h.id)}
+                onClick={() => {
+                  onSelect(h.id);
+                }}
                 style={{ paddingLeft: `${(h.level - 1) * 12 + 10}px` }}
                 className={`group w-full flex items-center gap-2 pr-2 py-1.5 rounded-md text-left transition-colors ${
                   isActive ? 'bg-droid-elevated/60' : 'hover:bg-droid-elevated/30'

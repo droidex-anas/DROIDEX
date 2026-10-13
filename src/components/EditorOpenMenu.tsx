@@ -104,7 +104,9 @@ export default function EditorOpenMenu({
             <EditorIcon editor={selected} size={15} />
           </button>
           <button
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => {
+              setOpen((v) => !v);
+            }}
             title="Editor actions"
             className={`flex items-center pr-1.5 pl-0.5 py-1.5 transition-colors ${
               open
@@ -117,7 +119,9 @@ export default function EditorOpenMenu({
         </div>
       ) : (
         <button
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => {
+            setOpen((v) => !v);
+          }}
           title={`Open with ${editorLabel(selected)}`}
           className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] transition-colors ${
             open
@@ -137,14 +141,18 @@ export default function EditorOpenMenu({
             icon={<FolderOpen className="w-3.5 h-3.5" />}
             label="Open codebase"
             disabled={!hasCwd}
-            onClick={() => run('codebase')}
+            onClick={() => {
+              run('codebase');
+            }}
           />
           <MenuAction
             icon={<FileDiff className="w-3.5 h-3.5" />}
             label="Open current diff"
             disabled={!hasCwd || !hasRepo}
             hint={!hasRepo && hasCwd ? 'No repo' : undefined}
-            onClick={() => run('diff')}
+            onClick={() => {
+              run('diff');
+            }}
           />
 
           <div className="my-1.5 h-px bg-droid-border/70" />
@@ -155,7 +163,9 @@ export default function EditorOpenMenu({
           {options.map((option) => (
             <button
               key={option.id}
-              onClick={() => chooseDefault(option.id)}
+              onClick={() => {
+                chooseDefault(option.id);
+              }}
               className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text-secondary hover:bg-droid-elevated/60 hover:text-droid-text transition-colors"
             >
               <EditorIcon editor={option.id} size={15} />

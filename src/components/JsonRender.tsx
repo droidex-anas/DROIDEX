@@ -28,17 +28,17 @@ const MAX_NODES = 1000;
 const MAX_ITEMS = 2000;
 const MAX_TABLE_COLUMNS = 40;
 
-type RawElement = {
+interface RawElement {
   type?: string;
   props?: Record<string, unknown>;
   children?: unknown;
   [key: string]: unknown;
-};
+}
 
-type Spec = {
+interface Spec {
   root?: string;
   elements?: Record<string, RawElement>;
-};
+}
 
 const COLOR_MAP: Record<string, string> = {
   accent: 'var(--droid-accent)',
@@ -557,7 +557,7 @@ export const JsonRender = memo(function JsonRender({ source }: { source: string 
     }
   }, [source]);
 
-  if (!parsed || !parsed.elements || !parsed.root) {
+  if (!parsed?.elements || !parsed.root) {
     return <ErrorFallback raw={source.trim()} />;
   }
 
