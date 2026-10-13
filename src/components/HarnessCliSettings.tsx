@@ -5,6 +5,7 @@ import type { HarnessCliState, HarnessInstallSource } from '../types/bridge';
 import { ModelIcon } from './ModelIcon';
 import { SettingRow } from './settingsKit';
 import { Switch } from './Switch';
+import { Button } from './ui/Button';
 
 const SOURCE_LABELS: Record<HarnessInstallSource, string> = {
   homebrew: 'Homebrew',
@@ -26,7 +27,7 @@ export function HarnessCliSettings({
   const clis = useHarnessClis();
 
   return (
-    <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
+    <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
       {clis === null ? (
         <SettingRow label="Claude Code and Codex" description="Detecting installed CLIs…">
           <span />
@@ -58,7 +59,7 @@ function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
   if (!cli.installed) {
     return (
       <SettingRow label={label} description="Not detected on this machine.">
-        <span className="text-[12px] font-mono text-muted">missing</span>
+        <span className="font-mono text-code text-muted">missing</span>
       </SettingRow>
     );
   }
@@ -80,16 +81,16 @@ function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
       }
     >
       <div className="flex shrink-0 items-center gap-2">
-        <span className="text-[12px] font-mono text-muted">{cli.version ?? 'installed'}</span>
-        <button
+        <span className="font-mono text-code text-muted">{cli.version ?? 'installed'}</span>
+        <Button
+          size="sm"
           onClick={() => {
             updateHarnessCli(cli.provider);
           }}
           disabled={cli.updating}
-          className="px-2.5 h-7 rounded-sm bg-elevated text-[12px] text-primary hover:bg-active transition-colors disabled:opacity-40"
         >
           {cli.updating ? 'Updating…' : 'Update'}
-        </button>
+        </Button>
       </div>
     </SettingRow>
   );
