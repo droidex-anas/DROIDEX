@@ -43,6 +43,7 @@ Two themes from the **Default** preset, dark first (the app's default and its `:
 | `--droid-green`, `orange`, `red` | `--success`, `--warning`, `--danger` | `text-success`, `bg-danger/10` … |
 | `--droid-accent`, `link`, `skill`, `skill-mark`, `visualize-mark`, `ultra`, `update`, `update-hover` | the same name without `droid-` | `text-accent`, `bg-update` … |
 | `--droid-shadow`, `--droid-shadow-sm` (`shadow-droid`, `shadow-droid-sm`) | `--shadow-lg`, `--shadow-sm` | `shadow-lg`, `shadow-sm`, which replace Tailwind's defaults |
+| Tailwind `rounded`, `-md`, `-lg`, `-xl`, `-2xl` (4/6/8/12/16px) | — | `rounded-xs`, `-sm`, `-md`, `-lg`, `-xl`; `rounded-2xl` is 24px, `rounded-full` unchanged. Tailwind's 2px `rounded-sm` has no token and is written `rounded-[2px]` |
 
 Text colours use `text-primary` rather than `text-text`; the colour itself is also exposed as `text` for fills. The `diff-*` variables already had their final names.
 

@@ -247,7 +247,7 @@ const TabList = memo(function TabList() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className={`group relative flex h-7 w-[200px] min-w-[120px] items-center rounded-lg transition-colors ${
+              className={`group relative flex h-7 w-[200px] min-w-[120px] items-center rounded-md transition-colors ${
                 active
                   ? 'bg-elevated/60 text-primary'
                   : 'text-muted hover:bg-elevated/40 hover:text-primary'
@@ -278,7 +278,7 @@ const TabList = memo(function TabList() {
                   }}
                   // A background tab's label takes the close button's room
                   // until the button shows.
-                  className={`flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg pl-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+                  className={`flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md pl-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
                     active ? 'pr-7' : 'pr-2.5 group-focus-within:pr-7 group-hover:pr-7'
                   }`}
                 >
@@ -315,7 +315,7 @@ const TabList = memo(function TabList() {
                       stripRef.current?.contains(document.activeElement) ?? false;
                     close(item.id);
                   }}
-                  className={`flex h-5 w-5 items-center justify-center rounded-md text-muted transition-[opacity,color,background-color] hover:bg-active hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+                  className={`flex h-5 w-5 items-center justify-center rounded-sm text-muted transition-[opacity,color,background-color] hover:bg-active hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
                     active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                   }`}
                 >
@@ -333,7 +333,7 @@ const TabList = memo(function TabList() {
           onClick={() => {
             dispatch({ type: 'OPEN_NEW_CHAT_TAB' });
           }}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>

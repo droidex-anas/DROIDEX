@@ -65,7 +65,7 @@ export function TileDropTarget({
     >
       {zone && (
         <div
-          className={`pointer-events-none absolute m-1.5 rounded-xl bg-accent/10 transition-[inset] duration-150 ease-out ${ZONE_CLASSES[zone]}`}
+          className={`pointer-events-none absolute m-1.5 rounded-lg bg-accent/10 transition-[inset] duration-150 ease-out ${ZONE_CLASSES[zone]}`}
         />
       )}
     </div>

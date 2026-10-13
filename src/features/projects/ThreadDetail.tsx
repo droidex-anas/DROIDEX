@@ -51,7 +51,7 @@ export function ThreadDetail({
           type="button"
           onClick={onBack}
           aria-label="Back to threads"
-          className="shrink-0 rounded-md p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
+          className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
@@ -63,7 +63,7 @@ export function ThreadDetail({
           type="button"
           onClick={onOpenInChat}
           disabled={row.status === 'queued'}
-          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-muted transition-colors hover:bg-elevated hover:text-primary"
+          className="flex shrink-0 items-center gap-1 rounded-sm px-2 py-1 text-[12px] text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           Open
           <ExternalLink className="h-3 w-3" />

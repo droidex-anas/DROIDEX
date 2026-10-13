@@ -41,7 +41,7 @@ function formatResponseTime(ts: number, now: number): string {
 }
 
 const buttonClass =
-  'flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50';
+  'flex h-7 w-7 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50';
 
 function MessageTime({ ts, label }: { ts: number; label?: string }) {
   return (

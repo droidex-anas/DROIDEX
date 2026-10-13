@@ -104,7 +104,7 @@ export default function PermissionInline({ appSessionId }: { appSessionId: strin
       <motion.div
         key={req.requestId}
         {...inlineCardMotion(reduceMotion)}
-        className="mb-2.5 overflow-hidden rounded-2xl border border-divider bg-raised shadow-lg"
+        className="mb-2.5 overflow-hidden rounded-xl border border-divider bg-raised shadow-lg"
       >
         <div className="flex items-start gap-2 px-4 pt-3.5 pb-3">
           <span
@@ -126,7 +126,7 @@ export default function PermissionInline({ appSessionId }: { appSessionId: strin
 
         {fullDetail && (
           <div className="px-4 pb-3">
-            <div className="max-h-32 overflow-y-auto rounded-xl border border-divider/70 bg-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed">
+            <div className="max-h-32 overflow-y-auto rounded-lg border border-divider/70 bg-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed">
               <span className="whitespace-pre-wrap break-words text-primary">{fullDetail}</span>
             </div>
           </div>

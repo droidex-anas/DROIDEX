@@ -140,7 +140,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
       {hover &&
         createPortal(
           <div
-            className="pointer-events-none fixed z-[60] max-w-[380px] rounded-md bg-raised px-2.5 py-1.5 text-[11px] leading-snug text-secondary shadow-md ring-1 ring-divider/60"
+            className="pointer-events-none fixed z-[60] max-w-[380px] rounded-sm bg-raised px-2.5 py-1.5 text-[11px] leading-snug text-secondary shadow-md ring-1 ring-divider/60"
             style={{ top: hover.top, left: hover.left, transform: 'translateY(-50%)' }}
           >
             <div

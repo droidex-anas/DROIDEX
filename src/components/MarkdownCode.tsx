@@ -44,7 +44,7 @@ export async function copyMarkdownCode(
 // One look for every control in a code or diagram card header: a quiet label
 // that gains a soft tint under the pointer or keyboard focus.
 export const CARD_CONTROL_CLASS =
-  'flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted transition-colors duration-150 hover:bg-active hover:text-primary focus-visible:bg-active focus-visible:text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40';
+  'flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted transition-colors duration-150 hover:bg-active hover:text-primary focus-visible:bg-active focus-visible:text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40';
 
 export function CardHeader({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -230,7 +230,7 @@ export function CodeCard({
   const collapsedMaxHeight = `calc((var(--code-font-size) + ${specMode ? '1px' : '0px'}) * 1.65 * ${String(COLLAPSED_LINES)} + 0.25rem)`;
 
   return (
-    <div className={`overflow-hidden rounded-xl bg-elevated/50 ${specMode ? 'my-4' : 'my-2.5'}`}>
+    <div className={`overflow-hidden rounded-lg bg-elevated/50 ${specMode ? 'my-4' : 'my-2.5'}`}>
       <CardHeader label={languageLabel(className)}>
         <CodeCardControls
           collapsible={collapsible}

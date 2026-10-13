@@ -85,7 +85,7 @@ export function GitActionsBar({
   return (
     <div>
       <div
-        className={`group flex items-center rounded-lg transition-colors ${
+        className={`group flex items-center rounded-md transition-colors ${
           sheet === 'commit' ? 'bg-elevated' : 'hover:bg-elevated/50'
         }`}
       >
@@ -96,7 +96,7 @@ export function GitActionsBar({
           }}
           title="Commit or push"
           aria-expanded={sheet === 'commit'}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-lg px-3 py-2 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-md px-3 py-2 text-left"
         >
           <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-colors group-hover:text-secondary">
             <GitCommitIcon size={16} />
@@ -112,7 +112,7 @@ export function GitActionsBar({
             disabled={pushing || !!env.detached}
             title={pushLabel}
             aria-label={pushLabel}
-            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-md border border-divider/70 bg-surface px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-sm border border-divider/70 bg-surface px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pushing ? (
               <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />

@@ -11,7 +11,7 @@ import { LinkBadge } from '../transcript/LinkBadge';
 import { BrowserPreview } from './BrowserPreview';
 
 const MENU_ROW =
-  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:bg-elevated/60 focus-visible:text-primary focus-visible:outline-none';
+  'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:bg-elevated/60 focus-visible:text-primary focus-visible:outline-none';
 
 /**
  * The page a turn worked on in the chat's browser, as one card in the
@@ -49,7 +49,7 @@ export function BrowserCard({
   const { page, link, title, site, doing } = cardText(events, working);
 
   return (
-    <div className="my-1.5 w-[360px] max-w-full overflow-hidden rounded-2xl border border-divider bg-surface">
+    <div className="my-1.5 w-[360px] max-w-full overflow-hidden rounded-xl border border-divider bg-surface">
       <BrowserPreview cardKey={cardKey} browserSessionId={browserSessionId} live={working} />
       <div className="flex items-center gap-1 py-2.5 pl-3.5 pr-2">
         <div className="min-w-0 flex-1">
@@ -71,7 +71,7 @@ export function BrowserCard({
             onClick={() => {
               dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'browser' });
             }}
-            className="shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+            className="shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
           >
             Open
           </button>
@@ -113,7 +113,7 @@ function PageMenu({ url }: { url: string }) {
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className={`shrink-0 rounded-lg p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
+        className={`shrink-0 rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
           open ? 'bg-elevated text-primary' : 'text-muted hover:bg-elevated hover:text-primary'
         }`}
       >

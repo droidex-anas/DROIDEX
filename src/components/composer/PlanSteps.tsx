@@ -189,7 +189,7 @@ export function PlanStepsPanel({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ duration: 0.22, ease: EASE }}
-          className="relative z-0 mx-[6%] -mb-3 min-w-0 overflow-hidden rounded-t-2xl border border-divider bg-surface pb-4"
+          className="relative z-0 mx-[6%] -mb-3 min-w-0 overflow-hidden rounded-t-xl border border-divider bg-surface pb-4"
         >
           <button
             type="button"

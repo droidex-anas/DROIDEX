@@ -86,7 +86,7 @@ export function PreferencesStep({
                 onClick={() => {
                   setEditor(o.id);
                 }}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                className={`flex items-center gap-2 px-3 py-2 rounded-md border text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   editor === o.id
                     ? 'border-divider-strong bg-elevated text-primary'
                     : 'border-divider text-secondary hover:border-divider-strong'

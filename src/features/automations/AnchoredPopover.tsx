@@ -258,7 +258,7 @@ export function AnchoredPopover({
         contain: 'layout paint',
         willChange: reduceMotion ? undefined : 'transform, opacity',
       }}
-      className={`pointer-events-auto fixed z-[260] overflow-hidden rounded-2xl border border-divider shadow-lg ${className}`}
+      className={`pointer-events-auto fixed z-[260] overflow-hidden rounded-xl border border-divider shadow-lg ${className}`}
     >
       {children}
     </motion.div>,

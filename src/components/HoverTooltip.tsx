@@ -123,7 +123,7 @@ export function HoverTooltip({
               top: position?.top ?? 0,
               opacity: position ? 1 : 0,
             }}
-            className="pointer-events-none fixed z-[200] max-w-[280px] rounded-md border border-divider bg-raised px-2 py-1 text-center text-[11px] font-medium leading-4 text-primary shadow-xl transition-opacity"
+            className="pointer-events-none fixed z-[200] max-w-[280px] rounded-sm border border-divider bg-raised px-2 py-1 text-center text-[11px] font-medium leading-4 text-primary shadow-xl transition-opacity"
           >
             {label}
           </div>,

@@ -319,7 +319,7 @@ export default function Sidebar({
             }}
             title="Search chats, messages, and PRs"
             aria-label="Search chats, messages, and PRs"
-            className="cursor-pointer rounded-md p-1.5 text-muted transition-colors hover:text-primary"
+            className="cursor-pointer rounded-sm p-1.5 text-muted transition-colors hover:text-primary"
           >
             <Search className="w-4 h-4" strokeWidth={1.75} />
           </button>
@@ -342,7 +342,7 @@ export default function Sidebar({
         <div className="group relative">
           <button
             onClick={newChat}
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl py-1.5 pr-8 pl-2.5 text-left text-[13px] font-medium text-primary"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-1.5 pr-8 pl-2.5 text-left text-[13px] font-medium text-primary"
           >
             <SquarePen className="h-4 w-4 shrink-0 text-secondary transition-colors group-hover:text-primary" />
             New chat
@@ -354,7 +354,7 @@ export default function Sidebar({
             }}
             title="New chat without a workspace"
             aria-label="New chat without a workspace"
-            className="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:text-primary"
+            className="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors hover:text-primary"
           >
             <MessageCirclePlus className="h-4 w-4" />
           </button>
@@ -431,7 +431,7 @@ export default function Sidebar({
             onClick={() => {
               dispatch({ type: 'TOGGLE_SETTINGS' });
             }}
-            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-2 rounded-lg text-secondary hover:text-primary transition-colors text-left"
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-2 rounded-md text-secondary hover:text-primary transition-colors text-left"
             title="Open settings"
           >
             <Settings className="w-4 h-4 shrink-0" />

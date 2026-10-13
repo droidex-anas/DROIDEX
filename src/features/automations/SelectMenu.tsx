@@ -203,7 +203,7 @@ export function SelectMenu<Value extends string>({
             openMenu();
           }
         }}
-        className={`inline-flex min-w-0 max-w-[260px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-right text-[13px] outline-none transition-colors focus-visible:border-divider-strong disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`inline-flex min-w-0 max-w-[260px] items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-right text-[13px] outline-none transition-colors focus-visible:border-divider-strong disabled:cursor-not-allowed disabled:opacity-40 ${
           open
             ? 'border-divider-strong bg-elevated text-primary'
             : 'border-transparent text-secondary hover:border-divider hover:bg-elevated/70 hover:text-primary'
@@ -226,7 +226,7 @@ export function SelectMenu<Value extends string>({
       >
         <div onKeyDown={onListKeyDown}>
           {searchable && (
-            <label className="m-2.5 flex h-9 items-center gap-2 rounded-xl border border-divider bg-surface/55 px-3 text-muted transition-colors focus-within:border-divider-strong">
+            <label className="m-2.5 flex h-9 items-center gap-2 rounded-lg border border-divider bg-surface/55 px-3 text-muted transition-colors focus-within:border-divider-strong">
               <Search className="h-3.5 w-3.5 shrink-0" />
               <input
                 ref={searchRef}
@@ -384,7 +384,7 @@ function OptionButton({
         // committed during pointerdown and must not fire a second change.
         if (event.detail === 0) onChoose();
       }}
-      className={`flex w-full items-center gap-2 rounded-xl px-3 text-left outline-none transition-colors focus-visible:bg-surface ${
+      className={`flex w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors focus-visible:bg-surface ${
         fixedHeight ? 'h-[38px]' : 'min-h-[38px] py-2'
       } ${active ? 'bg-surface' : 'hover:bg-surface/65'}`}
     >

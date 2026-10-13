@@ -138,7 +138,7 @@ export default function ModelSelectorPopover({
       style={{ width, maxHeight }}
       className="absolute bottom-full right-0 mb-3 z-50"
     >
-      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-divider/60 bg-raised shadow-lg">
+      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-xl border border-divider/60 bg-raised shadow-lg">
         <div className="flex min-h-0 flex-1">
           {showHarness && (
             <HarnessRail
@@ -173,7 +173,7 @@ export default function ModelSelectorPopover({
             {/* Agent tabs */}
             {!singleAgent && !childTarget && (
               <div className="px-3">
-                <div className="flex gap-1 p-0.5 rounded-xl bg-bg/60 border border-divider">
+                <div className="flex gap-1 p-0.5 rounded-lg bg-bg/60 border border-divider">
                   {AGENTS.map((a) => {
                     const on = a.kind === agent;
                     return (
@@ -182,7 +182,7 @@ export default function ModelSelectorPopover({
                         onClick={() => {
                           setAgent(a.kind);
                         }}
-                        className={`flex-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors truncate ${
+                        className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors truncate ${
                           on ? 'bg-surface text-primary' : 'text-muted hover:text-secondary'
                         }`}
                         style={on ? { boxShadow: `inset 0 0 0 1px ${accentMix(33)}` } : undefined}
@@ -198,7 +198,7 @@ export default function ModelSelectorPopover({
             {/* Model search + list */}
             <div className="flex min-h-0 flex-col px-2 pt-2 pb-2">
               <div className="flex shrink-0 items-center gap-1.5">
-                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-bg/50 px-3">
+                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
                   <Search className="w-3.5 h-3.5 text-muted shrink-0" />
                   <input
                     autoFocus

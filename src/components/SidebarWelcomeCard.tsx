@@ -32,7 +32,7 @@ export function SidebarWelcomeCard({
       transition={{ duration: 0.22, ease: EASE }}
       className="mb-2 overflow-hidden"
     >
-      <div className="relative overflow-hidden rounded-2xl border border-divider bg-raised shadow-lg">
+      <div className="relative overflow-hidden rounded-xl border border-divider bg-raised shadow-lg">
         {/* Visual: nebula artwork melting into the card body — a multi-stop
             blend instead of a hard edge, slightly enriched so the color carries,
             with a soft top scrim keeping the dismiss button legible. */}
@@ -54,7 +54,7 @@ export function SidebarWelcomeCard({
           <button
             type="button"
             onClick={onStart}
-            className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
+            className="mt-2.5 flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
           >
             <SquarePen className="h-3.5 w-3.5" />
             Start a chat
@@ -65,7 +65,7 @@ export function SidebarWelcomeCard({
           type="button"
           aria-label="Dismiss"
           onClick={onDismiss}
-          className="absolute right-2 top-2 rounded-md bg-black/35 p-1 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/55 hover:text-white"
+          className="absolute right-2 top-2 rounded-sm bg-black/35 p-1 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/55 hover:text-white"
         >
           <X className="h-3.5 w-3.5" />
         </button>

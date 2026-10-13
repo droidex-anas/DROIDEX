@@ -80,7 +80,7 @@ function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string
           <span className="truncate font-medium text-primary">{from.name}</span>
           <span className={`shrink-0 ${asks ? 'text-warning' : 'text-muted'}`}>{from.action}</span>
         </p>
-        <div className="rounded-2xl rounded-tl-md border border-divider bg-bg px-3.5 py-2.5 text-[13px] leading-6 text-secondary">
+        <div className="rounded-xl rounded-tl-sm border border-divider bg-bg px-3.5 py-2.5 text-[13px] leading-6 text-secondary">
           <ClampedBlock lines={8} lineHeightPx={BUBBLE_LINE_PX} fade="from-bg via-bg/90">
             <MessageBody text={text} live={false} cacheId={`thread-message:${from.threadId}`} />
           </ClampedBlock>
@@ -104,7 +104,7 @@ function NoticeCard({
   testId?: string;
 }) {
   return (
-    <div data-testid={testId} className="rounded-2xl border border-divider bg-surface/35 px-4 py-3">
+    <div data-testid={testId} className="rounded-xl border border-divider bg-surface/35 px-4 py-3">
       <p className="text-[12px] font-medium text-muted">{lead}</p>
       <div className="mt-1.5 text-[13px] leading-6 text-secondary">
         <MessageBody text={text} live={false} cacheId={cacheId} />

@@ -92,7 +92,7 @@ export default function EditorOpenMenu({
   return (
     <div className="relative" ref={ref}>
       {variant === 'toolbar' ? (
-        <div className="flex items-center rounded-md overflow-hidden">
+        <div className="flex items-center rounded-sm overflow-hidden">
           <button
             onClick={() => hasCwd && openCodebase(cwd)}
             disabled={!hasCwd}
@@ -123,7 +123,7 @@ export default function EditorOpenMenu({
             setOpen((v) => !v);
           }}
           title={`Open with ${editorLabel(selected)}`}
-          className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] transition-colors ${
+          className={`flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-[12px] transition-colors ${
             open ? 'text-primary bg-elevated' : 'text-muted hover:text-primary hover:bg-elevated/60'
           }`}
         >
@@ -134,7 +134,7 @@ export default function EditorOpenMenu({
       )}
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-52 rounded-xl border border-divider bg-surface p-1.5 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg border border-divider bg-surface p-1.5 shadow-lg">
           <MenuAction
             icon={<FolderOpen className="w-3.5 h-3.5" />}
             label="Open codebase"
@@ -164,7 +164,7 @@ export default function EditorOpenMenu({
               onClick={() => {
                 chooseDefault(option.id);
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-secondary hover:bg-elevated/60 hover:text-primary transition-colors"
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] text-secondary hover:bg-elevated/60 hover:text-primary transition-colors"
             >
               <EditorIcon editor={option.id} size={15} />
               <span className="flex-1 truncate">{option.label}</span>
@@ -206,7 +206,7 @@ function MenuAction({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60 disabled:cursor-not-allowed disabled:text-muted/60 disabled:hover:bg-transparent"
+      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60 disabled:cursor-not-allowed disabled:text-muted/60 disabled:hover:bg-transparent"
     >
       <span className="shrink-0 text-muted">{icon}</span>
       <span className="flex-1 truncate">{label}</span>

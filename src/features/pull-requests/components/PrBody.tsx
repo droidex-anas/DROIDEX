@@ -9,7 +9,7 @@ import { FoldChevron, PrCollapse } from './PrCollapse';
 function Disclosure({ summary, body }: { summary: string; body: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-2 overflow-hidden rounded-lg border border-divider">
+    <div className="mt-2 overflow-hidden rounded-md border border-divider">
       <button
         type="button"
         aria-expanded={open}

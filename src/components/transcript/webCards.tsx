@@ -51,7 +51,7 @@ function WebSourceRow({
             },
           }
         : {})}
-      className={`block rounded-lg px-3 py-2 transition-colors hover:bg-elevated/60 focus-visible:bg-elevated/60 focus-visible:outline-none ${
+      className={`block rounded-md px-3 py-2 transition-colors hover:bg-elevated/60 focus-visible:bg-elevated/60 focus-visible:outline-none ${
         emphasize ? 'bg-elevated/40' : ''
       }`}
     >
@@ -71,7 +71,7 @@ function WebSourceRow({
 
 function CountBadge({ label }: { label: string }) {
   return (
-    <span className="ml-auto shrink-0 rounded-md border border-divider bg-elevated/60 px-1.5 py-0.5 tabular-nums text-[11px] text-secondary">
+    <span className="ml-auto shrink-0 rounded-sm border border-divider bg-elevated/60 px-1.5 py-0.5 tabular-nums text-[11px] text-secondary">
       {label}
     </span>
   );
@@ -165,7 +165,7 @@ export function WebSearchCard({
     );
   } else if (expanded && raw) {
     body = (
-      <pre className="mt-1.5 max-h-44 overflow-auto rounded-md bg-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-muted/80 whitespace-pre-wrap break-words">
+      <pre className="mt-1.5 max-h-44 overflow-auto rounded-sm bg-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-muted/80 whitespace-pre-wrap break-words">
         {linkify(raw)}
       </pre>
     );
@@ -223,7 +223,7 @@ export function WebFetchBody({
   if (error && hasBody) {
     return (
       <pre
-        className="mt-1.5 max-h-56 overflow-auto rounded-md px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words"
+        className="mt-1.5 max-h-56 overflow-auto rounded-sm px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words"
         style={{ backgroundColor: RED_TINT, color: RED }}
       >
         {body}
@@ -257,13 +257,13 @@ function FetchBodyContent({ body }: { body: string }) {
   // Raw HTML dumps stay mono — they render poorly as markdown.
   if (looksLikeHtml(body)) {
     return (
-      <pre className="max-h-44 overflow-auto rounded-lg bg-elevated/30 px-3 py-2 font-mono text-[12px] leading-relaxed text-muted whitespace-pre-wrap break-words">
+      <pre className="max-h-44 overflow-auto rounded-md bg-elevated/30 px-3 py-2 font-mono text-[12px] leading-relaxed text-muted whitespace-pre-wrap break-words">
         {linkify(body)}
       </pre>
     );
   }
   return (
-    <div className="max-h-96 overflow-auto rounded-lg bg-elevated/30 px-3.5 py-2.5">
+    <div className="max-h-96 overflow-auto rounded-md bg-elevated/30 px-3.5 py-2.5">
       {/* Fetched pages are untrusted: diagrams must stay off so an ```svg fence
           in the body can never reach SvgCodeBlock's dangerouslySetInnerHTML, and
           a `src/app.ts` in the page must not become a control for a local file. */}

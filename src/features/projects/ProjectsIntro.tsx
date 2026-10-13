@@ -82,7 +82,7 @@ export function ProjectsIntro({
           style={{ position: 'fixed', top: position.top, left: position.left, width: INTRO_WIDTH }}
           className="z-50"
         >
-          <div className="relative overflow-hidden rounded-2xl border border-divider bg-raised shadow-lg">
+          <div className="relative overflow-hidden rounded-xl border border-divider bg-raised shadow-lg">
             <ProjectGlyph />
             <div className="px-3.5 pb-3.5 pt-2.5">
               <div className="flex items-baseline gap-2">
@@ -100,7 +100,7 @@ export function ProjectsIntro({
                   dismiss();
                   dispatch({ type: 'START_CHAT', cwd, executionMode: 'local', project: true });
                 }}
-                className="mt-3 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
+                className="mt-3 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
               >
                 Start a project
               </button>
@@ -109,7 +109,7 @@ export function ProjectsIntro({
               type="button"
               aria-label="Dismiss"
               onClick={dismiss}
-              className="absolute right-2 top-2 rounded-md p-1 text-muted transition-colors hover:bg-droid-hover hover:text-primary"
+              className="absolute right-2 top-2 rounded-sm p-1 text-muted transition-colors hover:bg-droid-hover hover:text-primary"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -139,7 +139,7 @@ function ProjectGlyph() {
       </div>
       {['w-24', 'w-20'].map((width) => (
         <div key={width} className="flex items-center gap-2 pl-2">
-          <span className="-mt-4 h-4 w-3 shrink-0 rounded-bl-md border-b border-l border-muted/40" />
+          <span className="-mt-4 h-4 w-3 shrink-0 rounded-bl-sm border-b border-l border-muted/40" />
           <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted">
             <ActivityStatusGlyph status="working" decorative />
           </span>

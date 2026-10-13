@@ -90,7 +90,7 @@ export function ExpandableAppSurface({
           <div
             className={
               isExpanded
-                ? 'flex h-full w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-divider bg-bg shadow-lg'
+                ? 'flex h-full w-full max-w-[1600px] flex-col overflow-hidden rounded-xl border border-divider bg-bg shadow-lg'
                 : 'min-w-0'
             }
           >
@@ -106,7 +106,7 @@ export function ExpandableAppSurface({
                   onClick={onCollapse}
                   aria-label="Exit full screen"
                   title="Exit full screen"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none"
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none"
                 >
                   <Minimize2 className="h-4 w-4" />
                 </button>
@@ -144,7 +144,7 @@ export function ExpandableAppSurface({
                 if (!surface) return;
                 onExpand({ placeholderHeight: surface.offsetHeight });
               }}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none"
             >
               <Maximize2 className="h-3.5 w-3.5" />
             </button>

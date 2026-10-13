@@ -79,7 +79,7 @@ function CommitsEntry({ commits }: { commits: PrCommit[] }) {
         </span>
       }
     >
-      <div className="rounded-xl border border-divider bg-surface px-3 py-2">
+      <div className="rounded-lg border border-divider bg-surface px-3 py-2">
         <button
           type="button"
           aria-expanded={open}
@@ -148,7 +148,7 @@ export function PrTimeline({
         )}
       </div>
       {loading && items.length === 0 ? (
-        <div className="mt-2 h-20 rounded-xl border border-divider bg-elevated/30" />
+        <div className="mt-2 h-20 rounded-lg border border-divider bg-elevated/30" />
       ) : null}
       {showEmpty && !error ? (
         <p className="mt-1 pl-11 text-[13px] text-muted">

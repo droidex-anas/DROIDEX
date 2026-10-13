@@ -79,7 +79,7 @@ export function PrMergeButton({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex items-center gap-1.5 rounded-lg bg-[#238636] px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:bg-elevated disabled:text-muted"
+        className="flex items-center gap-1.5 rounded-md bg-[#238636] px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:bg-elevated disabled:text-muted"
       >
         <Octicon name="git-merge" size={13} />
         {mergeLabel(merging, merged)}
@@ -88,7 +88,7 @@ export function PrMergeButton({
       {open && !disabled ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-xl border border-divider bg-surface py-1 shadow-xl"
+          className="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-lg border border-divider bg-surface py-1 shadow-xl"
         >
           {METHODS.map((method) => (
             <button

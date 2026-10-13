@@ -149,7 +149,7 @@ export function SideChatDetail({
                 type="button"
                 disabled={state.loadingOlder}
                 onClick={loadEarlier}
-                className="rounded-md px-2 py-1 text-[11px] text-muted transition-colors hover:bg-elevated hover:text-secondary disabled:hover:bg-transparent"
+                className="rounded-sm px-2 py-1 text-[11px] text-muted transition-colors hover:bg-elevated hover:text-secondary disabled:hover:bg-transparent"
               >
                 {state.loadingOlder ? 'Loading earlier messages…' : 'Show earlier messages'}
               </button>
@@ -208,7 +208,7 @@ function SideChatEmptyState({
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-md bg-elevated px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-active"
+          className="rounded-sm bg-elevated px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-active"
         >
           Retry
         </button>

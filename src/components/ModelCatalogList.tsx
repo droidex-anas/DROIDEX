@@ -202,7 +202,7 @@ const ModelRow = memo(function ModelRow({
         if (!disabled) pick(id);
       }}
       title={label}
-      className={`relative flex items-center gap-2.5 h-10 px-2.5 rounded-lg select-none ${
+      className={`relative flex items-center gap-2.5 h-10 px-2.5 rounded-md select-none ${
         disabled
           ? 'cursor-not-allowed opacity-50'
           : selected

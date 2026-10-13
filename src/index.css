@@ -912,30 +912,30 @@
      surface (e.g. the left sidebar) that should read as a rounded, elevated
      card rather than an edge-to-edge rectangle. */
   .droid-card {
-    @apply flex flex-col rounded-2xl border border-divider bg-surface overflow-hidden;
+    @apply flex flex-col rounded-xl border border-divider bg-surface overflow-hidden;
     /* Theme-derived (see applyTheme): strong on dark, soft and diffuse on light. */
     box-shadow: var(--shadow-lg, 0 10px 40px rgba(0, 0, 0, 0.35));
   }
 
   .droid-tool-panel {
-    @apply overflow-hidden rounded-xl border border-divider bg-elevated/50;
+    @apply overflow-hidden rounded-lg border border-divider bg-elevated/50;
 
     box-shadow: var(--shadow-sm, 0 4px 16px rgba(0, 0, 0, 0.28));
   }
 
   .droid-button {
-    @apply px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150;
+    @apply px-3 py-1.5 text-sm font-medium rounded-sm transition-all duration-150;
     @apply bg-elevated text-secondary hover:text-primary hover:bg-active;
     @apply border border-divider;
   }
 
   .droid-button-primary {
-    @apply px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150;
+    @apply px-3 py-1.5 text-sm font-medium rounded-sm transition-all duration-150;
     @apply bg-text text-bg hover:bg-secondary;
   }
 
   .droid-input {
-    @apply bg-elevated border border-divider rounded-lg px-4 py-2.5 text-sm;
+    @apply bg-elevated border border-divider rounded-md px-4 py-2.5 text-sm;
     @apply text-primary placeholder-muted focus:outline-none focus:border-divider-strong;
     @apply transition-colors duration-150;
   }

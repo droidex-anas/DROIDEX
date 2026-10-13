@@ -2483,7 +2483,7 @@ export default function PromptInput({
           )}
 
           {missionAutonomyGateOpen && missionPreview && !activeSession && (
-            <div className="mx-3 mt-3 flex items-center gap-3 rounded-xl border border-divider bg-bg/60 px-3 py-2.5">
+            <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg border border-divider bg-bg/60 px-3 py-2.5">
               <p className="flex-1 min-w-0 text-[11px] text-secondary leading-snug">
                 Missions run unattended, so they need{' '}
                 <span className="text-primary font-medium">High autonomy</span> to start.
@@ -2494,7 +2494,7 @@ export default function PromptInput({
                   setMissionAutonomyGateOpen(false);
                   void handleSubmit('queue', 'high');
                 }}
-                className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-bg transition-opacity hover:opacity-90"
+                className="shrink-0 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-bg transition-opacity hover:opacity-90"
                 style={{ background: ACCENT }}
               >
                 Set High and start
@@ -2503,7 +2503,7 @@ export default function PromptInput({
                 onClick={() => {
                   setMissionAutonomyGateOpen(false);
                 }}
-                className="shrink-0 px-2 py-1.5 rounded-lg text-[11px] text-muted hover:text-primary transition-colors"
+                className="shrink-0 px-2 py-1.5 rounded-md text-[11px] text-muted hover:text-primary transition-colors"
               >
                 Not now
               </button>

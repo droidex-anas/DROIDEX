@@ -60,7 +60,7 @@ export function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) 
             type="button"
             disabled={busy}
             onClick={setup.runPrimaryAction}
-            className="rounded-xl bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {setupActionLabel(setup)}
           </button>
@@ -68,7 +68,7 @@ export function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) 
             <button
               type="button"
               onClick={setup.cancelAuthentication}
-              className="rounded-xl px-3 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-elevated hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+              className="rounded-lg px-3 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-elevated hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
             >
               {setup.action === 'installing' ? 'Cancel installation' : 'Cancel sign-in'}
             </button>
@@ -113,7 +113,7 @@ export function PrWorkspaceEmpty({
           onClick={() => {
             void openWorkspace();
           }}
-          className="mt-4 rounded-xl bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+          className="mt-4 rounded-lg bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           Open workspace
         </button>
@@ -133,7 +133,7 @@ export function PrWorkspaceEmpty({
           onClick={() => {
             void openWorkspace();
           }}
-          className="mt-4 rounded-xl bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+          className="mt-4 rounded-lg bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           Choose another workspace
         </button>

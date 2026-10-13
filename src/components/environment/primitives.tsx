@@ -67,7 +67,7 @@ export function Row({
     return (
       <div
         title={title}
-        className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left"
+        className="group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left"
       >
         {content}
       </div>
@@ -82,7 +82,7 @@ export function Row({
       disabled={disabled}
       aria-expanded={expanded}
       aria-haspopup={hasPopup}
-      className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-default ${
+      className={`group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors disabled:cursor-default ${
         active ? 'bg-elevated' : 'hover:bg-elevated/50'
       }`}
     >

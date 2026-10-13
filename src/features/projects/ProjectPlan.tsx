@@ -83,7 +83,7 @@ function PlanRow({
       data-testid="plan-step"
       disabled={!row}
       onClick={open}
-      className="group flex w-full items-start gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
+      className="group flex w-full items-start gap-2.5 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
     >
       <span className="w-4 shrink-0 pt-px text-right text-[11px] tabular-nums text-muted/70">
         {index}

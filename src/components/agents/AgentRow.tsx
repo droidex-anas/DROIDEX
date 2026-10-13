@@ -58,7 +58,7 @@ export function AgentEffortChip({
     <span
       data-testid="agent-effort"
       data-effort={effort}
-      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize ${
+      className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] font-medium capitalize ${
         ultra ? 'bg-ultra/15 text-ultra' : 'bg-active/60 text-secondary'
       }`}
     >

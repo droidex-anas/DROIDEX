@@ -30,7 +30,7 @@ interface AutomationEditorProps {
 }
 
 const CONTROL =
-  'w-full rounded-xl border border-divider bg-surface/55 px-3 py-2.5 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus:bg-surface';
+  'w-full rounded-lg border border-divider bg-surface/55 px-3 py-2.5 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus:bg-surface';
 
 export function AutomationEditor({
   editor,
@@ -112,7 +112,7 @@ export function AutomationEditor({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
+            className="rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
             aria-label="Close automation editor"
           >
             <X className="h-4 w-4" />
@@ -174,7 +174,7 @@ export function AutomationEditor({
           ) : (
             <>
               <SectionLabel>Run configuration</SectionLabel>
-              <div className="overflow-visible rounded-2xl border border-divider bg-surface/35">
+              <div className="overflow-visible rounded-xl border border-divider bg-surface/35">
                 <EditorRow label="Model">
                   <AutomationModelPicker
                     models={models}
@@ -249,7 +249,7 @@ export function AutomationEditor({
           )}
 
           <SectionLabel>Schedule</SectionLabel>
-          <div className="overflow-visible rounded-2xl border border-divider bg-surface/35">
+          <div className="overflow-visible rounded-xl border border-divider bg-surface/35">
             {!isDelivery && (
               <EditorRow label="Repeat">
                 <SelectMenu
@@ -303,7 +303,7 @@ export function AutomationEditor({
             </EditorRow>
           </div>
 
-          <div className="mt-4 rounded-xl border border-divider/70 bg-surface/25 px-3 py-2.5 text-[11px] leading-4 text-muted">
+          <div className="mt-4 rounded-lg border border-divider/70 bg-surface/25 px-3 py-2.5 text-[11px] leading-4 text-muted">
             {isDelivery
               ? 'Sends once, after any active turn finishes. Delivered means the conversation accepted the prompt, not that the agent finished its work. Attachments are saved copies.'
               : 'Every run opens as a background chat. Open it here to follow its progress.'}{' '}
@@ -318,7 +318,7 @@ export function AutomationEditor({
             type="button"
             onClick={onSave}
             disabled={saving || Boolean(validation)}
-            className="ml-auto block rounded-xl bg-text px-4 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+            className="ml-auto block rounded-lg bg-text px-4 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
           >
             {saving ? 'Saving…' : editor.mode === 'create' ? 'Create automation' : 'Save changes'}
           </button>

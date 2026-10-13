@@ -54,7 +54,7 @@ export function HunkPreview({ diffHunk }: { diffHunk: string }) {
     ? { lines: diffHunk.replace(/\n+$/, '').split('\n'), truncated: false }
     : hunkLines(diffHunk);
   return (
-    <div className="mt-2 overflow-hidden rounded-lg border border-divider">
+    <div className="mt-2 overflow-hidden rounded-md border border-divider">
       {truncated ? (
         <button
           type="button"

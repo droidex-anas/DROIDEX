@@ -203,7 +203,7 @@ function FeaturesColumn({
                   onClick={() => {
                     onSelect(f);
                   }}
-                  className="group relative w-full flex items-center gap-2 text-left pl-3 pr-2 py-1.5 rounded-md transition-colors"
+                  className="group relative w-full flex items-center gap-2 text-left pl-3 pr-2 py-1.5 rounded-sm transition-colors"
                   style={active ? { background: accentMix(7) } : undefined}
                 >
                   <span
@@ -263,7 +263,7 @@ function EnvRow({
     <button
       onClick={onClick}
       title={title}
-      className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-secondary hover:text-primary hover:bg-elevated/60 transition-colors"
+      className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-secondary hover:text-primary hover:bg-elevated/60 transition-colors"
     >
       <span className="text-muted shrink-0">{icon}</span>
       <span className="text-[13px] leading-none">{label}</span>
@@ -368,14 +368,14 @@ function ContextColumn({
         <div className="flex items-center gap-1 px-1">
           <button
             title={`${String(skills.length)} skills`}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
           >
             <Boxes className="w-4 h-4" />
             {skills.length > 0 && <span className="text-[11px] tabular-nums">{skills.length}</span>}
           </button>
           <button
             title="Web"
-            className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
+            className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
           >
             <Globe className="w-4 h-4" />
           </button>
@@ -383,7 +383,7 @@ function ContextColumn({
         {big && skills.length > 0 && (
           <div className="flex flex-wrap gap-1 px-1 mt-2">
             {skills.map((s) => (
-              <span key={s} className="px-1.5 py-0.5 rounded text-[11px] text-muted bg-elevated">
+              <span key={s} className="px-1.5 py-0.5 rounded-xs text-[11px] text-muted bg-elevated">
                 {s}
               </span>
             ))}
@@ -508,7 +508,7 @@ function AgentRow({
   return (
     <button
       onClick={onClick}
-      className="group w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors text-left hover:bg-elevated/50"
+      className="group w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-left hover:bg-elevated/50"
       style={selected ? { background: accentMix(7) } : undefined}
     >
       <span className="relative shrink-0">
@@ -564,7 +564,7 @@ function ProgressSection({
             onClick={() => {
               if (entry.workerChildSessionId) onSelectChild(entry.workerChildSessionId);
             }}
-            className={`w-full flex items-center gap-2 px-2 py-1 rounded-lg text-left transition-colors ${
+            className={`w-full flex items-center gap-2 px-2 py-1 rounded-md text-left transition-colors ${
               entry.workerChildSessionId ? 'hover:bg-elevated/35' : 'cursor-default'
             }`}
           >
@@ -630,7 +630,7 @@ function ExpandModal({
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.97, opacity: 0, y: 8 }}
         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-3xl h-[82vh] flex flex-col rounded-2xl border border-divider bg-surface shadow-lg overflow-hidden"
+        className="w-full max-w-3xl h-[82vh] flex flex-col rounded-xl border border-divider bg-surface shadow-lg overflow-hidden"
         onClick={(e) => {
           e.stopPropagation();
         }}
@@ -641,7 +641,7 @@ function ExpandModal({
             {headerExtra}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated transition-colors"
+              className="p-1.5 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -681,7 +681,7 @@ function PanelHeader({
         <button
           onClick={onExpand}
           title="Expand"
-          className="p-1 rounded-md text-muted/60 hover:text-primary hover:bg-elevated transition-colors"
+          className="p-1 rounded-sm text-muted/60 hover:text-primary hover:bg-elevated transition-colors"
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>
@@ -689,7 +689,7 @@ function PanelHeader({
           <button
             onClick={onCollapse}
             title="Collapse"
-            className="p-1 rounded-md text-muted/60 hover:text-primary hover:bg-elevated transition-colors"
+            className="p-1 rounded-sm text-muted/60 hover:text-primary hover:bg-elevated transition-colors"
           >
             <PanelLeft className="w-3.5 h-3.5" />
           </button>
@@ -738,7 +738,7 @@ function ActionRow({
     <button
       disabled={!clickable}
       onClick={() => change && onOpenDiff?.(change)}
-      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left ${clickable ? 'hover:bg-elevated/60 cursor-pointer' : 'cursor-default'}`}
+      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left ${clickable ? 'hover:bg-elevated/60 cursor-pointer' : 'cursor-default'}`}
       title={detail || undefined}
     >
       <span className="text-[12px] font-medium text-secondary shrink-0">{CAT_LABEL[cat]}</span>
@@ -813,7 +813,7 @@ function FeatureFocus({
             <div className="flex flex-wrap items-center gap-2 mt-2">
               {feature.skillName && (
                 <span
-                  className="px-1.5 py-0.5 rounded text-[11px] font-medium"
+                  className="px-1.5 py-0.5 rounded-xs text-[11px] font-medium"
                   style={{ color: ACCENT, background: accentMix(10) }}
                 >
                   [{feature.skillName}]
@@ -829,7 +829,7 @@ function FeatureFocus({
           </div>
         </div>
 
-        <div className="space-y-4 rounded-xl bg-elevated/25 p-4 mb-6">
+        <div className="space-y-4 rounded-lg bg-elevated/25 p-4 mb-6">
           {noSpec ? (
             <div className="text-[13px] text-muted">No spec details provided for this feature.</div>
           ) : (
@@ -1059,7 +1059,7 @@ export default function MissionControl() {
                 setRailCollapsed(false);
               }}
               title="Expand features"
-              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated transition-colors"
+              className="p-1.5 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors"
             >
               <PanelLeft className="w-4 h-4" />
             </button>
@@ -1106,7 +1106,7 @@ export default function MissionControl() {
                     onClick={() => {
                       interruptVisibleSession(mission.appSessionId, visibleChildSessionId);
                     }}
-                    className="px-2 py-1 rounded-md text-[11px] text-muted hover:text-primary border border-divider hover:border-divider-strong transition-colors"
+                    className="px-2 py-1 rounded-sm text-[11px] text-muted hover:text-primary border border-divider hover:border-divider-strong transition-colors"
                   >
                     Stop
                   </button>

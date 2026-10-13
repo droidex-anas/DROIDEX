@@ -80,7 +80,7 @@ export function AutomationRow({
       }`}
     >
       <span
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${statusTileClass(
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${statusTileClass(
           run,
           needsSetup,
           automation.enabled,
@@ -259,7 +259,7 @@ function RowAction({
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className={`rounded-lg p-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
+        className={`rounded-md p-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
           danger
             ? 'bg-danger/12 text-danger hover:bg-danger/20'
             : 'text-muted hover:bg-elevated hover:text-primary'

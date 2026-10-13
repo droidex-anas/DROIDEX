@@ -68,7 +68,7 @@ export function CommandPaletteSkeleton() {
       aria-label="Loading command palette"
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[18vh]"
     >
-      <div className="w-full max-w-xl rounded-2xl border border-divider bg-raised p-4 shadow-lg">
+      <div className="w-full max-w-xl rounded-xl border border-divider bg-raised p-4 shadow-lg">
         <SkeletonLine width="100%" height="h-10" />
         <div className="mt-3 space-y-2">
           <SkeletonLine width="88%" height="h-8" />
@@ -102,12 +102,12 @@ export function MissionControlSkeleton() {
     <div role="status" aria-label="Loading mission control" className="flex h-full flex-col p-6">
       <SkeletonLine width="36%" height="h-5" />
       <div className="mt-6 grid flex-1 grid-cols-2 gap-4">
-        <div className="rounded-xl border border-divider p-4 space-y-3">
+        <div className="rounded-lg border border-divider p-4 space-y-3">
           <SkeletonLine width="54%" />
           <SkeletonLine width="88%" />
           <SkeletonLine width="72%" />
         </div>
-        <div className="rounded-xl border border-divider p-4 space-y-3">
+        <div className="rounded-lg border border-divider p-4 space-y-3">
           <SkeletonLine width="48%" />
           <SkeletonLine width="80%" />
           <SkeletonLine width="66%" />

@@ -22,7 +22,7 @@ export function ImageAttachmentChip({ path }: { path: string }) {
     return (
       <span
         title={path}
-        className="flex items-center gap-1 rounded-lg border border-divider bg-elevated/80 px-2 py-1 text-[11px] text-muted"
+        className="flex items-center gap-1 rounded-md border border-divider bg-elevated/80 px-2 py-1 text-[11px] text-muted"
       >
         <ImageOff className="h-3 w-3 shrink-0" />
         <span className="max-w-40 truncate">{label}</span>
@@ -37,7 +37,7 @@ export function ImageAttachmentChip({ path }: { path: string }) {
           setOpen(true);
         }}
         title={`View ${label}`}
-        className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-divider bg-bg/60 transition-colors hover:border-divider-strong"
+        className="block h-11 w-11 shrink-0 overflow-hidden rounded-md border border-divider bg-bg/60 transition-colors hover:border-divider-strong"
       >
         <img
           src={src}

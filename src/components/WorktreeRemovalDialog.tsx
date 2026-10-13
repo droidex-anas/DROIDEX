@@ -131,7 +131,7 @@ export function WorktreeRemovalDialogContent({
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 6, scale: 0.99, opacity: 0 }}
         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[440px] overflow-hidden rounded-2xl border border-divider bg-surface shadow-lg"
+        className="w-full max-w-[440px] overflow-hidden rounded-xl border border-divider bg-surface shadow-lg"
       >
         <div className="px-6 pb-5 pt-6">
           <h2
@@ -147,7 +147,7 @@ export function WorktreeRemovalDialogContent({
 
           <div
             id="worktree-removal-description"
-            className={`mt-5 rounded-xl border p-4 ${
+            className={`mt-5 rounded-lg border p-4 ${
               hasUnsavedChanges ? 'border-red-500/25 bg-red-500/[0.07]' : 'border-divider bg-bg/45'
             }`}
           >
@@ -176,7 +176,7 @@ export function WorktreeRemovalDialogContent({
             type="button"
             onClick={onCancel}
             disabled={isRemoving}
-            className="rounded-lg px-3.5 py-2 text-[12px] font-medium text-secondary transition-all duration-150 hover:bg-elevated/70 hover:text-primary active:scale-[0.97] disabled:opacity-40"
+            className="rounded-md px-3.5 py-2 text-[12px] font-medium text-secondary transition-all duration-150 hover:bg-elevated/70 hover:text-primary active:scale-[0.97] disabled:opacity-40"
           >
             Cancel
           </button>
@@ -184,7 +184,7 @@ export function WorktreeRemovalDialogContent({
             type="button"
             onClick={onConfirm}
             disabled={isChecking || isRemoving}
-            className="flex min-w-[118px] items-center justify-center gap-2 rounded-lg bg-red-500/15 px-3.5 py-2 text-[12px] font-semibold text-red-300 transition-all duration-150 hover:bg-red-500/25 active:scale-[0.97] disabled:opacity-50"
+            className="flex min-w-[118px] items-center justify-center gap-2 rounded-md bg-red-500/15 px-3.5 py-2 text-[12px] font-semibold text-red-300 transition-all duration-150 hover:bg-red-500/25 active:scale-[0.97] disabled:opacity-50"
           >
             {(isChecking || isRemoving) && (
               <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />

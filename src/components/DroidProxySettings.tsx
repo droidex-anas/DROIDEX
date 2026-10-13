@@ -58,7 +58,7 @@ const PROVIDER_ORDER: readonly DroidProxyProviderKey[] = [
 ];
 
 const BUTTON_CLASS =
-  'px-2.5 h-7 rounded-md bg-elevated text-[12px] text-primary hover:bg-active transition-colors disabled:opacity-40';
+  'px-2.5 h-7 rounded-sm bg-elevated text-[12px] text-primary hover:bg-active transition-colors disabled:opacity-40';
 
 const INSTALL_PHASE_LABELS: Record<DroidProxyInstallPhase, string> = {
   downloading: 'Downloading',
@@ -123,7 +123,7 @@ export function DroidProxySettings() {
           title="DroidProxy"
           sub="Use subscription models in Droid sessions through a local proxy."
         />
-        <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+        <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
           <SettingRow label="DroidProxy" description="Detecting the app and its connections…">
             <span />
           </SettingRow>
@@ -154,7 +154,7 @@ export function DroidProxySettings() {
         sub="Use subscription models in Droid sessions through a local proxy."
       />
 
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow label="DroidProxy app" description={appDescription(status, installError)}>
           {status.appInstalled ? (
             <button
@@ -234,7 +234,7 @@ export function DroidProxySettings() {
       <GroupLabel>
         Subscriptions{connectedCount > 0 ? ` · ${String(connectedCount)} connected` : ''}
       </GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         {PROVIDER_ORDER.map((provider) => {
           const row = status.providers.find((entry) => entry.provider === provider);
           if (!row) return null;
@@ -310,7 +310,7 @@ function DroidProxyProviderRow({
             onClick={() => {
               setExpanded((current) => !current);
             }}
-            className="group flex min-w-0 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+            className="group flex min-w-0 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
           >
             {heading}
             <ChevronDown
@@ -395,7 +395,7 @@ function DroidProxyAccountRow({
   const pending = pendingAccountId === account.id;
   const action = account.disabled ? 'Enable' : 'Disable';
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-200 ease-out hover:bg-elevated/60 motion-reduce:transition-none">
+    <div className="flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 transition-colors duration-200 ease-out hover:bg-elevated/60 motion-reduce:transition-none">
       <span
         aria-hidden="true"
         className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200 motion-reduce:transition-none ${account.disabled ? 'bg-muted/50' : 'bg-warning'}`}
@@ -418,7 +418,7 @@ function DroidProxyAccountRow({
           disabled={pendingAccountId !== null || lastEnabled}
           aria-label={`${action} ${label}`}
           title={lastEnabled ? 'Keep at least one account enabled' : undefined}
-          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-2 text-[11px] font-medium text-warning transition-colors duration-200 ease-out hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+          className="inline-flex min-h-8 shrink-0 items-center rounded-sm px-2 text-[11px] font-medium text-warning transition-colors duration-200 ease-out hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
         >
           {pending ? (
             <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 motion-safe:animate-spin" />

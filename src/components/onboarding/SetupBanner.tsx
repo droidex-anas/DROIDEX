@@ -27,7 +27,7 @@ export default function SetupBanner({
       <span className="text-primary">{message}</span>
       <button
         onClick={onAction}
-        className="ml-1 px-2 py-0.5 rounded-md bg-accent text-bg text-[11px] font-medium hover:opacity-90 transition-opacity"
+        className="ml-1 px-2 py-0.5 rounded-sm bg-accent text-bg text-[11px] font-medium hover:opacity-90 transition-opacity"
       >
         {actionLabel}
       </button>

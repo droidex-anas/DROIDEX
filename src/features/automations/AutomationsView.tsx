@@ -271,7 +271,7 @@ export function AutomationsView({
                 <button
                   type="button"
                   onClick={onChatWithDroidex}
-                  className="inline-flex items-center gap-2 rounded-xl border border-divider bg-surface/50 px-3.5 py-2 text-[13px] font-medium text-secondary transition-colors hover:border-divider-strong hover:bg-elevated hover:text-primary"
+                  className="inline-flex items-center gap-2 rounded-lg border border-divider bg-surface/50 px-3.5 py-2 text-[13px] font-medium text-secondary transition-colors hover:border-divider-strong hover:bg-elevated hover:text-primary"
                 >
                   <MessageSquareText className="h-4 w-4" />
                   Chat with DROIDEX
@@ -281,7 +281,7 @@ export function AutomationsView({
                   onClick={() => {
                     createDraft();
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-text px-3.5 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-90"
+                  className="inline-flex items-center gap-2 rounded-lg bg-text px-3.5 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-90"
                 >
                   <Plus className="h-4 w-4" />
                   Create automation
@@ -296,7 +296,7 @@ export function AutomationsView({
               </div>
             ) : (
               <>
-                <label className="mt-8 flex h-10 items-center gap-2 rounded-xl border border-divider bg-surface/40 px-3 text-muted transition-colors focus-within:border-divider-strong focus-within:bg-surface/55">
+                <label className="mt-8 flex h-10 items-center gap-2 rounded-lg border border-divider bg-surface/40 px-3 text-muted transition-colors focus-within:border-divider-strong focus-within:bg-surface/55">
                   <Search className="h-4 w-4 shrink-0" />
                   <input
                     value={query}
@@ -321,7 +321,7 @@ export function AutomationsView({
                       onClick={() => {
                         setFilter(value);
                       }}
-                      className={`rounded-lg px-3 py-1.5 text-[12px] capitalize transition-colors ${
+                      className={`rounded-md px-3 py-1.5 text-[12px] capitalize transition-colors ${
                         filter === value
                           ? 'bg-elevated text-primary'
                           : 'text-muted hover:bg-elevated/50 hover:text-primary'
@@ -449,7 +449,7 @@ function SuggestionList({ onPick }: { onPick: (draft: AutomationSuggestion['draf
   return (
     <section className="mt-8">
       <h2 className="text-[14px] font-medium text-secondary">Suggestions</h2>
-      <div className="mt-2 overflow-hidden rounded-2xl border border-divider/75 bg-surface/20">
+      <div className="mt-2 overflow-hidden rounded-xl border border-divider/75 bg-surface/20">
         {AUTOMATION_SUGGESTIONS.map((suggestion, index) => (
           <button
             key={suggestion.title}
@@ -461,7 +461,7 @@ function SuggestionList({ onPick }: { onPick: (draft: AutomationSuggestion['draf
               index === AUTOMATION_SUGGESTIONS.length - 1 ? '' : 'border-b border-divider/60'
             }`}
           >
-            <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl border border-divider bg-surface text-muted transition-colors group-hover:text-primary">
+            <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-divider bg-surface text-muted transition-colors group-hover:text-primary">
               <Clock className="h-4 w-4" />
             </span>
             <span className="min-w-0 flex-1">

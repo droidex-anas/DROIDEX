@@ -88,7 +88,7 @@ function RestoreFailedState({ message, onRetry }: { message?: string; onRetry: (
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-lg border border-divider px-3 py-1.5 text-[12px] text-secondary transition-colors hover:bg-elevated/60"
+        className="rounded-md border border-divider px-3 py-1.5 text-[12px] text-secondary transition-colors hover:bg-elevated/60"
       >
         Retry
       </button>
@@ -144,14 +144,14 @@ export function EarlierHistoryControl({
 
 function RestoreFailedBanner({ message, onRetry }: { message?: string; onRetry: () => void }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-center gap-2 rounded-lg border border-divider bg-elevated/40 px-3 py-2 text-center">
+    <div className="mb-4 flex flex-wrap items-center justify-center gap-2 rounded-md border border-divider bg-elevated/40 px-3 py-2 text-center">
       <span className="text-[12px] text-secondary">
         {message ? `Couldn't load earlier messages: ${message}` : "Couldn't load earlier messages"}
       </span>
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-md border border-divider px-2 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
+        className="rounded-sm border border-divider px-2 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
       >
         Retry
       </button>
@@ -194,7 +194,7 @@ function ChatHeader({
     >
       <div
         {...(tile ? tileHandleProps(tile.id) : {})}
-        className={`flex min-w-0 items-center gap-1.5 rounded-xl pl-2 py-1.5 transition-colors ${
+        className={`flex min-w-0 items-center gap-1.5 rounded-lg pl-2 py-1.5 transition-colors ${
           tile ? 'no-drag cursor-grab pr-2 active:cursor-grabbing' : 'pr-3'
         } ${tile && !tile.focused ? 'bg-elevated/25' : 'bg-elevated/60'}`}
       >
@@ -234,7 +234,7 @@ function ChatHeader({
           type="button"
           onClick={sub.onStop}
           title="Stop child session"
-          className="flex shrink-0 items-center gap-1 rounded-lg bg-elevated/60 px-2.5 py-1.5 text-[11px] text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+          className="flex shrink-0 items-center gap-1 rounded-md bg-elevated/60 px-2.5 py-1.5 text-[11px] text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           <Square className="h-3 w-3" />
           Stop
@@ -784,7 +784,7 @@ export default function ChatView({
     conversationContent = (
       <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 px-8 text-center">
         {selectedChildSession?.prompt && (
-          <div className="max-w-lg rounded-xl bg-elevated/40 px-4 py-3 text-left">
+          <div className="max-w-lg rounded-lg bg-elevated/40 px-4 py-3 text-left">
             <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted">
               Task
             </div>

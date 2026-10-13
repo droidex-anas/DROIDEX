@@ -162,13 +162,13 @@ export function McpServersSection(props: McpServersSectionProps) {
   let serverList: React.ReactNode;
   if (props.isLoading && props.servers.length === 0) {
     serverList = (
-      <div className="flex items-center gap-2 rounded-xl border border-divider bg-surface px-4 py-5 text-[12px] text-muted">
+      <div className="flex items-center gap-2 rounded-lg border border-divider bg-surface px-4 py-5 text-[12px] text-muted">
         <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" /> Loading MCP servers…
       </div>
     );
   } else if (props.servers.length === 0) {
     serverList = (
-      <div className="rounded-xl border border-dashed border-divider px-5 py-8 text-center">
+      <div className="rounded-lg border border-dashed border-divider px-5 py-8 text-center">
         <Server className="mx-auto mb-2 h-5 w-5 text-muted" />
         <div className="text-[13px] font-medium text-primary">No MCP servers configured</div>
         <div className="mt-1 text-[11px] text-muted">
@@ -178,7 +178,7 @@ export function McpServersSection(props: McpServersSectionProps) {
     );
   } else {
     serverList = (
-      <div className="divide-y divide-divider/80 overflow-hidden rounded-xl border border-divider bg-surface shadow-lg">
+      <div className="divide-y divide-divider/80 overflow-hidden rounded-lg border border-divider bg-surface shadow-lg">
         {props.servers.map((server) => (
           <McpServerCard
             key={`${server.source}:${server.name}`}
@@ -206,7 +206,7 @@ export function McpServersSection(props: McpServersSectionProps) {
           onClick={props.onRefresh}
           disabled={props.isLoading || props.isMutating}
           aria-label="Refresh MCP servers"
-          className="rounded-lg border border-divider p-2 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
+          className="rounded-md border border-divider p-2 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
         >
           <RefreshCw className={`h-4 w-4 ${props.isLoading ? 'animate-spin' : ''}`} />
         </button>
@@ -225,7 +225,7 @@ export function McpServersSection(props: McpServersSectionProps) {
       </div>
 
       {props.error && (
-        <div className="mb-4 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-[12px] text-primary">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-[12px] text-primary">
           <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>{props.error}</span>
         </div>
@@ -238,7 +238,7 @@ export function McpServersSection(props: McpServersSectionProps) {
         onClick={() => {
           setIsAdding(true);
         }}
-        className="mt-5 flex items-center gap-1.5 rounded-lg border border-divider bg-elevated px-3.5 py-2 text-[12px] font-medium text-primary transition-all duration-150 hover:border-divider-strong hover:bg-active active:scale-[0.97]"
+        className="mt-5 flex items-center gap-1.5 rounded-md border border-divider bg-elevated px-3.5 py-2 text-[12px] font-medium text-primary transition-all duration-150 hover:border-divider-strong hover:bg-active active:scale-[0.97]"
       >
         <Plus className="h-3.5 w-3.5" /> Add server
       </button>
@@ -291,7 +291,7 @@ function McpServerCard({
             setExpanded((value) => !value);
           }}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left active:opacity-70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left active:opacity-70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           <ChevronRight
             className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-100 ${expanded ? 'rotate-90' : ''}`}
@@ -322,7 +322,7 @@ function McpServerCard({
             onClick={() => {
               onAuthenticate(server.name);
             }}
-            className="rounded-lg border border-divider bg-elevated px-2.5 py-1.5 text-[11px] font-medium text-primary transition-all duration-150 hover:border-divider-strong active:scale-[0.97] disabled:opacity-40"
+            className="rounded-md border border-divider bg-elevated px-2.5 py-1.5 text-[11px] font-medium text-primary transition-all duration-150 hover:border-divider-strong active:scale-[0.97] disabled:opacity-40"
           >
             Authenticate
           </button>
@@ -343,7 +343,7 @@ function McpServerCard({
             onClick={() => {
               onRemove(server.name);
             }}
-            className="rounded-lg border border-transparent p-2 text-secondary transition-all duration-150 hover:border-warning/25 hover:bg-warning/10 hover:text-warning active:scale-[0.96] disabled:opacity-40"
+            className="rounded-md border border-transparent p-2 text-secondary transition-all duration-150 hover:border-warning/25 hover:bg-warning/10 hover:text-warning active:scale-[0.96] disabled:opacity-40"
           >
             <Trash2 className="h-4 w-4" /> <span className="sr-only">Remove</span>
           </button>

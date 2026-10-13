@@ -80,7 +80,7 @@ function CardButton({
       type="button"
       title={label}
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors ${
+      className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-[12px] transition-colors ${
         danger
           ? 'text-danger hover:bg-danger/10'
           : 'text-muted hover:bg-elevated hover:text-primary'
@@ -122,7 +122,7 @@ function ThemeColorRow({
           setOpen((o) => !o);
         }}
         title={`Pick ${label.toLowerCase()}`}
-        className="flex h-8 min-w-[124px] shrink-0 items-center gap-2 rounded-lg px-2.5 font-mono text-[11px] uppercase transition-transform hover:scale-[1.02]"
+        className="flex h-8 min-w-[124px] shrink-0 items-center gap-2 rounded-md px-2.5 font-mono text-[11px] uppercase transition-transform hover:scale-[1.02]"
         style={{
           backgroundColor: value,
           color: ink,
@@ -363,7 +363,7 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
   ];
 
   return (
-    <div className="rounded-xl border border-divider bg-surface mb-8">
+    <div className="rounded-lg border border-divider bg-surface mb-8">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-divider">
         <div className="text-[13px] font-medium text-primary">
           {resolvedScheme === 'dark' ? 'Dark' : 'Light'} theme

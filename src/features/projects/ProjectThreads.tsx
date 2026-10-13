@@ -29,7 +29,7 @@ export function ProjectThreads({
           type="button"
           onClick={onBack}
           aria-label="Back to projects"
-          className="rounded-md p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
+          className="rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -39,7 +39,7 @@ export function ProjectThreads({
         <button
           type="button"
           onClick={onOpenChat}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] text-muted transition-colors hover:bg-elevated hover:text-primary"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           Open the chat
           <ExternalLink className="h-3 w-3" />
@@ -47,7 +47,7 @@ export function ProjectThreads({
       </div>
 
       {project.paused && (
-        <div className="mb-2 flex items-center gap-3 rounded-xl border border-divider px-4 py-3">
+        <div className="mb-2 flex items-center gap-3 rounded-lg border border-divider px-4 py-3">
           <p className="flex-1 text-[12px] leading-5 text-secondary">
             {project.uncertain > 0
               ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
@@ -56,14 +56,14 @@ export function ProjectThreads({
           <button
             type="button"
             onClick={onResume}
-            className="shrink-0 rounded-lg bg-active px-2.5 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
+            className="shrink-0 rounded-md bg-active px-2.5 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
           >
             Resume
           </button>
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-divider bg-surface/30">
+      <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-divider bg-surface/30">
         <ThreadList
           rows={rows}
           plan={project.plan}

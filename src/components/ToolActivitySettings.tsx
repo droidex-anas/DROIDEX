@@ -97,7 +97,7 @@ export function ToolActivitySettings() {
   const current = DENSITY_STOPS[stopIndex];
 
   return (
-    <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+    <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
       <div className="px-4 py-3.5">
         <div className="text-[13px] text-primary">Tool activity</div>
         <div className="text-[11px] text-muted mt-0.5">
@@ -158,7 +158,7 @@ export function ToolActivitySettings() {
             new defaults and the preview always reflects the pending setting. */}
         <div
           key={`${settings.density}:${String(settings.inlineDiffs)}`}
-          className="space-y-3 rounded-lg border border-divider bg-bg/60 p-3"
+          className="space-y-3 rounded-md border border-divider bg-bg/60 p-3"
         >
           <ToolGroupItem events={PREVIEW_TOOL_EVENTS} density={settings.density} />
           <DiffGroup changes={PREVIEW_DIFF} inlineDiffs={settings.inlineDiffs} />

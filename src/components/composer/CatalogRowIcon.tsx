@@ -55,7 +55,7 @@ export function CatalogRowIcon({
         draggable={false}
         loading="lazy"
         decoding="async"
-        className={`rounded object-contain ${className}`}
+        className={`rounded-xs object-contain ${className}`}
         // The brand colour is the harness's own data, in whatever notation it
         // chose, so the tint is mixed rather than built by appending alpha hex.
         style={

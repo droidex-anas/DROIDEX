@@ -34,7 +34,7 @@ export function SelectionHighlight({ index }: { index: number }) {
   return (
     <div
       aria-hidden
-      className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-lg bg-surface ${
+      className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-md bg-surface ${
         index < 0 ? 'opacity-0' : ''
       }`}
       style={{

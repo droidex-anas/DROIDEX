@@ -147,7 +147,7 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
             }}
             // The room above the composer, which a tall draft shrinks.
             style={{ maxHeight: 'min(420px, calc(var(--page-room, 420px) - 16px))' }}
-            className="absolute inset-x-0 bottom-full mb-2 overflow-y-auto rounded-2xl border border-divider/60 bg-raised p-4 shadow-lg outline-none"
+            className="absolute inset-x-0 bottom-full mb-2 overflow-y-auto rounded-xl border border-divider/60 bg-raised p-4 shadow-lg outline-none"
           >
             {earlier && (
               <p className="mb-2.5 text-[12px] text-muted">Earlier steps are in the chat</p>

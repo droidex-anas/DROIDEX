@@ -58,7 +58,7 @@ export function FileChip({
             },
           }
         : {})}
-      className={`group relative flex max-w-60 items-center gap-2.5 rounded-xl border border-divider bg-bg/60 py-2 pl-2 pr-2.5 text-left ${
+      className={`group relative flex max-w-60 items-center gap-2.5 rounded-lg border border-divider bg-bg/60 py-2 pl-2 pr-2.5 text-left ${
         onOpen
           ? 'transition-colors hover:border-divider-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60'
           : ''
@@ -66,7 +66,7 @@ export function FileChip({
       title={onOpen ? `Open ${displayName} in Review` : displayName}
     >
       <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${TILE_BY_KIND[info.kind]}`}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${TILE_BY_KIND[info.kind]}`}
       >
         <FileText className="h-4 w-4" />
       </span>

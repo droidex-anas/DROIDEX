@@ -47,7 +47,7 @@ export default function ModelCategoryFilter({
         aria-label="Filter models by category"
         title="Filter models by category"
         aria-expanded={open}
-        className={`relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+        className={`relative flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
           open ? 'bg-surface text-primary' : 'bg-bg/50 hover:bg-surface/60 hover:text-primary'
         } ${filtered ? 'text-primary' : 'text-muted'}`}
       >
@@ -67,7 +67,7 @@ export default function ModelCategoryFilter({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border border-divider bg-raised p-1 shadow-md"
+            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-lg border border-divider bg-raised p-1 shadow-md"
           >
             {options.map((option) => {
               const on = option.value === selected;
@@ -79,7 +79,7 @@ export default function ModelCategoryFilter({
                     onSelect(option.value);
                     onOpenChange(false);
                   }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-colors ${
                     on ? 'bg-surface text-primary' : 'text-secondary hover:bg-surface/60'
                   }`}
                 >

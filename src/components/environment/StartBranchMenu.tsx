@@ -192,7 +192,7 @@ export function StartBranchMenu({
           <button
             onClick={() => void checkoutLocally()}
             disabled={busy}
-            className="ml-auto flex items-center gap-1 rounded-md bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent hover:bg-accent/25 disabled:opacity-40"
+            className="ml-auto flex items-center gap-1 rounded-sm bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent hover:bg-accent/25 disabled:opacity-40"
           >
             {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
             Checkout locally
@@ -296,7 +296,7 @@ export function StartBranchMenu({
                       if (e.key === 'Enter') void createNewBranch();
                     }}
                     placeholder="new-branch-name"
-                    className="w-full rounded-md bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
+                    className="w-full rounded-sm bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
                   />
                   <div className="px-0.5 text-[11px] text-muted">
                     Branches off <span className="text-secondary">{base}</span>
@@ -306,14 +306,14 @@ export function StartBranchMenu({
                       onClick={() => {
                         setCreatingNew(false);
                       }}
-                      className="rounded-md px-2 py-1 text-[11px] text-muted hover:text-primary"
+                      className="rounded-sm px-2 py-1 text-[11px] text-muted hover:text-primary"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => void createNewBranch()}
                       disabled={!newName.trim() || busy}
-                      className="flex items-center gap-1 rounded-md bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
+                      className="flex items-center gap-1 rounded-sm bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
                     >
                       {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
                       Create & start
@@ -325,7 +325,7 @@ export function StartBranchMenu({
                   onClick={() => {
                     setCreatingNew(true);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
                 >
                   <Plus className="h-3.5 w-3.5 shrink-0 text-muted" />
                   Create and checkout new branch…

@@ -121,7 +121,7 @@ function ProjectListView({
           <button
             type="button"
             onClick={onStartProject}
-            className="flex items-center gap-1.5 rounded-xl bg-active px-3 py-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-elevated"
+            className="flex items-center gap-1.5 rounded-lg bg-active px-3 py-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-elevated"
           >
             <Plus className="h-3.5 w-3.5" />
             New project
@@ -169,13 +169,13 @@ function ProjectRow({
   return (
     <div
       data-testid="project-row"
-      className="group flex items-center gap-2 rounded-2xl border border-divider bg-surface/40 pr-2 transition-colors hover:border-divider-strong hover:bg-elevated/40"
+      className="group flex items-center gap-2 rounded-xl border border-divider bg-surface/40 pr-2 transition-colors hover:border-divider-strong hover:bg-elevated/40"
     >
       <button
         type="button"
         onClick={onOpenChat}
         title="Open this project’s chat and its threads"
-        className="flex min-w-0 flex-1 items-center gap-4 rounded-2xl px-5 py-4 text-left"
+        className="flex min-w-0 flex-1 items-center gap-4 rounded-xl px-5 py-4 text-left"
       >
         <span className="flex w-4 shrink-0 justify-center">
           <ActivityStatusGlyph status={pulse.attention > 0 ? 'input' : 'ready'} />
@@ -203,7 +203,7 @@ function ProjectRow({
         type="button"
         onClick={onOpenDetails}
         aria-label={`Open ${project.title} in Projects`}
-        className="shrink-0 rounded-lg p-2 text-muted opacity-0 transition-opacity hover:bg-elevated hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
+        className="shrink-0 rounded-md p-2 text-muted opacity-0 transition-opacity hover:bg-elevated hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
       >
         <ChevronRight className="h-4 w-4" />
       </button>
@@ -231,7 +231,7 @@ function Empty({
   onCreate: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-divider px-6 py-10 text-center">
+    <div className="rounded-xl border border-divider px-6 py-10 text-center">
       <h2 className="text-[15px] font-medium">
         {error ? 'Projects could not be loaded' : loading ? 'Loading projects…' : 'No projects yet'}
       </h2>
@@ -243,7 +243,7 @@ function Empty({
         <button
           type="button"
           onClick={onCreate}
-          className="mt-5 rounded-xl bg-text px-4 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-80"
+          className="mt-5 rounded-lg bg-text px-4 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-80"
         >
           Start a project
         </button>

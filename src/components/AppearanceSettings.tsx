@@ -36,7 +36,7 @@ function ModeButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] transition-colors ${
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[11px] transition-colors ${
         active ? 'bg-elevated text-primary border border-divider' : 'text-muted hover:text-primary'
       }`}
     >
@@ -143,11 +143,11 @@ function SchemeCard({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`rounded-xl border p-2 text-left transition-colors ${
+      className={`rounded-lg border p-2 text-left transition-colors ${
         active ? 'border-accent/50 bg-elevated' : 'border-divider hover:border-divider-strong'
       }`}
     >
-      <div className="h-24 overflow-hidden rounded-lg border border-divider">{children}</div>
+      <div className="h-24 overflow-hidden rounded-md border border-divider">{children}</div>
       <div className="mt-2 flex items-center justify-between px-0.5 pb-0.5">
         <span className={`text-[12px] ${active ? 'text-primary' : 'text-secondary'}`}>{label}</span>
         {active && (
@@ -218,7 +218,7 @@ export function AppearanceSection() {
       <ThemePresetCard resolvedScheme={resolvedScheme} />
 
       {/* App icon */}
-      <div className="rounded-xl border border-divider bg-surface p-4 mb-6">
+      <div className="rounded-lg border border-divider bg-surface p-4 mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-[13px] text-primary">App icon</div>
@@ -257,7 +257,7 @@ export function AppearanceSection() {
 
       {/* Typography + behavior */}
       <GroupLabel>Typography & behavior</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface px-4 [&>*:last-child]:border-b-0">
+      <div className="rounded-lg border border-divider bg-surface px-4 [&>*:last-child]:border-b-0">
         <div className="flex items-center justify-between py-2.5 border-b border-divider">
           <div>
             <div className="text-[13px] text-primary">UI font</div>

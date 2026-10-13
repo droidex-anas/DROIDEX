@@ -60,7 +60,7 @@ export function KeyboardShortcutsSettings() {
         title="Keyboard"
         sub={`Press a new chord after choosing Change. Escape cancels, Delete restores the default. Every shortcut needs ${PRIMARY_MODIFIER_LABEL}.`}
       />
-      <div className="overflow-hidden rounded-2xl border border-divider/80 bg-surface">
+      <div className="overflow-hidden rounded-xl border border-divider/80 bg-surface">
         {SHORTCUT_DEFINITIONS.map((definition, index) => {
           const active = capturing === definition.action;
           const conflicts = conflictingActions(bindings, definition.action);
@@ -78,7 +78,7 @@ export function KeyboardShortcutsSettings() {
               >
                 <div className="flex shrink-0 items-center gap-2">
                   <kbd
-                    className={`min-w-[52px] rounded-md px-2 py-1 text-center font-mono text-[11px] ${
+                    className={`min-w-[52px] rounded-sm px-2 py-1 text-center font-mono text-[11px] ${
                       active
                         ? 'bg-elevated text-primary ring-1 ring-inset ring-divider-strong'
                         : 'bg-elevated text-muted'
@@ -96,7 +96,7 @@ export function KeyboardShortcutsSettings() {
                     onClick={() => {
                       setCapturing(active ? null : definition.action);
                     }}
-                    className="rounded-xl bg-elevated/80 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
+                    className="rounded-lg bg-elevated/80 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
                   >
                     {active ? 'Cancel' : 'Change'}
                   </button>
@@ -108,7 +108,7 @@ export function KeyboardShortcutsSettings() {
         {/* Browser tab numbering is fixed, so it is listed but not rebindable. */}
         <div className="border-t border-divider/50">
           <SettingRow label="Go to tab 1–9" description="9 always opens the last tab.">
-            <kbd className="min-w-[52px] shrink-0 rounded-md bg-elevated px-2 py-1 text-center font-mono text-[11px] text-muted">
+            <kbd className="min-w-[52px] shrink-0 rounded-sm bg-elevated px-2 py-1 text-center font-mono text-[11px] text-muted">
               {formatChord('Meta+1')}–{formatChord('Meta+9')}
             </kbd>
           </SettingRow>

@@ -52,7 +52,7 @@ export function DiffStat({
     <>
       <div
         ref={anchorRef}
-        className={`group flex items-center rounded-lg transition-colors ${
+        className={`group flex items-center rounded-md transition-colors ${
           open ? 'bg-elevated' : 'hover:bg-elevated/50'
         }`}
       >
@@ -60,7 +60,7 @@ export function DiffStat({
           type="button"
           onClick={onOpenReview}
           title="Open the full diff review"
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-lg px-3 py-2 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-md px-3 py-2 text-left"
         >
           <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-colors group-hover:text-secondary">
             <ChangesIcon className="h-4 w-4" />
@@ -96,7 +96,7 @@ export function DiffStat({
           title="Choose which changes are counted"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="shrink-0 rounded-r-lg px-1.5 py-2 text-muted/60 hover:text-primary"
+          className="shrink-0 rounded-r-md px-1.5 py-2 text-muted/60 hover:text-primary"
         >
           <RowCaret open={open} />
         </button>
@@ -121,7 +121,7 @@ export function DiffStat({
                 onModeChange(option);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
             >
               <span className="flex-1 truncate">{diffModeLabel(option, baseRef)}</span>
               {option === mode && (

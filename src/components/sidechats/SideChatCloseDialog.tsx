@@ -48,7 +48,7 @@ export function SideChatCloseDialog({
         aria-labelledby="side-chat-close-title"
         aria-describedby="side-chat-close-description"
         onKeyDown={keepFocusInside}
-        className="w-full max-w-[360px] rounded-2xl bg-raised p-5 shadow-lg"
+        className="w-full max-w-[360px] rounded-xl bg-raised p-5 shadow-lg"
       >
         <h2 id="side-chat-close-title" className="text-[14px] font-semibold text-primary">
           Close this side chat?
@@ -62,7 +62,7 @@ export function SideChatCloseDialog({
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+            className="rounded-md px-3 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
           >
             Cancel
           </button>
@@ -70,7 +70,7 @@ export function SideChatCloseDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className="rounded-lg bg-red-500/15 px-3 py-1.5 text-[12px] font-semibold text-red-400 transition-colors hover:bg-red-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400/60"
+            className="rounded-md bg-red-500/15 px-3 py-1.5 text-[12px] font-semibold text-red-400 transition-colors hover:bg-red-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400/60"
           >
             Close side chat
           </button>

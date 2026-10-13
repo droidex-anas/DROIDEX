@@ -22,7 +22,7 @@ function CheckRow({ check }: { check: PrCheck }) {
       }}
       disabled={!check.link}
       title={check.link ? 'Open run on GitHub' : check.description || check.state}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-active disabled:cursor-default disabled:hover:bg-transparent"
+      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-active disabled:cursor-default disabled:hover:bg-transparent"
     >
       <CheckStatusIcon status={bucketToStatus(check.bucket)} size={14} />
       <span className="min-w-0 flex-1">
@@ -63,7 +63,7 @@ function ChecksBody({
       </div>
     );
   }
-  if (loading) return <div className="h-12 rounded-xl bg-elevated/40" />;
+  if (loading) return <div className="h-12 rounded-lg bg-elevated/40" />;
   return <p className="text-[13px] text-muted">{error ?? 'No checks reported'}</p>;
 }
 
@@ -76,7 +76,7 @@ function Description({
   body: string;
   metaError: string | null;
 }) {
-  if (!loaded && !body) return <div className="h-16 rounded-xl bg-elevated/40" />;
+  if (!loaded && !body) return <div className="h-16 rounded-lg bg-elevated/40" />;
   // Generated descriptions carry the same disclosures, footers, and badge links
   // as bot comments, so they go through the same renderer.
   const blocks = body ? prCommentBlocks(body) : [];
@@ -97,7 +97,7 @@ function Description({
 // the fact and links out instead of offering a resolve button it cannot honor.
 function MergeConflicts({ pr }: { pr: PullRequest }) {
   return (
-    <div className="rounded-xl border border-divider bg-elevated/30 px-3 py-2.5">
+    <div className="rounded-lg border border-divider bg-elevated/30 px-3 py-2.5">
       <p className="text-[13px] text-secondary">
         <span className="text-primary">{pr.headRefName ?? 'This branch'}</span> cannot be merged
         into <span className="text-primary">{pr.baseRefName ?? 'the base branch'}</span>{' '}
@@ -108,7 +108,7 @@ function MergeConflicts({ pr }: { pr: PullRequest }) {
         onClick={() => {
           void openExternal(pr.url);
         }}
-        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-divider px-2 py-1 text-[13px] text-secondary transition-colors hover:bg-active hover:text-primary"
+        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-divider px-2 py-1 text-[13px] text-secondary transition-colors hover:bg-active hover:text-primary"
       >
         <Octicon name="link-external" size={12} />
         View conflicts on GitHub

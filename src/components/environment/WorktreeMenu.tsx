@@ -241,14 +241,14 @@ export function WorktreeMenu({
               {w.isMain ? (
                 <span
                   title="The repository's main worktree can't be removed"
-                  className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-muted"
+                  className="shrink-0 rounded-xs bg-elevated px-1.5 py-0.5 text-[11px] text-muted"
                 >
                   main
                 </span>
               ) : w.path && isWorktreeInUse(w.path, sessionCwds) ? (
                 <span
                   title="A chat is currently using this worktree"
-                  className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-muted"
+                  className="shrink-0 rounded-xs bg-elevated px-1.5 py-0.5 text-[11px] text-muted"
                 >
                   in use
                 </span>
@@ -263,7 +263,7 @@ export function WorktreeMenu({
                     }}
                     disabled={busy}
                     title="Confirm removal"
-                    className="rounded p-1 text-warning hover:bg-warning/15 disabled:opacity-40"
+                    className="rounded-xs p-1 text-warning hover:bg-warning/15 disabled:opacity-40"
                   >
                     <Check className="h-3.5 w-3.5" strokeWidth={3} />
                   </button>
@@ -272,7 +272,7 @@ export function WorktreeMenu({
                       setConfirming(null);
                     }}
                     title="Cancel"
-                    className="rounded p-1 text-muted hover:bg-elevated"
+                    className="rounded-xs p-1 text-muted hover:bg-elevated"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -284,7 +284,7 @@ export function WorktreeMenu({
                   }}
                   disabled={busy}
                   title="Remove worktree"
-                  className="shrink-0 rounded p-1 text-muted/0 transition-colors group-hover:text-muted hover:!text-warning disabled:opacity-40"
+                  className="shrink-0 rounded-xs p-1 text-muted/0 transition-colors group-hover:text-muted hover:!text-warning disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -304,13 +304,13 @@ export function WorktreeMenu({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && !pickingBase && void doCreate()}
                 placeholder="new-branch-name"
-                className="w-full rounded-md bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
+                className="w-full rounded-sm bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
               />
               <button
                 onClick={() => {
                   setPickingBase((v) => !v);
                 }}
-                className="flex w-full items-center gap-1.5 rounded-md bg-bg/40 px-2 py-1 text-[12px] text-secondary hover:bg-bg/60"
+                className="flex w-full items-center gap-1.5 rounded-sm bg-bg/40 px-2 py-1 text-[12px] text-secondary hover:bg-bg/60"
               >
                 <span className="text-muted">Base</span>
                 <span className="flex-1 truncate text-left text-primary">{base}</span>
@@ -319,7 +319,7 @@ export function WorktreeMenu({
                 />
               </button>
               {pickingBase && (
-                <div className="max-h-32 overflow-y-auto rounded-md bg-bg/40 p-1">
+                <div className="max-h-32 overflow-y-auto rounded-sm bg-bg/40 p-1">
                   {baseOptions.map((option) => (
                     <button
                       key={option}
@@ -327,7 +327,7 @@ export function WorktreeMenu({
                         setBase(option);
                         setPickingBase(false);
                       }}
-                      className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-secondary hover:bg-elevated/60 hover:text-primary"
+                      className="flex w-full items-center gap-2 rounded-xs px-1.5 py-1 text-left text-[12px] text-secondary hover:bg-elevated/60 hover:text-primary"
                     >
                       <span className="flex-1 truncate">{option}</span>
                       {option === base && (
@@ -346,14 +346,14 @@ export function WorktreeMenu({
                   onClick={() => {
                     setCreating(false);
                   }}
-                  className="rounded-md px-2 py-1 text-[11px] text-muted hover:text-primary"
+                  className="rounded-sm px-2 py-1 text-[11px] text-muted hover:text-primary"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => void doCreate()}
                   disabled={!name.trim() || busy}
-                  className="flex items-center gap-1 rounded-md bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
+                  className="flex items-center gap-1 rounded-sm bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
                 >
                   {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
                   Create & open
@@ -363,7 +363,7 @@ export function WorktreeMenu({
           ) : (
             <button
               onClick={startCreating}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
             >
               <Plus className="h-3.5 w-3.5 shrink-0 text-muted" />
               New worktree…

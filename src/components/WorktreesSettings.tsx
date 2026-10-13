@@ -292,7 +292,7 @@ export function WorktreesSettings() {
           onClick={() => void load()}
           title="Refresh worktrees"
           aria-label="Refresh worktrees"
-          className="shrink-0 rounded-lg border border-divider bg-surface p-2 text-muted transition-all duration-150 hover:-translate-y-px hover:border-divider-strong hover:bg-elevated/60 hover:text-primary active:scale-[0.94]"
+          className="shrink-0 rounded-md border border-divider bg-surface p-2 text-muted transition-all duration-150 hover:-translate-y-px hover:border-divider-strong hover:bg-elevated/60 hover:text-primary active:scale-[0.94]"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
@@ -303,7 +303,7 @@ export function WorktreesSettings() {
           key={loading ? 'loading' : 'empty'}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-dashed border-divider bg-surface/40 p-7 text-center"
+          className="rounded-lg border border-dashed border-divider bg-surface/40 p-7 text-center"
         >
           <p className="text-[13px] text-secondary">
             {loading ? 'Scanning workspaces…' : 'No linked worktrees yet.'}
@@ -341,7 +341,7 @@ export function WorktreesSettings() {
                   {linkedWorktrees.length === 1 ? 'worktree' : 'worktrees'}
                 </span>
               </div>
-              <div className="divide-y divide-divider/80 overflow-hidden rounded-xl border border-divider bg-surface shadow-sm">
+              <div className="divide-y divide-divider/80 overflow-hidden rounded-lg border border-divider bg-surface shadow-sm">
                 <AnimatePresence initial={false}>
                   {visibleWorktrees.map((details) => {
                     const { worktree } = details;

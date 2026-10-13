@@ -20,7 +20,7 @@ export function WorktreeCreatedCard({ path }: { path: string }) {
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
       </button>
       {open && (
-        <div className="mt-2 rounded-xl border border-divider bg-elevated/35 px-4 py-3 font-mono text-[12px] leading-relaxed text-secondary">
+        <div className="mt-2 rounded-lg border border-divider bg-elevated/35 px-4 py-3 font-mono text-[12px] leading-relaxed text-secondary">
           <div>Preparing worktree (detached HEAD)</div>
           <div className="break-all">Worktree created at {path}</div>
         </div>

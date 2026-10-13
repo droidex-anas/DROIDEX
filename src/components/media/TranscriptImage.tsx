@@ -36,7 +36,7 @@ export function TranscriptImage({
     return (
       <span
         title={title ?? reference}
-        className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-divider bg-elevated/50 px-2 py-1 text-[12px] text-muted"
+        className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-md border border-divider bg-elevated/50 px-2 py-1 text-[12px] text-muted"
       >
         <ImageOff className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{label}</span>
@@ -51,7 +51,7 @@ export function TranscriptImage({
           setOpen(true);
         }}
         title={title ?? `View ${label}`}
-        className="my-1.5 block max-w-full overflow-hidden rounded-xl border border-divider bg-bg/40 transition-colors hover:border-divider-strong"
+        className="my-1.5 block max-w-full overflow-hidden rounded-lg border border-divider bg-bg/40 transition-colors hover:border-divider-strong"
       >
         <img
           src={src}

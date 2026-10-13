@@ -97,7 +97,7 @@ export default function ContextWindowMenu({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px] transition-colors ${
+        className={`flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-[11px] transition-colors ${
           open ? 'bg-surface text-primary' : 'text-muted hover:bg-surface/60 hover:text-primary'
         }`}
       >
@@ -119,7 +119,7 @@ export default function ContextWindowMenu({
               data-popover-layer="context-window"
               onKeyDown={onMenuKey}
               style={{ ...place, width: MENU_WIDTH_PX }}
-              className="fixed z-[200] overflow-hidden rounded-xl border border-divider/60 bg-raised p-1 shadow-lg"
+              className="fixed z-[200] overflow-hidden rounded-lg border border-divider/60 bg-raised p-1 shadow-lg"
             >
               <div className="px-2 pt-1 pb-1.5 text-[11px] font-medium text-muted">
                 {CONTEXT_WINDOW_LABEL}
@@ -140,7 +140,7 @@ export default function ContextWindowMenu({
                       setOpen(false);
                       buttonRef.current?.focus();
                     }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                       on ? 'bg-surface text-primary' : 'text-secondary enabled:hover:bg-surface/60'
                     }`}
                   >

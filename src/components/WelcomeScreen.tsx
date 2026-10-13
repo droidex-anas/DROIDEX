@@ -68,7 +68,7 @@ export function WelcomeScreen({
               onSeedPrompt(entry.prompt);
             }}
             style={{ animationDelay: `${String(160 + i * 70)}ms` }}
-            className="droid-rise group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-elevated/60"
+            className="droid-rise group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-elevated/60"
           >
             <span className="w-3 shrink-0 text-[13px] text-accent opacity-0 transition-opacity group-hover:opacity-100">
               &gt;
@@ -111,7 +111,7 @@ function ProjectWelcome({ onStartChat }: { onStartChat: () => void }) {
         type="button"
         onClick={onStartChat}
         style={{ animationDelay: '230ms' }}
-        className="droid-rise mt-6 rounded-lg px-3 py-1.5 text-[13px] text-muted transition-colors hover:bg-elevated/60 hover:text-secondary"
+        className="droid-rise mt-6 rounded-md px-3 py-1.5 text-[13px] text-muted transition-colors hover:bg-elevated/60 hover:text-secondary"
       >
         Start a chat instead
       </button>

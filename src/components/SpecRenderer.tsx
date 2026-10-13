@@ -88,7 +88,7 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
       initial={{ opacity: 0, y: 10, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.4, ease: EASE, delay: Math.min(index * 0.06, 0.3) }}
-      className="group relative rounded-2xl border border-divider bg-elevated/30 overflow-hidden hover:border-accent/20 transition-colors duration-300"
+      className="group relative rounded-xl border border-divider bg-elevated/30 overflow-hidden hover:border-accent/20 transition-colors duration-300"
     >
       {/* Subtle top bar */}
       <div className="absolute top-0 inset-x-0 h-7 flex items-center justify-between px-3.5 bg-surface/30 border-b border-divider">

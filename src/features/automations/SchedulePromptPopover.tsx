@@ -76,7 +76,7 @@ export default function SchedulePromptPopover({
             onClick={close}
             disabled={saving}
             aria-label="Close schedule"
-            className="rounded-lg p-1.5 text-muted hover:bg-surface focus-visible:outline focus-visible:outline-divider-strong"
+            className="rounded-md p-1.5 text-muted hover:bg-surface focus-visible:outline focus-visible:outline-divider-strong"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -95,13 +95,13 @@ export default function SchedulePromptPopover({
                   setSchedule({ kind: 'once', runAt: preset.runAt() });
                   setError(null);
                 }}
-                className="rounded-lg border border-divider px-2.5 py-1.5 text-[11px] text-secondary transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-divider-strong"
+                className="rounded-md border border-divider px-2.5 py-1.5 text-[11px] text-secondary transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-divider-strong"
               >
                 {preset.label}
               </button>
             ))}
           </div>
-          <div className="rounded-xl border border-divider bg-surface/30">
+          <div className="rounded-lg border border-divider bg-surface/30">
             <ScheduleControls
               schedule={schedule}
               timezone={timezone}
@@ -127,7 +127,7 @@ export default function SchedulePromptPopover({
           <button
             type="submit"
             disabled={saving || unconfirmed}
-            className="inline-flex items-center gap-2 rounded-lg bg-text px-3 py-2 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-md bg-text px-3 py-2 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {saving && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
             {saving ? 'Scheduling…' : 'Schedule prompt'}

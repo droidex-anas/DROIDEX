@@ -186,7 +186,7 @@ export function AutonomyMenu({
       role="menu"
       aria-label="Autonomy"
       onKeyDown={onMenuKey}
-      className="rounded-2xl border border-divider/60 bg-raised shadow-lg overflow-hidden"
+      className="rounded-xl border border-divider/60 bg-raised shadow-lg overflow-hidden"
     >
       <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1.5">
         <span className="text-[12px] font-medium text-secondary">Autonomy</span>
@@ -212,7 +212,7 @@ export function AutonomyMenu({
               onClick={() => {
                 onSelect(level);
               }}
-              className={`w-full flex items-start gap-3 px-2.5 py-2 rounded-lg text-left transition-colors ${
+              className={`w-full flex items-start gap-3 px-2.5 py-2 rounded-md text-left transition-colors ${
                 selected ? 'bg-surface' : 'hover:bg-surface/60'
               }`}
             >

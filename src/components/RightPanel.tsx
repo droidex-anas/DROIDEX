@@ -288,7 +288,7 @@ export default function RightPanel() {
                     exit={{ opacity: 0, height: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="mx-3 my-1.5 rounded-xl bg-elevated/50 px-3 py-2.5 space-y-2">
+                    <div className="mx-3 my-1.5 rounded-lg bg-elevated/50 px-3 py-2.5 space-y-2">
                       <div className="text-[13px] text-primary leading-relaxed">
                         {f.description}
                       </div>

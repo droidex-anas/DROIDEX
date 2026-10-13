@@ -148,7 +148,7 @@ export function AutomationProposalCard({
       initial={reduceMotion ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.18, ease: EASE }}
-      className="overflow-hidden rounded-2xl border border-divider bg-surface/35"
+      className="overflow-hidden rounded-xl border border-divider bg-surface/35"
       aria-label="DROIDEX automation proposal"
     >
       <div className="px-4 pb-3 pt-3.5">
@@ -332,7 +332,7 @@ export function AutomationProposalCard({
               onClick={() => {
                 dispatch({ type: 'OPEN_AUTOMATIONS', automationId: scheduledAutomationId });
               }}
-              className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary"
+              className="rounded-md px-3 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary"
             >
               Open automation
             </button>
@@ -341,7 +341,7 @@ export function AutomationProposalCard({
               type="button"
               onClick={() => void confirm()}
               disabled={confirmDisabled}
-              className="rounded-lg bg-text px-3.5 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+              className="rounded-md bg-text px-3.5 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
             >
               {confirming ? 'Scheduling…' : 'Confirm automation'}
             </button>

@@ -205,7 +205,7 @@ export default function ModelSliderPopover({
     >
       <div
         ref={setCard}
-        className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-divider/60 bg-raised shadow-lg"
+        className="flex max-h-[inherit] flex-col overflow-hidden rounded-xl border border-divider/60 bg-raised shadow-lg"
       >
         <AnimatePresence mode="wait" initial={false}>
           {showEffortView ? (
@@ -224,7 +224,7 @@ export default function ModelSliderPopover({
                   onClick={() => {
                     setView('list');
                   }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface/60 hover:text-primary"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-surface/60 hover:text-primary"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -239,7 +239,7 @@ export default function ModelSliderPopover({
                       onClick={() => {
                         setFastMode(!fastMode);
                       }}
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-40 ${
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition-colors disabled:opacity-40 ${
                         fastMode
                           ? 'bg-surface text-accent'
                           : 'text-muted enabled:hover:bg-surface/60 enabled:hover:text-primary'
@@ -279,7 +279,7 @@ export default function ModelSliderPopover({
                     onClick={() => {
                       sliderRef.current?.setValue(defaultEffort, { emit: true });
                     }}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface/60 hover:text-primary"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-surface/60 hover:text-primary"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
@@ -315,7 +315,7 @@ export default function ModelSliderPopover({
 
               <div className="flex min-h-0 flex-col px-3 pt-3 pb-3">
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-bg/50 px-3">
+                  <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
                     <Search className="h-3.5 w-3.5 shrink-0 text-muted" />
                     <input
                       autoFocus

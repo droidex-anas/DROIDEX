@@ -145,7 +145,7 @@ export function SidebarWorkspaceList({
                   }}
                   title="Add workspace"
                   aria-label="Add workspace"
-                  className="shrink-0 cursor-pointer rounded-md p-0.5 text-muted transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
+                  className="shrink-0 cursor-pointer rounded-sm p-0.5 text-muted transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>

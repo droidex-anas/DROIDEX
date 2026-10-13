@@ -24,7 +24,7 @@ export function DesignMarkChip({
 
   return (
     <span
-      className="group relative flex max-w-56 shrink-0 items-center rounded-xl border transition-colors"
+      className="group relative flex max-w-56 shrink-0 items-center rounded-lg border transition-colors"
       style={{
         borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
         backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
@@ -34,9 +34,9 @@ export function DesignMarkChip({
         type="button"
         onClick={onInsert}
         title={`${label}${where ? ` (${where})` : ''}. Click to write @${number} in the prompt.`}
-        className="flex min-w-0 items-center gap-2 rounded-xl py-1.5 pl-1.5 pr-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+        className="flex min-w-0 items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
       >
-        <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-divider bg-surface">
+        <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-md border border-divider bg-surface">
           {crop && (
             <img src={crop} alt="" draggable={false} className="h-full w-full object-cover" />
           )}

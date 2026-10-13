@@ -41,7 +41,7 @@ export function AgentDockLine({
         if (event.key === 'Escape') onExpandedChange(false);
       }}
       data-testid="agent-dock-line"
-      className="relative z-0 mx-[3%] -mb-3 min-w-0 overflow-hidden rounded-t-2xl border border-divider bg-surface pb-4"
+      className="relative z-0 mx-[3%] -mb-3 min-w-0 overflow-hidden rounded-t-xl border border-divider bg-surface pb-4"
     >
       <button
         type="button"

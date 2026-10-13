@@ -45,7 +45,7 @@ export default function HarnessSegments({
       <div
         role="radiogroup"
         aria-label="Harness"
-        className="relative flex gap-0.5 rounded-xl border border-divider bg-bg/60 p-0.5"
+        className="relative flex gap-0.5 rounded-lg border border-divider bg-bg/60 p-0.5"
       >
         {PROVIDER_KINDS.map((kind) => {
           const {

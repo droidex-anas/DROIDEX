@@ -50,7 +50,7 @@ export function AutomationList({
       role="list"
       aria-label="Automations"
       tabIndex={0}
-      className="mt-4 max-h-[60vh] overflow-y-auto rounded-2xl border border-divider/80 bg-surface/20 outline-none [container-type:inline-size] focus-visible:border-divider-strong"
+      className="mt-4 max-h-[60vh] overflow-y-auto rounded-xl border border-divider/80 bg-surface/20 outline-none [container-type:inline-size] focus-visible:border-divider-strong"
     >
       <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((item) => {

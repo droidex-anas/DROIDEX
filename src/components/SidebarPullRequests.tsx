@@ -74,7 +74,7 @@ export function SidebarPullRequests({
           <section key={url} aria-label={`PR #${String(pr.number)} ${pr.title}`}>
             <button
               type="button"
-              className="group/heading flex w-full cursor-pointer items-center gap-2.5 rounded-md py-1.5 pl-3 pr-3 text-left text-[13px] font-medium text-secondary transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
+              className="group/heading flex w-full cursor-pointer items-center gap-2.5 rounded-sm py-1.5 pl-3 pr-3 text-left text-[13px] font-medium text-secondary transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
               title={`${url} · ${prKindLabel(kind)} (last detected)`}
               aria-expanded={open}
               onClick={() => {

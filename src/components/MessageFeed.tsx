@@ -62,7 +62,7 @@ const InlineSpecCard = memo(function InlineSpecCard({
   const sections = useMemo(() => (content.match(/^#{1,3}\s+/gm) ?? []).length, [content]);
 
   return (
-    <div className="rounded-xl border border-divider bg-elevated/20 overflow-hidden">
+    <div className="rounded-lg border border-divider bg-elevated/20 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button
           onClick={() => {
@@ -84,7 +84,7 @@ const InlineSpecCard = memo(function InlineSpecCard({
         {onOpenWiki && (
           <button
             onClick={onOpenWiki}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium text-secondary bg-elevated/50 border border-divider hover:bg-elevated/80 hover:text-primary transition-colors"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-secondary bg-elevated/50 border border-divider hover:bg-elevated/80 hover:text-primary transition-colors"
           >
             Read spec
           </button>

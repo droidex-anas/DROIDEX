@@ -43,7 +43,7 @@ export function PrComposer({
   // Same shape as the chat composer: one rounded field with the author on the
   // left of its footer and a round accent send button on the right.
   return (
-    <div className="rounded-2xl border border-divider bg-elevated transition-colors focus-within:border-divider-strong">
+    <div className="rounded-xl border border-divider bg-elevated transition-colors focus-within:border-divider-strong">
       <textarea
         ref={textareaRef}
         value={draft}

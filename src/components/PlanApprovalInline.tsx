@@ -103,7 +103,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
       <motion.div
         key={req.requestId}
         {...inlineCardMotion(reduceMotion)}
-        className="mb-2.5 overflow-hidden rounded-2xl border border-divider bg-raised shadow-lg"
+        className="mb-2.5 overflow-hidden rounded-xl border border-divider bg-raised shadow-lg"
       >
         <div className="flex items-center gap-2 px-4 pt-3.5 pb-3">
           <span
@@ -145,7 +145,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
                 ? 'Add a comment to guide implementation (optional)…'
                 : 'Add a comment (optional)…'
             }
-            className="w-full resize-none rounded-xl border border-divider/70 bg-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed text-primary placeholder:text-muted outline-none focus:border-divider-strong"
+            className="w-full resize-none rounded-lg border border-divider/70 bg-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed text-primary placeholder:text-muted outline-none focus:border-divider-strong"
           />
         </div>
 

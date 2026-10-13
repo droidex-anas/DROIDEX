@@ -89,7 +89,7 @@ export function SpecModal({
             onClick={(e) => {
               e.stopPropagation();
             }}
-            className="w-full max-w-[1120px] h-[88vh] flex flex-col rounded-2xl border border-divider bg-surface shadow-lg overflow-hidden"
+            className="w-full max-w-[1120px] h-[88vh] flex flex-col rounded-xl border border-divider bg-surface shadow-lg overflow-hidden"
           >
             {/* Header */}
             <div className="shrink-0 flex items-center justify-between px-5 h-12 border-b border-divider">
@@ -106,7 +106,7 @@ export function SpecModal({
               </div>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated transition-colors"
+                className="p-1.5 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>

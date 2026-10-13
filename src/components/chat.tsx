@@ -154,7 +154,7 @@ function ToolGroupWithCards({
           key={call.id}
           fallback={
             <div
-              className="rounded-2xl border border-divider bg-surface/35 px-4 py-3 text-[11px] text-muted"
+              className="rounded-xl border border-divider bg-surface/35 px-4 py-3 text-[11px] text-muted"
               aria-busy="true"
             >
               Loading automation proposal…

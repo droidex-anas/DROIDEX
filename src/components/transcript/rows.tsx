@@ -237,7 +237,7 @@ export function ErrorLine({ text, attempts }: { text: string; attempts?: number 
       <Expand open={open}>
         <div className="mt-1.5 pl-[18px]">
           <pre
-            className="max-h-56 overflow-auto rounded-md px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words"
+            className="max-h-56 overflow-auto rounded-sm px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words"
             style={{ backgroundColor: RED_TINT, color: RED }}
           >
             {linkify(body)}
@@ -585,7 +585,7 @@ export function renderToolEvents(
     nodes.push(
       <pre
         key={e.id}
-        className="max-h-48 overflow-auto rounded-md bg-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-muted/80 whitespace-pre-wrap break-words"
+        className="max-h-48 overflow-auto rounded-sm bg-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-muted/80 whitespace-pre-wrap break-words"
       >
         {linkify(body)}
       </pre>,

@@ -70,7 +70,7 @@ export function InstallStep({
       />
 
       {channels.length === 0 && (
-        <div className="rounded-xl border border-divider bg-surface px-4 py-3.5 text-[13px] text-secondary mb-4">
+        <div className="rounded-lg border border-divider bg-surface px-4 py-3.5 text-[13px] text-secondary mb-4">
           <p className="text-warning mb-1">No supported package manager found.</p>
           Install Homebrew, npm, or curl, then re-scan. You can also skip this for now and finish
           setup later.
@@ -111,7 +111,7 @@ export function InstallStep({
       {(Boolean(installing) || installLog.length > 0) && (
         <div
           ref={logRef}
-          className="mb-4 max-h-40 overflow-auto rounded-xl border border-divider bg-surface p-3.5 font-mono text-[11px] leading-5 text-muted"
+          className="mb-4 max-h-40 overflow-auto rounded-lg border border-divider bg-surface p-3.5 font-mono text-[11px] leading-5 text-muted"
         >
           {installLog.map((line, i) => (
             <div key={i} className="whitespace-pre-wrap break-words">

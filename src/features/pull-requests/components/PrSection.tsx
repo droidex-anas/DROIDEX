@@ -38,7 +38,7 @@ export function PrSection({
           onClick={() => {
             setOpen((value) => !value);
           }}
-          className="group -ml-1 flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors hover:bg-elevated/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+          className="group -ml-1 flex min-w-0 items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-elevated/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           <ChevronDown
             className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ease-out group-hover:text-secondary motion-reduce:transition-none ${

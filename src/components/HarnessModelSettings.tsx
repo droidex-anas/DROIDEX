@@ -52,7 +52,7 @@ export function HarnessModelSettings() {
   }, [needsDroidCatalog]);
 
   return (
-    <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+    <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
       {HARNESSES.map((provider) => (
         <HarnessModelRow
           key={provider}

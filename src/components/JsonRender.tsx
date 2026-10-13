@@ -138,7 +138,7 @@ function BoxEl({ props, children }: { props: Record<string, unknown>; children: 
   const bordered = !!props.borderStyle;
   return (
     <div
-      className={bordered ? 'rounded-xl border border-divider' : undefined}
+      className={bordered ? 'rounded-lg border border-divider' : undefined}
       style={{
         display: 'flex',
         flexDirection: row ? 'row' : 'column',
@@ -204,9 +204,9 @@ function BarChartEl({ props }: { props: Record<string, unknown> }) {
             <span className="w-24 shrink-0 truncate text-secondary text-right">
               {asString(d.label)}
             </span>
-            <div className="flex-1 h-3.5 rounded-sm bg-elevated/60 overflow-hidden">
+            <div className="flex-1 h-3.5 rounded-[2px] bg-elevated/60 overflow-hidden">
               <div
-                className="h-full rounded-sm"
+                className="h-full rounded-[2px]"
                 style={{ width: `${(value / max) * 100}%`, backgroundColor: color }}
               />
             </div>
@@ -229,7 +229,7 @@ function SparklineEl({ props }: { props: Record<string, unknown> }) {
       {data.map((v, i) => (
         <div
           key={i}
-          className="w-1 rounded-sm"
+          className="w-1 rounded-[2px]"
           style={{ height: `${Math.max(8, ((v - min) / span) * 100)}%`, backgroundColor: color }}
         />
       ))}
@@ -248,7 +248,7 @@ function TableEl({ props }: { props: Record<string, unknown> }) {
         .slice(0, MAX_TABLE_COLUMNS)
         .map((key) => ({ header: key, key }));
   return (
-    <div className="overflow-x-auto rounded-xl border border-divider w-full">
+    <div className="overflow-x-auto rounded-lg border border-divider w-full">
       <table className="w-full border-collapse text-[13px]">
         <thead className="bg-elevated/25">
           <tr>
@@ -304,7 +304,7 @@ function CardEl({ props, children }: { props: Record<string, unknown>; children:
   const title = asString(props.title);
   const padding = asNumber(props.padding);
   return (
-    <div className="rounded-xl border border-divider bg-elevated/20 overflow-hidden w-full">
+    <div className="rounded-lg border border-divider bg-elevated/20 overflow-hidden w-full">
       {title && (
         <div className="px-3.5 py-2 border-b border-divider text-[12px] font-medium text-primary">
           {title}
@@ -401,7 +401,7 @@ function CalloutEl({ props, children }: { props: Record<string, unknown>; childr
   // A single colored dot carries the severity; the card itself is a plain
   // elevated surface so P-level/danger notes read as clean cards, not stickers.
   return (
-    <div className="w-full rounded-xl border border-divider bg-elevated px-4 py-3">
+    <div className="w-full rounded-lg border border-divider bg-elevated px-4 py-3">
       {title && (
         <div className="flex items-center gap-2 text-[13px] font-semibold text-primary break-words">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
@@ -530,7 +530,7 @@ function renderNode(
 
 function ErrorFallback({ raw }: { raw: string }) {
   return (
-    <div className="rounded-xl border border-divider bg-elevated/20 overflow-hidden my-2.5">
+    <div className="rounded-lg border border-divider bg-elevated/20 overflow-hidden my-2.5">
       <div className="px-3.5 h-7 flex items-center text-[11px] font-medium tracking-widest uppercase text-muted/60 border-b border-divider">
         Render spec (unparseable)
       </div>

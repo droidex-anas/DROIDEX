@@ -147,7 +147,7 @@ export function FilePreviewPane({
             <button
               type="button"
               onClick={onOpenExternal}
-              className="mt-1 flex items-center gap-1.5 rounded-md border border-divider bg-surface px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
+              className="mt-1 flex items-center gap-1.5 rounded-sm border border-divider bg-surface px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
             >
               <ExternalLink className="h-3 w-3" />
               Open externally
@@ -229,7 +229,7 @@ function FallbackNotice({
         <button
           type="button"
           onClick={onOpenExternal}
-          className="flex items-center gap-1.5 rounded-md border border-divider bg-surface px-3 py-1.5 text-[12px] text-primary transition-colors hover:bg-elevated/60"
+          className="flex items-center gap-1.5 rounded-sm border border-divider bg-surface px-3 py-1.5 text-[12px] text-primary transition-colors hover:bg-elevated/60"
         >
           <ExternalLink className="h-3.5 w-3.5" />
           Open externally
@@ -237,7 +237,7 @@ function FallbackNotice({
         <button
           type="button"
           onClick={onReveal}
-          className="flex items-center gap-1.5 rounded-md border border-divider px-3 py-1.5 text-[12px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
+          className="flex items-center gap-1.5 rounded-sm border border-divider px-3 py-1.5 text-[12px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
         >
           <FolderSearch className="h-3.5 w-3.5" />
           Reveal
@@ -418,7 +418,7 @@ function ImagePreview({ data, fileName }: { data?: Uint8Array; fileName: string 
   return (
     <div className="image-checkerboard relative flex h-full items-center justify-center overflow-auto p-4">
       {status === 'loading' && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border border-divider bg-surface/90 px-2 py-1 text-[11px] text-muted shadow-[0_1px_2px_0_rgb(0_0_0/0.05)]">
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm border border-divider bg-surface/90 px-2 py-1 text-[11px] text-muted shadow-[0_1px_2px_0_rgb(0_0_0/0.05)]">
           <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
           Decoding…
         </div>
@@ -426,7 +426,7 @@ function ImagePreview({ data, fileName }: { data?: Uint8Array; fileName: string 
       <img
         src={url}
         alt={`Preview of ${fileName}`}
-        className="max-h-full max-w-full rounded-sm object-contain shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
+        className="max-h-full max-w-full rounded-[2px] object-contain shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
         onLoad={() => {
           setStatus('ready');
         }}
@@ -561,18 +561,18 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
     <div className="flex h-full flex-col items-center overflow-auto bg-surface/20 p-4">
       <canvas
         ref={canvasRef}
-        className="max-h-full rounded-md shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
+        className="max-h-full rounded-sm shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
         style={{ maxHeight: 'calc(100% - 32px)' }}
       />
       {numPages > 1 && (
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-divider bg-elevated px-2 py-1">
+        <div className="mt-2 flex items-center gap-2 rounded-md border border-divider bg-elevated px-2 py-1">
           <button
             type="button"
             disabled={page <= 1 || rendering}
             onClick={() => {
               setPage((p) => Math.max(1, p - 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
@@ -585,7 +585,7 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
             onClick={() => {
               setPage((p) => Math.min(numPages, p + 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
           >
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -661,14 +661,14 @@ function DocxPreview({ data }: { data?: Uint8Array }) {
   return (
     <div className="relative h-full overflow-auto bg-surface/20 p-4">
       {loading && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border border-divider bg-elevated px-2 py-1 text-[11px] text-muted">
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm border border-divider bg-elevated px-2 py-1 text-[11px] text-muted">
           <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
           Rendering…
         </div>
       )}
       <div
         ref={containerRef}
-        className="mx-auto max-w-[800px] rounded-md bg-white p-6 text-black shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
+        className="mx-auto max-w-[800px] rounded-sm bg-white p-6 text-black shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
       />
     </div>
   );
@@ -762,7 +762,7 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
               onClick={() => {
                 setActiveSheet(idx);
               }}
-              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+              className={`shrink-0 rounded-sm px-2 py-0.5 text-[11px] transition-colors ${
                 idx === activeSheet
                   ? 'bg-accent/15 text-primary'
                   : 'text-muted hover:bg-elevated/60 hover:text-primary'

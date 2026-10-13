@@ -32,11 +32,11 @@ export function ArchivedChatsSettings() {
         </p>
       </div>
       {rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-divider bg-surface/40 p-10 text-center">
+        <div className="rounded-lg border border-dashed border-divider bg-surface/40 p-10 text-center">
           <p className="text-[13px] text-secondary">No archived chats.</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-divider bg-surface/40 divide-y divide-divider overflow-hidden">
+        <div className="rounded-lg border border-divider bg-surface/40 divide-y divide-divider overflow-hidden">
           {rows.map(({ session, archivedAt }) => {
             const title = chatDisplayTitle(session, chatMetadata[session.appSessionId]);
             return (
@@ -63,7 +63,7 @@ export function ArchivedChatsSettings() {
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-red-300 bg-red-500/15 transition-colors hover:bg-red-500/25"
+                      className="rounded-sm px-2 py-1 text-[11px] font-medium text-red-300 bg-red-500/15 transition-colors hover:bg-red-500/25"
                     >
                       Delete
                     </button>
@@ -75,7 +75,7 @@ export function ArchivedChatsSettings() {
                       onClick={() => {
                         setConfirmingDelete(null);
                       }}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-elevated hover:text-primary"
+                      className="rounded-sm px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-elevated hover:text-primary"
                     >
                       Cancel
                     </button>
@@ -89,7 +89,7 @@ export function ArchivedChatsSettings() {
                       onClick={() => {
                         dispatch({ type: 'RESTORE_CHAT', appSessionId: session.appSessionId });
                       }}
-                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
+                      className="rounded-sm p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
                     >
                       <ArchiveRestore className="w-4 h-4" />
                     </button>
@@ -100,7 +100,7 @@ export function ArchivedChatsSettings() {
                       onClick={() => {
                         setConfirmingDelete(session.appSessionId);
                       }}
-                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
+                      className="rounded-sm p-1.5 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

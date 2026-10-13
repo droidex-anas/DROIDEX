@@ -130,7 +130,7 @@ export function Dropdown({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`${width} flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
+        className={`${width} flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[12px] transition-colors ${
           open ? 'bg-active text-primary' : 'bg-elevated text-primary hover:bg-active'
         }`}
       >
@@ -145,7 +145,7 @@ export function Dropdown({
 
       {open && (
         <div
-          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full z-50 mt-1.5 min-w-full rounded-xl border border-divider bg-surface p-2 shadow-lg`}
+          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full z-50 mt-1.5 min-w-full rounded-lg border border-divider bg-surface p-2 shadow-lg`}
         >
           <div
             className="max-h-72 overflow-y-auto space-y-0.5"
@@ -164,7 +164,7 @@ export function Dropdown({
                     setOpen(false);
                     triggerRef.current?.focus();
                   }}
-                  className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                  className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
                     active ? 'bg-elevated' : 'hover:bg-elevated/50'
                   }`}
                 >

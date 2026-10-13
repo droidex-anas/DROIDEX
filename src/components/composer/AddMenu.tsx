@@ -45,7 +45,7 @@ function MenuRow({
       onClick={onRun}
       role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
       aria-checked={checked}
-      className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-surface/55 focus:bg-surface focus:outline-none"
+      className="flex w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface/55 focus:bg-surface focus:outline-none"
     >
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
       <span className="shrink-0 text-[13px] font-medium text-primary">{label}</span>
@@ -185,7 +185,7 @@ export default function AddMenu({
             exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
             style={fit}
-            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-xl border border-divider bg-raised p-1.5 shadow-lg"
+            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-lg border border-divider bg-raised p-1.5 shadow-lg"
             role="menu"
             aria-label="Add to this prompt"
           >

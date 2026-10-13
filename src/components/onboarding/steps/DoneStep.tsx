@@ -56,7 +56,7 @@ export function DoneStep({
         The cockpit is yours. Open a session and give your agents something interesting to do.
       </p>
       <div
-        className="droid-rise mt-8 w-full max-w-[300px] rounded-xl border border-divider bg-surface divide-y divide-divider overflow-hidden"
+        className="droid-rise mt-8 w-full max-w-[300px] rounded-lg border border-divider bg-surface divide-y divide-divider overflow-hidden"
         style={{ animationDelay: '230ms' }}
       >
         {summary.map((row) => (

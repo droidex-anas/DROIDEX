@@ -34,7 +34,7 @@ export function TerminalCloseConfirm({
       onKeyDown={onKeyDown}
       className="absolute inset-0 z-10 flex animate-fade-in items-center justify-center bg-bg/70 p-4"
     >
-      <div className="w-[280px] rounded-2xl border border-divider bg-surface p-4 shadow-lg">
+      <div className="w-[280px] rounded-xl border border-divider bg-surface p-4 shadow-lg">
         <p className="text-[12px] leading-relaxed text-primary">
           A process is still running in this terminal.
         </p>
@@ -43,14 +43,14 @@ export function TerminalCloseConfirm({
             type="button"
             autoFocus
             onClick={onKeepOpen}
-            className="rounded-md px-2 py-1 leading-none text-muted transition-colors hover:bg-active hover:text-primary focus:bg-active focus:text-primary focus:outline-none"
+            className="rounded-sm px-2 py-1 leading-none text-muted transition-colors hover:bg-active hover:text-primary focus:bg-active focus:text-primary focus:outline-none"
           >
             Keep
           </button>
           <button
             type="button"
             onClick={onStopAndClose}
-            className="rounded-md bg-elevated px-2 py-1 leading-none text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="rounded-sm bg-elevated px-2 py-1 leading-none text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           >
             Stop and close
           </button>

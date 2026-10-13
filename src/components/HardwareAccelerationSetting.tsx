@@ -53,7 +53,7 @@ function HardwareAccelerationSettingPanel() {
   return (
     <>
       <GroupLabel>Performance</GroupLabel>
-      <div className="mb-8 rounded-xl border border-divider bg-surface divide-y divide-divider">
+      <div className="mb-8 rounded-lg border border-divider bg-surface divide-y divide-divider">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
             <div className="text-[13px] text-primary">Hardware acceleration</div>
@@ -77,7 +77,7 @@ function HardwareAccelerationSettingPanel() {
             <button
               type="button"
               onClick={() => void relaunchApp()}
-              className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
+              className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
             >
               Restart now
             </button>

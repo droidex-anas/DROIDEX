@@ -32,7 +32,7 @@ export function StepTitle({ title, sub }: { title: string; sub?: string }) {
 export function Panel({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={`rounded-xl border border-divider bg-surface divide-y divide-divider overflow-hidden ${className}`}
+      className={`rounded-lg border border-divider bg-surface divide-y divide-divider overflow-hidden ${className}`}
     >
       {children}
     </div>

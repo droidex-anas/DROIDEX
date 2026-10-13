@@ -22,7 +22,9 @@ function ChatStatus({
   activeAppSessionId: string | null;
 }) {
   const label = worktreeChatStatus(session, activeAppSessionId);
-  return <span className="rounded bg-elevated px-1.5 py-0.5 text-[11px] text-muted">{label}</span>;
+  return (
+    <span className="rounded-xs bg-elevated px-1.5 py-0.5 text-[11px] text-muted">{label}</span>
+  );
 }
 
 function WorktreeAction({
@@ -53,7 +55,7 @@ function WorktreeAction({
       onClick={onRequestRemoval}
       disabled={removing !== null || checking !== null}
       title="Remove worktree"
-      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-muted transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 active:scale-[0.94] disabled:opacity-40"
+      className="shrink-0 rounded-sm px-2 py-1 text-[11px] font-medium text-muted transition-all duration-150 hover:bg-red-500/10 hover:text-red-400 active:scale-[0.94] disabled:opacity-40"
     >
       {checking === worktree.path || removing === worktree.path ? (
         <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
@@ -135,7 +137,7 @@ function ConversationList({
           onClick={() => {
             onOpenChat(session.appSessionId);
           }}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-all duration-150 hover:bg-elevated/60 active:scale-[0.995] active:bg-elevated/80"
+          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-150 hover:bg-elevated/60 active:scale-[0.995] active:bg-elevated/80"
         >
           <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">
             {session.title}

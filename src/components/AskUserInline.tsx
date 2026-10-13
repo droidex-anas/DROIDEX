@@ -88,7 +88,7 @@ function Mark({ checked, multi }: { checked: boolean; multi: boolean }) {
 }
 
 const ROW_BASE =
-  'flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors';
+  'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors';
 
 function rowClass(active: boolean): string {
   return `${ROW_BASE} ${
@@ -141,7 +141,7 @@ export function QuestionCard({
   return (
     <motion.div
       {...inlineCardMotion(reduceMotion)}
-      className="mb-2.5 overflow-hidden rounded-2xl border border-divider bg-raised shadow-lg"
+      className="mb-2.5 overflow-hidden rounded-xl border border-divider bg-raised shadow-lg"
     >
       <div className="flex items-start gap-2 px-4 pt-3.5">
         <span

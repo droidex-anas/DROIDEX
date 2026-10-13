@@ -100,14 +100,14 @@ export function GithubAuthPromptContent({
       <p className="mt-1 text-[12px] leading-4 text-muted">
         Paste this code into GitHub’s device activation page. The browser is already open.
       </p>
-      <div className="mt-3 flex items-center gap-2 rounded-lg border border-divider bg-elevated p-2">
+      <div className="mt-3 flex items-center gap-2 rounded-md border border-divider bg-elevated p-2">
         <code className="min-w-0 flex-1 select-all text-center font-mono text-[16px] font-semibold tracking-[0.12em] text-primary">
           {code}
         </code>
         <button
           type="button"
           onClick={onCopy}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-divider bg-surface px-2 py-1.5 text-[12px] font-medium text-secondary hover:border-divider-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-divider bg-surface px-2 py-1.5 text-[12px] font-medium text-secondary hover:border-divider-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? 'Copied' : 'Copy code'}
@@ -122,7 +122,7 @@ export function GithubAuthPromptContent({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md px-2 py-1.5 text-[12px] font-medium text-muted hover:bg-elevated hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          className="rounded-sm px-2 py-1.5 text-[12px] font-medium text-muted hover:bg-elevated hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
         >
           Cancel sign-in
         </button>
@@ -164,7 +164,7 @@ export function GithubSetupCard({
   const content = setupContent(availability, action, manualGuideOpened, authCode);
 
   return (
-    <div className="mx-1.5 mt-1.5 rounded-xl border border-divider bg-surface px-3 py-2.5">
+    <div className="mx-1.5 mt-1.5 rounded-lg border border-divider bg-surface px-3 py-2.5">
       <div className="flex items-start gap-2">
         <GitPullRequest className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
         <div className="min-w-0 flex-1">
@@ -180,7 +180,7 @@ export function GithubSetupCard({
             onClick={authCode ? onShowAuthPrompt : onPrimaryAction}
             aria-haspopup={authCode ? 'dialog' : undefined}
             aria-expanded={authCode ? isAuthPopoverOpen : undefined}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-divider bg-elevated px-2.5 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:border-divider-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-divider bg-elevated px-2.5 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:border-divider-strong hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <SetupActionIcon icon={content.icon} />
             {content.label}
@@ -189,7 +189,7 @@ export function GithubSetupCard({
             <button
               type="button"
               onClick={onCancelAuthentication}
-              className="ml-2 mt-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-muted transition-colors hover:bg-elevated hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              className="ml-2 mt-2 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted transition-colors hover:bg-elevated hover:text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
             >
               {action === 'installing' ? 'Cancel installation' : 'Cancel sign-in'}
             </button>

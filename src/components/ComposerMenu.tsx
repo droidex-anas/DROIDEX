@@ -89,7 +89,7 @@ function Row({
         onRun();
       }}
       onClick={runOnKeyboardClick}
-      className={`flex h-8 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${
+      className={`flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 text-left transition-colors ${
         active ? 'bg-accent/[0.07]' : ''
       }`}
     >
@@ -184,7 +184,7 @@ export default function ComposerMenu({
       {open && (
         <motion.div
           {...motionProps}
-          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto overscroll-contain rounded-2xl bg-raised p-1.5 shadow-lg"
+          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto overscroll-contain rounded-xl bg-raised p-1.5 shadow-lg"
         >
           {entries.map((entry, i) => {
             if (entry.kind === 'section') {

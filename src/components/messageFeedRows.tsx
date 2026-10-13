@@ -65,7 +65,7 @@ export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
           onClick={() => {
             reach.onSelectRangeRow(item.key);
           }}
-          className="mb-1 rounded-md border border-divider px-1.5 py-0.5 text-[11px] text-muted hover:text-primary"
+          className="mb-1 rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-muted hover:text-primary"
         >
           {rangeRowLabel(item.key, reach.rangeStartKey, reach.rangeEndKey)}
         </button>

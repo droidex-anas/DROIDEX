@@ -103,7 +103,7 @@ export function AddMcpServerDialog({
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 8, scale: 0.99, opacity: 0 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="max-h-[calc(100vh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-divider bg-surface shadow-lg"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-xl border border-divider bg-surface shadow-lg"
       >
         <form
           onSubmit={(event) => {
@@ -131,7 +131,7 @@ export function AddMcpServerDialog({
               onClick={onCancel}
               disabled={disabled}
               aria-label="Close add MCP server"
-              className="rounded-lg p-2 text-secondary transition-all duration-150 hover:bg-elevated hover:text-primary active:scale-[0.96] disabled:opacity-40"
+              className="rounded-md p-2 text-secondary transition-all duration-150 hover:bg-elevated hover:text-primary active:scale-[0.96] disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
@@ -153,7 +153,7 @@ export function AddMcpServerDialog({
                   onChange={(event) => {
                     setServerType(serverTypeFromValue(event.target.value));
                   }}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
+                  className="mt-1.5 h-10 w-full rounded-lg border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
                 >
                   <option value="http">HTTP</option>
                   <option value="sse">SSE</option>
@@ -200,14 +200,14 @@ export function AddMcpServerDialog({
               type="button"
               onClick={onCancel}
               disabled={disabled}
-              className="rounded-lg px-3.5 py-2 text-[12px] font-medium text-secondary transition-all duration-150 hover:bg-elevated/70 hover:text-primary active:scale-[0.97] disabled:opacity-40"
+              className="rounded-md px-3.5 py-2 text-[12px] font-medium text-secondary transition-all duration-150 hover:bg-elevated/70 hover:text-primary active:scale-[0.97] disabled:opacity-40"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={disabled}
-              className="min-w-[104px] rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-bg transition-all duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
+              className="min-w-[104px] rounded-md bg-accent px-4 py-2 text-[12px] font-semibold text-bg transition-all duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
             >
               {disabled ? 'Adding…' : 'Add server'}
             </button>
@@ -247,7 +247,7 @@ function Field({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="mt-1.5 h-10 w-full rounded-xl border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
+        className="mt-1.5 h-10 w-full rounded-lg border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
       />
     </label>
   );
@@ -276,7 +276,7 @@ function TextAreaField({
         }}
         rows={3}
         placeholder={placeholder}
-        className="mt-1.5 w-full resize-none rounded-xl border border-divider bg-field px-3 py-2.5 text-[13px] leading-5 text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
+        className="mt-1.5 w-full resize-none rounded-lg border border-divider bg-field px-3 py-2.5 text-[13px] leading-5 text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
       />
     </label>
   );

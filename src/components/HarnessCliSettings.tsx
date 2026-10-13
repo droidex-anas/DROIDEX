@@ -26,7 +26,7 @@ export function HarnessCliSettings({
   const clis = useHarnessClis();
 
   return (
-    <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+    <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
       {clis === null ? (
         <SettingRow label="Claude Code and Codex" description="Detecting installed CLIs…">
           <span />
@@ -86,7 +86,7 @@ function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
             updateHarnessCli(cli.provider);
           }}
           disabled={cli.updating}
-          className="px-2.5 h-7 rounded-md bg-elevated text-[12px] text-primary hover:bg-active transition-colors disabled:opacity-40"
+          className="px-2.5 h-7 rounded-sm bg-elevated text-[12px] text-primary hover:bg-active transition-colors disabled:opacity-40"
         >
           {cli.updating ? 'Updating…' : 'Update'}
         </button>

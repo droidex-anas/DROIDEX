@@ -77,7 +77,7 @@ function PrInboxRow({
   const time = prRelativeTime(pr.updatedAt ?? pr.createdAt);
   return (
     <div
-      className={`group flex w-full items-start gap-1 rounded-xl pr-1 transition-colors hover:bg-active ${
+      className={`group flex w-full items-start gap-1 rounded-lg pr-1 transition-colors hover:bg-active ${
         selected ? 'bg-active' : ''
       }`}
     >
@@ -136,7 +136,7 @@ function PrInboxRow({
         onClick={() => {
           onToggleBacklog(pr);
         }}
-        className="mt-1.5 shrink-0 rounded-lg p-1.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-elevated hover:text-primary focus-visible:opacity-100"
+        className="mt-1.5 shrink-0 rounded-md p-1.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-elevated hover:text-primary focus-visible:opacity-100"
       >
         {backlogged ? <Undo2 size={14} /> : <ListTodo size={14} />}
       </button>
@@ -148,7 +148,7 @@ function SkeletonRows() {
   return (
     <div className="space-y-1">
       {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} className="h-16 rounded-xl bg-elevated/40" />
+        <div key={index} className="h-16 rounded-lg bg-elevated/40" />
       ))}
     </div>
   );
@@ -268,7 +268,7 @@ function InboxList({
               onClick={() => {
                 onToggleOther(group.cwd);
               }}
-              className="flex w-full items-center gap-1.5 rounded-xl px-1.5 py-1.5 text-left text-muted transition-colors hover:bg-active hover:text-secondary"
+              className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-muted transition-colors hover:bg-active hover:text-secondary"
             >
               <ChevronRight
                 size={14}
@@ -374,7 +374,7 @@ export function PrInbox({
           type="button"
           onClick={onRetry}
           title="Refresh"
-          className="ml-auto rounded-lg p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
+          className="ml-auto rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <Octicon
             name="sync"
@@ -394,7 +394,7 @@ export function PrInbox({
           }}
           aria-label="Search pull requests"
           placeholder="Search"
-          className="w-full rounded-xl bg-field py-2 pr-3 pl-9 text-[13px] text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+          className="w-full rounded-lg bg-field py-2 pr-3 pl-9 text-[13px] text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
         />
       </div>
 
@@ -404,7 +404,7 @@ export function PrInbox({
           <button
             type="button"
             onClick={onRetry}
-            className="shrink-0 rounded-xl px-2 py-1 font-medium text-primary transition-colors hover:bg-elevated"
+            className="shrink-0 rounded-lg px-2 py-1 font-medium text-primary transition-colors hover:bg-elevated"
           >
             Retry
           </button>

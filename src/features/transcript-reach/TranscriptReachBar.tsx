@@ -43,7 +43,7 @@ export function TranscriptReachBar({
     <div
       role="search"
       data-testid="transcript-find-bar"
-      className="pointer-events-auto flex max-w-[min(100%,42rem)] flex-col gap-1.5 rounded-xl border border-divider bg-surface/95 px-2 py-1.5 shadow-sm backdrop-blur"
+      className="pointer-events-auto flex max-w-[min(100%,42rem)] flex-col gap-1.5 rounded-lg border border-divider bg-surface/95 px-2 py-1.5 shadow-sm backdrop-blur"
     >
       <form onSubmit={onSubmit} className="flex items-center gap-1.5">
         <Search className="h-3.5 w-3.5 shrink-0 text-muted/70" />
@@ -122,7 +122,7 @@ export function TranscriptReachBar({
               type="button"
               data-testid="transcript-find-load-older"
               onClick={onLoadOlder}
-              className="rounded-md border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
+              className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
             >
               Load older history
             </button>
@@ -141,7 +141,7 @@ export function TranscriptReachBar({
             data-testid="transcript-range-copy"
             disabled={!rangeReady}
             onClick={onCopyRange}
-            className="rounded-md border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60 disabled:opacity-40"
+            className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60 disabled:opacity-40"
           >
             {copied ? 'Copied' : 'Copy range'}
           </button>
@@ -165,7 +165,7 @@ function activeMatchActions(
         onClick={() => {
           dispatch({ type: 'setRangeBound', bound: 'start', itemKey: match.itemKey });
         }}
-        className="rounded-md border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
+        className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
       >
         Start at match
       </button>
@@ -175,7 +175,7 @@ function activeMatchActions(
         onClick={() => {
           dispatch({ type: 'setRangeBound', bound: 'end', itemKey: match.itemKey });
         }}
-        className="rounded-md border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
+        className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
       >
         End at match
       </button>
@@ -206,7 +206,7 @@ function IconButton({
       aria-label={title}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-md p-1 text-muted transition-colors hover:bg-elevated/70 hover:text-primary disabled:opacity-40 ${
+      className={`rounded-sm p-1 text-muted transition-colors hover:bg-elevated/70 hover:text-primary disabled:opacity-40 ${
         active ? 'bg-accent/15 text-primary' : ''
       }`}
     >

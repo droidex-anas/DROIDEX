@@ -11,7 +11,7 @@ import { ComposerTab } from './ComposerTab';
 // StartInBar's pill. Each action adds its color: the one that can unblock the
 // chat reads brightest.
 export const ACTION_CLASS =
-  'group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-bg/40 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent/60';
+  'group flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-[11px] transition-colors hover:bg-bg/40 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent/60';
 
 // The tab above the composer while the chat is held on a usage limit, in
 // StartInBar's slot and shape. It never blocks the composer: a message sent now

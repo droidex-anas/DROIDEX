@@ -170,7 +170,7 @@ export function BranchMenu({
                 void doCheckout(dirtyRef, true);
               }}
               disabled={busy}
-              className="rounded-md bg-warning/20 px-2 py-0.5 text-[11px] font-medium text-warning hover:bg-warning/30 disabled:opacity-40"
+              className="rounded-sm bg-warning/20 px-2 py-0.5 text-[11px] font-medium text-warning hover:bg-warning/30 disabled:opacity-40"
             >
               Switch anyway
             </button>
@@ -251,12 +251,12 @@ export function BranchMenu({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && void doCreate()}
                 placeholder="new-branch-name"
-                className="w-full rounded-md bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
+                className="w-full rounded-sm bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
               />
               <button
                 onClick={() => void doCreate()}
                 disabled={!newName.trim() || busy}
-                className="flex shrink-0 items-center gap-1 rounded-md bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
+                className="flex shrink-0 items-center gap-1 rounded-sm bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
               >
                 {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
                 Create
@@ -267,7 +267,7 @@ export function BranchMenu({
               onClick={() => {
                 setCreating(true);
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
             >
               <Plus className="h-3.5 w-3.5 shrink-0 text-muted" />
               Create and checkout new branch…

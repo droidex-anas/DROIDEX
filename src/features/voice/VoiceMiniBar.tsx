@@ -173,7 +173,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
                   <span
                     className={
                       line.role === 'user'
-                        ? 'max-w-[85%] rounded-xl rounded-br-sm bg-elevated px-2.5 py-1.5 text-[12px] leading-[1.5] text-primary'
+                        ? 'max-w-[85%] rounded-lg rounded-br-[2px] bg-elevated px-2.5 py-1.5 text-[12px] leading-[1.5] text-primary'
                         : 'block text-[12px] leading-[1.5] text-secondary'
                     }
                   >

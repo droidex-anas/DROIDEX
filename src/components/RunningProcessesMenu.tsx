@@ -82,7 +82,7 @@ export function RunningProcessesMenu({
         className={`flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
           overPage
             ? `${OVER_PAGE_CHIP} text-muted hover:text-secondary aria-expanded:text-secondary`
-            : `rounded-lg py-1.5 ${
+            : `rounded-md py-1.5 ${
                 open
                   ? 'bg-elevated text-primary'
                   : 'bg-elevated/60 text-muted hover:bg-elevated hover:text-primary'
@@ -109,7 +109,7 @@ export function RunningProcessesMenu({
             return (
               <div
                 key={process.pid}
-                className="group flex h-8 items-center gap-2 rounded-lg px-2 text-[12px] transition-colors hover:bg-elevated/60"
+                className="group flex h-8 items-center gap-2 rounded-md px-2 text-[12px] transition-colors hover:bg-elevated/60"
               >
                 <span className="min-w-0 flex-1 truncate text-primary" title={process.command}>
                   {process.name}
@@ -133,7 +133,7 @@ export function RunningProcessesMenu({
                         onClick={() => {
                           openInBrowser(port);
                         }}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg/60 hover:text-primary"
+                        className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors hover:bg-bg/60 hover:text-primary"
                       >
                         <Globe className="h-3.5 w-3.5" />
                       </button>
@@ -144,7 +144,7 @@ export function RunningProcessesMenu({
                       onClick={() => {
                         stopAgentProcess(appSessionId, process.pid);
                       }}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg/60 hover:text-primary"
+                      className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors hover:bg-bg/60 hover:text-primary"
                     >
                       <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />
                     </button>

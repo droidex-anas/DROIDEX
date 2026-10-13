@@ -144,7 +144,7 @@ export function ThreadList({
               <button
                 type="button"
                 onClick={onResume}
-                className="shrink-0 rounded-lg bg-active px-2.5 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
+                className="shrink-0 rounded-md bg-active px-2.5 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
               >
                 Resume
               </button>
@@ -158,7 +158,7 @@ export function ThreadList({
           )
         )}
         {done && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl border border-divider px-3 py-2.5">
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-divider px-3 py-2.5">
             <span className="mt-1 shrink-0">
               <ActivityStatusGlyph status="settled" />
             </span>
@@ -181,7 +181,7 @@ export function ThreadList({
             }}
             placeholder="Search threads"
             aria-label="Search threads"
-            className="w-full rounded-lg border border-divider bg-transparent px-2.5 py-1.5 text-[13px] text-primary placeholder:text-muted focus:border-divider-strong focus:outline-none"
+            className="w-full rounded-md border border-divider bg-transparent px-2.5 py-1.5 text-[13px] text-primary placeholder:text-muted focus:border-divider-strong focus:outline-none"
           />
         </div>
       ),

@@ -74,7 +74,7 @@ export default function PaletteShell({
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
         transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[560px] bg-raised rounded-2xl shadow-lg overflow-hidden"
+        className="w-full max-w-[560px] bg-raised rounded-xl shadow-lg overflow-hidden"
         onClick={(e) => {
           e.stopPropagation();
         }}
@@ -96,7 +96,7 @@ export default function PaletteShell({
             onClick={onClose}
             title="Close"
             aria-label="Close"
-            className="p-1 rounded-md text-muted hover:text-primary hover:bg-active transition-colors"
+            className="p-1 rounded-sm text-muted hover:text-primary hover:bg-active transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -107,11 +107,11 @@ export default function PaletteShell({
         <div className="flex items-center justify-between px-4 pt-2.5 pb-3">
           <div className="flex items-center gap-3 text-[11px] text-muted">
             <span className="flex items-center gap-1.5">
-              <kbd className="px-1 py-0.5 rounded bg-active font-sans text-[11px]">↑↓</kbd>
+              <kbd className="px-1 py-0.5 rounded-xs bg-active font-sans text-[11px]">↑↓</kbd>
               Navigate
             </span>
             <span className="flex items-center gap-1.5">
-              <kbd className="px-1 py-0.5 rounded bg-active font-sans text-[11px]">↵</kbd>
+              <kbd className="px-1 py-0.5 rounded-xs bg-active font-sans text-[11px]">↵</kbd>
               {enterHint}
             </span>
           </div>

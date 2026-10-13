@@ -107,7 +107,7 @@ function SliderRow({
         onSelect();
       }}
       title={model.displayName}
-      className={`relative flex h-10 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 select-none ${
+      className={`relative flex h-10 cursor-pointer items-center gap-2.5 rounded-md px-2.5 select-none ${
         selected ? 'cursor-default' : 'hover:bg-surface/60'
       }`}
     >
@@ -137,7 +137,7 @@ function SliderRow({
             e.stopPropagation();
             onDrill();
           }}
-          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px] transition-colors hover:bg-bg/60 ${
+          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-[11px] transition-colors hover:bg-bg/60 ${
             drillUltra ? 'text-ultra' : 'text-secondary hover:text-primary'
           }`}
         >

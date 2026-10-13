@@ -69,7 +69,7 @@ export function SubagentPanelRow({
     <div
       data-testid="subagent-row"
       data-child-session-id={child.childSessionId}
-      className={`group flex items-center rounded-lg transition-colors ${
+      className={`group flex items-center rounded-md transition-colors ${
         selected ? 'bg-elevated' : 'hover:bg-elevated/50'
       }`}
     >
@@ -146,7 +146,7 @@ export function SubagentsSection({
         }}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors ${
+        className={`group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors ${
           open ? 'bg-elevated' : 'hover:bg-elevated/50'
         }`}
       >

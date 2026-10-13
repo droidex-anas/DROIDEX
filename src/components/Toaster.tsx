@@ -57,7 +57,7 @@ export default function Toaster() {
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) resumeToast(t.id);
             }}
-            className="group pointer-events-auto relative min-w-[240px] max-w-[380px] overflow-hidden rounded-xl border border-divider bg-raised/95 shadow-sm backdrop-blur-sm"
+            className="group pointer-events-auto relative min-w-[240px] max-w-[380px] overflow-hidden rounded-lg border border-divider bg-raised/95 shadow-sm backdrop-blur-sm"
           >
             <div className="flex items-center gap-2.5 px-3 py-2.5">
               <span
@@ -72,7 +72,7 @@ export default function Toaster() {
                   dismissToast(t.id);
                 }}
                 aria-label="Dismiss"
-                className="-mr-1 shrink-0 rounded-md p-1 text-muted opacity-0 transition-all hover:bg-surface hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
+                className="-mr-1 shrink-0 rounded-sm p-1 text-muted opacity-0 transition-all hover:bg-surface hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
                 title="Dismiss"
               >
                 <X className="h-3.5 w-3.5" />

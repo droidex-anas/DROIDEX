@@ -243,7 +243,7 @@ export function FilesWorkspace({
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-9 shrink-0 items-center gap-1 border-b border-divider pl-2 pr-1.5">
           {relative && (
-            <div className="flex h-7 min-w-0 items-center gap-1.5 rounded-lg border border-divider/60 bg-elevated/40 pl-2 pr-1">
+            <div className="flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-divider/60 bg-elevated/40 pl-2 pr-1">
               <FileTypeIcon filename={fileName} className="h-3.5 w-3.5" />
               <span className="min-w-0 truncate text-[12px] text-primary">{fileName}</span>
               <button
@@ -253,7 +253,7 @@ export function FilesWorkspace({
                 onClick={() => {
                   onSelectPath('');
                 }}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -303,7 +303,7 @@ export function FilesWorkspace({
             onClick={() => {
               setTreeCollapsed((current) => !current);
             }}
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
               treeCollapsed
                 ? 'bg-active text-primary'
                 : 'text-muted hover:bg-elevated/60 hover:text-primary'
@@ -338,7 +338,7 @@ function HeaderButton({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
     >
       {children}
     </button>
@@ -377,7 +377,7 @@ function FileTreeRow({
         aria-expanded={entry.kind === 'directory' ? expanded : undefined}
         onClick={onClick}
         title={entry.relative}
-        className={`file-tree-row flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[12px] transition-colors ${
+        className={`file-tree-row flex h-7 w-full items-center gap-1.5 rounded-sm pr-2 text-left text-[12px] transition-colors ${
           selected
             ? 'bg-active text-primary'
             : 'text-secondary hover:bg-elevated/60 hover:text-primary'

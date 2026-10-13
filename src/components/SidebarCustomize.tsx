@@ -125,7 +125,7 @@ function FlyoutRow<T extends string | number>({
           <div
             role="menu"
             aria-label={label}
-            className="w-[220px] rounded-xl border border-divider bg-surface py-1.5 shadow-lg"
+            className="w-[220px] rounded-lg border border-divider bg-surface py-1.5 shadow-lg"
           >
             {options.map((option) => {
               const selected = option.value === value;
@@ -260,7 +260,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         aria-label="View options"
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`cursor-pointer rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+        className={`cursor-pointer rounded-sm p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
           open || customized ? 'text-primary' : 'text-muted hover:text-primary'
         }`}
       >

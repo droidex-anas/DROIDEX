@@ -107,7 +107,7 @@ export function SpecOutline({
     >
       {/* Search */}
       <div className="shrink-0 px-3 py-2.5 border-b border-divider">
-        <div className="flex items-center gap-2 h-8 px-2.5 rounded-lg bg-bg/50 border border-divider focus-within:border-divider-strong transition-colors">
+        <div className="flex items-center gap-2 h-8 px-2.5 rounded-md bg-bg/50 border border-divider focus-within:border-divider-strong transition-colors">
           <Search className="w-3.5 h-3.5 shrink-0 text-muted/60" />
           <input
             ref={searchRef}
@@ -123,7 +123,7 @@ export function SpecOutline({
               onClick={() => {
                 onSearchChange('');
               }}
-              className="p-0.5 rounded text-muted/60 hover:text-primary transition-colors"
+              className="p-0.5 rounded-xs text-muted/60 hover:text-primary transition-colors"
               title="Clear"
             >
               <X className="w-3 h-3" />
@@ -148,7 +148,7 @@ export function SpecOutline({
                   onSelect(h.id);
                 }}
                 style={{ paddingLeft: `${(h.level - 1) * 12 + 10}px` }}
-                className={`group w-full flex items-center gap-2 pr-2 py-1.5 rounded-md text-left transition-colors ${
+                className={`group w-full flex items-center gap-2 pr-2 py-1.5 rounded-sm text-left transition-colors ${
                   isActive ? 'bg-elevated/60' : 'hover:bg-elevated/30'
                 }`}
               >

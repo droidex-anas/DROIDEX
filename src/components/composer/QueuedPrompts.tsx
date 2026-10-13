@@ -64,7 +64,7 @@ export function QueuedPrompts({
               setDragIndex(null);
               setDragOverIndex(null);
             }}
-            className={`group flex items-start gap-2 rounded-xl border bg-elevated px-2 py-1.5 transition-colors ${
+            className={`group flex items-start gap-2 rounded-lg border bg-elevated px-2 py-1.5 transition-colors ${
               dragOverIndex === i && dragIndex !== null && dragIndex !== i
                 ? 'border-warning'
                 : 'border-divider'
@@ -78,7 +78,7 @@ export function QueuedPrompts({
             </span>
             <PendingPromptPreview text={p.text} files={p.files} skills={p.skills}>
               {p.design && p.design.references.length > 0 && (
-                <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-active px-1.5 py-0.5 text-[11px] text-muted">
+                <span className="mt-1 inline-flex items-center gap-1 rounded-sm bg-active px-1.5 py-0.5 text-[11px] text-muted">
                   <MousePointerSquareDashed className="w-3 h-3" />
                   {p.design.references.length} reference
                   {p.design.references.length === 1 ? '' : 's'}
@@ -90,7 +90,7 @@ export function QueuedPrompts({
                 onClick={() => {
                   onEdit(p);
                 }}
-                className="rounded p-1 text-muted transition-colors hover:bg-active/70 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+                className="rounded-xs p-1 text-muted transition-colors hover:bg-active/70 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
                 title="Edit in composer"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -99,7 +99,7 @@ export function QueuedPrompts({
                 onClick={() => {
                   onRemove(p.id);
                 }}
-                className="rounded p-1 text-muted transition-colors hover:bg-active/70 hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+                className="rounded-xs p-1 text-muted transition-colors hover:bg-active/70 hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
                 title="Delete"
               >
                 <X className="w-3.5 h-3.5" />

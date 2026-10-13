@@ -117,7 +117,7 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
       <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted">
         Finish alerts
       </div>
-      <div className="mb-6 overflow-hidden rounded-2xl border border-divider/80 bg-surface">
+      <div className="mb-6 overflow-hidden rounded-xl border border-divider/80 bg-surface">
         {FINISH_NOTIFICATION_TOGGLES.map(({ key, label, description, needsMaster }, index) => {
           const highlighted = rowMatches(label, description, highlightQuery);
           return (
@@ -165,7 +165,7 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
             onClick={() => {
               void sendTest();
             }}
-            className="shrink-0 rounded-xl bg-elevated/80 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-elevated disabled:opacity-60"
+            className="shrink-0 rounded-lg bg-elevated/80 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-elevated disabled:opacity-60"
           >
             {testing ? 'Sending…' : 'Test'}
           </button>

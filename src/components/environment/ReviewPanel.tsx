@@ -54,7 +54,7 @@ function ScopeSelector() {
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className="flex items-center gap-1.5 rounded-lg bg-elevated px-2.5 py-1.5 text-[12px] text-primary transition-colors hover:bg-elevated/70"
+        className="flex items-center gap-1.5 rounded-md bg-elevated px-2.5 py-1.5 text-[12px] text-primary transition-colors hover:bg-elevated/70"
       >
         <span>{reviewScopeLabel(reviewScope)}</span>
         <ChevronDown
@@ -62,7 +62,7 @@ function ScopeSelector() {
         />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-60 rounded-xl border border-divider bg-surface p-1.5 shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 w-60 rounded-lg border border-divider bg-surface p-1.5 shadow-lg">
           {REVIEW_SCOPE_OPTIONS.map((option) => (
             <button
               key={option.scope}
@@ -70,7 +70,7 @@ function ScopeSelector() {
                 dispatch({ type: 'SET_REVIEW_SCOPE', scope: option.scope });
                 setOpen(false);
               }}
-              className={`flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 ${
+              className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 ${
                 option.scope === reviewScope ? 'bg-elevated/50' : ''
               }`}
             >
@@ -93,7 +93,7 @@ function ViewToggle() {
   const dispatch = useStoreDispatch();
   const diffView = useStoreSelector((state) => state.diffView);
   return (
-    <div className="review-view-toggle flex items-center rounded-lg bg-elevated p-0.5">
+    <div className="review-view-toggle flex items-center rounded-md bg-elevated p-0.5">
       {VIEW_TOGGLE_ITEMS.map(({ mode, icon: Icon, title }) => (
         <button
           key={mode}
@@ -101,7 +101,7 @@ function ViewToggle() {
             dispatch({ type: 'SET_DIFF_VIEW', mode });
           }}
           title={title}
-          className={`rounded-md p-1.5 transition-colors ${
+          className={`rounded-sm p-1.5 transition-colors ${
             diffView === mode ? 'bg-bg text-primary' : 'text-muted hover:text-primary'
           }`}
         >
@@ -132,7 +132,7 @@ function ToolbarButton({
       ref={innerRef}
       onClick={onClick}
       title={title}
-      className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] transition-colors ${
+      className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] transition-colors ${
         active ? 'bg-active text-primary' : 'text-muted hover:bg-elevated/60 hover:text-primary'
       }`}
     >
@@ -156,7 +156,7 @@ function MenuItem({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
+      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
     >
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
       <span className="flex-1 truncate">{label}</span>
@@ -275,7 +275,7 @@ function DetachedFocusPane({
           type="button"
           onClick={onClose}
           title="Close"
-          className="shrink-0 rounded-md p-1 text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+          className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -667,7 +667,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
               onClose();
             }}
             title="Close review"
-            className="rounded-md p-1.5 text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+            className="rounded-sm p-1.5 text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
           >
             <X className="h-4 w-4" />
           </button>

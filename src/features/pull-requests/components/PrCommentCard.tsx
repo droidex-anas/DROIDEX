@@ -101,7 +101,7 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
   const previewLine = location && preview ? `${location.label} · ${preview}` : preview;
 
   return (
-    <article className="overflow-hidden rounded-xl border border-divider bg-surface">
+    <article className="overflow-hidden rounded-lg border border-divider bg-surface">
       <header className="flex items-start gap-2 border-b border-divider bg-elevated/40 px-3 py-2">
         {foldable ? (
           <button
@@ -111,7 +111,7 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
             onClick={() => {
               setOpen((value) => !value);
             }}
-            className="group -my-1 -ml-1 flex min-w-0 flex-1 items-start gap-1.5 rounded-lg px-1 py-1 text-left transition-colors hover:bg-elevated/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            className="group -my-1 -ml-1 flex min-w-0 flex-1 items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-elevated/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           >
             <span className="mt-[3px]">
               <FoldChevron open={open} />
@@ -140,7 +140,7 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
               onClick={() => {
                 if (comment.url) void openExternal(comment.url);
               }}
-              className="rounded-md p-1 text-muted transition-colors hover:bg-active hover:text-primary"
+              className="rounded-sm p-1 text-muted transition-colors hover:bg-active hover:text-primary"
             >
               <Octicon name="link-external" size={12} label="Open on GitHub" />
             </button>
@@ -152,7 +152,7 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
           {location ? (
             <p
               title={location.title}
-              className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-elevated/60 px-2 py-0.5 text-[12px] text-secondary"
+              className="mb-2 inline-flex items-center gap-1.5 rounded-md bg-elevated/60 px-2 py-0.5 text-[12px] text-secondary"
             >
               <Octicon name="file-diff" size={12} />
               {/* Open cards have room for the full path: two files with the

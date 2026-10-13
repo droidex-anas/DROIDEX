@@ -206,7 +206,7 @@ function CompactionModelPicker({
         onClick={() => {
           choose(id);
         }}
-        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
+        className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
           active ? 'bg-elevated' : 'hover:bg-elevated/50'
         }`}
       >
@@ -240,7 +240,7 @@ function CompactionModelPicker({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
+        className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] transition-colors ${
           open ? 'bg-active text-primary' : 'bg-elevated text-primary hover:bg-active'
         }`}
       >
@@ -252,8 +252,8 @@ function CompactionModelPicker({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-divider bg-surface p-2 shadow-lg">
-          <div className="mb-2 flex items-center gap-2 h-8 rounded-md bg-bg/60 border border-divider px-2.5">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-lg border border-divider bg-surface p-2 shadow-lg">
+          <div className="mb-2 flex items-center gap-2 h-8 rounded-sm bg-bg/60 border border-divider px-2.5">
             <Search className="w-3.5 h-3.5 text-muted" />
             <input
               autoFocus
@@ -336,7 +336,7 @@ function GeneralSection() {
       />
 
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Enter while working"
           description="What Enter does while the agent works. Steer hands the message to the agent at its next step; Queue sends it after the turn. Cmd/Ctrl+Enter does the other."
@@ -381,7 +381,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Voice</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Voice"
           description="Which voice speaks in voice mode. The harness offers the list; leave this on its default to take whichever voice it picks."
@@ -416,7 +416,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Diff display</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Diff view"
           description="How file diffs render in the Review tab — one column or side-by-side."
@@ -459,7 +459,7 @@ function GeneralSection() {
       <HardwareAccelerationSetting />
 
       <GroupLabel>Compaction</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Compaction model"
           description="Model that summarizes a conversation when it is compacted."
@@ -484,7 +484,7 @@ function GeneralSection() {
         Override the compaction limit for specific models. Models without an override use{' '}
         {defaultLimitLabel}.
       </p>
-      <div className="rounded-xl border border-divider bg-surface p-3">
+      <div className="rounded-lg border border-divider bg-surface p-3">
         {overrideEntries.length === 0 && (
           <div className="text-[12px] text-muted px-1 py-1.5">
             No overrides — every model uses {defaultLimitLabel}.
@@ -495,7 +495,7 @@ function GeneralSection() {
           {overrideEntries.map(([id, limit]) => (
             <div
               key={id}
-              className="flex items-center gap-2.5 rounded-lg border border-divider bg-bg/40 px-2.5 py-2"
+              className="flex items-center gap-2.5 rounded-md border border-divider bg-bg/40 px-2.5 py-2"
             >
               <ModelIcon
                 provider={providerOf(
@@ -516,7 +516,7 @@ function GeneralSection() {
                 onClick={() => {
                   setModelLimit(id, undefined);
                 }}
-                className="p-1 rounded-md text-muted hover:text-primary hover:bg-elevated transition-colors shrink-0"
+                className="p-1 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors shrink-0"
                 title="Remove override"
               >
                 <X className="w-3.5 h-3.5" />
@@ -595,7 +595,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>Droid CLI</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="CLI status"
           description={env?.cli.present ? env.cli.path : 'Not detected on this machine.'}
@@ -609,7 +609,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
                 onboard.update(onboarding?.installChannel);
               }}
               disabled={!!installing || !env?.cli.present}
-              className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
+              className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
             >
               {installing === 'update' ? 'Updating…' : 'Update'}
             </button>
@@ -639,7 +639,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
               onClick={onboard.refreshEnv}
               disabled={!env?.cli.present}
               title={env?.cli.present ? undefined : 'The Droid CLI must be installed first.'}
-              className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
+              className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
             >
               Refresh status
             </button>
@@ -654,7 +654,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>DROIDEX app</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow label="Current version" description={updateStatus}>
           <div className="flex items-center gap-2">
             <button
@@ -662,7 +662,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
                 void runCheck();
               }}
               disabled={checking}
-              className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
+              className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
             >
               {checking ? 'Checking…' : 'Check for updates'}
             </button>
@@ -671,7 +671,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
                 onClick={() => {
                   void requestAppUpdate(update, hasActiveWork);
                 }}
-                className="px-2.5 h-7 rounded-md bg-accent text-bg text-[12px] hover:opacity-90 transition-opacity"
+                className="px-2.5 h-7 rounded-sm bg-accent text-bg text-[12px] hover:opacity-90 transition-opacity"
               >
                 Download update…
               </button>
@@ -693,7 +693,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
             onClick={() => {
               void openExternal(cursorDesign.attributionUrl);
             }}
-            className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
+            className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
           >
             Flaticon
           </button>
@@ -701,14 +701,14 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       </div>
 
       <GroupLabel>Onboarding</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider">
         <SettingRow label="Run setup again" description="Re-open the first-run setup tour.">
           <button
             onClick={() => {
               window.dispatchEvent(new CustomEvent('droid:open-onboarding'));
               onClose();
             }}
-            className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
+            className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
           >
             Run setup
           </button>
@@ -730,7 +730,7 @@ function ConfigurationSection() {
       <GroupLabel>Default models</GroupLabel>
       <HarnessModelSettings />
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Model selector"
           description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
@@ -755,7 +755,7 @@ function ConfigurationSection() {
       <GroupLabel>Transcript</GroupLabel>
       <ToolActivitySettings />
       <GroupLabel>Sessions</GroupLabel>
-      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Default autonomy"
           description="How much new sessions may do without asking. The composer can override it for a single session."
@@ -798,7 +798,7 @@ function PlaceholderSection({ title }: { title: string }) {
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title={title} />
-      <div className="rounded-xl border border-dashed border-divider bg-surface/40 p-10 text-center">
+      <div className="rounded-lg border border-dashed border-divider bg-surface/40 p-10 text-center">
         <p className="text-[13px] text-secondary">{title} settings are coming soon.</p>
       </div>
     </div>
@@ -830,7 +830,7 @@ function SettingsSearchResults({
               onClick={() => {
                 onOpen(hit);
               }}
-              className={`group flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-2.5 text-left transition-colors ${
+              className={`group flex w-full items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 text-left transition-colors ${
                 onActiveTab
                   ? 'bg-active/70 text-primary'
                   : 'text-secondary hover:bg-elevated/45 hover:text-primary'
@@ -949,7 +949,7 @@ export default function SettingsPanel() {
           <ChevronLeft className="w-4 h-4" /> Back to app
         </button>
         <div className="px-3 pb-3">
-          <div className="flex h-9 items-center gap-2 rounded-2xl bg-elevated/70 px-3 ring-1 ring-inset ring-divider/70 transition-[box-shadow,background-color] focus-within:bg-elevated focus-within:ring-divider-strong">
+          <div className="flex h-9 items-center gap-2 rounded-xl bg-elevated/70 px-3 ring-1 ring-inset ring-divider/70 transition-[box-shadow,background-color] focus-within:bg-elevated focus-within:ring-divider-strong">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted" />
             <input
               value={query}
@@ -989,7 +989,7 @@ export default function SettingsPanel() {
                       onClick={() => {
                         setActive(label);
                       }}
-                      className={`flex h-8 w-full items-center rounded-xl px-2.5 text-left text-[13px] transition-colors ${
+                      className={`flex h-8 w-full items-center rounded-lg px-2.5 text-left text-[13px] transition-colors ${
                         active === label
                           ? 'bg-active text-primary'
                           : 'text-secondary hover:bg-elevated/40 hover:text-primary'

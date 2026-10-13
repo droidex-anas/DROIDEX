@@ -85,7 +85,7 @@ export function AgentPaneList({
                   onClick={() => {
                     setExpandedSections((current) => new Set(current).add(section.key));
                   }}
-                  className="w-full rounded-xl px-3 py-2 text-left text-[13px] text-muted transition-colors hover:text-secondary"
+                  className="w-full rounded-lg px-3 py-2 text-left text-[13px] text-muted transition-colors hover:text-secondary"
                 >
                   Show {hidden} more
                 </button>
@@ -125,7 +125,7 @@ function AgentListRow({
         onOpen(row.child.childSessionId);
       }}
       title={row.agentName}
-      className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
+      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
     >
       {/* One harness runs every agent of a chat, so its mark would say nothing
           here: each agent carries its own creature, the one the context panel

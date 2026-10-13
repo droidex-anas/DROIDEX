@@ -26,7 +26,7 @@ const AutomationSessionBadge = lazy(async () => {
 // Row controls are bare icons: hover brightens the glyph instead of adding a
 // filled square on top of the row's own hover tint.
 const HOVER_ACTION =
-  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 cursor-pointer items-center justify-center rounded-md text-muted opacity-0 pointer-events-none transition-[opacity,color] hover:text-primary group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60';
+  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 cursor-pointer items-center justify-center rounded-sm text-muted opacity-0 pointer-events-none transition-[opacity,color] hover:text-primary group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60';
 
 // A blocked chat cannot move until the user acts, so list rows still mark it.
 const WAITING_ON_USER: ReadonlySet<SessionActivityStatus> = new Set(['approval', 'input', 'plan']);
@@ -215,7 +215,7 @@ export const SessionRow = memo(function SessionRow({
           onBlur={(e) => {
             if (!renameHandled.current) onRenameCommit(session.appSessionId, e.currentTarget.value);
           }}
-          className="min-w-0 flex-1 rounded-md bg-elevated px-1.5 py-0.5 text-[13px] text-primary ring-1 ring-accent/50 focus:outline-none"
+          className="min-w-0 flex-1 rounded-sm bg-elevated px-1.5 py-0.5 text-[13px] text-primary ring-1 ring-accent/50 focus:outline-none"
         />
       </div>
     );
@@ -329,7 +329,7 @@ export const SessionRow = memo(function SessionRow({
           e.preventDefault();
           onMenu(session.appSessionId, { x: e.clientX, y: e.clientY });
         }}
-        className={`w-full flex cursor-pointer ${inbox ? 'items-start py-2.5' : 'items-center py-[7px]'} gap-2.5 pl-3 pr-3 rounded-xl text-left transition-colors ${
+        className={`w-full flex cursor-pointer ${inbox ? 'items-start py-2.5' : 'items-center py-[7px]'} gap-2.5 pl-3 pr-3 rounded-lg text-left transition-colors ${
           active ? 'bg-active' : 'hover:bg-elevated/40'
         }`}
       >

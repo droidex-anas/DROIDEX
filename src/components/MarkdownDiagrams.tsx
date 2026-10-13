@@ -121,7 +121,7 @@ function DiagramCard({
 }) {
   const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
   return (
-    <div ref={hostRef} className="my-3 overflow-hidden rounded-xl bg-elevated/50">
+    <div ref={hostRef} className="my-3 overflow-hidden rounded-lg bg-elevated/50">
       <CardHeader label={kind}>
         <button
           onClick={() => {

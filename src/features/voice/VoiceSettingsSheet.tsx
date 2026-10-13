@@ -58,7 +58,7 @@ export function VoiceSettingsSheet({
         onClick={(event) => {
           event.stopPropagation();
         }}
-        className="w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-divider/60 bg-elevated shadow-lg"
+        className="w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-divider/60 bg-elevated shadow-lg"
       >
         <div className="px-4 pt-3.5 pb-2 text-[12px] font-medium text-secondary">Voice</div>
         <div
@@ -99,7 +99,7 @@ export function VoiceSettingsSheet({
                   onClick={() => {
                     chooseNarration(option.value);
                   }}
-                  className={`flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                  className={`flex items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
                     selected ? 'bg-surface' : 'hover:bg-surface/60'
                   }`}
                 >
@@ -136,7 +136,7 @@ function VoiceRow({
       role="radio"
       aria-checked={selected}
       onClick={onSelect}
-      className={`flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors ${
+      className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors ${
         selected
           ? 'bg-surface text-primary'
           : 'text-secondary hover:bg-surface/60 hover:text-primary'

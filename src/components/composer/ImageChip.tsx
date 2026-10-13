@@ -24,7 +24,7 @@ export function ImageChip({
       <button
         onClick={failed ? undefined : onOpen}
         disabled={failed}
-        className="block h-16 w-16 overflow-hidden rounded-lg border border-divider bg-bg/60 transition-colors hover:border-divider-strong disabled:cursor-default"
+        className="block h-16 w-16 overflow-hidden rounded-md border border-divider bg-bg/60 transition-colors hover:border-divider-strong disabled:cursor-default"
         title={failed ? `${label} is no longer available` : `View ${label}`}
       >
         {failed ? (

@@ -65,7 +65,7 @@ export function AgentPaneDetail({
           type="button"
           onClick={onBack}
           aria-label="Back to agents"
-          className="shrink-0 rounded-md p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
+          className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>

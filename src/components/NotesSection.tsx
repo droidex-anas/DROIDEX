@@ -162,7 +162,7 @@ export function NotesPanel({
                     chrome. Uses the field token: raised like the composer on
                     dark, crisp card-surface on light. */}
                 <div className="mx-3">
-                  <div className="rounded-lg border border-divider/60 bg-field px-2.5 py-2 transition-colors focus-within:border-accent/40">
+                  <div className="rounded-md border border-divider/60 bg-field px-2.5 py-2 transition-colors focus-within:border-accent/40">
                     {tag && (
                       <div className="mb-1 flex">
                         <span
@@ -173,7 +173,7 @@ export function NotesPanel({
                             type="button"
                             aria-label="Remove tag"
                             onClick={onTagClear}
-                            className="rounded-sm opacity-70 transition-opacity hover:opacity-100"
+                            className="rounded-[2px] opacity-70 transition-opacity hover:opacity-100"
                           >
                             <X className="h-2.5 w-2.5" />
                           </button>
@@ -271,7 +271,7 @@ export function NotesPanel({
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -4 }}
                         transition={{ duration: 0.15, ease: EASE }}
-                        className="mt-1.5 overflow-hidden rounded-xl border border-divider bg-raised py-1 shadow-lg"
+                        className="mt-1.5 overflow-hidden rounded-lg border border-divider bg-raised py-1 shadow-lg"
                       >
                         {matchingTags.map((option, index) => (
                           <button
@@ -320,7 +320,7 @@ export function NotesPanel({
                               onUse(note);
                             }}
                             title="Send to composer"
-                            className="flex w-full items-start gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-droid-hover/60 focus-visible:bg-droid-hover/60 focus-visible:outline-none"
+                            className="flex w-full items-start gap-2.5 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-droid-hover/60 focus-visible:bg-droid-hover/60 focus-visible:outline-none"
                           >
                             <span
                               aria-hidden
@@ -353,7 +353,7 @@ export function NotesPanel({
                               onRemove(note.id);
                             }}
                             title="Delete note"
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted opacity-0 transition-opacity hover:bg-active hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-xs p-1 text-muted opacity-0 transition-opacity hover:bg-active hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
                           >
                             <X className="h-3 w-3" />
                           </button>

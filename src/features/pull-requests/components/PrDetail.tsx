@@ -52,7 +52,7 @@ export function CodePane({ diff, diffError }: { diff: string | null; diffError: 
   if (diff !== null) return <PrDiff diff={diff} />;
   return (
     <div className="flex h-full items-center justify-center px-8">
-      <div className="h-16 w-full max-w-2xl rounded-xl bg-elevated/40" />
+      <div className="h-16 w-full max-w-2xl rounded-lg bg-elevated/40" />
     </div>
   );
 }
@@ -76,7 +76,7 @@ function ToolbarIconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-lg p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
+      className="rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
     >
       <Octicon name={icon} size={14} label={label} className={spinning ? 'animate-spin' : ''} />
     </button>
@@ -203,7 +203,7 @@ export function PrDetail({
         <div
           role="tablist"
           aria-label="Pull request views"
-          className="flex items-center gap-0.5 rounded-lg bg-elevated/50 p-0.5"
+          className="flex items-center gap-0.5 rounded-md bg-elevated/50 p-0.5"
         >
           {TABS.map((item) => (
             <button
@@ -216,7 +216,7 @@ export function PrDetail({
               onClick={() => {
                 setTab(item.id);
               }}
-              className={`rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors ${
+              className={`rounded-sm px-2.5 py-1 text-[13px] font-medium transition-colors ${
                 tab === item.id
                   ? 'bg-surface text-primary shadow-[0_1px_2px_0_rgb(0_0_0/0.05)]'
                   : 'text-muted hover:text-secondary'
@@ -248,7 +248,7 @@ export function PrDetail({
             onClick={() => {
               if (headerPr) onOpenChat(headerPr);
             }}
-            className="flex items-center gap-1.5 rounded-lg border border-divider px-2.5 py-1.5 text-[13px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md border border-divider px-2.5 py-1.5 text-[13px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
           >
             <Octicon name="comment-discussion" size={13} />
             Chat

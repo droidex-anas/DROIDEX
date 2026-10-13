@@ -39,7 +39,7 @@ export function ThreadRow({
         onOpen(row.appSessionId);
       }}
       style={{ paddingLeft: `${String(10 + Math.min(row.depth, 3) * 14)}px` }}
-      className={`group flex w-full items-center gap-2.5 rounded-lg py-1.5 pr-2 text-left transition-colors ${
+      className={`group flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2 text-left transition-colors ${
         active ? 'bg-active' : 'hover:bg-elevated/50'
       }`}
     >

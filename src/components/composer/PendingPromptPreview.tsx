@@ -66,7 +66,7 @@ function PendingImages({ paths }: { paths: [string, ...string[]] }) {
       title={paths.map((path) => pathBaseName(path)).join('\n')}
       className="relative mt-1 inline-block h-6 w-6 align-middle"
     >
-      <span className="block h-full w-full overflow-hidden rounded-md border border-divider bg-bg/60">
+      <span className="block h-full w-full overflow-hidden rounded-sm border border-divider bg-bg/60">
         {src === null || failed ? (
           <span className="flex h-full w-full items-center justify-center text-muted">
             <ImageOff className="h-3 w-3" />

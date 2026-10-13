@@ -140,7 +140,7 @@ function ImageViewerModalContent({
           src={image.preview}
           alt="Attached image preview"
           draggable={false}
-          className="block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-lg object-contain shadow-lg"
+          className="block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-md object-contain shadow-lg"
         />
         {cropping && <CropOverlay rect={rect} onChange={setRect} />}
       </motion.div>

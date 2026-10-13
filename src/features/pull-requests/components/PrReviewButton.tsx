@@ -55,7 +55,7 @@ export function PrReviewButton({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex items-center gap-1.5 rounded-lg border border-divider px-2.5 py-1.5 text-[13px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary"
+        className="flex items-center gap-1.5 rounded-md border border-divider px-2.5 py-1.5 text-[13px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary"
       >
         <Octicon name="check" size={13} />
         {requesting ? 'Requesting…' : 'Review'}
@@ -65,7 +65,7 @@ export function PrReviewButton({
         <div
           role="menu"
           aria-label="Review pull request"
-          className="absolute right-0 z-50 mt-1 w-72 overflow-hidden rounded-xl border border-divider bg-surface py-1 shadow-xl"
+          className="absolute right-0 z-50 mt-1 w-72 overflow-hidden rounded-lg border border-divider bg-surface py-1 shadow-xl"
         >
           <p className="flex items-center gap-2 px-3 pt-1 pb-1.5">
             <span className="text-[11px] font-medium tracking-wide text-muted uppercase">

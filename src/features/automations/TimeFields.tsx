@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 const NUMBER_FIELD =
-  'h-8 rounded-lg border border-divider bg-bg/70 px-2 text-center text-[13px] tabular-nums text-primary outline-none transition-colors focus:border-divider-strong focus:bg-bg';
+  'h-8 rounded-md border border-divider bg-bg/70 px-2 text-center text-[13px] tabular-nums text-primary outline-none transition-colors focus:border-divider-strong focus:bg-bg';
 
 export function AutomationTimeInput({
   value,

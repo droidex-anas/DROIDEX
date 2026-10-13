@@ -114,7 +114,7 @@ export function ScheduleControls({
                 onChange({ kind: 'cron', expression: event.target.value });
               }}
               placeholder="0 9 * * 1-5"
-              className="w-full rounded-lg border border-divider bg-bg/70 px-2.5 py-1.5 text-right text-[12px] tabular-nums text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong"
+              className="w-full rounded-md border border-divider bg-bg/70 px-2.5 py-1.5 text-right text-[12px] tabular-nums text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong"
             />
             <div className="mt-1 text-right text-[11px] text-muted">
               minute · hour · day · month · weekday

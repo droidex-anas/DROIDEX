@@ -418,7 +418,7 @@ export default function BrowserWorkspace({
           </span>
           <button
             type="button"
-            className="shrink-0 rounded-md border border-divider bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+            className="shrink-0 rounded-sm border border-divider bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
             onClick={() => {
               setLoadFailure(null);
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
@@ -431,7 +431,7 @@ export default function BrowserWorkspace({
           </button>
           <button
             type="button"
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
             onClick={() => {
               setLoadFailure(null);
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);

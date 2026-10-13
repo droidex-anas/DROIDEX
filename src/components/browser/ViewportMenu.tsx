@@ -93,7 +93,7 @@ export function ViewportMenu({
             animate={{ opacity: 1, x: menuX, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: menuX, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute bottom-full z-50 mb-2 w-[220px] overflow-hidden rounded-2xl border border-divider/60 bg-raised p-1.5 shadow-lg ${
+            className={`absolute bottom-full z-50 mb-2 w-[220px] overflow-hidden rounded-xl border border-divider/60 bg-raised p-1.5 shadow-lg ${
               menuAlign === 'end' ? 'right-0' : 'left-1/2'
             }`}
           >
@@ -115,7 +115,7 @@ export function ViewportMenu({
                     buttonRef.current?.focus();
                     if (!selected) onSelect(choice);
                   }}
-                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                  className={`flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
                     selected ? 'bg-surface' : 'hover:bg-surface/60'
                   }`}
                 >

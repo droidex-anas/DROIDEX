@@ -31,7 +31,7 @@ export function SideChatBackButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-label="Back to side chat"
-      className="shrink-0 rounded-md p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
+      className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
     >
       <ArrowLeft className="h-3.5 w-3.5" />
     </button>
@@ -59,7 +59,7 @@ export function SideChatHeaderButton({
         aria-pressed={pressed}
         disabled={disabled}
         onClick={onClick}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
       >
         {children}
       </button>

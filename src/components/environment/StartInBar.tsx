@@ -75,7 +75,7 @@ function Pill({
       title={`${title}: ${label}`}
       aria-label={`${title}: ${label}`}
       {...(open === undefined ? {} : { 'aria-expanded': open, 'aria-haspopup': 'dialog' as const })}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
+      className={`group flex min-w-0 items-center gap-1.5 rounded-sm px-1.5 py-1 text-[11px] transition-colors ${
         open ? 'bg-bg/60 text-primary' : 'text-secondary hover:bg-bg/40 hover:text-primary'
       }`}
     >
@@ -242,7 +242,7 @@ export function StartInBar({
             onClick={() => {
               void openFolder();
             }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
           >
             <FolderPlus className="h-3.5 w-3.5 shrink-0 text-muted" />
             Open folder…

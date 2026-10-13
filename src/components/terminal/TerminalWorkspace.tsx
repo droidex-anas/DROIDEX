@@ -201,7 +201,7 @@ function TerminalStatusRow({
       <button
         type="button"
         onClick={onRestart}
-        className="shrink-0 rounded-md px-2 py-1 leading-none text-primary transition-colors hover:bg-elevated focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="shrink-0 rounded-sm px-2 py-1 leading-none text-primary transition-colors hover:bg-elevated focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         Restart
       </button>
@@ -224,7 +224,7 @@ function HeaderAction({
         type="button"
         aria-label={label}
         onClick={onClick}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="flex h-7 w-7 items-center justify-center rounded-sm text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         {children}
       </button>

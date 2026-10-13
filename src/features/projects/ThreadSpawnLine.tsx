@@ -79,7 +79,7 @@ export function ThreadSpawnLine({
           onClick={() => {
             setOpen((value) => !value);
           }}
-          className="-m-0.5 flex items-center rounded p-0.5"
+          className="-m-0.5 flex items-center rounded-xs p-0.5"
           aria-label={words.toggle}
           aria-expanded={open}
         >

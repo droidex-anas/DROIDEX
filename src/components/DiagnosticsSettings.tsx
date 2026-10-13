@@ -82,7 +82,7 @@ export function DiagnosticsSettings() {
       <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted">
         Automatic diagnostics
       </div>
-      <div className="rounded-xl border border-divider bg-surface">
+      <div className="rounded-lg border border-divider bg-surface">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
             <div className="text-[13px] text-primary">Crash reports and Release Health</div>
@@ -118,7 +118,7 @@ export function DiagnosticsSettings() {
       <div className="mb-3 mt-8 text-[11px] font-medium uppercase tracking-wider text-muted">
         Anonymous usage analytics
       </div>
-      <div className="rounded-xl border border-divider bg-surface">
+      <div className="rounded-lg border border-divider bg-surface">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
             <div className="text-[13px] text-primary">Count this installation</div>

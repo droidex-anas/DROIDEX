@@ -87,7 +87,7 @@ export function UtilityPane({
             return (
               <div
                 key={tab.id}
-                className={`group flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors ${
+                className={`group flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors ${
                   active
                     ? 'bg-active text-primary'
                     : 'text-muted hover:bg-elevated/45 hover:text-primary'
@@ -100,7 +100,7 @@ export function UtilityPane({
                   onClick={() => {
                     onActivateTab(tab.id);
                   }}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{tab.label}</span>
@@ -109,7 +109,7 @@ export function UtilityPane({
                   <button
                     type="button"
                     aria-label={`Close ${tab.label}`}
-                    className="ml-0.5 rounded-md p-1 text-muted opacity-50 transition hover:bg-elevated hover:text-primary group-hover:opacity-100"
+                    className="ml-0.5 rounded-sm p-1 text-muted opacity-50 transition hover:bg-elevated hover:text-primary group-hover:opacity-100"
                     onClick={(event) => {
                       event.stopPropagation();
                       onCloseTab(tab);
@@ -132,7 +132,7 @@ export function UtilityPane({
             onClick={() => {
               setMenuOpen((open) => !open);
             }}
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm transition-colors ${
               menuOpen
                 ? 'bg-elevated text-primary'
                 : 'text-muted hover:bg-elevated/60 hover:text-primary'
@@ -146,7 +146,7 @@ export function UtilityPane({
             type="button"
             aria-label="Hide utility pane"
             onClick={onClosePane}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
           >
             <PanelRight className="h-4 w-4" />
           </button>

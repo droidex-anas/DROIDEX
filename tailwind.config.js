@@ -12,6 +12,18 @@ export default {
     '!./src/components/effortSlider/effortSliderStyles.ts',
   ],
   theme: {
+    // The design-system radius scale replaces Tailwind's; there is no bare
+    // `rounded`. Off-scale radii stay arbitrary values (`rounded-[2px]`).
+    borderRadius: {
+      none: '0px',
+      xs: '4px',
+      sm: '6px',
+      md: '8px',
+      lg: '12px',
+      xl: '16px',
+      '2xl': '24px',
+      full: '9999px',
+    },
     extend: {
       // Names follow docs/design-system (README "Naming"). Text colours read
       // `text-primary`/`text-secondary`/`text-muted`; `text` is the same colour

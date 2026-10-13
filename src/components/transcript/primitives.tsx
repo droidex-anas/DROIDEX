@@ -130,7 +130,7 @@ export function useCopiedFlash(): { copied: boolean; copy: (text: string) => voi
 export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
   return (
     <span
-      className={`shrink-0 rounded-md text-[10px] font-medium uppercase tracking-[0.08em] ${
+      className={`shrink-0 rounded-sm text-[10px] font-medium uppercase tracking-[0.08em] ${
         emphasis ? 'ml-auto px-2 py-0.5' : 'px-1.5 py-px'
       }`}
       style={{
@@ -147,7 +147,7 @@ export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
 // the row's own muted tone rather than the error red.
 export function InterruptedTag() {
   return (
-    <span className="shrink-0 rounded-md bg-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-muted px-1.5 py-px">
+    <span className="shrink-0 rounded-sm bg-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-muted px-1.5 py-px">
       Interrupted
     </span>
   );
@@ -341,7 +341,7 @@ export function ForkedFromDivider({ onOpenSource }: { onOpenSource: () => void }
       <button
         type="button"
         onClick={onOpenSource}
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] whitespace-nowrap text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:outline-none"
+        className="flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[12px] whitespace-nowrap text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:outline-none"
       >
         <GitFork className="h-3.5 w-3.5" />
         Forked from chat

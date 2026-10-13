@@ -55,7 +55,7 @@ export function SignInStep({
       />
 
       {signedIn ? (
-        <div className="rounded-xl border border-divider bg-surface px-4 py-3.5 mb-6 flex items-center gap-2.5 text-[13px] text-primary">
+        <div className="rounded-lg border border-divider bg-surface px-4 py-3.5 mb-6 flex items-center gap-2.5 text-[13px] text-primary">
           <Check className="w-4 h-4 text-success" strokeWidth={3} /> You&apos;re signed in.
         </div>
       ) : (
@@ -88,7 +88,7 @@ export function SignInStep({
               <KeyRound className="w-3.5 h-3.5" /> Use an API key instead
             </button>
           ) : (
-            <div className="rounded-xl border border-divider bg-surface p-3.5 space-y-2">
+            <div className="rounded-lg border border-divider bg-surface p-3.5 space-y-2">
               <input
                 type="password"
                 aria-label="Factory API key"

@@ -139,7 +139,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
         initial={{ y: 18, scale: 0.975, opacity: 0 }}
         animate={{ y: 0, scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 430, damping: 34 }}
-        className="max-h-[calc(100vh-2.5rem)] w-full max-w-[680px] overflow-y-auto rounded-2xl border border-divider bg-surface shadow-lg"
+        className="max-h-[calc(100vh-2.5rem)] w-full max-w-[680px] overflow-y-auto rounded-xl border border-divider bg-surface shadow-lg"
       >
         {reportId ? (
           <div className="px-8 py-9 text-center" aria-live="polite">
@@ -155,7 +155,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
             <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-secondary">
               Keep this report ID if you need to follow up with support.
             </p>
-            <div className="mx-auto mt-6 flex max-w-[430px] items-center gap-2 rounded-xl border border-divider bg-bg/60 p-2 pl-4">
+            <div className="mx-auto mt-6 flex max-w-[430px] items-center gap-2 rounded-lg border border-divider bg-bg/60 p-2 pl-4">
               <input
                 ref={reportIdRef}
                 aria-label="Report ID"
@@ -170,7 +170,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                 ref={copyButtonRef}
                 type="button"
                 onClick={() => void copyReportId()}
-                className="flex h-9 items-center gap-1.5 rounded-lg border border-divider bg-elevated px-3 text-[12px] font-medium text-primary transition-colors hover:border-divider-strong hover:bg-elevated/80"
+                className="flex h-9 items-center gap-1.5 rounded-md border border-divider bg-elevated px-3 text-[12px] font-medium text-primary transition-colors hover:border-divider-strong hover:bg-elevated/80"
               >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copied ? 'Copied' : 'Copy ID'}
@@ -184,7 +184,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="mt-7 h-10 rounded-xl bg-accent px-6 text-[13px] font-semibold text-bg transition-opacity hover:opacity-90"
+              className="mt-7 h-10 rounded-lg bg-accent px-6 text-[13px] font-semibold text-bg transition-opacity hover:opacity-90"
             >
               Done
             </button>
@@ -211,7 +211,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                 onClick={onClose}
                 disabled={submitting}
                 aria-label="Close feedback"
-                className="rounded-lg p-2 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
+                className="rounded-md p-2 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -262,7 +262,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                     }
                   }}
                   placeholder="What happened? What did you expect instead?"
-                  className="min-h-[168px] w-full resize-none rounded-xl border border-divider bg-bg/45 px-4 py-3 text-[14px] leading-6 text-primary outline-none transition-colors placeholder:text-muted focus:border-accent/70 disabled:opacity-60"
+                  className="min-h-[168px] w-full resize-none rounded-lg border border-divider bg-bg/45 px-4 py-3 text-[14px] leading-6 text-primary outline-none transition-colors placeholder:text-muted focus:border-accent/70 disabled:opacity-60"
                 />
               </label>
               <div className="mt-2 flex items-start justify-between gap-5">
@@ -327,7 +327,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                 onClick={() => void submit()}
                 disabled={description.trim().length < 5 || submitting}
                 aria-live="polite"
-                className="h-10 min-w-[132px] rounded-xl bg-accent px-5 text-[13px] font-semibold text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+                className="h-10 min-w-[132px] rounded-lg bg-accent px-5 text-[13px] font-semibold text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
               >
                 {submitting ? 'Sending…' : 'Submit report'}
               </button>

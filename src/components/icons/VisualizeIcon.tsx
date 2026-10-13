@@ -10,7 +10,7 @@ export function VisualizeIcon({ className }: { className?: string }) {
 // app icon.
 export function VisualizeTile() {
   return (
-    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-visualize-mark/15">
+    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-visualize-mark/15">
       <VisualizeIcon className="h-5 w-5" />
     </span>
   );

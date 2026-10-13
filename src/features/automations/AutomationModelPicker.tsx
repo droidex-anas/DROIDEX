@@ -121,7 +121,7 @@ export function AutomationModelPicker({
           if (open) close();
           else setOpen(true);
         }}
-        className={`inline-flex max-w-[270px] items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:border-divider-strong ${
+        className={`inline-flex max-w-[270px] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:border-divider-strong ${
           open
             ? 'border-divider-strong bg-elevated'
             : 'border-transparent hover:border-divider hover:bg-elevated/70'
@@ -165,7 +165,7 @@ export function AutomationModelPicker({
               onClick={close}
               aria-label="Close model selector"
               title="Close model selector"
-              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-primary"
+              className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface hover:text-primary"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -179,7 +179,7 @@ export function AutomationModelPicker({
                   {selectedReasoning}
                 </span>
               </div>
-              <div className="flex flex-wrap gap-1 rounded-xl border border-divider bg-bg/65 p-1">
+              <div className="flex flex-wrap gap-1 rounded-lg border border-divider bg-bg/65 p-1">
                 {reasoningOptions.map((reasoning) => {
                   const selected = reasoning === selectedReasoning;
                   return (
@@ -191,7 +191,7 @@ export function AutomationModelPicker({
                         onChange({ modelId: selectedModel.id, reasoningEffort: reasoning });
                       }}
                       disabled={!selectedModel}
-                      className={`relative rounded-lg px-2.5 py-1.5 text-[11px] capitalize outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40 ${
+                      className={`relative rounded-md px-2.5 py-1.5 text-[11px] capitalize outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40 ${
                         selected ? 'text-primary' : 'text-muted hover:text-primary'
                       }`}
                       style={
@@ -211,7 +211,7 @@ export function AutomationModelPicker({
             </div>
 
             <div className="px-4 pb-3 pt-2">
-              <label className="flex h-9 items-center gap-2 rounded-xl border border-divider bg-bg/65 px-3 text-muted transition-colors focus-within:border-divider-strong">
+              <label className="flex h-9 items-center gap-2 rounded-lg border border-divider bg-bg/65 px-3 text-muted transition-colors focus-within:border-divider-strong">
                 <Search className="h-3.5 w-3.5 shrink-0" />
                 <input
                   autoFocus
@@ -275,7 +275,7 @@ export function AutomationModelPicker({
               type="button"
               onClick={close}
               disabled={!modelId}
-              className="rounded-lg bg-text px-3 py-1.5 text-[11px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+              className="rounded-md bg-text px-3 py-1.5 text-[11px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
             >
               Done
             </button>
@@ -301,7 +301,7 @@ function CategoryButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg px-2.5 py-1 text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent/60 ${
+      className={`rounded-md px-2.5 py-1 text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent/60 ${
         active ? 'bg-surface text-primary' : 'text-muted hover:bg-surface/60 hover:text-primary'
       }`}
     >
