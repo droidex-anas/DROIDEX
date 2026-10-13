@@ -8,4 +8,4 @@ The single-line text field used in settings, sheets and search. It is filled, ne
 - Label above in `label` style and `text-secondary`, `space-1.5` gap. Never use the placeholder as the label.
 - The consumer provides the label, placeholder, value, and error text.
 
-Hand-written from `src/index.css` (`.droid-input`), with the border replaced by a fill.
+Implemented by `Field` and `Input` in `src/components/ui/Field.tsx`.

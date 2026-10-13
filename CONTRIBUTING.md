@@ -103,7 +103,9 @@ short version:
 - Search for an existing helper, hook, or type with `rg` before adding one.
 - Keep the renderer provider-neutral; translate CLI-specific behaviour at the
   bridge boundary.
-- Use the existing theme tokens (`docs/design-system/`). Never hardcode a colour.
+- Follow the design system in `docs/design-system/`: build UI from the
+  primitives in `src/components/ui/` and use design tokens only, never a raw
+  colour or an arbitrary value.
 - Production files stay under 500 lines. Crossing that line needs a reason.
 - Delete what you supersede: no dead exports, unused props, or stale comments.
 - Comments explain *why*, sparingly. Prefer a clearer name over a comment.
@@ -184,8 +186,8 @@ npm run docs:generate
 npm run docs:check
 ```
 
-For UI work, look at the change in the running app. A passing build is not
-visual verification.
+For UI work, run `npm run quality:design-tokens` and look at the change in the
+running app, in light and dark. A passing build is not visual verification.
 
 Performance-sensitive changes are validated with the deterministic replay
 harness, not intuition:

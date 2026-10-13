@@ -28,6 +28,7 @@ flowchart LR
 | Area | Path | Responsibility |
 | --- | --- | --- |
 | Renderer | `src/` | React UI, local state, settings, onboarding, session and Mission Control views |
+| UI primitives | `src/components/ui/` | Shared controls and floating layers built on the design tokens in `src/lib/themeTokens.ts`, `tailwind.config.js` and `src/index.css`; the spec is `docs/design-system/` |
 | Electron main | `electron/main.cjs` | Window lifecycle, bridge process management, browser pages and the agent's browser requests (`electron/nativeBrowser*.cjs`), downloads, update checks |
 | Electron preload | `electron/preload.cjs` | Narrow API boundary between renderer and Electron main process |
 | Native browser preload | `electron/nativeBrowserPreload.cjs` | Browser automation bridge for embedded native browser flows |
