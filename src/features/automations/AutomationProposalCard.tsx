@@ -148,18 +148,18 @@ export function AutomationProposalCard({
       initial={reduceMotion ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.18, ease: EASE }}
-      className="overflow-hidden rounded-2xl border border-droid-border bg-droid-surface/35"
+      className="overflow-hidden rounded-2xl border border-divider bg-surface/35"
       aria-label="DROIDEX automation proposal"
     >
       <div className="px-4 pb-3 pt-3.5">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-droid-text-muted">
+          <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted">
             DROIDEX automation
           </span>
           <StateIndicator state={state} />
         </div>
         {scheduledAutomationId && workingDraft ? (
-          <h3 className="mt-2 text-[16px] font-medium leading-6 tracking-[-0.01em] text-droid-text">
+          <h3 className="mt-2 text-[16px] font-medium leading-6 tracking-[-0.01em] text-primary">
             {workingDraft.title}
           </h3>
         ) : (
@@ -171,17 +171,17 @@ export function AutomationProposalCard({
             disabled={!workingDraft}
             placeholder={workingDraft ? 'Automation title' : 'Preparing automation'}
             aria-label="Automation title"
-            className="mt-2 w-full bg-transparent text-[16px] font-medium leading-6 tracking-[-0.01em] text-droid-text outline-none transition-colors placeholder:text-droid-text-muted disabled:cursor-default"
+            className="mt-2 w-full bg-transparent text-[16px] font-medium leading-6 tracking-[-0.01em] text-primary outline-none transition-colors placeholder:text-muted disabled:cursor-default"
           />
         )}
-        <p className="mt-1 line-clamp-3 text-[13px] leading-5 text-droid-text-muted">
+        <p className="mt-1 line-clamp-3 text-[13px] leading-5 text-muted">
           {workingDraft?.prompt ?? 'DROIDEX is resolving the schedule and run configuration.'}
         </p>
       </div>
 
       {workingDraft ? (
         scheduledAutomationId ? (
-          <dl className="border-t border-droid-border/70">
+          <dl className="border-t border-divider/70">
             <ViewRow
               label="Schedule"
               value={formatSchedule(workingDraft.schedule, workingDraft.timezone)}
@@ -211,7 +211,7 @@ export function AutomationProposalCard({
             />
           </dl>
         ) : (
-          <div className="border-t border-droid-border/70 px-4 pb-1 pt-1">
+          <div className="border-t border-divider/70 px-4 pb-1 pt-1">
             <EditorRow label="Repeat">
               <SelectMenu
                 value={workingDraft.schedule.kind}
@@ -316,19 +316,15 @@ export function AutomationProposalCard({
       ) : null}
 
       {(toolError ?? displayModelIssue) && state.kind !== 'scheduled' && (
-        <div className="border-t border-droid-border/70 px-4 py-2.5">
-          <p
-            className={`text-[12px] leading-4 ${
-              toolError ? 'text-droid-red' : 'text-droid-orange'
-            }`}
-          >
+        <div className="border-t border-divider/70 px-4 py-2.5">
+          <p className={`text-[12px] leading-4 ${toolError ? 'text-danger' : 'text-warning'}`}>
             {toolError ?? displayModelIssue}
           </p>
         </div>
       )}
 
-      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-droid-border/70 bg-droid-bg/20 px-4 py-2.5">
-        <span className="text-[11px] leading-4 text-droid-text-muted">{helper}</span>
+      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-divider/70 bg-bg/20 px-4 py-2.5">
+        <span className="text-[11px] leading-4 text-muted">{helper}</span>
         <div className="flex shrink-0 items-center gap-2">
           {scheduledAutomationId ? (
             <button
@@ -336,7 +332,7 @@ export function AutomationProposalCard({
               onClick={() => {
                 dispatch({ type: 'OPEN_AUTOMATIONS', automationId: scheduledAutomationId });
               }}
-              className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text"
+              className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary"
             >
               Open automation
             </button>
@@ -345,7 +341,7 @@ export function AutomationProposalCard({
               type="button"
               onClick={() => void confirm()}
               disabled={confirmDisabled}
-              className="rounded-lg bg-droid-text px-3.5 py-1.5 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+              className="rounded-lg bg-text px-3.5 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
             >
               {confirming ? 'Scheduling…' : 'Confirm automation'}
             </button>
@@ -365,14 +361,14 @@ export function AutomationProposalCard({
 function StateIndicator({ state }: { state: ProposalCardState }) {
   const dot =
     state.kind === 'failed'
-      ? 'bg-droid-red'
+      ? 'bg-danger'
       : state.kind === 'review'
-        ? 'bg-droid-orange'
+        ? 'bg-warning'
         : state.kind === 'preparing'
-          ? 'bg-droid-text-muted motion-safe:animate-pulse'
-          : 'bg-droid-text-secondary';
+          ? 'bg-muted motion-safe:animate-pulse'
+          : 'bg-secondary';
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-droid-text-muted">
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted">
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
       {state.label}
     </span>
@@ -383,11 +379,11 @@ function ViewRow({ label, value, last = false }: { label: string; value: string;
   return (
     <div
       className={`flex items-baseline justify-between gap-4 px-4 py-2.5 ${
-        last ? '' : 'border-b border-droid-border/60'
+        last ? '' : 'border-b border-divider/60'
       }`}
     >
-      <dt className="shrink-0 text-[11px] text-droid-text-muted">{label}</dt>
-      <dd className="min-w-0 truncate text-right text-[12px] font-medium text-droid-text-secondary">
+      <dt className="shrink-0 text-[11px] text-muted">{label}</dt>
+      <dd className="min-w-0 truncate text-right text-[12px] font-medium text-secondary">
         {value}
       </dd>
     </div>

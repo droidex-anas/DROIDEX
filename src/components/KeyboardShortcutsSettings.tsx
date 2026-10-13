@@ -60,20 +60,17 @@ export function KeyboardShortcutsSettings() {
         title="Keyboard"
         sub={`Press a new chord after choosing Change. Escape cancels, Delete restores the default. Every shortcut needs ${PRIMARY_MODIFIER_LABEL}.`}
       />
-      <div className="overflow-hidden rounded-2xl border border-droid-border/80 bg-droid-surface">
+      <div className="overflow-hidden rounded-2xl border border-divider/80 bg-surface">
         {SHORTCUT_DEFINITIONS.map((definition, index) => {
           const active = capturing === definition.action;
           const conflicts = conflictingActions(bindings, definition.action);
           return (
-            <div
-              key={definition.action}
-              className={index > 0 ? 'border-t border-droid-border/50' : ''}
-            >
+            <div key={definition.action} className={index > 0 ? 'border-t border-divider/50' : ''}>
               <SettingRow
                 label={definition.label}
                 description={
                   conflicts.length > 0 ? (
-                    <span className="text-droid-orange">
+                    <span className="text-warning">
                       Also bound to {conflicts.map((other) => other.label).join(', ')}.
                     </span>
                   ) : undefined
@@ -83,8 +80,8 @@ export function KeyboardShortcutsSettings() {
                   <kbd
                     className={`min-w-[52px] rounded-md px-2 py-1 text-center font-mono text-[11px] ${
                       active
-                        ? 'bg-droid-elevated text-droid-text ring-1 ring-inset ring-droid-border-hover'
-                        : 'bg-droid-elevated text-droid-text-muted'
+                        ? 'bg-elevated text-primary ring-1 ring-inset ring-divider-strong'
+                        : 'bg-elevated text-muted'
                     }`}
                   >
                     {active ? 'Press…' : formatChord(bindings[definition.action])}
@@ -99,7 +96,7 @@ export function KeyboardShortcutsSettings() {
                     onClick={() => {
                       setCapturing(active ? null : definition.action);
                     }}
-                    className="rounded-xl bg-droid-elevated/80 px-3 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
+                    className="rounded-xl bg-elevated/80 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
                   >
                     {active ? 'Cancel' : 'Change'}
                   </button>
@@ -109,9 +106,9 @@ export function KeyboardShortcutsSettings() {
           );
         })}
         {/* Browser tab numbering is fixed, so it is listed but not rebindable. */}
-        <div className="border-t border-droid-border/50">
+        <div className="border-t border-divider/50">
           <SettingRow label="Go to tab 1–9" description="9 always opens the last tab.">
-            <kbd className="min-w-[52px] shrink-0 rounded-md bg-droid-elevated px-2 py-1 text-center font-mono text-[11px] text-droid-text-muted">
+            <kbd className="min-w-[52px] shrink-0 rounded-md bg-elevated px-2 py-1 text-center font-mono text-[11px] text-muted">
               {formatChord('Meta+1')}–{formatChord('Meta+9')}
             </kbd>
           </SettingRow>

@@ -65,7 +65,7 @@ export function ToolGroupItem({
         {inFlight ? (
           <span className="shimmer-text text-[13px] font-medium">{summary}</span>
         ) : (
-          <span className="text-[13px] text-droid-text-muted group-hover:text-droid-text-secondary transition-colors">
+          <span className="text-[13px] text-muted group-hover:text-secondary transition-colors">
             {summary}
           </span>
         )}
@@ -102,12 +102,12 @@ export function WorkedGroup({
         className="group flex min-w-0 items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        <span className="shrink-0 text-[13px] text-droid-text-secondary">
+        <span className="shrink-0 text-[13px] text-secondary">
           {item.durationMs >= 1000 ? `Worked for ${formatDuration(item.durationMs)}` : 'Worked'}
         </span>
       </button>
       <Expand open={open}>
-        <div className="mt-3 space-y-2.5 border-l border-droid-border pl-[17px]">{children}</div>
+        <div className="mt-3 space-y-2.5 border-l border-divider pl-[17px]">{children}</div>
       </Expand>
     </div>
   );
@@ -171,7 +171,7 @@ export function DiffGroup({
         className="group flex w-full min-w-0 items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        <span className="min-w-0 truncate text-[13px] font-medium text-droid-text-muted group-hover:text-droid-text-secondary">
+        <span className="min-w-0 truncate text-[13px] font-medium text-muted group-hover:text-secondary">
           {label}
         </span>
         <span className="shrink-0 text-[12px] tabular-nums" style={{ color: 'var(--diff-add-fg)' }}>
@@ -182,7 +182,7 @@ export function DiffGroup({
         </span>
       </button>
       <Expand open={open}>
-        <div className="mt-2 space-y-2.5 border-l border-droid-border pl-[17px]">
+        <div className="mt-2 space-y-2.5 border-l border-divider pl-[17px]">
           {shown.map((c) => (
             <DiffCard
               key={c.event.id}
@@ -207,7 +207,7 @@ export function DiffGroup({
               onClick={() => {
                 setDisclosure((current) => revealNextDiffCards(current, changes.length));
               }}
-              className="rounded-md px-1.5 py-0.5 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+              className="rounded-md px-1.5 py-0.5 text-[12px] text-muted transition-colors hover:bg-elevated/60 hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
             >
               Show next {revealCount} {revealCount === 1 ? 'edit' : 'edits'} ({hiddenCount}{' '}
               remaining)

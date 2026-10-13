@@ -127,10 +127,10 @@ export function SideChatWindow({ sourceAppSessionId }: { sourceAppSessionId: str
           width: shown.width,
           height: shown.height,
           // Raised and elevated share a tone in dark themes; step prompts up one.
-          '--prompt-bubble-bg': 'var(--droid-active)',
+          '--prompt-bubble-bg': 'var(--active)',
         } as CSSProperties
       }
-      className="absolute z-30 flex flex-col overflow-hidden rounded-2xl bg-droid-raised shadow-droid"
+      className="absolute z-30 flex flex-col overflow-hidden rounded-2xl bg-raised shadow-lg"
       onPointerDown={(event) => {
         const target = event.target;
         if (!(target instanceof Element) || !target.closest(`[${SIDE_CHAT_DRAG_HANDLE}]`)) return;

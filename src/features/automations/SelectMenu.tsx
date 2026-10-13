@@ -203,15 +203,15 @@ export function SelectMenu<Value extends string>({
             openMenu();
           }
         }}
-        className={`inline-flex min-w-0 max-w-[260px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-right text-[13px] outline-none transition-colors focus-visible:border-droid-border-hover disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`inline-flex min-w-0 max-w-[260px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-right text-[13px] outline-none transition-colors focus-visible:border-divider-strong disabled:cursor-not-allowed disabled:opacity-40 ${
           open
-            ? 'border-droid-border-hover bg-droid-elevated text-droid-text'
-            : 'border-transparent text-droid-text-secondary hover:border-droid-border hover:bg-droid-elevated/70 hover:text-droid-text'
+            ? 'border-divider-strong bg-elevated text-primary'
+            : 'border-transparent text-secondary hover:border-divider hover:bg-elevated/70 hover:text-primary'
         }`}
       >
         <span className="truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -226,7 +226,7 @@ export function SelectMenu<Value extends string>({
       >
         <div onKeyDown={onListKeyDown}>
           {searchable && (
-            <label className="m-2.5 flex h-9 items-center gap-2 rounded-xl border border-droid-border bg-droid-surface/55 px-3 text-droid-text-muted transition-colors focus-within:border-droid-border-hover">
+            <label className="m-2.5 flex h-9 items-center gap-2 rounded-xl border border-divider bg-surface/55 px-3 text-muted transition-colors focus-within:border-divider-strong">
               <Search className="h-3.5 w-3.5 shrink-0" />
               <input
                 ref={searchRef}
@@ -239,7 +239,7 @@ export function SelectMenu<Value extends string>({
                   if (listRef.current) listRef.current.scrollTop = 0;
                 }}
                 placeholder="Search"
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-droid-text outline-none placeholder:text-droid-text-muted"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-primary outline-none placeholder:text-muted"
               />
             </label>
           )}
@@ -285,9 +285,7 @@ export function SelectMenu<Value extends string>({
               ))
             )}
             {visible.length === 0 && (
-              <div className="px-3 py-7 text-center text-[11px] text-droid-text-muted">
-                No matches
-              </div>
+              <div className="px-3 py-7 text-center text-[11px] text-muted">No matches</div>
             )}
           </div>
         </div>
@@ -386,21 +384,17 @@ function OptionButton({
         // committed during pointerdown and must not fire a second change.
         if (event.detail === 0) onChoose();
       }}
-      className={`flex w-full items-center gap-2 rounded-xl px-3 text-left outline-none transition-colors focus-visible:bg-droid-surface ${
+      className={`flex w-full items-center gap-2 rounded-xl px-3 text-left outline-none transition-colors focus-visible:bg-surface ${
         fixedHeight ? 'h-[38px]' : 'min-h-[38px] py-2'
-      } ${active ? 'bg-droid-surface' : 'hover:bg-droid-surface/65'}`}
+      } ${active ? 'bg-surface' : 'hover:bg-surface/65'}`}
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] text-droid-text">{option.label}</span>
+        <span className="block truncate text-[12px] text-primary">{option.label}</span>
         {option.detail && option.detail !== option.label && (
-          <span className="mt-0.5 block truncate text-[11px] text-droid-text-muted">
-            {option.detail}
-          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted">{option.detail}</span>
         )}
       </span>
-      {selected && (
-        <Check className="h-3.5 w-3.5 shrink-0 text-droid-text-secondary" strokeWidth={2.2} />
-      )}
+      {selected && <Check className="h-3.5 w-3.5 shrink-0 text-secondary" strokeWidth={2.2} />}
     </button>
   );
 }

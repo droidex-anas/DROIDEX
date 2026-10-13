@@ -18,7 +18,7 @@ import { GithubAvatar } from './GithubAvatar';
 
 const STATE_PILL = {
   open: { class: 'bg-[#238636] text-white', icon: 'git-pull-request' },
-  draft: { class: 'bg-droid-elevated text-droid-text-secondary', icon: 'git-pull-request-draft' },
+  draft: { class: 'bg-elevated text-secondary', icon: 'git-pull-request-draft' },
   merged: { class: 'bg-[#8250df] text-white', icon: 'git-merge' },
   closed: { class: 'bg-[#da3633] text-white', icon: 'git-pull-request-closed' },
 } as const;
@@ -26,7 +26,7 @@ const STATE_PILL = {
 function Badge({ badge }: { badge: PrBadge }) {
   return (
     <span
-      className={`rounded-full border border-droid-border px-2 py-0.5 text-[12px] font-medium ${
+      className={`rounded-full border border-divider px-2 py-0.5 text-[12px] font-medium ${
         PR_TONE_TEXT_CLASS[badge.tone]
       }`}
     >
@@ -38,22 +38,22 @@ function Badge({ badge }: { badge: PrBadge }) {
 function MetaRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="pt-0.5 text-[13px] text-droid-text-muted">{label}</dt>
-      <dd className="min-w-0 text-[13px] text-droid-text-secondary">{children}</dd>
+      <dt className="pt-0.5 text-[13px] text-muted">{label}</dt>
+      <dd className="min-w-0 text-[13px] text-secondary">{children}</dd>
     </>
   );
 }
 
 function Reviewers({ pr }: { pr: PullRequest }) {
   const rows = reviewerRows(pr);
-  if (rows.length === 0) return <span className="text-droid-text-muted">No reviewers</span>;
+  if (rows.length === 0) return <span className="text-muted">No reviewers</span>;
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
       {rows.map((row) => (
         <span key={row.login} className="flex items-center gap-1.5">
           <GithubAvatar login={row.login} size={18} />
-          <span className="text-droid-text">{displayLogin(row.login)}</span>
-          <span className="text-droid-text-muted">{REVIEWER_STATE_LABEL[row.state]}</span>
+          <span className="text-primary">{displayLogin(row.login)}</span>
+          <span className="text-muted">{REVIEWER_STATE_LABEL[row.state]}</span>
         </span>
       ))}
     </span>
@@ -76,10 +76,8 @@ function ChecksMeta({
   if (!badge) {
     // A failed load must not read as "this pull request has no checks"; the
     // Checks section below states the error itself.
-    if (loading) return <span className="text-droid-text-muted">Loading…</span>;
-    return (
-      <span className="text-droid-text-muted">{error ? 'Unavailable' : 'No checks reported'}</span>
-    );
+    if (loading) return <span className="text-muted">Loading…</span>;
+    return <span className="text-muted">{error ? 'Unavailable' : 'No checks reported'}</span>;
   }
   return (
     <span className="flex items-center gap-1.5">
@@ -111,13 +109,11 @@ export function PrHeader({
 
   return (
     <header>
-      <h1 className="text-[22px] leading-snug font-semibold text-droid-text">
+      <h1 className="text-[22px] leading-snug font-semibold text-primary">
         {pr ? (
           <>
             {pr.title}
-            <span className="ml-2 font-normal tabular-nums text-droid-text-muted">
-              #{String(number)}
-            </span>
+            <span className="ml-2 font-normal tabular-nums text-muted">#{String(number)}</span>
           </>
         ) : (
           `Pull request #${String(number)}`
@@ -132,17 +128,14 @@ export function PrHeader({
             {prKindLabel(kind)}
           </span>
         ) : (
-          <span className="inline-flex h-7 w-20 rounded-full bg-droid-elevated/60" />
+          <span className="inline-flex h-7 w-20 rounded-full bg-elevated/60" />
         )}
         {pr ? (
-          <span className="flex items-center gap-1.5 text-[13px] text-droid-text-secondary">
+          <span className="flex items-center gap-1.5 text-[13px] text-secondary">
             <GithubAvatar login={pr.author} size={20} />
-            <span className="text-droid-text">{displayLogin(pr.author)}</span>
+            <span className="text-primary">{displayLogin(pr.author)}</span>
             {updated ? (
-              <span
-                title={prAbsoluteTime(pr.updatedAt ?? pr.createdAt)}
-                className="text-droid-text-muted"
-              >
+              <span title={prAbsoluteTime(pr.updatedAt ?? pr.createdAt)} className="text-muted">
                 {/* `prRelativeTime` returns either "now" or an age like "3d",
                     and only an age reads as "ago". */}
                 updated {updated === 'now' ? 'now' : `${updated} ago`}
@@ -156,9 +149,9 @@ export function PrHeader({
         <dl className="mt-4 grid grid-cols-[86px_minmax(0,1fr)] gap-x-4 gap-y-2">
           <MetaRow label="Branch">
             <span className="flex min-w-0 items-center gap-1.5">
-              <Octicon name="git-branch" size={13} className="shrink-0 text-droid-text-muted" />
-              <span className="truncate text-droid-text">{pr.headRefName ?? 'unknown'}</span>
-              <span className="shrink-0 text-droid-text-muted">into</span>
+              <Octicon name="git-branch" size={13} className="shrink-0 text-muted" />
+              <span className="truncate text-primary">{pr.headRefName ?? 'unknown'}</span>
+              <span className="shrink-0 text-muted">into</span>
               <span className="truncate">{pr.baseRefName ?? 'unknown'}</span>
             </span>
           </MetaRow>

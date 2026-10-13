@@ -43,7 +43,7 @@ export function ComposerSendButton({
         title="Starting turn"
         aria-label="Starting turn"
         {...parkedProps}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg opacity-90"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-text text-bg opacity-90"
       >
         <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
       </button>
@@ -57,7 +57,7 @@ export function ComposerSendButton({
         title="Working — click to stop"
         aria-label="Stop turn"
         {...parkedProps}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-text text-bg transition-opacity hover:opacity-90"
       >
         <Square className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
       </button>
@@ -96,15 +96,15 @@ export function ComposerSendButton({
             animate={{ opacity: 1, y: 0 }}
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
             transition={{ duration: reducedMotion ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full right-0 z-50 mb-2 flex flex-col gap-0.5 whitespace-nowrap rounded-xl border border-droid-border bg-droid-raised p-1.5 shadow-droid"
+            className="absolute bottom-full right-0 z-50 mb-2 flex flex-col gap-0.5 whitespace-nowrap rounded-xl border border-divider bg-raised p-1.5 shadow-lg"
           >
             {hintRows.map((row) => (
               <div
                 key={row.label}
-                className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 text-[12px] text-droid-text"
+                className="flex items-center justify-between gap-3 rounded-lg px-2 py-1 text-[12px] text-primary"
               >
                 <span>{row.label}</span>
-                <span className="flex items-center gap-0.5 rounded-md bg-droid-bg/70 px-1.5 py-0.5 text-[11px] text-droid-text-secondary">
+                <span className="flex items-center gap-0.5 rounded-md bg-bg/70 px-1.5 py-0.5 text-[11px] text-secondary">
                   {row.keys.map((key) => (
                     <kbd key={key} className="font-sans leading-none">
                       {key}
@@ -123,7 +123,7 @@ export function ComposerSendButton({
         title={disabled ? title : undefined}
         aria-label={live ? (enterSteers ? 'Steer' : 'Queue prompt') : 'Send prompt'}
         {...parkedProps}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-text text-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <ArrowUp className="h-4 w-4" />
       </button>

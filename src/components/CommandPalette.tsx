@@ -86,7 +86,7 @@ export default function CommandPalette() {
       enterHint="Select"
     >
       {filtered.length === 0 && (
-        <div className="px-4 py-8 text-center text-sm text-droid-text-muted">No commands found</div>
+        <div className="px-4 py-8 text-center text-sm text-muted">No commands found</div>
       )}
       {filtered.map((cmd, i) => {
         const Icon = cmd.icon;
@@ -100,17 +100,17 @@ export default function CommandPalette() {
               runCommand(cmd);
             }}
             className={`w-full flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
-              i === selected ? 'bg-droid-accent/[0.07]' : ''
+              i === selected ? 'bg-accent/[0.07]' : ''
             }`}
           >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center text-droid-text-muted">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted">
               <Icon size={16} />
             </span>
-            <span className="flex-1 text-sm text-droid-text">{cmd.label}</span>
+            <span className="flex-1 text-sm text-primary">{cmd.label}</span>
             {cmd.shortcut && (
-              <span className="text-[11px] text-droid-text-muted font-mono">{cmd.shortcut}</span>
+              <span className="text-[11px] text-muted font-mono">{cmd.shortcut}</span>
             )}
-            {i === selected && <ArrowRight className="w-3.5 h-3.5 text-droid-accent" />}
+            {i === selected && <ArrowRight className="w-3.5 h-3.5 text-accent" />}
           </button>
         );
       })}

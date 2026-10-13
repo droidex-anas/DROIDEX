@@ -26,7 +26,7 @@ const AutomationSessionBadge = lazy(async () => {
 // Row controls are bare icons: hover brightens the glyph instead of adding a
 // filled square on top of the row's own hover tint.
 const HOVER_ACTION =
-  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 cursor-pointer items-center justify-center rounded-md text-droid-text-muted opacity-0 pointer-events-none transition-[opacity,color] hover:text-droid-text group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60';
+  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 cursor-pointer items-center justify-center rounded-md text-muted opacity-0 pointer-events-none transition-[opacity,color] hover:text-primary group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60';
 
 // A blocked chat cannot move until the user acts, so list rows still mark it.
 const WAITING_ON_USER: ReadonlySet<SessionActivityStatus> = new Set(['approval', 'input', 'plan']);
@@ -42,7 +42,7 @@ function HarnessMark({ provider, label }: { provider: Provider; label: string })
       role="img"
       aria-label={label}
       title={label}
-      className={`harness-mark flex shrink-0 text-droid-text-muted ${HIDE_ON_HOVER}`}
+      className={`harness-mark flex shrink-0 text-muted ${HIDE_ON_HOVER}`}
     >
       <ModelIcon provider={provider} size={14} />
     </span>
@@ -151,7 +151,7 @@ export const SessionRow = memo(function SessionRow({
       label={`${PROVIDER_LABELS[session.provider]} chat`}
     />
   );
-  const timeTone = unread ? 'text-droid-text font-medium' : 'text-droid-text-muted';
+  const timeTone = unread ? 'text-primary font-medium' : 'text-muted';
 
   // Return focus to the row when the inline editor closes, unless the user
   // already moved focus elsewhere (e.g. clicked another row).
@@ -215,7 +215,7 @@ export const SessionRow = memo(function SessionRow({
           onBlur={(e) => {
             if (!renameHandled.current) onRenameCommit(session.appSessionId, e.currentTarget.value);
           }}
-          className="min-w-0 flex-1 rounded-md bg-droid-elevated px-1.5 py-0.5 text-[13px] text-droid-text ring-1 ring-droid-accent/50 focus:outline-none"
+          className="min-w-0 flex-1 rounded-md bg-elevated px-1.5 py-0.5 text-[13px] text-primary ring-1 ring-accent/50 focus:outline-none"
         />
       </div>
     );
@@ -227,7 +227,7 @@ export const SessionRow = memo(function SessionRow({
       size={14}
       // The stroke takes its colour from the text token, so the purple eases in
       // and out as the main agent sleeps and wakes.
-      className={`shrink-0 transition-colors duration-300 ${ultra ? 'text-droid-ultra ' : ''}motion-safe:animate-spin-slow`}
+      className={`shrink-0 transition-colors duration-300 ${ultra ? 'text-ultra ' : ''}motion-safe:animate-spin-slow`}
       aria-label={
         agentsAlone
           ? 'agents working'
@@ -287,9 +287,7 @@ export const SessionRow = memo(function SessionRow({
       <span
         ref={titleRef}
         className={`block text-[13px] ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
-          active || unread
-            ? 'text-droid-text'
-            : 'text-droid-text-secondary group-hover:text-droid-text'
+          active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
         } ${unread && !active ? 'font-semibold' : ''}`}
       >
         {title}
@@ -332,7 +330,7 @@ export const SessionRow = memo(function SessionRow({
           onMenu(session.appSessionId, { x: e.clientX, y: e.clientY });
         }}
         className={`w-full flex cursor-pointer ${inbox ? 'items-start py-2.5' : 'items-center py-[7px]'} gap-2.5 pl-3 pr-3 rounded-xl text-left transition-colors ${
-          active ? 'bg-droid-active' : 'hover:bg-droid-elevated/40'
+          active ? 'bg-active' : 'hover:bg-elevated/40'
         }`}
       >
         {/* On two-line rows the mark sits in a box the height of the title
@@ -342,7 +340,7 @@ export const SessionRow = memo(function SessionRow({
         <span
           className={`flex w-3.5 shrink-0 items-center justify-center ${inbox ? 'h-5' : ''} ${
             ultra ? 'effort-dot-ultra ' : ''
-          }${active ? 'text-droid-text' : 'text-droid-text-secondary group-hover:text-droid-text'}`}
+          }${active ? 'text-primary' : 'text-secondary group-hover:text-primary'}`}
         >
           {leadingMark()}
         </span>
@@ -359,7 +357,7 @@ export const SessionRow = memo(function SessionRow({
             </span>
             {/* While the chat works its live activity shimmers across the whole
                 line; otherwise the reason shares it with the time. */}
-            <span className="mt-1 flex min-w-0 items-center gap-2 text-[12px] leading-4 text-droid-text-muted">
+            <span className="mt-1 flex min-w-0 items-center gap-2 text-[12px] leading-4 text-muted">
               <span className={`min-w-0 flex-1 truncate ${working ? 'shimmer-text' : ''}`}>
                 {detail}
               </span>
@@ -393,7 +391,7 @@ export const SessionRow = memo(function SessionRow({
             onToggleSettled(session);
           }}
           className={`${HOVER_ACTION} inbox-mark-control left-[7px] ${inbox ? 'top-2 translate-y-0' : ''} ${
-            settled ? 'hover:text-droid-text' : 'hover:text-droid-green'
+            settled ? 'hover:text-primary' : 'hover:text-success'
           }`}
         >
           <ActivityToggleGlyph settled={settled} />

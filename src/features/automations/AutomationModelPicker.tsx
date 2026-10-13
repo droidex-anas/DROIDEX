@@ -8,9 +8,8 @@ import type { ModelInfo, ReasoningEffort } from '../../types/bridge';
 import { AnchoredPopover } from './AnchoredPopover';
 import { reasoningForModel } from './modelSelection';
 
-const ACCENT = 'var(--droid-accent)';
-const accentMix = (pct: number) =>
-  `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
+const ACCENT = 'var(--accent)';
+const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
 
 // Tall enough for the reasoning row, a useful slice of the catalog, and the
 // footer; the popover still clamps it to the room the viewport actually has.
@@ -122,23 +121,23 @@ export function AutomationModelPicker({
           if (open) close();
           else setOpen(true);
         }}
-        className={`inline-flex max-w-[270px] items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:border-droid-border-hover ${
+        className={`inline-flex max-w-[270px] items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:border-divider-strong ${
           open
-            ? 'border-droid-border-hover bg-droid-elevated'
-            : 'border-transparent hover:border-droid-border hover:bg-droid-elevated/70'
+            ? 'border-divider-strong bg-elevated'
+            : 'border-transparent hover:border-divider hover:bg-elevated/70'
         }`}
       >
         <span className="flex h-5 w-5 shrink-0 items-center justify-center">
           <ModelIcon provider={providerOf(selectedModel)} size={17} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-droid-text">{label}</span>
-          <span className="block text-[11px] capitalize text-droid-text-muted">
+          <span className="block truncate text-[13px] font-medium text-primary">{label}</span>
+          <span className="block text-[11px] capitalize text-muted">
             {modelId ? `${selectedReasoning} reasoning` : 'Select from your model catalog'}
           </span>
         </span>
         <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -154,12 +153,10 @@ export function AutomationModelPicker({
         {/* `inherit` keeps this column inside the height the popover resolved,
             so the reasoning row, catalog, and Done control stay reachable. */}
         <div className="flex min-h-0 flex-col" style={{ maxHeight: 'inherit' }}>
-          <div className="flex items-start justify-between gap-3 border-b border-droid-border/70 px-4 pb-3 pt-3.5">
+          <div className="flex items-start justify-between gap-3 border-b border-divider/70 px-4 pb-3 pt-3.5">
             <div>
-              <div className="text-[11px] font-medium text-droid-text-secondary">
-                Model and reasoning
-              </div>
-              <div className="mt-0.5 text-[11px] text-droid-text-muted">
+              <div className="text-[11px] font-medium text-secondary">Model and reasoning</div>
+              <div className="mt-0.5 text-[11px] text-muted">
                 Uses the same live catalog as the chat composer
               </div>
             </div>
@@ -168,7 +165,7 @@ export function AutomationModelPicker({
               onClick={close}
               aria-label="Close model selector"
               title="Close model selector"
-              className="rounded-lg p-1.5 text-droid-text-muted transition-colors hover:bg-droid-surface hover:text-droid-text"
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-primary"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -177,14 +174,12 @@ export function AutomationModelPicker({
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="px-4 pb-2 pt-3.5">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-droid-text-muted">
-                  Reasoning
-                </span>
+                <span className="text-[11px] uppercase tracking-wider text-muted">Reasoning</span>
                 <span className="text-[11px] font-medium capitalize" style={{ color: ACCENT }}>
                   {selectedReasoning}
                 </span>
               </div>
-              <div className="flex flex-wrap gap-1 rounded-xl border border-droid-border bg-droid-bg/65 p-1">
+              <div className="flex flex-wrap gap-1 rounded-xl border border-divider bg-bg/65 p-1">
                 {reasoningOptions.map((reasoning) => {
                   const selected = reasoning === selectedReasoning;
                   return (
@@ -196,8 +191,8 @@ export function AutomationModelPicker({
                         onChange({ modelId: selectedModel.id, reasoningEffort: reasoning });
                       }}
                       disabled={!selectedModel}
-                      className={`relative rounded-lg px-2.5 py-1.5 text-[11px] capitalize outline-none transition-colors focus-visible:ring-1 focus-visible:ring-droid-accent/60 disabled:cursor-not-allowed disabled:opacity-40 ${
-                        selected ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
+                      className={`relative rounded-lg px-2.5 py-1.5 text-[11px] capitalize outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40 ${
+                        selected ? 'text-primary' : 'text-muted hover:text-primary'
                       }`}
                       style={
                         selected
@@ -216,7 +211,7 @@ export function AutomationModelPicker({
             </div>
 
             <div className="px-4 pb-3 pt-2">
-              <label className="flex h-9 items-center gap-2 rounded-xl border border-droid-border bg-droid-bg/65 px-3 text-droid-text-muted transition-colors focus-within:border-droid-border-hover">
+              <label className="flex h-9 items-center gap-2 rounded-xl border border-divider bg-bg/65 px-3 text-muted transition-colors focus-within:border-divider-strong">
                 <Search className="h-3.5 w-3.5 shrink-0" />
                 <input
                   autoFocus
@@ -226,7 +221,7 @@ export function AutomationModelPicker({
                     setQuery(event.target.value);
                   }}
                   placeholder="Search models"
-                  className="min-w-0 flex-1 bg-transparent text-[12px] text-droid-text outline-none placeholder:text-droid-text-muted/65"
+                  className="min-w-0 flex-1 bg-transparent text-[12px] text-primary outline-none placeholder:text-muted/65"
                 />
               </label>
 
@@ -268,8 +263,8 @@ export function AutomationModelPicker({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-droid-border/70 px-4 py-3">
-            <span className="min-w-0 truncate text-[11px] text-droid-text-muted">
+          <div className="flex items-center justify-between gap-3 border-t border-divider/70 px-4 py-3">
+            <span className="min-w-0 truncate text-[11px] text-muted">
               {selectedModel
                 ? `${selectedModel.displayName} · ${selectedReasoning} reasoning`
                 : modelId
@@ -280,7 +275,7 @@ export function AutomationModelPicker({
               type="button"
               onClick={close}
               disabled={!modelId}
-              className="rounded-lg bg-droid-text px-3 py-1.5 text-[11px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+              className="rounded-lg bg-text px-3 py-1.5 text-[11px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
             >
               Done
             </button>
@@ -306,10 +301,8 @@ function CategoryButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg px-2.5 py-1 text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
-        active
-          ? 'bg-droid-surface text-droid-text'
-          : 'text-droid-text-muted hover:bg-droid-surface/60 hover:text-droid-text'
+      className={`rounded-lg px-2.5 py-1 text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent/60 ${
+        active ? 'bg-surface text-primary' : 'text-muted hover:bg-surface/60 hover:text-primary'
       }`}
     >
       {label}

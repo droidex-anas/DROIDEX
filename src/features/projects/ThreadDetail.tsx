@@ -46,24 +46,24 @@ export function ThreadDetail({
 
   return (
     <div data-testid="thread-detail" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-droid-border/70 px-3 py-2.5">
+      <div className="flex shrink-0 items-center gap-2 border-b border-divider/70 px-3 py-2.5">
         <button
           type="button"
           onClick={onBack}
           aria-label="Back to threads"
-          className="shrink-0 rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+          className="shrink-0 rounded-md p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
         <ActivityStatusGlyph status={row.status} />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
+        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-primary">
           {row.title}
         </span>
         <button
           type="button"
           onClick={onOpenInChat}
           disabled={row.status === 'queued'}
-          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           Open
           <ExternalLink className="h-3 w-3" />
@@ -82,7 +82,7 @@ export function ThreadDetail({
               inlineDiffs={toolActivity.inlineDiffs}
             />
           ) : (
-            <p className="text-[12px] leading-5 text-droid-text-muted">
+            <p className="text-[12px] leading-5 text-muted">
               {row.status === 'queued'
                 ? row.detail
                 : historyError || (transcript === undefined ? 'Loading this thread…' : row.detail)}

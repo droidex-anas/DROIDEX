@@ -75,8 +75,8 @@ export function AutomationRow({
 
   return (
     <div
-      className={`group grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition-colors hover:bg-droid-elevated/30 [@container(min-width:540px)]:flex ${
-        last ? '' : 'border-b border-droid-border/60'
+      className={`group grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition-colors hover:bg-elevated/30 [@container(min-width:540px)]:flex ${
+        last ? '' : 'border-b border-divider/60'
       }`}
     >
       <span
@@ -90,10 +90,10 @@ export function AutomationRow({
       </span>
 
       <button type="button" onClick={onEdit} className="min-w-0 flex-1 text-left">
-        <div title={automation.title} className="truncate text-[13px] font-medium text-droid-text">
+        <div title={automation.title} className="truncate text-[13px] font-medium text-primary">
           {automation.title}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-droid-text-muted">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
           <span>{formatSchedule(automation.schedule, automation.timezone)}</span>
           <span aria-hidden>·</span>
           {isDelivery ? (
@@ -122,7 +122,7 @@ export function AutomationRow({
           ) : (
             statusContent
           )}
-          <span className="truncate text-droid-text-muted/75">
+          <span className="truncate text-muted/75">
             {rowHint(automation, run, active, needsSetup)}
           </span>
         </div>
@@ -259,10 +259,10 @@ function RowAction({
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className={`rounded-lg p-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
+        className={`rounded-lg p-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
           danger
-            ? 'bg-droid-red/12 text-droid-red hover:bg-droid-red/20'
-            : 'text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
+            ? 'bg-danger/12 text-danger hover:bg-danger/20'
+            : 'text-muted hover:bg-elevated hover:text-primary'
         }`}
       >
         {children}
@@ -301,27 +301,25 @@ function RunStatusIcon({
 }) {
   const size = large ? 'h-4 w-4' : 'h-3 w-3';
   if (needsSetup && !isAutomationRunActive(run)) {
-    return <SetupRequiredIcon className={`${size} text-droid-orange`} />;
+    return <SetupRequiredIcon className={`${size} text-warning`} />;
   }
   if (!run) {
     return enabled ? (
-      <Clock className={`${size} text-droid-text-muted`} />
+      <Clock className={`${size} text-muted`} />
     ) : (
-      <CirclePause className={`${size} text-droid-text-muted/60`} />
+      <CirclePause className={`${size} text-muted/60`} />
     );
   }
   switch (run.status) {
     case 'queued':
-      return <Clock className={`${size} text-droid-text-muted`} />;
+      return <Clock className={`${size} text-muted`} />;
     case 'starting':
     case 'running':
-      return (
-        <Spinner className={`${size} motion-safe:animate-spin-slow text-droid-text-secondary`} />
-      );
+      return <Spinner className={`${size} motion-safe:animate-spin-slow text-secondary`} />;
     case 'completed':
-      return <History className={`${size} text-droid-text-secondary`} />;
+      return <History className={`${size} text-secondary`} />;
     case 'failed':
-      return <CircleAlert className={`${size} text-droid-red`} />;
+      return <CircleAlert className={`${size} text-danger`} />;
   }
 }
 
@@ -331,21 +329,21 @@ function statusTileClass(
   enabled: boolean,
 ): string {
   if (needsSetup && !isAutomationRunActive(run)) {
-    return 'border-droid-orange/20 bg-droid-orange/5';
+    return 'border-warning/20 bg-warning/5';
   }
-  if (run?.status === 'failed') return 'border-droid-red/20 bg-droid-red/5';
-  if (run?.status === 'completed') return 'border-droid-border bg-droid-surface/48';
+  if (run?.status === 'failed') return 'border-danger/20 bg-danger/5';
+  if (run?.status === 'completed') return 'border-divider bg-surface/48';
   if (run?.status === 'running' || run?.status === 'starting') {
-    return 'border-droid-border-hover bg-droid-elevated/75';
+    return 'border-divider-strong bg-elevated/75';
   }
-  if (!enabled) return 'border-droid-border/70 bg-droid-surface/30';
-  return 'border-droid-border bg-droid-surface/65';
+  if (!enabled) return 'border-divider/70 bg-surface/30';
+  return 'border-divider bg-surface/65';
 }
 
 function statusClass(run: AutomationRun | undefined, needsSetup = false): string {
-  if (needsSetup && !isAutomationRunActive(run)) return 'text-droid-orange';
-  if (run?.status === 'failed') return 'text-droid-red';
-  if (run?.status === 'completed') return 'text-droid-text-secondary';
-  if (run?.status === 'running' || run?.status === 'starting') return 'text-droid-text-secondary';
-  return 'text-droid-text-muted';
+  if (needsSetup && !isAutomationRunActive(run)) return 'text-warning';
+  if (run?.status === 'failed') return 'text-danger';
+  if (run?.status === 'completed') return 'text-secondary';
+  if (run?.status === 'running' || run?.status === 'starting') return 'text-secondary';
+  return 'text-muted';
 }

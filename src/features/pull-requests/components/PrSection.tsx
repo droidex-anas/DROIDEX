@@ -38,16 +38,16 @@ export function PrSection({
           onClick={() => {
             setOpen((value) => !value);
           }}
-          className="group -ml-1 flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors hover:bg-droid-elevated/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+          className="group -ml-1 flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors hover:bg-elevated/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           <ChevronDown
-            className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform duration-200 ease-out group-hover:text-droid-text-secondary motion-reduce:transition-none ${
+            className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ease-out group-hover:text-secondary motion-reduce:transition-none ${
               open ? '' : '-rotate-90'
             }`}
           />
-          <span className="truncate text-[13px] font-semibold text-droid-text">{title}</span>
+          <span className="truncate text-[13px] font-semibold text-primary">{title}</span>
           {count != null ? (
-            <span className="rounded-full bg-droid-elevated px-1.5 py-0.5 text-[11px] tabular-nums text-droid-text-secondary">
+            <span className="rounded-full bg-elevated px-1.5 py-0.5 text-[11px] tabular-nums text-secondary">
               {count}
             </span>
           ) : null}

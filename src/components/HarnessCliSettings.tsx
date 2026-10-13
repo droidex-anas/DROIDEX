@@ -26,7 +26,7 @@ export function HarnessCliSettings({
   const clis = useHarnessClis();
 
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+    <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
       {clis === null ? (
         <SettingRow label="Claude Code and Codex" description="Detecting installed CLIs…">
           <span />
@@ -58,7 +58,7 @@ function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
   if (!cli.installed) {
     return (
       <SettingRow label={label} description="Not detected on this machine.">
-        <span className="text-[12px] font-mono text-droid-text-muted">missing</span>
+        <span className="text-[12px] font-mono text-muted">missing</span>
       </SettingRow>
     );
   }
@@ -72,7 +72,7 @@ function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
             {SOURCE_LABELS[cli.source]} · {cli.path}
           </span>
           {cli.updateError && (
-            <span className="block truncate text-droid-red" title={cli.updateError}>
+            <span className="block truncate text-danger" title={cli.updateError}>
               Update failed: {cli.updateError}
             </span>
           )}
@@ -80,15 +80,13 @@ function HarnessCliRow({ cli }: { cli: HarnessCliState }) {
       }
     >
       <div className="flex shrink-0 items-center gap-2">
-        <span className="text-[12px] font-mono text-droid-text-muted">
-          {cli.version ?? 'installed'}
-        </span>
+        <span className="text-[12px] font-mono text-muted">{cli.version ?? 'installed'}</span>
         <button
           onClick={() => {
             updateHarnessCli(cli.provider);
           }}
           disabled={cli.updating}
-          className="px-2.5 h-7 rounded-md bg-droid-elevated text-[12px] text-droid-text hover:bg-droid-active transition-colors disabled:opacity-40"
+          className="px-2.5 h-7 rounded-md bg-elevated text-[12px] text-primary hover:bg-active transition-colors disabled:opacity-40"
         >
           {cli.updating ? 'Updating…' : 'Update'}
         </button>

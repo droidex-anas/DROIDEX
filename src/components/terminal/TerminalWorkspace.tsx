@@ -79,7 +79,7 @@ export function TerminalWorkspace({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-droid-bg">
+    <div className="flex h-full min-h-0 flex-col bg-bg">
       <TerminalHeader shellName={state.shellName} cwd={cwd} stopped={stopped}>
         <HeaderAction
           label="Copy selection"
@@ -123,14 +123,14 @@ export function TerminalWorkspace({
         />
       )}
       {state.status === 'running' && state.truncated && (
-        <div className="shrink-0 animate-fade-in px-3 pb-0.5 pt-1.5 text-[12px] leading-none text-droid-text-muted">
+        <div className="shrink-0 animate-fade-in px-3 pb-0.5 pt-1.5 text-[12px] leading-none text-muted">
           Earlier output was trimmed
         </div>
       )}
       <div className="relative min-h-0 flex-1">
         <div ref={hostRef} className="h-full w-full overflow-hidden p-3" />
         {state.status === 'starting' && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-droid-text-muted">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-muted">
             {state.shellName === 'Terminal' ? 'Starting shell…' : `Starting ${state.shellName}…`}
           </div>
         )}
@@ -164,14 +164,14 @@ function TerminalHeader({
 }) {
   const folder = cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
   return (
-    <div className="group flex h-8 shrink-0 items-center gap-0.5 border-b border-droid-border pl-3 pr-1.5">
+    <div className="group flex h-8 shrink-0 items-center gap-0.5 border-b border-divider pl-3 pr-1.5">
       <div className="flex min-w-0 flex-1 items-center">
         <HoverTooltip label={cwd} placement="bottom" className="min-w-0">
           <span
-            className={`truncate text-[12px] leading-none ${stopped ? 'text-droid-text-secondary' : 'text-droid-text'}`}
+            className={`truncate text-[12px] leading-none ${stopped ? 'text-secondary' : 'text-primary'}`}
           >
             {shellName}
-            <span className="text-droid-text-secondary"> · {folder}</span>
+            <span className="text-secondary"> · {folder}</span>
           </span>
         </HoverTooltip>
       </div>
@@ -192,16 +192,16 @@ function TerminalStatusRow({
   onRestart: () => void;
 }) {
   return (
-    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-droid-border pl-3 pr-1.5 text-[12px]">
+    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-divider pl-3 pr-1.5 text-[12px]">
       <span
-        className={`min-w-0 flex-1 truncate ${tone === 'error' ? 'text-droid-red' : 'text-droid-text-secondary'}`}
+        className={`min-w-0 flex-1 truncate ${tone === 'error' ? 'text-danger' : 'text-secondary'}`}
       >
         {message}
       </span>
       <button
         type="button"
         onClick={onRestart}
-        className="shrink-0 rounded-md px-2 py-1 leading-none text-droid-text transition-colors hover:bg-droid-elevated focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent"
+        className="shrink-0 rounded-md px-2 py-1 leading-none text-primary transition-colors hover:bg-elevated focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         Restart
       </button>
@@ -224,7 +224,7 @@ function HeaderAction({
         type="button"
         aria-label={label}
         onClick={onClick}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         {children}
       </button>

@@ -187,7 +187,7 @@ export function ColorPicker({
 
       <div className="mt-3 flex items-center gap-1.5">
         <span
-          className="h-7 w-7 shrink-0 rounded-md border border-droid-border"
+          className="h-7 w-7 shrink-0 rounded-md border border-divider"
           style={{ backgroundColor: value }}
         />
         <input
@@ -196,13 +196,13 @@ export function ColorPicker({
             commitHex(e.target.value);
           }}
           spellCheck={false}
-          className="h-7 min-w-0 flex-1 rounded-md border border-droid-border bg-droid-bg/60 px-2 font-mono text-[11px] uppercase text-droid-text focus:border-droid-border-hover focus:outline-none"
+          className="h-7 min-w-0 flex-1 rounded-md border border-divider bg-bg/60 px-2 font-mono text-[11px] uppercase text-primary focus:border-divider-strong focus:outline-none"
         />
         {hasEyeDropper && (
           <button
             onClick={pickFromScreen}
             title="Pick color from screen"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-droid-border text-droid-text-muted transition-colors hover:border-droid-border-hover hover:text-droid-text"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-divider text-muted transition-colors hover:border-divider-strong hover:text-primary"
           >
             <Pipette className="h-3.5 w-3.5" />
           </button>
@@ -271,7 +271,7 @@ export function ColorPopover({
       // Portaled to <body>, so modal hosts (the theme editor's Tab trap)
       // recognize focus inside it via this attribute instead of containment.
       data-color-popover=""
-      className="fixed z-[70] p-3 rounded-xl border border-droid-border bg-droid-raised shadow-droid"
+      className="fixed z-[70] p-3 rounded-xl border border-divider bg-raised shadow-lg"
       style={{ top: pos.top, left: pos.left }}
     >
       {children}
@@ -309,8 +309,8 @@ export function ColorField({
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
-        <div className="text-[12px] text-droid-text">{label}</div>
-        {description && <div className="text-[11px] text-droid-text-muted">{description}</div>}
+        <div className="text-[12px] text-primary">{label}</div>
+        {description && <div className="text-[11px] text-muted">{description}</div>}
       </div>
       <div className="flex items-center gap-1.5">
         <button
@@ -318,7 +318,7 @@ export function ColorField({
           onClick={() => {
             setOpen((o) => !o);
           }}
-          className="w-8 h-8 rounded-lg border border-droid-border cursor-pointer hover:border-droid-border-hover transition-colors"
+          className="w-8 h-8 rounded-lg border border-divider cursor-pointer hover:border-divider-strong transition-colors"
           style={{ backgroundColor: value }}
           title="Pick color"
         />
@@ -329,7 +329,7 @@ export function ColorField({
             commit(e.target.value);
           }}
           spellCheck={false}
-          className="w-24 bg-droid-elevated border border-droid-border rounded-lg px-2 py-1.5 font-mono text-[11px] text-droid-text-secondary focus:outline-none focus:border-droid-border-hover"
+          className="w-24 bg-elevated border border-divider rounded-lg px-2 py-1.5 font-mono text-[11px] text-secondary focus:outline-none focus:border-divider-strong"
         />
         {open && (
           <ColorPopover

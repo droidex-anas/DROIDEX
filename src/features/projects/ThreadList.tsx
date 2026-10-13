@@ -124,20 +124,18 @@ export function ThreadList({
     key: 'head',
     node: (
       <div className="px-4 pb-2 pt-5">
-        <h2 className="text-[22px] font-semibold leading-tight tracking-tight text-droid-text">
+        <h2 className="text-[22px] font-semibold leading-tight tracking-tight text-primary">
           {threadGreeting(rows, counts, done)}
         </h2>
         {title && (
-          <p className="mt-2.5 truncate text-[15px] font-semibold leading-5 tracking-tight text-droid-text">
+          <p className="mt-2.5 truncate text-[15px] font-semibold leading-5 tracking-tight text-primary">
             {title}
           </p>
         )}
-        {timeline && (
-          <p className="mt-0.5 text-[12px] leading-5 text-droid-text-muted">{timeline}</p>
-        )}
+        {timeline && <p className="mt-0.5 text-[12px] leading-5 text-muted">{timeline}</p>}
         {held ? (
           <div className="mt-2 flex items-center gap-3">
-            <p className="min-w-0 flex-1 text-[13px] leading-5 text-droid-text-secondary">
+            <p className="min-w-0 flex-1 text-[13px] leading-5 text-secondary">
               {uncertain > 0
                 ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
                 : 'Paused. Work and queued messages are kept.'}
@@ -146,7 +144,7 @@ export function ThreadList({
               <button
                 type="button"
                 onClick={onResume}
-                className="shrink-0 rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
+                className="shrink-0 rounded-lg bg-active px-2.5 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
               >
                 Resume
               </button>
@@ -154,19 +152,17 @@ export function ThreadList({
           </div>
         ) : (
           leadStopped && (
-            <p className="mt-1 text-[13px] leading-5 text-droid-text-secondary">
+            <p className="mt-1 text-[13px] leading-5 text-secondary">
               Lead stopped. The team keeps working; reports wait until you message it.
             </p>
           )
         )}
         {done && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl border border-droid-border px-3 py-2.5">
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-divider px-3 py-2.5">
             <span className="mt-1 shrink-0">
               <ActivityStatusGlyph status="settled" />
             </span>
-            <p className="min-w-0 text-[12px] leading-5 text-droid-text-secondary">
-              {done.outcome}
-            </p>
+            <p className="min-w-0 text-[12px] leading-5 text-secondary">{done.outcome}</p>
           </div>
         )}
       </div>
@@ -185,7 +181,7 @@ export function ThreadList({
             }}
             placeholder="Search threads"
             aria-label="Search threads"
-            className="w-full rounded-lg border border-droid-border bg-transparent px-2.5 py-1.5 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:border-droid-border-hover focus:outline-none"
+            className="w-full rounded-lg border border-divider bg-transparent px-2.5 py-1.5 text-[13px] text-primary placeholder:text-muted focus:border-divider-strong focus:outline-none"
           />
         </div>
       ),
@@ -211,7 +207,7 @@ export function ThreadList({
     entries.push({
       key: 'empty',
       node: (
-        <p className="px-5 py-2 text-[13px] leading-5 text-droid-text-muted">
+        <p className="px-5 py-2 text-[13px] leading-5 text-muted">
           This project has not started any threads. Tell its chat what to run in parallel and it
           will open them here.
         </p>
@@ -250,7 +246,7 @@ export function ThreadList({
       {error && (
         <p
           role="alert"
-          className="shrink-0 border-t border-droid-border/70 px-4 py-3 text-[12px] leading-5 text-droid-text-secondary"
+          className="shrink-0 border-t border-divider/70 px-4 py-3 text-[12px] leading-5 text-secondary"
         >
           {error}
         </p>

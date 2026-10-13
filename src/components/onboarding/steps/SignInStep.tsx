@@ -55,8 +55,8 @@ export function SignInStep({
       />
 
       {signedIn ? (
-        <div className="rounded-xl border border-droid-border bg-droid-surface px-4 py-3.5 mb-6 flex items-center gap-2.5 text-[13px] text-droid-text">
-          <Check className="w-4 h-4 text-droid-green" strokeWidth={3} /> You&apos;re signed in.
+        <div className="rounded-xl border border-divider bg-surface px-4 py-3.5 mb-6 flex items-center gap-2.5 text-[13px] text-primary">
+          <Check className="w-4 h-4 text-success" strokeWidth={3} /> You&apos;re signed in.
         </div>
       ) : (
         <div className="space-y-2 mb-6">
@@ -71,12 +71,10 @@ export function SignInStep({
             <Check className="w-4 h-4" /> Check CLI sign-in
           </PrimaryButton>
           {!env?.cli.present && (
-            <p className="text-[12px] text-droid-text-muted text-center">
-              Install the Droid CLI first.
-            </p>
+            <p className="text-[12px] text-muted text-center">Install the Droid CLI first.</p>
           )}
           {env?.cli.present && (
-            <p className="text-[12px] text-droid-text-muted text-center">
+            <p className="text-[12px] text-muted text-center">
               Sign in with the Droid CLI in Terminal, then check the status here.
             </p>
           )}
@@ -85,12 +83,12 @@ export function SignInStep({
               onClick={() => {
                 setShowKey(true);
               }}
-              className="w-full text-[13px] text-droid-text-muted hover:text-droid-text transition-colors py-2 flex items-center justify-center gap-1.5"
+              className="w-full text-[13px] text-muted hover:text-primary transition-colors py-2 flex items-center justify-center gap-1.5"
             >
               <KeyRound className="w-3.5 h-3.5" /> Use an API key instead
             </button>
           ) : (
-            <div className="rounded-xl border border-droid-border bg-droid-surface p-3.5 space-y-2">
+            <div className="rounded-xl border border-divider bg-surface p-3.5 space-y-2">
               <input
                 type="password"
                 aria-label="Factory API key"
@@ -113,7 +111,7 @@ export function SignInStep({
                   'Save key'
                 )}
               </PrimaryButton>
-              {keyError && <p className="text-[12px] text-droid-red">{keyError}</p>}
+              {keyError && <p className="text-[12px] text-danger">{keyError}</p>}
             </div>
           )}
         </div>

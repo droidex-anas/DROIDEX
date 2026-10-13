@@ -139,11 +139,9 @@ export function NotesPanel({
           aria-expanded={open}
           className="group flex w-full items-center gap-2 px-3 pb-1 pt-4 text-left"
         >
-          <span className="min-w-0 flex-1 text-[12px] font-medium text-droid-text-muted">
-            Notes
-          </span>
+          <span className="min-w-0 flex-1 text-[12px] font-medium text-muted">Notes</span>
           {notes.length > 0 && (
-            <span className="shrink-0 text-[11px] leading-none tabular-nums text-droid-text-muted">
+            <span className="shrink-0 text-[11px] leading-none tabular-nums text-muted">
               {used}/{notes.length} sent
             </span>
           )}
@@ -164,7 +162,7 @@ export function NotesPanel({
                     chrome. Uses the field token: raised like the composer on
                     dark, crisp card-surface on light. */}
                 <div className="mx-3">
-                  <div className="rounded-lg border border-droid-border/60 bg-droid-field px-2.5 py-2 transition-colors focus-within:border-droid-accent/40">
+                  <div className="rounded-lg border border-divider/60 bg-field px-2.5 py-2 transition-colors focus-within:border-accent/40">
                     {tag && (
                       <div className="mb-1 flex">
                         <span
@@ -242,19 +240,19 @@ export function NotesPanel({
                           : 'Write a note to use later — Enter to save'
                       }
                       rows={3}
-                      className="w-full resize-none bg-transparent text-[13px] leading-snug text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+                      className="w-full resize-none bg-transparent text-[13px] leading-snug text-primary placeholder:text-muted focus:outline-none"
                     />
                     {/* The pad saves on Enter with no other chrome, so the moment
                         text exists a plain save affordance and the key hints appear. */}
                     {draft.trim() !== '' && (
                       <div className="mt-1 flex items-center justify-end gap-2.5">
-                        <span className="text-[11px] text-droid-text-muted/60">
+                        <span className="text-[11px] text-muted/60">
                           Enter to save · Shift+Enter for a new line
                         </span>
                         <button
                           type="button"
                           onClick={onSave}
-                          className="text-[11px] font-medium text-droid-text-secondary transition-colors hover:text-droid-text"
+                          className="text-[11px] font-medium text-secondary transition-colors hover:text-primary"
                         >
                           Save
                         </button>
@@ -273,7 +271,7 @@ export function NotesPanel({
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -4 }}
                         transition={{ duration: 0.15, ease: EASE }}
-                        className="mt-1.5 overflow-hidden rounded-xl border border-droid-border bg-droid-raised py-1 shadow-droid"
+                        className="mt-1.5 overflow-hidden rounded-xl border border-divider bg-raised py-1 shadow-lg"
                       >
                         {matchingTags.map((option, index) => (
                           <button
@@ -295,9 +293,7 @@ export function NotesPanel({
                             >
                               {option}
                             </span>
-                            <span className="text-[12px] text-droid-text-muted">
-                              {NOTE_TAG_HINT[option]}
-                            </span>
+                            <span className="text-[12px] text-muted">{NOTE_TAG_HINT[option]}</span>
                           </button>
                         ))}
                       </motion.div>
@@ -330,15 +326,15 @@ export function NotesPanel({
                               aria-hidden
                               className={`mt-[3px] h-[13px] w-[13px] shrink-0 rounded-full border-[1.5px] transition-colors duration-300 ${
                                 note.usedAt !== null
-                                  ? 'border-droid-accent bg-droid-accent'
-                                  : 'border-droid-text-muted/40 group-hover:border-droid-text-muted/70'
+                                  ? 'border-accent bg-accent'
+                                  : 'border-muted/40 group-hover:border-muted/70'
                               }`}
                             />
                             <span
                               className={`line-clamp-2 min-w-0 flex-1 break-words pr-4 text-[13px] leading-snug transition-colors ${
                                 note.usedAt !== null
-                                  ? 'text-droid-text-muted'
-                                  : 'text-droid-text-secondary group-hover:text-droid-text'
+                                  ? 'text-muted'
+                                  : 'text-secondary group-hover:text-primary'
                               }`}
                             >
                               {tag && (
@@ -357,7 +353,7 @@ export function NotesPanel({
                               onRemove(note.id);
                             }}
                             title="Delete note"
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-droid-text-muted opacity-0 transition-opacity hover:bg-droid-active hover:text-droid-text focus-visible:opacity-100 group-hover:opacity-100"
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted opacity-0 transition-opacity hover:bg-active hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -367,7 +363,7 @@ export function NotesPanel({
                   </AnimatePresence>
 
                   {notes.length === 0 && (
-                    <div className="px-3 py-1.5 text-[12px] leading-snug text-droid-text-muted">
+                    <div className="px-3 py-1.5 text-[12px] leading-snug text-muted">
                       No notes yet — write one above, Enter to save. Start it with @bug, @next,
                       @idea or @constraint to tag it.
                     </div>

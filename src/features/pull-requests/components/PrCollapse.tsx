@@ -6,7 +6,7 @@ export function FoldChevron({ open }: { open: boolean }) {
   return (
     <ChevronDown
       aria-hidden="true"
-      className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform duration-200 ease-out group-hover:text-droid-text-secondary motion-reduce:transition-none ${
+      className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ease-out group-hover:text-secondary motion-reduce:transition-none ${
         open ? '' : '-rotate-90'
       }`}
     />

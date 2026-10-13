@@ -63,7 +63,7 @@ export function SidebarPullRequests({
   return (
     <div className="space-y-3">
       {groups.size === 0 && (
-        <p className="px-3 py-1 text-[11px] leading-relaxed text-droid-text-muted">
+        <p className="px-3 py-1 text-[11px] leading-relaxed text-muted">
           Pull requests are linked automatically from your chats’ worktrees.
         </p>
       )}
@@ -74,7 +74,7 @@ export function SidebarPullRequests({
           <section key={url} aria-label={`PR #${String(pr.number)} ${pr.title}`}>
             <button
               type="button"
-              className="group/heading flex w-full cursor-pointer items-center gap-2.5 rounded-md py-1.5 pl-3 pr-3 text-left text-[13px] font-medium text-droid-text-secondary transition-colors hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+              className="group/heading flex w-full cursor-pointer items-center gap-2.5 rounded-md py-1.5 pl-3 pr-3 text-left text-[13px] font-medium text-secondary transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
               title={`${url} · ${prKindLabel(kind)} (last detected)`}
               aria-expanded={open}
               onClick={() => {
@@ -92,7 +92,7 @@ export function SidebarPullRequests({
                   aria-hidden="true"
                 />
               </span>
-              <span className="shrink-0 text-[11px] font-normal text-droid-text-muted">
+              <span className="shrink-0 text-[11px] font-normal text-muted">
                 {prKindLabel(kind)}
               </span>
             </button>

@@ -71,22 +71,22 @@ export function DiagnosticsSettings() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-7">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-droid-text">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-primary">
           Privacy & diagnostics
         </h1>
-        <p className="mt-1.5 max-w-xl text-[12px] leading-5 text-droid-text-muted">
+        <p className="mt-1.5 max-w-xl text-[12px] leading-5 text-muted">
           Control the automatic operational data DROIDEX sends to its private Sentry project.
         </p>
       </div>
 
-      <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+      <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted">
         Automatic diagnostics
       </div>
-      <div className="rounded-xl border border-droid-border bg-droid-surface">
+      <div className="rounded-xl border border-divider bg-surface">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
-            <div className="text-[13px] text-droid-text">Crash reports and Release Health</div>
-            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-droid-text-muted">
+            <div className="text-[13px] text-primary">Crash reports and Release Health</div>
+            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-muted">
               Sends app version, runtime and device context, crash stacks, native crash dumps, and a
               random local profile ID. Crash material can contain incidental sensitive data. It does
               not intentionally attach account identity as structured data. A minidump can still
@@ -104,7 +104,7 @@ export function DiagnosticsSettings() {
         </div>
       </div>
 
-      <p className="mt-3 text-[11px] leading-[17px] text-droid-text-muted">
+      <p className="mt-3 text-[11px] leading-[17px] text-muted">
         Changes apply immediately. Turning it off stops automatic reporting and deletes the local
         profile ID. Reports you explicitly submit through <span className="font-mono">/bug</span> or{' '}
         <span className="font-mono">/feedback</span> are still sent when you choose Submit.
@@ -115,14 +115,14 @@ export function DiagnosticsSettings() {
         </p>
       )}
 
-      <div className="mb-3 mt-8 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+      <div className="mb-3 mt-8 text-[11px] font-medium uppercase tracking-wider text-muted">
         Anonymous usage analytics
       </div>
-      <div className="rounded-xl border border-droid-border bg-droid-surface">
+      <div className="rounded-xl border border-divider bg-surface">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
-            <div className="text-[13px] text-droid-text">Count this installation</div>
-            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-droid-text-muted">
+            <div className="text-[13px] text-primary">Count this installation</div>
+            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-muted">
               Records that the app was opened, so DROIDEX knows how many installations are active.
               It sends a random installation ID, the app version, your platform and architecture,
               and which channel the build came from. It never sends your name, email, prompts,
@@ -143,7 +143,7 @@ export function DiagnosticsSettings() {
         </div>
       </div>
 
-      <p className="mt-3 text-[11px] leading-[17px] text-droid-text-muted">
+      <p className="mt-3 text-[11px] leading-[17px] text-muted">
         Turning it off stops the counting and deletes the stored installation ID. Turning it back on
         creates a new one, which counts as a separate installation.
       </p>

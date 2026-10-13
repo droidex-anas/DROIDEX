@@ -23,15 +23,15 @@ export function AgentSummaryLine({
   const layoutId = (status: string) => (morphId === undefined ? undefined : `${morphId}:${status}`);
   return (
     <span className={`flex items-center gap-2 ${className}`}>
-      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-droid-active/60">
+      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-active/60">
         <span
           data-testid="agent-progress"
           data-percent={percent}
-          className="block h-full rounded-full bg-droid-green motion-safe:transition-[width] motion-safe:duration-500"
+          className="block h-full rounded-full bg-success motion-safe:transition-[width] motion-safe:duration-500"
           style={{ width: `${String(percent)}%` }}
         />
       </span>
-      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-droid-text">
+      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-primary">
         {percent}%
       </span>
       {/* The counts sit where the rows keep their status pill, so expanding
@@ -54,7 +54,7 @@ export function AgentSummaryLine({
           {...(layoutId('queued') !== undefined ? { layoutId: layoutId('queued') } : {})}
         />
       ) : null}
-      <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-[12px] tabular-nums text-droid-text-muted">
+      <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-[12px] tabular-nums text-muted">
         {wave.timeMs != null ? formatDuration(wave.timeMs) : ''}
       </span>
     </span>

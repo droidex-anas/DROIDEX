@@ -103,7 +103,7 @@ export function AddMcpServerDialog({
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 8, scale: 0.99, opacity: 0 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="max-h-[calc(100vh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-divider bg-surface shadow-lg"
       >
         <form
           onSubmit={(event) => {
@@ -115,13 +115,13 @@ export function AddMcpServerDialog({
             <div>
               <h2
                 id="add-mcp-title"
-                className="text-[16px] font-semibold tracking-[-0.015em] text-droid-text"
+                className="text-[16px] font-semibold tracking-[-0.015em] text-primary"
               >
                 Add MCP server
               </h2>
               <p
                 id="add-mcp-description"
-                className="mt-1 max-w-md text-[12px] leading-5 text-droid-text-secondary"
+                className="mt-1 max-w-md text-[12px] leading-5 text-secondary"
               >
                 Saved to your Droid CLI user configuration and available to new DROIDEX sessions.
               </p>
@@ -131,13 +131,13 @@ export function AddMcpServerDialog({
               onClick={onCancel}
               disabled={disabled}
               aria-label="Close add MCP server"
-              className="rounded-lg p-2 text-droid-text-secondary transition-all duration-150 hover:bg-droid-elevated hover:text-droid-text active:scale-[0.96] disabled:opacity-40"
+              className="rounded-lg p-2 text-secondary transition-all duration-150 hover:bg-elevated hover:text-primary active:scale-[0.96] disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
           </header>
 
-          <div className="border-y border-droid-border/70 px-5 py-5 sm:px-6">
+          <div className="border-y border-divider/70 px-5 py-5 sm:px-6">
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_160px]">
               <Field
                 inputRef={nameRef}
@@ -146,14 +146,14 @@ export function AddMcpServerDialog({
                 onChange={setName}
                 placeholder="sentry"
               />
-              <label className="block text-[12px] font-medium text-droid-text-secondary">
+              <label className="block text-[12px] font-medium text-secondary">
                 Type
                 <select
                   value={serverType}
                   onChange={(event) => {
                     setServerType(serverTypeFromValue(event.target.value));
                   }}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-droid-border bg-droid-field px-3 text-[13px] text-droid-text outline-none transition-colors focus:border-droid-border-hover focus-visible:ring-1 focus-visible:ring-droid-accent/30"
+                  className="mt-1.5 h-10 w-full rounded-xl border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
                 >
                   <option value="http">HTTP</option>
                   <option value="sse">SSE</option>
@@ -189,25 +189,25 @@ export function AddMcpServerDialog({
             />
 
             {(error ?? serverError) && (
-              <div role="alert" className="mt-3 text-[12px] text-droid-orange">
+              <div role="alert" className="mt-3 text-[12px] text-warning">
                 {error ?? serverError}
               </div>
             )}
           </div>
 
-          <footer className="flex items-center justify-end gap-2 bg-droid-bg/30 px-5 py-4 sm:px-6">
+          <footer className="flex items-center justify-end gap-2 bg-bg/30 px-5 py-4 sm:px-6">
             <button
               type="button"
               onClick={onCancel}
               disabled={disabled}
-              className="rounded-lg px-3.5 py-2 text-[12px] font-medium text-droid-text-secondary transition-all duration-150 hover:bg-droid-elevated/70 hover:text-droid-text active:scale-[0.97] disabled:opacity-40"
+              className="rounded-lg px-3.5 py-2 text-[12px] font-medium text-secondary transition-all duration-150 hover:bg-elevated/70 hover:text-primary active:scale-[0.97] disabled:opacity-40"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={disabled}
-              className="min-w-[104px] rounded-lg bg-droid-accent px-4 py-2 text-[12px] font-semibold text-droid-bg transition-all duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
+              className="min-w-[104px] rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-bg transition-all duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
             >
               {disabled ? 'Adding…' : 'Add server'}
             </button>
@@ -238,7 +238,7 @@ function Field({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-[12px] font-medium text-droid-text-secondary">
+    <label className="block text-[12px] font-medium text-secondary">
       {label}
       <input
         ref={inputRef}
@@ -247,7 +247,7 @@ function Field({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        className="mt-1.5 h-10 w-full rounded-xl border border-droid-border bg-droid-field px-3 text-[13px] text-droid-text outline-none transition-colors placeholder:text-droid-text-muted focus:border-droid-border-hover focus-visible:ring-1 focus-visible:ring-droid-accent/30"
+        className="mt-1.5 h-10 w-full rounded-xl border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
       />
     </label>
   );
@@ -267,8 +267,8 @@ function TextAreaField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="mt-4 block text-[12px] font-medium text-droid-text-secondary">
-      {label} <span className="font-normal text-droid-text-muted">· {hint}</span>
+    <label className="mt-4 block text-[12px] font-medium text-secondary">
+      {label} <span className="font-normal text-muted">· {hint}</span>
       <textarea
         value={value}
         onChange={(event) => {
@@ -276,7 +276,7 @@ function TextAreaField({
         }}
         rows={3}
         placeholder={placeholder}
-        className="mt-1.5 w-full resize-none rounded-xl border border-droid-border bg-droid-field px-3 py-2.5 text-[13px] leading-5 text-droid-text outline-none transition-colors placeholder:text-droid-text-muted focus:border-droid-border-hover focus-visible:ring-1 focus-visible:ring-droid-accent/30"
+        className="mt-1.5 w-full resize-none rounded-xl border border-divider bg-field px-3 py-2.5 text-[13px] leading-5 text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
       />
     </label>
   );

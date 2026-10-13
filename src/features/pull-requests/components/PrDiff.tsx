@@ -29,13 +29,13 @@ function FileRow({
       }}
       title={file.path}
       className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${
-        selected ? 'bg-droid-active' : 'hover:bg-droid-elevated/50'
+        selected ? 'bg-active' : 'hover:bg-elevated/50'
       }`}
     >
       <FileTypeIcon filename={file.path} className="h-3.5 w-3.5" />
       <span className="min-w-0 flex-1 truncate text-[13px]">
-        {dir ? <span className="text-droid-text-muted/70">{dir}</span> : null}
-        <span className="text-droid-text">{name}</span>
+        {dir ? <span className="text-muted/70">{dir}</span> : null}
+        <span className="text-primary">{name}</span>
       </span>
       <span className="shrink-0 text-[11px] tabular-nums">
         {file.additions > 0 ? (
@@ -93,7 +93,7 @@ export function PrDiff({ diff }: { diff: string }) {
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-8">
-        <p className="text-[13px] text-droid-text-muted">No file changes.</p>
+        <p className="text-[13px] text-muted">No file changes.</p>
       </div>
     );
   }

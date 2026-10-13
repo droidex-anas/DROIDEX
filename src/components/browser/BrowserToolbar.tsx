@@ -45,7 +45,7 @@ interface BrowserToolbarProps {
 const EASE = 'ease-[cubic-bezier(0.22,1,0.36,1)]';
 // Short, soft feedback on every control, and none of the movement when the
 // reader asks for less.
-const PRESS = `transition-[background-color,color,box-shadow,transform,opacity] duration-150 ${EASE} active:scale-[0.94] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 disabled:pointer-events-none disabled:opacity-30`;
+const PRESS = `transition-[background-color,color,box-shadow,transform,opacity] duration-150 ${EASE} active:scale-[0.94] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:pointer-events-none disabled:opacity-30`;
 
 // Navigation quietly on the left, the address as the one wide thing in the
 // middle, the pane's size and the design tools on the right.
@@ -71,7 +71,7 @@ export function BrowserToolbar({
 }: BrowserToolbarProps) {
   const drawing = designMode && pencilMode;
   return (
-    <header className="relative flex h-12 shrink-0 items-center gap-2 border-b border-droid-border bg-droid-bg px-2">
+    <header className="relative flex h-12 shrink-0 items-center gap-2 border-b border-divider bg-bg px-2">
       <div className="flex shrink-0 items-center gap-1">
         <IconButton
           title="Back: return to the previous page (⌘[)"
@@ -125,7 +125,7 @@ export function BrowserToolbar({
           role="group"
           aria-label="Design tools"
           className={`flex items-center gap-0.5 rounded-full p-0.5 transition-colors duration-150 ${
-            designMode ? 'bg-droid-elevated' : 'bg-droid-elevated/50'
+            designMode ? 'bg-elevated' : 'bg-elevated/50'
           }`}
         >
           <ToolButton
@@ -188,18 +188,18 @@ function AddressBar({
 
   return (
     <form
-      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-droid-elevated/60 pl-3.5 pr-1 transition-[background-color,box-shadow] duration-150 ${EASE} hover:bg-droid-elevated focus-within:!bg-droid-raised focus-within:shadow-[0_0_0_1px_var(--droid-border-hover),0_0_0_4px_color-mix(in_srgb,var(--droid-accent)_8%,transparent)] motion-reduce:transition-none`}
+      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-elevated/60 pl-3.5 pr-1 transition-[background-color,box-shadow] duration-150 ${EASE} hover:bg-elevated focus-within:!bg-raised focus-within:shadow-[0_0_0_1px_var(--divider-strong),0_0_0_4px_color-mix(in_srgb,var(--accent)_8%,transparent)] motion-reduce:transition-none`}
       onSubmit={(event) => {
         event.preventDefault();
         onOpen();
       }}
     >
       {searching ? (
-        <Search className="h-4 w-4 shrink-0 text-droid-text-muted" />
+        <Search className="h-4 w-4 shrink-0 text-muted" />
       ) : link ? (
         <LinkBadge key={link.host} link={link} className="h-4 w-4 shrink-0" />
       ) : (
-        <Globe className="h-4 w-4 shrink-0 text-droid-text-muted" />
+        <Globe className="h-4 w-4 shrink-0 text-muted" />
       )}
       <span className="relative h-full min-w-0 flex-1">
         <input
@@ -226,7 +226,7 @@ function AddressBar({
             event.currentTarget.blur();
           }}
           spellCheck={false}
-          className="peer absolute inset-0 h-full w-full min-w-0 bg-transparent text-[13px] text-transparent outline-none placeholder:text-droid-text-muted focus:text-droid-text"
+          className="peer absolute inset-0 h-full w-full min-w-0 bg-transparent text-[13px] text-transparent outline-none placeholder:text-muted focus:text-primary"
           placeholder="Search or enter address"
           aria-label="Browser address"
         />
@@ -236,7 +236,7 @@ function AddressBar({
         <span
           role="img"
           aria-label="Secure connection"
-          className="flex h-7 w-5 shrink-0 items-center justify-center text-droid-text-muted group-focus-within:hidden"
+          className="flex h-7 w-5 shrink-0 items-center justify-center text-muted group-focus-within:hidden"
         >
           <Lock className="h-3.5 w-3.5" />
         </span>
@@ -252,7 +252,7 @@ function AddressBar({
           onMouseDown={(event) => {
             event.preventDefault();
           }}
-          className={`flex h-7 w-7 items-center justify-center rounded-full bg-droid-elevated text-droid-text-secondary hover:bg-droid-active hover:text-droid-text ${PRESS}`}
+          className={`flex h-7 w-7 items-center justify-center rounded-full bg-elevated text-secondary hover:bg-active hover:text-primary ${PRESS}`}
         >
           <CornerDownLeft className="h-3.5 w-3.5" />
         </button>
@@ -273,8 +273,8 @@ function AddressText({ value }: { value: string }) {
       className="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-nowrap text-[13px] peer-focus:invisible"
     >
       <span className="truncate">
-        <span className="font-medium text-droid-text">{host}</span>
-        <span className="text-droid-text-muted">{rest}</span>
+        <span className="font-medium text-primary">{host}</span>
+        <span className="text-muted">{rest}</span>
       </span>
     </span>
   );
@@ -291,7 +291,7 @@ function LoadingBar({ loading }: { loading: boolean }) {
         <motion.div
           key="loading"
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 origin-left bg-droid-accent"
+          className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 origin-left bg-accent"
           initial={{ scaleX: still ? 1 : 0, opacity: still ? 0.6 : 1 }}
           animate={{
             scaleX: still ? 1 : 0.85,
@@ -331,8 +331,8 @@ function IconButton({
         onClick={onClick}
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${PRESS} ${
           active
-            ? 'bg-droid-elevated text-droid-text'
-            : 'text-droid-text-secondary hover:bg-droid-elevated/70 hover:text-droid-text'
+            ? 'bg-elevated text-primary'
+            : 'text-secondary hover:bg-elevated/70 hover:text-primary'
         }`}
       >
         {children}
@@ -368,8 +368,8 @@ function ToolButton({
         onClick={onClick}
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${PRESS} ${
           current
-            ? 'bg-droid-text text-droid-bg shadow-droid-sm'
-            : 'text-droid-text-secondary hover:bg-droid-active hover:text-droid-text aria-pressed:text-droid-text'
+            ? 'bg-text text-bg shadow-sm'
+            : 'text-secondary hover:bg-active hover:text-primary aria-pressed:text-primary'
         }`}
       >
         {children}

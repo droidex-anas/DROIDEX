@@ -52,10 +52,10 @@ const SLIDER_STYLE = {
   '--effort-surface': 'transparent',
   '--effort-border': 'transparent',
   '--effort-shadow': 'none',
-  '--effort-text': 'var(--droid-text)',
-  '--effort-muted': 'var(--droid-text-muted)',
-  '--effort-fill': 'color-mix(in srgb, var(--droid-text) 45%, transparent)',
-  '--effort-accent': 'var(--droid-ultra, #a392e5)',
+  '--effort-text': 'var(--text)',
+  '--effort-muted': 'var(--text-muted)',
+  '--effort-fill': 'color-mix(in srgb, var(--text) 45%, transparent)',
+  '--effort-accent': 'var(--ultra, #a392e5)',
 } as CSSProperties;
 
 /**
@@ -205,7 +205,7 @@ export default function ModelSliderPopover({
     >
       <div
         ref={setCard}
-        className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised shadow-droid"
+        className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-divider/60 bg-raised shadow-lg"
       >
         <AnimatePresence mode="wait" initial={false}>
           {showEffortView ? (
@@ -224,7 +224,7 @@ export default function ModelSliderPopover({
                   onClick={() => {
                     setView('list');
                   }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-surface/60 hover:text-droid-text"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface/60 hover:text-primary"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -241,8 +241,8 @@ export default function ModelSliderPopover({
                       }}
                       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-40 ${
                         fastMode
-                          ? 'bg-droid-surface text-droid-accent'
-                          : 'text-droid-text-muted enabled:hover:bg-droid-surface/60 enabled:hover:text-droid-text'
+                          ? 'bg-surface text-accent'
+                          : 'text-muted enabled:hover:bg-surface/60 enabled:hover:text-primary'
                       }`}
                     >
                       <Zap
@@ -261,7 +261,7 @@ export default function ModelSliderPopover({
                     <DroidProxyMark size={12} />
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text">
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary">
                   {shortModelName(selectedLabel)}
                 </span>
                 {offersContextWindow(provider) && (
@@ -279,7 +279,7 @@ export default function ModelSliderPopover({
                     onClick={() => {
                       sliderRef.current?.setValue(defaultEffort, { emit: true });
                     }}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-surface/60 hover:text-droid-text"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface/60 hover:text-primary"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
@@ -315,8 +315,8 @@ export default function ModelSliderPopover({
 
               <div className="flex min-h-0 flex-col px-3 pt-3 pb-3">
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-droid-bg/50 px-3">
-                    <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+                  <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-bg/50 px-3">
+                    <Search className="h-3.5 w-3.5 shrink-0 text-muted" />
                     <input
                       autoFocus
                       value={query}
@@ -324,7 +324,7 @@ export default function ModelSliderPopover({
                         setQuery(e.target.value);
                       }}
                       placeholder="Search models"
-                      className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text placeholder-droid-text-muted focus:outline-none"
+                      className="min-w-0 flex-1 bg-transparent text-[13px] text-primary placeholder-muted focus:outline-none"
                     />
                   </div>
                   {catOptions.length > 0 && (
@@ -338,9 +338,7 @@ export default function ModelSliderPopover({
                   )}
                 </div>
 
-                <div className="px-0.5 pt-2.5 pb-1 text-[11px] text-droid-text-muted">
-                  Select model
-                </div>
+                <div className="px-0.5 pt-2.5 pb-1 text-[11px] text-muted">Select model</div>
 
                 <ModelSliderCatalogList
                   models={models}
@@ -362,7 +360,7 @@ export default function ModelSliderPopover({
 
       {/* Tail */}
       <div
-        className="absolute -bottom-1.5 h-3 w-3 rotate-45 border-r border-b border-droid-border/60 bg-droid-raised"
+        className="absolute -bottom-1.5 h-3 w-3 rotate-45 border-r border-b border-divider/60 bg-raised"
         style={{ right: tailRight }}
       />
     </motion.div>

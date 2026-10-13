@@ -44,12 +44,12 @@ export async function copyMarkdownCode(
 // One look for every control in a code or diagram card header: a quiet label
 // that gains a soft tint under the pointer or keyboard focus.
 export const CARD_CONTROL_CLASS =
-  'flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-droid-text-muted transition-colors duration-150 hover:bg-droid-active hover:text-droid-text focus-visible:bg-droid-active focus-visible:text-droid-text focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40';
+  'flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted transition-colors duration-150 hover:bg-active hover:text-primary focus-visible:bg-active focus-visible:text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40';
 
 export function CardHeader({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex h-8 items-center justify-between gap-2 pl-3.5 pr-1.5">
-      <span className="truncate text-[11.5px] font-medium text-droid-text-muted">{label}</span>
+      <span className="truncate text-[11.5px] font-medium text-muted">{label}</span>
       <div className="flex shrink-0 items-center gap-0.5">{children}</div>
     </div>
   );
@@ -79,7 +79,7 @@ export function CodeCopyButton({ text }: { text: string }) {
       className={CARD_CONTROL_CLASS}
       title="Copy"
     >
-      {copied ? <Check className="h-3 w-3 text-droid-green" /> : <Copy className="h-3 w-3" />}
+      {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
       <span aria-live="polite">{copied ? 'Copied' : 'Copy'}</span>
     </button>
   );
@@ -100,38 +100,38 @@ export function HighlightJson({ code }: { code: string }) {
         // makes this a key is two tokens on, across (at most) whitespace.
         if (tokens[i + 1].trim() === '' && tokens[i + 2] === ':') {
           return (
-            <span key={i} style={{ color: 'var(--droid-accent)' }}>
+            <span key={i} style={{ color: 'var(--accent)' }}>
               {token}
             </span>
           );
         }
         return (
-          <span key={i} style={{ color: 'var(--droid-green)' }}>
+          <span key={i} style={{ color: 'var(--success)' }}>
             {token}
           </span>
         );
       }
       if (token === 'true' || token === 'false')
         return (
-          <span key={i} style={{ color: 'var(--droid-orange)' }}>
+          <span key={i} style={{ color: 'var(--warning)' }}>
             {token}
           </span>
         );
       if (token === 'null')
         return (
-          <span key={i} style={{ color: 'var(--droid-text-muted)' }}>
+          <span key={i} style={{ color: 'var(--text-muted)' }}>
             {token}
           </span>
         );
       if (/^-?\d/.exec(token))
         return (
-          <span key={i} style={{ color: 'var(--droid-orange)' }}>
+          <span key={i} style={{ color: 'var(--warning)' }}>
             {token}
           </span>
         );
       if (/^[{}[\],:!]$/.test(token))
         return (
-          <span key={i} style={{ color: 'var(--droid-text-muted)' }}>
+          <span key={i} style={{ color: 'var(--text-muted)' }}>
             {token}
           </span>
         );
@@ -159,7 +159,7 @@ function LineGutter({ count, sizeClass }: { count: number; sizeClass: string }) 
   return (
     <div
       aria-hidden
-      className={`mr-4 shrink-0 select-none text-right font-mono leading-[1.65] text-droid-text-muted/55 ${sizeClass}`}
+      className={`mr-4 shrink-0 select-none text-right font-mono leading-[1.65] text-muted/55 ${sizeClass}`}
     >
       {Array.from({ length: count }, (_, i) => (
         <div key={i}>{i + 1}</div>
@@ -196,7 +196,7 @@ function CodeCardControls({
       )}
       <button
         onClick={onToggleWrap}
-        className={`${CARD_CONTROL_CLASS} ${wrapped ? 'bg-droid-active text-droid-text' : ''}`}
+        className={`${CARD_CONTROL_CLASS} ${wrapped ? 'bg-active text-primary' : ''}`}
         title={wrapped ? 'Disable soft wrap' : 'Soft wrap long lines'}
         aria-pressed={wrapped}
       >
@@ -230,9 +230,7 @@ export function CodeCard({
   const collapsedMaxHeight = `calc((var(--code-font-size) + ${specMode ? '1px' : '0px'}) * 1.65 * ${String(COLLAPSED_LINES)} + 0.25rem)`;
 
   return (
-    <div
-      className={`overflow-hidden rounded-xl bg-droid-elevated/50 ${specMode ? 'my-4' : 'my-2.5'}`}
-    >
+    <div className={`overflow-hidden rounded-xl bg-elevated/50 ${specMode ? 'my-4' : 'my-2.5'}`}>
       <CardHeader label={languageLabel(className)}>
         <CodeCardControls
           collapsible={collapsible}
@@ -261,7 +259,7 @@ export function CodeCard({
           >
             {showGutter && <LineGutter count={lines.length} sizeClass={sizeClass} />}
             <code
-              className={`font-mono leading-[1.65] text-droid-text/90 ${wrapped ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'} ${sizeClass}`}
+              className={`font-mono leading-[1.65] text-primary/90 ${wrapped ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'} ${sizeClass}`}
             >
               {highlighted ?? code}
             </code>
@@ -274,7 +272,7 @@ export function CodeCard({
                 setCollapsed(false);
               }}
               aria-expanded={false}
-              className="flex h-7 items-center gap-1 rounded-full bg-droid-raised px-3 text-[11.5px] font-medium text-droid-text-secondary shadow-droid-sm transition-colors duration-150 hover:text-droid-text focus-visible:text-droid-text focus-visible:outline-none"
+              className="flex h-7 items-center gap-1 rounded-full bg-raised px-3 text-[11.5px] font-medium text-secondary shadow-sm transition-colors duration-150 hover:text-primary focus-visible:text-primary focus-visible:outline-none"
             >
               <ChevronDown className="h-3 w-3" />
               Show all {String(lines.length)} lines

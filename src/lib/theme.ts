@@ -382,7 +382,7 @@ const MARK_COLORS = {
 // The top reasoning level reads by hue on every theme, the way skills and links
 // do: the neutral accent cannot say "this one is different" when it is the same
 // tone the rest of the chrome already uses. Each scheme carries the shade that
-// keeps AA for 12px label text on its composer surface (--droid-elevated).
+// keeps AA for 12px label text on its composer surface (--elevated).
 export const ULTRA_COLORS = {
   dark: '#bba6ff',
   light: '#6d28d9',
@@ -443,31 +443,28 @@ function uiFontStack(id: string): string {
 /* ── apply CSS variables to document ── */
 export function applyTheme(theme: ThemeSettings) {
   const root = document.documentElement;
-  root.style.setProperty('--droid-bg', theme.bg);
-  root.style.setProperty('--droid-surface', theme.surface);
+  root.style.setProperty('--bg', theme.bg);
+  root.style.setProperty('--surface', theme.surface);
   // Build the elevation ramp in the correct direction for the theme (see
   // surfaceStep), so both modes get the same visible tonal hierarchy.
   const bgIsDark = colorLuminance(theme.bg) < 0.4;
-  root.style.setProperty('--droid-elevated', elevatedSurfaceColor(theme));
+  root.style.setProperty('--elevated', elevatedSurfaceColor(theme));
   // Input fields inside cards share the elevated rung: a raised pad on dark, a
   // recessed well on light. Both read as a distinct field against the card.
-  root.style.setProperty('--droid-field', surfaceStep(theme, 13));
+  root.style.setProperty('--field', surfaceStep(theme, 13));
   // The most-raised neutral, for selected/active rows.
-  root.style.setProperty('--droid-active', surfaceStep(theme, 26));
-  root.style.setProperty('--droid-raised', raisedSurfaceColor(theme));
+  root.style.setProperty('--active', surfaceStep(theme, 26));
+  root.style.setProperty('--raised', raisedSurfaceColor(theme));
   // Soften resting borders by blending toward the background so panel/section
   // separators read as gentle hairlines rather than hard lines. Dark themes need
   // a stronger blend: at low luminance the same edge reads as a harsh outline, so
   // we push it closer to the background to keep the subtle look light mode has.
-  root.style.setProperty('--droid-border', mixHex(theme.border, theme.bg, bgIsDark ? 0.72 : 0.6));
-  root.style.setProperty(
-    '--droid-border-hover',
-    mixHex(theme.border, theme.bg, bgIsDark ? 0.4 : 0.2),
-  );
-  root.style.setProperty('--droid-text', theme.fg);
+  root.style.setProperty('--divider', mixHex(theme.border, theme.bg, bgIsDark ? 0.72 : 0.6));
+  root.style.setProperty('--divider-strong', mixHex(theme.border, theme.bg, bgIsDark ? 0.4 : 0.2));
+  root.style.setProperty('--text', theme.fg);
   if (bgIsDark) {
-    root.style.setProperty('--droid-text-secondary', adjustColor(theme.fg, -30));
-    root.style.setProperty('--droid-text-muted', adjustColor(theme.fg, -50));
+    root.style.setProperty('--text-secondary', adjustColor(theme.fg, -30));
+    root.style.setProperty('--text-muted', adjustColor(theme.fg, -50));
   } else {
     // Light themes have no dark headroom below a near-black fg (darkening would
     // invert the hierarchy into pure black), so mute by blending toward the
@@ -479,28 +476,28 @@ export function applyTheme(theme: ThemeSettings) {
     // against whichever of the canvas and the elevated tone is harder.
     const elevated = elevatedSurfaceColor(theme);
     const ground = colorLuminance(elevated) < colorLuminance(theme.bg) ? elevated : theme.bg;
-    root.style.setProperty('--droid-text-secondary', mixToContrast(theme.fg, ground, 7));
-    root.style.setProperty('--droid-text-muted', mixToContrast(theme.fg, ground, 4.5));
+    root.style.setProperty('--text-secondary', mixToContrast(theme.fg, ground, 7));
+    root.style.setProperty('--text-muted', mixToContrast(theme.fg, ground, 4.5));
   }
-  root.style.setProperty('--droid-accent', theme.accent);
-  root.style.setProperty('--droid-skill', bgIsDark ? SKILL_COLORS.dark : SKILL_COLORS.light);
-  root.style.setProperty('--droid-link', bgIsDark ? LINK_COLORS.dark : LINK_COLORS.light);
-  root.style.setProperty('--droid-ultra', bgIsDark ? ULTRA_COLORS.dark : ULTRA_COLORS.light);
+  root.style.setProperty('--accent', theme.accent);
+  root.style.setProperty('--skill', bgIsDark ? SKILL_COLORS.dark : SKILL_COLORS.light);
+  root.style.setProperty('--link', bgIsDark ? LINK_COLORS.dark : LINK_COLORS.light);
+  root.style.setProperty('--ultra', bgIsDark ? ULTRA_COLORS.dark : ULTRA_COLORS.light);
   const markShade = bgIsDark ? 'dark' : 'light';
-  root.style.setProperty('--droid-skill-mark', MARK_COLORS.skill[markShade]);
-  root.style.setProperty('--droid-visualize-mark', MARK_COLORS.visualize[markShade]);
+  root.style.setProperty('--skill-mark', MARK_COLORS.skill[markShade]);
+  root.style.setProperty('--visualize-mark', MARK_COLORS.visualize[markShade]);
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
   // Light themes lead with a faint 1px ring: a white card on near-white paper
   // needs an edge, and the ring gives one without drawing a visible outline.
   root.style.setProperty(
-    '--droid-shadow',
+    '--shadow-lg',
     bgIsDark
       ? '0 10px 40px rgba(0, 0, 0, 0.35)'
       : '0 0 0 1px rgba(28, 25, 23, 0.04), 0 2px 4px rgba(28, 25, 23, 0.04), 0 12px 32px rgba(28, 25, 23, 0.08)',
   );
   root.style.setProperty(
-    '--droid-shadow-sm',
+    '--shadow-sm',
     bgIsDark
       ? '0 4px 16px rgba(0, 0, 0, 0.28)'
       : '0 0 0 1px rgba(28, 25, 23, 0.04), 0 1px 2px rgba(28, 25, 23, 0.04), 0 6px 16px rgba(28, 25, 23, 0.06)',
@@ -512,16 +509,16 @@ export function applyTheme(theme: ThemeSettings) {
   // them below AA for 11–13px status text. Red clears AA on every built-in
   // light canvas, so it always keeps its tuned shade.
   root.style.setProperty(
-    '--droid-green',
+    '--success',
     bgIsDark ? '#4fae82' : statusColorOnLight('#1f7a4d', theme.bg),
   );
   root.style.setProperty(
-    '--droid-orange',
+    '--warning',
     bgIsDark ? '#d9913a' : statusColorOnLight('#9a5a0f', theme.bg),
   );
-  root.style.setProperty('--droid-red', bgIsDark ? '#cf5d54' : '#b3312a');
-  root.style.setProperty('--droid-update', UPDATE_COLORS.base);
-  root.style.setProperty('--droid-update-hover', UPDATE_COLORS.hover);
+  root.style.setProperty('--danger', bgIsDark ? '#cf5d54' : '#b3312a');
+  root.style.setProperty('--update', UPDATE_COLORS.base);
+  root.style.setProperty('--update-hover', UPDATE_COLORS.hover);
   root.setAttribute('data-diff-style', theme.diffStyle);
   const diffPalette = diffPaletteForTheme(bgIsDark, theme.diffStyle);
   root.style.setProperty('--diff-add-fg', diffPalette.addFg);
@@ -555,7 +552,7 @@ export function applyTheme(theme: ThemeSettings) {
   // so the near-white reading area stays the brightest region of the window.
   const sidebarColor = bgIsDark ? theme.surface : adjustColor(theme.bg, -6);
   root.style.setProperty(
-    '--sidebar-bg',
+    '--sidebar',
     theme.translucentSidebar ? `${sidebarColor}${sidebarAlpha}` : sidebarColor,
   );
   root.style.setProperty(

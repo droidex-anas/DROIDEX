@@ -17,26 +17,23 @@ export default function SetupBanner({
   onDismiss?: () => void;
 }) {
   const Icon = kind === 'blocker' ? AlertTriangle : ArrowUpCircle;
-  const accent = kind === 'blocker' ? 'text-droid-orange' : 'text-droid-accent';
+  const accent = kind === 'blocker' ? 'text-warning' : 'text-accent';
   return (
     <div
-      className="shrink-0 flex items-center gap-2 pr-4 h-9 border-b border-droid-border bg-droid-elevated/60 text-[12px]"
+      className="shrink-0 flex items-center gap-2 pr-4 h-9 border-b border-divider bg-elevated/60 text-[12px]"
       style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
     >
       <Icon className={`w-3.5 h-3.5 ${accent}`} />
-      <span className="text-droid-text">{message}</span>
+      <span className="text-primary">{message}</span>
       <button
         onClick={onAction}
-        className="ml-1 px-2 py-0.5 rounded-md bg-droid-accent text-droid-bg text-[11px] font-medium hover:opacity-90 transition-opacity"
+        className="ml-1 px-2 py-0.5 rounded-md bg-accent text-bg text-[11px] font-medium hover:opacity-90 transition-opacity"
       >
         {actionLabel}
       </button>
       <div className="flex-1" />
       {onDismiss && (
-        <button
-          onClick={onDismiss}
-          className="text-droid-text-muted hover:text-droid-text transition-colors"
-        >
+        <button onClick={onDismiss} className="text-muted hover:text-primary transition-colors">
           <X className="w-3.5 h-3.5" />
         </button>
       )}

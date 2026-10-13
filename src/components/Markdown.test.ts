@@ -234,9 +234,9 @@ test('small JSON fences keep token highlighting and large ones stay plain', asyn
   const smallHtml = renderToStaticMarkup(createElement(Markdown, null, small));
   const largeHtml = renderToStaticMarkup(createElement(Markdown, null, large));
   // Keys read by accent, string values by green.
-  assert.match(smallHtml, /--droid-accent\)">&quot;accent&quot;/);
-  assert.match(smallHtml, /--droid-green\)">&quot;droid&quot;/);
-  assert.doesNotMatch(largeHtml, /--droid-green/);
+  assert.match(smallHtml, /--accent\)">&quot;accent&quot;/);
+  assert.match(smallHtml, /--success\)">&quot;droid&quot;/);
+  assert.doesNotMatch(largeHtml, /--success/);
   assert.match(largeHtml, /k1199/);
 });
 

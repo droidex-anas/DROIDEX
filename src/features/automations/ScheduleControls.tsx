@@ -114,9 +114,9 @@ export function ScheduleControls({
                 onChange({ kind: 'cron', expression: event.target.value });
               }}
               placeholder="0 9 * * 1-5"
-              className="w-full rounded-lg border border-droid-border bg-droid-bg/70 px-2.5 py-1.5 text-right text-[12px] tabular-nums text-droid-text outline-none transition-colors placeholder:text-droid-text-muted focus:border-droid-border-hover"
+              className="w-full rounded-lg border border-divider bg-bg/70 px-2.5 py-1.5 text-right text-[12px] tabular-nums text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong"
             />
-            <div className="mt-1 text-right text-[11px] text-droid-text-muted">
+            <div className="mt-1 text-right text-[11px] text-muted">
               minute · hour · day · month · weekday
             </div>
           </div>
@@ -156,10 +156,10 @@ export function EditorRow({
   return (
     <div
       className={`flex min-h-12 items-center justify-between gap-4 px-3.5 py-2 text-[13px] ${
-        last ? '' : 'border-b border-droid-border/70'
+        last ? '' : 'border-b border-divider/70'
       }`}
     >
-      <span id={captionId} className="shrink-0 text-droid-text-secondary">
+      <span id={captionId} className="shrink-0 text-secondary">
         {label}
       </span>
       <div role="group" aria-labelledby={captionId} className="min-w-0 text-right">

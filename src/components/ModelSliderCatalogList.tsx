@@ -108,7 +108,7 @@ function SliderRow({
       }}
       title={model.displayName}
       className={`relative flex h-10 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 select-none ${
-        selected ? 'cursor-default' : 'hover:bg-droid-surface/60'
+        selected ? 'cursor-default' : 'hover:bg-surface/60'
       }`}
     >
       <span
@@ -123,7 +123,7 @@ function SliderRow({
       )}
       <span
         className={`min-w-0 flex-1 truncate text-[14px] font-medium ${
-          selected ? 'text-droid-text' : 'text-droid-text-secondary'
+          selected ? 'text-primary' : 'text-secondary'
         }`}
       >
         {shortModelName(model.displayName)}
@@ -137,12 +137,12 @@ function SliderRow({
             e.stopPropagation();
             onDrill();
           }}
-          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px] transition-colors hover:bg-droid-bg/60 ${
-            drillUltra ? 'text-droid-ultra' : 'text-droid-text-secondary hover:text-droid-text'
+          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px] transition-colors hover:bg-bg/60 ${
+            drillUltra ? 'text-ultra' : 'text-secondary hover:text-primary'
           }`}
         >
           {drillLabel}
-          <ChevronRight className="h-3 w-3 text-droid-text-muted" />
+          <ChevronRight className="h-3 w-3 text-muted" />
         </button>
       )}
     </div>

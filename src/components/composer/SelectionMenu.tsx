@@ -90,7 +90,7 @@ const FORMAT_GROUPS: FormatButton[][] = [
 ];
 
 function Separator() {
-  return <div role="separator" className="mx-1.5 my-1 h-px bg-droid-active" />;
+  return <div role="separator" className="mx-1.5 my-1 h-px bg-active" />;
 }
 
 function TextRow({
@@ -111,11 +111,11 @@ function TextRow({
       role="menuitem"
       disabled={disabled}
       onClick={onSelect}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-droid-surface/55 focus:bg-droid-surface focus:outline-none disabled:opacity-40 disabled:hover:bg-transparent"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-surface/55 focus:bg-surface focus:outline-none disabled:opacity-40 disabled:hover:bg-transparent"
     >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-      <span className="text-[13px] font-medium text-droid-text">{label}</span>
-      {hint ? <span className="ml-auto text-[11px] text-droid-text-muted">{hint}</span> : null}
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
+      <span className="text-[13px] font-medium text-primary">{label}</span>
+      {hint ? <span className="ml-auto text-[11px] text-muted">{hint}</span> : null}
     </button>
   );
 }
@@ -184,7 +184,7 @@ export default function SelectionMenu({
         top: above ? y - 4 : y + 4,
         transform: above ? 'translateY(-100%)' : undefined,
       }}
-      className="fixed z-50 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-droid-border-hover bg-droid-raised p-1 shadow-droid"
+      className="fixed z-50 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-divider-strong bg-raised p-1 shadow-lg"
     >
       {link ? (
         <>
@@ -240,7 +240,7 @@ export default function SelectionMenu({
               onClick={choose(() => {
                 onFormat(action);
               })}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-droid-text-secondary transition-colors hover:bg-droid-surface/55 hover:text-droid-text focus:bg-droid-surface focus:outline-none"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-surface/55 hover:text-primary focus:bg-surface focus:outline-none"
             >
               <Icon className="h-4 w-4" />
             </button>

@@ -719,8 +719,8 @@ export default function App() {
               aria-pressed={state.rightPanelOpen}
               // No pressed fill: like the sidebar and utility toggles beside it,
               // the open panel is its own evidence; the icon only brightens.
-              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
-                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
+              className={`rounded-md p-1.5 transition-colors hover:bg-elevated/60 hover:text-primary ${
+                state.rightPanelOpen ? 'text-primary' : 'text-muted/70'
               }`}
               title="Toggle context"
             >
@@ -731,7 +731,7 @@ export default function App() {
             <button
               ref={bindUtilityToggleIntent}
               onClick={toggleUtilityPane}
-              className="rounded-md p-1.5 text-droid-text-muted/70 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+              className="rounded-md p-1.5 text-muted/70 transition-colors hover:bg-elevated/60 hover:text-primary"
               title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
             >
               <PanelRight className="h-4 w-4" />
@@ -745,7 +745,7 @@ export default function App() {
   return (
     <div
       id="app-root"
-      className="h-screen w-screen flex flex-col bg-droid-bg text-droid-text overflow-hidden relative"
+      className="h-screen w-screen flex flex-col bg-bg text-primary overflow-hidden relative"
     >
       <div ref={bannerStackRef} className="shrink-0">
         {showBanner && (
@@ -788,7 +788,7 @@ export default function App() {
             window controls and the floating sidebar toggle into that row; the
             chat header reads the collapsed state and leaves them room. With a
             second tab open, the tab strip stacks above and takes that role. */}
-        <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
+        <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
           {state.tabStripShown && (
             <HeaderTabs
               leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
@@ -1097,7 +1097,7 @@ export default function App() {
           onClick={() => {
             dispatch({ type: 'TOGGLE_SIDEBAR' });
           }}
-          className="p-1.5 rounded-md text-droid-text-muted/70 hover:text-droid-text hover:bg-droid-elevated/60 transition-colors"
+          className="p-1.5 rounded-md text-muted/70 hover:text-primary hover:bg-elevated/60 transition-colors"
           title={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
         >
           <PanelLeft className="w-4 h-4" />

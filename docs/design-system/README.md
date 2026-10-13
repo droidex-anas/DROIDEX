@@ -31,7 +31,20 @@ DROIDEX is one desktop app for all your coding agents. The interface is a quiet,
 
 Two themes from the **Default** preset, dark first (the app's default and its `:root`). The values start from what `applyTheme` derives at runtime, with four text colours adjusted so every one reads on every surface.
 
-**Naming.** Tokens have plain semantic names: `bg`, `surface`, `text-muted`, `danger`. Map them in Tailwind so classes read `bg-surface`, `text-muted` and `bg-danger-soft`. The old `--droid-*` names in the code map one to one: drop the `droid-` prefix, except `--droid-border` → `divider`, `--droid-border-hover` → `divider-strong`, `--droid-green`/`orange`/`red` → `success`/`warning`/`danger`, and `--sidebar-bg` → `sidebar`. Brand colours keep the `brand-` prefix.
+**Naming.** Tokens have plain semantic names: `bg`, `surface`, `text-muted`, `danger`. Each one is a CSS variable of the same name (`--surface`) and a Tailwind colour, so classes read `bg-surface`, `text-muted` and `border-divider`. Brand colours keep the `brand-` prefix. The code's former `--droid-*` names map like this:
+
+| Former name | CSS variable | Tailwind |
+| --- | --- | --- |
+| `--droid-bg`, `surface`, `elevated`, `field`, `active`, `raised` | `--bg`, `--surface`, `--elevated`, `--field`, `--active`, `--raised` | `bg-surface`, `hover:bg-active`, `ring-offset-bg` … |
+| `--sidebar-bg` | `--sidebar` | `bg-sidebar` |
+| `--droid-text` | `--text` | `text-primary`; `bg-text`, `ring-text` where the text colour is a fill |
+| `--droid-text-secondary`, `text-muted` | `--text-secondary`, `--text-muted` | `text-secondary`, `text-muted`; `bg-secondary`, `bg-muted`, `placeholder-muted` |
+| `--droid-border`, `border-hover` | `--divider`, `--divider-strong` | `border-divider`, `divide-divider`, `bg-divider`, `border-divider-strong` |
+| `--droid-green`, `orange`, `red` | `--success`, `--warning`, `--danger` | `text-success`, `bg-danger/10` … |
+| `--droid-accent`, `link`, `skill`, `skill-mark`, `visualize-mark`, `ultra`, `update`, `update-hover` | the same name without `droid-` | `text-accent`, `bg-update` … |
+| `--droid-shadow`, `--droid-shadow-sm` (`shadow-droid`, `shadow-droid-sm`) | `--shadow-lg`, `--shadow-sm` | `shadow-lg`, `shadow-sm`, which replace Tailwind's defaults |
+
+Text colours use `text-primary` rather than `text-text`; the colour itself is also exposed as `text` for fills. The `diff-*` variables already had their final names.
 
 - **Neutral ramp.** Paint the window `bg`, cards and side panels `surface`, hover fills, chips and the composer `elevated`, inputs `field`, and selected rows and pressed controls `active`. The ramp always reads bg < surface < elevated < active. Floating layers (menus, popovers, tooltips, toasts) use `raised`, which lifts to near-white on light instead of darkening.
 - **Text.** `text` for primary copy and icons, `text-secondary` for supporting text and resting icons, `text-muted` for meta, timestamps and placeholders. All three, and every status colour, hold at least 4.5:1 on every surface, `active` included, in both themes. Don't go lighter than muted for anything that must be read.
@@ -119,5 +132,5 @@ The mark is a pixel **DX** monogram built on an 80px grid. On the light tile (`b
 
 - Only the **Default** preset is here. Midnight, Ember, Ocean and the branded presets in `src/lib/theme.ts` aren't, and neither is the "focused" diff style or the translucent sidebar variant.
 - No font files. Silkscreen, Inter and JetBrains Mono are served by Google Fonts, and SF Pro and SF Mono are system faces.
-- The component guidelines describe of how the app styles its controls (the Tailwind classes on its buttons, rows and menus, plus `src/components/environment/primitives.tsx`), redrawn without borders. The code still has borders, opaque `--droid-border` dividers and dark focus outlines; the migration removes them.
+- The component guidelines describe of how the app styles its controls (the Tailwind classes on its buttons, rows and menus, plus `src/components/environment/primitives.tsx`), redrawn without borders. The code still has borders, opaque `--divider` values and dark focus outlines; the migration removes them.
 - Not brought in: `assets/brand/dmg-background.*` (installer art), motion as tokens (the timings live in feel.md), and the per-component Tailwind one-offs.

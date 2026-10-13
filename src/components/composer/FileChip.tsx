@@ -14,8 +14,8 @@ const TILE_BY_KIND: Record<FileKind, string> = {
   image: 'bg-teal-500/15 text-teal-400',
   video: 'bg-rose-500/15 text-rose-400',
   audio: 'bg-orange-500/15 text-orange-400',
-  archive: 'bg-droid-text-muted/10 text-droid-text-muted',
-  file: 'bg-droid-text-muted/10 text-droid-text-muted',
+  archive: 'bg-muted/10 text-muted',
+  file: 'bg-muted/10 text-muted',
 };
 
 /**
@@ -58,9 +58,9 @@ export function FileChip({
             },
           }
         : {})}
-      className={`group relative flex max-w-60 items-center gap-2.5 rounded-xl border border-droid-border bg-droid-bg/60 py-2 pl-2 pr-2.5 text-left ${
+      className={`group relative flex max-w-60 items-center gap-2.5 rounded-xl border border-divider bg-bg/60 py-2 pl-2 pr-2.5 text-left ${
         onOpen
-          ? 'transition-colors hover:border-droid-border-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60'
+          ? 'transition-colors hover:border-divider-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60'
           : ''
       }`}
       title={onOpen ? `Open ${displayName} in Review` : displayName}
@@ -71,10 +71,8 @@ export function FileChip({
         <FileText className="h-4 w-4" />
       </span>
       <span className="min-w-0 leading-tight">
-        <span className="block truncate text-[12px] font-medium text-droid-text">
-          {displayName}
-        </span>
-        <span className="block text-[11px] text-droid-text-muted">{info.label}</span>
+        <span className="block truncate text-[12px] font-medium text-primary">{displayName}</span>
+        <span className="block text-[11px] text-muted">{info.label}</span>
       </span>
       {onRemove && (
         <button
@@ -82,7 +80,7 @@ export function FileChip({
             e.stopPropagation();
             onRemove();
           }}
-          className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-droid-border bg-droid-raised text-droid-text-muted shadow-sm transition-colors after:absolute after:-inset-0.5 after:content-[''] hover:border-droid-border-hover hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+          className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-divider bg-raised text-muted shadow-[0_1px_2px_0_rgb(0_0_0/0.05)] transition-colors after:absolute after:-inset-0.5 after:content-[''] hover:border-divider-strong hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
           title="Remove file"
         >
           <X className="h-2.5 w-2.5" strokeWidth={3} />

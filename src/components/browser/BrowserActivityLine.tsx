@@ -147,12 +147,10 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
             }}
             // The room above the composer, which a tall draft shrinks.
             style={{ maxHeight: 'min(420px, calc(var(--page-room, 420px) - 16px))' }}
-            className="absolute inset-x-0 bottom-full mb-2 overflow-y-auto rounded-2xl border border-droid-border/60 bg-droid-raised p-4 shadow-droid outline-none"
+            className="absolute inset-x-0 bottom-full mb-2 overflow-y-auto rounded-2xl border border-divider/60 bg-raised p-4 shadow-lg outline-none"
           >
             {earlier && (
-              <p className="mb-2.5 text-[12px] text-droid-text-muted">
-                Earlier steps are in the chat
-              </p>
+              <p className="mb-2.5 text-[12px] text-muted">Earlier steps are in the chat</p>
             )}
             <div className="space-y-2.5">
               {steps.map((item, index) => (
@@ -186,18 +184,16 @@ export function BrowserActivityLine({ appSessionId }: { appSessionId: string }) 
           {live ? (
             <WorkingIndicator {...cue} />
           ) : (
-            <span className="text-[13px] text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+            <span className="text-[13px] text-muted transition-colors group-hover:text-secondary">
               {worked >= 1000 ? `Worked for ${formatDuration(worked)}` : 'Worked'}
             </span>
           )}
         </span>
         {steerCount > 0 && (
-          <span className="shrink-0 text-[11px] tabular-nums text-droid-text-muted">
-            {steerCount} waiting
-          </span>
+          <span className="shrink-0 text-[11px] tabular-nums text-muted">{steerCount} waiting</span>
         )}
         <ChevronUp
-          className={`h-3 w-3 shrink-0 text-droid-text-muted/50 transition-transform duration-200 group-hover:text-droid-text-muted ${open ? 'rotate-180' : ''}`}
+          className={`h-3 w-3 shrink-0 text-muted/50 transition-transform duration-200 group-hover:text-muted ${open ? 'rotate-180' : ''}`}
         />
       </button>
     </div>

@@ -22,22 +22,18 @@ function CheckRow({ check }: { check: PrCheck }) {
       }}
       disabled={!check.link}
       title={check.link ? 'Open run on GitHub' : check.description || check.state}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-droid-active disabled:cursor-default disabled:hover:bg-transparent"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-active disabled:cursor-default disabled:hover:bg-transparent"
     >
       <CheckStatusIcon status={bucketToStatus(check.bucket)} size={14} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] text-droid-text">{check.name}</span>
+        <span className="block truncate text-[13px] text-primary">{check.name}</span>
         {check.workflow ? (
-          <span className="mt-0.5 block truncate text-[12px] text-droid-text-muted">
-            {check.workflow}
-          </span>
+          <span className="mt-0.5 block truncate text-[12px] text-muted">{check.workflow}</span>
         ) : null}
       </span>
-      {finished ? (
-        <span className="shrink-0 text-[12px] text-droid-text-muted">{finished}</span>
-      ) : null}
+      {finished ? <span className="shrink-0 text-[12px] text-muted">{finished}</span> : null}
       {check.link ? (
-        <Octicon name="link-external" size={12} className="shrink-0 text-droid-text-muted" />
+        <Octicon name="link-external" size={12} className="shrink-0 text-muted" />
       ) : null}
     </button>
   );
@@ -55,7 +51,7 @@ function ChecksBody({
   if (checks.length > 0) {
     return (
       <div className="-ml-1">
-        {error ? <p className="mb-1 text-[13px] text-droid-text-muted">{error}</p> : null}
+        {error ? <p className="mb-1 text-[13px] text-muted">{error}</p> : null}
         {checks.map((check, index) => (
           <CheckRow
             // A matrix job or a re-run reports the same name and workflow
@@ -67,8 +63,8 @@ function ChecksBody({
       </div>
     );
   }
-  if (loading) return <div className="h-12 rounded-xl bg-droid-elevated/40" />;
-  return <p className="text-[13px] text-droid-text-muted">{error ?? 'No checks reported'}</p>;
+  if (loading) return <div className="h-12 rounded-xl bg-elevated/40" />;
+  return <p className="text-[13px] text-muted">{error ?? 'No checks reported'}</p>;
 }
 
 function Description({
@@ -80,18 +76,18 @@ function Description({
   body: string;
   metaError: string | null;
 }) {
-  if (!loaded && !body) return <div className="h-16 rounded-xl bg-droid-elevated/40" />;
+  if (!loaded && !body) return <div className="h-16 rounded-xl bg-elevated/40" />;
   // Generated descriptions carry the same disclosures, footers, and badge links
   // as bot comments, so they go through the same renderer.
   const blocks = body ? prCommentBlocks(body) : [];
   if (blocks.length === 0) {
-    return <p className="text-[13px] text-droid-text-muted">{metaError ?? 'No description.'}</p>;
+    return <p className="text-[13px] text-muted">{metaError ?? 'No description.'}</p>;
   }
   return (
     <>
       {/* A refresh that fails after the description loaded still has to report
           the failure; the cached body must not read as a successful load. */}
-      {metaError ? <p className="mb-2 text-[13px] text-droid-text-muted">{metaError}</p> : null}
+      {metaError ? <p className="mb-2 text-[13px] text-muted">{metaError}</p> : null}
       <PrBody blocks={blocks} />
     </>
   );
@@ -101,10 +97,10 @@ function Description({
 // the fact and links out instead of offering a resolve button it cannot honor.
 function MergeConflicts({ pr }: { pr: PullRequest }) {
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-elevated/30 px-3 py-2.5">
-      <p className="text-[13px] text-droid-text-secondary">
-        <span className="text-droid-text">{pr.headRefName ?? 'This branch'}</span> cannot be merged
-        into <span className="text-droid-text">{pr.baseRefName ?? 'the base branch'}</span>{' '}
+    <div className="rounded-xl border border-divider bg-elevated/30 px-3 py-2.5">
+      <p className="text-[13px] text-secondary">
+        <span className="text-primary">{pr.headRefName ?? 'This branch'}</span> cannot be merged
+        into <span className="text-primary">{pr.baseRefName ?? 'the base branch'}</span>{' '}
         automatically. Resolve the conflicts in a checkout of the branch.
       </p>
       <button
@@ -112,7 +108,7 @@ function MergeConflicts({ pr }: { pr: PullRequest }) {
         onClick={() => {
           void openExternal(pr.url);
         }}
-        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-droid-border px-2 py-1 text-[13px] text-droid-text-secondary transition-colors hover:bg-droid-active hover:text-droid-text"
+        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-divider px-2 py-1 text-[13px] text-secondary transition-colors hover:bg-active hover:text-primary"
       >
         <Octicon name="link-external" size={12} />
         View conflicts on GitHub
@@ -211,7 +207,7 @@ export function PrSummary({
         count={comments.length}
         meta={
           commits.length > 0 ? (
-            <span className="text-[12px] text-droid-text-muted">
+            <span className="text-[12px] text-muted">
               {commits.length} {commits.length === 1 ? 'commit' : 'commits'}
             </span>
           ) : null

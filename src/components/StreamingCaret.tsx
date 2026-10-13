@@ -1,4 +1,4 @@
-const ACCENT = 'var(--droid-accent)';
+const ACCENT = 'var(--accent)';
 
 export function StreamingCaret() {
   return (

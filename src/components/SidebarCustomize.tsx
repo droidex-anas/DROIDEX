@@ -54,7 +54,7 @@ const STATUS: Option<SidebarActivityPreferences['filter']>[] = [
 ];
 
 const ROW =
-  'flex w-full items-center gap-3 px-3.5 py-2 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/70 focus-visible:bg-droid-elevated/70 focus-visible:outline-none';
+  'flex w-full items-center gap-3 px-3.5 py-2 text-left text-[13px] text-primary transition-colors hover:bg-elevated/70 focus-visible:bg-elevated/70 focus-visible:outline-none';
 
 type Submenu = 'view' | 'order' | 'limit' | 'filter';
 
@@ -106,7 +106,7 @@ function FlyoutRow<T extends string | number>({
       }}
     >
       <button
-        className={`${ROW} ${isOpen ? 'bg-droid-elevated/70' : ''}`}
+        className={`${ROW} ${isOpen ? 'bg-elevated/70' : ''}`}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={() => {
@@ -114,9 +114,9 @@ function FlyoutRow<T extends string | number>({
         }}
       >
         <span className="flex-1">{label}</span>
-        {showValue && <span className="text-droid-text-muted">{current?.label}</span>}
-        {marked && <span className="h-1.5 w-1.5 rounded-full bg-droid-text-secondary" />}
-        <ChevronRight className="h-4 w-4 text-droid-text-muted" strokeWidth={1.5} />
+        {showValue && <span className="text-muted">{current?.label}</span>}
+        {marked && <span className="h-1.5 w-1.5 rounded-full bg-secondary" />}
+        <ChevronRight className="h-4 w-4 text-muted" strokeWidth={1.5} />
       </button>
       {isOpen && (
         // The gap to the flyout is padding on a wrapper, not a margin, so the
@@ -125,7 +125,7 @@ function FlyoutRow<T extends string | number>({
           <div
             role="menu"
             aria-label={label}
-            className="w-[220px] rounded-xl border border-droid-border bg-droid-surface py-1.5 shadow-droid"
+            className="w-[220px] rounded-xl border border-divider bg-surface py-1.5 shadow-lg"
           >
             {options.map((option) => {
               const selected = option.value === value;
@@ -140,7 +140,7 @@ function FlyoutRow<T extends string | number>({
                   }}
                 >
                   {option.icon && (
-                    <span className="flex w-4 shrink-0 justify-center text-droid-text-secondary">
+                    <span className="flex w-4 shrink-0 justify-center text-secondary">
                       {option.icon}
                     </span>
                   )}
@@ -247,7 +247,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
 
   return (
     <div className="mb-1 ml-5 mr-3 flex items-center justify-between">
-      <span className="text-[13px] font-medium text-droid-text-muted">
+      <span className="text-[13px] font-medium text-muted">
         {VIEWS.find((view) => view.value === preferences.view)?.label}
       </span>
       <button
@@ -260,8 +260,8 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         aria-label="View options"
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`cursor-pointer rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
-          open || customized ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
+        className={`cursor-pointer rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+          open || customized ? 'text-primary' : 'text-muted hover:text-primary'
         }`}
       >
         <ListFilter className="h-4 w-4" strokeWidth={1.5} />
@@ -335,12 +335,12 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('limit', limit);
             }}
           />
-          <div className="mx-3.5 my-1.5 border-t border-droid-border" />
-          <div className="flex items-center px-3.5 py-1.5 text-[13px] text-droid-text-muted">
+          <div className="mx-3.5 my-1.5 border-t border-divider" />
+          <div className="flex items-center px-3.5 py-1.5 text-[13px] text-muted">
             <span className="flex-1">Filters</span>
             {customized && (
               <button
-                className="transition-colors hover:text-droid-text"
+                className="transition-colors hover:text-primary"
                 onClick={() => {
                   onChange({
                     ...DEFAULT_SIDEBAR_PREFERENCES,
@@ -369,9 +369,9 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('filter', filter);
             }}
           />
-          <div className="mx-3.5 my-1.5 border-t border-droid-border" />
+          <div className="mx-3.5 my-1.5 border-t border-divider" />
           <button
-            className={`${ROW} disabled:text-droid-text-muted disabled:hover:bg-transparent`}
+            className={`${ROW} disabled:text-muted disabled:hover:bg-transparent`}
             disabled={unreadCount === 0}
             onMouseEnter={closeSubmenu}
             onClick={() => {

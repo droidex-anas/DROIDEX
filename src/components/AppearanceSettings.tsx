@@ -37,9 +37,7 @@ function ModeButton({
       aria-pressed={active}
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] transition-colors ${
-        active
-          ? 'bg-droid-elevated text-droid-text border border-droid-border'
-          : 'text-droid-text-muted hover:text-droid-text'
+        active ? 'bg-elevated text-primary border border-divider' : 'text-muted hover:text-primary'
       }`}
     >
       <Icon className="w-3.5 h-3.5" />
@@ -66,10 +64,10 @@ function Slider({
   suffix?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-droid-border">
+    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-divider">
       <div>
-        <div className="text-[13px] text-droid-text">{label}</div>
-        {sub && <div className="text-[11px] text-droid-text-muted">{sub}</div>}
+        <div className="text-[13px] text-primary">{label}</div>
+        {sub && <div className="text-[11px] text-muted">{sub}</div>}
       </div>
       <div className="flex items-center gap-2">
         <input
@@ -82,9 +80,9 @@ function Slider({
             onChange(Number(e.target.value));
           }}
           className="w-32 h-1 rounded-full cursor-pointer"
-          style={{ accentColor: 'var(--droid-accent)' }}
+          style={{ accentColor: 'var(--accent)' }}
         />
-        <span className="font-mono text-[11px] text-droid-text-muted w-8 text-right">
+        <span className="font-mono text-[11px] text-muted w-8 text-right">
           {value}
           {suffix}
         </span>
@@ -105,10 +103,10 @@ function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-droid-border">
+    <div className="flex items-center justify-between py-2.5 border-b border-divider">
       <div>
-        <div className="text-[13px] text-droid-text">{label}</div>
-        {sub && <div className="text-[11px] text-droid-text-muted">{sub}</div>}
+        <div className="text-[13px] text-primary">{label}</div>
+        {sub && <div className="text-[11px] text-muted">{sub}</div>}
       </div>
       <button
         type="button"
@@ -118,10 +116,10 @@ function Toggle({
         onClick={() => {
           onChange(!checked);
         }}
-        className={`w-10 h-6 rounded-full transition-colors shrink-0 flex items-center p-0.5 ${checked ? 'bg-droid-accent' : 'bg-droid-border'}`}
+        className={`w-10 h-6 rounded-full transition-colors shrink-0 flex items-center p-0.5 ${checked ? 'bg-accent' : 'bg-divider'}`}
       >
         <span
-          className={`w-5 h-5 rounded-full shadow-sm transition-transform ${checked ? 'bg-droid-bg translate-x-4' : 'bg-droid-text-secondary translate-x-0'}`}
+          className={`w-5 h-5 rounded-full shadow-[0_1px_2px_0_rgb(0_0_0/0.05)] transition-transform ${checked ? 'bg-bg translate-x-4' : 'bg-secondary translate-x-0'}`}
         />
       </button>
     </div>
@@ -146,18 +144,14 @@ function SchemeCard({
       aria-pressed={active}
       onClick={onClick}
       className={`rounded-xl border p-2 text-left transition-colors ${
-        active
-          ? 'border-droid-accent/50 bg-droid-elevated'
-          : 'border-droid-border hover:border-droid-border-hover'
+        active ? 'border-accent/50 bg-elevated' : 'border-divider hover:border-divider-strong'
       }`}
     >
-      <div className="h-24 overflow-hidden rounded-lg border border-droid-border">{children}</div>
+      <div className="h-24 overflow-hidden rounded-lg border border-divider">{children}</div>
       <div className="mt-2 flex items-center justify-between px-0.5 pb-0.5">
-        <span className={`text-[12px] ${active ? 'text-droid-text' : 'text-droid-text-secondary'}`}>
-          {label}
-        </span>
+        <span className={`text-[12px] ${active ? 'text-primary' : 'text-secondary'}`}>{label}</span>
         {active && (
-          <Check className="w-3.5 h-3.5" style={{ color: 'var(--droid-accent)' }} strokeWidth={3} />
+          <Check className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} strokeWidth={3} />
         )}
       </div>
     </button>
@@ -224,11 +218,11 @@ export function AppearanceSection() {
       <ThemePresetCard resolvedScheme={resolvedScheme} />
 
       {/* App icon */}
-      <div className="rounded-xl border border-droid-border bg-droid-surface p-4 mb-6">
+      <div className="rounded-xl border border-divider bg-surface p-4 mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-[13px] text-droid-text">App icon</div>
-            <div className="text-[11px] text-droid-text-muted">
+            <div className="text-[13px] text-primary">App icon</div>
+            <div className="text-[11px] text-muted">
               Match the system, or pick the light or dark DROIDEX icon
             </div>
           </div>
@@ -263,11 +257,11 @@ export function AppearanceSection() {
 
       {/* Typography + behavior */}
       <GroupLabel>Typography & behavior</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface px-4 [&>*:last-child]:border-b-0">
-        <div className="flex items-center justify-between py-2.5 border-b border-droid-border">
+      <div className="rounded-xl border border-divider bg-surface px-4 [&>*:last-child]:border-b-0">
+        <div className="flex items-center justify-between py-2.5 border-b border-divider">
           <div>
-            <div className="text-[13px] text-droid-text">UI font</div>
-            <div className="text-[11px] text-droid-text-muted">
+            <div className="text-[13px] text-primary">UI font</div>
+            <div className="text-[11px] text-muted">
               Typeface for the whole app (defaults to your OS font)
             </div>
           </div>

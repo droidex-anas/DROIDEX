@@ -86,7 +86,7 @@ export function GitActionsBar({
     <div>
       <div
         className={`group flex items-center rounded-lg transition-colors ${
-          sheet === 'commit' ? 'bg-droid-elevated' : 'hover:bg-droid-elevated/50'
+          sheet === 'commit' ? 'bg-elevated' : 'hover:bg-elevated/50'
         }`}
       >
         <button
@@ -98,10 +98,10 @@ export function GitActionsBar({
           aria-expanded={sheet === 'commit'}
           className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-lg px-3 py-2 text-left"
         >
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-colors group-hover:text-secondary">
             <GitCommitIcon size={16} />
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-droid-text">
+          <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-primary">
             Commit or push
           </span>
         </button>
@@ -112,7 +112,7 @@ export function GitActionsBar({
             disabled={pushing || !!env.detached}
             title={pushLabel}
             aria-label={pushLabel}
-            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-md border border-droid-border/70 bg-droid-surface px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text disabled:cursor-not-allowed disabled:opacity-40"
+            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-md border border-divider/70 bg-surface px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pushing ? (
               <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
@@ -147,7 +147,7 @@ export function GitActionsBar({
           title={`${pr.title} — view checks and comments`}
           onClick={onOpenPr}
           trailing={
-            <ChevronRight className="h-3.5 w-3.5 text-droid-text-muted/60 transition-colors group-hover:text-droid-text-secondary" />
+            <ChevronRight className="h-3.5 w-3.5 text-muted/60 transition-colors group-hover:text-secondary" />
           }
         />
       ) : (

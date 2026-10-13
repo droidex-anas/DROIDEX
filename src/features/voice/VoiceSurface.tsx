@@ -28,7 +28,7 @@ export function VoiceSurface({ voice, appSessionId }: { voice: Voice; appSession
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex="0"]';
 
 const controlClass =
-  'rounded-full p-2 text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text';
+  'rounded-full p-2 text-secondary transition-colors hover:bg-bg/50 hover:text-primary';
 
 function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionId: string }) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -104,7 +104,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
       animate={{ opacity: 1, scale: 1 }}
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 1.01 }}
       transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed inset-0 z-[1200] flex flex-col bg-droid-bg text-droid-text"
+      className="fixed inset-0 z-[1200] flex flex-col bg-bg text-primary"
     >
       {/* Nothing is titled here: the orb is the subject. The row exists so the
           window can be dragged and so the macOS controls have their space. */}
@@ -139,7 +139,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
         </motion.div>
         <p
           className={`text-[13px] ${
-            voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+            voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-muted'
           }`}
           aria-live="polite"
         >
@@ -148,11 +148,11 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
       </div>
 
       <div className="flex justify-center px-4" style={{ paddingBottom: 40 }}>
-        <div className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-raised p-1.5 shadow-droid">
+        <div className="flex items-center gap-1 rounded-full border border-divider bg-raised p-1.5 shadow-lg">
           <button
             type="button"
             onClick={voice.minimize}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
           >
             <Keyboard className="h-3.5 w-3.5" />
             Type
@@ -166,7 +166,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
             className={controlClass}
           >
             {session.muted ? (
-              <MicOff className="h-3.5 w-3.5 text-droid-red" />
+              <MicOff className="h-3.5 w-3.5 text-danger" />
             ) : (
               <Mic className="h-3.5 w-3.5" />
             )}
@@ -197,7 +197,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
             onClick={voice.close}
             aria-label="End voice mode"
             title="End voice mode"
-            className="rounded-full bg-droid-accent p-2 text-droid-bg transition-opacity hover:opacity-90"
+            className="rounded-full bg-accent p-2 text-bg transition-opacity hover:opacity-90"
           >
             <X className="h-3.5 w-3.5" />
           </button>

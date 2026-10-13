@@ -104,7 +104,7 @@ export function AppUpdateButtonView({
       data-open={open}
       data-swapping={swapping}
       style={{ width: open ? openWidth : RESTING_SIZE }}
-      className="update-pill relative h-5 shrink-0 cursor-pointer overflow-hidden rounded-full bg-droid-update text-white enabled:hover:bg-droid-update-hover disabled:bg-droid-update-hover"
+      className="update-pill relative h-5 shrink-0 cursor-pointer overflow-hidden rounded-full bg-update text-white enabled:hover:bg-update-hover disabled:bg-update-hover"
     >
       <span className="update-pill-icon absolute inset-0 grid place-items-center">
         <Download size={13} strokeWidth={2} />

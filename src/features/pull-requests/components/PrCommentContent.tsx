@@ -35,7 +35,7 @@ export function ReactionChips({ reactions }: { reactions: PrComment['reactions']
           <span
             key={reaction.content}
             title={`${String(reaction.count)} ${details.label}`}
-            className="inline-flex items-center gap-1 rounded-full border border-droid-border bg-droid-elevated/60 px-2 py-0.5 text-[12px] text-droid-text-secondary"
+            className="inline-flex items-center gap-1 rounded-full border border-divider bg-elevated/60 px-2 py-0.5 text-[12px] text-secondary"
           >
             <span aria-hidden="true">{details.emoji}</span>
             <span className="tabular-nums">{reaction.count}</span>
@@ -54,14 +54,14 @@ export function HunkPreview({ diffHunk }: { diffHunk: string }) {
     ? { lines: diffHunk.replace(/\n+$/, '').split('\n'), truncated: false }
     : hunkLines(diffHunk);
   return (
-    <div className="mt-2 overflow-hidden rounded-lg border border-droid-border">
+    <div className="mt-2 overflow-hidden rounded-lg border border-divider">
       {truncated ? (
         <button
           type="button"
           onClick={() => {
             setExpanded(true);
           }}
-          className="w-full border-b border-droid-border bg-droid-elevated/40 px-3 py-1 text-left text-[11px] text-droid-text-muted transition-colors hover:text-droid-text"
+          className="w-full border-b border-divider bg-elevated/40 px-3 py-1 text-left text-[11px] text-muted transition-colors hover:text-primary"
         >
           Show full hunk
         </button>
@@ -75,7 +75,7 @@ export function HunkPreview({ diffHunk }: { diffHunk: string }) {
               <div
                 key={`${String(index)}-${line}`}
                 style={HUNK_TONE_STYLE[tone]}
-                className="px-3 font-mono text-[12px] leading-[1.5] whitespace-pre text-droid-text-secondary"
+                className="px-3 font-mono text-[12px] leading-[1.5] whitespace-pre text-secondary"
               >
                 {line || ' '}
               </div>

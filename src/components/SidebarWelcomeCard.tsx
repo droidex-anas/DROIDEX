@@ -32,7 +32,7 @@ export function SidebarWelcomeCard({
       transition={{ duration: 0.22, ease: EASE }}
       className="mb-2 overflow-hidden"
     >
-      <div className="relative overflow-hidden rounded-2xl border border-droid-border bg-droid-raised shadow-droid">
+      <div className="relative overflow-hidden rounded-2xl border border-divider bg-raised shadow-lg">
         {/* Visual: nebula artwork melting into the card body — a multi-stop
             blend instead of a hard edge, slightly enriched so the color carries,
             with a soft top scrim keeping the dismiss button legible. */}
@@ -42,19 +42,19 @@ export function SidebarWelcomeCard({
             alt=""
             className="h-full w-full scale-105 object-cover saturate-[1.2]"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-droid-elevated via-droid-elevated/35 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-elevated via-elevated/35 to-transparent" />
           <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/45 to-transparent" />
         </div>
 
         <div className="relative -mt-6 px-3.5 pb-3">
-          <span className="text-[13px] font-semibold text-droid-text">Welcome to Droidex</span>
-          <p className="mt-1 text-[12px] leading-snug text-droid-text-muted">
+          <span className="text-[13px] font-semibold text-primary">Welcome to Droidex</span>
+          <p className="mt-1 text-[12px] leading-snug text-muted">
             Chats, workspaces and missions live here. Start a chat and put Droid to work.
           </p>
           <button
             type="button"
             onClick={onStart}
-            className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-droid-accent px-3 py-1.5 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90"
+            className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
           >
             <SquarePen className="h-3.5 w-3.5" />
             Start a chat

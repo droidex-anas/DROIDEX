@@ -19,8 +19,7 @@ const PREFERRED_WIDTH_PX = 380;
 // catalog keeps its room.
 const RAIL_WIDTH_PX = 44;
 
-const accentMix = (pct: number) =>
-  `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
+const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
 
 const AGENTS: { kind: AgentKind; label: string; hint: string }[] = [
   { kind: 'primary', label: 'Primary', hint: 'Runs the session' },
@@ -139,7 +138,7 @@ export default function ModelSelectorPopover({
       style={{ width, maxHeight }}
       className="absolute bottom-full right-0 mb-3 z-50"
     >
-      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-raised shadow-droid">
+      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-divider/60 bg-raised shadow-lg">
         <div className="flex min-h-0 flex-1">
           {showHarness && (
             <HarnessRail
@@ -152,18 +151,18 @@ export default function ModelSelectorPopover({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Header */}
             <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1">
-              <span className="shrink-0 text-[12px] font-medium text-droid-text-secondary">
+              <span className="shrink-0 text-[12px] font-medium text-secondary">
                 {childTarget ? childTarget.label : singleAgent ? 'Model' : 'Models'}
               </span>
               {childTarget ? (
-                <span className="text-[11px] text-droid-text-muted truncate">
+                <span className="text-[11px] text-muted truncate">
                   {childTarget.readiness === 'ready'
                     ? `${active.label} model`
                     : childSettingsReadinessLabel(childTarget.readiness)}
                 </span>
               ) : (
                 <span
-                  className="min-w-0 text-[13px] text-droid-text truncate"
+                  className="min-w-0 text-[13px] text-primary truncate"
                   title={singleAgent ? 'Used for this chat' : active.hint}
                 >
                   {selectedLabel}
@@ -174,7 +173,7 @@ export default function ModelSelectorPopover({
             {/* Agent tabs */}
             {!singleAgent && !childTarget && (
               <div className="px-3">
-                <div className="flex gap-1 p-0.5 rounded-xl bg-droid-bg/60 border border-droid-border">
+                <div className="flex gap-1 p-0.5 rounded-xl bg-bg/60 border border-divider">
                   {AGENTS.map((a) => {
                     const on = a.kind === agent;
                     return (
@@ -184,9 +183,7 @@ export default function ModelSelectorPopover({
                           setAgent(a.kind);
                         }}
                         className={`flex-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors truncate ${
-                          on
-                            ? 'bg-droid-surface text-droid-text'
-                            : 'text-droid-text-muted hover:text-droid-text-secondary'
+                          on ? 'bg-surface text-primary' : 'text-muted hover:text-secondary'
                         }`}
                         style={on ? { boxShadow: `inset 0 0 0 1px ${accentMix(33)}` } : undefined}
                       >
@@ -201,8 +198,8 @@ export default function ModelSelectorPopover({
             {/* Model search + list */}
             <div className="flex min-h-0 flex-col px-2 pt-2 pb-2">
               <div className="flex shrink-0 items-center gap-1.5">
-                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-droid-bg/50 px-3">
-                  <Search className="w-3.5 h-3.5 text-droid-text-muted shrink-0" />
+                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-bg/50 px-3">
+                  <Search className="w-3.5 h-3.5 text-muted shrink-0" />
                   <input
                     autoFocus
                     value={query}
@@ -210,7 +207,7 @@ export default function ModelSelectorPopover({
                       setQuery(e.target.value);
                     }}
                     placeholder="Search models"
-                    className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text placeholder-droid-text-muted focus:outline-none"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-primary placeholder-muted focus:outline-none"
                   />
                 </div>
                 {catOptions.length > 0 && (
@@ -244,7 +241,7 @@ export default function ModelSelectorPopover({
 
       {/* Tail */}
       <div
-        className="absolute -bottom-1.5 w-3 h-3 rotate-45 bg-droid-raised border-r border-b border-droid-border/60"
+        className="absolute -bottom-1.5 w-3 h-3 rotate-45 bg-raised border-r border-b border-divider/60"
         style={{ right: tailRight }}
       />
     </motion.div>

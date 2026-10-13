@@ -37,15 +37,13 @@ export function LinkBadge({
 
   if (link.isGitHub) {
     return (
-      <span className={`${className} text-droid-text-secondary`}>
+      <span className={`${className} text-secondary`}>
         <GitHubMark />
       </span>
     );
   }
   if (missing) {
-    return (
-      <Globe aria-hidden strokeWidth={1.75} className={`${className} text-droid-text-muted`} />
-    );
+    return <Globe aria-hidden strokeWidth={1.75} className={`${className} text-muted`} />;
   }
   return (
     <img

@@ -59,44 +59,44 @@
 
 @layer base {
   :root {
-    --droid-bg: #0a0a0a;
-    --droid-surface: #111111;
-    --droid-elevated: #1e1e1e;
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --elevated: #1e1e1e;
     /* Input fields inside cards; dark fallback, applyTheme derives per theme. */
-    --droid-field: #1e1e1e;
+    --field: #1e1e1e;
     /* One step above elevated: the lightest neutral, for selected/active rows so
        the surface ramp reads bg < surface < elevated < active. */
-    --droid-active: #292929;
+    --active: #292929;
     /* Floating layers: the elevated rung on dark, near-white on light. */
-    --droid-raised: #1e1e1e;
-    --droid-border: #161616;
-    --droid-border-hover: #222222;
-    --droid-text: #ededed;
-    --droid-text-secondary: #9a9a9a;
-    --droid-text-muted: #5c5c5c;
+    --raised: #1e1e1e;
+    --divider: #161616;
+    --divider-strong: #222222;
+    --text: #ededed;
+    --text-secondary: #9a9a9a;
+    --text-muted: #5c5c5c;
     /* Accent defaults to a theme-matched neutral (near-white in dark, near-black
        in light) so the UI reads as a monochrome tonal scale rather than a fixed
        hue. applyTheme overrides this from the active theme; users can still pick
        a colored accent from Appearance. */
-    --droid-accent: #f2f2f2;
+    --accent: #f2f2f2;
     /* Skill invocations stay blue, with applyTheme selecting the accessible
        light-theme shade. */
-    --droid-skill: #93c5fd;
+    --skill: #93c5fd;
     /* Chip marks beside the skill label: rose Rosette, pink Visualize. */
-    --droid-skill-mark: #ed4772;
-    --droid-visualize-mark: #f472b6;
+    --skill-mark: #ed4772;
+    --visualize-mark: #f472b6;
     /* Links stay blue for the same reason skills do: the neutral accent is
        near-white in dark themes, so accent-coloured links read as body text. */
-    --droid-link: #7cb2ff;
+    --link: #7cb2ff;
     /* The top reasoning level reads by hue for the same reason; applyTheme
        selects the accessible light-theme shade. */
-    --droid-ultra: #bba6ff;
+    --ultra: #bba6ff;
     /* Fixed semantic status colors: success green, warning amber, and danger red
        stay vivid across every theme (including monochrome) so diffs, status, and
        callouts always read by hue. The neutral accent governs UI chrome only and
        must never tint these signals. */
-    --droid-green: #4fae82;
-    --droid-orange: #d9913a;
+    --success: #4fae82;
+    --warning: #d9913a;
     /* Standard diff colors (GitHub-style), shared by every diff surface. */
     --diff-add-fg: #3fb950;
     --diff-add-bg: rgba(46, 160, 67, 0.15);
@@ -108,16 +108,16 @@
     --diff-hunk-fg: #79b8ff;
     /* Fixed semantic danger color: stays red across accent/monochrome themes so
        errors and P-level callouts always read as alarming, never accent-tinted. */
-    --droid-red: #cf5d54;
+    --danger: #cf5d54;
     /* The sidebar update pill keeps this fixed blue in both schemes, for the same
        reason the status colors do. */
-    --droid-update: #005fc8;
-    --droid-update-hover: #0054b2;
+    --update: #005fc8;
+    --update-hover: #0054b2;
     --ui-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --ui-font-size: 14px;
     --ui-zoom: 1;
     --code-font-size: 12px;
-    --sidebar-bg: var(--droid-surface);
+    --sidebar: var(--surface);
     --sidebar-blur: none;
   }
 
@@ -129,8 +129,8 @@
   }
 
   body {
-    background-color: var(--droid-bg);
-    color: var(--droid-text);
+    background-color: var(--bg);
+    color: var(--text);
     font-family: var(--ui-font-family);
     font-size: var(--ui-font-size);
     -webkit-font-smoothing: antialiased;
@@ -190,12 +190,12 @@
   /* Thumbs derive from the theme text color so they stay subtle in both dark
      (dim white) and light (soft grey) instead of a fixed dark-mode grey. */
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--droid-text) 16%, transparent);
+    background: color-mix(in srgb, var(--text) 16%, transparent);
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--droid-text) 26%, transparent);
+    background: color-mix(in srgb, var(--text) 26%, transparent);
   }
 
   .no-scrollbar {
@@ -214,11 +214,11 @@
   }
 
   .scrollbar-on-hover:hover::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--droid-text) 16%, transparent);
+    background: color-mix(in srgb, var(--text) 16%, transparent);
   }
 
   .scrollbar-on-hover::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--droid-text) 26%, transparent);
+    background: color-mix(in srgb, var(--text) 26%, transparent);
   }
 
   /* A scroller that ends mid-window (the chat beside an open utility pane)
@@ -229,11 +229,11 @@
   }
 
   .scrollbar-while-scrolling[data-scrolling]::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--droid-text) 16%, transparent);
+    background: color-mix(in srgb, var(--text) 16%, transparent);
   }
 
   .scrollbar-while-scrolling::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--droid-text) 26%, transparent);
+    background: color-mix(in srgb, var(--text) 26%, transparent);
   }
 
   /* A block wider than its frame fades at the edge it continues past, so it
@@ -253,7 +253,7 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--droid-accent) 22%, transparent);
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
 
   @keyframes shimmer {
@@ -268,9 +268,9 @@
   .shimmer-text {
     background: linear-gradient(
       90deg,
-      var(--droid-text-muted) 0%,
-      var(--droid-text) 50%,
-      var(--droid-text-muted) 100%
+      var(--text-muted) 0%,
+      var(--text) 50%,
+      var(--text-muted) 100%
     );
     background-size: 200% 100%;
     -webkit-background-clip: text;
@@ -355,7 +355,7 @@
   .image-grid-dots {
     background-image: radial-gradient(
       circle at center,
-      color-mix(in srgb, var(--droid-text) 12%, transparent) 1px,
+      color-mix(in srgb, var(--text) 12%, transparent) 1px,
       transparent 1.6px
     );
     background-size: 9px 9px;
@@ -373,7 +373,7 @@
     background: linear-gradient(
       135deg,
       transparent 34%,
-      color-mix(in srgb, var(--droid-text) 55%, transparent) 50%,
+      color-mix(in srgb, var(--text) 55%, transparent) 50%,
       transparent 66%
     );
     animation: image-grid-sweep 5.5s ease-in-out infinite alternate;
@@ -580,7 +580,7 @@
     margin-bottom: -0.15em;
     border-radius: 2px;
     vertical-align: baseline;
-    background: var(--droid-accent);
+    background: var(--accent);
     animation: caret-blink 1s ease-in-out infinite;
   }
 
@@ -640,9 +640,9 @@
   .skeleton-block {
     background: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--droid-text) 6%, var(--droid-surface)) 25%,
-      color-mix(in srgb, var(--droid-text) 13%, var(--droid-surface)) 50%,
-      color-mix(in srgb, var(--droid-text) 6%, var(--droid-surface)) 75%
+      color-mix(in srgb, var(--text) 6%, var(--surface)) 25%,
+      color-mix(in srgb, var(--text) 13%, var(--surface)) 50%,
+      color-mix(in srgb, var(--text) 6%, var(--surface)) 75%
     );
     background-size: 200% 100%;
     animation: skeleton-sweep 1.6s ease-in-out infinite;
@@ -683,7 +683,7 @@
 
   .update-pill:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--droid-update) 35%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--update) 35%, transparent);
   }
 
   .update-pill-icon {
@@ -829,8 +829,8 @@
       width: min(82%, 280px);
       min-width: 0;
       max-width: none;
-      background: var(--droid-surface);
-      box-shadow: 18px 0 44px color-mix(in srgb, var(--droid-text) 22%, transparent);
+      background: var(--surface);
+      box-shadow: 18px 0 44px color-mix(in srgb, var(--text) 22%, transparent);
     }
 
     .review-diff-scroll {
@@ -874,7 +874,7 @@
     }
 
     .review-split-left {
-      border-bottom: 1px solid var(--droid-border);
+      border-bottom: 1px solid var(--divider);
     }
   }
 
@@ -894,28 +894,12 @@
   }
 
   .image-checkerboard {
-    background-color: var(--droid-surface);
+    background-color: var(--surface);
     background-image:
-      linear-gradient(
-        45deg,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 25%,
-        transparent 25%
-      ),
-      linear-gradient(
-        -45deg,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 25%,
-        transparent 25%
-      ),
-      linear-gradient(
-        45deg,
-        transparent 75%,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 75%
-      ),
-      linear-gradient(
-        -45deg,
-        transparent 75%,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 75%
-      );
+      linear-gradient(45deg, color-mix(in srgb, var(--text) 7%, transparent) 25%, transparent 25%),
+      linear-gradient(-45deg, color-mix(in srgb, var(--text) 7%, transparent) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--text) 7%, transparent) 75%),
+      linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--text) 7%, transparent) 75%);
     background-position:
       0 0,
       0 8px,
@@ -928,46 +912,46 @@
      surface (e.g. the left sidebar) that should read as a rounded, elevated
      card rather than an edge-to-edge rectangle. */
   .droid-card {
-    @apply flex flex-col rounded-2xl border border-droid-border bg-droid-surface overflow-hidden;
+    @apply flex flex-col rounded-2xl border border-divider bg-surface overflow-hidden;
     /* Theme-derived (see applyTheme): strong on dark, soft and diffuse on light. */
-    box-shadow: var(--droid-shadow, 0 10px 40px rgba(0, 0, 0, 0.35));
+    box-shadow: var(--shadow-lg, 0 10px 40px rgba(0, 0, 0, 0.35));
   }
 
   .droid-tool-panel {
-    @apply overflow-hidden rounded-xl border border-droid-border bg-droid-elevated/50;
+    @apply overflow-hidden rounded-xl border border-divider bg-elevated/50;
 
-    box-shadow: var(--droid-shadow-sm, 0 4px 16px rgba(0, 0, 0, 0.28));
+    box-shadow: var(--shadow-sm, 0 4px 16px rgba(0, 0, 0, 0.28));
   }
 
   .droid-button {
     @apply px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150;
-    @apply bg-droid-elevated text-droid-text-secondary hover:text-droid-text hover:bg-droid-active;
-    @apply border border-droid-border;
+    @apply bg-elevated text-secondary hover:text-primary hover:bg-active;
+    @apply border border-divider;
   }
 
   .droid-button-primary {
     @apply px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150;
-    @apply bg-droid-text text-droid-bg hover:bg-droid-text-secondary;
+    @apply bg-text text-bg hover:bg-secondary;
   }
 
   .droid-input {
-    @apply bg-droid-elevated border border-droid-border rounded-lg px-4 py-2.5 text-sm;
-    @apply text-droid-text placeholder-droid-text-muted focus:outline-none focus:border-droid-border-hover;
+    @apply bg-elevated border border-divider rounded-lg px-4 py-2.5 text-sm;
+    @apply text-primary placeholder-muted focus:outline-none focus:border-divider-strong;
     @apply transition-colors duration-150;
   }
 
   .transcript-find-hit {
     border-radius: 0.75rem;
-    outline: 1px solid color-mix(in srgb, var(--droid-accent) 28%, transparent);
+    outline: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   }
 
   .transcript-find-hit-active {
-    outline: 2px solid color-mix(in srgb, var(--droid-accent) 70%, transparent);
-    background-color: color-mix(in srgb, var(--droid-accent) 8%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 8%, transparent);
   }
 
   .transcript-range-bound {
-    outline: 2px dashed color-mix(in srgb, var(--droid-accent) 55%, transparent);
+    outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
   }
 }
 

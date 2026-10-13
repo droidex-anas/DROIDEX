@@ -27,7 +27,7 @@ export function CompactComposer({
   textareaRef,
   onEscape,
   maxHeight = 160,
-  className = 'shadow-droid-sm',
+  className = 'shadow-sm',
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -97,7 +97,7 @@ export function CompactComposer({
           if (canSend) onSend();
         }
       }}
-      className={`block w-full resize-none bg-transparent text-[13px] leading-5 text-droid-text placeholder:text-droid-text-muted focus:outline-none ${
+      className={`block w-full resize-none bg-transparent text-[13px] leading-5 text-primary placeholder:text-muted focus:outline-none ${
         leading ? 'px-3.5 pt-3' : 'min-w-0 flex-1 py-1'
       }`}
     />
@@ -112,7 +112,7 @@ export function CompactComposer({
           onClick={onSend}
           disabled={!canSend}
           aria-label={sendLabel}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-text text-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ArrowUp className="h-3.5 w-3.5" />
         </button>
@@ -121,7 +121,7 @@ export function CompactComposer({
   );
 
   return leading ? (
-    <div className={`rounded-[16px] bg-droid-raised ${className}`}>
+    <div className={`rounded-[16px] bg-raised ${className}`}>
       {textarea}
       <div className="flex items-center gap-2 px-2 pb-2">
         <div className="min-w-0 flex-1">{leading}</div>
@@ -130,7 +130,7 @@ export function CompactComposer({
     </div>
   ) : (
     <div
-      className={`flex items-end gap-2 rounded-[16px] bg-droid-raised py-1.5 pl-3.5 pr-1.5 ${className}`}
+      className={`flex items-end gap-2 rounded-[16px] bg-raised py-1.5 pl-3.5 pr-1.5 ${className}`}
     >
       {textarea}
       {trailing}

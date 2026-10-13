@@ -10,16 +10,14 @@ import type { AriaAttributes, ReactNode, Ref } from 'react';
 export function SectionHeader({ label, trailing }: { label: string; trailing?: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-2 px-3 pb-1 pt-4">
-      <span className="text-[12px] font-medium text-droid-text-muted">{label}</span>
-      {trailing && (
-        <span className="shrink-0 text-[11px] leading-none text-droid-text-muted">{trailing}</span>
-      )}
+      <span className="text-[12px] font-medium text-muted">{label}</span>
+      {trailing && <span className="shrink-0 text-[11px] leading-none text-muted">{trailing}</span>}
     </div>
   );
 }
 
 export function Divider() {
-  return <div className="mx-3 my-1 h-px bg-droid-border/60" />;
+  return <div className="mx-3 my-1 h-px bg-divider/60" />;
 }
 
 export function Row({
@@ -51,14 +49,12 @@ export function Row({
 }) {
   const content = (
     <>
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-colors group-hover:text-secondary">
         {icon}
       </span>
-      <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-droid-text">
-        {label}
-      </span>
+      <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-primary">{label}</span>
       {meta && (
-        <span className="shrink-0 text-[12px] capitalize leading-none text-droid-text-muted tabular-nums">
+        <span className="shrink-0 text-[12px] capitalize leading-none text-muted tabular-nums">
           {meta}
         </span>
       )}
@@ -87,7 +83,7 @@ export function Row({
       aria-expanded={expanded}
       aria-haspopup={hasPopup}
       className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-default ${
-        active ? 'bg-droid-elevated' : 'hover:bg-droid-elevated/50'
+        active ? 'bg-elevated' : 'hover:bg-elevated/50'
       }`}
     >
       {content}
@@ -101,7 +97,7 @@ export function RowCaret({ open }: { open: boolean }) {
   return (
     <svg
       viewBox="0 0 16 16"
-      className={`h-3 w-3 shrink-0 text-droid-text-muted/60 transition-transform duration-150 ${
+      className={`h-3 w-3 shrink-0 text-muted/60 transition-transform duration-150 ${
         open ? 'rotate-180' : ''
       }`}
       fill="none"

@@ -24,13 +24,13 @@ export function ImageChip({
       <button
         onClick={failed ? undefined : onOpen}
         disabled={failed}
-        className="block h-16 w-16 overflow-hidden rounded-lg border border-droid-border bg-droid-bg/60 transition-colors hover:border-droid-border-hover disabled:cursor-default"
+        className="block h-16 w-16 overflow-hidden rounded-lg border border-divider bg-bg/60 transition-colors hover:border-divider-strong disabled:cursor-default"
         title={failed ? `${label} is no longer available` : `View ${label}`}
       >
         {failed ? (
           // Name the missing file in place: several restored chips can fail at
           // once, and an anonymous icon says nothing about which one is gone.
-          <span className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1 text-droid-text-muted">
+          <span className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1 text-muted">
             <ImageOff className="h-4 w-4 shrink-0" />
             <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
           </span>
@@ -51,7 +51,7 @@ export function ImageChip({
           e.stopPropagation();
           onRemove();
         }}
-        className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-droid-border bg-droid-raised text-droid-text-muted shadow-sm transition-colors after:absolute after:-inset-0.5 after:content-[''] hover:border-droid-border-hover hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+        className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-divider bg-raised text-muted shadow-[0_1px_2px_0_rgb(0_0_0/0.05)] transition-colors after:absolute after:-inset-0.5 after:content-[''] hover:border-divider-strong hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         title="Remove image"
       >
         <X className="h-2.5 w-2.5" strokeWidth={3} />

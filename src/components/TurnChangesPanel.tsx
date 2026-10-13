@@ -45,29 +45,29 @@ export default function TurnChangesPanel({
   const [open, setOpen] = useState(true);
   const { files, added, removed } = item;
   return (
-    <div className="overflow-hidden rounded-xl border border-droid-border bg-droid-surface">
+    <div className="overflow-hidden rounded-xl border border-divider bg-surface">
       <button
         onClick={() => {
           setOpen((current) => !current);
         }}
-        className="group flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-droid-elevated/40"
+        className="group flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-elevated/40"
         aria-expanded={open}
       >
         <ChevronRight
-          className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ${
             open ? 'rotate-90' : ''
           }`}
         />
-        <span className="text-[13px] font-medium text-droid-text-secondary">Changes</span>
+        <span className="text-[13px] font-medium text-secondary">Changes</span>
         <span className="ml-auto flex shrink-0 items-center gap-2.5">
-          <span className="text-[11px] text-droid-text-muted">
+          <span className="text-[11px] text-muted">
             {files.length} {files.length === 1 ? 'file' : 'files'}
           </span>
           <ChangeCount added={added} removed={removed} />
         </span>
       </button>
       <Expand open={open}>
-        <div className="border-t border-droid-border">
+        <div className="border-t border-divider">
           {files.map((file) => {
             const display = displayPath(file.path, cwd);
             return (
@@ -76,9 +76,9 @@ export default function TurnChangesPanel({
                 onClick={() => onOpenFile?.(file.path, file.change)}
                 disabled={!onOpenFile}
                 title={file.path}
-                className="flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors enabled:hover:bg-droid-elevated/40 disabled:cursor-default"
+                className="flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors enabled:hover:bg-elevated/40 disabled:cursor-default"
               >
-                <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-secondary">
+                <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
                   {display}
                 </span>
                 <ChangeCount added={file.added} removed={file.removed} />

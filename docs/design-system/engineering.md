@@ -74,11 +74,11 @@ Neutral by default, colour when the action has consequences:
 
 Do it in order, one surface at a time:
 
-1. **Swap the dividers.** Point the old `--droid-border` at the translucent `divider`. Every hairline softens at once.
+1. **Swap the dividers.** Give `--divider` its translucent value. Every hairline softens at once.
 2. **Remove the focus outlines.** Add `outline: none` on `:focus` globally, and switch `focus-visible:ring-1 ring-droid-accent/60` to the 1.5px `focus-ring`. The dark outline on click goes away.
 3. **Strip control borders.** Buttons, inputs, chips and segmented controls lose `border` and get their fill from the ramp.
 4. **Strip surface borders.** Cards, popovers, tool panels and the composer lose `border` and rely on `shadow-sm`/`shadow-lg`, whose rings now carry the edge.
-5. **Search for leftovers.** Search for `border-droid-border`, `border ` and `outline` and remove what remains, keeping only `divider` lines between list groups.
+5. **Search for leftovers.** Search for `border-divider`, `border ` and `outline` and remove what remains, keeping only `divider` lines between list groups.
 
 ## Interaction details
 

@@ -42,7 +42,7 @@ function WorkspaceDetail({
   if (cwd == null || number == null) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center px-8">
-        <p className="text-[13px] text-droid-text-muted">Select a pull request</p>
+        <p className="text-[13px] text-muted">Select a pull request</p>
       </div>
     );
   }

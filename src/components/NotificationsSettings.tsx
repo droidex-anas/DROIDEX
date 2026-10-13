@@ -108,32 +108,28 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-7">
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-droid-text">
-          Notifications
-        </h1>
-        <p className="mt-1.5 max-w-xl text-[12px] leading-5 text-droid-text-muted">
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-primary">Notifications</h1>
+        <p className="mt-1.5 max-w-xl text-[12px] leading-5 text-muted">
           Desktop banners when a model turn finishes. Click a banner to jump back to that chat.
         </p>
       </div>
 
-      <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+      <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted">
         Finish alerts
       </div>
-      <div className="mb-6 overflow-hidden rounded-2xl border border-droid-border/80 bg-droid-surface">
+      <div className="mb-6 overflow-hidden rounded-2xl border border-divider/80 bg-surface">
         {FINISH_NOTIFICATION_TOGGLES.map(({ key, label, description, needsMaster }, index) => {
           const highlighted = rowMatches(label, description, highlightQuery);
           return (
             <div
               key={key}
               className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${
-                index > 0 ? 'border-t border-droid-border/50' : ''
-              } ${highlighted ? 'bg-droid-accent/[0.07]' : ''}`}
+                index > 0 ? 'border-t border-divider/50' : ''
+              } ${highlighted ? 'bg-accent/[0.07]' : ''}`}
             >
               <div className="min-w-0">
-                <div className="text-[13px] tracking-tight text-droid-text">{label}</div>
-                <div className="mt-0.5 text-[12px] leading-snug text-droid-text-muted">
-                  {description}
-                </div>
+                <div className="text-[13px] tracking-tight text-primary">{label}</div>
+                <div className="mt-0.5 text-[12px] leading-snug text-muted">{description}</div>
               </div>
               <Switch
                 label={label}
@@ -151,15 +147,15 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
           );
         })}
         <div
-          className={`flex items-center justify-between gap-4 border-t border-droid-border/50 px-4 py-3.5 transition-colors ${
-            testHighlighted ? 'bg-droid-accent/[0.07]' : ''
+          className={`flex items-center justify-between gap-4 border-t border-divider/50 px-4 py-3.5 transition-colors ${
+            testHighlighted ? 'bg-accent/[0.07]' : ''
           }`}
         >
           <div className="min-w-0">
-            <div className="text-[13px] tracking-tight text-droid-text">
+            <div className="text-[13px] tracking-tight text-primary">
               {FINISH_NOTIFICATION_TEST_ACTION.label}
             </div>
-            <div className="mt-0.5 text-[12px] leading-snug text-droid-text-muted">
+            <div className="mt-0.5 text-[12px] leading-snug text-muted">
               {FINISH_NOTIFICATION_TEST_ACTION.description}
             </div>
           </div>
@@ -169,7 +165,7 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
             onClick={() => {
               void sendTest();
             }}
-            className="shrink-0 rounded-xl bg-droid-elevated/80 px-3 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated disabled:opacity-60"
+            className="shrink-0 rounded-xl bg-elevated/80 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-elevated disabled:opacity-60"
           >
             {testing ? 'Sending…' : 'Test'}
           </button>

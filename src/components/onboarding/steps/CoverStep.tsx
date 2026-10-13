@@ -9,16 +9,16 @@ export function CoverStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col items-center text-center">
       <div className="droid-rise">
-        <BrandMark size={34} className="text-droid-accent" />
+        <BrandMark size={34} className="text-accent" />
       </div>
       <h1
-        className="droid-rise mt-6 text-[22px] leading-snug font-semibold tracking-tight text-droid-text"
+        className="droid-rise mt-6 text-[22px] leading-snug font-semibold tracking-tight text-primary"
         style={{ animationDelay: '90ms' }}
       >
         Let&apos;s get you set up.
       </h1>
       <p
-        className="droid-rise mt-3 max-w-[340px] text-[13px] leading-relaxed text-droid-text-muted"
+        className="droid-rise mt-3 max-w-[340px] text-[13px] leading-relaxed text-muted"
         style={{ animationDelay: '160ms' }}
       >
         A quick tour: check your machine, install the Droid CLI, connect your account, and pick a
@@ -27,7 +27,7 @@ export function CoverStep({ onNext }: { onNext: () => void }) {
       <div className="droid-rise mt-10" style={{ animationDelay: '230ms' }}>
         <button
           onClick={onNext}
-          className="droid-button-primary inline-flex h-10 items-center gap-2 px-5 text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-droid-bg"
+          className="droid-button-primary inline-flex h-10 items-center gap-2 px-5 text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           Get started <ArrowRight className="w-4 h-4" />
         </button>

@@ -25,7 +25,7 @@ export function SidebarSectionHeading({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          className="group/heading flex w-full cursor-pointer items-center gap-1 rounded-md text-left text-[13px] font-medium text-droid-text-muted transition-colors hover:text-droid-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+          className="group/heading flex w-full cursor-pointer items-center gap-1 rounded-md text-left text-[13px] font-medium text-muted transition-colors hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
         >
           <span className="truncate">{label}</span>
           <ChevronRight

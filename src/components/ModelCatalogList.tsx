@@ -173,7 +173,7 @@ const ModelRow = memo(function ModelRow({
         e.stopPropagation();
         pick(id, stepEffort(efforts, shown, delta));
       }}
-      className={`w-4 shrink-0 text-[11px] text-droid-text-secondary hover:text-droid-text transition-opacity ${
+      className={`w-4 shrink-0 text-[11px] text-secondary hover:text-primary transition-opacity ${
         selected && canStep ? '' : 'opacity-0 pointer-events-none'
       }`}
     >
@@ -207,7 +207,7 @@ const ModelRow = memo(function ModelRow({
           ? 'cursor-not-allowed opacity-50'
           : selected
             ? 'cursor-default'
-            : 'cursor-pointer hover:bg-droid-surface/60'
+            : 'cursor-pointer hover:bg-surface/60'
       }`}
     >
       <span
@@ -220,7 +220,7 @@ const ModelRow = memo(function ModelRow({
           <DroidProxyMark size={13} />
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
+      <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-primary">
         {shortModelName(label)}
       </span>
       {offersReasoning && (
@@ -268,12 +268,12 @@ const ModelRow = memo(function ModelRow({
 });
 
 function dotFill(filled: boolean, selected: boolean, ultra: boolean): string {
-  if (!filled) return 'bg-droid-text-muted/30';
-  if (!selected) return 'bg-droid-text-muted';
-  return ultra ? 'bg-droid-ultra effort-dot-ultra' : 'bg-droid-accent';
+  if (!filled) return 'bg-muted/30';
+  if (!selected) return 'bg-muted';
+  return ultra ? 'bg-ultra effort-dot-ultra' : 'bg-accent';
 }
 
 function effortWordTone(selected: boolean, ultra: boolean): string {
-  if (ultra) return 'text-droid-ultra';
-  return selected ? 'text-droid-text' : 'text-droid-text-secondary';
+  if (ultra) return 'text-ultra';
+  return selected ? 'text-primary' : 'text-secondary';
 }

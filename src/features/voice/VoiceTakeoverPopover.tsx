@@ -30,7 +30,7 @@ export default function VoiceTakeoverPopover({
       width={272}
     >
       <div className="flex flex-col gap-3 p-3.5">
-        <p className="text-[13px] leading-relaxed text-droid-text">
+        <p className="text-[13px] leading-relaxed text-primary">
           You are talking to <span className="font-medium">{runningOn}</span>. Starting here ends
           that conversation.
         </p>
@@ -38,7 +38,7 @@ export default function VoiceTakeoverPopover({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-lg px-2.5 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text"
+            className="cursor-pointer rounded-lg px-2.5 py-1.5 text-[12px] text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
           >
             Cancel
           </button>
@@ -49,7 +49,7 @@ export default function VoiceTakeoverPopover({
               onClose();
               onTakeOver();
             }}
-            className="cursor-pointer rounded-lg bg-droid-accent px-2.5 py-1.5 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90"
+            className="cursor-pointer rounded-lg bg-accent px-2.5 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
           >
             End it and start here
           </button>

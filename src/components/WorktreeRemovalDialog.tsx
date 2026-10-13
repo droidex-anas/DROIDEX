@@ -38,8 +38,8 @@ function RemovalStatus({
 }) {
   if (isChecking) {
     return (
-      <div className="flex items-center gap-2.5 text-[12px] text-droid-text-secondary">
-        <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow text-droid-text-muted" />
+      <div className="flex items-center gap-2.5 text-[12px] text-secondary">
+        <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow text-muted" />
         Checking for unsaved changes…
       </div>
     );
@@ -53,7 +53,7 @@ function RemovalStatus({
             {String(changedFileCount)} changed {changedFileCount === 1 ? 'file will' : 'files will'}{' '}
             be permanently discarded.
           </p>
-          <p className="mt-1 text-[12px] leading-5 text-droid-text-secondary">
+          <p className="mt-1 text-[12px] leading-5 text-secondary">
             This includes modified and untracked files. This action cannot be undone.
           </p>
         </div>
@@ -61,7 +61,7 @@ function RemovalStatus({
     );
   }
   return (
-    <p className="text-[12px] leading-5 text-droid-text-secondary">
+    <p className="text-[12px] leading-5 text-secondary">
       The worktree directory will be removed from this Mac.
     </p>
   );
@@ -131,37 +131,30 @@ export function WorktreeRemovalDialogContent({
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 6, scale: 0.99, opacity: 0 }}
         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[440px] overflow-hidden rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
+        className="w-full max-w-[440px] overflow-hidden rounded-2xl border border-divider bg-surface shadow-lg"
       >
         <div className="px-6 pb-5 pt-6">
           <h2
             id="worktree-removal-title"
-            className="text-[16px] font-semibold tracking-[-0.015em] text-droid-text"
+            className="text-[16px] font-semibold tracking-[-0.015em] text-primary"
           >
             {removalTitle(isChecking, hasUnsavedChanges)}
           </h2>
-          <p className="mt-1 text-[13px] font-medium text-droid-text-secondary">
-            {worktreeName(worktree)}
-          </p>
-          <p
-            className="mt-0.5 truncate text-[11px] text-droid-text-muted"
-            title={worktree.path ?? undefined}
-          >
+          <p className="mt-1 text-[13px] font-medium text-secondary">{worktreeName(worktree)}</p>
+          <p className="mt-0.5 truncate text-[11px] text-muted" title={worktree.path ?? undefined}>
             {worktree.path}
           </p>
 
           <div
             id="worktree-removal-description"
             className={`mt-5 rounded-xl border p-4 ${
-              hasUnsavedChanges
-                ? 'border-red-500/25 bg-red-500/[0.07]'
-                : 'border-droid-border bg-droid-bg/45'
+              hasUnsavedChanges ? 'border-red-500/25 bg-red-500/[0.07]' : 'border-divider bg-bg/45'
             }`}
           >
             <RemovalStatus changedFileCount={changedFileCount} isChecking={isChecking} />
           </div>
 
-          <ul className="mt-4 space-y-2 text-[12px] leading-5 text-droid-text-muted">
+          <ul className="mt-4 space-y-2 text-[12px] leading-5 text-muted">
             {linkedSessionCount > 0 && (
               <li>
                 {String(linkedSessionCount)} idle{' '}
@@ -177,13 +170,13 @@ export function WorktreeRemovalDialogContent({
           </ul>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-droid-border bg-droid-bg/30 px-6 py-4">
+        <div className="flex items-center justify-end gap-2 border-t border-divider bg-bg/30 px-6 py-4">
           <button
             ref={cancelRef}
             type="button"
             onClick={onCancel}
             disabled={isRemoving}
-            className="rounded-lg px-3.5 py-2 text-[12px] font-medium text-droid-text-secondary transition-all duration-150 hover:bg-droid-elevated/70 hover:text-droid-text active:scale-[0.97] disabled:opacity-40"
+            className="rounded-lg px-3.5 py-2 text-[12px] font-medium text-secondary transition-all duration-150 hover:bg-elevated/70 hover:text-primary active:scale-[0.97] disabled:opacity-40"
           >
             Cancel
           </button>

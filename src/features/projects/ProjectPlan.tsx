@@ -37,7 +37,7 @@ export function ProjectPlan({
         milestones.map(([milestone, steps]) => (
           <div key={milestone} className="pb-1">
             {milestone && (
-              <span className="block px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted/70">
+              <span className="block px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-muted/70">
                 {milestone}
               </span>
             )}
@@ -83,9 +83,9 @@ function PlanRow({
       data-testid="plan-step"
       disabled={!row}
       onClick={open}
-      className="group flex w-full items-start gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-droid-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
+      className="group flex w-full items-start gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-elevated/50 disabled:cursor-default disabled:hover:bg-transparent"
     >
-      <span className="w-4 shrink-0 pt-px text-right text-[11px] tabular-nums text-droid-text-muted/70">
+      <span className="w-4 shrink-0 pt-px text-right text-[11px] tabular-nums text-muted/70">
         {index}
       </span>
       <span className="flex w-3.5 shrink-0 items-center justify-center pt-px">
@@ -97,8 +97,8 @@ function PlanRow({
         <span
           className={`block truncate text-[13px] ${
             step.state === 'done'
-              ? 'text-droid-text-muted line-through decoration-droid-text-muted/40'
-              : 'text-droid-text-secondary group-hover:text-droid-text'
+              ? 'text-muted line-through decoration-muted/40'
+              : 'text-secondary group-hover:text-primary'
           }`}
         >
           {step.title}
@@ -106,7 +106,7 @@ function PlanRow({
         {detail && (
           <span
             className={`mt-0.5 block truncate text-[12px] leading-4 ${
-              row?.live === true ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+              row?.live === true ? 'shimmer-text font-medium' : 'text-muted'
             }`}
           >
             {detail}

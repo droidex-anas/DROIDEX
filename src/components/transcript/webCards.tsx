@@ -51,18 +51,16 @@ function WebSourceRow({
             },
           }
         : {})}
-      className={`block rounded-lg px-3 py-2 transition-colors hover:bg-droid-elevated/60 focus-visible:bg-droid-elevated/60 focus-visible:outline-none ${
-        emphasize ? 'bg-droid-elevated/40' : ''
+      className={`block rounded-lg px-3 py-2 transition-colors hover:bg-elevated/60 focus-visible:bg-elevated/60 focus-visible:outline-none ${
+        emphasize ? 'bg-elevated/40' : ''
       }`}
     >
-      <div className="truncate text-[13px] font-medium text-droid-text">{title}</div>
+      <div className="truncate text-[13px] font-medium text-primary">{title}</div>
       {snippet && (
-        <div className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-droid-text-muted">
-          {snippet}
-        </div>
+        <div className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-muted">{snippet}</div>
       )}
       {url && (
-        <div className="mt-1.5 flex items-center text-[12px] text-droid-text-secondary">
+        <div className="mt-1.5 flex items-center text-[12px] text-secondary">
           {link && <LinkBadge key={link.host} link={link} />}
           <span className="truncate">{webSourceName(url)}</span>
         </div>
@@ -73,7 +71,7 @@ function WebSourceRow({
 
 function CountBadge({ label }: { label: string }) {
   return (
-    <span className="ml-auto shrink-0 rounded-md border border-droid-border bg-droid-elevated/60 px-1.5 py-0.5 tabular-nums text-[11px] text-droid-text-secondary">
+    <span className="ml-auto shrink-0 rounded-md border border-divider bg-elevated/60 px-1.5 py-0.5 tabular-nums text-[11px] text-secondary">
       {label}
     </span>
   );
@@ -103,7 +101,7 @@ function WebToolRunningRow({ label, detail }: { label: string; detail?: string }
       {/* Caret-width spacer: the settled row gains a caret, never a new indent. */}
       <span className="w-3 shrink-0" aria-hidden="true" />
       <span className="shimmer-text shrink-0 font-medium">{label}</span>
-      {detail ? <span className="min-w-0 truncate text-droid-text-muted">{detail}</span> : null}
+      {detail ? <span className="min-w-0 truncate text-muted">{detail}</span> : null}
     </div>
   );
 }
@@ -167,7 +165,7 @@ export function WebSearchCard({
     );
   } else if (expanded && raw) {
     body = (
-      <pre className="mt-1.5 max-h-44 overflow-auto rounded-md bg-droid-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-droid-text-muted/80 whitespace-pre-wrap break-words">
+      <pre className="mt-1.5 max-h-44 overflow-auto rounded-md bg-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-muted/80 whitespace-pre-wrap break-words">
         {linkify(raw)}
       </pre>
     );
@@ -183,10 +181,8 @@ export function WebSearchCard({
         aria-expanded={expanded}
       >
         <Caret open={expanded} />
-        <span className="shrink-0 text-droid-text-secondary">
-          {isX ? 'Searched X' : 'Searched web'}
-        </span>
-        {query ? <span className="min-w-0 truncate text-droid-text-muted">{query}</span> : null}
+        <span className="shrink-0 text-secondary">{isX ? 'Searched X' : 'Searched web'}</span>
+        {query ? <span className="min-w-0 truncate text-muted">{query}</span> : null}
         {trailing}
       </button>
       <Expand open={expanded}>
@@ -244,7 +240,7 @@ export function WebFetchBody({
   const rowSnippet = showBody && snippet.length > 0 ? snippet : undefined;
   const snippetNode =
     !showBody && snippet.length > 0 ? (
-      <div className="line-clamp-2 px-3 text-[12px] leading-relaxed text-droid-text-muted">
+      <div className="line-clamp-2 px-3 text-[12px] leading-relaxed text-muted">
         {linkify(snippet)}
       </div>
     ) : null;
@@ -261,13 +257,13 @@ function FetchBodyContent({ body }: { body: string }) {
   // Raw HTML dumps stay mono — they render poorly as markdown.
   if (looksLikeHtml(body)) {
     return (
-      <pre className="max-h-44 overflow-auto rounded-lg bg-droid-elevated/30 px-3 py-2 font-mono text-[12px] leading-relaxed text-droid-text-muted whitespace-pre-wrap break-words">
+      <pre className="max-h-44 overflow-auto rounded-lg bg-elevated/30 px-3 py-2 font-mono text-[12px] leading-relaxed text-muted whitespace-pre-wrap break-words">
         {linkify(body)}
       </pre>
     );
   }
   return (
-    <div className="max-h-96 overflow-auto rounded-lg bg-droid-elevated/30 px-3.5 py-2.5">
+    <div className="max-h-96 overflow-auto rounded-lg bg-elevated/30 px-3.5 py-2.5">
       {/* Fetched pages are untrusted: diagrams must stay off so an ```svg fence
           in the body can never reach SvgCodeBlock's dangerouslySetInnerHTML, and
           a `src/app.ts` in the page must not become a control for a local file. */}
@@ -349,10 +345,8 @@ export function WebFetchCard({
         aria-expanded={expanded}
       >
         <Caret open={expanded} />
-        <span className="shrink-0 text-droid-text-secondary">Fetched</span>
-        <span className="min-w-0 truncate text-droid-text-muted">
-          {url.length > 0 ? url : displayTitle}
-        </span>
+        <span className="shrink-0 text-secondary">Fetched</span>
+        <span className="min-w-0 truncate text-muted">{url.length > 0 ? url : displayTitle}</span>
         {trailing}
       </button>
       <Expand open={expanded}>

@@ -82,8 +82,8 @@ function CardButton({
       onClick={onClick}
       className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors ${
         danger
-          ? 'text-droid-red hover:bg-droid-red/10'
-          : 'text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
+          ? 'text-danger hover:bg-danger/10'
+          : 'text-muted hover:bg-elevated hover:text-primary'
       }`}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -110,10 +110,10 @@ function ThemeColorRow({
   // (near-black or near-white) has better contrast against it.
   const ink = contrastInk(value);
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-droid-border">
+    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-divider">
       <div>
-        <div className="text-[13px] text-droid-text">{label}</div>
-        <div className="text-[11px] text-droid-text-muted">{description}</div>
+        <div className="text-[13px] text-primary">{label}</div>
+        <div className="text-[11px] text-muted">{description}</div>
       </div>
       <button
         ref={pillRef}
@@ -363,9 +363,9 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
   ];
 
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-surface mb-8">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-droid-border">
-        <div className="text-[13px] font-medium text-droid-text">
+    <div className="rounded-xl border border-divider bg-surface mb-8">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-divider">
+        <div className="text-[13px] font-medium text-primary">
           {resolvedScheme === 'dark' ? 'Dark' : 'Light'} theme
         </div>
         <div className="flex items-center gap-1">
@@ -389,7 +389,7 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
           />
         </div>
       </div>
-      {themeError && <p className="px-4 pt-2.5 text-[11px] text-droid-red">{themeError}</p>}
+      {themeError && <p className="px-4 pt-2.5 text-[11px] text-danger">{themeError}</p>}
 
       <div className="px-4 [&>*:last-child]:border-b-0">
         {COLOR_ROWS.map(({ key, label, description }) => (
@@ -403,10 +403,10 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
             }}
           />
         ))}
-        <div className="flex items-center justify-between gap-3 py-2.5 border-b border-droid-border">
+        <div className="flex items-center justify-between gap-3 py-2.5 border-b border-divider">
           <div>
-            <div className="text-[13px] text-droid-text">Quick accents</div>
-            <div className="text-[11px] text-droid-text-muted">One-tap accent colors</div>
+            <div className="text-[13px] text-primary">Quick accents</div>
+            <div className="text-[11px] text-muted">One-tap accent colors</div>
           </div>
           <div className="flex flex-wrap justify-end gap-1.5">
             {QUICK_ACCENTS.map((c) => {
@@ -423,11 +423,11 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
                     updateColors({ accent: c });
                   }}
                   className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
-                    selected ? 'border-droid-text' : 'border-transparent'
+                    selected ? 'border-text' : 'border-transparent'
                   }`}
                   // A hairline inside the ring keeps a swatch the colour of the
                   // panel (white on a light theme) from reading as an empty slot.
-                  style={{ backgroundColor: c, boxShadow: 'inset 0 0 0 1px var(--droid-border)' }}
+                  style={{ backgroundColor: c, boxShadow: 'inset 0 0 0 1px var(--divider)' }}
                 >
                   {selected && (
                     <Check className="w-3 h-3 mx-auto" style={{ color: ink }} strokeWidth={3} />
@@ -439,7 +439,7 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-droid-border px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2 border-t border-divider px-2.5 py-2">
         <div className="flex items-center">
           <CardButton icon={Plus} label="New theme" onClick={openNewTheme} />
           {activePreset && (

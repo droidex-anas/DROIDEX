@@ -369,7 +369,7 @@ export default function BrowserWorkspace({
   }, [designMode, stepBackFromDesign]);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col bg-droid-bg">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-bg">
       <BrowserToolbar
         urlInputRef={urlInputRef}
         urlInput={urlInput}
@@ -404,13 +404,13 @@ export default function BrowserWorkspace({
       />
 
       {browserError && (
-        <div className="shrink-0 border-b border-droid-border bg-droid-accent/10 px-4 py-2 text-[12px] text-droid-text-secondary">
+        <div className="shrink-0 border-b border-divider bg-accent/10 px-4 py-2 text-[12px] text-secondary">
           {browserError}
         </div>
       )}
 
       {(pageCrashed || loadFailure) && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-droid-border bg-red-500/10 px-4 py-2 text-[12px] text-droid-text-secondary">
+        <div className="flex shrink-0 items-center gap-2 border-b border-divider bg-red-500/10 px-4 py-2 text-[12px] text-secondary">
           <span className="min-w-0 flex-1 truncate">
             {pageCrashed || !loadFailure
               ? 'This page crashed. Retry to load it again.'
@@ -418,7 +418,7 @@ export default function BrowserWorkspace({
           </span>
           <button
             type="button"
-            className="shrink-0 rounded-md border border-droid-border bg-droid-surface px-2 py-0.5 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+            className="shrink-0 rounded-md border border-divider bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
             onClick={() => {
               setLoadFailure(null);
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
@@ -431,7 +431,7 @@ export default function BrowserWorkspace({
           </button>
           <button
             type="button"
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
             onClick={() => {
               setLoadFailure(null);
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
@@ -490,13 +490,13 @@ export default function BrowserWorkspace({
             expanded={expanded}
           />
         ) : (
-          <div className="flex h-full items-center justify-center bg-droid-bg px-6 text-sm text-droid-text-muted">
+          <div className="flex h-full items-center justify-center bg-bg px-6 text-sm text-muted">
             {browserKey ? 'Preparing browser pane...' : 'Select or create a Droid session.'}
           </div>
         )}
 
         {browserKey && !browser && frameReady && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-droid-bg px-6 text-sm text-droid-text-muted">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg px-6 text-sm text-muted">
             Open a URL to start this chat&apos;s browser.
           </div>
         )}
@@ -512,7 +512,7 @@ export default function BrowserWorkspace({
               paddingBottom: 'calc(var(--composer-height, 0px) + 8px)',
               background:
                 viewportMode === 'fit'
-                  ? 'linear-gradient(to top, color-mix(in srgb, var(--droid-bg) 70%, transparent), color-mix(in srgb, var(--droid-bg) 40%, transparent) var(--composer-height, 0px), color-mix(in srgb, var(--droid-bg) 15%, transparent) calc(var(--composer-height, 0px) + 44px), transparent)'
+                  ? 'linear-gradient(to top, color-mix(in srgb, var(--bg) 70%, transparent), color-mix(in srgb, var(--bg) 40%, transparent) var(--composer-height, 0px), color-mix(in srgb, var(--bg) 15%, transparent) calc(var(--composer-height, 0px) + 44px), transparent)'
                   : undefined,
             }}
           >

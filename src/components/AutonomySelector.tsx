@@ -89,9 +89,9 @@ export default function AutonomySelector({
     : `${AUTONOMY_LABELS[value]} — ${AUTONOMY_DESCRIPTIONS[value]}`;
 
   const Glyph = AUTONOMY_GLYPHS[value];
-  let tone = 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40';
-  if (open) tone = 'bg-droid-bg/60 text-droid-text';
-  else if (inactive) tone = 'text-droid-text-muted/60 cursor-not-allowed';
+  let tone = 'text-secondary hover:text-primary hover:bg-bg/40';
+  if (open) tone = 'bg-bg/60 text-primary';
+  else if (inactive) tone = 'text-muted/60 cursor-not-allowed';
 
   return (
     <div ref={rootRef} className="relative shrink-0">
@@ -186,14 +186,12 @@ export function AutonomyMenu({
       role="menu"
       aria-label="Autonomy"
       onKeyDown={onMenuKey}
-      className="rounded-2xl border border-droid-border/60 bg-droid-raised shadow-droid overflow-hidden"
+      className="rounded-2xl border border-divider/60 bg-raised shadow-lg overflow-hidden"
     >
       <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1.5">
-        <span className="text-[12px] font-medium text-droid-text-secondary">Autonomy</span>
+        <span className="text-[12px] font-medium text-secondary">Autonomy</span>
         {SCOPE_CAPTIONS[scope] && (
-          <span className="truncate text-[11px] text-droid-text-muted">
-            {SCOPE_CAPTIONS[scope]}
-          </span>
+          <span className="truncate text-[11px] text-muted">{SCOPE_CAPTIONS[scope]}</span>
         )}
       </div>
       <div className="px-1.5 pb-1.5 space-y-0.5">
@@ -215,39 +213,36 @@ export function AutonomyMenu({
                 onSelect(level);
               }}
               className={`w-full flex items-start gap-3 px-2.5 py-2 rounded-lg text-left transition-colors ${
-                selected ? 'bg-droid-surface' : 'hover:bg-droid-surface/60'
+                selected ? 'bg-surface' : 'hover:bg-surface/60'
               }`}
             >
               <Mark
                 className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
-                  selected ? 'text-droid-text-secondary' : 'text-droid-text-muted'
+                  selected ? 'text-secondary' : 'text-muted'
                 }`}
                 strokeWidth={GLYPH_STROKE}
               />
               <span className="min-w-0 flex-1">
                 <span
                   className={`block text-[13px] ${
-                    selected ? 'font-medium text-droid-text' : 'text-droid-text-secondary'
+                    selected ? 'font-medium text-primary' : 'text-secondary'
                   }`}
                 >
                   {AUTONOMY_LABELS[level]}
                 </span>
-                <span className="mt-0.5 block text-[11px] text-droid-text-muted leading-snug">
+                <span className="mt-0.5 block text-[11px] text-muted leading-snug">
                   {AUTONOMY_DESCRIPTIONS[level]}
                 </span>
                 {consequence && (
-                  <span className="mt-1 block text-[11px] text-droid-text-secondary leading-snug">
+                  <span className="mt-1 block text-[11px] text-secondary leading-snug">
                     {consequence}
                   </span>
                 )}
               </span>
               {selected && (
-                <Check
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-droid-accent"
-                  strokeWidth={2.6}
-                />
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2.6} />
               )}
-              <span className="mt-0.5 w-3 shrink-0 text-right text-[10px] tabular-nums text-droid-text-muted/60">
+              <span className="mt-0.5 w-3 shrink-0 text-right text-[10px] tabular-nums text-muted/60">
                 {i + 1}
               </span>
             </button>

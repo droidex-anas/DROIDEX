@@ -11,7 +11,7 @@ import { ComposerTab } from './ComposerTab';
 // StartInBar's pill. Each action adds its color: the one that can unblock the
 // chat reads brightest.
 export const ACTION_CLASS =
-  'group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-droid-bg/40 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/60';
+  'group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-bg/40 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent/60';
 
 // The tab above the composer while the chat is held on a usage limit, in
 // StartInBar's slot and shape. It never blocks the composer: a message sent now
@@ -38,13 +38,13 @@ export function UsageLimitTab({
           title={`${headline} · ${detail}`}
           className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-[11px]"
         >
-          <span className="shrink-0 text-droid-orange">
+          <span className="shrink-0 text-warning">
             <Gauge className="h-3.5 w-3.5" strokeWidth={2} />
           </span>
           <span className="flex min-w-0 items-center gap-1 tabular-nums">
-            <span className="shrink-0 font-medium text-droid-text">{headline}</span>
-            <span className="shrink-0 text-droid-text-muted">·</span>
-            <span className="min-w-0 truncate text-droid-text-muted">{detail}</span>
+            <span className="shrink-0 font-medium text-primary">{headline}</span>
+            <span className="shrink-0 text-muted">·</span>
+            <span className="min-w-0 truncate text-muted">{detail}</span>
           </span>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -52,12 +52,12 @@ export function UsageLimitTab({
             <button
               type="button"
               onClick={onSwitchModel}
-              className={`${ACTION_CLASS} text-droid-text`}
+              className={`${ACTION_CLASS} text-primary`}
             >
               Switch model
             </button>
           )}
-          <ManageUsageButton provider={provider} className="text-droid-text-secondary" />
+          <ManageUsageButton provider={provider} className="text-secondary" />
         </div>
       </div>
     </ComposerTab>
@@ -88,26 +88,26 @@ export function UsageWarningTab({
           title={[headline, ...details].join(' · ')}
           className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-[11px]"
         >
-          <span className="shrink-0 text-droid-text-muted">
+          <span className="shrink-0 text-muted">
             <Gauge className="h-3.5 w-3.5" strokeWidth={2} />
           </span>
           {/* Flows as text: on a narrow composer it wraps between details, so
               neither the headline nor a time is ever cut short. */}
           <span className="min-w-0 tabular-nums">
             {/* Only the headline is announced: the countdown beside it ticks. */}
-            <span role="status" className="text-droid-text-secondary">
+            <span role="status" className="text-secondary">
               {headline}
             </span>
             {details.map((detail) => (
               <Fragment key={detail}>
                 {' '}
-                <span className="whitespace-nowrap text-droid-text-muted">· {detail}</span>
+                <span className="whitespace-nowrap text-muted">· {detail}</span>
               </Fragment>
             ))}
           </span>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <ManageUsageButton provider={provider} className="text-droid-text-muted" />
+          <ManageUsageButton provider={provider} className="text-muted" />
         </div>
       </div>
     </ComposerTab>
@@ -130,7 +130,7 @@ export function ManageUsageButton({
     >
       Manage usage
       <ExternalLink
-        className="h-3 w-3 shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary"
+        className="h-3 w-3 shrink-0 text-muted transition-colors group-hover:text-secondary"
         strokeWidth={2}
       />
     </button>

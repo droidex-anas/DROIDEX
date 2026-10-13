@@ -114,7 +114,7 @@ export function SideChatDetail({
         </span>
         <span
           title={session.title}
-          className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text"
+          className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary"
         >
           {session.title}
         </span>
@@ -149,7 +149,7 @@ export function SideChatDetail({
                 type="button"
                 disabled={state.loadingOlder}
                 onClick={loadEarlier}
-                className="rounded-md px-2 py-1 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text-secondary disabled:hover:bg-transparent"
+                className="rounded-md px-2 py-1 text-[11px] text-muted transition-colors hover:bg-elevated hover:text-secondary disabled:hover:bg-transparent"
               >
                 {state.loadingOlder ? 'Loading earlier messages…' : 'Show earlier messages'}
               </button>
@@ -203,14 +203,12 @@ function SideChatEmptyState({
   if (restore?.status === 'failed') {
     return (
       <div className="flex flex-col items-center gap-2 pt-6 text-center">
-        <span className="text-[12px] text-droid-text">Couldn&apos;t load this side chat</span>
-        {restore.error && (
-          <span className="text-[11px] text-droid-text-muted">{restore.error}</span>
-        )}
+        <span className="text-[12px] text-primary">Couldn&apos;t load this side chat</span>
+        {restore.error && <span className="text-[11px] text-muted">{restore.error}</span>}
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-md bg-droid-elevated px-2.5 py-1 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-active"
+          className="rounded-md bg-elevated px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-active"
         >
           Retry
         </button>
@@ -218,7 +216,7 @@ function SideChatEmptyState({
     );
   }
   return (
-    <p className="pt-6 text-center text-[12px] text-droid-text-muted">
+    <p className="pt-6 text-center text-[12px] text-muted">
       {restore?.status === 'loading' ? 'Loading side chat…' : 'Nothing in this side chat yet.'}
     </p>
   );

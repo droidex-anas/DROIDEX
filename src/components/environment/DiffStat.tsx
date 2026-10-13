@@ -53,7 +53,7 @@ export function DiffStat({
       <div
         ref={anchorRef}
         className={`group flex items-center rounded-lg transition-colors ${
-          open ? 'bg-droid-elevated' : 'hover:bg-droid-elevated/50'
+          open ? 'bg-elevated' : 'hover:bg-elevated/50'
         }`}
       >
         <button
@@ -62,25 +62,22 @@ export function DiffStat({
           title="Open the full diff review"
           className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-lg px-3 py-2 text-left"
         >
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-colors group-hover:text-secondary">
             <ChangesIcon className="h-4 w-4" />
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-droid-text">
+          <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-primary">
             Changes
             {modeQualifier(mode, baseRef) !== '' && (
-              <span className="text-[11px] text-droid-text-muted">
-                {' '}
-                {modeQualifier(mode, baseRef)}
-              </span>
+              <span className="text-[11px] text-muted"> {modeQualifier(mode, baseRef)}</span>
             )}
           </span>
           <span className="shrink-0 text-[11px] tabular-nums">
             {!ready ? (
-              <span className="text-droid-text-muted/60">…</span>
+              <span className="text-muted/60">…</span>
             ) : clean ? (
-              <span className="text-droid-text-muted">Clean</span>
+              <span className="text-muted">Clean</span>
             ) : noLineDelta ? (
-              <span className="text-droid-text-secondary">
+              <span className="text-secondary">
                 {files.toLocaleString()} file{files === 1 ? '' : 's'}
               </span>
             ) : (
@@ -99,7 +96,7 @@ export function DiffStat({
           title="Choose which changes are counted"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="shrink-0 rounded-r-lg px-1.5 py-2 text-droid-text-muted/60 hover:text-droid-text"
+          className="shrink-0 rounded-r-lg px-1.5 py-2 text-muted/60 hover:text-primary"
         >
           <RowCaret open={open} />
         </button>
@@ -124,13 +121,13 @@ export function DiffStat({
                 onModeChange(option);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
             >
               <span className="flex-1 truncate">{diffModeLabel(option, baseRef)}</span>
               {option === mode && (
                 <Check
                   className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: 'var(--droid-accent)' }}
+                  style={{ color: 'var(--accent)' }}
                   strokeWidth={3}
                 />
               )}

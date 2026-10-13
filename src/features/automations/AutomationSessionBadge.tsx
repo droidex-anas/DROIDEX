@@ -12,9 +12,9 @@ export function AutomationSessionBadge({ appSessionId }: { appSessionId: string 
         status ? `, run ${status}` : ''
       }`}
       title={`Automation: ${origin.automationTitle}${status ? ` · ${status}` : ''}`}
-      className={`h-2.5 w-2.5 shrink-0 rounded-full border border-droid-text-muted ${
+      className={`h-2.5 w-2.5 shrink-0 rounded-full border border-muted ${
         status === 'running' || status === 'starting'
-          ? 'motion-safe:animate-pulse border-droid-text-secondary'
+          ? 'motion-safe:animate-pulse border-secondary'
           : ''
       }`}
     />

@@ -57,9 +57,8 @@ import AutonomySelector from './AutonomySelector';
 import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { createIncrementalTranscriptFilter } from '../lib/incrementalTranscriptFilter';
 
-const ACCENT = 'var(--droid-accent)';
-const accentMix = (pct: number) =>
-  `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
+const ACCENT = 'var(--accent)';
+const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
 const EMPTY_TRANSCRIPT: TranscriptEvent[] = [];
 const EMPTY_PROGRESS: ProgressEntry[] = [];
 const EMPTY_CHILD_SESSIONS: Record<string, ChildSessionSummary> = {};
@@ -122,7 +121,7 @@ function ChatArea({
     >
       <div className={`mx-auto min-w-0 ${big ? 'max-w-3xl' : 'max-w-2xl'}`}>
         {hidden > 0 && (
-          <div className="mb-4 text-center text-[12px] text-droid-text-muted">
+          <div className="mb-4 text-center text-[12px] text-muted">
             Showing latest {renderEvents.length.toLocaleString()} of{' '}
             {events.length.toLocaleString()} events.
           </div>
@@ -141,7 +140,7 @@ function ChatArea({
         />
 
         {events.length === 0 && !pending && (
-          <div className="py-24 text-center text-[13px] text-droid-text-muted">
+          <div className="py-24 text-center text-[13px] text-muted">
             {live ? 'Waiting for the agent…' : 'Direct the orchestrator to begin.'}
           </div>
         )}
@@ -153,7 +152,7 @@ function ChatArea({
 /* ════════════════════════ left: features ════════════════════════ */
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <span className="text-[12px] font-medium text-droid-text-muted">{children}</span>;
+  return <span className="text-[12px] font-medium text-muted">{children}</span>;
 }
 
 function FeaturesColumn({
@@ -190,7 +189,7 @@ function FeaturesColumn({
     <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-4 pt-2 space-y-4">
       {milestones.map(([milestone, feats]) => (
         <div key={milestone}>
-          <span className="block px-2 mb-1 text-[11px] font-medium text-droid-text-muted/70 uppercase tracking-wider">
+          <span className="block px-2 mb-1 text-[11px] font-medium text-muted/70 uppercase tracking-wider">
             {milestone}
           </span>
           <div className="space-y-px">
@@ -211,16 +210,16 @@ function FeaturesColumn({
                     className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full transition-opacity"
                     style={{ background: ACCENT, opacity: active ? 1 : running ? 0.45 : 0 }}
                   />
-                  <span className="tabular-nums text-[11px] text-droid-text-muted/70 w-4 shrink-0 text-right">
+                  <span className="tabular-nums text-[11px] text-muted/70 w-4 shrink-0 text-right">
                     {numberOf.get(f.id)}
                   </span>
                   <span
                     className={`min-w-0 flex-1 truncate ${big ? 'text-[13px]' : 'text-[12px]'} ${
                       completed
-                        ? 'text-droid-text-muted'
+                        ? 'text-muted'
                         : active
-                          ? 'text-droid-text'
-                          : 'text-droid-text-secondary group-hover:text-droid-text'
+                          ? 'text-primary'
+                          : 'text-secondary group-hover:text-primary'
                     }`}
                   >
                     {f.skillName || f.description}
@@ -230,10 +229,7 @@ function FeaturesColumn({
                       working
                     </span>
                   ) : completed ? (
-                    <Check
-                      className="w-3 h-3 shrink-0 text-droid-text-muted/60"
-                      strokeWidth={2.5}
-                    />
+                    <Check className="w-3 h-3 shrink-0 text-muted/60" strokeWidth={2.5} />
                   ) : null}
                 </button>
               );
@@ -242,7 +238,7 @@ function FeaturesColumn({
         </div>
       ))}
       {features.length === 0 && (
-        <div className="px-3 py-8 text-[12px] text-droid-text-muted">Planning features…</div>
+        <div className="px-3 py-8 text-[12px] text-muted">Planning features…</div>
       )}
     </div>
   );
@@ -267,11 +263,11 @@ function EnvRow({
     <button
       onClick={onClick}
       title={title}
-      className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-droid-text-secondary hover:text-droid-text hover:bg-droid-elevated/60 transition-colors"
+      className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-secondary hover:text-primary hover:bg-elevated/60 transition-colors"
     >
-      <span className="text-droid-text-muted shrink-0">{icon}</span>
+      <span className="text-muted shrink-0">{icon}</span>
       <span className="text-[13px] leading-none">{label}</span>
-      {chevron && <ChevronDown className="w-3.5 h-3.5 ml-1 text-droid-text-muted/60" />}
+      {chevron && <ChevronDown className="w-3.5 h-3.5 ml-1 text-muted/60" />}
     </button>
   );
 }
@@ -372,14 +368,14 @@ function ContextColumn({
         <div className="flex items-center gap-1 px-1">
           <button
             title={`${String(skills.length)} skills`}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated/60 transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
           >
             <Boxes className="w-4 h-4" />
             {skills.length > 0 && <span className="text-[11px] tabular-nums">{skills.length}</span>}
           </button>
           <button
             title="Web"
-            className="p-1.5 rounded-lg text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated/60 transition-colors"
+            className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
           >
             <Globe className="w-4 h-4" />
           </button>
@@ -387,10 +383,7 @@ function ContextColumn({
         {big && skills.length > 0 && (
           <div className="flex flex-wrap gap-1 px-1 mt-2">
             {skills.map((s) => (
-              <span
-                key={s}
-                className="px-1.5 py-0.5 rounded text-[11px] text-droid-text-muted bg-droid-elevated"
-              >
+              <span key={s} className="px-1.5 py-0.5 rounded text-[11px] text-muted bg-elevated">
                 {s}
               </span>
             ))}
@@ -515,7 +508,7 @@ function AgentRow({
   return (
     <button
       onClick={onClick}
-      className="group w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors text-left hover:bg-droid-elevated/50"
+      className="group w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors text-left hover:bg-elevated/50"
       style={selected ? { background: accentMix(7) } : undefined}
     >
       <span className="relative shrink-0">
@@ -524,7 +517,7 @@ function AgentRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span
-            className={`text-[13px] leading-none truncate ${selected ? 'text-droid-text' : 'text-droid-text-secondary'}`}
+            className={`text-[13px] leading-none truncate ${selected ? 'text-primary' : 'text-secondary'}`}
           >
             {title}
           </span>
@@ -532,7 +525,7 @@ function AgentRow({
             <span className="shimmer-text text-[11px] leading-none font-medium">working</span>
           )}
         </span>
-        <span className="mt-1 block text-[11px] text-droid-text-muted truncate">{meta}</span>
+        <span className="mt-1 block text-[11px] text-muted truncate">{meta}</span>
       </span>
     </button>
   );
@@ -558,7 +551,7 @@ function ProgressSection({
       <div className="flex items-center justify-between px-2 mb-1.5">
         <SectionLabel>Progress</SectionLabel>
         {progress.length > 0 && (
-          <span className="tabular-nums text-[11px] text-droid-text-muted">{progress.length}</span>
+          <span className="tabular-nums text-[11px] text-muted">{progress.length}</span>
         )}
       </div>
       <div className="space-y-0.5">
@@ -572,26 +565,26 @@ function ProgressSection({
               if (entry.workerChildSessionId) onSelectChild(entry.workerChildSessionId);
             }}
             className={`w-full flex items-center gap-2 px-2 py-1 rounded-lg text-left transition-colors ${
-              entry.workerChildSessionId ? 'hover:bg-droid-elevated/35' : 'cursor-default'
+              entry.workerChildSessionId ? 'hover:bg-elevated/35' : 'cursor-default'
             }`}
           >
-            <span className="tabular-nums text-[11px] text-droid-text-muted/70 shrink-0">
+            <span className="tabular-nums text-[11px] text-muted/70 shrink-0">
               {formatTime(entry.timestamp)}
             </span>
-            <span className="min-w-0 truncate text-[12px] text-droid-text-secondary">
+            <span className="min-w-0 truncate text-[12px] text-secondary">
               {entry.title ?? entry.message ?? entry.type.replace(/_/g, ' ')}
             </span>
           </button>
         ))}
         {shown.length === 0 && (
-          <div className="px-2 py-4 text-[12px] text-droid-text-muted">No progress log yet.</div>
+          <div className="px-2 py-4 text-[12px] text-muted">No progress log yet.</div>
         )}
         {!big && hidden > 0 && (
           <button
             onClick={() => {
               setShowAll(true);
             }}
-            className="w-full text-left px-2 py-1 text-[12px] text-droid-text-muted hover:text-droid-text transition-colors"
+            className="w-full text-left px-2 py-1 text-[12px] text-muted hover:text-primary transition-colors"
           >
             Show {hidden} more
           </button>
@@ -601,7 +594,7 @@ function ProgressSection({
             onClick={() => {
               setShowAll(false);
             }}
-            className="w-full text-left px-2 py-1 text-[12px] text-droid-text-muted hover:text-droid-text transition-colors"
+            className="w-full text-left px-2 py-1 text-[12px] text-muted hover:text-primary transition-colors"
           >
             Show less
           </button>
@@ -637,18 +630,18 @@ function ExpandModal({
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.97, opacity: 0, y: 8 }}
         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-3xl h-[82vh] flex flex-col rounded-2xl border border-droid-border bg-droid-surface shadow-droid overflow-hidden"
+        className="w-full max-w-3xl h-[82vh] flex flex-col rounded-2xl border border-divider bg-surface shadow-lg overflow-hidden"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
-        <div className="flex items-center justify-between px-5 h-12 border-b border-droid-border shrink-0">
-          <span className="text-[13px] font-medium text-droid-text">{title}</span>
+        <div className="flex items-center justify-between px-5 h-12 border-b border-divider shrink-0">
+          <span className="text-[13px] font-medium text-primary">{title}</span>
           <div className="flex items-center gap-1">
             {headerExtra}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated transition-colors"
+              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -676,19 +669,19 @@ function PanelHeader({
   return (
     <div
       data-electron-drag-region
-      className="flex items-center justify-between px-4 h-11 shrink-0 border-b border-droid-border"
+      className="flex items-center justify-between px-4 h-11 shrink-0 border-b border-divider"
     >
       <span className="flex items-center gap-2">
-        <span className="text-[11px] font-medium tracking-[0.09em] text-droid-text-secondary uppercase">
+        <span className="text-[11px] font-medium tracking-[0.09em] text-secondary uppercase">
           {title}
         </span>
-        {count && <span className="tabular-nums text-[11px] text-droid-text-muted">{count}</span>}
+        {count && <span className="tabular-nums text-[11px] text-muted">{count}</span>}
       </span>
       <div className="flex items-center gap-0.5">
         <button
           onClick={onExpand}
           title="Expand"
-          className="p-1 rounded-md text-droid-text-muted/60 hover:text-droid-text hover:bg-droid-elevated transition-colors"
+          className="p-1 rounded-md text-muted/60 hover:text-primary hover:bg-elevated transition-colors"
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>
@@ -696,7 +689,7 @@ function PanelHeader({
           <button
             onClick={onCollapse}
             title="Collapse"
-            className="p-1 rounded-md text-droid-text-muted/60 hover:text-droid-text hover:bg-droid-elevated transition-colors"
+            className="p-1 rounded-md text-muted/60 hover:text-primary hover:bg-elevated transition-colors"
           >
             <PanelLeft className="w-3.5 h-3.5" />
           </button>
@@ -724,7 +717,7 @@ function StatusDot({ status }: { status: string }) {
         style={{ color: ACCENT }}
       />
     );
-  return <span className="mt-1.5 w-2.5 h-2.5 rounded-full border border-droid-border shrink-0" />;
+  return <span className="mt-1.5 w-2.5 h-2.5 rounded-full border border-divider shrink-0" />;
 }
 
 function ActionRow({
@@ -745,16 +738,14 @@ function ActionRow({
     <button
       disabled={!clickable}
       onClick={() => change && onOpenDiff?.(change)}
-      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left ${clickable ? 'hover:bg-droid-elevated/60 cursor-pointer' : 'cursor-default'}`}
+      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left ${clickable ? 'hover:bg-elevated/60 cursor-pointer' : 'cursor-default'}`}
       title={detail || undefined}
     >
-      <span className="text-[12px] font-medium text-droid-text-secondary shrink-0">
-        {CAT_LABEL[cat]}
-      </span>
-      <span className="text-[12px] font-mono text-droid-text-muted truncate">
+      <span className="text-[12px] font-medium text-secondary shrink-0">{CAT_LABEL[cat]}</span>
+      <span className="text-[12px] font-mono text-muted truncate">
         {displayDetail || event.toolName}
       </span>
-      {clickable && <FileDiff className="w-3 h-3 ml-auto shrink-0 text-droid-text-muted/60" />}
+      {clickable && <FileDiff className="w-3 h-3 ml-auto shrink-0 text-muted/60" />}
     </button>
   );
 }
@@ -763,13 +754,13 @@ function SpecList({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
     <div>
-      <div className="text-[11px] font-medium uppercase tracking-wider text-droid-text-muted mb-1.5">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-muted mb-1.5">
         {title}
       </div>
       <ul className="space-y-1">
         {items.map((it, i) => (
-          <li key={i} className="flex gap-2 text-[13px] text-droid-text-secondary leading-relaxed">
-            <span className="mt-[7px] w-1 h-1 rounded-full bg-droid-text-muted shrink-0" />
+          <li key={i} className="flex gap-2 text-[13px] text-secondary leading-relaxed">
+            <span className="mt-[7px] w-1 h-1 rounded-full bg-muted shrink-0" />
             <span className="break-words">{it}</span>
           </li>
         ))}
@@ -808,7 +799,7 @@ function FeatureFocus({
       <div className="max-w-3xl mx-auto px-8 py-6">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-[12px] text-droid-text-muted hover:text-droid-text transition-colors mb-4"
+          className="flex items-center gap-1.5 text-[12px] text-muted hover:text-primary transition-colors mb-4"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to chat
         </button>
@@ -816,7 +807,7 @@ function FeatureFocus({
         <div className="flex items-start gap-3 mb-5">
           <StatusDot status={feature.status} />
           <div className="min-w-0">
-            <h2 className="text-[16px] font-semibold text-droid-text leading-snug break-words">
+            <h2 className="text-[16px] font-semibold text-primary leading-snug break-words">
               {feature.description}
             </h2>
             <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -829,20 +820,18 @@ function FeatureFocus({
                 </span>
               )}
               {feature.milestone && (
-                <span className="text-[11px] text-droid-text-muted">{feature.milestone}</span>
+                <span className="text-[11px] text-muted">{feature.milestone}</span>
               )}
-              <span className="text-[11px] text-droid-text-muted capitalize">
+              <span className="text-[11px] text-muted capitalize">
                 {feature.status.replace(/_/g, ' ')}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="space-y-4 rounded-xl bg-droid-elevated/25 p-4 mb-6">
+        <div className="space-y-4 rounded-xl bg-elevated/25 p-4 mb-6">
           {noSpec ? (
-            <div className="text-[13px] text-droid-text-muted">
-              No spec details provided for this feature.
-            </div>
+            <div className="text-[13px] text-muted">No spec details provided for this feature.</div>
           ) : (
             <>
               <SpecList title="Preconditions" items={feature.preconditions} />
@@ -854,17 +843,17 @@ function FeatureFocus({
 
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-droid-text-secondary">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-secondary">
               Worker actions
             </span>
-            <span className="tabular-nums text-[11px] text-droid-text-muted">{shown.length}</span>
+            <span className="tabular-nums text-[11px] text-muted">{shown.length}</span>
           </div>
           {toolCalls.length > curated.length && (
             <button
               onClick={() => {
                 setShowAll((v) => !v);
               }}
-              className="text-[11px] text-droid-text-muted hover:text-droid-text transition-colors"
+              className="text-[11px] text-muted hover:text-primary transition-colors"
             >
               {showAll ? 'Show key actions' : `Reveal all (${String(toolCalls.length)})`}
             </button>
@@ -875,7 +864,7 @@ function FeatureFocus({
             <ActionRow key={e.id} event={e} cwd={cwd} onOpenDiff={onOpenDiff} />
           ))}
           {shown.length === 0 && (
-            <div className="py-8 text-center text-[13px] text-droid-text-muted">
+            <div className="py-8 text-center text-[13px] text-muted">
               No worker activity recorded yet.
             </div>
           )}
@@ -1064,22 +1053,22 @@ export default function MissionControl() {
       <div className="flex-1 flex min-h-0 min-w-0">
         {/* ─── Features rail ─── */}
         {railCollapsed ? (
-          <div className="w-11 shrink-0 flex flex-col items-center py-3 border-r border-droid-border bg-droid-surface/20">
+          <div className="w-11 shrink-0 flex flex-col items-center py-3 border-r border-divider bg-surface/20">
             <button
               onClick={() => {
                 setRailCollapsed(false);
               }}
               title="Expand features"
-              className="p-1.5 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated transition-colors"
+              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated transition-colors"
             >
               <PanelLeft className="w-4 h-4" />
             </button>
-            <span className="mt-3 text-[11px] font-medium tracking-[0.15em] text-droid-text-muted uppercase [writing-mode:vertical-rl]">
+            <span className="mt-3 text-[11px] font-medium tracking-[0.15em] text-muted uppercase [writing-mode:vertical-rl]">
               Features
             </span>
           </div>
         ) : (
-          <aside className="w-[248px] shrink-0 flex flex-col border-r border-droid-border bg-droid-surface/20">
+          <aside className="w-[248px] shrink-0 flex flex-col border-r border-divider bg-surface/20">
             <PanelHeader
               title="Features"
               count={features.length > 0 ? `${String(done)}/${String(features.length)}` : undefined}
@@ -1103,9 +1092,9 @@ export default function MissionControl() {
         <section className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             data-electron-drag-region
-            className="shrink-0 flex items-center justify-between gap-3 pr-6 pl-6 h-12 border-b border-droid-border"
+            className="shrink-0 flex items-center justify-between gap-3 pr-6 pl-6 h-12 border-b border-divider"
           >
-            <h1 className="text-[14px] font-medium text-droid-text truncate">{mission.title}</h1>
+            <h1 className="text-[14px] font-medium text-primary truncate">{mission.title}</h1>
             <div className="flex items-center gap-2 shrink-0">
               <RunningProcessesMenu appSessionId={mission.appSessionId} />
               {visibleIsLive ? (
@@ -1117,13 +1106,13 @@ export default function MissionControl() {
                     onClick={() => {
                       interruptVisibleSession(mission.appSessionId, visibleChildSessionId);
                     }}
-                    className="px-2 py-1 rounded-md text-[11px] text-droid-text-muted hover:text-droid-text border border-droid-border hover:border-droid-border-hover transition-colors"
+                    className="px-2 py-1 rounded-md text-[11px] text-muted hover:text-primary border border-divider hover:border-divider-strong transition-colors"
                   >
                     Stop
                   </button>
                 </>
               ) : (
-                <span className="text-[11px] text-droid-text-muted capitalize">{phaseLabel}</span>
+                <span className="text-[11px] text-muted capitalize">{phaseLabel}</span>
               )}
             </div>
           </div>
@@ -1160,7 +1149,7 @@ export default function MissionControl() {
               animate={{ width: 272, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="shrink-0 overflow-hidden flex flex-col border-l border-droid-border bg-droid-surface/20"
+              className="shrink-0 overflow-hidden flex flex-col border-l border-divider bg-surface/20"
             >
               <div className="flex h-full w-[272px] flex-col">
                 <PanelHeader

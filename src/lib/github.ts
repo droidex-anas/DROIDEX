@@ -256,7 +256,7 @@ export interface PrBadge {
 }
 
 export const PR_TONE_TEXT_CLASS: Record<PrTone, string> = {
-  neutral: 'text-droid-text-secondary',
+  neutral: 'text-secondary',
   success: 'text-[var(--diff-add-fg)]',
   danger: 'text-[var(--diff-del-fg)]',
   accent: 'text-[#a371f7]',

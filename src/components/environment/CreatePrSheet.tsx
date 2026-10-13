@@ -107,7 +107,7 @@ export function CreatePrSheet({
   };
 
   return (
-    <div className="mx-2 mb-1.5 space-y-2 rounded-xl bg-droid-elevated/50 px-2.5 py-2.5">
+    <div className="mx-2 mb-1.5 space-y-2 rounded-xl bg-elevated/50 px-2.5 py-2.5">
       <input
         autoFocus
         value={title}
@@ -116,7 +116,7 @@ export function CreatePrSheet({
         }}
         onKeyDown={submitOnMetaEnter}
         placeholder="Pull request title"
-        className="w-full rounded-lg bg-droid-bg/60 px-2.5 py-1.5 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+        className="w-full rounded-lg bg-bg/60 px-2.5 py-1.5 text-[13px] text-primary placeholder:text-muted focus:outline-none"
       />
       <textarea
         value={body}
@@ -126,17 +126,17 @@ export function CreatePrSheet({
         onKeyDown={submitOnMetaEnter}
         rows={3}
         placeholder="Description (optional)"
-        className="w-full resize-none rounded-lg bg-droid-bg/60 px-2.5 py-2 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+        className="w-full resize-none rounded-lg bg-bg/60 px-2.5 py-2 text-[13px] text-primary placeholder:text-muted focus:outline-none"
       />
       <div className="relative" ref={basePickerRef}>
         <button
           onClick={() => {
             setPickingBase((v) => !v);
           }}
-          className="flex w-full items-center gap-1.5 rounded-lg bg-droid-bg/40 px-2.5 py-1.5 text-[12px] hover:bg-droid-bg/60"
+          className="flex w-full items-center gap-1.5 rounded-lg bg-bg/40 px-2.5 py-1.5 text-[12px] hover:bg-bg/60"
         >
-          <span className="text-droid-text-muted">Base</span>
-          <span className="flex-1 truncate text-left text-droid-text">
+          <span className="text-muted">Base</span>
+          <span className="flex-1 truncate text-left text-primary">
             {effectiveBase ?? 'No base branch available'}
           </span>
           <ChevronDown
@@ -144,7 +144,7 @@ export function CreatePrSheet({
           />
         </button>
         {pickingBase && (
-          <div className="mt-1 max-h-32 overflow-y-auto rounded-lg bg-droid-bg/60 p-1">
+          <div className="mt-1 max-h-32 overflow-y-auto rounded-lg bg-bg/60 p-1">
             {baseOptions.map((option) => (
               <button
                 key={option}
@@ -152,7 +152,7 @@ export function CreatePrSheet({
                   setBase(option);
                   setPickingBase(false);
                 }}
-                className="flex w-full items-center rounded px-1.5 py-1 text-left text-[12px] text-droid-text-secondary hover:bg-droid-elevated/60 hover:text-droid-text"
+                className="flex w-full items-center rounded px-1.5 py-1 text-left text-[12px] text-secondary hover:bg-elevated/60 hover:text-primary"
               >
                 {option}
               </button>
@@ -161,21 +161,21 @@ export function CreatePrSheet({
         )}
       </div>
       <div className="flex items-center justify-between">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-droid-text-secondary">
+        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-secondary">
           <input
             type="checkbox"
             checked={draft}
             onChange={(e) => {
               setDraft(e.target.checked);
             }}
-            className="accent-droid-accent"
+            className="accent-accent"
           />
           Draft
         </label>
         <button
           onClick={() => void doCreate()}
           disabled={!title.trim() || !effectiveBase || busy}
-          className="flex items-center gap-1.5 rounded-lg bg-droid-accent/15 px-2.5 py-1 text-[12px] font-medium text-droid-accent transition-colors hover:bg-droid-accent/25 disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-lg bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
         >
           {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
           Open PR

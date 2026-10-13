@@ -23,23 +23,23 @@ export function markdownTableComponents(specMode: boolean): Components {
   return {
     table: ({ children }) => (
       <div
-        className={`max-w-full overflow-hidden rounded-xl border border-droid-border ${specMode ? 'my-6' : 'my-2.5'}`}
+        className={`max-w-full overflow-hidden rounded-xl border border-divider ${specMode ? 'my-6' : 'my-2.5'}`}
       >
         <div className="scrollbar-on-hover scroll-fade-x overflow-x-auto overscroll-x-contain">
           <table className="min-w-full border-collapse text-[13px]">{children}</table>
         </div>
       </div>
     ),
-    thead: ({ children }) => <thead className="bg-droid-surface/45">{children}</thead>,
+    thead: ({ children }) => <thead className="bg-surface/45">{children}</thead>,
     tbody: ({ children }) => (
-      <tbody className="[&_tr:nth-child(even)]:bg-droid-surface/25 [&_tr:hover]:bg-droid-active/25">
+      <tbody className="[&_tr:nth-child(even)]:bg-surface/25 [&_tr:hover]:bg-active/25">
         {children}
       </tbody>
     ),
     th: ({ children, align }) => (
       <th
         style={alignStyle(align)}
-        className={`border-b border-droid-border-hover text-left align-top font-semibold whitespace-nowrap text-droid-text ${cell}`}
+        className={`border-b border-divider-strong text-left align-top font-semibold whitespace-nowrap text-primary ${cell}`}
       >
         {children}
       </th>
@@ -47,7 +47,7 @@ export function markdownTableComponents(specMode: boolean): Components {
     td: ({ children, align }) => (
       <td
         style={alignStyle(align)}
-        className={`min-w-[14ch] border-t border-droid-border/60 align-top text-droid-text-secondary first:font-medium first:text-droid-text ${cell}`}
+        className={`min-w-[14ch] border-t border-divider/60 align-top text-secondary first:font-medium first:text-primary ${cell}`}
       >
         {children}
       </td>

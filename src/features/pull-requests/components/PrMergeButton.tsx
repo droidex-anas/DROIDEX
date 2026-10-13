@@ -79,7 +79,7 @@ export function PrMergeButton({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex items-center gap-1.5 rounded-lg bg-[#238636] px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:bg-droid-elevated disabled:text-droid-text-muted"
+        className="flex items-center gap-1.5 rounded-lg bg-[#238636] px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:bg-elevated disabled:text-muted"
       >
         <Octicon name="git-merge" size={13} />
         {mergeLabel(merging, merged)}
@@ -88,7 +88,7 @@ export function PrMergeButton({
       {open && !disabled ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-xl border border-droid-border bg-droid-surface py-1 shadow-xl"
+          className="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-xl border border-divider bg-surface py-1 shadow-xl"
         >
           {METHODS.map((method) => (
             <button
@@ -101,10 +101,10 @@ export function PrMergeButton({
                   if (ok) setMergedKey(prKey);
                 });
               }}
-              className="block w-full px-3 py-1.5 text-left transition-colors hover:bg-droid-active"
+              className="block w-full px-3 py-1.5 text-left transition-colors hover:bg-active"
             >
-              <span className="block text-[13px] text-droid-text">{method.label}</span>
-              <span className="block text-[12px] text-droid-text-muted">{method.hint}</span>
+              <span className="block text-[13px] text-primary">{method.label}</span>
+              <span className="block text-[12px] text-muted">{method.hint}</span>
             </button>
           ))}
         </div>

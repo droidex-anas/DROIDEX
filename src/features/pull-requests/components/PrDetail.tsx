@@ -45,14 +45,14 @@ export function CodePane({ diff, diffError }: { diff: string | null; diffError: 
   if (diffError) {
     return (
       <div className="flex h-full items-center justify-center px-8">
-        <p className="text-[13px] text-droid-text-muted">{diffError}</p>
+        <p className="text-[13px] text-muted">{diffError}</p>
       </div>
     );
   }
   if (diff !== null) return <PrDiff diff={diff} />;
   return (
     <div className="flex h-full items-center justify-center px-8">
-      <div className="h-16 w-full max-w-2xl rounded-xl bg-droid-elevated/40" />
+      <div className="h-16 w-full max-w-2xl rounded-xl bg-elevated/40" />
     </div>
   );
 }
@@ -76,7 +76,7 @@ function ToolbarIconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-lg p-1.5 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text disabled:opacity-40"
+      className="rounded-lg p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
     >
       <Octicon name={icon} size={14} label={label} className={spinning ? 'animate-spin' : ''} />
     </button>
@@ -203,7 +203,7 @@ export function PrDetail({
         <div
           role="tablist"
           aria-label="Pull request views"
-          className="flex items-center gap-0.5 rounded-lg bg-droid-elevated/50 p-0.5"
+          className="flex items-center gap-0.5 rounded-lg bg-elevated/50 p-0.5"
         >
           {TABS.map((item) => (
             <button
@@ -218,8 +218,8 @@ export function PrDetail({
               }}
               className={`rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors ${
                 tab === item.id
-                  ? 'bg-droid-surface text-droid-text shadow-sm'
-                  : 'text-droid-text-muted hover:text-droid-text-secondary'
+                  ? 'bg-surface text-primary shadow-[0_1px_2px_0_rgb(0_0_0/0.05)]'
+                  : 'text-muted hover:text-secondary'
               }`}
             >
               {item.label}
@@ -248,7 +248,7 @@ export function PrDetail({
             onClick={() => {
               if (headerPr) onOpenChat(headerPr);
             }}
-            className="flex items-center gap-1.5 rounded-lg border border-droid-border px-2.5 py-1.5 text-[13px] font-medium text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg border border-divider px-2.5 py-1.5 text-[13px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
           >
             <Octicon name="comment-discussion" size={13} />
             Chat

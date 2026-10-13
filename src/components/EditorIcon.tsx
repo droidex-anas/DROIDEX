@@ -54,5 +54,5 @@ export function EditorIcon({ editor, size = 16 }: { editor: EditorId; size?: num
   if (icon) return <img src={icon} width={size} height={size} alt="" className="shrink-0" />;
 
   const Glyph = FALLBACK[editor];
-  return <Glyph size={size} className="shrink-0 text-droid-text-muted" aria-hidden />;
+  return <Glyph size={size} className="shrink-0 text-muted" aria-hidden />;
 }

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { X } from 'lucide-react';
 
-const SKILL = 'var(--droid-skill)';
+const SKILL = 'var(--skill)';
 
 // gap-2 between selections, and the space between the last one and the first
 // word of the draft.
@@ -27,7 +27,7 @@ export interface DraftSelection {
 //
 // They cannot be textarea text, since a textarea gives its whole value one
 // colour, so this row floats over the first line and reports the width that line
-// must be indented by. Colour comes from --droid-skill, the blue the transcript
+// must be indented by. Colour comes from --skill, the blue the transcript
 // gives an invoked skill, so a selection looks the same before and after it is
 // sent.
 export function DraftSelections({

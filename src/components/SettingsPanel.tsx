@@ -207,7 +207,7 @@ function CompactionModelPicker({
           choose(id);
         }}
         className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-          active ? 'bg-droid-elevated' : 'hover:bg-droid-elevated/50'
+          active ? 'bg-elevated' : 'hover:bg-elevated/50'
         }`}
       >
         {!current && (
@@ -220,13 +220,13 @@ function CompactionModelPicker({
           />
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] text-droid-text truncate">{l}</div>
-          {sub && <div className="text-[11px] text-droid-text-muted truncate">{sub}</div>}
+          <div className="text-[13px] text-primary truncate">{l}</div>
+          {sub && <div className="text-[11px] text-muted truncate">{sub}</div>}
         </div>
         {active && (
           <Check
             className="w-3.5 h-3.5 shrink-0"
-            style={{ color: 'var(--droid-accent)' }}
+            style={{ color: 'var(--accent)' }}
             strokeWidth={3}
           />
         )}
@@ -241,22 +241,20 @@ function CompactionModelPicker({
           setOpen((v) => !v);
         }}
         className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
-          open
-            ? 'bg-droid-active text-droid-text'
-            : 'bg-droid-elevated text-droid-text hover:bg-droid-active'
+          open ? 'bg-active text-primary' : 'bg-elevated text-primary hover:bg-active'
         }`}
       >
         {!isCurrent && <ModelIcon provider={providerOf(selModel, selected)} size={14} />}
         <span className="max-w-[160px] truncate">{label}</span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-droid-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-droid-border bg-droid-surface p-2 shadow-droid">
-          <div className="mb-2 flex items-center gap-2 h-8 rounded-md bg-droid-bg/60 border border-droid-border px-2.5">
-            <Search className="w-3.5 h-3.5 text-droid-text-muted" />
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-divider bg-surface p-2 shadow-lg">
+          <div className="mb-2 flex items-center gap-2 h-8 rounded-md bg-bg/60 border border-divider px-2.5">
+            <Search className="w-3.5 h-3.5 text-muted" />
             <input
               autoFocus
               value={query}
@@ -264,7 +262,7 @@ function CompactionModelPicker({
                 setQuery(e.target.value);
               }}
               placeholder="Search models…"
-              className="w-full bg-transparent text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+              className="w-full bg-transparent text-[12px] text-primary placeholder:text-muted focus:outline-none"
             />
           </div>
           <div className="max-h-64 overflow-y-auto space-y-0.5">
@@ -278,9 +276,7 @@ function CompactionModelPicker({
               <Option key={m.id} id={m.id} label={m.displayName} sub={m.provider} />
             ))}
             {filtered.length === 0 && (
-              <div className="px-2.5 py-4 text-center text-[12px] text-droid-text-muted">
-                No models match.
-              </div>
+              <div className="px-2.5 py-4 text-center text-[12px] text-muted">No models match.</div>
             )}
           </div>
         </div>
@@ -340,7 +336,7 @@ function GeneralSection() {
       />
 
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Enter while working"
           description="What Enter does while the agent works. Steer hands the message to the agent at its next step; Queue sends it after the turn. Cmd/Ctrl+Enter does the other."
@@ -385,7 +381,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Voice</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Voice"
           description="Which voice speaks in voice mode. The harness offers the list; leave this on its default to take whichever voice it picks."
@@ -420,7 +416,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Diff display</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Diff view"
           description="How file diffs render in the Review tab — one column or side-by-side."
@@ -463,7 +459,7 @@ function GeneralSection() {
       <HardwareAccelerationSetting />
 
       <GroupLabel>Compaction</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Compaction model"
           description="Model that summarizes a conversation when it is compacted."
@@ -484,13 +480,13 @@ function GeneralSection() {
 
       {/* Per-model token limits */}
       <GroupLabel>Per-model token limits</GroupLabel>
-      <p className="text-[12px] text-droid-text-muted mb-3">
+      <p className="text-[12px] text-muted mb-3">
         Override the compaction limit for specific models. Models without an override use{' '}
         {defaultLimitLabel}.
       </p>
-      <div className="rounded-xl border border-droid-border bg-droid-surface p-3">
+      <div className="rounded-xl border border-divider bg-surface p-3">
         {overrideEntries.length === 0 && (
-          <div className="text-[12px] text-droid-text-muted px-1 py-1.5">
+          <div className="text-[12px] text-muted px-1 py-1.5">
             No overrides — every model uses {defaultLimitLabel}.
           </div>
         )}
@@ -499,7 +495,7 @@ function GeneralSection() {
           {overrideEntries.map(([id, limit]) => (
             <div
               key={id}
-              className="flex items-center gap-2.5 rounded-lg border border-droid-border bg-droid-bg/40 px-2.5 py-2"
+              className="flex items-center gap-2.5 rounded-lg border border-divider bg-bg/40 px-2.5 py-2"
             >
               <ModelIcon
                 provider={providerOf(
@@ -508,7 +504,7 @@ function GeneralSection() {
                 )}
                 size={16}
               />
-              <span className="text-[12px] text-droid-text truncate flex-1">{modelLabel(id)}</span>
+              <span className="text-[12px] text-primary truncate flex-1">{modelLabel(id)}</span>
               <TokenLimitSelect
                 value={limit}
                 onSelect={(n) => {
@@ -520,7 +516,7 @@ function GeneralSection() {
                 onClick={() => {
                   setModelLimit(id, undefined);
                 }}
-                className="p-1 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated transition-colors shrink-0"
+                className="p-1 rounded-md text-muted hover:text-primary hover:bg-elevated transition-colors shrink-0"
                 title="Remove override"
               >
                 <X className="w-3.5 h-3.5" />
@@ -535,7 +531,7 @@ function GeneralSection() {
               ariaLabel="Add a model override"
               value=""
               placeholder="Add a model override…"
-              triggerIcon={<Plus className="w-3.5 h-3.5 text-droid-text-muted" />}
+              triggerIcon={<Plus className="w-3.5 h-3.5 text-muted" />}
               width="w-full"
               align="left"
               options={availableForOverride.map((m) => ({
@@ -599,13 +595,13 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>Droid CLI</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="CLI status"
           description={env?.cli.present ? env.cli.path : 'Not detected on this machine.'}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[12px] font-mono text-droid-text-muted">
+            <span className="text-[12px] font-mono text-muted">
               {env?.cli.present ? (env.cli.version ?? 'installed') : 'missing'}
             </span>
             <button
@@ -613,7 +609,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
                 onboard.update(onboarding?.installChannel);
               }}
               disabled={!!installing || !env?.cli.present}
-              className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors disabled:opacity-40"
+              className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
             >
               {installing === 'update' ? 'Updating…' : 'Update'}
             </button>
@@ -637,13 +633,13 @@ function SetupSection({ onClose }: { onClose: () => void }) {
           }
         >
           {signedIn ? (
-            <span className="text-[12px] text-droid-green">Signed in</span>
+            <span className="text-[12px] text-success">Signed in</span>
           ) : (
             <button
               onClick={onboard.refreshEnv}
               disabled={!env?.cli.present}
               title={env?.cli.present ? undefined : 'The Droid CLI must be installed first.'}
-              className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors disabled:opacity-40"
+              className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
             >
               Refresh status
             </button>
@@ -658,7 +654,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>DROIDEX app</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow label="Current version" description={updateStatus}>
           <div className="flex items-center gap-2">
             <button
@@ -666,7 +662,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
                 void runCheck();
               }}
               disabled={checking}
-              className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors disabled:opacity-40"
+              className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors disabled:opacity-40"
             >
               {checking ? 'Checking…' : 'Check for updates'}
             </button>
@@ -675,7 +671,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
                 onClick={() => {
                   void requestAppUpdate(update, hasActiveWork);
                 }}
-                className="px-2.5 h-7 rounded-md bg-droid-accent text-droid-bg text-[12px] hover:opacity-90 transition-opacity"
+                className="px-2.5 h-7 rounded-md bg-accent text-bg text-[12px] hover:opacity-90 transition-opacity"
               >
                 Download update…
               </button>
@@ -697,7 +693,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
             onClick={() => {
               void openExternal(cursorDesign.attributionUrl);
             }}
-            className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors"
+            className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
           >
             Flaticon
           </button>
@@ -705,14 +701,14 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       </div>
 
       <GroupLabel>Onboarding</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider">
         <SettingRow label="Run setup again" description="Re-open the first-run setup tour.">
           <button
             onClick={() => {
               window.dispatchEvent(new CustomEvent('droid:open-onboarding'));
               onClose();
             }}
-            className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors"
+            className="px-2.5 h-7 rounded-md bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
           >
             Run setup
           </button>
@@ -734,7 +730,7 @@ function ConfigurationSection() {
       <GroupLabel>Default models</GroupLabel>
       <HarnessModelSettings />
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Model selector"
           description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
@@ -759,7 +755,7 @@ function ConfigurationSection() {
       <GroupLabel>Transcript</GroupLabel>
       <ToolActivitySettings />
       <GroupLabel>Sessions</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl border border-divider bg-surface divide-y divide-divider mb-8">
         <SettingRow
           label="Default autonomy"
           description="How much new sessions may do without asking. The composer can override it for a single session."
@@ -802,8 +798,8 @@ function PlaceholderSection({ title }: { title: string }) {
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title={title} />
-      <div className="rounded-xl border border-dashed border-droid-border bg-droid-surface/40 p-10 text-center">
-        <p className="text-[13px] text-droid-text-secondary">{title} settings are coming soon.</p>
+      <div className="rounded-xl border border-dashed border-divider bg-surface/40 p-10 text-center">
+        <p className="text-[13px] text-secondary">{title} settings are coming soon.</p>
       </div>
     </div>
   );
@@ -821,7 +817,7 @@ function SettingsSearchResults({
 }) {
   return (
     <div className="mx-auto mb-8 max-w-2xl">
-      <div className="mb-2.5 px-0.5 text-[11px] text-droid-text-muted">
+      <div className="mb-2.5 px-0.5 text-[11px] text-muted">
         {hits.length === 1 ? '1 match' : `${String(hits.length)} matches`}
       </div>
       <div className="flex flex-col gap-1">
@@ -836,21 +832,19 @@ function SettingsSearchResults({
               }}
               className={`group flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-2.5 text-left transition-colors ${
                 onActiveTab
-                  ? 'bg-droid-active/70 text-droid-text'
-                  : 'text-droid-text-secondary hover:bg-droid-elevated/45 hover:text-droid-text'
+                  ? 'bg-active/70 text-primary'
+                  : 'text-secondary hover:bg-elevated/45 hover:text-primary'
               }`}
             >
               <div className="min-w-0">
-                <div className="truncate text-[13px] font-medium tracking-tight text-droid-text">
+                <div className="truncate text-[13px] font-medium tracking-tight text-primary">
                   {hit.label}
                 </div>
-                <div className="mt-0.5 truncate text-[11px] text-droid-text-muted">{hit.tab}</div>
+                <div className="mt-0.5 truncate text-[11px] text-muted">{hit.tab}</div>
               </div>
               <span
                 className={`shrink-0 text-[11px] transition-opacity ${
-                  onActiveTab
-                    ? 'text-droid-text-muted'
-                    : 'text-droid-text-muted/0 group-hover:text-droid-text-muted'
+                  onActiveTab ? 'text-muted' : 'text-muted/0 group-hover:text-muted'
                 }`}
               >
                 {onActiveTab ? 'Here' : 'Open'}
@@ -945,25 +939,25 @@ export default function SettingsPanel() {
   return (
     <>
       {/* Left nav */}
-      <aside className="w-60 shrink-0 border-r border-droid-border flex flex-col bg-droid-surface/40">
+      <aside className="w-60 shrink-0 border-r border-divider flex flex-col bg-surface/40">
         {/* Traffic-light clearance */}
         <div data-electron-drag-region className="h-9 shrink-0" />
         <button
           onClick={close}
-          className="flex items-center gap-1.5 px-4 h-10 text-[12px] text-droid-text-secondary hover:text-droid-text transition-colors shrink-0"
+          className="flex items-center gap-1.5 px-4 h-10 text-[12px] text-secondary hover:text-primary transition-colors shrink-0"
         >
           <ChevronLeft className="w-4 h-4" /> Back to app
         </button>
         <div className="px-3 pb-3">
-          <div className="flex h-9 items-center gap-2 rounded-2xl bg-droid-elevated/70 px-3 ring-1 ring-inset ring-droid-border/70 transition-[box-shadow,background-color] focus-within:bg-droid-elevated focus-within:ring-droid-border-hover">
-            <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+          <div className="flex h-9 items-center gap-2 rounded-2xl bg-elevated/70 px-3 ring-1 ring-inset ring-divider/70 transition-[box-shadow,background-color] focus-within:bg-elevated focus-within:ring-divider-strong">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted" />
             <input
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
               }}
               placeholder="Search settings…"
-              className="w-full bg-transparent text-[13px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+              className="w-full bg-transparent text-[13px] text-primary placeholder:text-muted focus:outline-none"
             />
             {q ? (
               <button
@@ -972,7 +966,7 @@ export default function SettingsPanel() {
                 onClick={() => {
                   setQuery('');
                 }}
-                className="rounded-full p-0.5 text-droid-text-muted transition-colors hover:text-droid-text"
+                className="rounded-full p-0.5 text-muted transition-colors hover:text-primary"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -985,7 +979,7 @@ export default function SettingsPanel() {
             if (filtered.length === 0) return null;
             return (
               <div key={group}>
-                <div className="mb-1 px-2.5 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted/80">
+                <div className="mb-1 px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted/80">
                   {group}
                 </div>
                 <div className="flex flex-col gap-0.5">
@@ -997,8 +991,8 @@ export default function SettingsPanel() {
                       }}
                       className={`flex h-8 w-full items-center rounded-xl px-2.5 text-left text-[13px] transition-colors ${
                         active === label
-                          ? 'bg-droid-active text-droid-text'
-                          : 'text-droid-text-secondary hover:bg-droid-elevated/40 hover:text-droid-text'
+                          ? 'bg-active text-primary'
+                          : 'text-secondary hover:bg-elevated/40 hover:text-primary'
                       }`}
                     >
                       <span className="truncate">{label}</span>
@@ -1009,7 +1003,7 @@ export default function SettingsPanel() {
             );
           })}
           {q && hits.length === 0 && (
-            <div className="px-2.5 py-4 text-[12px] leading-relaxed text-droid-text-muted">
+            <div className="px-2.5 py-4 text-[12px] leading-relaxed text-muted">
               No matching settings.
             </div>
           )}

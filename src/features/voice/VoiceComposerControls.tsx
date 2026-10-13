@@ -18,9 +18,7 @@ export function VoiceComposerControls() {
         aria-pressed={session.muted}
         onClick={session.toggleMuted}
         className={`grid h-8 w-8 place-items-center rounded-full transition-colors ${
-          session.muted
-            ? 'bg-droid-surface text-droid-text'
-            : 'text-droid-text-muted hover:bg-droid-bg/40 hover:text-droid-text'
+          session.muted ? 'bg-surface text-primary' : 'text-muted hover:bg-bg/40 hover:text-primary'
         }`}
       >
         {session.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -30,7 +28,7 @@ export function VoiceComposerControls() {
         aria-label="End voice"
         title="End voice"
         onClick={voice.close}
-        className="grid h-8 w-8 place-items-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90"
+        className="grid h-8 w-8 place-items-center rounded-full bg-text text-bg transition-opacity hover:opacity-90"
       >
         <X className="h-4 w-4" />
       </button>

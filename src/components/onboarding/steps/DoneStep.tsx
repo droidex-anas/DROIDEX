@@ -41,31 +41,31 @@ export function DoneStep({
   return (
     <div className="flex flex-col items-center text-center">
       <div className="droid-rise">
-        <BrandMark size={34} className="text-droid-accent" />
+        <BrandMark size={34} className="text-accent" />
       </div>
       <h1
-        className="droid-rise mt-6 text-[22px] leading-snug font-semibold tracking-tight text-droid-text"
+        className="droid-rise mt-6 text-[22px] leading-snug font-semibold tracking-tight text-primary"
         style={{ animationDelay: '90ms' }}
       >
         You&apos;re all set.
       </h1>
       <p
-        className="droid-rise mt-3 max-w-[320px] text-[13px] leading-relaxed text-droid-text-muted"
+        className="droid-rise mt-3 max-w-[320px] text-[13px] leading-relaxed text-muted"
         style={{ animationDelay: '160ms' }}
       >
         The cockpit is yours. Open a session and give your agents something interesting to do.
       </p>
       <div
-        className="droid-rise mt-8 w-full max-w-[300px] rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border overflow-hidden"
+        className="droid-rise mt-8 w-full max-w-[300px] rounded-xl border border-divider bg-surface divide-y divide-divider overflow-hidden"
         style={{ animationDelay: '230ms' }}
       >
         {summary.map((row) => (
           <div key={row.label} className="flex items-center justify-between px-4 py-3">
-            <span className="text-[13px] text-droid-text-secondary">{row.label}</span>
+            <span className="text-[13px] text-secondary">{row.label}</span>
             {row.ok ? (
-              <Check className="w-4 h-4 text-droid-green" strokeWidth={3} />
+              <Check className="w-4 h-4 text-success" strokeWidth={3} />
             ) : (
-              <span className="text-[12px] text-droid-text-muted">Pending</span>
+              <span className="text-[12px] text-muted">Pending</span>
             )}
           </div>
         ))}
@@ -76,7 +76,7 @@ export function DoneStep({
             void finish();
           }}
           disabled={finishing}
-          className="droid-button-primary inline-flex h-10 items-center gap-2 px-5 text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-droid-bg"
+          className="droid-button-primary inline-flex h-10 items-center gap-2 px-5 text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           {finishing ? (
             <>
@@ -88,7 +88,7 @@ export function DoneStep({
             </>
           )}
         </button>
-        {finishError && <p className="mt-3 text-[12px] text-droid-red">{finishError}</p>}
+        {finishError && <p className="mt-3 text-[12px] text-danger">{finishError}</p>}
       </div>
     </div>
   );

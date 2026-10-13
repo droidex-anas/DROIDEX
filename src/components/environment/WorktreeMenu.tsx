@@ -198,32 +198,32 @@ export function WorktreeMenu({
         width={288}
       >
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
-          <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+          <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
             This session
           </div>
           {current && (
             <div className="flex items-center gap-2 px-2.5 py-1.5">
               <Check
                 className="h-3.5 w-3.5 shrink-0"
-                style={{ color: 'var(--droid-accent)' }}
+                style={{ color: 'var(--accent)' }}
                 strokeWidth={3}
               />
-              <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text">
+              <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
                 {worktreeName(current)}
               </span>
-              <span className="shrink-0 text-[11px] text-droid-text-muted">{current.head}</span>
+              <span className="shrink-0 text-[11px] text-muted">{current.head}</span>
             </div>
           )}
 
           {others.length > 0 && (
-            <div className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+            <div className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted">
               Other worktrees
             </div>
           )}
           {others.map((w) => (
             <div
               key={w.path}
-              className="group flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-droid-elevated/60"
+              className="group flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-elevated/60"
             >
               <button
                 onClick={() => {
@@ -232,28 +232,28 @@ export function WorktreeMenu({
                 title="Open this worktree in a new chat"
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-secondary">
+                <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
                   {worktreeName(w)}
                 </span>
-                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-droid-text-muted/60" />
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted/60" />
               </button>
               {w.isMain ? (
                 <span
                   title="The repository's main worktree can't be removed"
-                  className="shrink-0 rounded bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-muted"
+                  className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-muted"
                 >
                   main
                 </span>
               ) : w.path && isWorktreeInUse(w.path, sessionCwds) ? (
                 <span
                   title="A chat is currently using this worktree"
-                  className="shrink-0 rounded bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-muted"
+                  className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-muted"
                 >
                   in use
                 </span>
               ) : removing === w.path ? (
-                <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-droid-text-muted" />
+                <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-muted" />
               ) : confirming === w.path ? (
                 <div className="flex shrink-0 items-center gap-0.5">
                   <button
@@ -263,7 +263,7 @@ export function WorktreeMenu({
                     }}
                     disabled={busy}
                     title="Confirm removal"
-                    className="rounded p-1 text-droid-orange hover:bg-droid-orange/15 disabled:opacity-40"
+                    className="rounded p-1 text-warning hover:bg-warning/15 disabled:opacity-40"
                   >
                     <Check className="h-3.5 w-3.5" strokeWidth={3} />
                   </button>
@@ -272,7 +272,7 @@ export function WorktreeMenu({
                       setConfirming(null);
                     }}
                     title="Cancel"
-                    className="rounded p-1 text-droid-text-muted hover:bg-droid-elevated"
+                    className="rounded p-1 text-muted hover:bg-elevated"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -284,7 +284,7 @@ export function WorktreeMenu({
                   }}
                   disabled={busy}
                   title="Remove worktree"
-                  className="shrink-0 rounded p-1 text-droid-text-muted/0 transition-colors group-hover:text-droid-text-muted hover:!text-droid-orange disabled:opacity-40"
+                  className="shrink-0 rounded p-1 text-muted/0 transition-colors group-hover:text-muted hover:!text-warning disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -293,7 +293,7 @@ export function WorktreeMenu({
           ))}
         </div>
 
-        <div className="shrink-0 border-t border-droid-border/70 p-1.5">
+        <div className="shrink-0 border-t border-divider/70 p-1.5">
           {creating ? (
             <div className="space-y-1.5">
               <input
@@ -304,22 +304,22 @@ export function WorktreeMenu({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && !pickingBase && void doCreate()}
                 placeholder="new-branch-name"
-                className="w-full rounded-md bg-droid-bg/60 px-2 py-1 text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+                className="w-full rounded-md bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
               />
               <button
                 onClick={() => {
                   setPickingBase((v) => !v);
                 }}
-                className="flex w-full items-center gap-1.5 rounded-md bg-droid-bg/40 px-2 py-1 text-[12px] text-droid-text-secondary hover:bg-droid-bg/60"
+                className="flex w-full items-center gap-1.5 rounded-md bg-bg/40 px-2 py-1 text-[12px] text-secondary hover:bg-bg/60"
               >
-                <span className="text-droid-text-muted">Base</span>
-                <span className="flex-1 truncate text-left text-droid-text">{base}</span>
+                <span className="text-muted">Base</span>
+                <span className="flex-1 truncate text-left text-primary">{base}</span>
                 <ChevronDown
                   className={`h-3 w-3 transition-transform ${pickingBase ? 'rotate-180' : ''}`}
                 />
               </button>
               {pickingBase && (
-                <div className="max-h-32 overflow-y-auto rounded-md bg-droid-bg/40 p-1">
+                <div className="max-h-32 overflow-y-auto rounded-md bg-bg/40 p-1">
                   {baseOptions.map((option) => (
                     <button
                       key={option}
@@ -327,13 +327,13 @@ export function WorktreeMenu({
                         setBase(option);
                         setPickingBase(false);
                       }}
-                      className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-droid-text-secondary hover:bg-droid-elevated/60 hover:text-droid-text"
+                      className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-secondary hover:bg-elevated/60 hover:text-primary"
                     >
                       <span className="flex-1 truncate">{option}</span>
                       {option === base && (
                         <Check
                           className="h-3 w-3"
-                          style={{ color: 'var(--droid-accent)' }}
+                          style={{ color: 'var(--accent)' }}
                           strokeWidth={3}
                         />
                       )}
@@ -346,14 +346,14 @@ export function WorktreeMenu({
                   onClick={() => {
                     setCreating(false);
                   }}
-                  className="rounded-md px-2 py-1 text-[11px] text-droid-text-muted hover:text-droid-text"
+                  className="rounded-md px-2 py-1 text-[11px] text-muted hover:text-primary"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => void doCreate()}
                   disabled={!name.trim() || busy}
-                  className="flex items-center gap-1 rounded-md bg-droid-accent/15 px-2 py-1 text-[11px] font-medium text-droid-accent disabled:opacity-40"
+                  className="flex items-center gap-1 rounded-md bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
                 >
                   {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
                   Create & open
@@ -363,9 +363,9 @@ export function WorktreeMenu({
           ) : (
             <button
               onClick={startCreating}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/60"
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
             >
-              <Plus className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+              <Plus className="h-3.5 w-3.5 shrink-0 text-muted" />
               New worktree…
             </button>
           )}

@@ -163,8 +163,8 @@ A name should communicate the concept at the scope where it is read.
   objects.
 - Derive presentation values during render or through selectors. Use effects
   for external synchronization only, with complete cleanup.
-- Reuse existing components, theme tokens (`--droid-*`), and interaction
-  patterns. Do not introduce a parallel palette or design system.
+- Reuse existing components, theme tokens (`docs/design-system/`), and
+  interaction patterns. Do not introduce a parallel palette or design system.
 - Controls must be working, discoverable, and keyboard-accessible, with loading,
   empty, and error states. Polish does not replace function.
 - Large lists mount only what is visible. Measure render cost with the real
@@ -177,16 +177,15 @@ rather than lines and boxes. Visible hard borders and heavy background panels
 are the most common way a change makes the app look worse.
 
 - Separate layers with tone and soft shadow, not outlines. Use a border only
-  when tone cannot do the job, and then only the resting `--droid-border`
-  hairline. Never use `border-hover`, the accent, or text color as a resting
+  when tone cannot do the job, and then only the resting `--divider`
+  hairline. Never use `divider-strong`, the accent, or text color as a resting
   edge: the default light accent is near-black, so accent outlines become hard
   black boxes.
 - Do not nest outlines. A control inside a bordered card is a borderless tinted
-  fill (`bg-droid-elevated`, `hover:bg-droid-active`), like the settings
-  dropdowns.
+  fill (`bg-elevated`, `hover:bg-active`), like the settings dropdowns.
 - Floating layers (composer, popovers, menus, tooltips, toasts, dialogs) use
-  `bg-droid-raised` with `shadow-droid` or `shadow-droid-sm`. No fixed black
-  shadows; the theme owns the shadow color.
+  `bg-raised` with `shadow-lg` or `shadow-sm`. No fixed black shadows; the
+  theme owns the shadow color.
 - Hover and selected states are soft tint shifts (`elevated` to `active`, or a
   low-alpha accent mix). Avoid thick rings and high-contrast selection fills;
   a check mark or text weight carries the meaning.

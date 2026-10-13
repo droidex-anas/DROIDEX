@@ -48,27 +48,27 @@ export const DiffFileSection = memo(function DiffFileSection({
   const dir = slash >= 0 ? display.slice(0, slash + 1) : '';
   const name = slash >= 0 ? display.slice(slash + 1) : display;
   return (
-    <div ref={sectionRef} className="border-b border-droid-border/70">
+    <div ref={sectionRef} className="border-b border-divider/70">
       <button
         onClick={() => {
           onToggle(path);
         }}
         title={file.path}
         aria-expanded={open}
-        className={`sticky top-0 z-10 flex w-full items-center gap-2 border-b border-droid-border/50 px-3 py-1.5 text-left transition-colors ${
-          active ? 'bg-droid-elevated' : 'bg-droid-surface hover:bg-droid-elevated'
+        className={`sticky top-0 z-10 flex w-full items-center gap-2 border-b border-divider/50 px-3 py-1.5 text-left transition-colors ${
+          active ? 'bg-elevated' : 'bg-surface hover:bg-elevated'
         }`}
       >
         <ChevronRight
-          className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted/60 transition-transform ${open ? 'rotate-90' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 text-muted/60 transition-transform ${open ? 'rotate-90' : ''}`}
         />
         <FileTypeIcon filename={file.path} className="h-3.5 w-3.5" />
         <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
-          {dir && <span className="text-droid-text-muted/70">{dir}</span>}
-          <span className="text-droid-text-secondary">{name}</span>
+          {dir && <span className="text-muted/70">{dir}</span>}
+          <span className="text-secondary">{name}</span>
         </span>
         {entry?.loading && (
-          <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-droid-text-muted" />
+          <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-muted" />
         )}
         <span className="shrink-0 font-mono text-[11px]">
           {file.additions > 0 && (
@@ -102,7 +102,7 @@ export const DiffFileSection = memo(function DiffFileSection({
                 wrap={wrap}
               />
             ) : (
-              <div className="flex items-center gap-2 px-4 py-3 text-[12px] text-droid-text-muted">
+              <div className="flex items-center gap-2 px-4 py-3 text-[12px] text-muted">
                 <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" /> Loading diff…
               </div>
             )}
