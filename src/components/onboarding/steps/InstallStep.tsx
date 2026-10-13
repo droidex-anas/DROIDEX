@@ -70,8 +70,8 @@ export function InstallStep({
       />
 
       {channels.length === 0 && (
-        <div className="rounded-xl border border-droid-border bg-droid-surface px-4 py-3.5 text-[13px] text-droid-text-secondary mb-4">
-          <p className="text-droid-orange mb-1">No supported package manager found.</p>
+        <div className="rounded-lg border border-divider bg-surface px-4 py-3.5 text-[13px] text-secondary mb-4">
+          <p className="text-warning mb-1">No supported package manager found.</p>
           Install Homebrew, npm, or curl, then re-scan. You can also skip this for now and finish
           setup later.
         </div>
@@ -89,19 +89,19 @@ export function InstallStep({
                   setChannel(c);
                 }}
                 disabled={!!installing}
-                className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-droid-elevated/50"
+                className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-elevated/50"
               >
-                <span className="flex items-center gap-3 text-[13px] text-droid-text">
+                <span className="flex items-center gap-3 text-[13px] text-primary">
                   <span
                     className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      channel === c ? 'border-droid-accent' : 'border-droid-border-hover'
+                      channel === c ? 'border-accent' : 'border-divider-strong'
                     }`}
                   >
-                    {channel === c && <span className="w-1.5 h-1.5 rounded-full bg-droid-accent" />}
+                    {channel === c && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
                   </span>
                   {CHANNEL_LABEL[c]}
                 </span>
-                {channel === c && <Check className="w-4 h-4 text-droid-accent" strokeWidth={3} />}
+                {channel === c && <Check className="w-4 h-4 text-accent" strokeWidth={3} />}
               </button>
             ))}
           </Panel>
@@ -111,7 +111,7 @@ export function InstallStep({
       {(Boolean(installing) || installLog.length > 0) && (
         <div
           ref={logRef}
-          className="mb-4 max-h-40 overflow-auto rounded-xl border border-droid-border bg-droid-surface p-3.5 font-mono text-[11px] leading-5 text-droid-text-muted"
+          className="mb-4 max-h-40 overflow-auto rounded-lg border border-divider bg-surface p-3.5 font-mono text-[11px] leading-5 text-muted"
         >
           {installLog.map((line, i) => (
             <div key={i} className="whitespace-pre-wrap break-words">
@@ -119,7 +119,7 @@ export function InstallStep({
             </div>
           ))}
           {installing && (
-            <div className="flex items-center gap-1.5 text-droid-text-secondary">
+            <div className="flex items-center gap-1.5 text-secondary">
               <Spinner className="w-3 h-3 motion-safe:animate-spin-slow" /> working…
             </div>
           )}
@@ -127,7 +127,7 @@ export function InstallStep({
       )}
 
       {lastResult && !lastResult.ok && (
-        <p className="text-[12px] text-droid-red mb-3">
+        <p className="text-[12px] text-danger mb-3">
           Installation didn&apos;t finish. Review the log and try again.
         </p>
       )}

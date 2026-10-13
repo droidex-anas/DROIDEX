@@ -103,7 +103,7 @@ short version:
 - Search for an existing helper, hook, or type with `rg` before adding one.
 - Keep the renderer provider-neutral; translate CLI-specific behaviour at the
   bridge boundary.
-- Use the existing theme tokens (`--droid-*`). Never hardcode a colour.
+- Use the existing theme tokens (`docs/design-system/`). Never hardcode a colour.
 - Production files stay under 500 lines. Crossing that line needs a reason.
 - Delete what you supersede: no dead exports, unused props, or stale comments.
 - Comments explain *why*, sparingly. Prefer a clearer name over a comment.

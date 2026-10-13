@@ -11,7 +11,7 @@ import { FolderOpen, Plus } from 'lucide-react';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { fitToWindow } from './popoverFit';
 
-const ACCENT = 'var(--droid-accent)';
+const ACCENT = 'var(--accent)';
 
 const PREFERRED_WIDTH_PX = 340;
 const MIN_WIDTH_PX = 200;
@@ -45,11 +45,11 @@ function MenuRow({
       onClick={onRun}
       role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
       aria-checked={checked}
-      className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-droid-surface/55 focus:bg-droid-surface focus:outline-none"
+      className="flex w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface/55 focus:bg-surface focus:outline-none"
     >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-      <span className="shrink-0 text-[13px] font-medium text-droid-text">{label}</span>
-      <span className="min-w-0 truncate text-[12px] text-droid-text-muted/75">{hint}</span>
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
+      <span className="shrink-0 text-[13px] font-medium text-primary">{label}</span>
+      <span className="min-w-0 truncate text-[12px] text-muted/75">{hint}</span>
       {checked && (
         <span className="ml-auto shrink-0 text-[11px] font-medium" style={{ color: ACCENT }}>
           Added
@@ -62,7 +62,7 @@ function MenuRow({
 function SectionTitle({ children, first = false }: { children: string; first?: boolean }) {
   return (
     <div
-      className={`px-2.5 pb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-droid-text-muted/50 ${
+      className={`px-2.5 pb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted/50 ${
         first ? 'pt-1' : 'pt-2.5'
       }`}
     >
@@ -167,9 +167,7 @@ export default function AddMenu({
           onOpenChange(!open);
         }}
         className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-          open
-            ? 'bg-droid-bg/60 text-droid-text'
-            : 'text-droid-text-muted hover:text-droid-text hover:bg-droid-bg/50'
+          open ? 'bg-bg/60 text-primary' : 'text-muted hover:text-primary hover:bg-bg/50'
         }`}
         title="Add files or a plugin"
         aria-haspopup="menu"
@@ -187,7 +185,7 @@ export default function AddMenu({
             exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
             style={fit}
-            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-xl border border-droid-border bg-droid-raised p-1.5 shadow-droid"
+            className="absolute bottom-full left-0 z-50 mb-2 w-[340px] rounded-lg border border-divider bg-raised p-1.5 shadow-lg"
             role="menu"
             aria-label="Add to this prompt"
           >

@@ -55,7 +55,7 @@ export function PrReviewButton({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex items-center gap-1.5 rounded-lg border border-droid-border px-2.5 py-1.5 text-[13px] font-medium text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text"
+        className="flex items-center gap-1.5 rounded-md border border-divider px-2.5 py-1.5 text-[13px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary"
       >
         <Octicon name="check" size={13} />
         {requesting ? 'Requesting…' : 'Review'}
@@ -65,14 +65,14 @@ export function PrReviewButton({
         <div
           role="menu"
           aria-label="Review pull request"
-          className="absolute right-0 z-50 mt-1 w-72 overflow-hidden rounded-xl border border-droid-border bg-droid-surface py-1 shadow-xl"
+          className="absolute right-0 z-50 mt-1 w-72 overflow-hidden rounded-lg border border-divider bg-surface py-1 shadow-xl"
         >
           <p className="flex items-center gap-2 px-3 pt-1 pb-1.5">
-            <span className="text-[11px] font-medium tracking-wide text-droid-text-muted uppercase">
+            <span className="text-[11px] font-medium tracking-wide text-muted uppercase">
               Review PR
             </span>
             {cubicInstalled ? (
-              <span className="rounded-full bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-muted">
+              <span className="rounded-full bg-elevated px-1.5 py-0.5 text-[11px] text-muted">
                 Cubic connected
               </span>
             ) : null}
@@ -90,7 +90,7 @@ export function PrReviewButton({
           {options.some((option) => option.action === 'enable-cubic') ? (
             <p
               title="DROIDEX may receive a reward if you upgrade."
-              className="px-3 pt-0.5 pb-1 text-[11px] text-droid-text-muted"
+              className="px-3 pt-0.5 pb-1 text-[11px] text-muted"
             >
               Referral link
             </p>
@@ -116,15 +116,15 @@ function MenuRow({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      className="block w-full px-3 py-1.5 text-left transition-colors hover:bg-droid-active disabled:opacity-50"
+      className="block w-full px-3 py-1.5 text-left transition-colors hover:bg-active disabled:opacity-50"
     >
-      <span className="flex items-center gap-1.5 text-[13px] text-droid-text">
+      <span className="flex items-center gap-1.5 text-[13px] text-primary">
         {option.title}
         {option.action === 'enable-cubic' ? (
-          <Octicon name="link-external" size={11} className="text-droid-text-muted" />
+          <Octicon name="link-external" size={11} className="text-muted" />
         ) : null}
       </span>
-      <span className="block text-[12px] text-droid-text-muted">{option.hint}</span>
+      <span className="block text-[12px] text-muted">{option.hint}</span>
     </button>
   );
 }

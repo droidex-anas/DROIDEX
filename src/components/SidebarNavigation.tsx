@@ -77,15 +77,15 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
         onClick={openPullRequests}
         onAuxClick={openPullRequests}
         onMouseDown={preventAutoscroll}
-        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
-          state.mainView === 'pull-requests' ? 'bg-droid-active' : ''
+        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-primary transition-colors ${
+          state.mainView === 'pull-requests' ? 'bg-active' : ''
         }`}
       >
         <span
           className={`flex h-4 w-4 shrink-0 items-center justify-center transition-colors ${
             state.mainView === 'pull-requests'
-              ? 'text-droid-text'
-              : 'text-droid-text-secondary group-hover:text-droid-text'
+              ? 'text-primary'
+              : 'text-secondary group-hover:text-primary'
           }`}
         >
           <GitPullRequestIcon size={15} />
@@ -99,9 +99,9 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
         onClick={openProjects}
         onAuxClick={openProjects}
         onMouseDown={preventAutoscroll}
-        className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${state.mainView === 'projects' ? 'bg-droid-active text-droid-text' : 'text-droid-text hover:bg-droid-elevated'}`}
+        className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors ${state.mainView === 'projects' ? 'bg-active text-primary' : 'text-primary hover:bg-elevated'}`}
       >
-        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-droid-text-secondary">
+        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-secondary">
           <ActivityStatusGlyph status="ready" decorative />
         </span>
         Projects
@@ -117,15 +117,15 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
         onAuxClick={openAutomations}
         onMouseDown={preventAutoscroll}
         aria-current={state.mainView === 'automations' ? 'page' : undefined}
-        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
-          state.mainView === 'automations' ? 'bg-droid-active' : ''
+        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-primary transition-colors ${
+          state.mainView === 'automations' ? 'bg-active' : ''
         }`}
       >
         <Clock
           className={`h-3.5 w-3.5 shrink-0 transition-colors ${
             state.mainView === 'automations'
-              ? 'text-droid-text'
-              : 'text-droid-text-secondary group-hover:text-droid-text'
+              ? 'text-primary'
+              : 'text-secondary group-hover:text-primary'
           }`}
         />
         Automations
@@ -144,7 +144,7 @@ function ProjectsNavBadge({ attention, live }: { attention: number; live: boolea
     return (
       <span
         title={`${String(attention)} waiting on you`}
-        className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-droid-orange/20 px-1 text-[11px] font-medium leading-none text-droid-orange"
+        className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-warning/20 px-1 text-[11px] font-medium leading-none text-warning"
       >
         {attention}
       </span>
@@ -155,7 +155,7 @@ function ProjectsNavBadge({ attention, live }: { attention: number; live: boolea
     <span
       aria-label="threads working"
       title="Threads working"
-      className="ml-auto h-3 w-3 rounded-full border-[1.5px] border-droid-text-muted border-r-transparent motion-safe:animate-spin-slow"
+      className="ml-auto h-3 w-3 rounded-full border-[1.5px] border-muted border-r-transparent motion-safe:animate-spin-slow"
     />
   );
 }

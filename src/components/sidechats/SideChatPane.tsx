@@ -80,7 +80,7 @@ export function SideChatPane({
           </span>
         </SideChatHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-droid-elevated px-3.5 py-2 text-[13px] leading-5 text-droid-text">
+          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-elevated px-3.5 py-2 text-[13px] leading-5 text-primary">
             {view.prompt}
           </p>
         </div>
@@ -91,7 +91,7 @@ export function SideChatPane({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideChatHeader controls={headerControls}>
-        <span className="min-w-0 flex-1 truncate px-1 text-[13px] font-medium text-droid-text">
+        <span className="min-w-0 flex-1 truncate px-1 text-[13px] font-medium text-primary">
           Side chat
         </span>
       </SideChatHeader>

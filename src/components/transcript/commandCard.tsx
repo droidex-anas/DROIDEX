@@ -48,9 +48,7 @@ export function ToolCallCard({
     <ToolPanel
       className="group relative"
       style={
-        error
-          ? { borderColor: 'color-mix(in srgb, var(--droid-red) 30%, var(--droid-border))' }
-          : undefined
+        error ? { borderColor: 'color-mix(in srgb, var(--danger) 30%, var(--divider))' } : undefined
       }
     >
       <div className="px-3.5 py-2.5 font-mono text-[12px] leading-[1.6]">
@@ -58,7 +56,7 @@ export function ToolCallCard({
         {running && <span className="shimmer-text text-[13px] font-medium">Running</span>}
         {interrupted && <InterruptedTag />}
         {images.length > 0 && (
-          <div className="mt-2 border-t border-droid-border/60 pt-1 first:mt-0 first:border-t-0 first:pt-0">
+          <div className="mt-2 border-t border-divider/60 pt-1 first:mt-0 first:border-t-0 first:pt-0">
             {images.map((image, index) => (
               // One result can carry the same picture twice.
               <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
@@ -67,7 +65,7 @@ export function ToolCallCard({
         )}
         {out && (
           <pre
-            className="mt-2 pt-2 border-t border-droid-border/60 first:mt-0 first:border-t-0 first:pt-0 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
+            className="mt-2 pt-2 border-t border-divider/60 first:mt-0 first:border-t-0 first:pt-0 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-muted"
             style={error ? { color: RED } : undefined}
           >
             {error ? out : linkify(out)}
@@ -98,13 +96,10 @@ export function CommandCard({
     <ToolCallCard
       heading={
         <div className="flex gap-2 break-words">
-          <span
-            className="select-none text-droid-text-muted"
-            style={error ? { color: RED } : undefined}
-          >
+          <span className="select-none text-muted" style={error ? { color: RED } : undefined}>
             $
           </span>
-          <span className="whitespace-pre-wrap text-droid-text">{command}</span>
+          <span className="whitespace-pre-wrap text-primary">{command}</span>
         </div>
       }
       output={output}
@@ -144,9 +139,9 @@ export function CommandLine({
       {running || alive ? (
         <span className="shimmer-text shrink-0 font-medium">Running</span>
       ) : (
-        <span className="shrink-0 text-droid-text-secondary">Ran</span>
+        <span className="shrink-0 text-secondary">Ran</span>
       )}
-      <span className="min-w-0 truncate text-droid-text-muted">{command}</span>
+      <span className="min-w-0 truncate text-muted">{command}</span>
     </>
   );
   // Only a still-running turn hides the expander: a finished call whose

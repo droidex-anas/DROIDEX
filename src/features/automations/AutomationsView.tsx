@@ -234,7 +234,7 @@ export function AutomationsView({
   return (
     <div
       data-testid="automations-workspace"
-      className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-droid-bg text-droid-text"
+      className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-bg text-primary"
     >
       <main className="flex min-w-0 flex-1 flex-col">
         {/* Outside the scroller, so the heading never slides under the window
@@ -247,19 +247,19 @@ export function AutomationsView({
                 <div className="flex items-center gap-2.5">
                   <h1 className="text-[22px] font-medium tracking-[-0.03em]">Automations</h1>
                   {statusSummary && (
-                    <span className="rounded-full border border-droid-border bg-droid-surface/60 px-2 py-1 text-[11px] text-droid-text-muted">
+                    <span className="rounded-full border border-divider bg-surface/60 px-2 py-1 text-[11px] text-muted">
                       {statusSummary}
                     </span>
                   )}
                 </div>
-                <p className="mt-1 max-w-[660px] text-[14px] leading-5 text-droid-text-muted">
+                <p className="mt-1 max-w-[660px] text-[14px] leading-5 text-muted">
                   Schedule tasks and automations to run through DROIDEX on the model, workspace, and
                   timezone you choose.
                 </p>
-                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-droid-text-muted/75">
+                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted/75">
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
-                      snapshot.scheduler.ready ? 'bg-droid-accent/70' : 'bg-droid-text-muted/35'
+                      snapshot.scheduler.ready ? 'bg-accent/70' : 'bg-muted/35'
                     }`}
                   />
                   <span>
@@ -271,7 +271,7 @@ export function AutomationsView({
                 <button
                   type="button"
                   onClick={onChatWithDroidex}
-                  className="inline-flex items-center gap-2 rounded-xl border border-droid-border bg-droid-surface/50 px-3.5 py-2 text-[13px] font-medium text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:bg-droid-elevated hover:text-droid-text"
+                  className="inline-flex items-center gap-2 rounded-lg border border-divider bg-surface/50 px-3.5 py-2 text-[13px] font-medium text-secondary transition-colors hover:border-divider-strong hover:bg-elevated hover:text-primary"
                 >
                   <MessageSquareText className="h-4 w-4" />
                   Chat with DROIDEX
@@ -281,7 +281,7 @@ export function AutomationsView({
                   onClick={() => {
                     createDraft();
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-droid-text px-3.5 py-2 text-[13px] font-medium text-droid-bg transition-opacity hover:opacity-90"
+                  className="inline-flex items-center gap-2 rounded-lg bg-text px-3.5 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-90"
                 >
                   <Plus className="h-4 w-4" />
                   Create automation
@@ -290,13 +290,13 @@ export function AutomationsView({
             </div>
 
             {loadingSnapshot ? (
-              <div className="mt-8 flex items-center gap-2 text-[13px] text-droid-text-muted">
+              <div className="mt-8 flex items-center gap-2 text-[13px] text-muted">
                 <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
                 Loading automations…
               </div>
             ) : (
               <>
-                <label className="mt-8 flex h-10 items-center gap-2 rounded-xl border border-droid-border bg-droid-surface/40 px-3 text-droid-text-muted transition-colors focus-within:border-droid-border-hover focus-within:bg-droid-surface/55">
+                <label className="mt-8 flex h-10 items-center gap-2 rounded-lg border border-divider bg-surface/40 px-3 text-muted transition-colors focus-within:border-divider-strong focus-within:bg-surface/55">
                   <Search className="h-4 w-4 shrink-0" />
                   <input
                     value={query}
@@ -305,7 +305,7 @@ export function AutomationsView({
                       setQuery(event.target.value);
                     }}
                     placeholder="Search automations"
-                    className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text outline-none placeholder:text-droid-text-muted"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-muted"
                   />
                 </label>
 
@@ -321,10 +321,10 @@ export function AutomationsView({
                       onClick={() => {
                         setFilter(value);
                       }}
-                      className={`rounded-lg px-3 py-1.5 text-[12px] capitalize transition-colors ${
+                      className={`rounded-md px-3 py-1.5 text-[12px] capitalize transition-colors ${
                         filter === value
-                          ? 'bg-droid-elevated text-droid-text'
-                          : 'text-droid-text-muted hover:bg-droid-elevated/50 hover:text-droid-text'
+                          ? 'bg-elevated text-primary'
+                          : 'text-muted hover:bg-elevated/50 hover:text-primary'
                       }`}
                     >
                       {label}
@@ -361,13 +361,13 @@ export function AutomationsView({
                 )}
 
                 {visible.length === 0 && snapshot.automations.length > 0 && (
-                  <div className="py-12 text-center text-[13px] text-droid-text-muted">
+                  <div className="py-12 text-center text-[13px] text-muted">
                     No automations match this view.
                   </div>
                 )}
 
                 {snapshot.automations.length === 0 && (
-                  <p className="mt-8 text-[12px] leading-5 text-droid-text-muted">
+                  <p className="mt-8 text-[12px] leading-5 text-muted">
                     To continue an existing conversation later, choose Schedule prompt beside its
                     Send button.
                   </p>
@@ -416,8 +416,8 @@ export function AutomationsView({
               }}
             />
             {saving && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-droid-bg/30 backdrop-blur-[1px]">
-                <Spinner className="h-5 w-5 motion-safe:animate-spin-slow text-droid-text-muted" />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg/30 backdrop-blur-[1px]">
+                <Spinner className="h-5 w-5 motion-safe:animate-spin-slow text-muted" />
               </div>
             )}
           </motion.div>
@@ -448,8 +448,8 @@ function isSnapshotLoading(snapshot: AutomationSnapshot): boolean {
 function SuggestionList({ onPick }: { onPick: (draft: AutomationSuggestion['draft']) => void }) {
   return (
     <section className="mt-8">
-      <h2 className="text-[14px] font-medium text-droid-text-secondary">Suggestions</h2>
-      <div className="mt-2 overflow-hidden rounded-2xl border border-droid-border/75 bg-droid-surface/20">
+      <h2 className="text-[14px] font-medium text-secondary">Suggestions</h2>
+      <div className="mt-2 overflow-hidden rounded-xl border border-divider/75 bg-surface/20">
         {AUTOMATION_SUGGESTIONS.map((suggestion, index) => (
           <button
             key={suggestion.title}
@@ -457,20 +457,20 @@ function SuggestionList({ onPick }: { onPick: (draft: AutomationSuggestion['draf
             onClick={() => {
               onPick(suggestion.draft);
             }}
-            className={`group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-droid-elevated/45 ${
-              index === AUTOMATION_SUGGESTIONS.length - 1 ? '' : 'border-b border-droid-border/60'
+            className={`group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated/45 ${
+              index === AUTOMATION_SUGGESTIONS.length - 1 ? '' : 'border-b border-divider/60'
             }`}
           >
-            <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl border border-droid-border bg-droid-surface text-droid-text-muted transition-colors group-hover:text-droid-text">
+            <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-divider bg-surface text-muted transition-colors group-hover:text-primary">
               <Clock className="h-4 w-4" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="text-[13px] font-medium text-droid-text">{suggestion.title}</span>
-              <span className="mt-1 block text-[12px] leading-5 text-droid-text-muted">
+              <span className="text-[13px] font-medium text-primary">{suggestion.title}</span>
+              <span className="mt-1 block text-[12px] leading-5 text-muted">
                 {suggestion.detail}
               </span>
             </span>
-            <Plus className="mt-1 h-4 w-4 text-droid-text-muted/65 transition-colors group-hover:text-droid-text" />
+            <Plus className="mt-1 h-4 w-4 text-muted/65 transition-colors group-hover:text-primary" />
           </button>
         ))}
       </div>

@@ -283,10 +283,8 @@ export function WorktreesSettings() {
     >
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[16px] font-semibold tracking-[-0.015em] text-droid-text">
-            Worktrees
-          </h2>
-          <p className="mt-1 text-[13px] text-droid-text-muted">
+          <h2 className="text-[16px] font-semibold tracking-[-0.015em] text-primary">Worktrees</h2>
+          <p className="mt-1 text-[13px] text-muted">
             Manage worktrees and open their linked conversations.
           </p>
         </div>
@@ -294,7 +292,7 @@ export function WorktreesSettings() {
           onClick={() => void load()}
           title="Refresh worktrees"
           aria-label="Refresh worktrees"
-          className="shrink-0 rounded-lg border border-droid-border bg-droid-surface p-2 text-droid-text-muted transition-all duration-150 hover:-translate-y-px hover:border-droid-border-hover hover:bg-droid-elevated/60 hover:text-droid-text active:scale-[0.94]"
+          className="shrink-0 rounded-md border border-divider bg-surface p-2 text-muted transition-all duration-150 hover:-translate-y-px hover:border-divider-strong hover:bg-elevated/60 hover:text-primary active:scale-[0.94]"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
@@ -305,9 +303,9 @@ export function WorktreesSettings() {
           key={loading ? 'loading' : 'empty'}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-dashed border-droid-border bg-droid-surface/40 p-7 text-center"
+          className="rounded-lg border border-dashed border-divider bg-surface/40 p-7 text-center"
         >
-          <p className="text-[13px] text-droid-text-secondary">
+          <p className="text-[13px] text-secondary">
             {loading ? 'Scanning workspaces…' : 'No linked worktrees yet.'}
           </p>
         </motion.div>
@@ -333,19 +331,17 @@ export function WorktreesSettings() {
             >
               <div className="mb-2.5 flex min-w-0 items-end justify-between gap-4 px-0.5">
                 <div className="min-w-0">
-                  <h3 className="truncate text-[13px] font-semibold text-droid-text">
+                  <h3 className="truncate text-[13px] font-semibold text-primary">
                     {workspaceName(repository.root)}
                   </h3>
-                  <p className="mt-0.5 truncate text-[11px] text-droid-text-muted">
-                    {repository.root}
-                  </p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted">{repository.root}</p>
                 </div>
-                <span className="shrink-0 pb-0.5 text-[11px] text-droid-text-muted">
+                <span className="shrink-0 pb-0.5 text-[11px] text-muted">
                   {String(linkedWorktrees.length)}{' '}
                   {linkedWorktrees.length === 1 ? 'worktree' : 'worktrees'}
                 </span>
               </div>
-              <div className="divide-y divide-droid-border/80 overflow-hidden rounded-xl border border-droid-border bg-droid-surface shadow-droid-sm">
+              <div className="divide-y divide-divider/80 overflow-hidden rounded-lg border border-divider bg-surface shadow-sm">
                 <AnimatePresence initial={false}>
                   {visibleWorktrees.map((details) => {
                     const { worktree } = details;
@@ -411,7 +407,7 @@ export function WorktreesSettings() {
                         return next;
                       });
                     }}
-                    className="flex w-full items-center justify-center border-t border-droid-border/80 px-3 py-2.5 text-[11px] font-medium text-droid-text-muted transition-colors duration-150 hover:bg-droid-elevated/35 hover:text-droid-text active:bg-droid-elevated/55"
+                    className="flex w-full items-center justify-center border-t border-divider/80 px-3 py-2.5 text-[11px] font-medium text-muted transition-colors duration-150 hover:bg-elevated/35 hover:text-primary active:bg-elevated/55"
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.span

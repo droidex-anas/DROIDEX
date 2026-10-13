@@ -34,7 +34,7 @@ export function SelectionHighlight({ index }: { index: number }) {
   return (
     <div
       aria-hidden
-      className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-lg bg-droid-surface ${
+      className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-md bg-surface ${
         index < 0 ? 'opacity-0' : ''
       }`}
       style={{
@@ -56,14 +56,10 @@ export function ModelListStatus({
   query: string;
 }) {
   if (!hasRealModels) {
-    return (
-      <div className="px-2 py-3 text-center text-[11px] text-droid-text-muted">Loading models…</div>
-    );
+    return <div className="px-2 py-3 text-center text-[11px] text-muted">Loading models…</div>;
   }
   if (!empty) return null;
   return (
-    <div className="px-2 py-3 text-center text-[11px] text-droid-text-muted">
-      No matches for “{query}”
-    </div>
+    <div className="px-2 py-3 text-center text-[11px] text-muted">No matches for “{query}”</div>
   );
 }

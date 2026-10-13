@@ -139,23 +139,23 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
         initial={{ y: 18, scale: 0.975, opacity: 0 }}
         animate={{ y: 0, scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 430, damping: 34 }}
-        className="max-h-[calc(100vh-2.5rem)] w-full max-w-[680px] overflow-y-auto rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
+        className="max-h-[calc(100vh-2.5rem)] w-full max-w-[680px] overflow-y-auto rounded-xl border border-divider bg-surface shadow-lg"
       >
         {reportId ? (
           <div className="px-8 py-9 text-center" aria-live="polite">
-            <div className="mx-auto mb-5 flex h-11 w-11 items-center justify-center rounded-full border border-droid-accent/35 bg-droid-accent/10 text-droid-accent">
+            <div className="mx-auto mb-5 flex h-11 w-11 items-center justify-center rounded-full border border-accent/35 bg-accent/10 text-accent">
               <CheckCircle2 className="h-5 w-5" />
             </div>
             <h2
               id="feedback-title"
-              className="text-[22px] font-semibold tracking-[-0.02em] text-droid-text"
+              className="text-[22px] font-semibold tracking-[-0.02em] text-primary"
             >
               Report accepted
             </h2>
-            <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-droid-text-secondary">
+            <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-secondary">
               Keep this report ID if you need to follow up with support.
             </p>
-            <div className="mx-auto mt-6 flex max-w-[430px] items-center gap-2 rounded-xl border border-droid-border bg-droid-bg/60 p-2 pl-4">
+            <div className="mx-auto mt-6 flex max-w-[430px] items-center gap-2 rounded-lg border border-divider bg-bg/60 p-2 pl-4">
               <input
                 ref={reportIdRef}
                 aria-label="Report ID"
@@ -164,13 +164,13 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                 onFocus={(event) => {
                   event.currentTarget.select();
                 }}
-                className="min-w-0 flex-1 bg-transparent text-left font-mono text-[14px] font-medium tracking-[0.04em] text-droid-text outline-none"
+                className="min-w-0 flex-1 bg-transparent text-left font-mono text-[14px] font-medium tracking-[0.04em] text-primary outline-none"
               />
               <button
                 ref={copyButtonRef}
                 type="button"
                 onClick={() => void copyReportId()}
-                className="flex h-9 items-center gap-1.5 rounded-lg border border-droid-border bg-droid-elevated px-3 text-[12px] font-medium text-droid-text transition-colors hover:border-droid-border-hover hover:bg-droid-elevated/80"
+                className="flex h-9 items-center gap-1.5 rounded-md border border-divider bg-elevated px-3 text-[12px] font-medium text-primary transition-colors hover:border-divider-strong hover:bg-elevated/80"
               >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copied ? 'Copied' : 'Copy ID'}
@@ -184,7 +184,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="mt-7 h-10 rounded-xl bg-droid-accent px-6 text-[13px] font-semibold text-droid-bg transition-opacity hover:opacity-90"
+              className="mt-7 h-10 rounded-lg bg-accent px-6 text-[13px] font-semibold text-bg transition-opacity hover:opacity-90"
             >
               Done
             </button>
@@ -193,16 +193,16 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
           <>
             <header className="flex items-start justify-between gap-5 px-7 pb-5 pt-6">
               <div>
-                <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-droid-accent">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-accent">
                   DROIDEX feedback
                 </div>
                 <h2
                   id="feedback-title"
-                  className="text-[22px] font-semibold tracking-[-0.02em] text-droid-text"
+                  className="text-[22px] font-semibold tracking-[-0.02em] text-primary"
                 >
                   Share feedback
                 </h2>
-                <p className="mt-1.5 text-[13px] leading-5 text-droid-text-secondary">
+                <p className="mt-1.5 text-[13px] leading-5 text-secondary">
                   Tell us what happened. A report ID will be created when delivery succeeds.
                 </p>
               </div>
@@ -211,13 +211,13 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                 onClick={onClose}
                 disabled={submitting}
                 aria-label="Close feedback"
-                className="rounded-lg p-2 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text disabled:opacity-40"
+                className="rounded-md p-2 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
               >
                 <X className="h-4 w-4" />
               </button>
             </header>
 
-            <div className="border-y border-droid-border/70 px-7 py-5">
+            <div className="border-y border-divider/70 px-7 py-5">
               <div className="flex flex-wrap gap-2" role="group" aria-label="Feedback category">
                 {CATEGORIES.map((option) => {
                   const Icon = option.icon;
@@ -233,11 +233,11 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                       }}
                       className={`flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-medium transition-colors ${
                         selected
-                          ? 'border-droid-accent/55 bg-droid-accent/10 text-droid-text'
-                          : 'border-droid-border bg-droid-bg/25 text-droid-text-secondary hover:border-droid-border-hover hover:text-droid-text'
+                          ? 'border-accent/55 bg-accent/10 text-primary'
+                          : 'border-divider bg-bg/25 text-secondary hover:border-divider-strong hover:text-primary'
                       }`}
                     >
-                      <Icon className={`h-3.5 w-3.5 ${selected ? 'text-droid-accent' : ''}`} />
+                      <Icon className={`h-3.5 w-3.5 ${selected ? 'text-accent' : ''}`} />
                       {option.label}
                     </button>
                   );
@@ -245,7 +245,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
               </div>
 
               <label className="mt-5 block">
-                <span className="mb-2 block text-[12px] font-medium text-droid-text">Details</span>
+                <span className="mb-2 block text-[12px] font-medium text-primary">Details</span>
                 <textarea
                   ref={descriptionRef}
                   value={description}
@@ -262,17 +262,17 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                     }
                   }}
                   placeholder="What happened? What did you expect instead?"
-                  className="min-h-[168px] w-full resize-none rounded-xl border border-droid-border bg-droid-bg/45 px-4 py-3 text-[14px] leading-6 text-droid-text outline-none transition-colors placeholder:text-droid-text-muted focus:border-droid-accent/70 disabled:opacity-60"
+                  className="min-h-[168px] w-full resize-none rounded-lg border border-divider bg-bg/45 px-4 py-3 text-[14px] leading-6 text-primary outline-none transition-colors placeholder:text-muted focus:border-accent/70 disabled:opacity-60"
                 />
               </label>
               <div className="mt-2 flex items-start justify-between gap-5">
-                <p className="max-w-[500px] text-[11px] leading-[17px] text-droid-text-muted">
+                <p className="max-w-[500px] text-[11px] leading-[17px] text-muted">
                   Includes a random pseudonymous ID (report-scoped while automatic diagnostics are
                   off), app version, macOS version, architecture, and runtime versions. Chats,
                   files, browser content, keys, and credentials are not attached unless you opt in
                   to a screenshot below.
                 </p>
-                <span className="shrink-0 font-mono text-[11px] text-droid-text-muted">
+                <span className="shrink-0 font-mono text-[11px] text-muted">
                   {description.length}/2000
                 </span>
               </div>
@@ -282,8 +282,8 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                 </p>
               )}
 
-              <div className="mt-4 border-t border-droid-border/50 pt-4">
-                <div className="mb-2 text-[11px] font-medium text-droid-text-muted">
+              <div className="mt-4 border-t border-divider/50 pt-4">
+                <div className="mb-2 text-[11px] font-medium text-muted">
                   Include with this report
                 </div>
                 <div className="flex flex-wrap gap-4">
@@ -296,7 +296,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                   ).map(([key, label]) => (
                     <label
                       key={key}
-                      className="flex cursor-pointer items-center gap-1.5 text-[12px] text-droid-text-secondary"
+                      className="flex cursor-pointer items-center gap-1.5 text-[12px] text-secondary"
                     >
                       <input
                         type="checkbox"
@@ -306,13 +306,13 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
                           setAttachments((prev) => ({ ...prev, [key]: event.target.checked }));
                           if (error) setError('');
                         }}
-                        className="accent-droid-accent"
+                        className="accent-accent"
                       />
                       {label}
                     </label>
                   ))}
                 </div>
-                <p className="mt-2 text-[11px] leading-[15px] text-droid-text-muted">
+                <p className="mt-2 text-[11px] leading-[15px] text-muted">
                   Optional. Session log and app state contain anonymized operational facts only. The
                   screenshot captures the full app window, which may include chats, file paths, and
                   browser content. Uncheck all to exclude these optional attachments.
@@ -321,13 +321,13 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
             </div>
 
             <footer className="flex items-center justify-between gap-4 px-7 py-4">
-              <span className="text-[11px] text-droid-text-muted">⌘↵ to submit</span>
+              <span className="text-[11px] text-muted">⌘↵ to submit</span>
               <button
                 type="button"
                 onClick={() => void submit()}
                 disabled={description.trim().length < 5 || submitting}
                 aria-live="polite"
-                className="h-10 min-w-[132px] rounded-xl bg-droid-accent px-5 text-[13px] font-semibold text-droid-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+                className="h-10 min-w-[132px] rounded-lg bg-accent px-5 text-[13px] font-semibold text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
               >
                 {submitting ? 'Sending…' : 'Submit report'}
               </button>

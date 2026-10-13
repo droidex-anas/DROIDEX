@@ -25,16 +25,16 @@ function BrowserReferenceChip({ reference }: { reference: BrowserTranscriptRefer
           ? `${reference.selector}\n${reference.url ?? ''}`
           : (reference.url ?? `Design reference: ${reference.label}`)
       }
-      className="flex min-w-0 items-center gap-1.5 rounded-lg bg-droid-accent/15 px-2 py-1 text-[11px] font-medium text-droid-text ring-1 ring-inset ring-droid-accent/30"
+      className="flex min-w-0 items-center gap-1.5 rounded-md bg-accent/15 px-2 py-1 text-[11px] font-medium text-primary ring-1 ring-inset ring-accent/30"
     >
       {reference.imageDataUrl ? (
         <img
           src={reference.imageDataUrl}
           alt={reference.label}
-          className="h-5 max-w-12 rounded-sm object-cover"
+          className="h-5 max-w-12 rounded-[2px] object-cover"
         />
       ) : (
-        <Icon className="h-3 w-3 shrink-0 text-droid-accent" />
+        <Icon className="h-3 w-3 shrink-0 text-accent" />
       )}
       <span className="max-w-40 truncate">@{reference.label}</span>
     </span>
@@ -53,7 +53,7 @@ function PromptChip({
   return (
     <span
       title={title ?? label}
-      className="inline-flex items-center gap-1.5 font-medium text-droid-skill"
+      className="inline-flex items-center gap-1.5 font-medium text-skill"
     >
       <Icon className="h-4 w-4 shrink-0" />
       {label}
@@ -69,7 +69,7 @@ function ClampedPrompt({ source, chips }: { source: string; chips: ReactNode }) 
     <ClampedBlock
       lines={16}
       lineHeightPx={PROMPT_LINE_PX}
-      fade="from-droid-elevated via-droid-elevated/90"
+      fade="from-elevated via-elevated/90"
       contentClassName={
         chips
           ? // The first paragraph runs inline after the chips, as it does in the
@@ -159,7 +159,7 @@ export function UserBubble({
       )}
       {hasPrompt && (
         <div className="relative min-w-0 max-w-[80%]">
-          <div className="min-w-0 rounded-2xl rounded-br-sm bg-[var(--prompt-bubble-bg,var(--droid-elevated))] px-4 py-2.5 text-[14px] leading-[1.6] text-droid-text">
+          <div className="min-w-0 rounded-xl rounded-br-[2px] bg-[var(--prompt-bubble-bg,var(--elevated))] px-4 py-2.5 text-[14px] leading-[1.6] text-primary">
             {display.text ? <ClampedPrompt source={display.text} chips={chips} /> : chips}
           </div>
           {/* The pending preview of a first message has no ts, and no actions yet;

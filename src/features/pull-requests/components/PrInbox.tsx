@@ -77,8 +77,8 @@ function PrInboxRow({
   const time = prRelativeTime(pr.updatedAt ?? pr.createdAt);
   return (
     <div
-      className={`group flex w-full items-start gap-1 rounded-xl pr-1 transition-colors hover:bg-droid-active ${
-        selected ? 'bg-droid-active' : ''
+      className={`group flex w-full items-start gap-1 rounded-lg pr-1 transition-colors hover:bg-active ${
+        selected ? 'bg-active' : ''
       }`}
     >
       <button
@@ -96,22 +96,22 @@ function PrInboxRow({
           <span className="flex items-start justify-between gap-2">
             <span
               title={pr.title}
-              className="min-w-0 truncate text-[13px] leading-snug font-medium text-droid-text"
+              className="min-w-0 truncate text-[13px] leading-snug font-medium text-primary"
             >
               {pr.title}
             </span>
             {time ? (
               <span
                 title={prAbsoluteTime(pr.updatedAt ?? pr.createdAt)}
-                className="shrink-0 text-[11px] text-droid-text-muted"
+                className="shrink-0 text-[11px] text-muted"
               >
                 {time}
               </span>
             ) : null}
           </span>
-          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-droid-text-muted">
+          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
             <GithubAvatar login={pr.author} size={16} />
-            <span className="shrink-0 text-droid-text-secondary">{displayLogin(pr.author)}</span>
+            <span className="shrink-0 text-secondary">{displayLogin(pr.author)}</span>
             <span className="shrink-0 tabular-nums">#{pr.number}</span>
             {pr.headRefName ? (
               <>
@@ -136,7 +136,7 @@ function PrInboxRow({
         onClick={() => {
           onToggleBacklog(pr);
         }}
-        className="mt-1.5 shrink-0 rounded-lg p-1.5 text-droid-text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-droid-elevated hover:text-droid-text focus-visible:opacity-100"
+        className="mt-1.5 shrink-0 rounded-md p-1.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-elevated hover:text-primary focus-visible:opacity-100"
       >
         {backlogged ? <Undo2 size={14} /> : <ListTodo size={14} />}
       </button>
@@ -148,7 +148,7 @@ function SkeletonRows() {
   return (
     <div className="space-y-1">
       {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} className="h-16 rounded-xl bg-droid-elevated/40" />
+        <div key={index} className="h-16 rounded-lg bg-elevated/40" />
       ))}
     </div>
   );
@@ -220,9 +220,7 @@ function InboxList({
 }) {
   if (loading) return <SkeletonRows />;
   if (groups.length === 0) {
-    return error ? null : (
-      <p className="px-1 py-6 text-[13px] text-droid-text-muted">{emptyCopy}</p>
-    );
+    return error ? null : <p className="px-1 py-6 text-[13px] text-muted">{emptyCopy}</p>;
   }
   const errorByCwd = new Map(repoErrors.map((item) => [comparablePath(item.cwd), item] as const));
   return (
@@ -251,10 +249,10 @@ function InboxList({
           return (
             <section key={group.cwd}>
               {repoError ? (
-                <p className="px-1 pb-2 text-[12px] text-droid-text-muted">{repoError.message}</p>
+                <p className="px-1 pb-2 text-[12px] text-muted">{repoError.message}</p>
               ) : null}
               {group.prs.length === 0 && !repoError ? (
-                <p className="px-1 py-4 text-[13px] text-droid-text-muted">{currentEmptyCopy}</p>
+                <p className="px-1 py-4 text-[13px] text-muted">{currentEmptyCopy}</p>
               ) : (
                 rows
               )}
@@ -270,7 +268,7 @@ function InboxList({
               onClick={() => {
                 onToggleOther(group.cwd);
               }}
-              className="flex w-full items-center gap-1.5 rounded-xl px-1.5 py-1.5 text-left text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text-secondary"
+              className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-muted transition-colors hover:bg-active hover:text-secondary"
             >
               <ChevronRight
                 size={14}
@@ -286,7 +284,7 @@ function InboxList({
             {expanded ? (
               <div className="mt-1">
                 {repoError ? (
-                  <p className="px-1 pb-2 text-[12px] text-droid-text-muted">{repoError.message}</p>
+                  <p className="px-1 pb-2 text-[12px] text-muted">{repoError.message}</p>
                 ) : null}
                 {rows}
               </div>
@@ -365,9 +363,7 @@ export function PrInbox({
                 setTab(item.id);
               }}
               className={`shrink-0 text-[13px] font-medium transition-colors ${
-                tab === item.id
-                  ? 'text-droid-text'
-                  : 'text-droid-text-muted hover:text-droid-text-secondary'
+                tab === item.id ? 'text-primary' : 'text-muted hover:text-secondary'
               }`}
             >
               {item.label}
@@ -378,7 +374,7 @@ export function PrInbox({
           type="button"
           onClick={onRetry}
           title="Refresh"
-          className="ml-auto rounded-lg p-1.5 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+          className="ml-auto rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <Octicon
             name="sync"
@@ -390,7 +386,7 @@ export function PrInbox({
       </div>
 
       <div className="relative mt-3">
-        <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-droid-text-muted" />
+        <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
         <input
           value={query}
           onChange={(event) => {
@@ -398,17 +394,17 @@ export function PrInbox({
           }}
           aria-label="Search pull requests"
           placeholder="Search"
-          className="w-full rounded-xl bg-droid-field py-2 pr-3 pl-9 text-[13px] text-droid-text outline-none placeholder:text-droid-text-muted focus-visible:ring-2 focus-visible:ring-droid-accent/60"
+          className="w-full rounded-lg bg-field py-2 pr-3 pl-9 text-[13px] text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
         />
       </div>
 
       {error ? (
-        <div className="mt-2 flex items-center gap-2 px-1 text-[12px] text-droid-text-muted">
+        <div className="mt-2 flex items-center gap-2 px-1 text-[12px] text-muted">
           <span className="min-w-0 flex-1">{error}</span>
           <button
             type="button"
             onClick={onRetry}
-            className="shrink-0 rounded-xl px-2 py-1 font-medium text-droid-text transition-colors hover:bg-droid-elevated"
+            className="shrink-0 rounded-lg px-2 py-1 font-medium text-primary transition-colors hover:bg-elevated"
           >
             Retry
           </button>

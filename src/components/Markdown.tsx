@@ -164,14 +164,14 @@ function createMarkdownComponents(specMode: boolean): Components {
       return specMode ? (
         <h1
           id={id}
-          className="text-[24px] font-semibold tracking-tight text-droid-text mt-10 first:mt-0 mb-4 scroll-mt-8"
+          className="text-[24px] font-semibold tracking-tight text-primary mt-10 first:mt-0 mb-4 scroll-mt-8"
         >
           {children}
         </h1>
       ) : (
         <h1
           id={id}
-          className="text-[19px] font-semibold tracking-tight text-droid-text mt-5 first:mt-0 mb-2 pb-1.5 border-b border-droid-border/70 scroll-mt-8"
+          className="text-[19px] font-semibold tracking-tight text-primary mt-5 first:mt-0 mb-2 pb-1.5 border-b border-divider/70 scroll-mt-8"
         >
           {children}
         </h1>
@@ -182,14 +182,14 @@ function createMarkdownComponents(specMode: boolean): Components {
       return specMode ? (
         <h2
           id={id}
-          className="text-[18px] font-semibold text-droid-text mt-7 first:mt-0 mb-2.5 scroll-mt-8"
+          className="text-[18px] font-semibold text-primary mt-7 first:mt-0 mb-2.5 scroll-mt-8"
         >
           {children}
         </h2>
       ) : (
         <h2
           id={id}
-          className="text-[16px] font-semibold text-droid-text mt-4 first:mt-0 mb-1.5 scroll-mt-8"
+          className="text-[16px] font-semibold text-primary mt-4 first:mt-0 mb-1.5 scroll-mt-8"
         >
           {children}
         </h2>
@@ -200,14 +200,14 @@ function createMarkdownComponents(specMode: boolean): Components {
       return specMode ? (
         <h3
           id={id}
-          className="text-[15px] font-semibold text-droid-text-secondary mt-5 first:mt-0 mb-2 scroll-mt-8"
+          className="text-[15px] font-semibold text-secondary mt-5 first:mt-0 mb-2 scroll-mt-8"
         >
           {children}
         </h3>
       ) : (
         <h3
           id={id}
-          className="text-[15px] font-semibold text-droid-text mt-3.5 first:mt-0 mb-1 scroll-mt-8"
+          className="text-[15px] font-semibold text-primary mt-3.5 first:mt-0 mb-1 scroll-mt-8"
         >
           {children}
         </h3>
@@ -215,35 +215,33 @@ function createMarkdownComponents(specMode: boolean): Components {
     },
     h4: ({ children }) =>
       specMode ? (
-        <h4 className="text-[14px] font-semibold text-droid-text-secondary mt-4 first:mt-0 mb-1.5">
+        <h4 className="text-[14px] font-semibold text-secondary mt-4 first:mt-0 mb-1.5">
           {children}
         </h4>
       ) : (
-        <h4 className="text-[14px] font-semibold text-droid-text mt-3.5 first:mt-0 mb-1">
+        <h4 className="text-[14px] font-semibold text-primary mt-3.5 first:mt-0 mb-1">
           {children}
         </h4>
       ),
     h5: ({ children }) => (
-      <h5 className="text-[14px] font-semibold text-droid-text-secondary mt-3 first:mt-0 mb-1">
-        {children}
-      </h5>
+      <h5 className="text-[14px] font-semibold text-secondary mt-3 first:mt-0 mb-1">{children}</h5>
     ),
     h6: ({ children }) => (
-      <h6 className="text-[12px] font-medium uppercase tracking-wide text-droid-text-muted mt-3 first:mt-0 mb-1">
+      <h6 className="text-[12px] font-medium uppercase tracking-wide text-muted mt-3 first:mt-0 mb-1">
         {children}
       </h6>
     ),
     p: ({ children }) => <p className={specMode ? 'leading-[1.8]' : 'leading-[1.6]'}>{children}</p>,
     ul: ({ children }) => (
       <ul
-        className={`marker:text-droid-text-muted ${specMode ? 'list-disc pl-6 space-y-2' : 'list-disc pl-5 space-y-1'}`}
+        className={`marker:text-muted ${specMode ? 'list-disc pl-6 space-y-2' : 'list-disc pl-5 space-y-1'}`}
       >
         {children}
       </ul>
     ),
     ol: ({ children }) => (
       <ol
-        className={`marker:text-droid-text-muted ${specMode ? 'list-decimal pl-6 space-y-2' : 'list-decimal pl-5 space-y-1'}`}
+        className={`marker:text-muted ${specMode ? 'list-decimal pl-6 space-y-2' : 'list-decimal pl-5 space-y-1'}`}
       >
         {children}
       </ol>
@@ -269,15 +267,13 @@ function createMarkdownComponents(specMode: boolean): Components {
         type="checkbox"
         defaultChecked={checked}
         disabled
-        className="mr-1.5 h-3 w-3 translate-y-[0.5px] accent-[var(--droid-accent)]"
+        className="mr-1.5 h-3 w-3 translate-y-[0.5px] accent-[var(--accent)]"
       />
     ),
-    strong: ({ children }) => <strong className="font-semibold text-droid-text">{children}</strong>,
+    strong: ({ children }) => <strong className="font-semibold text-primary">{children}</strong>,
     em: ({ children }) => <em className="italic">{children}</em>,
     del: ({ children }) => (
-      <del className="line-through decoration-droid-text-muted/80 text-droid-text-secondary">
-        {children}
-      </del>
+      <del className="line-through decoration-muted/80 text-secondary">{children}</del>
     ),
     a: ({ children, href, node }) => {
       // A linked markdown image would otherwise produce invalid nested
@@ -304,7 +300,7 @@ function createMarkdownComponents(specMode: boolean): Components {
           rel="noreferrer"
           title={href}
           className="group/link"
-          style={{ color: 'var(--droid-link)' }}
+          style={{ color: 'var(--link)' }}
         >
           {link ? <LinkBadge key={link.host} link={link} /> : null}
           <span
@@ -319,7 +315,7 @@ function createMarkdownComponents(specMode: boolean): Components {
     },
     blockquote: ({ children }) => (
       <blockquote
-        className={`text-droid-text-secondary ${specMode ? 'border-l border-droid-border pl-4 py-0.5 my-4' : 'border-l-2 border-droid-border-hover pl-3.5 py-0.5 my-2.5'}`}
+        className={`text-secondary ${specMode ? 'border-l border-divider pl-4 py-0.5 my-4' : 'border-l-2 border-divider-strong pl-3.5 py-0.5 my-2.5'}`}
       >
         {children}
       </blockquote>
@@ -329,7 +325,7 @@ function createMarkdownComponents(specMode: boolean): Components {
     // local paths through the desktop image source and bounds the preview.
     img: ({ src, alt, title }) =>
       typeof src === 'string' ? <TranscriptImage reference={src} alt={alt} title={title} /> : null,
-    hr: () => <hr className={`border-0 h-px bg-droid-border/25 ${specMode ? 'my-8' : 'my-4'}`} />,
+    hr: () => <hr className={`border-0 h-px bg-divider/25 ${specMode ? 'my-8' : 'my-4'}`} />,
     // A fence is the only markdown that produces <pre>, so <pre> owns block
     // code and <code> is always inline. A fence without a language therefore
     // still gets a code card instead of an inline pill on every line, and each
@@ -365,7 +361,7 @@ const SPEC_COMPONENTS = createMarkdownComponents(true);
 // read at the same size; 1.6 leading keeps paragraphs and lists close without
 // crowding them.
 export function markdownShellClass(specMode: boolean): string {
-  return `md-shell min-w-0 max-w-full text-droid-text break-words ${specMode ? 'text-[15px] leading-[1.8] space-y-5' : 'text-[14px] leading-[1.6] space-y-2.5'}`;
+  return `md-shell min-w-0 max-w-full text-primary break-words ${specMode ? 'text-[15px] leading-[1.8] space-y-5' : 'text-[14px] leading-[1.6] space-y-2.5'}`;
 }
 
 export type MarkdownFenceFlags = Omit<FenceRenderOptions, 'appFences'>;

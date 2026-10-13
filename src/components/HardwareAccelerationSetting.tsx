@@ -53,11 +53,11 @@ function HardwareAccelerationSettingPanel() {
   return (
     <>
       <GroupLabel>Performance</GroupLabel>
-      <div className="mb-8 rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border">
+      <div className="mb-8 rounded-lg border border-divider bg-surface divide-y divide-divider">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
-            <div className="text-[13px] text-droid-text">Hardware acceleration</div>
-            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-droid-text-muted">
+            <div className="text-[13px] text-primary">Hardware acceleration</div>
+            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-muted">
               Uses your GPU for smoother rendering. Turn this off if DROIDEX is blank, flickers, or
               crashes because of graphics drivers.
             </p>
@@ -70,14 +70,14 @@ function HardwareAccelerationSettingPanel() {
           />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="text-[11px] leading-[17px] text-droid-text-muted">
+          <p className="text-[11px] leading-[17px] text-muted">
             Changes take effect after you restart DROIDEX.
           </p>
           {needsRestart && (
             <button
               type="button"
               onClick={() => void relaunchApp()}
-              className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors"
+              className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
             >
               Restart now
             </button>

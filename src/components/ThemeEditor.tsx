@@ -167,16 +167,16 @@ export function ThemeEditor({
         role="dialog"
         aria-modal="true"
         aria-labelledby="theme-editor-title"
-        className="w-[560px] max-w-full rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
+        className="w-[560px] max-w-full rounded-xl border border-divider bg-surface shadow-lg"
       >
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
-          <h3 id="theme-editor-title" className="text-[14px] font-semibold text-droid-text">
+          <h3 id="theme-editor-title" className="text-[14px] font-semibold text-primary">
             {title}
           </h3>
           <button
             onClick={onCancel}
             aria-label="Close theme editor"
-            className="rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+            className="rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
           >
             <X className="h-4 w-4" />
           </button>
@@ -184,9 +184,9 @@ export function ThemeEditor({
 
         <div className="px-5 pb-4">
           {/* Live preview: wireframe plus the theme's icon glyph */}
-          <div className="relative h-44 overflow-hidden rounded-xl border border-droid-border">
+          <div className="relative h-44 overflow-hidden rounded-lg border border-divider">
             <MiniAppFrame colors={draft[editing]} />
-            <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl border border-droid-border bg-droid-bg/70 p-3 backdrop-blur-sm">
+            <div className="pointer-events-none absolute bottom-3 right-3 rounded-lg border border-divider bg-bg/70 p-3 backdrop-blur-sm">
               <ThemeSwatches
                 preset={{
                   id: 'draft',
@@ -198,7 +198,7 @@ export function ThemeEditor({
                 size={36}
               />
             </div>
-            <div className="absolute right-2 top-2 flex gap-1 rounded-lg border border-droid-border bg-droid-bg/80 p-0.5 backdrop-blur-sm">
+            <div className="absolute right-2 top-2 flex gap-1 rounded-md border border-divider bg-bg/80 p-0.5 backdrop-blur-sm">
               <button
                 type="button"
                 title="Edit light variant"
@@ -206,10 +206,8 @@ export function ThemeEditor({
                 onClick={() => {
                   setEditing('light');
                 }}
-                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                  editing === 'light'
-                    ? 'bg-droid-elevated text-droid-text'
-                    : 'text-droid-text-muted hover:text-droid-text'
+                className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] transition-colors ${
+                  editing === 'light' ? 'bg-elevated text-primary' : 'text-muted hover:text-primary'
                 }`}
               >
                 <Sun className="h-3 w-3" />
@@ -222,10 +220,8 @@ export function ThemeEditor({
                 onClick={() => {
                   setEditing('dark');
                 }}
-                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                  editing === 'dark'
-                    ? 'bg-droid-elevated text-droid-text'
-                    : 'text-droid-text-muted hover:text-droid-text'
+                className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] transition-colors ${
+                  editing === 'dark' ? 'bg-elevated text-primary' : 'text-muted hover:text-primary'
                 }`}
               >
                 <Moon className="h-3 w-3" />
@@ -235,7 +231,7 @@ export function ThemeEditor({
           </div>
 
           <div className="mt-4">
-            <label className="mb-1.5 block text-[11px] text-droid-text-muted" htmlFor="theme-name">
+            <label className="mb-1.5 block text-[11px] text-muted" htmlFor="theme-name">
               Theme name
             </label>
             <input
@@ -251,7 +247,7 @@ export function ThemeEditor({
               }}
               placeholder="My theme"
               spellCheck={false}
-              className="h-8 w-full rounded-lg border border-droid-border bg-droid-bg/60 px-2.5 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:border-droid-border-hover focus:outline-none"
+              className="h-8 w-full rounded-md border border-divider bg-bg/60 px-2.5 text-[13px] text-primary placeholder:text-muted focus:border-divider-strong focus:outline-none"
             />
           </div>
 
@@ -271,21 +267,21 @@ export function ThemeEditor({
         </div>
 
         {error && (
-          <p role="alert" className="px-5 pb-2 text-[12px] text-droid-red">
+          <p role="alert" className="px-5 pb-2 text-[12px] text-danger">
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2 border-t border-droid-border px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-divider px-5 py-3">
           <button
             onClick={onCancel}
-            className="h-8 rounded-lg border border-droid-border px-3 text-[12px] text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:text-droid-text"
+            className="h-8 rounded-md border border-divider px-3 text-[12px] text-secondary transition-colors hover:border-divider-strong hover:text-primary"
           >
             Cancel
           </button>
           <button
             onClick={save}
             disabled={!name}
-            className="h-8 rounded-lg bg-droid-accent px-3 text-[12px] text-droid-bg transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="h-8 rounded-md bg-accent px-3 text-[12px] text-bg transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             Save theme
           </button>

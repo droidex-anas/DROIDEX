@@ -7,7 +7,7 @@ import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 // tinted from the text colour so it still reads on a message bubble, and cloned
 // across a line break so a wrapped pill keeps both ends.
 const PILL =
-  'rounded-[0.35em] bg-droid-text/[0.07] px-[0.38em] py-[0.12em] font-mono text-[0.86em] text-droid-text [box-decoration-break:clone] break-words';
+  'rounded-[0.35em] bg-text/[0.07] px-[0.38em] py-[0.12em] font-mono text-[0.86em] text-primary [box-decoration-break:clone] break-words';
 
 // A reply names files constantly ("check `docs/architecture.md`"), and those
 // mentions open in Review exactly like a tool row's path. The handler reaches
@@ -55,7 +55,7 @@ export function InlineCode({ children }: { children?: ReactNode }) {
         event.preventDefault();
         open();
       }}
-      className={`${PILL} cursor-pointer underline decoration-transparent underline-offset-2 transition-colors hover:bg-droid-text/[0.14] hover:decoration-current focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60`}
+      className={`${PILL} cursor-pointer underline decoration-transparent underline-offset-2 transition-colors hover:bg-text/[0.14] hover:decoration-current focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60`}
     >
       {children}
     </code>

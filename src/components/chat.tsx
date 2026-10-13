@@ -154,7 +154,7 @@ function ToolGroupWithCards({
           key={call.id}
           fallback={
             <div
-              className="rounded-2xl border border-droid-border bg-droid-surface/35 px-4 py-3 text-[11px] text-droid-text-muted"
+              className="rounded-xl border border-divider bg-surface/35 px-4 py-3 text-[11px] text-muted"
               aria-busy="true"
             >
               Loading automation proposal…
@@ -480,9 +480,7 @@ export const FeedItemView = memo(function FeedItemView({
       return live && !isSettingsStatus(item.event) ? (
         <span className="shimmer-text text-[13px] font-medium">{text}</span>
       ) : (
-        <span className="block text-[13px] text-droid-text-muted leading-relaxed break-words">
-          {text}
-        </span>
+        <span className="block text-[13px] text-muted leading-relaxed break-words">{text}</span>
       );
     }
     case 'error':

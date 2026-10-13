@@ -75,13 +75,11 @@ function Pill({
       title={`${title}: ${label}`}
       aria-label={`${title}: ${label}`}
       {...(open === undefined ? {} : { 'aria-expanded': open, 'aria-haspopup': 'dialog' as const })}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
-        open
-          ? 'bg-droid-bg/60 text-droid-text'
-          : 'text-droid-text-secondary hover:bg-droid-bg/40 hover:text-droid-text'
+      className={`group flex min-w-0 items-center gap-1.5 rounded-sm px-1.5 py-1 text-[11px] transition-colors ${
+        open ? 'bg-bg/60 text-primary' : 'text-secondary hover:bg-bg/40 hover:text-primary'
       }`}
     >
-      <span className="shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+      <span className="shrink-0 text-muted transition-colors group-hover:text-secondary">
         {icon}
       </span>
       <span className="max-w-[150px] truncate text-left">{label}</span>
@@ -220,33 +218,33 @@ export function StartInBar({
                 setRepoOpen(false);
               }}
               aria-pressed={path === repoRoot}
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/60"
             >
-              <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+              <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-muted" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-droid-text">
+                <span className="block truncate text-[13px] text-primary">
                   {workspaceName(path)}
                 </span>
-                <span className="block truncate text-[11px] text-droid-text-muted">{path}</span>
+                <span className="block truncate text-[11px] text-muted">{path}</span>
               </span>
               {path === repoRoot && (
                 <Check
                   className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: 'var(--droid-accent)' }}
+                  style={{ color: 'var(--accent)' }}
                   strokeWidth={3}
                 />
               )}
             </button>
           ))}
         </div>
-        <div className="border-t border-droid-border/70 p-1.5">
+        <div className="border-t border-divider/70 p-1.5">
           <button
             onClick={() => {
               void openFolder();
             }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/60"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
           >
-            <FolderPlus className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+            <FolderPlus className="h-3.5 w-3.5 shrink-0 text-muted" />
             Open folder…
           </button>
         </div>
@@ -289,19 +287,19 @@ export function StartInBar({
                   setLocOpen(false);
                 }}
                 aria-pressed={createsWorktree}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/60"
               >
-                <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+                <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-droid-text">New worktree</span>
-                  <span className="block truncate text-[11px] text-droid-text-muted">
+                  <span className="block truncate text-[13px] text-primary">New worktree</span>
+                  <span className="block truncate text-[11px] text-muted">
                     Isolated checkout for this chat
                   </span>
                 </span>
                 {createsWorktree && (
                   <Check
                     className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: 'var(--droid-accent)' }}
+                    style={{ color: 'var(--accent)' }}
                     strokeWidth={3}
                   />
                 )}
@@ -313,12 +311,12 @@ export function StartInBar({
                 }}
                 disabled={!mainCheckout}
                 aria-pressed={onLocal}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-droid-elevated/60 disabled:opacity-50"
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-elevated/60 disabled:opacity-50"
               >
-                <LocalGlyph className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+                <LocalGlyph className="h-3.5 w-3.5 shrink-0 text-muted" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-droid-text">Work locally</span>
-                  <span className="block truncate text-[11px] text-droid-text-muted">
+                  <span className="block truncate text-[13px] text-primary">Work locally</span>
+                  <span className="block truncate text-[11px] text-muted">
                     {mainCheckout
                       ? `${mainCheckout.branch ?? 'detached'} · main checkout`
                       : 'Loading main checkout…'}
@@ -327,7 +325,7 @@ export function StartInBar({
                 {onLocal && (
                   <Check
                     className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: 'var(--droid-accent)' }}
+                    style={{ color: 'var(--accent)' }}
                     strokeWidth={3}
                   />
                 )}
@@ -342,16 +340,16 @@ export function StartInBar({
                       setLocOpen(false);
                     }}
                     aria-pressed={currentWtPath === w.path}
-                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/60"
                   >
-                    <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-secondary">
+                    <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
                       {worktreeName(w)}
                     </span>
                     {currentWtPath === w.path && (
                       <Check
                         className="h-3.5 w-3.5 shrink-0"
-                        style={{ color: 'var(--droid-accent)' }}
+                        style={{ color: 'var(--accent)' }}
                         strokeWidth={3}
                       />
                     )}

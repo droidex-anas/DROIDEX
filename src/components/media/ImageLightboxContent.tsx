@@ -126,7 +126,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
       >
         {failed ? (
           <div
-            className="flex max-w-[90vw] flex-col items-center gap-3 rounded-2xl bg-droid-raised px-6 py-5 text-droid-text-muted shadow-droid"
+            className="flex max-w-[90vw] flex-col items-center gap-3 rounded-xl bg-raised px-6 py-5 text-muted shadow-lg"
             onClick={(e) => {
               e.stopPropagation();
             }}
@@ -156,8 +156,8 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
               {...imageViewerContentMotion(reduceMotion)}
               className={
                 vector
-                  ? 'block h-[calc(100vh-10rem)] w-[calc(100vw-4rem)] select-none rounded-2xl bg-droid-bg object-contain p-10 shadow-droid'
-                  : 'block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-lg object-contain shadow-droid'
+                  ? 'block h-[calc(100vh-10rem)] w-[calc(100vw-4rem)] select-none rounded-xl bg-bg object-contain p-10 shadow-lg'
+                  : 'block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-md object-contain shadow-lg'
               }
               onError={() => {
                 setFailed(true);

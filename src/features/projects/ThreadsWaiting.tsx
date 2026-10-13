@@ -47,7 +47,7 @@ export function ThreadsWaiting({ appSessionId }: { appSessionId: string }) {
       >
         <span
           aria-hidden="true"
-          className="h-2.5 w-2.5 rounded-full border-[1.5px] border-droid-text-muted border-r-transparent motion-safe:animate-spin-slow"
+          className="h-2.5 w-2.5 rounded-full border-[1.5px] border-muted border-r-transparent motion-safe:animate-spin-slow"
         />
         <span className="shimmer-text shimmer-slow">
           Waiting for {plural(names.length, 'thread', 'threads')}

@@ -30,7 +30,7 @@ interface AutomationEditorProps {
 }
 
 const CONTROL =
-  'w-full rounded-xl border border-droid-border bg-droid-surface/55 px-3 py-2.5 text-[13px] text-droid-text outline-none transition-colors placeholder:text-droid-text-muted focus:border-droid-border-hover focus:bg-droid-surface';
+  'w-full rounded-lg border border-divider bg-surface/55 px-3 py-2.5 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus:bg-surface';
 
 export function AutomationEditor({
   editor,
@@ -90,20 +90,20 @@ export function AutomationEditor({
   return (
     <aside
       aria-busy={saving}
-      className="flex h-full w-full flex-col border-l border-droid-border bg-droid-bg shadow-droid"
+      className="flex h-full w-full flex-col border-l border-divider bg-bg shadow-lg"
     >
       <div data-electron-drag-region className="h-9 shrink-0" />
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-5 pb-3 pt-2">
           <div>
-            <div className="text-[12px] font-medium text-droid-text-secondary">
+            <div className="text-[12px] font-medium text-secondary">
               {isDelivery
                 ? 'Scheduled prompt'
                 : editor.mode === 'create'
                   ? 'New automation'
                   : 'Edit automation'}
             </div>
-            <div className="mt-0.5 text-[11px] text-droid-text-muted">
+            <div className="mt-0.5 text-[11px] text-muted">
               {isDelivery
                 ? 'Continue a conversation at the right time'
                 : 'Schedule a task that runs as a DROIDEX chat'}
@@ -112,7 +112,7 @@ export function AutomationEditor({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+            className="rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
             aria-label="Close automation editor"
           >
             <X className="h-4 w-4" />
@@ -127,7 +127,7 @@ export function AutomationEditor({
               update('title', event.target.value);
             }}
             placeholder="Automation title"
-            className="mb-4 w-full bg-transparent text-[22px] font-medium tracking-[-0.02em] text-droid-text outline-none placeholder:text-droid-text-muted"
+            className="mb-4 w-full bg-transparent text-[22px] font-medium tracking-[-0.02em] text-primary outline-none placeholder:text-muted"
             autoFocus
           />
           <textarea
@@ -162,11 +162,11 @@ export function AutomationEditor({
           )}
 
           {isDelivery ? (
-            <div className="mt-5 flex items-start gap-2.5 text-[12px] text-droid-text-secondary">
-              <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-droid-text-muted" />
+            <div className="mt-5 flex items-start gap-2.5 text-[12px] text-secondary">
+              <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
               <div className="min-w-0">
                 <p className="truncate">{targetTitle ?? 'Original conversation'}</p>
-                <p className="mt-1 text-[11px] leading-4 text-droid-text-muted">
+                <p className="mt-1 text-[11px] leading-4 text-muted">
                   Keeps its model, workspace, and permissions. No new chat is created.
                 </p>
               </div>
@@ -174,7 +174,7 @@ export function AutomationEditor({
           ) : (
             <>
               <SectionLabel>Run configuration</SectionLabel>
-              <div className="overflow-visible rounded-2xl border border-droid-border bg-droid-surface/35">
+              <div className="overflow-visible rounded-xl border border-divider bg-surface/35">
                 <EditorRow label="Model">
                   <AutomationModelPicker
                     models={models}
@@ -249,7 +249,7 @@ export function AutomationEditor({
           )}
 
           <SectionLabel>Schedule</SectionLabel>
-          <div className="overflow-visible rounded-2xl border border-droid-border bg-droid-surface/35">
+          <div className="overflow-visible rounded-xl border border-divider bg-surface/35">
             {!isDelivery && (
               <EditorRow label="Repeat">
                 <SelectMenu
@@ -303,7 +303,7 @@ export function AutomationEditor({
             </EditorRow>
           </div>
 
-          <div className="mt-4 rounded-xl border border-droid-border/70 bg-droid-surface/25 px-3 py-2.5 text-[11px] leading-4 text-droid-text-muted">
+          <div className="mt-4 rounded-lg border border-divider/70 bg-surface/25 px-3 py-2.5 text-[11px] leading-4 text-muted">
             {isDelivery
               ? 'Sends once, after any active turn finishes. Delivered means the conversation accepted the prompt, not that the agent finished its work. Attachments are saved copies.'
               : 'Every run opens as a background chat. Open it here to follow its progress.'}{' '}
@@ -312,13 +312,13 @@ export function AutomationEditor({
           </div>
         </fieldset>
 
-        <div className="border-t border-droid-border px-5 py-4">
-          {validation && <p className="mb-2 text-[11px] text-droid-text-muted">{validation}</p>}
+        <div className="border-t border-divider px-5 py-4">
+          {validation && <p className="mb-2 text-[11px] text-muted">{validation}</p>}
           <button
             type="button"
             onClick={onSave}
             disabled={saving || Boolean(validation)}
-            className="ml-auto block rounded-xl bg-droid-text px-4 py-2 text-[13px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+            className="ml-auto block rounded-lg bg-text px-4 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
           >
             {saving ? 'Saving…' : editor.mode === 'create' ? 'Create automation' : 'Save changes'}
           </button>
@@ -329,5 +329,5 @@ export function AutomationEditor({
 }
 
 function SectionLabel({ children }: { children: string }) {
-  return <h3 className="mb-2 mt-6 text-[12px] font-medium text-droid-text-muted">{children}</h3>;
+  return <h3 className="mb-2 mt-6 text-[12px] font-medium text-muted">{children}</h3>;
 }

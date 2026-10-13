@@ -68,9 +68,9 @@ export function createPlanStepsSelector(
 }
 
 function stepTone(item: TodoItem, isActive: boolean): string {
-  if (isActive) return 'text-droid-text font-medium';
-  if (item.status === 'completed') return 'text-droid-text-secondary';
-  return 'text-droid-text-muted';
+  if (isActive) return 'text-primary font-medium';
+  if (item.status === 'completed') return 'text-secondary';
+  return 'text-muted';
 }
 
 // Completed steps stay filled; pending and stopped steps keep an empty ring.
@@ -85,19 +85,17 @@ function StepRing({
 }) {
   if (status === 'completed') {
     return (
-      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-droid-accent">
-        <Check className="h-2 w-2 text-droid-bg" strokeWidth={3} />
+      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-accent">
+        <Check className="h-2 w-2 text-bg" strokeWidth={3} />
       </span>
     );
   }
   if (active && spinning) {
     return (
-      <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow" />
+      <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-text border-r-transparent motion-safe:animate-spin-slow" />
     );
   }
-  return (
-    <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-droid-text-muted/30" />
-  );
+  return <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-muted/30" />;
 }
 
 // The model's plan for the composer's session, tucked behind the composer.
@@ -191,7 +189,7 @@ export function PlanStepsPanel({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ duration: 0.22, ease: EASE }}
-          className="relative z-0 mx-[6%] -mb-3 min-w-0 overflow-hidden rounded-t-2xl border border-droid-border bg-droid-surface pb-4"
+          className="relative z-0 mx-[6%] -mb-3 min-w-0 overflow-hidden rounded-t-xl border border-divider bg-surface pb-4"
         >
           <button
             type="button"
@@ -200,18 +198,16 @@ export function PlanStepsPanel({
             }}
             aria-expanded={expanded}
             aria-controls={listId}
-            className="flex w-full min-w-0 items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-droid-active/40"
+            className="flex w-full min-w-0 items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-active/40"
           >
             <StepRing
               status={allDone ? 'completed' : current.status}
               active={!allDone}
               spinning={isRunning}
             />
-            <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text">
-              {current.text}
-            </span>
+            <span className="min-w-0 flex-1 truncate text-[12px] text-primary">{current.text}</span>
             <ChevronDown
-              className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+              className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
             />
           </button>
 

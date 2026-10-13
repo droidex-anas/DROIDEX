@@ -11,9 +11,9 @@ import {
 } from '../lib/toast';
 
 const DOT: Record<ToastVariant, string> = {
-  success: 'var(--droid-green)',
-  error: 'var(--droid-red)',
-  info: 'var(--droid-accent)',
+  success: 'var(--success)',
+  error: 'var(--danger)',
+  info: 'var(--accent)',
 };
 
 // Minimal pro toast: uniform hairline border (no side accent bars), a small
@@ -57,14 +57,14 @@ export default function Toaster() {
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) resumeToast(t.id);
             }}
-            className="group pointer-events-auto relative min-w-[240px] max-w-[380px] overflow-hidden rounded-xl border border-droid-border bg-droid-raised/95 shadow-droid-sm backdrop-blur-sm"
+            className="group pointer-events-auto relative min-w-[240px] max-w-[380px] overflow-hidden rounded-lg border border-divider bg-raised/95 shadow-sm backdrop-blur-sm"
           >
             <div className="flex items-center gap-2.5 px-3 py-2.5">
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                 style={{ background: DOT[t.variant] }}
               />
-              <span className="min-w-0 flex-1 text-[13px] leading-snug text-droid-text">
+              <span className="min-w-0 flex-1 text-[13px] leading-snug text-primary">
                 {t.message}
               </span>
               <button
@@ -72,7 +72,7 @@ export default function Toaster() {
                   dismissToast(t.id);
                 }}
                 aria-label="Dismiss"
-                className="-mr-1 shrink-0 rounded-md p-1 text-droid-text-muted opacity-0 transition-all hover:bg-droid-surface hover:text-droid-text focus-visible:opacity-100 group-hover:opacity-100"
+                className="-mr-1 shrink-0 rounded-sm p-1 text-muted opacity-0 transition-all hover:bg-surface hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
                 title="Dismiss"
               >
                 <X className="h-3.5 w-3.5" />

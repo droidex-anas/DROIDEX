@@ -79,27 +79,27 @@ export function ThreadSpawnLine({
           onClick={() => {
             setOpen((value) => !value);
           }}
-          className="-m-0.5 flex items-center rounded p-0.5"
+          className="-m-0.5 flex items-center rounded-xs p-0.5"
           aria-label={words.toggle}
           aria-expanded={open}
         >
           <Caret open={open} />
         </button>
-        <span className={live ? 'shimmer-text font-medium' : 'text-droid-text-muted'}>
+        <span className={live ? 'shimmer-text font-medium' : 'text-muted'}>
           {starting ? words.starting : words.started}
         </span>
         <button
           type="button"
           disabled={!spawned}
           onClick={openSpawned}
-          className="font-semibold text-droid-text underline-offset-2 hover:underline disabled:no-underline"
+          className="font-semibold text-primary underline-offset-2 hover:underline disabled:no-underline"
           title={words.openTitle}
         >
           {title}
         </button>
         {row && !live && (
           <>
-            <span className="min-w-0 truncate text-[12px] text-droid-text-muted">{row.detail}</span>
+            <span className="min-w-0 truncate text-[12px] text-muted">{row.detail}</span>
             <ActivityStatusGlyph status={row.status} />
           </>
         )}
@@ -138,14 +138,12 @@ function SpawnDetail({
   return (
     <div className="mt-2 pl-[18px]">
       {task !== undefined && (
-        <div className="break-words text-[13px] leading-relaxed text-droid-text-muted/70">
-          {task}
-        </div>
+        <div className="break-words text-[13px] leading-relaxed text-muted/70">{task}</div>
       )}
       {step !== undefined && (
         <div
           className={`mt-1.5 break-words text-[13px] font-medium leading-relaxed ${
-            live ? 'shimmer-text' : 'text-droid-text-secondary'
+            live ? 'shimmer-text' : 'text-secondary'
           }`}
         >
           {step}
@@ -155,7 +153,7 @@ function SpawnDetail({
         type="button"
         disabled={!canOpen}
         onClick={onOpen}
-        className="mt-2 inline-flex items-center gap-1 text-[12px] text-droid-text-muted transition-colors hover:text-droid-text disabled:hover:text-droid-text-muted"
+        className="mt-2 inline-flex items-center gap-1 text-[12px] text-muted transition-colors hover:text-primary disabled:hover:text-muted"
       >
         {openLabel}
         <ChevronRight className="h-3.5 w-3.5" />

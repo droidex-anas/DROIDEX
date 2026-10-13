@@ -65,30 +65,30 @@ function extensionOf(name: string): string {
 export const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
 const TABULAR_EXTENSIONS = new Set(['csv', 'tsv']);
 const CODE_THEME: PrismTheme = {
-  plain: { color: 'var(--droid-text-secondary)' },
+  plain: { color: 'var(--text-secondary)' },
   styles: [
     {
       types: ['comment', 'prolog', 'doctype', 'cdata'],
-      style: { color: 'var(--droid-text-muted)' },
+      style: { color: 'var(--text-muted)' },
     },
     {
       types: ['property', 'tag', 'boolean', 'number', 'constant', 'symbol', 'deleted'],
-      style: { color: 'var(--droid-red)' },
+      style: { color: 'var(--danger)' },
     },
     {
       types: ['selector', 'attr-name', 'string', 'char', 'builtin', 'inserted'],
-      style: { color: 'var(--droid-green)' },
+      style: { color: 'var(--success)' },
     },
     {
       types: ['operator', 'entity', 'url', 'string-variable'],
-      style: { color: 'var(--droid-text-secondary)' },
+      style: { color: 'var(--text-secondary)' },
     },
     {
       types: ['atrule', 'attr-value', 'keyword'],
-      style: { color: 'var(--droid-orange)' },
+      style: { color: 'var(--warning)' },
     },
-    { types: ['function', 'class-name'], style: { color: 'var(--droid-accent)' } },
-    { types: ['regex', 'important', 'variable'], style: { color: 'var(--droid-orange)' } },
+    { types: ['function', 'class-name'], style: { color: 'var(--accent)' } },
+    { types: ['regex', 'important', 'variable'], style: { color: 'var(--warning)' } },
   ],
 };
 
@@ -127,15 +127,15 @@ export function FilePreviewPane({
   const fileName = useMemo(() => relative.split(/[\\/]/).pop() ?? relative, [relative]);
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-droid-bg">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
       <div className="min-h-0 flex-1 overflow-hidden">
         {state.kind === 'idle' && (
-          <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-droid-text-muted">
+          <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-muted">
             Select a file to preview.
           </div>
         )}
         {state.kind === 'loading' && (
-          <div className="flex h-full items-center justify-center gap-2 text-[12px] text-droid-text-muted">
+          <div className="flex h-full items-center justify-center gap-2 text-[12px] text-muted">
             <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
             Loading preview…
           </div>
@@ -143,13 +143,11 @@ export function FilePreviewPane({
         {state.kind === 'error' && (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <AlertTriangle className="h-5 w-5 text-amber-400" />
-            <p className="max-w-sm text-[12px] leading-relaxed text-droid-text-secondary">
-              {state.message}
-            </p>
+            <p className="max-w-sm text-[12px] leading-relaxed text-secondary">{state.message}</p>
             <button
               type="button"
               onClick={onOpenExternal}
-              className="mt-1 flex items-center gap-1.5 rounded-md border border-droid-border bg-droid-surface px-2.5 py-1 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+              className="mt-1 flex items-center gap-1.5 rounded-sm border border-divider bg-surface px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
             >
               <ExternalLink className="h-3 w-3" />
               Open externally
@@ -215,18 +213,14 @@ function FallbackNotice({
   const reason = payload.reason ?? (oversize ? 'File exceeds the inline preview size cap.' : null);
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-      <AlertTriangle
-        className={`h-6 w-6 ${oversize ? 'text-amber-400' : 'text-droid-text-muted'}`}
-      />
+      <AlertTriangle className={`h-6 w-6 ${oversize ? 'text-amber-400' : 'text-muted'}`} />
       <div className="space-y-1">
-        <p className="text-[13px] font-medium text-droid-text">
+        <p className="text-[13px] font-medium text-primary">
           {oversize ? 'File too large to preview inline' : 'No inline preview available'}
         </p>
-        {reason && (
-          <p className="max-w-sm text-[12px] leading-relaxed text-droid-text-muted">{reason}</p>
-        )}
+        {reason && <p className="max-w-sm text-[12px] leading-relaxed text-muted">{reason}</p>}
         {payload.totalSize > 0 && (
-          <p className="text-[11px] text-droid-text-muted">
+          <p className="text-[11px] text-muted">
             {formatBytes(payload.totalSize)} · cap {formatBytes(payload.sizeCapBytes)}
           </p>
         )}
@@ -235,7 +229,7 @@ function FallbackNotice({
         <button
           type="button"
           onClick={onOpenExternal}
-          className="flex items-center gap-1.5 rounded-md border border-droid-border bg-droid-surface px-3 py-1.5 text-[12px] text-droid-text transition-colors hover:bg-droid-elevated/60"
+          className="flex items-center gap-1.5 rounded-sm border border-divider bg-surface px-3 py-1.5 text-[12px] text-primary transition-colors hover:bg-elevated/60"
         >
           <ExternalLink className="h-3.5 w-3.5" />
           Open externally
@@ -243,7 +237,7 @@ function FallbackNotice({
         <button
           type="button"
           onClick={onReveal}
-          className="flex items-center gap-1.5 rounded-md border border-droid-border px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+          className="flex items-center gap-1.5 rounded-sm border border-divider px-3 py-1.5 text-[12px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
         >
           <FolderSearch className="h-3.5 w-3.5" />
           Reveal
@@ -275,7 +269,7 @@ function TextPreview({ text, fileName }: { text: string; fileName: string }) {
   return (
     <div className="h-full overflow-auto">
       {truncated && (
-        <div className="sticky top-0 z-10 border-b border-droid-border bg-droid-surface/80 px-3 py-1.5 text-[11px] text-amber-300 backdrop-blur">
+        <div className="sticky top-0 z-10 border-b border-divider bg-surface/80 px-3 py-1.5 text-[11px] text-amber-300 backdrop-blur">
           Showing first {formatBytes(visibleText.length)} of {formatBytes(text.length)} (truncated
           for performance).
         </div>
@@ -295,7 +289,7 @@ function SyntaxCodePreview({ code, fileName }: { code: string; fileName: string 
   const language = resolveFilePresentation(fileName).language;
   if (!language || code.length > HIGHLIGHT_CHAR_LIMIT) {
     return (
-      <pre className="px-4 py-3 font-mono text-[12px] leading-[1.6] text-droid-text-secondary [overflow-wrap:anywhere]">
+      <pre className="px-4 py-3 font-mono text-[12px] leading-[1.6] text-secondary [overflow-wrap:anywhere]">
         <code className="whitespace-pre-wrap break-all">{code}</code>
       </pre>
     );
@@ -312,7 +306,7 @@ function SyntaxCodePreview({ code, fileName }: { code: string; fileName: string 
             const lineProps = getLineProps({ line });
             return (
               <div {...lineProps} key={lineIndex} className={`${lineProps.className} flex min-w-0`}>
-                <span className="w-9 shrink-0 select-none pr-3 text-right text-droid-text-muted/50">
+                <span className="w-9 shrink-0 select-none pr-3 text-right text-muted/50">
                   {lineIndex + 1}
                 </span>
                 <span className="min-w-0 flex-1 whitespace-pre-wrap break-all">
@@ -347,7 +341,7 @@ function CsvPreview({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {truncated && (
-        <div className="shrink-0 border-b border-droid-border bg-droid-surface/80 px-3 py-1.5 text-[11px] text-amber-300">
+        <div className="shrink-0 border-b border-divider bg-surface/80 px-3 py-1.5 text-[11px] text-amber-300">
           Showing first {formatBytes(text.length)} of {formatBytes(originalLength)} (truncated for
           performance).
         </div>
@@ -355,7 +349,7 @@ function CsvPreview({
       <PreviewTable rows={rows} />
       {(rows.length >= TABLE_ROW_LIMIT ||
         (rows[rows.length - 1]?.length ?? 0) >= TABLE_COL_LIMIT) && (
-        <div className="shrink-0 border-t border-droid-border bg-droid-surface/60 px-3 py-1 text-[11px] text-droid-text-muted">
+        <div className="shrink-0 border-t border-divider bg-surface/60 px-3 py-1 text-[11px] text-muted">
           Limited to {TABLE_ROW_LIMIT} rows × {TABLE_COL_LIMIT} columns.
         </div>
       )}
@@ -369,11 +363,11 @@ function PreviewTable({ rows }: { rows: string[][] }) {
       <table className="w-full border-collapse text-[11px]">
         <tbody>
           {rows.map((row, rIdx) => (
-            <tr key={rIdx} className={rIdx === 0 ? 'bg-droid-elevated/40 font-medium' : ''}>
+            <tr key={rIdx} className={rIdx === 0 ? 'bg-elevated/40 font-medium' : ''}>
               {row.map((cell, cIdx) => (
                 <td
                   key={cIdx}
-                  className="border-t border-droid-border px-2 py-1 text-droid-text-secondary [overflow-wrap:anywhere]"
+                  className="border-t border-divider px-2 py-1 text-secondary [overflow-wrap:anywhere]"
                 >
                   {cell}
                 </td>
@@ -409,13 +403,13 @@ function ImagePreview({ data, fileName }: { data?: Uint8Array; fileName: string 
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-droid-text-secondary">Failed to render this image.</p>
+        <p className="text-[12px] text-secondary">Failed to render this image.</p>
       </div>
     );
   }
   if (!url) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-[12px] text-droid-text-muted">
+      <div className="flex h-full items-center justify-center gap-2 text-[12px] text-muted">
         <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
         Loading image…
       </div>
@@ -424,7 +418,7 @@ function ImagePreview({ data, fileName }: { data?: Uint8Array; fileName: string 
   return (
     <div className="image-checkerboard relative flex h-full items-center justify-center overflow-auto p-4">
       {status === 'loading' && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border border-droid-border bg-droid-surface/90 px-2 py-1 text-[11px] text-droid-text-muted shadow-sm">
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm border border-divider bg-surface/90 px-2 py-1 text-[11px] text-muted shadow-[0_1px_2px_0_rgb(0_0_0/0.05)]">
           <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
           Decoding…
         </div>
@@ -432,7 +426,7 @@ function ImagePreview({ data, fileName }: { data?: Uint8Array; fileName: string 
       <img
         src={url}
         alt={`Preview of ${fileName}`}
-        className="max-h-full max-w-full rounded-sm object-contain shadow-lg"
+        className="max-h-full max-w-full rounded-[2px] object-contain shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
         onLoad={() => {
           setStatus('ready');
         }}
@@ -557,32 +551,32 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-droid-text-secondary">Failed to render PDF.</p>
-        <p className="max-w-sm text-[11px] text-droid-text-muted">{error}</p>
+        <p className="text-[12px] text-secondary">Failed to render PDF.</p>
+        <p className="max-w-sm text-[11px] text-muted">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col items-center overflow-auto bg-droid-surface/20 p-4">
+    <div className="flex h-full flex-col items-center overflow-auto bg-surface/20 p-4">
       <canvas
         ref={canvasRef}
-        className="max-h-full rounded-md shadow-lg"
+        className="max-h-full rounded-sm shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
         style={{ maxHeight: 'calc(100% - 32px)' }}
       />
       {numPages > 1 && (
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-droid-border bg-droid-elevated px-2 py-1">
+        <div className="mt-2 flex items-center gap-2 rounded-md border border-divider bg-elevated px-2 py-1">
           <button
             type="button"
             disabled={page <= 1 || rendering}
             onClick={() => {
               setPage((p) => Math.max(1, p - 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-droid-text-muted transition-colors enabled:hover:bg-droid-elevated/60 enabled:hover:text-droid-text disabled:opacity-30"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
-          <span className="text-[11px] tabular-nums text-droid-text-secondary">
+          <span className="text-[11px] tabular-nums text-secondary">
             {page} / {numPages}
           </span>
           <button
@@ -591,7 +585,7 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
             onClick={() => {
               setPage((p) => Math.min(numPages, p + 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-droid-text-muted transition-colors enabled:hover:bg-droid-elevated/60 enabled:hover:text-droid-text disabled:opacity-30"
+            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
           >
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -658,23 +652,23 @@ function DocxPreview({ data }: { data?: Uint8Array }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-droid-text-secondary">Failed to render document.</p>
-        <p className="max-w-sm text-[11px] text-droid-text-muted">{error}</p>
+        <p className="text-[12px] text-secondary">Failed to render document.</p>
+        <p className="max-w-sm text-[11px] text-muted">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="relative h-full overflow-auto bg-droid-surface/20 p-4">
+    <div className="relative h-full overflow-auto bg-surface/20 p-4">
       {loading && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border border-droid-border bg-droid-elevated px-2 py-1 text-[11px] text-droid-text-muted">
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm border border-divider bg-elevated px-2 py-1 text-[11px] text-muted">
           <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
           Rendering…
         </div>
       )}
       <div
         ref={containerRef}
-        className="mx-auto max-w-[800px] rounded-md bg-white p-6 text-black shadow-lg"
+        className="mx-auto max-w-[800px] rounded-sm bg-white p-6 text-black shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
       />
     </div>
   );
@@ -737,7 +731,7 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-[12px] text-droid-text-muted">
+      <div className="flex h-full items-center justify-center gap-2 text-[12px] text-muted">
         <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
         Parsing spreadsheet…
       </div>
@@ -748,8 +742,8 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-droid-text-secondary">Failed to parse spreadsheet.</p>
-        <p className="max-w-sm text-[11px] text-droid-text-muted">{error}</p>
+        <p className="text-[12px] text-secondary">Failed to parse spreadsheet.</p>
+        <p className="max-w-sm text-[11px] text-muted">{error}</p>
       </div>
     );
   }
@@ -760,7 +754,7 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {sheets.length > 1 && (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-droid-border bg-droid-surface/40 px-2 py-1.5">
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-divider bg-surface/40 px-2 py-1.5">
           {sheets.map((s, idx) => (
             <button
               key={s.sheet}
@@ -768,10 +762,10 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
               onClick={() => {
                 setActiveSheet(idx);
               }}
-              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+              className={`shrink-0 rounded-sm px-2 py-0.5 text-[11px] transition-colors ${
                 idx === activeSheet
-                  ? 'bg-droid-accent/15 text-droid-text'
-                  : 'text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text'
+                  ? 'bg-accent/15 text-primary'
+                  : 'text-muted hover:bg-elevated/60 hover:text-primary'
               }`}
             >
               {s.sheet}
@@ -780,7 +774,7 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
         </div>
       )}
       <PreviewTable rows={sheet.data} />
-      <div className="shrink-0 border-t border-droid-border bg-droid-surface/60 px-3 py-1 text-[11px] text-droid-text-muted">
+      <div className="shrink-0 border-t border-divider bg-surface/60 px-3 py-1 text-[11px] text-muted">
         Limited to {TABLE_ROW_LIMIT} rows × {TABLE_COL_LIMIT} columns per sheet.
       </div>
     </div>

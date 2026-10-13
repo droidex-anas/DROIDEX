@@ -97,10 +97,10 @@ export function ToolActivitySettings() {
   const current = DENSITY_STOPS[stopIndex];
 
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+    <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
       <div className="px-4 py-3.5">
-        <div className="text-[13px] text-droid-text">Tool activity</div>
-        <div className="text-[11px] text-droid-text-muted mt-0.5">
+        <div className="text-[13px] text-primary">Tool activity</div>
+        <div className="text-[11px] text-muted mt-0.5">
           How much working detail the transcript shows. {current.hint}
         </div>
         <input
@@ -116,7 +116,7 @@ export function ToolActivitySettings() {
             if (stop) update({ density: stop.value });
           }}
           className="mt-3 h-1 w-full cursor-pointer rounded-full"
-          style={{ accentColor: 'var(--droid-accent)' }}
+          style={{ accentColor: 'var(--accent)' }}
         />
         <div className="mt-1 flex justify-between">
           {DENSITY_STOPS.map((stop) => (
@@ -129,8 +129,8 @@ export function ToolActivitySettings() {
               aria-pressed={stop.value === settings.density}
               className={`text-[11px] transition-colors ${
                 stop.value === settings.density
-                  ? 'font-medium text-droid-text'
-                  : 'text-droid-text-muted hover:text-droid-text-secondary'
+                  ? 'font-medium text-primary'
+                  : 'text-muted hover:text-secondary'
               }`}
             >
               {stop.label}
@@ -151,14 +151,14 @@ export function ToolActivitySettings() {
         />
       </SettingRow>
       <div className="px-4 py-3.5">
-        <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
           Preview
         </div>
         {/* Remount on any change so disclosure state re-initializes from the
             new defaults and the preview always reflects the pending setting. */}
         <div
           key={`${settings.density}:${String(settings.inlineDiffs)}`}
-          className="space-y-3 rounded-lg border border-droid-border bg-droid-bg/60 p-3"
+          className="space-y-3 rounded-md border border-divider bg-bg/60 p-3"
         >
           <ToolGroupItem events={PREVIEW_TOOL_EVENTS} density={settings.density} />
           <DiffGroup changes={PREVIEW_DIFF} inlineDiffs={settings.inlineDiffs} />

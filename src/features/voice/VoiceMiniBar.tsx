@@ -44,7 +44,7 @@ interface DragBounds {
 const PINNED: DragBounds = { left: 0, right: 0, top: 0, bottom: 0 };
 
 const buttonClass =
-  'cursor-pointer rounded-full p-1.5 text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text';
+  'cursor-pointer rounded-full p-1.5 text-secondary transition-colors hover:bg-bg/50 hover:text-primary';
 
 export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSessionId: string }) {
   const dispatch = useStoreDispatch();
@@ -165,7 +165,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
           className="max-h-[220px] overflow-y-auto p-3"
         >
           {lines.length === 0 ? (
-            <p className="text-[12px] text-droid-text-muted">Nothing said yet.</p>
+            <p className="text-[12px] text-muted">Nothing said yet.</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {lines.map((line) => (
@@ -173,8 +173,8 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
                   <span
                     className={
                       line.role === 'user'
-                        ? 'max-w-[85%] rounded-xl rounded-br-sm bg-droid-elevated px-2.5 py-1.5 text-[12px] leading-[1.5] text-droid-text'
-                        : 'block text-[12px] leading-[1.5] text-droid-text-secondary'
+                        ? 'max-w-[85%] rounded-lg rounded-br-[2px] bg-elevated px-2.5 py-1.5 text-[12px] leading-[1.5] text-primary'
+                        : 'block text-[12px] leading-[1.5] text-secondary'
                     }
                   >
                     {line.text}
@@ -189,7 +189,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       <div
         role="group"
         aria-label="Voice conversation"
-        className="flex items-center gap-0.5 rounded-full border border-droid-border bg-droid-raised p-1.5 shadow-droid"
+        className="flex items-center gap-0.5 rounded-full border border-divider bg-raised p-1.5 shadow-lg"
       >
         <button
           type="button"
@@ -219,7 +219,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
           className={buttonClass}
         >
           {session.muted ? (
-            <MicOff className="h-3.5 w-3.5 text-droid-red" />
+            <MicOff className="h-3.5 w-3.5 text-danger" />
           ) : (
             <Mic className="h-3.5 w-3.5" />
           )}
@@ -229,7 +229,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
           aria-label="End voice mode"
           title="End voice mode"
           onClick={voice.close}
-          className="cursor-pointer rounded-full bg-droid-accent p-1.5 text-droid-bg transition-opacity hover:opacity-90"
+          className="cursor-pointer rounded-full bg-accent p-1.5 text-bg transition-opacity hover:opacity-90"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -251,7 +251,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
 }
 
 function Hairline() {
-  return <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-droid-border" />;
+  return <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-divider" />;
 }
 
 function clamp(value: number, low: number, high: number): number {

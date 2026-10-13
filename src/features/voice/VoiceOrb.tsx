@@ -108,7 +108,7 @@ export function VoiceOrb({
           // it stays faint so the orb reads as a sphere rather than a lamp.
           maskImage: 'radial-gradient(closest-side, #000 55%, transparent 100%)',
           background:
-            'radial-gradient(closest-side, color-mix(in srgb, var(--droid-skill) 32%, transparent), transparent 70%)',
+            'radial-gradient(closest-side, color-mix(in srgb, var(--skill) 32%, transparent), transparent 70%)',
         }}
       />
       <div
@@ -124,7 +124,7 @@ export function VoiceOrb({
           // rather than shaded like a ball, so it keeps one crisp edge and no
           // dark underside.
           background:
-            'linear-gradient(170deg, color-mix(in srgb, var(--droid-skill) 82%, #ffffff) 0%, color-mix(in srgb, var(--droid-skill) 34%, #ffffff) 44%, #ffffff 78%, color-mix(in srgb, var(--droid-ultra) 18%, #ffffff) 100%)',
+            'linear-gradient(170deg, color-mix(in srgb, var(--skill) 82%, #ffffff) 0%, color-mix(in srgb, var(--skill) 34%, #ffffff) 44%, #ffffff 78%, color-mix(in srgb, var(--ultra) 18%, #ffffff) 100%)',
         }}
       >
         <div

@@ -89,24 +89,24 @@ export function SpecModal({
             onClick={(e) => {
               e.stopPropagation();
             }}
-            className="w-full max-w-[1120px] h-[88vh] flex flex-col rounded-2xl border border-droid-border bg-droid-surface shadow-droid overflow-hidden"
+            className="w-full max-w-[1120px] h-[88vh] flex flex-col rounded-xl border border-divider bg-surface shadow-lg overflow-hidden"
           >
             {/* Header */}
-            <div className="shrink-0 flex items-center justify-between px-5 h-12 border-b border-droid-border">
+            <div className="shrink-0 flex items-center justify-between px-5 h-12 border-b border-divider">
               <div className="flex items-center gap-2.5 min-w-0">
-                <FileText className="w-4 h-4 shrink-0 text-droid-text-muted" />
-                <span className="text-[13px] font-medium text-droid-text truncate">
+                <FileText className="w-4 h-4 shrink-0 text-muted" />
+                <span className="text-[13px] font-medium text-primary truncate">
                   {title?.length ? title : 'Specification'}
                 </span>
                 {outline.length > 0 && (
-                  <span className="text-[11px] font-mono text-droid-text-muted/70 ml-1">
+                  <span className="text-[11px] font-mono text-muted/70 ml-1">
                     {outline.length} sections
                   </span>
                 )}
               </div>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated transition-colors"
+                className="p-1.5 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -123,7 +123,7 @@ export function SpecModal({
                   {content ? (
                     <SpecRenderer content={content} />
                   ) : (
-                    <div className="flex items-center justify-center h-full text-[13px] text-droid-text-muted">
+                    <div className="flex items-center justify-center h-full text-[13px] text-muted">
                       No spec content available.
                     </div>
                   )}

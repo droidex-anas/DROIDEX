@@ -130,9 +130,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
             >
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full transition-all duration-200 ${
-                  active
-                    ? 'scale-125 bg-droid-text-secondary'
-                    : 'bg-droid-text-muted/35 group-hover/dot:bg-droid-text-muted/80'
+                  active ? 'scale-125 bg-secondary' : 'bg-muted/35 group-hover/dot:bg-muted/80'
                 }`}
               />
             </button>
@@ -142,7 +140,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
       {hover &&
         createPortal(
           <div
-            className="pointer-events-none fixed z-[60] max-w-[380px] rounded-md bg-droid-raised px-2.5 py-1.5 text-[11px] leading-snug text-droid-text-secondary shadow-md ring-1 ring-droid-border/60"
+            className="pointer-events-none fixed z-[60] max-w-[380px] rounded-sm bg-raised px-2.5 py-1.5 text-[11px] leading-snug text-secondary shadow-md ring-1 ring-divider/60"
             style={{ top: hover.top, left: hover.left, transform: 'translateY(-50%)' }}
           >
             <div

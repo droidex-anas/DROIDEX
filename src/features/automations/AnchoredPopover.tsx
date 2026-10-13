@@ -252,13 +252,13 @@ export function AnchoredPopover({
               : 'top left',
         // Fully opaque themed surface: drawer rows must never bleed through a
         // timezone/model menu while it opens.
-        backgroundColor: 'var(--droid-bg)',
+        backgroundColor: 'var(--bg)',
         isolation: 'isolate',
         overscrollBehavior: 'contain',
         contain: 'layout paint',
         willChange: reduceMotion ? undefined : 'transform, opacity',
       }}
-      className={`pointer-events-auto fixed z-[260] overflow-hidden rounded-2xl border border-droid-border shadow-droid ${className}`}
+      className={`pointer-events-auto fixed z-[260] overflow-hidden rounded-xl border border-divider shadow-lg ${className}`}
     >
       {children}
     </motion.div>,

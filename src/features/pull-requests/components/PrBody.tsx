@@ -9,20 +9,20 @@ import { FoldChevron, PrCollapse } from './PrCollapse';
 function Disclosure({ summary, body }: { summary: string; body: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-2 overflow-hidden rounded-lg border border-droid-border">
+    <div className="mt-2 overflow-hidden rounded-md border border-divider">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="group flex w-full items-center gap-1.5 bg-droid-elevated/40 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/70"
+        className="group flex w-full items-center gap-1.5 bg-elevated/40 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/70"
       >
         <FoldChevron open={open} />
-        <span className="truncate text-[13px] text-droid-text-secondary">{summary}</span>
+        <span className="truncate text-[13px] text-secondary">{summary}</span>
       </button>
       <PrCollapse open={open}>
-        <div className="px-2.5 py-2 text-[13px] leading-[1.6] text-droid-text-secondary">
+        <div className="px-2.5 py-2 text-[13px] leading-[1.6] text-secondary">
           <Markdown allowGeneratedContent={false}>{body}</Markdown>
         </div>
       </PrCollapse>
@@ -39,7 +39,7 @@ export function PrBody({ blocks }: { blocks: readonly PrCommentBlock[] }) {
         block.kind === 'markdown' ? (
           <div
             key={index}
-            className="mt-2 text-[13px] leading-[1.6] text-droid-text first:mt-0 [&_div]:!text-[13px] [&_div]:!leading-[1.6]"
+            className="mt-2 text-[13px] leading-[1.6] text-primary first:mt-0 [&_div]:!text-[13px] [&_div]:!leading-[1.6]"
           >
             <Markdown allowGeneratedContent={false}>{block.text}</Markdown>
           </div>

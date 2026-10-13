@@ -64,10 +64,10 @@ export default function SchedulePromptPopover({
         }}
       >
         <div className="flex items-start gap-3">
-          <Clock className="mt-1 h-4 w-4 shrink-0 text-droid-text-secondary" />
+          <Clock className="mt-1 h-4 w-4 shrink-0 text-secondary" />
           <div className="min-w-0 flex-1">
-            <h2 className="text-[14px] font-medium text-droid-text">Send later</h2>
-            <p className="mt-0.5 truncate text-[11px] text-droid-text-muted" title={sessionTitle}>
+            <h2 className="text-[14px] font-medium text-primary">Send later</h2>
+            <p className="mt-0.5 truncate text-[11px] text-muted" title={sessionTitle}>
               Continue in {sessionTitle || 'this conversation'}
             </p>
           </div>
@@ -76,7 +76,7 @@ export default function SchedulePromptPopover({
             onClick={close}
             disabled={saving}
             aria-label="Close schedule"
-            className="rounded-lg p-1.5 text-droid-text-muted hover:bg-droid-surface focus-visible:outline focus-visible:outline-droid-border-hover"
+            className="rounded-md p-1.5 text-muted hover:bg-surface focus-visible:outline focus-visible:outline-divider-strong"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -95,13 +95,13 @@ export default function SchedulePromptPopover({
                   setSchedule({ kind: 'once', runAt: preset.runAt() });
                   setError(null);
                 }}
-                className="rounded-lg border border-droid-border px-2.5 py-1.5 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-surface focus-visible:outline focus-visible:outline-droid-border-hover"
+                className="rounded-md border border-divider px-2.5 py-1.5 text-[11px] text-secondary transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-divider-strong"
               >
                 {preset.label}
               </button>
             ))}
           </div>
-          <div className="rounded-xl border border-droid-border bg-droid-surface/30">
+          <div className="rounded-lg border border-divider bg-surface/30">
             <ScheduleControls
               schedule={schedule}
               timezone={timezone}
@@ -112,24 +112,22 @@ export default function SchedulePromptPopover({
             />
           </div>
         </fieldset>
-        <p className="mt-2 text-right text-[11px] text-droid-text-muted">
-          {timezone.replaceAll('_', ' ')}
-        </p>
-        <p className="mt-4 text-[11px] leading-[17px] text-droid-text-muted">
+        <p className="mt-2 text-right text-[11px] text-muted">{timezone.replaceAll('_', ' ')}</p>
+        <p className="mt-4 text-[11px] leading-[17px] text-muted">
           Uses this conversation’s settings and permissions. If it is busy, delivery waits. If
           DROIDEX is asleep or closed, it sends when available again.
         </p>
         {error && (
-          <p role="alert" className="mt-3 text-[11px] leading-4 text-droid-orange">
+          <p role="alert" className="mt-3 text-[11px] leading-4 text-warning">
             {error}
           </p>
         )}
         <div className="mt-4 flex items-center justify-between gap-3">
-          <span className="text-[11px] text-droid-text-muted">Manage in Automations</span>
+          <span className="text-[11px] text-muted">Manage in Automations</span>
           <button
             type="submit"
             disabled={saving || unconfirmed}
-            className="inline-flex items-center gap-2 rounded-lg bg-droid-text px-3 py-2 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-md bg-text px-3 py-2 text-[12px] font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {saving && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
             {saving ? 'Scheduling…' : 'Schedule prompt'}

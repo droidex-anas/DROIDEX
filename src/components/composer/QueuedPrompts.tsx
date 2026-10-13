@@ -41,7 +41,7 @@ export function QueuedPrompts({
 
   return (
     <div className="mb-2 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
+      <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-muted">
         <ListPlus className="w-3 h-3" />
         Queued · {deliveryHint(usageLimit)}
       </div>
@@ -64,21 +64,21 @@ export function QueuedPrompts({
               setDragIndex(null);
               setDragOverIndex(null);
             }}
-            className={`group flex items-start gap-2 rounded-xl border bg-droid-elevated px-2 py-1.5 transition-colors ${
+            className={`group flex items-start gap-2 rounded-lg border bg-elevated px-2 py-1.5 transition-colors ${
               dragOverIndex === i && dragIndex !== null && dragIndex !== i
-                ? 'border-droid-orange'
-                : 'border-droid-border'
+                ? 'border-warning'
+                : 'border-divider'
             }`}
           >
             <span
-              className="mt-0.5 cursor-grab text-droid-text-muted/60 active:cursor-grabbing"
+              className="mt-0.5 cursor-grab text-muted/60 active:cursor-grabbing"
               title="Drag to reorder"
             >
               <GripVertical className="w-3.5 h-3.5" />
             </span>
             <PendingPromptPreview text={p.text} files={p.files} skills={p.skills}>
               {p.design && p.design.references.length > 0 && (
-                <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-droid-active px-1.5 py-0.5 text-[11px] text-droid-text-muted">
+                <span className="mt-1 inline-flex items-center gap-1 rounded-sm bg-active px-1.5 py-0.5 text-[11px] text-muted">
                   <MousePointerSquareDashed className="w-3 h-3" />
                   {p.design.references.length} reference
                   {p.design.references.length === 1 ? '' : 's'}
@@ -90,7 +90,7 @@ export function QueuedPrompts({
                 onClick={() => {
                   onEdit(p);
                 }}
-                className="rounded p-1 text-droid-text-muted transition-colors hover:bg-droid-active/70 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                className="rounded-xs p-1 text-muted transition-colors hover:bg-active/70 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
                 title="Edit in composer"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -99,7 +99,7 @@ export function QueuedPrompts({
                 onClick={() => {
                   onRemove(p.id);
                 }}
-                className="rounded p-1 text-droid-text-muted transition-colors hover:bg-droid-active/70 hover:text-droid-red focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                className="rounded-xs p-1 text-muted transition-colors hover:bg-active/70 hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
                 title="Delete"
               >
                 <X className="w-3.5 h-3.5" />

@@ -26,17 +26,17 @@ export function ArchivedChatsSettings() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-4">
-        <h2 className="text-[16px] font-semibold text-droid-text">Archived chats</h2>
-        <p className="text-[12px] text-droid-text-muted mt-0.5">
+        <h2 className="text-[16px] font-semibold text-primary">Archived chats</h2>
+        <p className="text-[12px] text-muted mt-0.5">
           Hidden from your sidebar. Restore a chat to bring it back, or delete it for good.
         </p>
       </div>
       {rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-droid-border bg-droid-surface/40 p-10 text-center">
-          <p className="text-[13px] text-droid-text-secondary">No archived chats.</p>
+        <div className="rounded-lg border border-dashed border-divider bg-surface/40 p-10 text-center">
+          <p className="text-[13px] text-secondary">No archived chats.</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-droid-border bg-droid-surface/40 divide-y divide-droid-border overflow-hidden">
+        <div className="rounded-lg border border-divider bg-surface/40 divide-y divide-divider overflow-hidden">
           {rows.map(({ session, archivedAt }) => {
             const title = chatDisplayTitle(session, chatMetadata[session.appSessionId]);
             return (
@@ -46,8 +46,8 @@ export function ArchivedChatsSettings() {
                 className="flex items-center gap-3 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] text-droid-text">{title}</div>
-                  <div className="mt-0.5 truncate text-[11px] text-droid-text-muted">
+                  <div className="truncate text-[13px] text-primary">{title}</div>
+                  <div className="mt-0.5 truncate text-[11px] text-muted">
                     Archived {formatRelativeTime(archivedAt, now)}
                     {session.cwd ? ` · ${workspaceName(session.cwd)}` : ''}
                   </div>
@@ -63,7 +63,7 @@ export function ArchivedChatsSettings() {
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-red-300 bg-red-500/15 transition-colors hover:bg-red-500/25"
+                      className="rounded-sm px-2 py-1 text-[11px] font-medium text-red-300 bg-red-500/15 transition-colors hover:bg-red-500/25"
                     >
                       Delete
                     </button>
@@ -75,7 +75,7 @@ export function ArchivedChatsSettings() {
                       onClick={() => {
                         setConfirmingDelete(null);
                       }}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+                      className="rounded-sm px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-elevated hover:text-primary"
                     >
                       Cancel
                     </button>
@@ -89,7 +89,7 @@ export function ArchivedChatsSettings() {
                       onClick={() => {
                         dispatch({ type: 'RESTORE_CHAT', appSessionId: session.appSessionId });
                       }}
-                      className="rounded-md p-1.5 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+                      className="rounded-sm p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
                     >
                       <ArchiveRestore className="w-4 h-4" />
                     </button>
@@ -100,7 +100,7 @@ export function ArchivedChatsSettings() {
                       onClick={() => {
                         setConfirmingDelete(session.appSessionId);
                       }}
-                      className="rounded-md p-1.5 text-droid-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
+                      className="rounded-sm p-1.5 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

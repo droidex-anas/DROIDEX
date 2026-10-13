@@ -60,12 +60,12 @@ export function AgentPaneDetail({
 
   return (
     <div data-testid="agent-pane-detail" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-droid-border/70 px-3 py-2.5">
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-divider/70 px-3 py-2.5">
         <button
           type="button"
           onClick={onBack}
           aria-label="Back to agents"
-          className="shrink-0 rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
+          className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
@@ -74,10 +74,10 @@ export function AgentPaneDetail({
           size={20}
           working={live && !row.queued && row.status === 'running'}
         />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
+        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-primary">
           {row.agentName}
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-droid-text-muted">
+        <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted">
           <span className="max-w-40 truncate">{modelName ?? row.child.modelId}</span>
           {row.child.reasoningEffort ? (
             <>
@@ -124,12 +124,10 @@ function AgentActivityStandIn({ row }: { row: AgentRow }) {
     <div className="space-y-2 pt-1">
       <div className="flex items-center gap-2">
         <AgentStatusPill status={row.queued ? 'queued' : row.status} />
-        <span className="min-w-0 truncate text-[12px] text-droid-text-secondary">
-          {row.snapshot.step}
-        </span>
+        <span className="min-w-0 truncate text-[12px] text-secondary">{row.snapshot.step}</span>
       </div>
       {row.child.prompt ? (
-        <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-droid-text-secondary">
+        <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-secondary">
           {row.child.prompt}
         </p>
       ) : null}
@@ -145,12 +143,12 @@ function AgentActivityStandIn({ row }: { row: AgentRow }) {
             setPreviewOpen((open) => !open);
           }}
           aria-expanded={previewOpen}
-          className="text-[12px] text-droid-text-muted transition-colors hover:text-droid-text"
+          className="text-[12px] text-muted transition-colors hover:text-primary"
         >
           {previewOpen ? 'Show less' : 'Show more'}
         </button>
       ) : null}
-      <p className="text-[11px] text-droid-text-muted">
+      <p className="text-[11px] text-muted">
         This harness reports the agent&apos;s status and latest step; its own transcript appears
         here once it streams.
       </p>

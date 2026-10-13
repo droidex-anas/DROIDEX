@@ -53,10 +53,10 @@ export function UtilityPane({
     <aside
       aria-label="Utility pane"
       className={`relative flex h-full min-w-0 flex-col overflow-hidden ${
-        expanded ? 'w-full border-l-0' : 'w-full border-l border-droid-border'
+        expanded ? 'w-full border-l-0' : 'w-full border-l border-divider'
       }`}
       style={{
-        background: 'var(--sidebar-bg)',
+        background: 'var(--sidebar)',
         backdropFilter: 'var(--sidebar-blur)',
         WebkitBackdropFilter: 'var(--sidebar-blur)',
       }}
@@ -73,7 +73,7 @@ export function UtilityPane({
 
       <header
         data-electron-drag-region
-        className="flex h-9 shrink-0 items-center gap-1 border-b border-droid-border pl-2 pr-1.5"
+        className="flex h-9 shrink-0 items-center gap-1 border-b border-divider pl-2 pr-1.5"
         style={leadPx === undefined ? undefined : { paddingLeft: leadPx }}
       >
         <div
@@ -87,10 +87,10 @@ export function UtilityPane({
             return (
               <div
                 key={tab.id}
-                className={`group flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors ${
+                className={`group flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors ${
                   active
-                    ? 'bg-droid-active text-droid-text'
-                    : 'text-droid-text-muted hover:bg-droid-elevated/45 hover:text-droid-text'
+                    ? 'bg-active text-primary'
+                    : 'text-muted hover:bg-elevated/45 hover:text-primary'
                 }`}
               >
                 <button
@@ -100,7 +100,7 @@ export function UtilityPane({
                   onClick={() => {
                     onActivateTab(tab.id);
                   }}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{tab.label}</span>
@@ -109,7 +109,7 @@ export function UtilityPane({
                   <button
                     type="button"
                     aria-label={`Close ${tab.label}`}
-                    className="ml-0.5 rounded-md p-1 text-droid-text-muted opacity-50 transition hover:bg-droid-elevated hover:text-droid-text group-hover:opacity-100"
+                    className="ml-0.5 rounded-sm p-1 text-muted opacity-50 transition hover:bg-elevated hover:text-primary group-hover:opacity-100"
                     onClick={(event) => {
                       event.stopPropagation();
                       onCloseTab(tab);
@@ -132,10 +132,10 @@ export function UtilityPane({
             onClick={() => {
               setMenuOpen((open) => !open);
             }}
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm transition-colors ${
               menuOpen
-                ? 'bg-droid-elevated text-droid-text'
-                : 'text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text'
+                ? 'bg-elevated text-primary'
+                : 'text-muted hover:bg-elevated/60 hover:text-primary'
             }`}
           >
             <Plus className="h-4 w-4" />
@@ -146,7 +146,7 @@ export function UtilityPane({
             type="button"
             aria-label="Hide utility pane"
             onClick={onClosePane}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
           >
             <PanelRight className="h-4 w-4" />
           </button>
@@ -172,9 +172,7 @@ export function UtilityPane({
             }}
           />
           {availableTools.length === 0 && (
-            <div className="px-2 py-2 text-[12px] text-droid-text-muted">
-              All utility tools are open.
-            </div>
+            <div className="px-2 py-2 text-[12px] text-muted">All utility tools are open.</div>
           )}
         </div>
       </Popover>

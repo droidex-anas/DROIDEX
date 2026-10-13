@@ -74,10 +74,10 @@ export function PreferencesStep({
 
       <Panel className="mb-7">
         <div className="px-4 py-3.5">
-          <div className="text-[13px] text-droid-text mb-2.5">Default editor</div>
+          <div className="text-[13px] text-primary mb-2.5">Default editor</div>
           <div className="flex flex-wrap gap-2">
             {editorOptions.length === 0 && (
-              <span className="text-[12px] text-droid-text-muted">No editors detected.</span>
+              <span className="text-[12px] text-muted">No editors detected.</span>
             )}
             {editorOptions.map((o) => (
               <button
@@ -86,10 +86,10 @@ export function PreferencesStep({
                 onClick={() => {
                   setEditor(o.id);
                 }}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                className={`flex items-center gap-2 px-3 py-2 rounded-md border text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   editor === o.id
-                    ? 'border-droid-border-hover bg-droid-elevated text-droid-text'
-                    : 'border-droid-border text-droid-text-secondary hover:border-droid-border-hover'
+                    ? 'border-divider-strong bg-elevated text-primary'
+                    : 'border-divider text-secondary hover:border-divider-strong'
                 }`}
               >
                 <EditorIcon editor={o.id} size={15} />
@@ -114,7 +114,7 @@ export function PreferencesStep({
         />
       </Panel>
 
-      {saveError && <p className="text-[12px] text-droid-red mb-3">{saveError}</p>}
+      {saveError && <p className="text-[12px] text-danger mb-3">{saveError}</p>}
 
       <div className="flex items-center gap-2">
         <BackButton onClick={onBack} disabled={saving} />

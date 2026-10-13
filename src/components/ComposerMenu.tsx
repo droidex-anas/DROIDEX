@@ -25,7 +25,7 @@ export interface SlashCommand {
   run: () => void;
 }
 
-const ICON = 'h-4 w-4 shrink-0 text-droid-text-muted';
+const ICON = 'h-4 w-4 shrink-0 text-muted';
 
 function basename(p: string): string {
   const i = p.lastIndexOf('/');
@@ -34,9 +34,7 @@ function basename(p: string): string {
 
 function SectionHeading({ text, first }: { text: string; first: boolean }) {
   return (
-    <div
-      className={`px-2.5 pb-1 text-[11px] font-medium text-droid-text-muted ${first ? 'pt-1' : 'pt-3'}`}
-    >
+    <div className={`px-2.5 pb-1 text-[11px] font-medium text-muted ${first ? 'pt-1' : 'pt-3'}`}>
       {text}
     </div>
   );
@@ -46,7 +44,7 @@ function SectionHeading({ text, first }: { text: string; first: boolean }) {
 // the skill glyph and still read as the plugin's.
 function GroupHeading({ text, plugin }: { text: string; plugin: SkillInfo | null }) {
   return (
-    <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[11px] text-droid-text-muted">
+    <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[11px] text-muted">
       {plugin && <CatalogRowIcon item={plugin} className="h-3.5 w-3.5 shrink-0" />}
       <span className="truncate">{text}</span>
     </div>
@@ -91,28 +89,26 @@ function Row({
         onRun();
       }}
       onClick={runOnKeyboardClick}
-      className={`flex h-8 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${
-        active ? 'bg-droid-accent/[0.07]' : ''
+      className={`flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 text-left transition-colors ${
+        active ? 'bg-accent/[0.07]' : ''
       }`}
     >
       {children}
-      {marked && <Check aria-label="Added" className="h-3.5 w-3.5 shrink-0 text-droid-accent" />}
+      {marked && <Check aria-label="Added" className="h-3.5 w-3.5 shrink-0 text-accent" />}
     </button>
   );
 }
 
 function Name({ children }: { children: ReactNode }) {
-  return <span className="shrink-0 text-[13px] font-medium text-droid-text">{children}</span>;
+  return <span className="shrink-0 text-[13px] font-medium text-primary">{children}</span>;
 }
 
 function Detail({ children }: { children: ReactNode }) {
-  return (
-    <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text-muted">{children}</span>
-  );
+  return <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{children}</span>;
 }
 
 function Scope({ children }: { children: string }) {
-  return <span className="shrink-0 text-[11px] text-droid-text-muted/70">{children}</span>;
+  return <span className="shrink-0 text-[11px] text-muted/70">{children}</span>;
 }
 
 function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
@@ -141,9 +137,7 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
       <CatalogRowIcon item={row} />
       <Name>{catalogLabel(row)}</Name>
       {row.argumentHint && (
-        <span className="shrink-0 font-mono text-[11px] text-droid-text-muted/70">
-          {row.argumentHint}
-        </span>
+        <span className="shrink-0 font-mono text-[11px] text-muted/70">{row.argumentHint}</span>
       )}
       <Detail>{row.description}</Detail>
       {/* Where a command or skill comes from is worth saying; an app or a
@@ -190,7 +184,7 @@ export default function ComposerMenu({
       {open && (
         <motion.div
           {...motionProps}
-          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto overscroll-contain rounded-2xl bg-droid-raised p-1.5 shadow-droid"
+          className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-y-auto overscroll-contain rounded-xl bg-raised p-1.5 shadow-lg"
         >
           {entries.map((entry, i) => {
             if (entry.kind === 'section') {

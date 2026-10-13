@@ -11,13 +11,13 @@ const MENU_CHROME_PX = 18;
 const MENU_ROW_PX = 30;
 
 const itemClass =
-  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:bg-droid-elevated/60 focus-visible:text-droid-text focus-visible:outline-none';
+  'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:bg-elevated/60 focus-visible:text-primary focus-visible:outline-none';
 
 function WorkspaceFolderIcon({ open }: { open: boolean }) {
   const reduceMotion = useReducedMotion();
   const duration = reduceMotion ? 0 : 0.15;
   return (
-    <span className="relative block h-4 w-4 shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+    <span className="relative block h-4 w-4 shrink-0 text-muted transition-colors group-hover:text-secondary">
       <motion.span
         className="absolute inset-0 flex items-center justify-center"
         initial={false}
@@ -91,7 +91,7 @@ export function WorkspaceContextMenuPanel({
         event.preventDefault();
       }}
       style={{ position: 'fixed', left, top, width: MENU_WIDTH }}
-      className="z-[991] rounded-xl border border-droid-border bg-droid-surface p-1 shadow-droid"
+      className="z-[991] rounded-lg border border-divider bg-surface p-1 shadow-lg"
     >
       <button
         type="button"
@@ -169,10 +169,10 @@ export function SidebarWorkspaceRow({
             setMenu({ x: event.clientX, y: event.clientY });
           }}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
         >
           <WorkspaceFolderIcon open={open} />
-          <span title={name} className="min-w-0 flex-1 truncate text-[13px] text-droid-text">
+          <span title={name} className="min-w-0 flex-1 truncate text-[13px] text-primary">
             {name}
           </span>
         </button>
@@ -181,7 +181,7 @@ export function SidebarWorkspaceRow({
           onClick={onNewChat}
           title="New chat here"
           aria-label={`New chat in ${name}`}
-          className="shrink-0 cursor-pointer rounded-md p-0.5 text-droid-text-muted/0 transition-colors focus-visible:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 group-hover:text-droid-text-muted hover:text-droid-text"
+          className="shrink-0 cursor-pointer rounded-sm p-0.5 text-muted/0 transition-colors focus-visible:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 group-hover:text-muted hover:text-primary"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>

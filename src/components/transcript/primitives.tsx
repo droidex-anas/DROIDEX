@@ -8,9 +8,9 @@ import { PROVIDER_LABELS, providerModelCatalog } from '../../features/providers/
 import { resetLabel } from '../../lib/usageLimit';
 import type { ModelInfo, TranscriptEvent } from '../../types/bridge';
 
-const ACCENT = 'var(--droid-accent)';
-export const RED = 'var(--droid-red)';
-export const RED_TINT = 'color-mix(in srgb, var(--droid-red) 8%, transparent)';
+const ACCENT = 'var(--accent)';
+export const RED = 'var(--danger)';
+export const RED_TINT = 'color-mix(in srgb, var(--danger) 8%, transparent)';
 
 /* ── Live elapsed-time hook: ticks while active and visible. ── */
 export function useElapsed(startTs: number | undefined, active: boolean): number {
@@ -44,7 +44,7 @@ export function httpHref(url: string): string | undefined {
 export function Caret({ open }: { open: boolean }) {
   return (
     <ChevronRight
-      className={`w-3 h-3 shrink-0 text-droid-text-muted/50 transition-transform duration-200 group-hover:text-droid-text-muted ${open ? 'rotate-90' : ''}`}
+      className={`w-3 h-3 shrink-0 text-muted/50 transition-transform duration-200 group-hover:text-muted ${open ? 'rotate-90' : ''}`}
     />
   );
 }
@@ -130,11 +130,11 @@ export function useCopiedFlash(): { copied: boolean; copy: (text: string) => voi
 export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
   return (
     <span
-      className={`shrink-0 rounded-md text-[10px] font-medium uppercase tracking-[0.08em] ${
+      className={`shrink-0 rounded-sm text-[10px] font-medium uppercase tracking-[0.08em] ${
         emphasis ? 'ml-auto px-2 py-0.5' : 'px-1.5 py-px'
       }`}
       style={{
-        backgroundColor: 'color-mix(in srgb, var(--droid-red) 15%, transparent)',
+        backgroundColor: 'color-mix(in srgb, var(--danger) 15%, transparent)',
         color: RED,
       }}
     >
@@ -147,7 +147,7 @@ export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
 // the row's own muted tone rather than the error red.
 export function InterruptedTag() {
   return (
-    <span className="shrink-0 rounded-md bg-droid-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-droid-text-muted px-1.5 py-px">
+    <span className="shrink-0 rounded-sm bg-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-muted px-1.5 py-px">
       Interrupted
     </span>
   );
@@ -249,7 +249,7 @@ export function WorkingIndicator({
    the message the way the steering mark does. ── */
 export function SpokenMark() {
   return (
-    <span className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
+    <span className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-muted">
       <AudioLines className="h-3 w-3" aria-hidden />
       Spoken
     </span>
@@ -309,7 +309,7 @@ export function TranscriptNotice({ event }: { event: TranscriptEvent }) {
   return (
     <div
       role="status"
-      className="flex items-center justify-center gap-2 py-1 text-center text-[12px] leading-relaxed text-droid-text-muted"
+      className="flex items-center justify-center gap-2 py-1 text-center text-[12px] leading-relaxed text-muted"
     >
       <Info aria-hidden="true" className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
       <span>{text}</span>
@@ -322,15 +322,13 @@ export function CompactionDivider({ compactType }: { compactType?: 'auto' | 'man
   const manual = compactType === 'manual';
   const label = manual ? 'Session compacted' : 'Context automatically compacted';
   return (
-    <div
-      className={`flex items-center gap-3 py-1 ${manual ? 'text-droid-text-secondary' : 'text-droid-text-muted'}`}
-    >
-      <div className="h-px flex-1 bg-droid-border/70" />
+    <div className={`flex items-center gap-3 py-1 ${manual ? 'text-secondary' : 'text-muted'}`}>
+      <div className="h-px flex-1 bg-divider/70" />
       <span className="flex items-center gap-1.5 text-[12px] whitespace-nowrap">
         <FoldVertical className="h-3.5 w-3.5" />
         {label}
       </span>
-      <div className="h-px flex-1 bg-droid-border/70" />
+      <div className="h-px flex-1 bg-divider/70" />
     </div>
   );
 }
@@ -338,17 +336,17 @@ export function CompactionDivider({ compactType }: { compactType?: 'auto' | 'man
 /* ── Fork divider — where a forked chat's inherited history ends ── */
 export function ForkedFromDivider({ onOpenSource }: { onOpenSource: () => void }) {
   return (
-    <div className="flex items-center gap-3 py-1 text-droid-text-muted">
-      <div className="h-px flex-1 bg-droid-border/70" />
+    <div className="flex items-center gap-3 py-1 text-muted">
+      <div className="h-px flex-1 bg-divider/70" />
       <button
         type="button"
         onClick={onOpenSource}
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] whitespace-nowrap text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:bg-droid-elevated focus-visible:outline-none"
+        className="flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[12px] whitespace-nowrap text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:outline-none"
       >
         <GitFork className="h-3.5 w-3.5" />
         Forked from chat
       </button>
-      <div className="h-px flex-1 bg-droid-border/70" />
+      <div className="h-px flex-1 bg-divider/70" />
     </div>
   );
 }

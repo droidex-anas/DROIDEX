@@ -23,7 +23,7 @@ export function CloseTileButton({ tileId, title }: { tileId: string; title: stri
       onClick={() => {
         dispatch({ type: 'CLOSE_TILE', tileId });
       }}
-      className="-mr-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+      className="-mr-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
     >
       <X className="h-3 w-3" />
     </button>

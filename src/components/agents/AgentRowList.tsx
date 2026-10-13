@@ -84,7 +84,7 @@ export function AgentRowList({
           {section.label ? (
             <div
               data-testid="agent-section-label"
-              className="px-4 pb-1 pt-2 text-[11px] uppercase tracking-[0.06em] text-droid-text-muted"
+              className="px-4 pb-1 pt-2 text-[11px] uppercase tracking-[0.06em] text-muted"
             >
               {section.label}
             </div>
@@ -116,7 +116,7 @@ export function AgentRowList({
         <button
           type="button"
           onClick={onShowAll}
-          className="w-full px-4 pb-3 pt-1 text-left text-[12px] text-droid-text-muted transition-colors hover:text-droid-text-secondary"
+          className="w-full px-4 pb-3 pt-1 text-left text-[12px] text-muted transition-colors hover:text-secondary"
         >
           Show {foldedCount} more {foldedCount === 1 ? 'agent' : 'agents'}
         </button>

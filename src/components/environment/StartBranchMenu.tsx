@@ -177,14 +177,14 @@ export function StartBranchMenu({
             onClick={() => {
               setPending(null);
             }}
-            className="mb-2 flex items-center gap-1 text-[12px] text-droid-text-muted hover:text-droid-text"
+            className="mb-2 flex items-center gap-1 text-[12px] text-muted hover:text-primary"
           >
             <ChevronLeft className="h-3.5 w-3.5" /> Branches
           </button>
-          <div className="mb-1 text-[13px] text-droid-text">
+          <div className="mb-1 text-[13px] text-primary">
             Checkout <span className="font-medium">{pending.branch}</span> locally?
           </div>
-          <div className="mb-2 text-[11px] text-droid-text-muted">
+          <div className="mb-2 text-[11px] text-muted">
             {uncommittedFiles > 0
               ? `Your current checkout has ${String(uncommittedFiles)} uncommitted file${uncommittedFiles === 1 ? '' : 's'}.`
               : 'This changes the branch in your current checkout.'}
@@ -192,7 +192,7 @@ export function StartBranchMenu({
           <button
             onClick={() => void checkoutLocally()}
             disabled={busy}
-            className="ml-auto flex items-center gap-1 rounded-md bg-droid-accent/15 px-2.5 py-1 text-[12px] font-medium text-droid-accent hover:bg-droid-accent/25 disabled:opacity-40"
+            className="ml-auto flex items-center gap-1 rounded-sm bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent hover:bg-accent/25 disabled:opacity-40"
           >
             {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
             Checkout locally
@@ -200,8 +200,8 @@ export function StartBranchMenu({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-2 border-b border-droid-border/70 px-2.5 py-2">
-            <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+          <div className="flex items-center gap-2 border-b border-divider/70 px-2.5 py-2">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted" />
             <input
               autoFocus
               value={query}
@@ -209,14 +209,14 @@ export function StartBranchMenu({
                 setQuery(e.target.value);
               }}
               placeholder="Search branches"
-              className="w-full bg-transparent text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+              className="w-full bg-transparent text-[12px] text-primary placeholder:text-muted focus:outline-none"
             />
             {fetching && (
-              <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-droid-accent" />
+              <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-accent" />
             )}
           </div>
           <div className="max-h-[280px] overflow-y-auto py-1">
-            <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+            <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
               Branches
             </div>
             {locals.map((b) => (
@@ -226,27 +226,25 @@ export function StartBranchMenu({
                   pickBranch(b.name, false);
                 }}
                 aria-pressed={b.name === selected}
-                className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+                className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/60"
               >
-                <GitBranchIcon size={14} className="shrink-0 text-droid-text-muted" />
+                <GitBranchIcon size={14} className="shrink-0 text-muted" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-droid-text">{b.name}</span>
+                  <span className="block truncate text-[13px] text-primary">{b.name}</span>
                   {b.name === selected ? (
-                    <span className="block truncate text-[11px] text-droid-text-muted">
+                    <span className="block truncate text-[11px] text-muted">
                       {selectedDescription}
                     </span>
                   ) : (
                     b.subject && (
-                      <span className="block truncate text-[11px] text-droid-text-muted">
-                        {b.subject}
-                      </span>
+                      <span className="block truncate text-[11px] text-muted">{b.subject}</span>
                     )
                   )}
                 </span>
                 {b.name === selected && (
                   <Check
                     className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: 'var(--droid-accent)' }}
+                    style={{ color: 'var(--accent)' }}
                     strokeWidth={3}
                   />
                 )}
@@ -254,7 +252,7 @@ export function StartBranchMenu({
             ))}
 
             {remotes.length > 0 && (
-              <div className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
+              <div className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted">
                 Remote
               </div>
             )}
@@ -265,16 +263,14 @@ export function StartBranchMenu({
                   pickBranch(r.name, true);
                 }}
                 aria-pressed={r.name === selected}
-                className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+                className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/60"
               >
-                <GitBranchIcon size={14} className="shrink-0 text-droid-text-muted" />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-secondary">
-                  {r.name}
-                </span>
+                <GitBranchIcon size={14} className="shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{r.name}</span>
                 {r.name === selected && (
                   <Check
                     className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: 'var(--droid-accent)' }}
+                    style={{ color: 'var(--accent)' }}
                     strokeWidth={3}
                   />
                 )}
@@ -282,12 +278,12 @@ export function StartBranchMenu({
             ))}
 
             {locals.length === 0 && remotes.length === 0 && (
-              <div className="px-2.5 py-2 text-[12px] text-droid-text-muted">No branches match</div>
+              <div className="px-2.5 py-2 text-[12px] text-muted">No branches match</div>
             )}
           </div>
 
           {executionMode === 'local' && (
-            <div className="border-t border-droid-border/70 p-1.5">
+            <div className="border-t border-divider/70 p-1.5">
               {creatingNew ? (
                 <div className="space-y-1.5">
                   <input
@@ -300,24 +296,24 @@ export function StartBranchMenu({
                       if (e.key === 'Enter') void createNewBranch();
                     }}
                     placeholder="new-branch-name"
-                    className="w-full rounded-md bg-droid-bg/60 px-2 py-1 text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+                    className="w-full rounded-sm bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
                   />
-                  <div className="px-0.5 text-[11px] text-droid-text-muted">
-                    Branches off <span className="text-droid-text-secondary">{base}</span>
+                  <div className="px-0.5 text-[11px] text-muted">
+                    Branches off <span className="text-secondary">{base}</span>
                   </div>
                   <div className="flex items-center justify-end gap-1.5">
                     <button
                       onClick={() => {
                         setCreatingNew(false);
                       }}
-                      className="rounded-md px-2 py-1 text-[11px] text-droid-text-muted hover:text-droid-text"
+                      className="rounded-sm px-2 py-1 text-[11px] text-muted hover:text-primary"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => void createNewBranch()}
                       disabled={!newName.trim() || busy}
-                      className="flex items-center gap-1 rounded-md bg-droid-accent/15 px-2 py-1 text-[11px] font-medium text-droid-accent disabled:opacity-40"
+                      className="flex items-center gap-1 rounded-sm bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
                     >
                       {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
                       Create & start
@@ -329,9 +325,9 @@ export function StartBranchMenu({
                   onClick={() => {
                     setCreatingNew(true);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/60"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
                 >
-                  <Plus className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+                  <Plus className="h-3.5 w-3.5 shrink-0 text-muted" />
                   Create and checkout new branch…
                 </button>
               )}

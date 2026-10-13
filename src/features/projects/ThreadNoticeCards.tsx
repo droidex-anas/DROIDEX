@@ -67,27 +67,21 @@ function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string
       <span
         role="img"
         aria-label={provider ? `${PROVIDER_LABELS[provider]} thread` : 'Thread'}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-droid-border bg-droid-surface"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-divider bg-surface"
       >
         {provider ? (
           <ModelIcon provider={PROVIDER_MARKS[provider]} size={14} />
         ) : (
-          <MessageSquareText className="h-3.5 w-3.5 text-droid-text-muted" />
+          <MessageSquareText className="h-3.5 w-3.5 text-muted" />
         )}
       </span>
       <div className="min-w-0">
         <p className="flex min-w-0 items-baseline gap-1.5 pb-1 pl-1 pt-1 text-[12px] leading-5">
-          <span className="truncate font-medium text-droid-text">{from.name}</span>
-          <span className={`shrink-0 ${asks ? 'text-droid-orange' : 'text-droid-text-muted'}`}>
-            {from.action}
-          </span>
+          <span className="truncate font-medium text-primary">{from.name}</span>
+          <span className={`shrink-0 ${asks ? 'text-warning' : 'text-muted'}`}>{from.action}</span>
         </p>
-        <div className="rounded-2xl rounded-tl-md border border-droid-border bg-droid-bg px-3.5 py-2.5 text-[13px] leading-6 text-droid-text-secondary">
-          <ClampedBlock
-            lines={8}
-            lineHeightPx={BUBBLE_LINE_PX}
-            fade="from-droid-bg via-droid-bg/90"
-          >
+        <div className="rounded-xl rounded-tl-sm border border-divider bg-bg px-3.5 py-2.5 text-[13px] leading-6 text-secondary">
+          <ClampedBlock lines={8} lineHeightPx={BUBBLE_LINE_PX} fade="from-bg via-bg/90">
             <MessageBody text={text} live={false} cacheId={`thread-message:${from.threadId}`} />
           </ClampedBlock>
         </div>
@@ -110,12 +104,9 @@ function NoticeCard({
   testId?: string;
 }) {
   return (
-    <div
-      data-testid={testId}
-      className="rounded-2xl border border-droid-border bg-droid-surface/35 px-4 py-3"
-    >
-      <p className="text-[12px] font-medium text-droid-text-muted">{lead}</p>
-      <div className="mt-1.5 text-[13px] leading-6 text-droid-text-secondary">
+    <div data-testid={testId} className="rounded-xl border border-divider bg-surface/35 px-4 py-3">
+      <p className="text-[12px] font-medium text-muted">{lead}</p>
+      <div className="mt-1.5 text-[13px] leading-6 text-secondary">
         <MessageBody text={text} live={false} cacheId={cacheId} />
       </div>
     </div>

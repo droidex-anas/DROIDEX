@@ -35,7 +35,7 @@ export function CommitSheet({ cwd, onDone }: { cwd: string; onDone: () => void }
     });
 
   return (
-    <div className="mx-2 mb-1.5 space-y-2 rounded-xl bg-droid-elevated/50 px-2.5 py-2.5">
+    <div className="mx-2 mb-1.5 space-y-2 rounded-lg bg-elevated/50 px-2.5 py-2.5">
       <textarea
         autoFocus
         value={message}
@@ -47,24 +47,24 @@ export function CommitSheet({ cwd, onDone }: { cwd: string; onDone: () => void }
         }}
         rows={3}
         placeholder="Commit message"
-        className="w-full resize-none rounded-lg bg-droid-bg/60 px-2.5 py-2 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+        className="w-full resize-none rounded-md bg-bg/60 px-2.5 py-2 text-[13px] text-primary placeholder:text-muted focus:outline-none"
       />
       <div className="flex items-center justify-between">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-droid-text-secondary">
+        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-secondary">
           <input
             type="checkbox"
             checked={stageAll}
             onChange={(e) => {
               setStageAll(e.target.checked);
             }}
-            className="accent-droid-accent"
+            className="accent-accent"
           />
           Stage all changes
         </label>
         <button
           onClick={() => void doCommit()}
           disabled={!message.trim() || busy}
-          className="flex items-center gap-1.5 rounded-lg bg-droid-accent/15 px-2.5 py-1 text-[12px] font-medium text-droid-accent transition-colors hover:bg-droid-accent/25 disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-md bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
         >
           {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
           Commit

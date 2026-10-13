@@ -32,7 +32,7 @@ const MENU_ROW_PX = 30;
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
 const itemClass =
-  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:bg-droid-elevated/60 focus-visible:text-droid-text focus-visible:outline-none';
+  'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:bg-elevated/60 focus-visible:text-primary focus-visible:outline-none';
 
 // Where the Factory web app renders a synced session. Deep links only resolve
 // for sessions that cloud sync has uploaded (signed-in, non-airgap).
@@ -214,7 +214,7 @@ export function SessionContextMenuPanel({
         e.preventDefault();
       }}
       style={{ position: 'fixed', left, top, width: SESSION_MENU_WIDTH }}
-      className="z-[991] rounded-xl border border-droid-border bg-droid-surface p-1 shadow-droid"
+      className="z-[991] rounded-lg border border-divider bg-surface p-1 shadow-lg"
     >
       <button
         type="button"
@@ -300,7 +300,7 @@ export function SessionContextMenuPanel({
         <Archive className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         Archive chat
       </button>
-      <div role="separator" className="mx-1 my-1 h-px bg-droid-border" />
+      <div role="separator" className="mx-1 my-1 h-px bg-divider" />
       {cwd && (
         <button
           type="button"

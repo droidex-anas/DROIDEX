@@ -41,14 +41,14 @@ function formatResponseTime(ts: number, now: number): string {
 }
 
 const buttonClass =
-  'flex h-7 w-7 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:bg-droid-elevated focus-visible:text-droid-text focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50';
+  'flex h-7 w-7 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50';
 
 function MessageTime({ ts, label }: { ts: number; label?: string }) {
   return (
     <time
       dateTime={new Date(ts).toISOString()}
       title={detailFormat.format(ts)}
-      className="whitespace-nowrap px-1.5 text-[12px] tabular-nums text-droid-text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
+      className="whitespace-nowrap px-1.5 text-[12px] tabular-nums text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
     >
       {label ?? formatResponseTime(ts, Date.now())}
     </time>
@@ -132,7 +132,7 @@ export function PromptActions({
           </HoverTooltip>
         ) : null}
       </div>
-      {onSendNow ? <span className="px-1.5 text-[12px] text-droid-text-muted">Unread</span> : null}
+      {onSendNow ? <span className="px-1.5 text-[12px] text-muted">Unread</span> : null}
     </div>
   );
 }

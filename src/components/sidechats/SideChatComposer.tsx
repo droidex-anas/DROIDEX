@@ -45,9 +45,7 @@ export function SideChatComposer({
         leading={leading}
         status={
           blockedReason ? (
-            <span className="min-w-0 truncate text-[11px] text-droid-text-muted">
-              {blockedReason}
-            </span>
+            <span className="min-w-0 truncate text-[11px] text-muted">{blockedReason}</span>
           ) : null
         }
         action={
@@ -57,7 +55,7 @@ export function SideChatComposer({
               onClick={onStop}
               aria-label="Stop side chat"
               title="Stop"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-droid-text text-droid-bg transition-opacity hover:opacity-90"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-text text-bg transition-opacity hover:opacity-90"
             >
               <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />
             </button>

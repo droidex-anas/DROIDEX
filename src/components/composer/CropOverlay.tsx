@@ -68,7 +68,7 @@ export function CropOverlay({
     >
       {rect && rect.width > 0 && rect.height > 0 && (
         <div
-          className="absolute rounded-[2px] border border-droid-accent"
+          className="absolute rounded-[2px] border border-accent"
           style={{
             left: rect.x,
             top: rect.y,

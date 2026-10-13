@@ -145,7 +145,7 @@ export default function RightPanel() {
         reasoningEffort ? (
           <span
             className={`shrink-0 text-[12px] capitalize leading-none ${
-              reasoningEffort === 'ultra' ? 'text-droid-ultra' : 'text-droid-text-muted'
+              reasoningEffort === 'ultra' ? 'text-ultra' : 'text-muted'
             }`}
           >
             {reasoningEffortLabel(reasoningEffort, activeSession.provider)}
@@ -166,10 +166,8 @@ export default function RightPanel() {
           remaining height change is the environment rows landing after mount. */}
       <div className="droid-card pointer-events-auto w-full max-h-full">
         {/* Header (no close button — the top toolbar button toggles this panel) */}
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-droid-border/70 pl-4 pr-3">
-          <span className="text-[13px] font-semibold tracking-[-0.01em] text-droid-text">
-            Context
-          </span>
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-divider/70 pl-4 pr-3">
+          <span className="text-[13px] font-semibold tracking-[-0.01em] text-primary">Context</span>
           {working && <span className="shimmer-text text-[11px] font-medium">Working</span>}
         </div>
 
@@ -256,7 +254,7 @@ export default function RightPanel() {
                   dispatch({ type: 'SPEC_OPEN_WIKI', appSessionId: activeSession.appSessionId });
                 }}
                 trailing={
-                  <ChevronRight className="h-3.5 w-3.5 text-droid-text-muted/60 transition-colors group-hover:text-droid-text-secondary" />
+                  <ChevronRight className="h-3.5 w-3.5 text-muted/60 transition-colors group-hover:text-secondary" />
                 }
               />
             </div>
@@ -290,14 +288,14 @@ export default function RightPanel() {
                     exit={{ opacity: 0, height: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="mx-3 my-1.5 rounded-xl bg-droid-elevated/50 px-3 py-2.5 space-y-2">
-                      <div className="text-[13px] text-droid-text leading-relaxed">
+                    <div className="mx-3 my-1.5 rounded-lg bg-elevated/50 px-3 py-2.5 space-y-2">
+                      <div className="text-[13px] text-primary leading-relaxed">
                         {f.description}
                       </div>
                       {f.skillName && (
                         <div className="flex items-center gap-2">
-                          <Hash className="w-3.5 h-3.5 text-droid-text-muted" />
-                          <span className="text-[11px] font-medium text-droid-text-secondary">
+                          <Hash className="w-3.5 h-3.5 text-muted" />
+                          <span className="text-[11px] font-medium text-secondary">
                             {f.skillName}
                           </span>
                         </div>
@@ -307,7 +305,7 @@ export default function RightPanel() {
                           {f.preconditions.map((p, i) => (
                             <div
                               key={i}
-                              className="text-[12px] text-droid-text-muted pl-3 border-l-2 border-droid-border"
+                              className="text-[12px] text-muted pl-3 border-l-2 border-divider"
                             >
                               {p}
                             </div>

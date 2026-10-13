@@ -58,10 +58,8 @@ export function AgentEffortChip({
     <span
       data-testid="agent-effort"
       data-effort={effort}
-      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize ${
-        ultra
-          ? 'bg-droid-ultra/15 text-droid-ultra'
-          : 'bg-droid-active/60 text-droid-text-secondary'
+      className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] font-medium capitalize ${
+        ultra ? 'bg-ultra/15 text-ultra' : 'bg-active/60 text-secondary'
       }`}
     >
       {reasoningEffortLabel(effort, provider)}
@@ -89,14 +87,14 @@ export const AgentRow = memo(function AgentRow({
   const identity = (
     <>
       <ModelIcon provider={row.provider} size={16} />
-      <span className="truncate text-[13px] font-medium leading-5 text-droid-text">{row.name}</span>
+      <span className="truncate text-[13px] font-medium leading-5 text-primary">{row.name}</span>
       {child.reasoningEffort ? (
         <AgentEffortChip effort={child.reasoningEffort} {...(provider ? { provider } : {})} />
       ) : null}
     </>
   );
   const rowClass = `flex w-full flex-col gap-1 rounded-[10px] px-2.5 py-2 text-left transition-colors ${
-    canOpen ? 'hover:bg-droid-active/40' : ''
+    canOpen ? 'hover:bg-active/40' : ''
   }`;
 
   const body = dense ? (
@@ -106,20 +104,18 @@ export const AgentRow = memo(function AgentRow({
         <span className="ml-auto flex shrink-0 items-center gap-2">{pill}</span>
       </span>
       <span className="flex items-center gap-2 pl-[26px]">
-        <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text-secondary">
+        <span className="min-w-0 flex-1 truncate text-[12px] text-secondary">
           {row.description}
         </span>
-        <span className="shrink-0 text-[11px] tabular-nums text-droid-text-muted">{elapsed}</span>
+        <span className="shrink-0 text-[11px] tabular-nums text-muted">{elapsed}</span>
       </span>
     </>
   ) : (
     <span className="flex w-full items-center gap-3">
       <span className="flex w-[196px] shrink-0 items-center gap-2.5">{identity}</span>
-      <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-secondary">
-        {row.description}
-      </span>
+      <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{row.description}</span>
       {pill}
-      <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-droid-text-muted">
+      <span className="w-14 shrink-0 text-right text-[12px] tabular-nums text-muted">
         {elapsed}
       </span>
     </span>

@@ -48,13 +48,13 @@ export function SideChatHarnessPicker({
         onClick={() => {
           setOpen((current) => !current);
         }}
-        className={`flex h-7 max-w-full items-center gap-1.5 rounded-lg px-2 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
-          open ? 'bg-droid-elevated text-droid-text' : ''
+        className={`flex h-7 max-w-full items-center gap-1.5 rounded-md px-2 text-[12px] text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+          open ? 'bg-elevated text-primary' : ''
         }`}
       >
         <ModelIcon provider={PROVIDER_MARKS[provider]} size={13} />
         <span className="min-w-0 truncate">{label}</span>
-        <ChevronDown className="h-3 w-3 shrink-0 text-droid-text-muted" />
+        <ChevronDown className="h-3 w-3 shrink-0 text-muted" />
       </button>
       <AnchoredPopover
         open={open}

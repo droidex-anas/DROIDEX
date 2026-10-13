@@ -8,7 +8,7 @@ import { AUTONOMY_LABELS } from '../lib/autonomy';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { inlineCardMotion } from './inlineCardMotion';
 
-const ACCENT = 'var(--droid-accent)';
+const ACCENT = 'var(--accent)';
 
 // The same three modes the composer's permission menu names, as the choice
 // that starts implementation.
@@ -103,7 +103,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
       <motion.div
         key={req.requestId}
         {...inlineCardMotion(reduceMotion)}
-        className="mb-2.5 overflow-hidden rounded-2xl border border-droid-border bg-droid-raised shadow-droid"
+        className="mb-2.5 overflow-hidden rounded-xl border border-divider bg-raised shadow-lg"
       >
         <div className="flex items-center gap-2 px-4 pt-3.5 pb-3">
           <span
@@ -111,13 +111,13 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
             style={{ background: ACCENT }}
             aria-hidden
           />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text">
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary">
             {isSpec ? 'Specification ready' : 'Mission plan proposed'}
           </span>
           <button
             type="button"
             onClick={openWiki}
-            className="flex shrink-0 items-center gap-0.5 rounded-full px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-surface hover:text-droid-text"
+            className="flex shrink-0 items-center gap-0.5 rounded-full px-2 py-1 text-[12px] text-secondary transition-colors hover:bg-surface hover:text-primary"
           >
             {isSpec ? 'Read spec' : 'Read plan'}
             <ChevronRight className="h-3 w-3" />
@@ -145,7 +145,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
                 ? 'Add a comment to guide implementation (optional)…'
                 : 'Add a comment (optional)…'
             }
-            className="w-full resize-none rounded-xl border border-droid-border/70 bg-droid-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed text-droid-text placeholder:text-droid-text-muted outline-none focus:border-droid-border-hover"
+            className="w-full resize-none rounded-lg border border-divider/70 bg-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed text-primary placeholder:text-muted outline-none focus:border-divider-strong"
           />
         </div>
 
@@ -154,7 +154,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
             <div
               role="radiogroup"
               aria-label="Implementation autonomy"
-              className="flex items-center gap-0.5 rounded-full border border-droid-border p-0.5"
+              className="flex items-center gap-0.5 rounded-full border border-divider p-0.5"
             >
               {AUTONOMY.map((a, i) => {
                 const active = autonomy === a.value;
@@ -176,7 +176,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
                     }}
                     title={`Implement with ${AUTONOMY_LABELS[a.value]}`}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      active ? 'text-droid-bg' : 'text-droid-text-secondary hover:text-droid-text'
+                      active ? 'text-bg' : 'text-secondary hover:text-primary'
                     }`}
                     style={active ? { background: ACCENT } : undefined}
                   >
@@ -192,7 +192,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
             onClick={iterate}
             disabled={appUpdateInstalling}
             title={appUpdateInstalling ? 'Installing DROIDEX update' : undefined}
-            className="rounded-full px-3.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors enabled:hover:bg-droid-surface enabled:hover:text-droid-text disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-full px-3.5 py-1.5 text-[12px] font-medium text-secondary transition-colors enabled:hover:bg-surface enabled:hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
             Keep iterating
           </button>
@@ -201,7 +201,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
             onClick={implement}
             disabled={appUpdateInstalling}
             title={appUpdateInstalling ? 'Installing DROIDEX update' : undefined}
-            className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             style={{ background: ACCENT }}
           >
             {text ? 'Implement with comment' : 'Implement'}

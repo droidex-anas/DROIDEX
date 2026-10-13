@@ -22,7 +22,7 @@ function ExpandButton({ expanded, onClick }: { expanded: boolean; onClick: () =>
     <button
       onClick={onClick}
       aria-expanded={expanded}
-      className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-surface px-2.5 py-1 text-[11px] font-medium text-droid-text-secondary shadow-sm transition-colors hover:border-droid-border-hover hover:text-droid-text"
+      className="flex items-center gap-1 rounded-full border border-divider bg-surface px-2.5 py-1 text-[11px] font-medium text-secondary shadow-[0_1px_2px_0_rgb(0_0_0/0.05)] transition-colors hover:border-divider-strong hover:text-primary"
     >
       {expanded ? 'Show less' : 'Show more'}
       <Chevron up={expanded} />

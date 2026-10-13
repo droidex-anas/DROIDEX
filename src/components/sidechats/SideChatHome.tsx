@@ -32,7 +32,7 @@ export function SideChatHome({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 text-center text-[12px] text-droid-text-muted">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 text-center text-[12px] text-muted">
         Ask about this chat without adding to it. The answer stays here.
       </div>
       <SideChatComposer

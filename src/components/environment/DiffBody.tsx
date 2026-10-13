@@ -7,8 +7,8 @@ import type { DiffViewMode } from '../../hooks/persistedUiPreferences';
 const SIGN_STYLE: Record<DiffLine['type'], CSSProperties> = {
   add: { color: 'var(--diff-add-fg)' },
   del: { color: 'var(--diff-del-fg)' },
-  ctx: { color: 'var(--droid-text-secondary)' },
-  meta: { color: 'var(--droid-text-secondary)' },
+  ctx: { color: 'var(--text-secondary)' },
+  meta: { color: 'var(--text-secondary)' },
 };
 const SIGN: Record<DiffLine['type'], string> = { add: '+', del: '-', ctx: ' ', meta: '' };
 
@@ -27,7 +27,7 @@ const EST_ROW_PX = 19.2; // 12px font at 1.6 line-height
 
 function Gutter({ value }: { value: number | null }) {
   return (
-    <span className="review-diff-gutter shrink-0 select-none px-1.5 text-right text-droid-text-muted/60">
+    <span className="review-diff-gutter shrink-0 select-none px-1.5 text-right text-muted/60">
       {value ?? ''}
     </span>
   );
@@ -45,7 +45,7 @@ const UnifiedLine = memo(function UnifiedLine({ line, wrap }: { line: DiffLine; 
   const textClass = wrap ? 'review-diff-code-wrap' : 'review-diff-code';
   if (line.type === 'meta') {
     return (
-      <div className="flex text-droid-text-muted/60">
+      <div className="flex text-muted/60">
         <span className="review-diff-meta-gutter shrink-0" />
         <span className={`${textClass} px-2 italic`}>{line.text}</span>
       </div>
@@ -58,9 +58,7 @@ const UnifiedLine = memo(function UnifiedLine({ line, wrap }: { line: DiffLine; 
       <span className="w-4 shrink-0 select-none text-center" style={SIGN_STYLE[line.type]}>
         {SIGN[line.type]}
       </span>
-      <span className={`${textClass} min-w-0 flex-1 px-1 text-droid-text-secondary`}>
-        {line.text || ' '}
-      </span>
+      <span className={`${textClass} min-w-0 flex-1 px-1 text-secondary`}>{line.text || ' '}</span>
     </div>
   );
 });
@@ -74,7 +72,7 @@ const SplitCell = memo(function SplitCell({
   side: 'left' | 'right';
   wrap: boolean;
 }) {
-  if (!line) return <div className="review-split-cell flex min-w-0 bg-droid-bg/30" />;
+  if (!line) return <div className="review-split-cell flex min-w-0 bg-bg/30" />;
   const textClass = wrap ? 'review-diff-code-wrap' : 'review-diff-code';
   const isMeta = line.type === 'meta';
   return (
@@ -89,7 +87,7 @@ const SplitCell = memo(function SplitCell({
       </span>
       <span
         className={`${textClass} min-w-0 flex-1 px-1 ${
-          isMeta ? 'italic text-droid-text-muted/60' : 'text-droid-text-secondary'
+          isMeta ? 'italic text-muted/60' : 'text-secondary'
         }`}
       >
         {line.text || ' '}
@@ -111,7 +109,7 @@ function RowView({ row, wrap }: { row: Row; wrap: boolean }) {
   return (
     <div className="review-split-row">
       <SplitCell line={row.left} side="left" wrap={wrap} />
-      <div className="review-split-divider bg-droid-border" />
+      <div className="review-split-divider bg-divider" />
       <SplitCell line={row.right} side="right" wrap={wrap} />
     </div>
   );
@@ -229,10 +227,10 @@ export function DiffBody({
   const pendingRows = Math.max(0, rows.length - mounted * CHUNK_ROWS);
 
   if (binary || parsed.binary) {
-    return <div className="p-4 text-[13px] text-droid-text-muted">Binary file not shown</div>;
+    return <div className="p-4 text-[13px] text-muted">Binary file not shown</div>;
   }
   if (parsed.hunks.length === 0) {
-    return <div className="p-4 text-[13px] text-droid-text-muted">No textual changes</div>;
+    return <div className="p-4 text-[13px] text-muted">No textual changes</div>;
   }
 
   return (
@@ -246,7 +244,7 @@ export function DiffBody({
           while the progressive mount catches up. */}
       {pendingRows > 0 && <div style={{ height: Math.round(pendingRows * EST_ROW_PX) }} />}
       {hiddenLines > 0 && (
-        <div className="px-3 py-2 text-[12px] text-droid-text-muted">
+        <div className="px-3 py-2 text-[12px] text-muted">
           Diff truncated: {hiddenLines.toLocaleString()} more lines not shown
         </div>
       )}

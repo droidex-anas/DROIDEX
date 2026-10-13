@@ -21,7 +21,7 @@ function CommandSigil({ className }: { className: string }) {
   return (
     <span
       aria-hidden
-      className={`flex items-center justify-center text-[13px] leading-none text-droid-text-muted/70 ${className}`}
+      className={`flex items-center justify-center text-[13px] leading-none text-muted/70 ${className}`}
     >
       /
     </span>
@@ -55,7 +55,7 @@ export function CatalogRowIcon({
         draggable={false}
         loading="lazy"
         decoding="async"
-        className={`rounded object-contain ${className}`}
+        className={`rounded-xs object-contain ${className}`}
         // The brand colour is the harness's own data, in whatever notation it
         // chose, so the tint is mixed rather than built by appending alpha hex.
         style={

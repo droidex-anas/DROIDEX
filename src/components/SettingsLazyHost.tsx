@@ -8,7 +8,7 @@ import { LazySettingsPanel } from '../lib/lazySurfaces';
 export function SettingsLazyHost() {
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex bg-droid-bg"
+      className="fixed inset-0 z-50 flex bg-bg"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

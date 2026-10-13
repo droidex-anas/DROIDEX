@@ -10,7 +10,7 @@ export function ComposerTab({ children }: { children: ReactNode }) {
   return (
     <motion.div
       {...inlineCardMotion(reduceMotion)}
-      className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
+      className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-divider bg-surface px-4 pb-4 pt-1.5"
       // The composer's own 20px corner, carried onto the tab above it.
       style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
     >

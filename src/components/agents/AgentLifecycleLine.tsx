@@ -10,7 +10,7 @@ export function AgentLifecycleLine({ rows, text }: { rows: readonly AgentRow[]; 
   return (
     <div
       data-testid="agent-lifecycle-line"
-      className="flex items-center gap-2 text-[13px] leading-relaxed text-droid-text-muted"
+      className="flex items-center gap-2 text-[13px] leading-relaxed text-muted"
     >
       <span className="flex shrink-0 items-center gap-1">
         {rows.slice(0, LIFECYCLE_ICON_LIMIT).map((row) => (

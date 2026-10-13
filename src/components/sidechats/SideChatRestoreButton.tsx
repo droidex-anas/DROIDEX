@@ -49,7 +49,7 @@ export function SideChatRestoreButton({ sourceAppSessionId }: { sourceAppSession
               placement: placement === 'minimized' ? 'floating' : 'docked',
             });
           }}
-          className="flex items-center gap-1.5 rounded-full bg-droid-raised px-2.5 py-1 text-[11px] font-medium text-droid-text-secondary shadow-droid-sm transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+          className="flex items-center gap-1.5 rounded-full bg-raised px-2.5 py-1 text-[11px] font-medium text-secondary shadow-sm transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           <MessageBubble className={`h-3.5 w-3.5 ${starting || working ? 'animate-pulse' : ''}`} />
           Side chat

@@ -39,27 +39,27 @@ export function ThreadRow({
         onOpen(row.appSessionId);
       }}
       style={{ paddingLeft: `${String(10 + Math.min(row.depth, 3) * 14)}px` }}
-      className={`group flex w-full items-center gap-2.5 rounded-lg py-1.5 pr-2 text-left transition-colors ${
-        active ? 'bg-droid-active' : 'hover:bg-droid-elevated/50'
+      className={`group flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2 text-left transition-colors ${
+        active ? 'bg-active' : 'hover:bg-elevated/50'
       }`}
     >
       <span className="flex w-3.5 shrink-0 items-center justify-center">
         {row.live ? (
           <span
             aria-label="working"
-            className="h-3 w-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
+            className="h-3 w-3 rounded-full border-[1.5px] border-text border-r-transparent motion-safe:animate-spin-slow"
           />
         ) : (
           <ActivityStatusGlyph status={row.status} />
         )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] text-droid-text-secondary group-hover:text-droid-text">
+        <span className="block truncate text-[13px] text-secondary group-hover:text-primary">
           {row.title}
         </span>
         <span
           className={`mt-0.5 block truncate text-[12px] leading-4 ${
-            row.live ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+            row.live ? 'shimmer-text font-medium' : 'text-muted'
           }`}
         >
           {row.detail}
@@ -75,7 +75,7 @@ export function ThreadRow({
             </span>
           )}
         </span>
-        <span className="text-right text-[12px] tabular-nums text-droid-text-muted">
+        <span className="text-right text-[12px] tabular-nums text-muted">
           {row.updatedAt > 0 ? formatRelativeTime(row.updatedAt, now) : ''}
         </span>
       </span>

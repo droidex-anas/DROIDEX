@@ -55,7 +55,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
 
   return (
     <section aria-label="Scheduled prompts" className="mb-2 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
+      <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-muted">
         <Clock className="h-3 w-3" />
         Scheduled · sends to this conversation
       </div>
@@ -69,11 +69,11 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
         return (
           <div
             key={automation.id}
-            className="group flex items-start gap-2 rounded-xl border border-droid-border bg-droid-elevated px-2 py-1.5 transition-colors"
+            className="group flex items-start gap-2 rounded-lg border border-divider bg-elevated px-2 py-1.5 transition-colors"
           >
-            <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-droid-text-muted/60" />
+            <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted/60" />
             <PendingPromptPreview text={automation.prompt} files={automation.files}>
-              <span aria-live="polite" className="mt-1 block text-[11px] text-droid-text-muted">
+              <span aria-live="polite" className="mt-1 block text-[11px] text-muted">
                 {hint}
               </span>
             </PendingPromptPreview>
@@ -86,7 +86,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
                 onClick={() => {
                   dispatch({ type: 'OPEN_AUTOMATIONS', automationId: automation.id });
                 }}
-                className="rounded p-1 text-droid-text-muted hover:text-droid-text hover:bg-black/20 focus-visible:outline focus-visible:outline-droid-border-hover disabled:opacity-30"
+                className="rounded-xs p-1 text-muted hover:text-primary hover:bg-black/20 focus-visible:outline focus-visible:outline-divider-strong disabled:opacity-30"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
@@ -100,7 +100,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
                 aria-label="Cancel scheduled prompt"
                 disabled={cancelingId !== null}
                 onClick={() => void cancel(automation.id)}
-                className="rounded p-1 text-droid-text-muted hover:text-droid-orange hover:bg-black/20 focus-visible:outline focus-visible:outline-droid-border-hover disabled:opacity-30"
+                className="rounded-xs p-1 text-muted hover:text-warning hover:bg-black/20 focus-visible:outline focus-visible:outline-divider-strong disabled:opacity-30"
               >
                 {canceling ? (
                   <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
@@ -118,7 +118,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
           onClick={() => {
             dispatch({ type: 'OPEN_AUTOMATIONS' });
           }}
-          className="rounded px-1 text-left text-[11px] text-droid-text-muted hover:text-droid-text focus-visible:outline focus-visible:outline-droid-border-hover"
+          className="rounded-xs px-1 text-left text-[11px] text-muted hover:text-primary focus-visible:outline focus-visible:outline-divider-strong"
         >
           {prompts.length - VISIBLE_PROMPTS} more in Automations
         </button>
