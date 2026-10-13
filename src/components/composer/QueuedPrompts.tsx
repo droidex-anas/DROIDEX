@@ -65,10 +65,10 @@ export function QueuedPrompts({
               setDragIndex(null);
               setDragOverIndex(null);
             }}
-            // A drop target gets the dashed outline, the one place a dashed line is allowed.
             className={`group flex items-start gap-2 rounded-lg bg-elevated px-2 py-1.5 transition-colors ${
               dragOverIndex === i && dragIndex !== null && dragIndex !== i
-                ? 'outline-dashed outline-1 outline-divider-strong'
+                ? // eslint-disable-next-line design-policy/design-tokens -- dashed drop target: drag cue
+                  'outline-dashed outline-1 outline-divider-strong'
                 : ''
             }`}
           >

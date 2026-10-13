@@ -339,15 +339,6 @@
     "arbitrary-value": 3,
     "border-width": 2
   },
-  "src/components/composer/CropOverlay.tsx": {
-    "border-width": 3
-  },
-  "src/components/composer/PlanSteps.tsx": {
-    "border-width": 3
-  },
-  "src/components/composer/QueuedPrompts.tsx": {
-    "border-width": 3
-  },
   "src/components/environment/BranchMenu.tsx": {
     "arbitrary-value": 13,
     "border-width": 4,

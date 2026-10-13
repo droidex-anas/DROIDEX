@@ -217,7 +217,7 @@ function MenuLabel({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
 }
 
 function MenuDivider({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return <div role="separator" {...rest} className={cn('mx-2 my-1 h-px bg-divider', className)} />;
+  return <div role="separator" {...rest} className={cn('h-2', className)} />;
 }
 
 export const Menu = Object.assign(MenuRoot, {

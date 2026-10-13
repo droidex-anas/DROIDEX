@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Circle } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
@@ -94,7 +94,7 @@ function StepRing({
   if (active && spinning) {
     return <Spinner className="size-icon-sm shrink-0 text-primary motion-safe:animate-spin-slow" />;
   }
-  return <span className="size-icon-sm shrink-0 rounded-full ring-1.5 ring-inset ring-muted/30" />;
+  return <Circle className="size-icon-sm shrink-0 text-muted/30" strokeWidth={2.5} />;
 }
 
 // The model's plan for the composer's session, tucked behind the composer.
