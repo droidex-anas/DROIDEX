@@ -129,8 +129,9 @@ The brief is the whole context the model gets. Include:
 - the readability bar: clear names, obvious control flow, small diffs, no
   compatibility shims, no new abstractions. GPT models in particular will write
   dense, machine-shaped code unless the brief names this expectation;
-- for UI: the existing visual is the specification. Restore and extend; never
-  invite a redesign of an element the user designed;
+- for UI: `docs/design-system/` is the specification and `src/components/ui/`
+  holds the primitives to build with. Move a surface onto the spec; never
+  invite a redesign of an element the user designed beyond what the spec asks;
 - the verification to run before reporting (typecheck, the focused test, the
   replay harness for perf-sensitive changes).
 

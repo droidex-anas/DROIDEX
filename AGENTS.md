@@ -163,8 +163,6 @@ A name should communicate the concept at the scope where it is read.
   objects.
 - Derive presentation values during render or through selectors. Use effects
   for external synchronization only, with complete cleanup.
-- Reuse existing components, theme tokens (`docs/design-system/`), and
-  interaction patterns. Do not introduce a parallel palette or design system.
 - Controls must be working, discoverable, and keyboard-accessible, with loading,
   empty, and error states. Polish does not replace function.
 - Large lists mount only what is visible. Measure render cost with the real
@@ -172,30 +170,22 @@ A name should communicate the concept at the scope where it is read.
 
 ## Visual design
 
-The interface should feel calm and deliberately designed: soft, quiet surfaces
-rather than lines and boxes. Visible hard borders and heavy background panels
-are the most common way a change makes the app look worse.
+`docs/design-system/` is the specification for how DROIDEX looks and feels.
+Read `rules.md` before building UI and `engineering.md` before building a
+component; this file does not restate them.
 
-- Separate layers with tone and soft shadow, not outlines. Use a border only
-  when tone cannot do the job, and then only the resting `--divider`
-  hairline. Never use `divider-strong`, the accent, or text color as a resting
-  edge: the default light accent is near-black, so accent outlines become hard
-  black boxes.
-- Do not nest outlines. A control inside a bordered card is a borderless tinted
-  fill (`bg-elevated`, `hover:bg-active`), like the settings dropdowns.
-- Floating layers (composer, popovers, menus, tooltips, toasts, dialogs) use
-  `bg-raised` with `shadow-lg` or `shadow-sm`. No fixed black shadows; the
-  theme owns the shadow color.
-- Hover and selected states are soft tint shifts (`elevated` to `active`, or a
-  low-alpha accent mix). Avoid thick rings and high-contrast selection fills;
-  a check mark or text weight carries the meaning.
-- Adjacent surfaces differ by a few percent of lightness, never a visible
-  block. Light mode is a soft warm off-white, not pure white or grey; dark mode
-  is a deep near-black.
-- Tune colors in `src/lib/theme.ts`, not per component, and keep the contrast
-  tests in `src/lib/theme.test.ts` passing.
-- Keep focus visible for keyboard users with a soft cue, such as a tint shift or
-  a low-alpha ring, not a hard outline.
+- Build from the primitives in `src/components/ui/` (`Button`, `Badge`,
+  `Field`/`Input`, `Row`, `Menu`, `Popover`, `Tooltip`, `Toaster`) before
+  writing an ad-hoc button, menu, popover or field. Add a missing variant to
+  the primitive.
+- Use design tokens only: no raw hex, arbitrary values (`text-[13px]`,
+  `rounded-[5px]`), Tailwind palette colours, or hand-made focus rings. Token
+  values live in `src/lib/themeTokens.ts`, `tailwind.config.js` and
+  `src/index.css`; keep the contrast tests in `src/lib/theme.test.ts` passing.
+- `npm run quality:design-tokens` enforces this against
+  `tools/design-token-baseline.json`, and the baseline only goes down. Use
+  `--update-baseline --force` only for a deliberate rise, such as a matcher
+  change, and explain it in the pull request.
 - Check both light and dark in the running app before shipping a visual change.
 
 ## DROIDEX identity and runtime contracts
@@ -390,11 +380,14 @@ npm run docs:check
 npm run build
 ```
 
+For UI changes, also run `npm run quality:design-tokens`.
+
 `npm run lint` blocks CI on new errors. The existing backlog is recorded in
 `eslint-suppressions.json`; never add to it to get a green run. When you fix old
 errors, prune it with `npx eslint . --prune-suppressions`; lint fails until you
 do, so the backlog only shrinks. The pre-commit hook runs lint-staged, file
-size, tech-debt, and typecheck gates.
+size, tech-debt, design-token (when `.tsx` files are staged), and typecheck
+gates.
 
 Performance changes are validated with the deterministic replay harness
 (`npm run perf:replay -- --scenario <smoke|idle|streaming|multi-agent|agents-4|agents-16|agents-27|long-history|long-tail|session-switch|soak>`),

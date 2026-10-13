@@ -10,6 +10,6 @@ Soft, borderless controls: 8px text buttons, square-ish icon buttons, round butt
 - **Success** (`dx-btn-success`): the same pattern in `success`. Use it for approve, merge and accept.
 - **Sizes**: `control-md` (32px) with a `body-strong` label and `space-3` padding. `dx-btn-sm` is `control-sm` (28px) with a `label` label and `space-2.5` padding. Icon buttons are square at the control size with a 16px icon.
 - **States**: hover changes tone only, never adds a line. Keyboard focus is a 1.5px `focus-ring`, shown only on `:focus-visible`, never on click. Disabled is 40% opacity with a not-allowed cursor. Loading swaps the icon for a spinner and keeps the width.
-- **API**: one `Button` with `variant` (primary, secondary, ghost, danger, success), `size` (sm, md), `shape` (default, round) and `icon`. Icon-only buttons need an `aria-label`. The consumer provides the label (sentence case, a verb first).
+- **API**: one `Button` with `variant` (primary, secondary, ghost, danger, success), `size` (sm, md, lg), `shape` (default, round) and `icon`. Icon-only buttons need an `aria-label`. The consumer provides the label (sentence case, a verb first).
 
-Hand-written from the app's button classes (`rounded-lg px-3 py-1.5`, and `ComposerSendButton`'s `h-8 w-8 rounded-full bg-droid-text`), with borders removed.
+Implemented by `Button` in `src/components/ui/Button.tsx`.

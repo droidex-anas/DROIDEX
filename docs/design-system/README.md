@@ -7,7 +7,7 @@ The source of truth for how DROIDEX looks, feels and is built. New UI follows it
 | [README.md](README.md) | The brand book: voice, colour, type, spacing, elevation, states, motion, icons, logo |
 | [rules.md](rules.md) | The checkable rulebook: type per element, spacing between things, alignment, hit areas, scrollbars, copy, and a pre-ship checklist |
 | [feel.md](feel.md) | Taste, visual cues, motion timings and feedback |
-| [engineering.md](engineering.md) | How to build it: primitives, popover positioning, dialogs, interaction details |
+| [engineering.md](engineering.md) | How to build it: primitives, popover positioning, dialogs, interaction details, and how the code enforces the tokens |
 | [tokens.json](tokens.json) | Every token, both themes: colour, type, spacing, size, radius, shadow, z-index |
 | [primitives.css](primitives.css) | Reference CSS for the primitives, written only with tokens |
 | [components/](components/) | Guidelines per component: Button, Badge, Input, Card, ToolPanel, PanelRow, Popover, Toast, Alignment, plus a reference implementation of Toast |
@@ -31,7 +31,7 @@ DROIDEX is one desktop app for all your coding agents. The interface is a quiet,
 
 Two themes from the **Default** preset, dark first (the app's default and its `:root`). The values start from what `applyTheme` derives at runtime, with four text colours adjusted so every one reads on every surface.
 
-**Naming.** Tokens have plain semantic names: `bg`, `surface`, `text-muted`, `danger`. Each one is a CSS variable of the same name (`--surface`) and a Tailwind colour, so classes read `bg-surface`, `text-muted` and `border-divider`. Brand colours keep the `brand-` prefix. The code's former `--droid-*` names map like this:
+**Naming.** Tokens have plain semantic names: `bg`, `surface`, `text-muted`, `danger`. Each one is a CSS variable of the same name (`--surface`), derived in `src/lib/themeTokens.ts`, and a Tailwind colour in `tailwind.config.js`, so classes read `bg-surface`, `text-muted` and `border-divider`. Brand colours keep the `brand-` prefix. The code's former `--droid-*` names map like this:
 
 | Former name | CSS variable | Tailwind |
 | --- | --- | --- |
@@ -133,5 +133,5 @@ The mark is a pixel **DX** monogram built on an 80px grid. On the light tile (`b
 
 - Only the **Default** preset is here. Midnight, Ember, Ocean and the branded presets in `src/lib/theme.ts` aren't, and neither is the "focused" diff style or the translucent sidebar variant.
 - No font files. Silkscreen, Inter and JetBrains Mono are served by Google Fonts, and SF Pro and SF Mono are system faces.
-- The component guidelines describe of how the app styles its controls (the Tailwind classes on its buttons, rows and menus, plus `src/components/environment/primitives.tsx`), redrawn without borders. The code still has borders, opaque `--divider` values and dark focus outlines; the migration removes them.
+- The component guidelines were drawn from how the app styled its controls, redrawn without borders. The primitives that implement them live in `src/components/ui/`. Older surfaces still carry borders, raw values and per-component focus rings; the migration moves them onto the primitives one surface at a time, and the token ratchet (see [engineering.md](engineering.md#enforcement)) keeps the count falling.
 - Not brought in: `assets/brand/dmg-background.*` (installer art), motion as tokens (the timings live in feel.md), and the per-component Tailwind one-offs.

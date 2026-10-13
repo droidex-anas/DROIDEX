@@ -10,4 +10,4 @@ The floating layer for menus, pickers and option lists. See [engineering.md](../
 - It opens on the side with room, flips when it can't fit, and enters by fading in and rising 4px from the anchor over 120–150ms.
 - The consumer provides the anchor, the items and their actions.
 
-Hand-written from `src/components/environment/Popover.tsx` and the composer's send menu (`rounded-xl bg-droid-raised p-1.5`), with the border removed.
+Implemented by `Popover` and `Menu` in `src/components/ui/`.
