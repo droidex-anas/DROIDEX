@@ -47,7 +47,7 @@ export function SidebarWelcomeCard({
         </div>
 
         <div className="relative -mt-6 px-3.5 pb-3">
-          <span className="text-[13px] font-semibold text-primary">Welcome to Droidex</span>
+          <span className="text-[13px] font-semibold text-primary">Welcome to DROIDEX</span>
           <p className="mt-1 text-[12px] leading-snug text-muted">
             Chats, workspaces and missions live here. Start a chat and put Droid to work.
           </p>

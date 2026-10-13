@@ -8,7 +8,7 @@ import type { SkillInfo } from '../../types/bridge';
 // Icons come from the desktop app's main process (the favicon protocol for a
 // remote logo, the local-image protocol for one on disk); a renderer running
 // without it has nowhere to ask.
-const canLoadIcons = typeof window !== 'undefined' && 'droidControl' in window;
+const canLoadIcons = typeof window !== 'undefined' && 'droidex' in window;
 
 // Icons that failed this session, so a row scrolled back into view goes straight
 // to its mark instead of flashing an empty box while the request fails again.

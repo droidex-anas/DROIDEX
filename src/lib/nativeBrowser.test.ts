@@ -9,7 +9,7 @@ test('stopping the shortcut forward hands the chords back to the browser page', 
   const globals = globalThis as typeof globalThis & { window?: unknown };
   const previousWindow = globals.window;
   globals.window = {
-    droidControl: {
+    droidex: {
       nativeBrowserSetShortcuts: async (chords: NativeBrowserChord[]) => {
         registered.push(chords);
       },

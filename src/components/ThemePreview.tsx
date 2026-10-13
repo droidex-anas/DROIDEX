@@ -18,7 +18,7 @@ function Line({ colors, w, strong = false }: { colors: ThemeColors; w: string; s
   );
 }
 
-/** Miniature Droid Control window (sidebar + chat + input) in a given palette. */
+/** Miniature DROIDEX window (sidebar + chat + input) in a given palette. */
 export function MiniAppFrame({ colors }: { colors: ThemeColors }) {
   return (
     <div

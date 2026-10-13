@@ -78,7 +78,7 @@ export function McpServersSettings({ cwd }: { cwd?: string }) {
     const unsubscribe = bridge.subscribe((event) => {
       if (!('requestId' in event) || event.requestId !== activeRequest.current) return;
       if (event.type === 'mcp.authRequested' && event.authUrl) {
-        void window.droidControl?.openExternal(event.authUrl);
+        void window.droidex?.openExternal(event.authUrl);
         return;
       }
       if (event.type === 'mcp.error') {

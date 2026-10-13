@@ -282,7 +282,7 @@ export default function BrowserWorkspace({
         type: 'BROWSER_ERROR',
         appSessionId: browserKey,
         message:
-          'Cannot open the Droid Control shell inside its own browser pane. Use a different local app port.',
+          'Cannot open the DROIDEX shell inside its own browser pane. Use a different local app port.',
       });
       return;
     }
