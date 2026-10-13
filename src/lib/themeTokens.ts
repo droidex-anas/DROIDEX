@@ -36,6 +36,7 @@ export const SKILL_COLORS = {
 export const UPDATE_COLORS = {
   base: '#005fc8',
   hover: '#0054b2',
+  label: '#ffffff',
 } as const;
 
 // Prompt chip marks keep their own hue beside the blue skill label: rose for a
@@ -152,6 +153,7 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     '--danger-soft': withAlpha(danger, SOFT_FILL_ALPHA[scheme]),
     '--update': UPDATE_COLORS.base,
     '--update-hover': UPDATE_COLORS.hover,
+    '--on-update': UPDATE_COLORS.label,
     '--shadow-sm': SHADOWS[scheme].sm,
     '--shadow-lg': SHADOWS[scheme].lg,
     '--diff-add-fg': diff.addFg,

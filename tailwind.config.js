@@ -68,6 +68,7 @@ export default {
         'focus-ring': v('--focus-ring'),
         update: v('--update'),
         'update-hover': v('--update-hover'),
+        'on-update': v('--on-update'),
         'brand-ink': v('--brand-ink'),
         'brand-paper': v('--brand-paper'),
         'brand-orange': v('--brand-orange'),
@@ -109,7 +110,9 @@ export default {
         'code-sm': ['11px', { lineHeight: '16px', letterSpacing: '0px', fontWeight: '400' }],
       },
       height: sizes,
-      width: sizes,
+      // The fixed shell columns (rules.md "Sizes"): `w-sidebar` and the
+      // floating context panel the chat insets its content for.
+      width: { ...sizes, sidebar: '280px', 'context-panel': '312px' },
       size: sizes,
       minHeight: sizes,
       minWidth: sizes,
