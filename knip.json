@@ -10,7 +10,7 @@
     "electron/*.cjs",
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
-    "src/components/ui/{Badge,Button,Field,Menu,Row}.tsx"
+    "src/components/ui/{Field,Menu,Row}.tsx"
   ],
   "project": ["src/**/*.{ts,tsx}", "electron/**/*.cjs", "*.config.{js,ts}"],
   "ignore": ["sidecar/**"],

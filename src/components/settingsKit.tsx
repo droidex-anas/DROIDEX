@@ -2,25 +2,21 @@
 // and the feature settings screens import these; keep them free of feature
 // state).
 
-import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
-import { pushEscapeLayer } from './ui/escapeStack';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Check, ChevronDown } from '@droidex/icons';
+import { Popover } from './ui/Popover';
 
 export function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   return (
-    <div className="mb-4">
-      <h2 className="text-[16px] font-semibold text-primary">{title}</h2>
-      {sub && <p className="text-[12px] text-muted mt-0.5">{sub}</p>}
+    <div className="mb-6">
+      <h2 className="text-title text-primary">{title}</h2>
+      {sub && <p className="mt-1 text-body text-muted">{sub}</p>}
     </div>
   );
 }
 
 export function GroupLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2 mt-1">
-      {children}
-    </div>
-  );
+  return <div className="mb-2 mt-1 select-none text-label text-muted">{children}</div>;
 }
 
 /* ── settings row: label + description on the left, control on the right ── */
@@ -36,8 +32,8 @@ export function SettingRow({
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-3">
       <div className="min-w-0">
-        <div className="text-[13px] text-primary">{label}</div>
-        {description && <div className="text-[11px] text-muted mt-0.5">{description}</div>}
+        <div className="text-body text-primary">{label}</div>
+        {description && <div className="mt-0.5 text-caption text-muted">{description}</div>}
       </div>
       {children}
     </div>
@@ -72,66 +68,63 @@ export function Dropdown({
   align?: 'left' | 'right';
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [minWidth, setMinWidth] = useState<number>();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const close = () => {
+    setOpen(false);
+  };
 
+  // A listbox opens with focus on the selected option.
   useEffect(() => {
     if (!open) return;
-    // Keyboard/screen-reader contract of a listbox popup: focus lands on the
-    // selected option, arrows move between options, Escape returns focus to
-    // the trigger.
-    const menu = ref.current?.querySelector<HTMLElement>('[role="listbox"]');
+    const list = listRef.current;
     const selected =
-      menu?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]') ??
-      menu?.querySelector<HTMLElement>('[role="option"]');
-    selected?.focus();
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    // Escape goes through the shared LIFO layer stack (see ui/escapeStack.ts) so a
-    // single keystroke closes only this innermost popup, never the settings
-    // panel or theme editor behind it.
-    const pop = pushEscapeLayer(() => {
-      setOpen(false);
-      triggerRef.current?.focus();
+      list?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]') ??
+      list?.querySelector<HTMLElement>('[role="option"]');
+    if (!list || !selected) return;
+    selected.focus({ preventScroll: true });
+    // The popover's position pass sizes the list after this effect runs, so
+    // reveal the selected option whenever the list's box settles.
+    const observer = new ResizeObserver(() => {
+      selected.scrollIntoView({ block: 'nearest' });
     });
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      // Only navigate when focus is actually inside the listbox — otherwise
-      // we'd hijack arrow keys from sliders/inputs the user tabbed to.
-      if (!menu?.contains(document.activeElement)) return;
-      e.preventDefault();
-      const items = Array.from(menu.querySelectorAll<HTMLElement>('[role="option"]'));
-      if (items.length === 0) return;
-      const index = items.indexOf(document.activeElement as HTMLElement);
-      const next =
-        e.key === 'ArrowDown'
-          ? items.at((index + 1) % items.length)
-          : items.at((index - 1 + items.length) % items.length);
-      next?.focus();
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
+    observer.observe(list);
     return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-      pop();
+      observer.disconnect();
     };
   }, [open]);
+
+  const onListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [],
+    );
+    if (items.length === 0) return;
+    event.preventDefault();
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      event.key === 'ArrowDown'
+        ? items.at((index + 1) % items.length)
+        : items.at((index - 1 + items.length) % items.length);
+    next?.focus();
+  };
 
   const sel = options.find((o) => o.value === value);
 
   return (
-    <div className={`relative ${width === 'w-full' ? 'w-full' : 'shrink-0'}`} ref={ref}>
+    <div className={width === 'w-full' ? 'w-full' : 'shrink-0'}>
       <button
         ref={triggerRef}
+        type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => {
+          setMinWidth(triggerRef.current?.offsetWidth);
           setOpen((v) => !v);
         }}
-        className={`${width} flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[12px] transition-colors ${
-          open ? 'bg-active text-primary' : 'bg-elevated text-primary hover:bg-active'
+        className={`${width} flex h-control-md select-none items-center justify-between gap-2 rounded-md px-3 text-body text-primary transition-colors duration-150 ease-out ${
+          open ? 'bg-active' : 'bg-elevated hover:bg-active'
         }`}
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -139,52 +132,53 @@ export function Dropdown({
           <span className="truncate">{sel?.label ?? placeholder}</span>
         </span>
         <ChevronDown
-          className={`w-3.5 h-3.5 shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+          className={`size-icon-sm shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
-      {open && (
+      <Popover
+        open={open}
+        onClose={close}
+        anchorRef={triggerRef}
+        label={ariaLabel}
+        placement={align === 'right' ? 'bottom-end' : 'bottom-start'}
+        style={{ minWidth }}
+        className="max-w-80"
+      >
         <div
-          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full z-50 mt-1.5 min-w-full rounded-lg border border-divider bg-surface p-2 shadow-lg`}
+          ref={listRef}
+          role="listbox"
+          aria-label={ariaLabel}
+          onKeyDown={onListKeyDown}
+          className="min-h-0 overflow-y-auto p-1.5"
         >
-          <div
-            className="max-h-72 overflow-y-auto space-y-0.5"
-            role="listbox"
-            aria-label={ariaLabel}
-          >
-            {options.map((o) => {
-              const active = o.value === value;
-              return (
-                <button
-                  key={o.value}
-                  role="option"
-                  aria-selected={active}
-                  onClick={() => {
-                    onChange(o.value);
-                    setOpen(false);
-                    triggerRef.current?.focus();
-                  }}
-                  className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ${
-                    active ? 'bg-elevated' : 'hover:bg-elevated/50'
-                  }`}
-                >
-                  {o.icon}
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
-                    {o.label}
-                  </span>
-                  {active && (
-                    <Check
-                      className="w-3.5 h-3.5 shrink-0"
-                      style={{ color: 'var(--accent)' }}
-                      strokeWidth={3}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          {options.map((o) => {
+            const active = o.value === value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onClick={() => {
+                  onChange(o.value);
+                  close();
+                }}
+                className={`flex w-full cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary ${
+                  active ? 'bg-active' : 'hover:bg-elevated dark:hover:bg-active'
+                }`}
+              >
+                {o.icon}
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                {active && (
+                  <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
+                )}
+              </button>
+            );
+          })}
         </div>
-      )}
+      </Popover>
     </div>
   );
 }

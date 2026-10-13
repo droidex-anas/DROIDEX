@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { ChevronDown, LoaderCircle } from 'lucide-react';
+import { ChevronDown, Spinner } from '@droidex/icons';
 
 import {
   applyDroidProxyFactoryModels,
@@ -20,6 +20,8 @@ import type {
 } from '../types/bridge';
 import { ModelIcon, type Provider } from './ModelIcon';
 import { GroupLabel, SectionTitle, SettingRow } from './settingsKit';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
 
 const DROIDPROXY_RELEASES_URL =
   'https://github.com/anand-92/droidproxy/releases/latest/download/DroidProxy-arm64.zip';
@@ -56,9 +58,6 @@ const PROVIDER_ORDER: readonly DroidProxyProviderKey[] = [
   'copilot',
   'meta',
 ];
-
-const BUTTON_CLASS =
-  'px-2.5 h-7 rounded-sm bg-elevated text-[12px] text-primary hover:bg-active transition-colors disabled:opacity-40';
 
 const INSTALL_PHASE_LABELS: Record<DroidProxyInstallPhase, string> = {
   downloading: 'Downloading',
@@ -123,7 +122,7 @@ export function DroidProxySettings() {
           title="DroidProxy"
           sub="Use subscription models in Droid sessions through a local proxy."
         />
-        <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
+        <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
           <SettingRow label="DroidProxy" description="Detecting the app and its connections…">
             <span />
           </SettingRow>
@@ -154,29 +153,29 @@ export function DroidProxySettings() {
         sub="Use subscription models in Droid sessions through a local proxy."
       />
 
-      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
         <SettingRow label="DroidProxy app" description={appDescription(status, installError)}>
           {status.appInstalled ? (
-            <button
+            <Button
+              size="sm"
               onClick={() => {
                 launchDroidProxy();
               }}
-              className={BUTTON_CLASS}
             >
               {status.proxyRunning ? 'Open app' : 'Launch'}
-            </button>
+            </Button>
           ) : install ? (
             <div className="flex shrink-0 items-center gap-2">
-              <span className="text-[12px] font-mono text-muted">{installLabel(install)}</span>
+              <span className="font-mono text-code text-muted">{installLabel(install)}</span>
               {canCancelInstall && (
-                <button
+                <Button
+                  size="sm"
                   onClick={() => {
                     cancelDroidProxyInstall();
                   }}
-                  className={BUTTON_CLASS}
                 >
                   Cancel
-                </button>
+                </Button>
               )}
             </div>
           ) : status.installUnavailable ? (
@@ -187,54 +186,54 @@ export function DroidProxySettings() {
                 onClick={() => {
                   void openExternal(DROIDPROXY_RELEASES_URL);
                 }}
-                className="text-[12px] text-muted hover:text-primary transition-colors"
+                className="text-label text-muted transition-colors hover:text-primary"
               >
                 manual download
               </button>
-              <button
+              <Button
+                size="sm"
                 onClick={() => {
                   installDroidProxy();
                 }}
-                className={BUTTON_CLASS}
               >
                 Install DroidProxy
-              </button>
+              </Button>
             </div>
           )}
         </SettingRow>
         <SettingRow label="Local proxy" description={proxyDescription(status)}>
           <div className="flex shrink-0 items-center gap-2">
             <span
-              className={`text-[12px] font-mono ${status.proxyRunning ? 'text-success' : 'text-muted'}`}
+              className={`font-mono text-code ${status.proxyRunning ? 'text-success' : 'text-muted'}`}
             >
               {status.proxyRunning ? 'running' : 'stopped'}
             </span>
-            <button
+            <Button
+              size="sm"
               onClick={() => {
                 requestDroidProxyStatus();
               }}
-              className={BUTTON_CLASS}
             >
               Refresh
-            </button>
+            </Button>
           </div>
         </SettingRow>
         <SettingRow label="Proxy models in Droid" description={modelDescription}>
-          <button
+          <Button
+            size="sm"
             onClick={() => {
               applyDroidProxyFactoryModels();
             }}
-            className={BUTTON_CLASS}
           >
             {modelActionLabel}
-          </button>
+          </Button>
         </SettingRow>
       </div>
 
       <GroupLabel>
         Subscriptions{connectedCount > 0 ? ` · ${String(connectedCount)} connected` : ''}
       </GroupLabel>
-      <div className="rounded-lg border border-divider bg-surface divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
         {PROVIDER_ORDER.map((provider) => {
           const row = status.providers.find((entry) => entry.provider === provider);
           if (!row) return null;
@@ -253,7 +252,7 @@ export function DroidProxySettings() {
         })}
       </div>
 
-      <p className="text-[11px] leading-relaxed text-muted">
+      <p className="text-body text-muted">
         Connecting signs you in with the provider in your browser; DROIDEX displays account
         metadata, never tokens or keys. Applying writes proxy models into Factory settings with a
         timestamped backup first. Copilot model picks and Meta contributor mode live in the
@@ -285,17 +284,17 @@ function DroidProxyProviderRow({
   const accountListId = useId();
   const heading = (
     <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-primary">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-body text-primary">
         <ModelIcon provider={PROVIDER_ICONS[row.provider]} size={15} />
         <span>{label}</span>
         {row.accounts.length > 0 && (
-          <span className="text-[11px] text-muted">
+          <span className="text-caption text-muted">
             {row.accounts.length} {row.accounts.length === 1 ? 'account' : 'accounts'}
           </span>
         )}
       </div>
       {!row.enabled && (
-        <p className="mt-0.5 text-[11px] text-muted">Disabled in the DroidProxy app</p>
+        <p className="mt-0.5 text-caption text-muted">Disabled in the DroidProxy app</p>
       )}
     </div>
   );
@@ -310,12 +309,12 @@ function DroidProxyProviderRow({
             onClick={() => {
               setExpanded((current) => !current);
             }}
-            className="group flex min-w-0 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+            className="group flex min-w-0 items-center gap-2 rounded-sm text-left"
           >
             {heading}
             <ChevronDown
               aria-hidden="true"
-              className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
+              className={`size-icon-sm shrink-0 text-muted transition-transform duration-300 ease-smooth-out motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
             />
           </button>
         ) : (
@@ -330,13 +329,15 @@ function DroidProxyProviderRow({
         />
       </div>
       {row.accounts.length === 0 ? (
-        <p className="mt-1 text-[11px] text-muted">Not connected</p>
+        <p className="mt-1 text-caption text-muted">Not connected</p>
       ) : (
         <div
           id={accountListId}
           aria-hidden={!expanded}
           inert={!expanded}
-          className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+          // The row track animates between 0fr and 1fr, which no grid-rows utility covers.
+          style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+          className={`grid transition-all duration-300 ease-smooth-out motion-reduce:transition-none ${expanded ? 'opacity-100' : 'opacity-0'}`}
         >
           <div className="min-h-0 overflow-hidden">
             <AccountList
@@ -401,13 +402,13 @@ function DroidProxyAccountRow({
         className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200 motion-reduce:transition-none ${account.disabled ? 'bg-muted/50' : 'bg-warning'}`}
       />
       <span
-        className={`min-w-0 flex-1 truncate text-[11px] transition-colors duration-200 motion-reduce:transition-none ${account.disabled ? 'text-muted line-through' : 'text-secondary'}`}
+        className={`min-w-0 flex-1 truncate text-caption transition-colors duration-200 motion-reduce:transition-none ${account.disabled ? 'text-muted line-through' : 'text-secondary'}`}
         title={label}
       >
         {label}
       </span>
       {account.expired && Date.parse(account.expired) < Date.now() && (
-        <span className="shrink-0 text-[10px] text-danger">Expired</span>
+        <Badge tone="danger">Expired</Badge>
       )}
       {account.id && (
         <button
@@ -418,10 +419,10 @@ function DroidProxyAccountRow({
           disabled={pendingAccountId !== null || lastEnabled}
           aria-label={`${action} ${label}`}
           title={lastEnabled ? 'Keep at least one account enabled' : undefined}
-          className="inline-flex min-h-8 shrink-0 items-center rounded-sm px-2 text-[11px] font-medium text-warning transition-colors duration-200 ease-out hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+          className="inline-flex min-h-control-md shrink-0 items-center rounded-sm px-2 text-label text-warning transition-colors duration-200 ease-out hover:bg-warning-soft disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
         >
           {pending ? (
-            <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 motion-safe:animate-spin" />
+            <Spinner aria-hidden="true" className="size-icon-sm motion-safe:animate-spin" />
           ) : (
             action
           )}
@@ -447,42 +448,42 @@ function ProviderAction({
   if (loggingIn) {
     return (
       <div className="flex shrink-0 items-center gap-2">
-        <span className="text-[12px] font-mono text-muted">waiting…</span>
-        <button
+        <span className="font-mono text-code text-muted">waiting…</span>
+        <Button
+          size="sm"
           onClick={() => {
             cancelDroidProxyLogin();
           }}
-          className={BUTTON_CLASS}
         >
           Cancel
-        </button>
+        </Button>
       </div>
     );
   }
   if (!row.canLoginHere) {
     return (
-      <button
+      <Button
+        size="sm"
         onClick={() => {
           launchDroidProxy();
         }}
         disabled={loginBusy || !appInstalled}
-        className={BUTTON_CLASS}
         title="Open DroidProxy's connection flow"
       >
         {row.accounts.length > 0 ? 'Manage in app' : 'Open to connect'}
-      </button>
+      </Button>
     );
   }
   return (
-    <button
+    <Button
+      size="sm"
       onClick={() => {
         startDroidProxyLogin(row.provider);
       }}
       disabled={loginBusy || loginUnavailable}
       title={loginUnavailable ? 'Install the DroidProxy app to connect here' : undefined}
-      className={BUTTON_CLASS}
     >
       {row.accounts.length > 0 ? 'Add account' : 'Connect'}
-    </button>
+    </Button>
   );
 }
