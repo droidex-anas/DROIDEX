@@ -625,6 +625,43 @@
 }
 
 @layer components {
+  /* The sidebar footer floats over the session list (SidebarFooter). The list
+     reserves the footer's height at its end, and its scrollbar stops above it. */
+  .sidebar-list {
+    padding-bottom: var(--sidebar-footer-height, 0px);
+    scroll-padding-bottom: var(--sidebar-footer-height, 0px);
+  }
+
+  .sidebar-list::-webkit-scrollbar-track {
+    margin-bottom: var(--sidebar-footer-height, 0px);
+  }
+
+  /* While rows sit under the footer they blur and fade into the sidebar tone
+     over its top padding, then disappear behind it. With nothing underneath
+     the layer is invisible, so there is never an edge. The blur sits on its
+     own layer (engineering.md, "Blur on its own layer"). */
+  .sidebar-footer {
+    isolation: isolate;
+  }
+
+  .sidebar-footer::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--sidebar);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 16px);
+    mask-image: linear-gradient(to bottom, transparent, #000 16px);
+    opacity: 0;
+    transition: opacity 150ms ease-out;
+  }
+
+  .sidebar-footer[data-content-under]::before {
+    opacity: 1;
+  }
+
   /* The sidebar update control: a 20px circle that grows leftward into a
      labelled pill while open, with its label sliding out from under a soft mask
      on the edge it is pinned to. The width itself is measured and set in

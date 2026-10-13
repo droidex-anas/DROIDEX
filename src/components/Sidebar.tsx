@@ -5,11 +5,10 @@ import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useSt
 import { useDocumentVisible } from '../hooks/useDocumentVisible';
 import { pickDirectory } from '../lib/desktop';
 import { dismissSidebarCard, loadSidebarCardSeen } from '../lib/sidebarCards';
-import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
-import { SIDEBAR_WELCOME_CARD_ID, SidebarWelcomeCard } from './SidebarWelcomeCard';
+import { SIDEBAR_WELCOME_CARD_ID } from './SidebarWelcomeCard';
 import { BrandMark } from './BrandMark';
 import SidebarSearch from './SidebarSearch';
-import { MessageCirclePlus, Search, Settings, SquarePen } from '@droidex/icons';
+import { MessageCirclePlus, Search, SquarePen } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { Row } from './ui/Row';
 import { Tooltip } from './ui/Tooltip';
@@ -41,7 +40,7 @@ import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 import { sessionResumeId } from '../features/providers/providerIdentity';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
-import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
+import { SidebarFooter } from './SidebarFooter';
 import { SidebarNavigation } from './SidebarNavigation';
 
 export default function Sidebar({
@@ -75,11 +74,9 @@ export default function Sidebar({
   // (Codex-style bell toggle) belong to the sidebar, not the root store.
   const [searchOpen, setSearchOpen] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   useScrolling(scrollRef);
-
-  useEffect(() => bindLazySurfaceIntent('settings', settingsButtonRef.current), []);
 
   const documentVisible = useDocumentVisible();
   const [now, setNow] = useState(() => Date.now());
@@ -370,78 +367,64 @@ export default function Sidebar({
         onChange={activity.update}
         onMarkAllRead={markAllSessionsRead}
       />
-      <div
-        ref={scrollRef}
-        className="scrollbar-while-scrolling flex-1 overflow-y-auto px-2 pb-2 space-y-3"
-      >
-        {unreadOnly && unreadCount === 0 && (
-          <div className="px-3 pt-2 pb-1 text-caption text-muted">No unread sessions.</div>
-        )}
-        {view === 'activity' ? (
-          <SidebarActivity
-            key={preferences.limit}
-            sessions={visibleSessions}
-            activeAppSessionId={state.activeAppSessionId}
-            statusFor={statusFor}
-            renderRow={renderRow}
-            limit={preferences.limit}
-            showSettled={preferences.filter === 'settled'}
-            hiddenCount={agedOutCount}
-          />
-        ) : view === 'pull-requests' ? (
-          <SidebarPullRequests
-            key={preferences.limit}
-            sessions={visibleSessions}
-            metadata={chatMetadata}
-            activeAppSessionId={state.activeAppSessionId}
-            renderRow={renderRow}
-            limit={preferences.limit}
-          />
-        ) : (
-          <SidebarWorkspaceList
-            key={preferences.limit}
-            limit={preferences.limit}
-            workspaces={workspaces}
-            chatSessions={chatSessions}
-            pinnedSessions={pinnedSessions}
-            isFiltered={unreadOnly || preferences.filter !== 'all'}
-            activeAppSessionId={state.activeAppSessionId}
-            renderRow={renderRow}
-            onAddWorkspace={pickAndChat}
-            onNewChat={startChat}
-            onRemoveWorkspace={(cwd) => {
-              dispatch({ type: 'REMOVE_WORKSPACE', cwd });
-            }}
-            onShowEarlierSessions={onShowEarlierSessions}
-          />
-        )}
-      </div>
-
-      {/* Settings */}
-      <div className="px-2 pb-2 pt-3">
-        <AnimatePresence>
-          {welcomeVisible && (
-            <SidebarWelcomeCard
-              onStart={() => {
-                dismissWelcome();
-                newChat();
-              }}
-              onDismiss={dismissWelcome}
-            />
-          )}
-        </AnimatePresence>
-        <div className="flex items-center gap-1">
-          <Row
-            ref={settingsButtonRef}
-            icon={<Settings className="size-icon-md" />}
-            label="Settings"
-            onClick={() => {
-              dispatch({ type: 'TOGGLE_SETTINGS' });
-            }}
-            className="min-w-0 flex-1"
-          />
-          <SidebarAppUpdateButton />
+      {/* The list runs to the bottom of the sidebar and the footer floats over
+          it, so rows pass underneath the Settings row. */}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          className="sidebar-list scrollbar-while-scrolling h-full overflow-y-auto px-2"
+        >
+          <div ref={listRef} className="space-y-3">
+            {unreadOnly && unreadCount === 0 && (
+              <div className="px-3 pt-2 pb-1 text-caption text-muted">No unread sessions.</div>
+            )}
+            {view === 'activity' ? (
+              <SidebarActivity
+                key={preferences.limit}
+                sessions={visibleSessions}
+                activeAppSessionId={state.activeAppSessionId}
+                statusFor={statusFor}
+                renderRow={renderRow}
+                limit={preferences.limit}
+                showSettled={preferences.filter === 'settled'}
+                hiddenCount={agedOutCount}
+              />
+            ) : view === 'pull-requests' ? (
+              <SidebarPullRequests
+                key={preferences.limit}
+                sessions={visibleSessions}
+                metadata={chatMetadata}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                limit={preferences.limit}
+              />
+            ) : (
+              <SidebarWorkspaceList
+                key={preferences.limit}
+                limit={preferences.limit}
+                workspaces={workspaces}
+                chatSessions={chatSessions}
+                pinnedSessions={pinnedSessions}
+                isFiltered={unreadOnly || preferences.filter !== 'all'}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                onAddWorkspace={pickAndChat}
+                onNewChat={startChat}
+                onRemoveWorkspace={(cwd) => {
+                  dispatch({ type: 'REMOVE_WORKSPACE', cwd });
+                }}
+                onShowEarlierSessions={onShowEarlierSessions}
+              />
+            )}
+          </div>
         </div>
+        <SidebarFooter
+          scrollRef={scrollRef}
+          contentRef={listRef}
+          welcomeVisible={welcomeVisible}
+          onStartChat={newChat}
+          onDismissWelcome={dismissWelcome}
+        />
       </div>
 
       <AnimatePresence>
