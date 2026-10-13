@@ -16,7 +16,7 @@ A quiet, raised card for results, errors and updates. Colour lives only in its 1
 - Title in `body-strong`. Optional description in 12/16 `text-secondary`, one line saying what happened or what to do next.
 - One text action at most (Undo, Retry, Restart, View): a 24px chip in `text` at 6%. The close button is a 24px ghost X.
 
-**Behaviour** (matches `src/lib/toast.ts`)
+**Behaviour** (target specification; [Toast.reference.md](Toast.reference.md) lists what ships today)
 - **How long each stays:**
   - Success and info: 4s, or 6s when the toast has an action.
   - Warning: 6s.

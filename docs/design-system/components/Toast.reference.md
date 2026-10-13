@@ -1,6 +1,16 @@
 # Toast: reference implementation
 
-A working reference for the [Toast](Toast.md) design, for whoever implements it in the app. It covers what `src/components/ui/Toaster.tsx` does not yet: the warning, update and loading variants, in-place changes, progress and swipe to dismiss. It replaces `src/lib/toast.ts` and `src/components/ui/Toaster.tsx`, and adds one test. The code is kept here as Markdown so it doesn't compile, lint or run until someone moves it into `src/`.
+A working reference for the [Toast](Toast.md) design, for whoever implements it in the app. It covers what `src/components/ui/Toaster.tsx` and `src/lib/toast.ts` do not yet:
+
+- warning, update and loading variants;
+- errors that stay until dismissed (today `toast.error` expires after the default 3200ms);
+- per-variant timing;
+- actions and descriptions;
+- repeat counts (×2);
+- a stack capped at five, with up to three peeking behind;
+- in-place changes, progress and swipe to dismiss.
+
+It replaces `src/lib/toast.ts` and `src/components/ui/Toaster.tsx`, and adds one test. The code is kept here as Markdown so it doesn't compile, lint or run until someone moves it into `src/`.
 
 ## What it does
 
@@ -19,7 +29,7 @@ A working reference for the [Toast](Toast.md) design, for whoever implements it 
 
 ## Moving it into the app
 
-1. Replace `src/lib/toast.ts` and `src/components/ui/Toaster.tsx` with the code below (the Toaster then imports `../../lib/toast`), and add `src/lib/toast.behaviour.test.ts`.
+1. Replace `src/lib/toast.ts` and `src/components/ui/Toaster.tsx` with the code below, and add `src/lib/toast.behaviour.test.ts`.
 2. The API stays compatible: every existing `toast.success/error/info(message)` and `pushToast(message, variant, ttl)` call keeps working.
 3. **Behaviour change to check:** on `main`, errors disappear after the default timeout. Here they stay until dismissed. Review the 82 `toast.error(...)` calls. Errors that are really transient notices should become `toast.warning` or `toast.info`, or pass `{ ttl: 6000 }`.
 4. Run `npm run typecheck`, `npm run lint` and `npm test`, then check both themes in the running app.
@@ -293,7 +303,7 @@ export const toast = {
 };
 ```
 
-## `src/components/Toaster.tsx`
+## `src/components/ui/Toaster.tsx`
 
 ```tsx
 import {
@@ -314,7 +324,7 @@ import {
   subscribeToasts,
   type ToastItem,
   type ToastVariant,
-} from '../lib/toast';
+} from '../../lib/toast';
 
 // Toast (design system): a raised, borderless card. Colour lives only in the
 // 16px status glyph, with no dots, side bars or tinted fills. Errors stay
@@ -355,7 +365,7 @@ const GLYPH: Record<ToastVariant, ReactNode> = {
   success: <CircleCheckFilled className="h-4 w-4 text-success" />,
   error: <CircleAlertFilled className="h-4 w-4 text-danger" />,
   warning: <AlertTriangleFilled className="h-4 w-4 text-warning" />,
-  update: <CircleArrowUpFilled className="h-4 w-4 text-link" />,
+  update: <CircleArrowUpFilled className="h-4 w-4" style={{ color: 'var(--link)' }} />,
   loading: <Spinner className="h-4 w-4 animate-spin text-muted" />,
   info: null,
 };
