@@ -39,7 +39,7 @@ const CASES = [
   ['palette-color', 'text-danger', 'bg-red-500'],
   ['border-width', 'border-t border-divider', 'border-t'],
   ['font-weight', 'font-semibold', 'font-bold'],
-  ['focus-ring', 'focus-visible:outline-none', 'focus-visible:ring-accent/60'],
+  ['focus-ring', 'focus-visible:ring-focus-ring', 'focus-visible:ring-accent/60'],
   ['uppercase', 'tracking-wide', 'uppercase'],
 ] as const;
 
@@ -68,14 +68,42 @@ test('collects class strings from template quasis, ternaries and cn() calls', ()
   );
 });
 
-test('a divider colour in the same className permits its border and divide widths', () => {
+test('a class helper object contributes its keys, never its values', () => {
   assert.deepEqual(
-    messageIds(lintDesignTokens('<div className={`border-t ${tone} border-divider`} />')),
-    [],
+    messageIds(lintDesignTokens('const cls = cn({ "p-[7px]": wide, flex: true });\n<div className={cls} />')),
+    ['arbitrary-value'],
+  );
+});
+
+test('walks template interpolations and resolves local const strings one level', () => {
+  assert.deepEqual(
+    messageIds(lintDesignTokens('const tone = "bg-red-500";\n<div className={`flex ${tone}`} />')),
+    ['palette-color'],
   );
   assert.deepEqual(
-    messageIds(lintDesignTokens('<div className="divide-y divide-divider border-t border-divider" />')),
-    [],
+    messageIds(lintDesignTokens('const tone = wide ? "p-[7px]" : "px-2";\n<div className={tone} />')),
+    ['arbitrary-value'],
+  );
+});
+
+test('strips variants and ! outside brackets and catches remaining default colours', () => {
+  assert.deepEqual(
+    messageIds(lintDesignTokens('<div className="sm:!text-[length:13px] text-white font-extralight" />')),
+    ['arbitrary-value', 'palette-color', 'font-weight'],
+  );
+});
+
+test('a divider colour exempts only same-variant border widths in the same branch', () => {
+  assert.deepEqual(messageIds(lintDesignTokens('<div className="border-t border-divider" />')), []);
+  assert.deepEqual(messageIds(lintDesignTokens('<div className="hover:border-t hover:border-divider" />')), []);
+  assert.deepEqual(
+    messageIds(lintDesignTokens('<div className="border-t hover:border-divider" />')),
+    ['border-width'],
+  );
+  assert.deepEqual(messageIds(lintDesignTokens('<div className={`border-t ${tone} border-divider`} />')), []);
+  assert.deepEqual(
+    messageIds(lintDesignTokens('<div className={wide ? "border-t border-divider" : "border-t"} />')),
+    ['border-width'],
   );
   assert.deepEqual(messageIds(lintDesignTokens('<div className="border border-accent" />')), [
     'border-width',

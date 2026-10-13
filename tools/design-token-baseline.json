@@ -6,7 +6,8 @@
     "arbitrary-value": 4
   },
   "src/components/AppBlockExpandableSurface.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "palette-color": 1
   },
   "src/components/AppBlockRepair.tsx": {
     "arbitrary-value": 5,
@@ -24,7 +25,7 @@
     "palette-color": 6
   },
   "src/components/AskUserInline.tsx": {
-    "arbitrary-value": 11,
+    "arbitrary-value": 12,
     "border-width": 1
   },
   "src/components/AutonomySelector.tsx": {
@@ -38,6 +39,7 @@
   "src/components/ColorPicker.tsx": {
     "arbitrary-value": 9,
     "border-width": 2,
+    "palette-color": 2,
     "uppercase": 1
   },
   "src/components/CommandPalette.tsx": {
@@ -64,7 +66,7 @@
     "arbitrary-value": 11
   },
   "src/components/DroidProxySettings.tsx": {
-    "arbitrary-value": 15,
+    "arbitrary-value": 25,
     "focus-ring": 4
   },
   "src/components/EditorOpenMenu.tsx": {
@@ -74,7 +76,7 @@
   "src/components/FeedbackModal.tsx": {
     "arbitrary-value": 33,
     "border-width": 2,
-    "palette-color": 2,
+    "palette-color": 3,
     "uppercase": 1
   },
   "src/components/HardwareAccelerationSetting.tsx": {
@@ -91,7 +93,7 @@
     "arbitrary-value": 3
   },
   "src/components/JsonRender.tsx": {
-    "arbitrary-value": 20,
+    "arbitrary-value": 22,
     "border-width": 1,
     "uppercase": 3
   },
@@ -100,10 +102,11 @@
   },
   "src/components/Markdown.tsx": {
     "arbitrary-value": 17,
+    "border-width": 1,
     "uppercase": 1
   },
   "src/components/MarkdownCode.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 7
   },
   "src/components/MarkdownDiagrams.tsx": {
     "arbitrary-value": 3
@@ -114,7 +117,8 @@
   },
   "src/components/McpServerForm.tsx": {
     "arbitrary-value": 20,
-    "focus-ring": 6
+    "focus-ring": 6,
+    "palette-color": 1
   },
   "src/components/McpServersSettings.tsx": {
     "arbitrary-value": 21,
@@ -126,7 +130,8 @@
     "arbitrary-value": 3
   },
   "src/components/MissionControl.tsx": {
-    "arbitrary-value": 48,
+    "arbitrary-value": 50,
+    "palette-color": 1,
     "uppercase": 6
   },
   "src/components/ModelCatalogList.tsx": {
@@ -153,7 +158,8 @@
     "uppercase": 1
   },
   "src/components/PaletteShell.tsx": {
-    "arbitrary-value": 7
+    "arbitrary-value": 7,
+    "palette-color": 1
   },
   "src/components/PermissionInline.tsx": {
     "arbitrary-value": 7
@@ -162,7 +168,7 @@
     "arbitrary-value": 6
   },
   "src/components/PromptInput.tsx": {
-    "arbitrary-value": 11,
+    "arbitrary-value": 12,
     "border-width": 1
   },
   "src/components/RightPanel.tsx": {
@@ -176,7 +182,7 @@
     "arbitrary-value": 1
   },
   "src/components/SessionContextMenu.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 12
   },
   "src/components/SettingsPanel.tsx": {
     "arbitrary-value": 28,
@@ -189,10 +195,11 @@
     "arbitrary-value": 2
   },
   "src/components/SidebarAppUpdateButton.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 4,
+    "palette-color": 1
   },
   "src/components/SidebarCustomize.tsx": {
-    "arbitrary-value": 3,
+    "arbitrary-value": 6,
     "focus-ring": 2
   },
   "src/components/SidebarNavigation.tsx": {
@@ -212,25 +219,31 @@
     "arbitrary-value": 3,
     "focus-ring": 2
   },
+  "src/components/SidebarSessionList.tsx": {
+    "arbitrary-value": 3
+  },
   "src/components/SidebarSessionRow.tsx": {
-    "arbitrary-value": 7
+    "arbitrary-value": 10,
+    "focus-ring": 4
   },
   "src/components/SidebarWelcomeCard.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "palette-color": 5
   },
   "src/components/SidebarWorkspaceList.tsx": {
     "arbitrary-value": 3,
     "focus-ring": 2
   },
   "src/components/SidebarWorkspaceRow.tsx": {
-    "arbitrary-value": 3,
+    "arbitrary-value": 4,
     "focus-ring": 4
   },
   "src/components/SpecModal.tsx": {
-    "arbitrary-value": 6
+    "arbitrary-value": 6,
+    "palette-color": 1
   },
   "src/components/SpecOutline.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 6
   },
   "src/components/SpecRenderer.tsx": {
     "arbitrary-value": 3,
@@ -250,7 +263,8 @@
     "focus-ring": 2
   },
   "src/components/ThemeEditor.tsx": {
-    "arbitrary-value": 10
+    "arbitrary-value": 10,
+    "palette-color": 1
   },
   "src/components/ThemePresetCard.tsx": {
     "arbitrary-value": 10,
@@ -282,7 +296,7 @@
   "src/components/WorktreeRemovalDialog.tsx": {
     "arbitrary-value": 16,
     "border-width": 1,
-    "palette-color": 5
+    "palette-color": 7
   },
   "src/components/WorktreeSettingsRow.tsx": {
     "arbitrary-value": 11,
@@ -328,19 +342,26 @@
     "arbitrary-value": 3
   },
   "src/components/browser/BrowserCard.tsx": {
-    "arbitrary-value": 4,
+    "arbitrary-value": 6,
     "focus-ring": 4
   },
+  "src/components/browser/BrowserPreview.tsx": {
+    "arbitrary-value": 1
+  },
   "src/components/browser/BrowserToolbar.tsx": {
-    "arbitrary-value": 5
+    "arbitrary-value": 6
   },
   "src/components/browser/BrowserWorkspace.tsx": {
     "arbitrary-value": 3,
     "palette-color": 1
   },
   "src/components/browser/DesignModePill.tsx": {
-    "arbitrary-value": 6,
+    "arbitrary-value": 8,
+    "border-width": 1,
     "focus-ring": 2
+  },
+  "src/components/browser/NativeBrowserSurface.tsx": {
+    "palette-color": 1
   },
   "src/components/browser/ViewportMenu.tsx": {
     "arbitrary-value": 4
@@ -382,14 +403,15 @@
   },
   "src/components/composer/FileChip.tsx": {
     "arbitrary-value": 4,
-    "focus-ring": 2
+    "focus-ring": 4
   },
   "src/components/composer/ImageChip.tsx": {
     "arbitrary-value": 3,
     "focus-ring": 2
   },
   "src/components/composer/ImageViewerModal.tsx": {
-    "arbitrary-value": 4
+    "arbitrary-value": 4,
+    "palette-color": 1
   },
   "src/components/composer/PendingPromptPreview.tsx": {
     "arbitrary-value": 2
@@ -407,7 +429,8 @@
     "border-width": 1
   },
   "src/components/composer/UsageLimitTab.tsx": {
-    "arbitrary-value": 2
+    "arbitrary-value": 4,
+    "focus-ring": 6
   },
   "src/components/composer/UsagePanel.tsx": {
     "arbitrary-value": 1
@@ -448,7 +471,8 @@
     "arbitrary-value": 2
   },
   "src/components/environment/ReviewPanel.tsx": {
-    "arbitrary-value": 18
+    "arbitrary-value": 18,
+    "palette-color": 1
   },
   "src/components/environment/StartBranchMenu.tsx": {
     "arbitrary-value": 18,
@@ -466,10 +490,10 @@
   },
   "src/components/files/FilePreviewPane.tsx": {
     "arbitrary-value": 37,
-    "palette-color": 7
+    "palette-color": 10
   },
   "src/components/files/FilesWorkspace.tsx": {
-    "arbitrary-value": 6,
+    "arbitrary-value": 7,
     "focus-ring": 4,
     "palette-color": 3
   },
@@ -480,7 +504,8 @@
     "arbitrary-value": 1
   },
   "src/components/media/ImageLightboxContent.tsx": {
-    "arbitrary-value": 9
+    "arbitrary-value": 9,
+    "palette-color": 1
   },
   "src/components/media/TranscriptImage.tsx": {
     "arbitrary-value": 1
@@ -501,8 +526,8 @@
     "arbitrary-value": 2
   },
   "src/components/onboarding/kit.tsx": {
-    "arbitrary-value": 6,
-    "focus-ring": 4,
+    "arbitrary-value": 9,
+    "focus-ring": 16,
     "uppercase": 1
   },
   "src/components/onboarding/steps/CoverStep.tsx": {
@@ -534,7 +559,7 @@
   "src/components/sidechats/SideChatCloseDialog.tsx": {
     "arbitrary-value": 6,
     "focus-ring": 3,
-    "palette-color": 4
+    "palette-color": 5
   },
   "src/components/sidechats/SideChatComposer.tsx": {
     "arbitrary-value": 1
@@ -560,7 +585,8 @@
     "focus-ring": 2
   },
   "src/components/skeletons/WorkspaceSkeletons.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "palette-color": 1
   },
   "src/components/terminal/TerminalCloseConfirm.tsx": {
     "arbitrary-value": 3,
@@ -580,6 +606,7 @@
     "arbitrary-value": 1
   },
   "src/components/transcript/ProseFileLink.tsx": {
+    "arbitrary-value": 8,
     "focus-ring": 2
   },
   "src/components/transcript/ResponseActions.tsx": {
@@ -596,7 +623,7 @@
     "focus-ring": 2
   },
   "src/components/transcript/primitives.tsx": {
-    "arbitrary-value": 15,
+    "arbitrary-value": 17,
     "uppercase": 2
   },
   "src/components/transcript/rows.tsx": {
@@ -617,7 +644,7 @@
     "arbitrary-value": 1
   },
   "src/features/automations/AutomationEditor.tsx": {
-    "arbitrary-value": 10
+    "arbitrary-value": 11
   },
   "src/features/automations/AutomationList.tsx": {
     "arbitrary-value": 1
@@ -650,14 +677,15 @@
     "arbitrary-value": 10
   },
   "src/features/automations/ScheduledPrompts.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 3,
+    "palette-color": 2
   },
   "src/features/automations/SelectMenu.tsx": {
-    "arbitrary-value": 7,
+    "arbitrary-value": 9,
     "border-width": 1
   },
   "src/features/automations/TimeFields.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 7
   },
   "src/features/projects/ProjectPlan.tsx": {
     "arbitrary-value": 4,
@@ -701,7 +729,7 @@
     "arbitrary-value": 7
   },
   "src/features/pull-requests/components/PrCollapse.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 3
   },
   "src/features/pull-requests/components/PrCommentCard.tsx": {
     "arbitrary-value": 6,
@@ -714,7 +742,7 @@
     "arbitrary-value": 4
   },
   "src/features/pull-requests/components/PrDetail.tsx": {
-    "arbitrary-value": 3
+    "arbitrary-value": 4
   },
   "src/features/pull-requests/components/PrDiff.tsx": {
     "arbitrary-value": 4
@@ -728,7 +756,8 @@
   },
   "src/features/pull-requests/components/PrMergeButton.tsx": {
     "arbitrary-value": 3,
-    "hex-color": 2
+    "hex-color": 2,
+    "palette-color": 1
   },
   "src/features/pull-requests/components/PrReviewButton.tsx": {
     "arbitrary-value": 6,

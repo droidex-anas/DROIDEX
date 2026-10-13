@@ -3,8 +3,11 @@
 // committed baseline in tools/design-token-baseline.json. The baseline only
 // shrinks: a rise fails, and a fall fails until the baseline is lowered with
 // `npm run quality:design-tokens -- --update-baseline` (the analogue of
-// eslint's --prune-suppressions). Surface steps of the design-system
-// migration remove violations, run the update, and commit the lower numbers.
+// eslint's --prune-suppressions, which also refuses to write a rise).
+// `--update-baseline --force` rewrites through a rise once, for a deliberate
+// change to the matchers; the raise is printed so the pull request owns it.
+// Surface steps of the design-system migration remove violations, run the
+// update, and commit the lower numbers.
 
 import { Linter } from 'eslint';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -21,6 +24,7 @@ const option = (name) => {
   return index === -1 ? undefined : args[index + 1];
 };
 const updateBaseline = args.includes('--update-baseline');
+const force = args.includes('--force');
 const root = resolve(option('root') ?? repoRoot);
 const baselinePath = resolve(option('baseline') ?? join(root, 'tools', 'design-token-baseline.json'));
 
@@ -36,6 +40,9 @@ const exempt = new Set(EXEMPT_FILES.map((file) => join(root, file)));
 const files = walkTsxFiles(join(root, 'src'))
   .filter((file) => !exempt.has(file))
   .sort();
+
+// Baseline keys use forward slashes on every platform.
+const toKey = (file) => relative(root, file).replaceAll('\\', '/');
 
 // Same rule as eslint.config.js, without the baseline option, so every
 // violation is reported and the counts here can never drift from lint's.
@@ -58,7 +65,7 @@ for (const file of files) {
   const messages = linter.verify(readFileSync(file, 'utf8'), lintConfig, { filePath: file });
   const parseError = messages.find((message) => message.ruleId === null);
   if (parseError) {
-    failures.push(`${relative(root, file)}: ${parseError.message}`);
+    failures.push(`${toKey(file)}: ${parseError.message}`);
     continue;
   }
   // Directive and unknown-rule notices from this minimal config carry other
@@ -69,7 +76,7 @@ for (const file of files) {
   }
   if (Object.keys(fileCounts).length > 0) {
     counts.set(
-      relative(root, file),
+      toKey(file),
       Object.fromEntries(Object.keys(fileCounts).sort().map((category) => [category, fileCounts[category]])),
     );
   }
@@ -106,6 +113,14 @@ const totalsLine = Object.keys(totals)
   .join(', ');
 
 if (updateBaseline) {
+  if (rises.length > 0 && !force) {
+    console.error(
+      'Refusing to raise the design-token baseline:\n' +
+        rises.join('\n') +
+        '\nThe baseline only moves down. Fix the new violations, or pass --force for a deliberate matcher change.',
+    );
+    process.exit(1);
+  }
   writeFileSync(
     baselinePath,
     JSON.stringify(Object.fromEntries([...counts.keys()].sort().map((file) => [file, counts.get(file)])), null, 2) +

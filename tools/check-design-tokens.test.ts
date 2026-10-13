@@ -46,6 +46,20 @@ test('a fall fails until the baseline is lowered', (t) => {
   assert.match(result.stderr, /--update-baseline/);
 });
 
+test('--update-baseline refuses to raise a count', (t) => {
+  const { run, root } = createFixture(t, { 'src/components/Case.tsx': { 'arbitrary-value': 1 } });
+  const result = run('--update-baseline');
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Refusing to raise/);
+  assert.match(result.stderr, /src\/components\/Case\.tsx: arbitrary-value 1 → 2 \(\+1\)/);
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'tools/design-token-baseline.json'), 'utf8')), {
+    'src/components/Case.tsx': { 'arbitrary-value': 1 },
+  });
+  const forced = run('--update-baseline', '--force');
+  assert.equal(forced.status, 0, forced.stdout + forced.stderr);
+  assert.match(forced.stderr, /baseline raised: src\/components\/Case\.tsx: arbitrary-value 1 → 2/);
+});
+
 test('--update-baseline rewrites the counts, and the exempt icon file stays uncounted', (t) => {
   const { run, root } = createFixture(t, { 'src/components/Case.tsx': { 'arbitrary-value': 3 } });
   const update = run('--update-baseline');

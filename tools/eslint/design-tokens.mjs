@@ -10,10 +10,9 @@
 
 import { relative } from 'node:path';
 
-// The ring classes the focus-ring token makes legal. Empty until the token
-// lands; add the utility here (for example 'ring-focus-ring') and existing
-// focus-visible rings migrate to it.
-const ALLOWED_FOCUS_CLASSES = [];
+// Ring classes the focus-ring token makes legal: components that opt out of
+// the global :focus-visible outline (src/index.css) ring with this token.
+const ALLOWED_FOCUS_CLASSES = ['ring-focus-ring'];
 
 // Functions whose string arguments are class values, wherever they are called.
 const CLASS_HELPERS = new Set(['cn', 'clsx', 'twMerge', 'classnames']);
@@ -25,25 +24,37 @@ export const EXEMPT_FILES = ['src/components/ModelIcon.tsx', 'src/components/env
 
 const HEX_COLOR = /#[0-9a-fA-F]{3,8}\b/;
 const PALETTE_COLOR =
-  /^(?:text|bg|border|ring|divide|fill|stroke|from|to|via|outline|decoration|caret|accent|shadow|placeholder)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}(?:\/\d+)?$/;
+  /^(?:text|bg|border|ring|divide|fill|stroke|from|to|via|outline|decoration|caret|accent|shadow|placeholder)-(?:black|white|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d{2,3})?(?:\/\d+)?$/;
 const ARBITRARY_VALUE = /-\[[^\]]*\]/;
 const BORDER_WIDTH = /^border(?:-[trblxy]{1,2})?(?:-[2-8])?$/;
 const BORDER_DIVIDER_COLOR = /^border(?:-[trblxy]{1,2})?-divider(?:\/\d+)?$/;
 const DIVIDE_WIDTH = /^divide-[xy](?:-[2-8])?$/;
 const DIVIDE_DIVIDER_COLOR = /^divide-divider(?:\/\d+)?$/;
-const FONT_WEIGHT = /^font-(?:bold|light|thin|extrabold|black)$/;
+const FONT_WEIGHT = /^font-(?:bold|light|thin|extralight|extrabold|black)$/;
 const FOCUS_VISIBLE = /(^|:)focus-visible:/;
 
-const stripVariants = (token) => token.slice(token.lastIndexOf(':') + 1);
+// Splits a class token into its variant prefix and utility, ignoring colons
+// inside arbitrary-value brackets ('sm:!text-[length:13px]' → 'sm', 'text-[…]').
+function splitClassToken(token) {
+  let cut = -1;
+  let depth = 0;
+  for (let index = 0; index < token.length; index++) {
+    const char = token[index];
+    if (char === '[') depth++;
+    else if (char === ']') depth = Math.max(0, depth - 1);
+    else if (char === ':' && depth === 0) cut = index;
+  }
+  const cls = cut === -1 ? token : token.slice(cut + 1);
+  return { prefix: cut === -1 ? '' : token.slice(0, cut), cls: cls.replace(/^!/, '') };
+}
 
-function categoryOf(token, hasBorderDivider, hasDivideDivider) {
-  const cls = stripVariants(token);
+function categoryOf(token, borderDividers, divideDividers) {
+  const { prefix, cls } = splitClassToken(token);
   if (HEX_COLOR.test(cls)) return 'hex-color';
   if (PALETTE_COLOR.test(cls)) return 'palette-color';
   if (ARBITRARY_VALUE.test(cls)) return 'arbitrary-value';
-  if ((BORDER_WIDTH.test(cls) && !hasBorderDivider) || (DIVIDE_WIDTH.test(cls) && !hasDivideDivider)) {
-    return 'border-width';
-  }
+  if (BORDER_WIDTH.test(cls) && !borderDividers.has(prefix)) return 'border-width';
+  if (DIVIDE_WIDTH.test(cls) && !divideDividers.has(prefix)) return 'border-width';
   if (FONT_WEIGHT.test(cls)) return 'font-weight';
   if (FOCUS_VISIBLE.test(token) && /^ring/.test(cls) && !ALLOWED_FOCUS_CLASSES.includes(cls)) {
     return 'focus-ring';
@@ -52,60 +63,122 @@ function categoryOf(token, hasBorderDivider, hasDivideDivider) {
   return null;
 }
 
-function dividerAllowances(value) {
-  const tokens = value.split(/\s+/);
-  return {
-    hasBorderDivider: tokens.some((token) => BORDER_DIVIDER_COLOR.test(token)),
-    hasDivideDivider: tokens.some((token) => DIVIDE_DIVIDER_COLOR.test(token)),
-  };
+// A border width is exempted only by a divider colour carrying the same
+// variant prefix, collected from the strings that reach the element together.
+function dividerPrefixes(tokens) {
+  const border = new Set();
+  const divide = new Set();
+  for (const token of tokens) {
+    const { prefix, cls } = splitClassToken(token);
+    if (BORDER_DIVIDER_COLOR.test(cls)) border.add(prefix);
+    if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
+  }
+  return { border, divide };
 }
 
 function helperName(callee) {
   return callee?.type === 'Identifier' && CLASS_HELPERS.has(callee.name);
 }
 
-// Walks a className value (or a helper call's arguments) and reports every
-// string that can end up on an element. Template quasis and helper arguments
-// are checked piece by piece, but their divider allowance is computed from the
-// pieces together, because they all land on the same element.
-function walkClassStrings(node, report, seen) {
+const isStringLiteral = (node) => node?.type === 'Literal' && typeof node.value === 'string';
+const isTernaryOfStringLiterals = (node) =>
+  node?.type === 'ConditionalExpression' &&
+  isStringLiteral(node.consequent) &&
+  isStringLiteral(node.alternate);
+
+// Resolves `const tone = '…'` (or a ternary of such literals) one level up the
+// scope chain, same file, when used directly in a className or class helper.
+function makeConstResolver(context) {
+  return (identifier) => {
+    let scope = context.sourceCode.getScope(identifier);
+    while (scope) {
+      const variable = scope.set.get(identifier.name);
+      if (variable) {
+        const definition = variable.defs[0];
+        if (
+          variable.defs.length === 1 &&
+          definition?.type === 'Variable' &&
+          definition.parent?.kind === 'const'
+        ) {
+          const { init } = definition.node;
+          if (isStringLiteral(init) || isTernaryOfStringLiterals(init)) return init;
+        }
+        return null;
+      }
+      scope = scope.upper;
+    }
+    return null;
+  };
+}
+
+// Collects the class strings reachable from a node into groups of strings that
+// can appear together on one element: unconditional parts share the current
+// group, and every conditional alternative (ternary branches, `&&`/`||`
+// operands, clsx object keys) starts its own, so a divider colour in one
+// branch never exempts a border width in another.
+function collectClassStrings(node, group, forkedGroups, resolve, seen) {
+  const fork = (branch) => {
+    const forked = [];
+    forkedGroups.push(forked);
+    collectClassStrings(branch, forked, forkedGroups, resolve, seen);
+  };
   switch (node?.type) {
     case 'Literal':
-      if (typeof node.value === 'string') report(node.value, node);
+      if (typeof node.value === 'string') group.push({ text: node.value, node });
       break;
-    case 'TemplateLiteral': {
-      const allowances = dividerAllowances(node.quasis.map((quasi) => quasi.value.cooked ?? '').join(' '));
-      for (const quasi of node.quasis) report(quasi.value.cooked ?? '', quasi, allowances);
+    case 'TemplateLiteral':
+      for (const quasi of node.quasis) group.push({ text: quasi.value.cooked ?? '', node: quasi });
+      for (const expression of node.expressions) {
+        collectClassStrings(expression, group, forkedGroups, resolve, seen);
+      }
       break;
-    }
     case 'ConditionalExpression':
-      walkClassStrings(node.consequent, report, seen);
-      walkClassStrings(node.alternate, report, seen);
+      fork(node.consequent);
+      fork(node.alternate);
       break;
     case 'LogicalExpression':
-      walkClassStrings(node.left, report, seen);
-      walkClassStrings(node.right, report, seen);
+      fork(node.left);
+      fork(node.right);
       break;
     case 'ArrayExpression':
-      for (const element of node.elements) walkClassStrings(element, report, seen);
+      for (const element of node.elements) {
+        collectClassStrings(element, group, forkedGroups, resolve, seen);
+      }
       break;
     case 'ObjectExpression':
+      // clsx-style objects: the keys are the classes, the values the conditions.
       for (const property of node.properties) {
-        if (property.type === 'Property') walkClassStrings(property.value, report, seen);
+        if (property.type !== 'Property' || property.computed) continue;
+        const forked = [];
+        forkedGroups.push(forked);
+        if (property.key.type === 'Identifier') {
+          forked.push({ text: property.key.name, node: property.key });
+        } else if (isStringLiteral(property.key)) {
+          forked.push({ text: property.key.value, node: property.key });
+        }
       }
       break;
     case 'JSXExpressionContainer':
-      walkClassStrings(node.expression, report, seen);
+      collectClassStrings(node.expression, group, forkedGroups, resolve, seen);
       break;
     case 'CallExpression': {
       if (seen.has(node) || !helperName(node.callee)) break;
       seen.add(node);
-      const parts = [];
       for (const argument of node.arguments) {
-        walkClassStrings(argument, (text, node) => parts.push({ text, node }), seen);
+        collectClassStrings(argument, group, forkedGroups, resolve, seen);
       }
-      const allowances = dividerAllowances(parts.map((part) => part.text).join(' '));
-      for (const part of parts) report(part.text, part.node, allowances);
+      break;
+    }
+    case 'Identifier': {
+      const init = resolve(node);
+      if (!init) break;
+      // Report resolved strings at the use site; the definition may be far
+      // from the element that wears them.
+      const parts = [];
+      const nested = [];
+      collectClassStrings(init, parts, nested, resolve, seen);
+      group.push(...parts.map((part) => ({ ...part, node })));
+      for (const forked of nested) forkedGroups.push(forked.map((part) => ({ ...part, node })));
       break;
     }
   }
@@ -135,7 +208,7 @@ export default {
       'palette-color':
         "Tailwind default palette '{{cls}}'. Use a theme token (bg-active, text-secondary, text-danger).{{note}}",
       'border-width':
-        "Border width '{{cls}}'. Separate with tone, space and shadow; the only hairline is a border-divider colour in the same className.{{note}}",
+        "Border width '{{cls}}'. Separate with tone, space and shadow; the only hairline is a border-divider colour with the same variant in the same className.{{note}}",
       'font-weight': "Font weight '{{cls}}'. Use font-medium or font-semibold.{{note}}",
       'focus-ring':
         "Focus ring '{{cls}}'. Use the focus-ring token (ALLOWED_FOCUS_CLASSES in tools/eslint/design-tokens.mjs).{{note}}",
@@ -147,30 +220,42 @@ export default {
   create(context) {
     const [{ baseline, rootDir } = {}] = context.options;
     const hasBaseline = rootDir !== undefined;
+    const resolve = makeConstResolver(context);
     const findings = [];
     const seen = new Set();
 
-    const report = (text, node, allowances) => {
-      const { hasBorderDivider, hasDivideDivider } = allowances ?? dividerAllowances(text);
-      for (const token of text.split(/\s+/)) {
-        const category = token && categoryOf(token, hasBorderDivider, hasDivideDivider);
-        if (category) findings.push({ category, cls: token, node });
+    const visitValue = (node) => {
+      const group = [];
+      const forkedGroups = [];
+      collectClassStrings(node, group, forkedGroups, resolve, seen);
+      for (const strings of [group, ...forkedGroups]) {
+        if (strings.length === 0) continue;
+        const { border, divide } = dividerPrefixes(
+          strings.flatMap((part) => part.text.split(/\s+/).filter(Boolean)),
+        );
+        for (const part of strings) {
+          for (const token of part.text.split(/\s+/)) {
+            const category = token && categoryOf(token, border, divide);
+            if (category) findings.push({ category, cls: token, node: part.node });
+          }
+        }
       }
     };
 
     return {
       JSXAttribute(node) {
         if (node.name.type === 'JSXIdentifier' && node.name.name === 'className') {
-          walkClassStrings(node.value, report, seen);
+          visitValue(node.value);
         }
       },
       CallExpression(node) {
-        walkClassStrings(node, report, seen);
+        visitValue(node);
       },
       'Program:exit'() {
-        const fileBaseline = hasBaseline
-          ? baseline[relative(rootDir, context.filename)] ?? {}
-          : {};
+        const fileKey = hasBaseline
+          ? relative(rootDir, context.filename).replaceAll('\\', '/')
+          : '';
+        const fileBaseline = hasBaseline ? baseline[fileKey] ?? {} : {};
         const byCategory = new Map();
         for (const finding of findings) {
           const list = byCategory.get(finding.category) ?? [];
