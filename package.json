@@ -86,6 +86,7 @@
     "@electron/asar": "^3.4.1",
     "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^9.39.4",
+    "@floating-ui/react": "0.27.20",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@playwright/test": "^1.61.0",
     "@tanstack/react-virtual": "^3.14.10",
