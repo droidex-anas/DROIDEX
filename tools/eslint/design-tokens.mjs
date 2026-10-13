@@ -63,31 +63,22 @@ function categoryOf(token, borderDividers, divideDividers) {
   return null;
 }
 
-// A border width is exempted only by a divider colour carrying the same
-// variant prefix, collected from the strings that reach the element together.
-function dividerPrefixes(tokens) {
-  const border = new Set();
-  const divide = new Set();
-  for (const token of tokens) {
-    const { prefix, cls } = splitClassToken(token);
-    if (BORDER_DIVIDER_COLOR.test(cls)) border.add(prefix);
-    if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
-  }
-  return { border, divide };
-}
-
 function helperName(callee) {
   return callee?.type === 'Identifier' && CLASS_HELPERS.has(callee.name);
 }
 
 const isStringLiteral = (node) => node?.type === 'Literal' && typeof node.value === 'string';
-const isTernaryOfStringLiterals = (node) =>
+const isStaticTemplate = (node) =>
+  node?.type === 'TemplateLiteral' && node.expressions.every(isStringLiteral);
+const isResolvableString = (node) => isStringLiteral(node) || isStaticTemplate(node);
+const isTernaryOfResolvableStrings = (node) =>
   node?.type === 'ConditionalExpression' &&
-  isStringLiteral(node.consequent) &&
-  isStringLiteral(node.alternate);
+  isResolvableString(node.consequent) &&
+  isResolvableString(node.alternate);
 
-// Resolves `const tone = '…'` (or a ternary of such literals) one level up the
-// scope chain, same file, when used directly in a className or class helper.
+// Resolves `const tone = '…'`, a template of literals, or a ternary of those,
+// one level up the scope chain, same file, when used directly in a className
+// or class helper.
 function makeConstResolver(context) {
   return (identifier) => {
     let scope = context.sourceCode.getScope(identifier);
@@ -98,10 +89,10 @@ function makeConstResolver(context) {
         if (
           variable.defs.length === 1 &&
           definition?.type === 'Variable' &&
-          definition.parent?.kind === 'const'
+          definition.parent?.kind === 'const' &&
+          (isResolvableString(definition.node.init) || isTernaryOfResolvableStrings(definition.node.init))
         ) {
-          const { init } = definition.node;
-          if (isStringLiteral(init) || isTernaryOfStringLiterals(init)) return init;
+          return definition.node.init;
         }
         return null;
       }
@@ -111,25 +102,29 @@ function makeConstResolver(context) {
   };
 }
 
-// Collects the class strings reachable from a node into groups of strings that
-// can appear together on one element: unconditional parts share the current
-// group, and every conditional alternative (ternary branches, `&&`/`||`
-// operands, clsx object keys) starts its own, so a divider colour in one
-// branch never exempts a border width in another.
-function collectClassStrings(node, group, forkedGroups, resolve, seen) {
+// A group of class strings that appear together on one element. `forks` holds
+// the conditional alternatives found inside it (ternary branches, `&&`/`||`
+// operands, clsx object keys); each fork inherits this group's unconditional
+// divider colours through `parent`, while sibling forks stay independent.
+function newGroup(parent) {
+  return { parts: [], forks: [], parent };
+}
+
+// Collects the class strings reachable from a node into `group` and its forks.
+function collectClassStrings(node, group, resolve, seen) {
   const fork = (branch) => {
-    const forked = [];
-    forkedGroups.push(forked);
-    collectClassStrings(branch, forked, forkedGroups, resolve, seen);
+    const forked = newGroup(group);
+    group.forks.push(forked);
+    collectClassStrings(branch, forked, resolve, seen);
   };
   switch (node?.type) {
     case 'Literal':
-      if (typeof node.value === 'string') group.push({ text: node.value, node });
+      if (typeof node.value === 'string') group.parts.push({ text: node.value, node });
       break;
     case 'TemplateLiteral':
-      for (const quasi of node.quasis) group.push({ text: quasi.value.cooked ?? '', node: quasi });
+      for (const quasi of node.quasis) group.parts.push({ text: quasi.value.cooked ?? '', node: quasi });
       for (const expression of node.expressions) {
-        collectClassStrings(expression, group, forkedGroups, resolve, seen);
+        collectClassStrings(expression, group, resolve, seen);
       }
       break;
     case 'ConditionalExpression':
@@ -141,32 +136,28 @@ function collectClassStrings(node, group, forkedGroups, resolve, seen) {
       fork(node.right);
       break;
     case 'ArrayExpression':
-      for (const element of node.elements) {
-        collectClassStrings(element, group, forkedGroups, resolve, seen);
-      }
+      for (const element of node.elements) collectClassStrings(element, group, resolve, seen);
       break;
     case 'ObjectExpression':
       // clsx-style objects: the keys are the classes, the values the conditions.
       for (const property of node.properties) {
         if (property.type !== 'Property' || property.computed) continue;
-        const forked = [];
-        forkedGroups.push(forked);
+        const forked = newGroup(group);
+        group.forks.push(forked);
         if (property.key.type === 'Identifier') {
-          forked.push({ text: property.key.name, node: property.key });
+          forked.parts.push({ text: property.key.name, node: property.key });
         } else if (isStringLiteral(property.key)) {
-          forked.push({ text: property.key.value, node: property.key });
+          forked.parts.push({ text: property.key.value, node: property.key });
         }
       }
       break;
     case 'JSXExpressionContainer':
-      collectClassStrings(node.expression, group, forkedGroups, resolve, seen);
+      collectClassStrings(node.expression, group, resolve, seen);
       break;
     case 'CallExpression': {
       if (seen.has(node) || !helperName(node.callee)) break;
       seen.add(node);
-      for (const argument of node.arguments) {
-        collectClassStrings(argument, group, forkedGroups, resolve, seen);
-      }
+      for (const argument of node.arguments) collectClassStrings(argument, group, resolve, seen);
       break;
     }
     case 'Identifier': {
@@ -174,11 +165,15 @@ function collectClassStrings(node, group, forkedGroups, resolve, seen) {
       if (!init) break;
       // Report resolved strings at the use site; the definition may be far
       // from the element that wears them.
-      const parts = [];
-      const nested = [];
-      collectClassStrings(init, parts, nested, resolve, seen);
-      group.push(...parts.map((part) => ({ ...part, node })));
-      for (const forked of nested) forkedGroups.push(forked.map((part) => ({ ...part, node })));
+      const resolved = newGroup(group);
+      collectClassStrings(init, resolved, resolve, seen);
+      group.parts.push(...resolved.parts.map((part) => ({ ...part, node })));
+      group.forks.push(
+        ...resolved.forks.map((forked) => {
+          forked.parts = forked.parts.map((part) => ({ ...part, node }));
+          return forked;
+        }),
+      );
       break;
     }
   }
@@ -224,22 +219,30 @@ export default {
     const findings = [];
     const seen = new Set();
 
-    const visitValue = (node) => {
-      const group = [];
-      const forkedGroups = [];
-      collectClassStrings(node, group, forkedGroups, resolve, seen);
-      for (const strings of [group, ...forkedGroups]) {
-        if (strings.length === 0) continue;
-        const { border, divide } = dividerPrefixes(
-          strings.flatMap((part) => part.text.split(/\s+/).filter(Boolean)),
-        );
-        for (const part of strings) {
-          for (const token of part.text.split(/\s+/)) {
-            const category = token && categoryOf(token, border, divide);
-            if (category) findings.push({ category, cls: token, node: part.node });
-          }
+    // Dividers from unconditional parts apply inside conditional forks;
+    // sibling alternatives never exempt each other.
+    const reportGroup = (group, inherited) => {
+      const border = new Set(inherited.border);
+      const divide = new Set(inherited.divide);
+      for (const token of group.parts.flatMap((part) => part.text.split(/\s+/))) {
+        if (!token) continue;
+        const { prefix, cls } = splitClassToken(token);
+        if (BORDER_DIVIDER_COLOR.test(cls)) border.add(prefix);
+        if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
+      }
+      for (const part of group.parts) {
+        for (const token of part.text.split(/\s+/)) {
+          const category = token && categoryOf(token, border, divide);
+          if (category) findings.push({ category, cls: token, node: part.node });
         }
       }
+      for (const forked of group.forks) reportGroup(forked, { border, divide });
+    };
+
+    const visitValue = (node) => {
+      const root = newGroup(null);
+      collectClassStrings(node, root, resolve, seen);
+      if (root.parts.length > 0 || root.forks.length > 0) reportGroup(root, { border: new Set(), divide: new Set() });
     };
 
     return {

@@ -51,9 +51,12 @@ for (const [category, allowed, rejected] of CASES) {
 }
 
 test('collects class strings from template quasis, ternaries and cn() calls', () => {
+  assert.deepEqual(messageIds(lintDesignTokens('const cls = `flex p-[7px]`;\n<div className={cls} />')), [
+    'arbitrary-value',
+  ]);
   assert.deepEqual(
-    messageIds(lintDesignTokens('const cls = `flex ${gap} p-[7px]`;\n<div className={cls} />')),
-    [],
+    messageIds(lintDesignTokens('const cls = `flex ${"text-white"} text-secondary`;\n<div className={cls} />')),
+    ['palette-color'],
   );
   assert.deepEqual(messageIds(lintDesignTokens('<div className={`flex ${gap} p-[7px]`} />')), [
     'arbitrary-value',
@@ -108,6 +111,21 @@ test('a divider colour exempts only same-variant border widths in the same branc
   assert.deepEqual(messageIds(lintDesignTokens('<div className="border border-accent" />')), [
     'border-width',
   ]);
+});
+
+test('conditional branches inherit divider allowances from unconditional parts', () => {
+  assert.deepEqual(
+    messageIds(lintDesignTokens("const cls = cn('border-divider', active && 'border-t');\n<div className={cls} />")),
+    [],
+  );
+  assert.deepEqual(
+    messageIds(lintDesignTokens('<div className={`border-divider ${wide ? "border-t" : "border-t-2"}`} />')),
+    [],
+  );
+  assert.deepEqual(
+    messageIds(lintDesignTokens('<div className={wide ? "border-t" : "border-divider"} />')),
+    ['border-width'],
+  );
 });
 
 test('a baseline suppresses reports up to its count per category', () => {
