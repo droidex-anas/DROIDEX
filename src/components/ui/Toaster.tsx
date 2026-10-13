@@ -10,6 +10,7 @@ import {
   type ToastVariant,
 } from '../../lib/toast';
 import { cn } from './cn';
+import { pushEscapeLayer } from './escapeStack';
 
 const TOAST_WIDTH_PX = 356;
 const STACK_SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const;
@@ -49,13 +50,26 @@ function resumeAll(toasts: ToastItem[]) {
 // aria-atomic and re-announce the whole stack whenever one arrives.
 export default function Toaster() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [focusedId, setFocusedId] = useState<number | null>(null);
   const regionRef = useRef<HTMLElement>(null);
 
   useEffect(() => subscribeToasts(setToasts), []);
 
+  // A focused toast is the topmost Escape layer, so Escape dismisses it and
+  // nothing beneath it (an open popover, Settings).
+  const escapeTargetId = toasts.some((t) => t.id === focusedId) ? focusedId : null;
   useEffect(() => {
-    // A toast raised while the window is in the background waits for it.
-    if (!document.hasFocus()) pauseAll(toasts);
+    if (escapeTargetId === null) return;
+    return pushEscapeLayer(() => {
+      dismissToast(escapeTargetId);
+    });
+  }, [escapeTargetId]);
+
+  useEffect(() => {
+    // A toast raised while the window is in the background, or while the
+    // stack is hovered or focused, waits like the ones already there.
+    const occupied = regionRef.current?.matches(':hover, :focus-within') === true;
+    if (!document.hasFocus() || occupied) pauseAll(toasts);
     const onBlur = () => {
       pauseAll(toasts);
     };
@@ -115,8 +129,11 @@ export default function Toaster() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12, ease: 'easeIn' } }}
             transition={STACK_SPRING}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') dismissToast(t.id);
+            onFocus={() => {
+              setFocusedId(t.id);
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setFocusedId(null);
             }}
             style={{ width: TOAST_WIDTH_PX }}
             className="group pointer-events-auto flex select-none items-start gap-2.5 rounded-lg bg-raised py-3 pl-3.5 pr-2.5 shadow-lg"

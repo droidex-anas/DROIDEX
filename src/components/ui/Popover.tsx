@@ -54,9 +54,11 @@ export function Popover({
     offsetPx: 4,
   });
 
+  // floating-ui keeps the last opening's middleware data while closed, so
+  // only trust `anchorHidden` once this opening has been positioned.
   useEffect(() => {
-    if (open && anchorHidden) onClose();
-  }, [open, anchorHidden, onClose]);
+    if (open && isPositioned && anchorHidden) onClose();
+  }, [open, isPositioned, anchorHidden, onClose]);
 
   // If focus is inside the panel when it closes (Escape from a search input,
   // an activated row unmounting), it would fall to <body>; hand it back to the
