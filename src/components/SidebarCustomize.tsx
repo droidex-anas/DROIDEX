@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from '@droidex/icons';
 import { Button } from './ui/Button';
-import { Menu } from './ui/Menu';
 import { Popover } from './ui/Popover';
+import { pushEscapeLayer } from './ui/escapeStack';
 import { Tooltip } from './ui/Tooltip';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import {
@@ -126,7 +126,7 @@ function FlyoutRow<T extends string | number>({
       {isOpen && (
         // The gap to the flyout is padding on a wrapper, not a margin, so the
         // pointer never leaves the menu while crossing it.
-        <div className="absolute -top-1.5 left-full pl-1.5" onMouseEnter={onSettle}>
+        <div className="absolute -top-1.5 left-full pl-3" onMouseEnter={onSettle}>
           <div role="menu" aria-label={label} className="w-56 rounded-lg bg-raised p-1.5 shadow-lg">
             {options.map((option) => {
               const selected = option.value === value;
@@ -207,6 +207,18 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
     switchTimer.current = null;
     setSubmenu(null);
   };
+  // An open flyout is its own Escape layer above the popover's, so Escape
+  // backs out one level and returns focus to the row that opened it.
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (submenu === null) return;
+    return pushEscapeLayer(() => {
+      menuRef.current?.querySelector<HTMLElement>(`[data-submenu="${submenu}"] > button`)?.focus();
+      if (switchTimer.current) clearTimeout(switchTimer.current);
+      switchTimer.current = null;
+      setSubmenu(null);
+    });
+  }, [submenu]);
   const filtered = preferences.filter !== DEFAULT_SIDEBAR_PREFERENCES.filter;
   const customized =
     filtered ||
@@ -277,6 +289,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
         className="overflow-visible"
       >
         <div
+          ref={menuRef}
           className="p-1.5"
           onKeyDown={onKeyDown}
           onMouseMove={(event) => {
@@ -336,7 +349,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('limit', limit);
             }}
           />
-          <Menu.Divider />
+          <div role="separator" className="h-2" />
           <div className="flex items-center px-2 pb-1 pt-1.5 text-label text-muted">
             <span className="flex-1">Filters</span>
             {customized && (
@@ -370,7 +383,7 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('filter', filter);
             }}
           />
-          <Menu.Divider />
+          <div role="separator" className="h-2" />
           <button
             className={`${ROW} disabled:text-muted`}
             disabled={unreadCount === 0}

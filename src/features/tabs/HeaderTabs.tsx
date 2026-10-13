@@ -250,8 +250,8 @@ const TabList = memo(function TabList() {
               transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
               className={`group relative flex h-control-sm w-52 min-w-32 items-center rounded-md transition-colors ${
                 active
-                  ? 'bg-elevated/60 text-primary'
-                  : 'text-muted hover:bg-elevated/40 hover:text-primary'
+                  ? 'bg-active text-primary'
+                  : 'text-muted hover:bg-elevated hover:text-primary'
               }`}
             >
               <Tooltip label={item.title} placement="bottom" className="h-full min-w-0 flex-1">

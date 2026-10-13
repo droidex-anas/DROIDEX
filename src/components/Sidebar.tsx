@@ -13,6 +13,7 @@ import { MessageCirclePlus, Search, Settings, SquarePen } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { Row } from './ui/Row';
 import { Tooltip } from './ui/Tooltip';
+import { useScrolling } from './ui/useScrolling';
 import { UnreadFilterActions } from './UnreadFilterActions';
 import { buildWorkspaceSections, resolveNewChatCwd, type WorkspaceScope } from '../lib/workspaces';
 import { SidebarCustomize } from './SidebarCustomize';
@@ -75,6 +76,8 @@ export default function Sidebar({
   const [searchOpen, setSearchOpen] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useScrolling(scrollRef);
 
   useEffect(() => bindLazySurfaceIntent('settings', settingsButtonRef.current), []);
 
@@ -367,7 +370,10 @@ export default function Sidebar({
         onChange={activity.update}
         onMarkAllRead={markAllSessionsRead}
       />
-      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-3">
+      <div
+        ref={scrollRef}
+        className="scrollbar-while-scrolling flex-1 overflow-y-auto px-2 pb-2 space-y-3"
+      >
         {unreadOnly && unreadCount === 0 && (
           <div className="px-3 pt-2 pb-1 text-caption text-muted">No unread sessions.</div>
         )}
@@ -412,7 +418,7 @@ export default function Sidebar({
       </div>
 
       {/* Settings */}
-      <div className="px-2 py-2 border-t border-divider">
+      <div className="px-2 pb-2 pt-3">
         <AnimatePresence>
           {welcomeVisible && (
             <SidebarWelcomeCard
@@ -424,7 +430,7 @@ export default function Sidebar({
             />
           )}
         </AnimatePresence>
-        <div className="flex items-center gap-1 pr-3">
+        <div className="flex items-center gap-1">
           <Row
             ref={settingsButtonRef}
             icon={<Settings className="size-icon-md" />}

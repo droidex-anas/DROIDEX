@@ -123,7 +123,11 @@ function preventAutoscroll(event: MouseEvent) {
 function ProjectsNavBadge({ attention, live }: { attention: number; live: boolean }) {
   if (attention > 0) {
     return (
-      <Badge tone="warning" title={`${String(attention)} waiting on you`} className="tabular-nums">
+      <Badge
+        tone="warning"
+        title={`${String(attention)} waiting on you`}
+        className="-my-0.5 tabular-nums"
+      >
         {attention}
       </Badge>
     );
