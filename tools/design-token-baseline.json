@@ -89,9 +89,6 @@
   "src/components/HarnessModelSettings.tsx": {
     "arbitrary-value": 2
   },
-  "src/components/HoverTooltip.tsx": {
-    "arbitrary-value": 3
-  },
   "src/components/JsonRender.tsx": {
     "arbitrary-value": 22,
     "border-width": 1,
@@ -258,10 +255,6 @@
   "src/components/SubagentsPanel.tsx": {
     "arbitrary-value": 8
   },
-  "src/components/Switch.tsx": {
-    "arbitrary-value": 2,
-    "focus-ring": 2
-  },
   "src/components/ThemeEditor.tsx": {
     "arbitrary-value": 10,
     "palette-color": 1
@@ -273,9 +266,6 @@
   },
   "src/components/ThemePreview.tsx": {
     "arbitrary-value": 20
-  },
-  "src/components/Toaster.tsx": {
-    "arbitrary-value": 5
   },
   "src/components/ToolActivitySettings.tsx": {
     "arbitrary-value": 4,
@@ -466,9 +456,6 @@
   "src/components/environment/GithubSetupCard.tsx": {
     "arbitrary-value": 12,
     "focus-ring": 8
-  },
-  "src/components/environment/Popover.tsx": {
-    "arbitrary-value": 2
   },
   "src/components/environment/ReviewPanel.tsx": {
     "arbitrary-value": 18,
