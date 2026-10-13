@@ -1,6 +1,6 @@
-import { X } from 'lucide-react';
 import type { DesignReference } from '../../types/bridge';
 import { designMarkColor, designMarkLabel } from '../browser/designMarks';
+import { ChipRemoveButton } from './ChipRemoveButton';
 
 // A mark picked in the browser and staged for the next prompt: its number, a
 // crop of it with the mark drawn in, its name and what it is, in the colour of
@@ -24,9 +24,10 @@ export function DesignMarkChip({
 
   return (
     <span
-      className="group relative flex max-w-56 shrink-0 items-center rounded-lg border transition-colors"
+      className="group relative flex max-w-56 shrink-0 items-center rounded-lg transition-colors"
+      // The mark's own colour edges the chip, as it edges the mark on the page.
       style={{
-        borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 55%, transparent)`,
         backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
       }}
     >
@@ -34,34 +35,27 @@ export function DesignMarkChip({
         type="button"
         onClick={onInsert}
         title={`${label}${where ? ` (${where})` : ''}. Click to write @${number} in the prompt.`}
-        className="flex min-w-0 items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+        className="flex min-w-0 items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-2.5 text-left"
       >
-        <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-md border border-divider bg-surface">
+        <span className="relative size-control-md shrink-0 overflow-hidden rounded-md bg-surface">
           {crop && (
             <img src={crop} alt="" draggable={false} className="h-full w-full object-cover" />
           )}
           <span
-            className="absolute left-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-semibold leading-none text-bg"
+            className="absolute left-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-overline tabular-nums text-bg"
             style={{ backgroundColor: color }}
           >
             {number}
           </span>
         </span>
-        <span className="min-w-0 leading-tight">
-          <span className="block truncate text-[12px] font-medium text-primary">{label}</span>
-          <span className="block truncate text-[11px] text-muted">
+        <span className="min-w-0">
+          <span className="block truncate text-label text-primary">{label}</span>
+          <span className="block truncate text-caption text-muted">
             <span style={{ color }}>@{number}</span> · {markDetail(anchor)}
           </span>
         </span>
       </button>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-divider bg-raised text-muted shadow-[0_1px_2px_0_rgb(0_0_0/0.05)] transition-colors after:absolute after:-inset-0.5 after:content-[''] hover:border-divider-strong hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
-        title={`Remove @${number}`}
-      >
-        <X className="h-2.5 w-2.5" strokeWidth={3} />
-      </button>
+      <ChipRemoveButton title={`Remove @${number}`} onRemove={onRemove} />
     </span>
   );
 }

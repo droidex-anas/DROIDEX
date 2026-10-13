@@ -9,6 +9,9 @@ import {
 } from './ModelIcon';
 import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
 
+// Five 40px rows before the list scrolls.
+const LIST_MAX_HEIGHT_PX = 200;
+
 /**
  * The slider popover's model list: the virtualized, filtered catalog, with the
  * selected row carrying the "adjust effort" drill chip.
@@ -39,7 +42,11 @@ export default function ModelSliderCatalogList({
   const { scrollRef, virtualizer } = useModelListVirtualizer(rows.length, selectedIndex);
 
   return (
-    <div ref={scrollRef} className="-mx-1 max-h-[200px] min-h-0 overflow-y-auto px-1">
+    <div
+      ref={scrollRef}
+      className="-mx-1 min-h-0 overflow-y-auto px-1"
+      style={{ maxHeight: LIST_MAX_HEIGHT_PX }}
+    >
       <div
         role="listbox"
         aria-label="Models"
@@ -108,7 +115,7 @@ function SliderRow({
       }}
       title={model.displayName}
       className={`relative flex h-10 cursor-pointer items-center gap-2.5 rounded-md px-2.5 select-none ${
-        selected ? 'cursor-default' : 'hover:bg-surface/60'
+        selected ? 'cursor-default' : 'hover:bg-elevated dark:hover:bg-active'
       }`}
     >
       <span
@@ -122,7 +129,7 @@ function SliderRow({
         </span>
       )}
       <span
-        className={`min-w-0 flex-1 truncate text-[14px] font-medium ${
+        className={`min-w-0 flex-1 truncate text-body-strong ${
           selected ? 'text-primary' : 'text-secondary'
         }`}
       >
@@ -137,7 +144,7 @@ function SliderRow({
             e.stopPropagation();
             onDrill();
           }}
-          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-[11px] transition-colors hover:bg-bg/60 ${
+          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-caption transition-colors hover:bg-active ${
             drillUltra ? 'text-ultra' : 'text-secondary hover:text-primary'
           }`}
         >

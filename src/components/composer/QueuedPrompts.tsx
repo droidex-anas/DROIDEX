@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from 'lucide-react';
+import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from '@droidex/icons';
 import type { QueuedPrompt } from '../../hooks/useStore';
 import { formatResetTime } from '../../lib/usageLimit';
 import type { UsageLimit } from '../../types/bridge';
+import { Button } from '../ui/Button';
 import { PendingPromptPreview } from './PendingPromptPreview';
 
 function deliveryHint(usageLimit: UsageLimit | undefined): string {
@@ -41,8 +42,8 @@ export function QueuedPrompts({
 
   return (
     <div className="mb-2 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-muted">
-        <ListPlus className="w-3 h-3" />
+      <div className="flex items-center gap-1.5 px-1 text-label text-muted">
+        <ListPlus className="size-3" />
         Queued · {deliveryHint(usageLimit)}
       </div>
       {queue.map((p, i) => {
@@ -64,46 +65,49 @@ export function QueuedPrompts({
               setDragIndex(null);
               setDragOverIndex(null);
             }}
-            className={`group flex items-start gap-2 rounded-lg border bg-elevated px-2 py-1.5 transition-colors ${
+            // A drop target gets the dashed outline, the one place a dashed line is allowed.
+            className={`group flex items-start gap-2 rounded-lg bg-elevated px-2 py-1.5 transition-colors ${
               dragOverIndex === i && dragIndex !== null && dragIndex !== i
-                ? 'border-warning'
-                : 'border-divider'
+                ? 'outline-dashed outline-1 outline-divider-strong'
+                : ''
             }`}
           >
             <span
-              className="mt-0.5 cursor-grab text-muted/60 active:cursor-grabbing"
+              className="flex h-control-sm cursor-grab items-center text-muted active:cursor-grabbing"
               title="Drag to reorder"
             >
-              <GripVertical className="w-3.5 h-3.5" />
+              <GripVertical className="size-icon-sm" />
             </span>
             <PendingPromptPreview text={p.text} files={p.files} skills={p.skills}>
               {p.design && p.design.references.length > 0 && (
-                <span className="mt-1 inline-flex items-center gap-1 rounded-sm bg-active px-1.5 py-0.5 text-[11px] text-muted">
-                  <MousePointerSquareDashed className="w-3 h-3" />
+                <span className="mt-1 inline-flex items-center gap-1 rounded-sm bg-active px-1.5 py-0.5 text-caption text-muted">
+                  <MousePointerSquareDashed className="size-3" />
                   {p.design.references.length} reference
                   {p.design.references.length === 1 ? '' : 's'}
                 </span>
               )}
             </PendingPromptPreview>
-            <div className="flex shrink-0 items-center gap-0.5">
-              <button
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Pencil}
+                aria-label="Edit in composer"
+                title="Edit in composer"
                 onClick={() => {
                   onEdit(p);
                 }}
-                className="rounded-xs p-1 text-muted transition-colors hover:bg-active/70 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
-                title="Edit in composer"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
-              <button
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={X}
+                aria-label="Delete"
+                title="Delete"
                 onClick={() => {
                   onRemove(p.id);
                 }}
-                className="rounded-xs p-1 text-muted transition-colors hover:bg-active/70 hover:text-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
-                title="Delete"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              />
             </div>
           </div>
         );

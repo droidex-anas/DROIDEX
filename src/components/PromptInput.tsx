@@ -2058,8 +2058,6 @@ export default function PromptInput({
     }
   };
 
-  const boxBorder = isSpecMode ? 'border-warning/40' : 'border-divider';
-
   const viewerImage = imageAttachments.images.find((i) => i.id === viewerImageId) ?? null;
   // Files attached as paths (the @ menu, the picker, or a queued prompt brought
   // back for editing) show as thumbnails when they are displayable images, so a
@@ -2310,10 +2308,10 @@ export default function PromptInput({
     >
       <div
         // The composer is the transcript column (42rem) plus its own text inset
-        // on each side (1px border, 16px content padding, 6px editor line
-        // padding = 23px), so the text you type starts on the same edge as the
-        // messages above it.
-        className={`relative mx-auto min-w-0 ${compact ? 'max-w-4xl' : 'max-w-[calc(42rem+46px)]'}`}
+        // on each side (16px content padding, 6px editor line padding = 22px),
+        // so the text you type starts on the same edge as the messages above it.
+        className={`relative mx-auto min-w-0 ${compact ? 'max-w-4xl' : ''}`}
+        style={compact ? undefined : { maxWidth: 'calc(42rem + 44px)' }}
         onDragOver={fileDrop.onDragOver}
         onDrop={fileDrop.onDrop}
       >
@@ -2335,14 +2333,14 @@ export default function PromptInput({
 
         {missionPreview ? (
           <div
-            className="absolute -top-5 left-1 flex items-center gap-1.5 text-[11px] font-medium tracking-wide"
+            className="absolute -top-5 left-1 flex items-center gap-1.5 text-caption font-medium"
             style={{ color: ACCENT }}
           >
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: ACCENT }} />
             Mission preview
           </div>
         ) : isSpecMode ? (
-          <div className="absolute -top-5 left-1 text-[11px] font-medium text-warning tracking-wide">
+          <div className="absolute -top-5 left-1 text-caption font-medium text-warning">
             SPEC MODE
           </div>
         ) : null}
@@ -2382,11 +2380,8 @@ export default function PromptInput({
           </Suspense>
         )}
         {showStartIn && !usageOpen && (
-          <div
-            className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-divider bg-surface px-4 pb-4 pt-1.5"
-            // The composer's own 20px corner, carried onto the tab above it.
-            style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
-          >
+          // The composer's own corner, carried onto the tab above it.
+          <div className="relative z-0 mx-10 -mb-3 min-w-0 rounded-t-xl bg-surface px-4 pb-4 pt-1.5 shadow-sm">
             <StartInBar />
           </div>
         )}
@@ -2400,12 +2395,11 @@ export default function PromptInput({
         )}
 
         <div
-          className={`relative z-10 bg-raised border rounded-[20px] shadow-sm transition-colors ${missionPreview ? '' : boxBorder}`}
+          className={`relative z-10 rounded-xl bg-elevated shadow-sm transition-shadow ${isSpecMode && !missionPreview ? 'ring-1 ring-warning/40' : ''}`}
           style={
             missionPreview
               ? {
-                  borderColor: accentMix(20),
-                  boxShadow: `var(--shadow-sm), 0 0 0 3px ${accentMix(6)}`,
+                  boxShadow: `var(--shadow-sm), 0 0 0 1px ${accentMix(20)}, 0 0 0 4px ${accentMix(6)}`,
                 }
               : undefined
           }
@@ -2483,8 +2477,8 @@ export default function PromptInput({
           )}
 
           {missionAutonomyGateOpen && missionPreview && !activeSession && (
-            <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg border border-divider bg-bg/60 px-3 py-2.5">
-              <p className="flex-1 min-w-0 text-[11px] text-secondary leading-snug">
+            <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg bg-bg/60 px-3 py-2.5">
+              <p className="flex-1 min-w-0 text-caption text-secondary">
                 Missions run unattended, so they need{' '}
                 <span className="text-primary font-medium">High autonomy</span> to start.
               </p>
@@ -2494,7 +2488,7 @@ export default function PromptInput({
                   setMissionAutonomyGateOpen(false);
                   void handleSubmit('queue', 'high');
                 }}
-                className="shrink-0 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-bg transition-opacity hover:opacity-90"
+                className="shrink-0 px-2.5 py-1.5 rounded-md text-label text-bg transition-opacity hover:opacity-90"
                 style={{ background: ACCENT }}
               >
                 Set High and start
@@ -2503,7 +2497,7 @@ export default function PromptInput({
                 onClick={() => {
                   setMissionAutonomyGateOpen(false);
                 }}
-                className="shrink-0 px-2 py-1.5 rounded-md text-[11px] text-muted hover:text-primary transition-colors"
+                className="shrink-0 px-2 py-1.5 rounded-md text-label text-muted hover:text-primary transition-colors"
               >
                 Not now
               </button>
@@ -2517,7 +2511,7 @@ export default function PromptInput({
                 seeds, and formatting actions. */}
             <Suspense
               fallback={
-                <div className="min-h-[44px] px-4 pt-3 pb-2 text-sm text-muted/50">
+                <div className="min-h-11 px-4 pt-3 pb-2 text-sm text-muted/50">
                   {promptPlaceholder}
                 </div>
               }
@@ -2563,7 +2557,7 @@ export default function PromptInput({
                 open session, draft override before a session exists. */}
             {targetChild ? (
               <span
-                className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-muted"
+                className="flex h-control-sm shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption text-muted"
                 title={
                   targetChild.autonomy
                     ? `Child session autonomy: ${AUTONOMY_LABELS[targetChild.autonomy]}`
@@ -2625,10 +2619,10 @@ export default function PromptInput({
                   onClick={() => {
                     setModelsOpen((v) => !v);
                   }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors max-w-[200px] ${
+                  className={`flex h-control-sm max-w-52 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${
                     modelsOpen
-                      ? 'bg-bg/60 text-primary'
-                      : 'text-secondary hover:text-primary hover:bg-bg/40'
+                      ? 'bg-active text-primary'
+                      : 'text-secondary hover:bg-active/60 hover:text-primary'
                   }`}
                   title={
                     childSettingsTarget
