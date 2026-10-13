@@ -12,7 +12,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { Copy, GitFork, Pin, PinOff } from '@droidex/icons';
-import { pushEscapeLayer } from './environment/usePopover';
+import { pushEscapeLayer } from './ui/escapeStack';
 import { toast } from '../lib/toast';
 import { PROVIDER_LABELS, sessionResumeCommand } from '../features/providers/providerIdentity';
 import type { ProviderKind } from '../types/bridge';

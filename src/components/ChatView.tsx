@@ -30,7 +30,7 @@ import {
 } from '../lib/childSessions';
 import { useOpenAgent } from './agents/useOpenAgent';
 import { useForkChat, useForkPending, useOpenForkSource } from '../hooks/useForkChat';
-import { useScrollingAttribute } from '../hooks/useScrollingAttribute';
+import { useScrolling } from './ui/useScrolling';
 import { ConversationTimeline } from './ConversationTimeline';
 import { WelcomeScreen } from './WelcomeScreen';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
@@ -280,7 +280,7 @@ export default function ChatView({
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useScrollingAttribute(scrollRef, besidePane);
+  useScrolling(scrollRef, besidePane);
   const conversationListRef = useRef<ConversationListHandle>(null);
   const viewportLayoutRef = useRef<ConversationViewportLayout | null>(null);
   const activeSession = state.activeSession;

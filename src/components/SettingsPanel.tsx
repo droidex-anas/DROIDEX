@@ -42,7 +42,7 @@ import {
   type SettingsSearchHit,
 } from '../lib/settingsSearch';
 import { ToolActivitySettings } from './ToolActivitySettings';
-import { usePopover } from './environment/usePopover';
+import { useDismiss } from './ui/useDismiss';
 
 interface NavItem {
   label: string;
@@ -170,7 +170,7 @@ function CompactionModelPicker({
   const close = useCallback(() => {
     setOpen(false);
   }, []);
-  const ref = usePopover(open, close);
+  const ref = useDismiss(open, close);
 
   const isCurrent = selected === 'current-model';
   const selModel = isCurrent ? undefined : models.find((m) => m.id === selected);

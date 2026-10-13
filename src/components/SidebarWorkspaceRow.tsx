@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Folder, FolderMinus, FolderOpen, Plus } from 'lucide-react';
-import { pushEscapeLayer } from './environment/usePopover';
+import { pushEscapeLayer } from './ui/escapeStack';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MENU_WIDTH = 200;

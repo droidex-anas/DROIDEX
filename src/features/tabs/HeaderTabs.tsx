@@ -6,7 +6,7 @@ import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
 import { formatChord } from '../../lib/shortcuts';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
-import { HoverTooltip } from '../../components/HoverTooltip';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
 import { PROVIDER_MARKS } from '../providers/providerIdentity';
@@ -253,7 +253,7 @@ const TabList = memo(function TabList() {
                   : 'text-muted hover:bg-elevated/40 hover:text-primary'
               }`}
             >
-              <HoverTooltip label={item.title} placement="bottom" className="h-full min-w-0 flex-1">
+              <Tooltip label={item.title} placement="bottom" className="h-full min-w-0 flex-1">
                 <button
                   type="button"
                   role="tab"
@@ -296,8 +296,8 @@ const TabList = memo(function TabList() {
                     </span>
                   )}
                 </button>
-              </HoverTooltip>
-              <HoverTooltip
+              </Tooltip>
+              <Tooltip
                 label={`Close tab (${formatChord(closeTabChord)})`}
                 placement="bottom"
                 className="absolute right-1 top-1/2 -translate-y-1/2"
@@ -321,12 +321,12 @@ const TabList = memo(function TabList() {
                 >
                   <X className="h-3 w-3" />
                 </button>
-              </HoverTooltip>
+              </Tooltip>
             </Reorder.Item>
           );
         })}
       </Reorder.Group>
-      <HoverTooltip label={`New tab (${formatChord(newTabChord)})`} placement="bottom">
+      <Tooltip label={`New tab (${formatChord(newTabChord)})`} placement="bottom">
         <button
           type="button"
           aria-label="New tab"
@@ -337,7 +337,7 @@ const TabList = memo(function TabList() {
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
-      </HoverTooltip>
+      </Tooltip>
     </>
   );
 });

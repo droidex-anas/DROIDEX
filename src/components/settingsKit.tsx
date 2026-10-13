@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
-import { pushEscapeLayer } from './environment/usePopover';
+import { pushEscapeLayer } from './ui/escapeStack';
 
 export function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   return (
@@ -88,7 +88,7 @@ export function Dropdown({
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    // Escape goes through the shared LIFO layer stack (see usePopover.ts) so a
+    // Escape goes through the shared LIFO layer stack (see ui/escapeStack.ts) so a
     // single keystroke closes only this innermost popup, never the settings
     // panel or theme editor behind it.
     const pop = pushEscapeLayer(() => {

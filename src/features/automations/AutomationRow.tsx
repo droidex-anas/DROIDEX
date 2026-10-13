@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { Clock, Spinner } from '@droidex/icons';
 import type { ReactNode } from 'react';
-import { HoverTooltip } from '../../components/HoverTooltip';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { AUTONOMY_LABELS } from '../../lib/autonomy';
 import type { ModelInfo } from '../../types/bridge';
 import {
@@ -116,9 +116,9 @@ export function AutomationRow({
         </div>
         <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px]">
           {error ? (
-            <HoverTooltip label={error} placement="bottom" delay={180}>
+            <Tooltip label={error} placement="bottom">
               {statusContent}
-            </HoverTooltip>
+            </Tooltip>
           ) : (
             statusContent
           )}
@@ -253,7 +253,7 @@ function RowAction({
   danger?: boolean;
 }) {
   return (
-    <HoverTooltip label={label} delay={220}>
+    <Tooltip label={label}>
       <button
         type="button"
         onClick={onClick}
@@ -267,7 +267,7 @@ function RowAction({
       >
         {children}
       </button>
-    </HoverTooltip>
+    </Tooltip>
   );
 }
 

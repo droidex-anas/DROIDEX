@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { Search, X } from 'lucide-react';
-import { pushEscapeLayer } from './environment/usePopover';
+import { pushEscapeLayer } from './ui/escapeStack';
 import { wrapTabFocus } from '../lib/focusTrap';
 
 // Shared chrome for the command-palette overlays (⌘K command palette,

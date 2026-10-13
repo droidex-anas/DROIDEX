@@ -3,7 +3,7 @@ import { RotateCcw, Trash2 } from 'lucide-react';
 import { Copy } from '@droidex/icons';
 import '@xterm/xterm/css/xterm.css';
 import { acquireTerminalInstance, type TerminalInstance } from '../../lib/terminalInstances';
-import { HoverTooltip } from '../HoverTooltip';
+import { Tooltip } from '../ui/Tooltip';
 import { TerminalCloseConfirm } from './TerminalCloseConfirm';
 import { useStoreSelector } from '../../hooks/useStore';
 import type { ThemeConfig } from '../../hooks/persistedThemePreferences';
@@ -166,14 +166,14 @@ function TerminalHeader({
   return (
     <div className="group flex h-8 shrink-0 items-center gap-0.5 border-b border-divider pl-3 pr-1.5">
       <div className="flex min-w-0 flex-1 items-center">
-        <HoverTooltip label={cwd} placement="bottom" className="min-w-0">
+        <Tooltip label={cwd} placement="bottom" className="min-w-0">
           <span
             className={`truncate text-[12px] leading-none ${stopped ? 'text-secondary' : 'text-primary'}`}
           >
             {shellName}
             <span className="text-secondary"> · {folder}</span>
           </span>
-        </HoverTooltip>
+        </Tooltip>
       </div>
       <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
         {children}
@@ -219,7 +219,7 @@ function HeaderAction({
   children: ReactNode;
 }) {
   return (
-    <HoverTooltip label={label} placement="bottom">
+    <Tooltip label={label} placement="bottom">
       <button
         type="button"
         aria-label={label}
@@ -228,7 +228,7 @@ function HeaderAction({
       >
         {children}
       </button>
-    </HoverTooltip>
+    </Tooltip>
   );
 }
 

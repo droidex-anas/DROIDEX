@@ -30,7 +30,7 @@ import { useTriggerAnchor } from './composer/useTriggerAnchor';
 import useModelPicker from './useModelPicker';
 import ModelSliderCatalogList from './ModelSliderCatalogList';
 import ContextWindowMenu from './ContextWindowMenu';
-import { HoverTooltip } from './HoverTooltip';
+import { Tooltip } from './ui/Tooltip';
 import EffortSlider from './effortSlider/EffortSlider';
 import type { EffortSliderElement, EffortSliderLevel } from './effortSlider/effortSliderElement';
 
@@ -229,7 +229,7 @@ export default function ModelSliderPopover({
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 {offersFastMode(provider) && (
-                  <HoverTooltip label={fastModeBlocked ?? `${FAST_MODE_LABEL} · ${FAST_MODE_HINT}`}>
+                  <Tooltip label={fastModeBlocked ?? `${FAST_MODE_LABEL} · ${FAST_MODE_HINT}`}>
                     <button
                       type="button"
                       aria-pressed={fastMode}
@@ -251,7 +251,7 @@ export default function ModelSliderPopover({
                         fill={fastMode ? 'currentColor' : 'transparent'}
                       />
                     </button>
-                  </HoverTooltip>
+                  </Tooltip>
                 )}
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                   <ModelIcon provider={providerOf(activeModel, resolvedModelId)} size={14} />

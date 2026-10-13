@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { PanelRight, Plus, X } from '@droidex/icons';
-import { HoverTooltip } from '../HoverTooltip';
-import { Popover } from '../environment/Popover';
+import { Tooltip } from '../ui/Tooltip';
+import { Popover } from '../ui/Popover';
 import type { UtilityPanelState, UtilityTab, UtilityTool } from '../../lib/utilityPanel';
 import { useStoreSelector } from '../../hooks/useStore';
 import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
@@ -105,7 +105,7 @@ export function UtilityPane({
                   <Icon className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{tab.label}</span>
                 </button>
-                <HoverTooltip label={`Close ${tab.label}`} placement="bottom">
+                <Tooltip label={`Close ${tab.label}`} placement="bottom">
                   <button
                     type="button"
                     aria-label={`Close ${tab.label}`}
@@ -117,13 +117,13 @@ export function UtilityPane({
                   >
                     <X className="h-3 w-3" />
                   </button>
-                </HoverTooltip>
+                </Tooltip>
               </div>
             );
           })}
         </div>
 
-        <HoverTooltip label="Open another tool" placement="bottom">
+        <Tooltip label="Open another tool" placement="bottom">
           <button
             ref={addRef}
             type="button"
@@ -140,8 +140,8 @@ export function UtilityPane({
           >
             <Plus className="h-4 w-4" />
           </button>
-        </HoverTooltip>
-        <HoverTooltip label="Hide utility pane" placement="bottom">
+        </Tooltip>
+        <Tooltip label="Hide utility pane" placement="bottom">
           <button
             type="button"
             aria-label="Hide utility pane"
@@ -150,7 +150,7 @@ export function UtilityPane({
           >
             <PanelRight className="h-4 w-4" />
           </button>
-        </HoverTooltip>
+        </Tooltip>
       </header>
 
       <Popover
@@ -159,7 +159,7 @@ export function UtilityPane({
           setMenuOpen(false);
         }}
         anchorRef={addRef}
-        align="right"
+        placement="bottom-end"
         width={236}
         label="Open utility tool"
       >

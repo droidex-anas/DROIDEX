@@ -6,7 +6,7 @@ import { describeLink } from '../../lib/linkPresentation';
 import { openExternal } from '../../lib/onboarding';
 import { toast } from '../../lib/toast';
 import type { TranscriptEvent } from '../../types/bridge';
-import { Popover } from '../environment/Popover';
+import { Popover } from '../ui/Popover';
 import { LinkBadge } from '../transcript/LinkBadge';
 import { BrowserPreview } from './BrowserPreview';
 
@@ -119,7 +119,14 @@ function PageMenu({ url }: { url: string }) {
       >
         <Ellipsis className="h-4 w-4" />
       </button>
-      <Popover open={open} onClose={close} anchorRef={buttonRef} label="Page options" width={220}>
+      <Popover
+        open={open}
+        onClose={close}
+        anchorRef={buttonRef}
+        placement="bottom-end"
+        label="Page options"
+        width={220}
+      >
         <div className="p-1">
           <button
             type="button"

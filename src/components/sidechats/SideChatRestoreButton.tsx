@@ -3,7 +3,7 @@ import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/us
 import { sessionIsLive } from '../../lib/sessions';
 import { currentSideChat, sideChatPanel } from '../../lib/sideChats';
 import { utilityPanelForSession } from '../../lib/utilityPanel';
-import { HoverTooltip } from '../HoverTooltip';
+import { Tooltip } from '../ui/Tooltip';
 import { isSideChatStarting } from './useAskSideChat';
 
 /* A minimized side chat rests on its own row at the top of the composer stack,
@@ -38,7 +38,7 @@ export function SideChatRestoreButton({ sourceAppSessionId }: { sourceAppSession
 
   return (
     <div className="mb-2 flex justify-end px-1">
-      <HoverTooltip label={label}>
+      <Tooltip label={label}>
         <button
           type="button"
           aria-label={label}
@@ -54,7 +54,7 @@ export function SideChatRestoreButton({ sourceAppSessionId }: { sourceAppSession
           <MessageBubble className={`h-3.5 w-3.5 ${starting || working ? 'animate-pulse' : ''}`} />
           Side chat
         </button>
-      </HoverTooltip>
+      </Tooltip>
     </div>
   );
 }

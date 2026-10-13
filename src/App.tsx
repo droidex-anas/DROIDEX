@@ -23,7 +23,7 @@ import type { ChildAccess } from './hooks/storeChildSession';
 import Sidebar from './components/Sidebar';
 import RightPanel from './components/RightPanel';
 import EditorOpenMenu from './components/EditorOpenMenu';
-import Toaster from './components/Toaster';
+import Toaster from './components/ui/Toaster';
 import { useRepoStatus } from './hooks/useRepoStatus';
 import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';

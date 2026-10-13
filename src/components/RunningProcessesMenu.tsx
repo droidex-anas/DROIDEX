@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Globe, Square } from '@droidex/icons';
 import { OVER_PAGE_CHIP } from './browser/overPageChip';
-import { Popover } from './environment/Popover';
+import { Popover } from './ui/Popover';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { openBrowser, stopAgentProcess } from '../lib/commands';
 import type { AgentProcess } from '../types/bridge';
@@ -100,7 +100,7 @@ export function RunningProcessesMenu({
         }}
         anchorRef={buttonRef}
         label="Running processes"
-        align="left"
+        placement="bottom-start"
         width={260}
       >
         <div className="max-h-[min(70vh,400px)] overflow-y-auto p-1">

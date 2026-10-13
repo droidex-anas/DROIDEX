@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
 import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
-import { pushEscapeLayer } from '../../components/environment/usePopover';
+import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { MessageBody } from '../../components/MessageBody';
 import InlineInteractions from '../../components/InlineInteractions';
 import { SpokenMark } from '../../components/transcript/primitives';
