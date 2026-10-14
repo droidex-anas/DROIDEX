@@ -35,7 +35,6 @@ function renderStatus(
       modelIssue: null,
       now: 2_000,
       deleteArmed: false,
-      last: true,
       onEdit: () => undefined,
       onToggle: () => undefined,
       onRun: () => undefined,

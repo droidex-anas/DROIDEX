@@ -73,7 +73,7 @@ export function ThreadSpawnLine({
 
   return (
     <div data-testid="thread-spawn-line">
-      <div className="group flex items-center gap-1.5 text-[13px]">
+      <div className="group flex items-center gap-1.5 text-body">
         <button
           type="button"
           onClick={() => {
@@ -99,7 +99,7 @@ export function ThreadSpawnLine({
         </button>
         {row && !live && (
           <>
-            <span className="min-w-0 truncate text-[12px] text-muted">{row.detail}</span>
+            <span className="min-w-0 truncate text-caption text-muted">{row.detail}</span>
             <ActivityStatusGlyph status={row.status} />
           </>
         )}
@@ -136,13 +136,11 @@ function SpawnDetail({
   onOpen: () => void;
 }) {
   return (
-    <div className="mt-2 pl-[18px]">
-      {task !== undefined && (
-        <div className="break-words text-[13px] leading-relaxed text-muted/70">{task}</div>
-      )}
+    <div className="mt-2 pl-4">
+      {task !== undefined && <div className="break-words text-body text-muted">{task}</div>}
       {step !== undefined && (
         <div
-          className={`mt-1.5 break-words text-[13px] font-medium leading-relaxed ${
+          className={`mt-1.5 break-words text-body font-medium ${
             live ? 'shimmer-text' : 'text-secondary'
           }`}
         >
@@ -153,10 +151,10 @@ function SpawnDetail({
         type="button"
         disabled={!canOpen}
         onClick={onOpen}
-        className="mt-2 inline-flex items-center gap-1 text-[12px] text-muted transition-colors hover:text-primary disabled:hover:text-muted"
+        className="mt-2 inline-flex items-center gap-1 text-label text-muted transition-colors hover:text-primary disabled:hover:text-muted"
       >
         {openLabel}
-        <ChevronRight className="h-3.5 w-3.5" />
+        <ChevronRight className="size-icon-sm" />
       </button>
     </div>
   );
