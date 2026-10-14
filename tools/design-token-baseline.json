@@ -613,10 +613,6 @@
     "border-width": 3,
     "focus-ring": 2
   },
-  "src/features/automations/AnchoredPopover.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
   "src/features/automations/AutomationEditor.tsx": {
     "arbitrary-value": 11,
     "border-width": 13
@@ -624,12 +620,6 @@
   "src/features/automations/AutomationList.tsx": {
     "arbitrary-value": 1,
     "border-width": 2
-  },
-  "src/features/automations/AutomationModelPicker.tsx": {
-    "arbitrary-value": 12,
-    "border-width": 13,
-    "focus-ring": 2,
-    "uppercase": 1
   },
   "src/features/automations/AutomationProposalCard.tsx": {
     "arbitrary-value": 14,
@@ -652,18 +642,10 @@
     "arbitrary-value": 4,
     "border-width": 5
   },
-  "src/features/automations/SchedulePromptPopover.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 4
-  },
   "src/features/automations/ScheduledPrompts.tsx": {
     "arbitrary-value": 3,
     "border-width": 2,
     "palette-color": 2
-  },
-  "src/features/automations/SelectMenu.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 7
   },
   "src/features/automations/TimeFields.tsx": {
     "arbitrary-value": 7,
