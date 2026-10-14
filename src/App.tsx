@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
@@ -117,6 +117,17 @@ import {
   utilityToolFallback,
 } from './lib/lazySurfaces';
 import { noteComposerNotApplicable, noteFirstMeaningfulShellPaint } from './lib/rendererPerf';
+
+const LazyProfileUsageRecorder = lazy(() =>
+  import('./features/profile/ProfileUsageRecorder').then((module) => ({
+    default: module.ProfileUsageRecorder,
+  })),
+);
+const LazyRemoteApprovalPanel = lazy(() =>
+  import('./components/RemoteApprovalPanel').then((module) => ({
+    default: module.RemoteApprovalPanel,
+  })),
+);
 
 function ContextListIcon({ className }: { className?: string }) {
   return (
@@ -1132,6 +1143,12 @@ export default function App() {
       )}
       <Toaster />
 
+      <Suspense fallback={null}>
+        <LazyProfileUsageRecorder />
+      </Suspense>
+      <Suspense fallback={null}>
+        <LazyRemoteApprovalPanel />
+      </Suspense>
       <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>
 
       <AnimatePresence>

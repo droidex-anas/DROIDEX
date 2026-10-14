@@ -196,6 +196,21 @@ contextBridge.exposeInMainWorld('droidControl', {
   getAutomaticDiagnostics: () => ipcRenderer.invoke('diagnostics-preference-get'),
   setAutomaticDiagnostics: (enabled) =>
     ipcRenderer.invoke('diagnostics-preference-set', { enabled }),
+  getRemoteState: () => ipcRenderer.invoke('remote-state'),
+  configureRemote: (patch) => ipcRenderer.invoke('remote-configure', patch),
+  setupRemoteAuthenticator: () => ipcRenderer.invoke('remote-setup'),
+  confirmRemoteAuthenticator: (code) => ipcRenderer.invoke('remote-confirm', code),
+  decideRemoteRequest: (id, approved) => ipcRenderer.invoke('remote-decide', { id, approved }),
+  revokeRemoteDevice: (id) => ipcRenderer.invoke('remote-revoke', id),
+  resetRemotePairing: () => ipcRenderer.invoke('remote-reset'),
+  remoteQr: (text) => ipcRenderer.invoke('remote-qr', text),
+  onRemoteState: (handler) => {
+    const listener = (_event, state) => handler(state);
+    ipcRenderer.on('remote-state-changed', listener);
+    return () => ipcRenderer.removeListener('remote-state-changed', listener);
+  },
+  getProfileUsage: () => ipcRenderer.invoke('profile-usage-get'),
+  recordProfileUsage: (records) => ipcRenderer.invoke('profile-usage-record', records),
   usageAnalyticsBootstrap: () => ipcRenderer.invoke('usage-analytics-bootstrap'),
   usageAnalyticsFirstLaunchReported: () =>
     ipcRenderer.invoke('usage-analytics-first-launch-reported'),

@@ -9,6 +9,7 @@ const {
   nativeImage,
   nativeTheme,
   powerMonitor,
+  powerSaveBlocker,
   protocol,
   safeStorage,
   session,
@@ -48,6 +49,7 @@ const { createAppUpdater } = require('./appUpdater.cjs');
 const Sentry = require('@sentry/electron/main');
 const { createDiagnostics } = require('./diagnostics.cjs');
 const { createUsageAnalytics } = require('./usageAnalytics.cjs');
+const { createRemoteAccess } = require('./remoteAccess.cjs');
 const {
   preferenceFilePath: hardwareAccelerationPreferenceFilePath,
   readHardwareAccelerationPreferenceSync,
@@ -211,6 +213,23 @@ if (
   app.disableHardwareAcceleration();
 }
 // Before diagnostics writes into userData, or a new install looks like an old one.
+const remoteAccess = createRemoteAccess({
+  app,
+  safeStorage,
+  powerSaveBlocker,
+  ipcMain,
+  hostModule: path.join(
+    app.isPackaged ? process.resourcesPath : appRoot(),
+    'sidecar/dist/remoteHost.mjs',
+  ),
+  bridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
+  assertRenderer: assertMainRenderer,
+  changed: (state) => {
+    if (state.pending.length && !isWindowUsable(mainWindow)) createMainWindow();
+    if (isWindowUsable(mainWindow)) mainWindow.webContents.send('remote-state-changed', state);
+  },
+});
+
 usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
 app.whenReady().then(async () => {
@@ -224,6 +243,7 @@ app.whenReady().then(async () => {
     shell,
     logError: (message) => console.error('[menu] %s', message),
   });
+  remoteAccess.registerIpc();
   registerIpc();
   registerLocalImageProtocol();
   registerMediaPermissions();
@@ -249,14 +269,20 @@ app.whenReady().then(async () => {
     if (appIconMode === 'system') applyAppIcon();
   });
   void sidecarSupervisor.start().catch((error) => console.error(error));
+  void remoteAccess
+    .resume()
+    .catch(() =>
+      console.error('[remote] Could not resume. Open Remote settings to review configuration.'),
+    );
 });
 
 app.on('window-all-closed', () => {
-  sidecarSupervisor.stop();
+  if (!remoteAccess.isEnabled()) sidecarSupervisor.stop();
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
+  void remoteAccess.close().catch(() => console.error('[remote] Could not flush local state'));
   sidecarSupervisor.stop();
   githubVcs.cancelSetup();
   closeAllDesktopNotifications();
@@ -269,6 +295,11 @@ app.on('activate', () => {
   if (!mainWindow) createMainWindow();
   else focusMainWindow();
   void sidecarSupervisor.start().catch((error) => console.error(error));
+  void remoteAccess
+    .resume()
+    .catch(() =>
+      console.error('[remote] Could not resume. Open Remote settings to review configuration.'),
+    );
   deliverPendingNotificationOpen();
 });
 

@@ -116,6 +116,7 @@ export interface SessionPrompt {
   // The sender's guard on a message from another chat. Once it turns false the
   // prompt is dropped wherever it waits, as a Stop drops it.
   isCurrent?: () => boolean;
+  remote?: true;
   delivery?: SteeredReportDelivery;
 }
 
@@ -240,6 +241,7 @@ export interface SessionLifecycleDependencies {
   releaseRuntimeForCapacity: (excludedAppSessionId: string) => Promise<boolean>;
 }
 export class SessionLifecycle {
+  private readonly supervisedTurns = new WeakSet<LiveSession>();
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
   private automaticCreates = 0;
   private readonly steerOutcomes = new WeakMap<
@@ -607,6 +609,11 @@ export class SessionLifecycle {
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
       await d.registry.register(liveSession, requireCurrentResume);
+      if (kind === 'claude')
+        d.context.preserveUsage(appSessionId, {
+          tokensIn: projectedSummary.tokensIn,
+          tokensOut: projectedSummary.tokensOut,
+        });
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.
@@ -796,8 +803,24 @@ export class SessionLifecycle {
     text: string,
     mentions?: ProviderMention[],
     steerId?: string,
+    remote?: true,
   ): Promise<void> {
-    await this.sendPrompt(requestedAppSessionId, sessionPrompt(text, mentions, steerId));
+    const prompt = sessionPrompt(text, mentions, steerId);
+    if (remote) {
+      const isSupervised = () => {
+        const live = this.dependencies.registry.getLive(requestedAppSessionId);
+        return (
+          live?.summary.autonomy === 'off' &&
+          live.session.autonomy === 'off' &&
+          (!live.streaming || this.supervisedTurns.has(live))
+        );
+      };
+      if (!isSupervised()) throw new Error('Remote messages require Supervised mode');
+      prompt.isCurrent = isSupervised;
+      prompt.remote = true;
+    }
+    await this.sendPrompt(requestedAppSessionId, prompt);
+    if (remote && steerId) await this.sendNow(requestedAppSessionId, steerId);
   }
 
   // A redelivered prompt keeps what it was sent with, so one nobody typed is
@@ -819,7 +842,7 @@ export class SessionLifecycle {
     prompt: SessionPrompt,
   ): Promise<void> {
     const { liveSession } = admitted;
-    if (prompt.steerId) {
+    if (prompt.steerId && !prompt.remote) {
       if ((await this.steer(liveSession, prompt)) || prompt.delivery) return;
       // A Stop, a new runtime, or its sender withdrawing it since it was sent
       // takes it back.
@@ -1423,6 +1446,9 @@ export class SessionLifecycle {
     const delegated = session.onDelegatedTurn?.((running, end) => {
       if (!isCurrent()) return;
       if (running) {
+        if (liveSession.summary.autonomy === 'off' && liveSession.session.autonomy === 'off')
+          this.supervisedTurns.add(liveSession);
+        else this.supervisedTurns.delete(liveSession);
         liveSession.streaming = true;
         liveSession.delegatedTurns = (liveSession.delegatedTurns ?? 0) + 1;
         liveSession.delegatedTurnOpen = true;
@@ -1763,6 +1789,9 @@ export class SessionLifecycle {
     let turn: Promise<void> | undefined;
     try {
       this.rememberSteerOutcome(liveSession, prompt, 'delivered');
+      if (liveSession.summary.autonomy === 'off' && liveSession.session.autonomy === 'off')
+        this.supervisedTurns.add(liveSession);
+      else this.supervisedTurns.delete(liveSession);
       liveSession.streaming = true;
       // Persist resumed activity immediately so the chat stays near the top
       // even if the app closes mid-turn. The renderer suppresses unread while

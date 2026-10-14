@@ -309,6 +309,13 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       );
     case 'spec.content':
       return hasStrings(value, ['appSessionId', 'path', 'content']);
+    case 'remote.snapshot':
+      return (
+        Array.isArray(value.sessions) &&
+        value.sessions.every(isSessionSummary) &&
+        Array.isArray(value.approvals) &&
+        value.approvals.every(isPermissionRequest)
+      );
     case 'sessions.list':
       return (
         Array.isArray(value.sessions) &&
