@@ -23,6 +23,8 @@ import type {
 } from '../../../packages/remote/src/desktop.js';
 import { RemoteLocalBridge } from './localBridge.js';
 import { createPushNotifications, validatePushSubscription } from './push.js';
+import { readRemoteUsage } from './profileUsage.js';
+import { createProfileAttestation } from './profileAttestation.js';
 
 interface Peer {
   id: string;
@@ -34,6 +36,7 @@ interface Peer {
   selectedSession?: string;
   queued: number;
   outgoing: number;
+  usageAvailableAt: number;
   queue: Promise<void>;
 }
 interface Pending {
@@ -95,6 +98,7 @@ export async function createRemoteHost(options: {
           queue: Promise.resolve(),
           queued: 0,
           outgoing: 0,
+          usageAvailableAt: 0,
         };
         peers.set(id, peer);
         forward(peer, handshake.hello);
@@ -254,6 +258,14 @@ export async function createRemoteHost(options: {
         return;
       }
       const command = remoteCommand(payload);
+      if (command.type === 'usage') {
+        const now = Date.now();
+        if (peer.usageAvailableAt > now)
+          throw new Error('Wait 10 seconds before refreshing usage again');
+        peer.usageAvailableAt = now + 10_000;
+        await send(peer, { type: 'usage', snapshot: await readRemoteUsage(options.bridgeInfo) });
+        return;
+      }
       if (command.type === 'open') peer.selectedSession = command.sessionId;
       if (bridge.needsApproval(command)) {
         if (pending.size >= 20) throw new Error('Too many pending requests');
@@ -368,6 +380,14 @@ export async function createRemoteHost(options: {
 
   return {
     snapshot,
+    signProfilePayload(payload: unknown) {
+      return createProfileAttestation(
+        identity,
+        state.authenticatorReady,
+        state.settings.profile.username,
+        payload,
+      );
+    },
     configure(patch: unknown) {
       return mutate(async () => {
         if (!isRecord(patch)) throw new Error('Invalid remote settings');

@@ -123,6 +123,10 @@ export function claimProof(handle: string, challenge: string): string {
   return `droidex-remote:claim:1|${handle}|${challenge}`;
 }
 
+export function profileShareProof(handle: string, payload: string): string {
+  return `droidex-profile:share:3|${handle}|${payload}`;
+}
+
 function helloProof(handle: string, hello: Omit<HostHello, 'signature'>): string {
   return `droidex-remote:hello:1|${handle}|${hello.nonce}|${keyText(hello.publicKey)}|${keyText(hello.ephemeralKey)}`;
 }

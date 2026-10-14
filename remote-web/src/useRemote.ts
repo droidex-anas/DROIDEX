@@ -11,6 +11,7 @@ import {
   type RemoteCommand,
   type RemoteSession,
 } from '../../packages/remote/src/application';
+import type { RemoteUsageSnapshot } from '../../packages/remote/src/usage';
 import { parseRemoteMessage } from './messages';
 import { LAST_HANDLE_KEY, prepareDevice, writeDevice, type BrowserDevice } from './deviceStore';
 
@@ -24,6 +25,7 @@ interface RemoteState {
   expiresAt: number;
   pushPublicKey: string | null;
   selectedSessionId: string | null;
+  usage: RemoteUsageSnapshot | null;
 }
 interface Connection {
   socket: WebSocket;
@@ -61,6 +63,7 @@ export function useRemote(handle: string, pin: string | null) {
     expiresAt: 0,
     pushPublicKey: null,
     selectedSessionId: null,
+    usage: null,
   });
   const active = useRef<Connection | null>(null);
   const selectedSessionId = useRef<string | null>(null);
@@ -216,12 +219,16 @@ export function useRemote(handle: string, pin: string | null) {
                       sessions: [],
                       approvals: [],
                       streams: {},
+                      usage: null,
                       selectedSessionId: null,
                       feedback: 'Unable to unlock. Check your code or wait before trying again.',
                     });
                   break;
                 case 'pairing':
                   update({ status: 'pairing', feedback: '' });
+                  break;
+                case 'usage':
+                  update({ usage: decoded.snapshot });
                   break;
                 case 'snapshot': {
                   const liveIds = new Set(decoded.sessions.map((session) => session.id));
@@ -358,7 +365,7 @@ export function useRemote(handle: string, pin: string | null) {
     const connection = active.current;
     if (state.status !== 'ready' || !connection?.channel)
       throw new Error('Reconnect to your laptop before sending a command.');
-    if (command.type === 'list' || command.type === 'open') {
+    if (command.type === 'list' || command.type === 'open' || command.type === 'usage') {
       if (command.type === 'open') {
         selectedSessionId.current = command.sessionId;
         connection.needsStreamRestore = false;

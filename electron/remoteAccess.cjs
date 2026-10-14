@@ -1,14 +1,12 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { createProfileUsage } = require('./profileUsage.cjs');
 
 function createRemoteAccess(options) {
   let hostPromise = null;
   let blocker = null;
   let enabled = false;
   let writes = Promise.resolve();
-  const profileUsage = createProfileUsage({ userDataDir: options.app.getPath('userData'), fs });
   const filename = path.join(options.app.getPath('userData'), 'remote-access.bin');
 
   function encryptionAvailable() {
@@ -83,9 +81,8 @@ function createRemoteAccess(options) {
       'remote-decide': async (value) => (await host()).decide(value?.id, value?.approved),
       'remote-revoke': async (id) => (await host()).revoke(id),
       'remote-reset': async () => (await host()).reset(),
+      'remote-sign-profile': async (payload) => (await host()).signProfilePayload(payload),
       'remote-qr': qrDataUrl,
-      'profile-usage-get': () => profileUsage.snapshot(),
-      'profile-usage-record': (records) => profileUsage.record(records),
     };
     for (const [channel, handler] of Object.entries(handlers)) {
       options.ipcMain.handle(channel, (event, value) => {
@@ -110,7 +107,7 @@ function createRemoteAccess(options) {
     async close() {
       if (hostPromise) await (await hostPromise).close();
       keepAwake(false);
-      await Promise.all([writes, profileUsage.flush()]);
+      await writes;
     },
   };
 }

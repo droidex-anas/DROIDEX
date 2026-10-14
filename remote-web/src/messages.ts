@@ -1,4 +1,5 @@
 import { isRecord } from '../../packages/remote/src/index';
+import { remoteUsageSnapshot } from '../../packages/remote/src/usage';
 import type {
   RemoteApproval,
   RemoteMessage,
@@ -49,6 +50,8 @@ export function parseRemoteMessage(value: unknown): RemoteMessage {
     case 'pairing':
       if (text(value.deviceId, 128)) return { type: 'pairing', deviceId: value.deviceId };
       break;
+    case 'usage':
+      return { type: 'usage', snapshot: remoteUsageSnapshot(value.snapshot) };
     case 'result':
       if (
         typeof value.ok === 'boolean' &&

@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react';
 import { HANDLE_PATTERN } from '../../packages/remote/src';
 import { ProfileActivity } from '../features/profile/ProfileActivity';
 import {
-  encodeProfileSnapshot,
+  createPublicProfileSnapshot,
+  encodeProfilePayload,
+  encodeProfileShare,
   type ProfileIdentity,
   type ProfileUsageSnapshot,
 } from '../features/profile/profileShare';
@@ -44,6 +46,7 @@ export function ProfileSettings({
   const [error, setError] = useState('');
   const [shareUrl, setShareUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const usageReady = usage?.sync.status === 'ready';
 
   const refresh = async () => {
     setLoading(true);
@@ -95,16 +98,17 @@ export function ProfileSettings({
       setSaving(false);
     }
   };
-  const share = () => {
+  const share = async () => {
     if (!usage) return;
     try {
-      const fragment = encodeProfileSnapshot({
-        ...usage,
-        ...profile,
-        version: 1,
-        generatedAt: Date.now(),
-      });
-      setShareUrl(`${webClientUrl.replace(/\/$/, '')}/p#${fragment}`);
+      if (!window.droidControl) throw new Error('Profile sharing is available in the desktop app.');
+      const snapshot = createPublicProfileSnapshot(profile, usage);
+      const payload = encodeProfilePayload(snapshot);
+      const fragment = encodeProfileShare(
+        payload,
+        await window.droidControl.signProfilePayload(payload),
+      );
+      setShareUrl(`${webClientUrl.replace(/\/$/, '')}/p/${profile.username}#${fragment}`);
       setCopied(false);
       setError('');
     } catch (cause) {
@@ -129,7 +133,7 @@ export function ProfileSettings({
           >
             <Pencil size={13} /> Edit
           </button>
-          <button className={action} disabled={!usage} onClick={share}>
+          <button className={action} disabled={!usageReady} onClick={() => void share()}>
             <Share2 size={13} /> Share
           </button>
         </div>
@@ -225,8 +229,9 @@ export function ProfileSettings({
             </button>
           </div>
           <p className="mb-3 text-[11px] leading-5 text-droid-text-muted">
-            Anyone with this link can see your name, username, aggregate activity and model names.
-            It contains a fixed snapshot; nothing is uploaded. Shared copies cannot be revoked.
+            Anyone with this link can see your name, username, headline activity, daily token totals
+            and model or harness names. The signed snapshot stays in the link; copied snapshots
+            cannot be revoked.
           </p>
           <div className="flex gap-2">
             <input
@@ -267,7 +272,25 @@ export function ProfileSettings({
           Reading your local activity…
         </p>
       )}
-      {usage && (
+      {usage && !usageReady && (
+        <div className="rounded-xl bg-droid-surface px-4 py-8 text-center">
+          <p className="text-[13px] font-medium text-droid-text">
+            {usage.sync.status === 'error'
+              ? 'Local usage indexing needs attention.'
+              : 'Indexing your local activity…'}
+          </p>
+          <p className="mt-2 text-[11px] text-droid-text-muted">
+            {usage.sync.status === 'error'
+              ? 'Restart DROIDEX, then refresh. Your profile stays private and cannot be shared while a source is incomplete.'
+              : 'Totals and sharing will appear after Claude Code, Codex, Droid, and OpenCode history is complete.'}
+          </p>
+          <button disabled={loading} className={`${action} mt-3`} onClick={() => void refresh()}>
+            <RefreshCw size={13} />
+            {loading ? 'Checking…' : 'Check again'}
+          </button>
+        </div>
+      )}
+      {usageReady && (
         <>
           <ProfileMetrics usage={usage} />
           <ProfileActivity usage={usage} />
@@ -277,9 +300,9 @@ export function ProfileSettings({
           </div>
           <div className="mt-8 flex items-center justify-between gap-4">
             <p className="max-w-xl text-[11px] leading-5 text-droid-text-muted">
-              Counts come from chats observed in DROIDEX, including retained history. Models are
-              ranked by each chat’s latest known model. Unreported tokens and external CLI activity
-              are excluded.
+              Counts come from local Claude Code, Codex, Droid and OpenCode history. Prompts and
+              responses are never stored in this profile ledger. Incomplete provider data stays
+              marked as unreported.
             </p>
             <button disabled={loading} className={action} onClick={() => void refresh()}>
               <RefreshCw size={13} />

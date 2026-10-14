@@ -1,3 +1,5 @@
+import type { RemoteUsageSnapshot } from './usage';
+
 export type RemoteProvider = 'droid' | 'claude' | 'codex';
 export interface RemoteSession {
   id: string;
@@ -20,6 +22,7 @@ export type RemoteCommand =
     }
   | { type: 'push.unsubscribe' }
   | { type: 'list' }
+  | { type: 'usage' }
   | { type: 'open'; sessionId: string }
   | { type: 'create'; text: string; provider: RemoteProvider }
   | { type: 'send'; sessionId: string; text: string }
@@ -38,7 +41,8 @@ export type RemoteMessage =
   | { type: 'result'; ok: boolean; message: string; operationId?: string }
   | { type: 'authorized'; expiresAt: number }
   | { type: 'locked' }
-  | { type: 'pairing'; deviceId: string };
+  | { type: 'pairing'; deviceId: string }
+  | { type: 'usage'; snapshot: RemoteUsageSnapshot };
 
 export interface RemoteAuth {
   type: 'auth';
@@ -53,6 +57,7 @@ export function remoteCommand(value: unknown): RemoteCommand {
   const command = value as Record<string, unknown>;
   switch (command.type) {
     case 'list':
+    case 'usage':
     case 'push.unsubscribe':
       return { type: command.type };
     case 'open':

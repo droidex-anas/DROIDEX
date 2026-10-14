@@ -118,11 +118,6 @@ import {
 } from './lib/lazySurfaces';
 import { noteComposerNotApplicable, noteFirstMeaningfulShellPaint } from './lib/rendererPerf';
 
-const LazyProfileUsageRecorder = lazy(() =>
-  import('./features/profile/ProfileUsageRecorder').then((module) => ({
-    default: module.ProfileUsageRecorder,
-  })),
-);
 const LazyRemoteApprovalPanel = lazy(() =>
   import('./components/RemoteApprovalPanel').then((module) => ({
     default: module.RemoteApprovalPanel,
@@ -1143,9 +1138,6 @@ export default function App() {
       )}
       <Toaster />
 
-      <Suspense fallback={null}>
-        <LazyProfileUsageRecorder />
-      </Suspense>
       <Suspense fallback={null}>
         <LazyRemoteApprovalPanel />
       </Suspense>
