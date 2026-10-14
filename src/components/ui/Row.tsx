@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode, Ref } from 'react';
+import type { HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { cn } from './cn';
 
@@ -22,7 +22,11 @@ interface RowBaseProps extends Omit<HTMLAttributes<HTMLElement>, 'onClick'> {
 // selected or disabled state.
 type RowProps = RowBaseProps &
   (
-    | { onClick: () => void; active?: boolean; disabled?: boolean }
+    | {
+        onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+        active?: boolean;
+        disabled?: boolean;
+      }
     | { onClick?: undefined; active?: never; disabled?: never }
   );
 

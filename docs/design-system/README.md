@@ -54,7 +54,7 @@ Text colours use `text-primary` rather than `text-text`; the colour itself is al
 - **Hue means something.** Links `link`; skills `skill` with `skill-mark`; the Visualize chip `visualize-mark`; the top reasoning level `ultra`.
 - **Actions with consequences get colour.** `success`, `warning` and `danger` each come with a `-soft` fill. A destructive menu item or button shows `danger` text at rest and a `danger-soft` fill on hover; a danger button fills solid `danger` on hover so the click confirms itself. Approve, merge and accept work the same way in `success`. Status badges pair the soft fill with the text colour. Always pair a status hue with a word or an icon.
 - **Diffs** use the `diff-*` tokens (the default "soft" style): `diff-add-fg` / `diff-add-bg` / `diff-add-gutter`, the same for `diff-del-*`, and `diff-hunk-*` for hunk headers.
-- **Updates** use `update` (white label, 6.0:1) in both themes. It is the one solid blue fill in the UI.
+- **Updates** use `update` with an `on-update` label (white, 6.0:1) in both themes. It is the one solid blue fill in the UI.
 - **Brand colours** `brand-ink`, `brand-paper`, `brand-orange` belong to the mark, the app icon, and marketing surfaces. Don't use them for app chrome or state.
 
 Adjusted from the code to fix contrast: light `text-muted` #6c6966 → #64615e, light `success` #1f7a4d → #1c6f46, light `warning` #9a5a0f → #8f530e, dark `danger` #cf5d54 → #d6766e. Each kept its hue and now reaches 4.5:1 on `active`.
