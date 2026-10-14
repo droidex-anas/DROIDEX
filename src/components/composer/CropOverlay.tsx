@@ -68,7 +68,8 @@ export function CropOverlay({
     >
       {rect && rect.width > 0 && rect.height > 0 && (
         <div
-          className="absolute rounded-[2px] border border-accent"
+          // eslint-disable-next-line design-policy/design-tokens -- crop selection marquee: drag cue, like a drop target
+          className="absolute rounded-xs outline outline-1 -outline-offset-1 outline-accent"
           style={{
             left: rect.x,
             top: rect.y,

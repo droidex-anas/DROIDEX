@@ -36,7 +36,7 @@ export function PendingPromptPreview({
 }) {
   return (
     <span className="flex-1 min-w-0">
-      <span className="line-clamp-2 block break-words text-[12px] text-secondary">
+      <span className="line-clamp-2 block break-words text-body text-secondary">
         {queuedPromptPreview(promptDisplayText(text, skills)) || '(empty)'}
       </span>
       {attachmentGroups(files).map((group, index) => (
@@ -66,7 +66,7 @@ function PendingImages({ paths }: { paths: [string, ...string[]] }) {
       title={paths.map((path) => pathBaseName(path)).join('\n')}
       className="relative mt-1 inline-block h-6 w-6 align-middle"
     >
-      <span className="block h-full w-full overflow-hidden rounded-sm border border-divider bg-bg/60">
+      <span className="block h-full w-full overflow-hidden rounded-sm bg-bg/60 shadow-sm">
         {src === null || failed ? (
           <span className="flex h-full w-full items-center justify-center text-muted">
             <ImageOff className="h-3 w-3" />
@@ -84,7 +84,7 @@ function PendingImages({ paths }: { paths: [string, ...string[]] }) {
         )}
       </span>
       {paths.length > 1 && (
-        <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-divider bg-raised px-0.5 text-[11px] font-semibold leading-none text-primary">
+        <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-raised px-0.5 text-overline tabular-nums text-primary shadow-sm">
           {paths.length}
         </span>
       )}

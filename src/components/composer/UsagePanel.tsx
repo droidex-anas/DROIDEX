@@ -51,7 +51,7 @@ export function UsagePanel({
       <div
         role="region"
         aria-label={`${PROVIDER_LABELS[provider]} usage`}
-        className="flex min-w-0 flex-col gap-1 text-[11px]"
+        className="flex min-w-0 flex-col gap-1 text-caption"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-4">
           <div className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1">

@@ -96,7 +96,7 @@ export function DraftSelections({
           <button
             key={item.key}
             onClick={item.onRemove}
-            className="group pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current"
+            className="group pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-xs"
             title={item.removeLabel}
             aria-label={item.removeLabel}
           >
@@ -104,7 +104,7 @@ export function DraftSelections({
               <Icon className="h-4 w-4 transition-opacity group-hover:opacity-0" />
               <X className="absolute inset-0 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
             </span>
-            <span className="max-w-[16rem] truncate">{item.label}</span>
+            <span className="max-w-64 truncate">{item.label}</span>
           </button>
         );
       })}
