@@ -39,7 +39,7 @@ export interface LiveProcessIdentity {
 
 // The sidecar that wrote the journal. The boot time keeps a pid recycled after
 // a restart of the machine from passing for it.
-export interface JournalOwner {
+interface JournalOwner {
   pid: number;
   bootedAt: number;
 }
