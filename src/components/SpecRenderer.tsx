@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Markdown } from './Markdown';
 import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
 import { LayoutTemplate } from '@droidex/icons';
@@ -77,6 +77,7 @@ function parseSpecSegments(markdown: string): Segment[] {
 }
 
 function SvgVisualCard({ svgContent, index }: { svgContent: string; index: number }) {
+  const reduceMotion = useReducedMotion();
   const image = useMemo(
     () => ({
       src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(svgContent))}`,
@@ -87,8 +88,8 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+      animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: EASE, delay: Math.min(index * 0.03, 0.3) }}
       className="rounded-xl bg-elevated p-4"
     >

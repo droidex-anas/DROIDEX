@@ -3,7 +3,7 @@ import { Search, X } from '@droidex/icons';
 import { isTranscriptFindShortcut } from '../lib/keyboardShortcuts';
 import { Button } from './ui/Button';
 import { Input } from './ui/Field';
-import { cn } from './ui/cn';
+import { Row } from './ui/Row';
 
 export interface OutlineHeading {
   level: number;
@@ -12,8 +12,9 @@ export interface OutlineHeading {
   content: string;
 }
 
-// extractOutline only reads h1-h3.
-const INDENT_BY_LEVEL: Record<number, string> = { 1: 'pl-3', 2: 'pl-6', 3: 'pl-9' };
+// extractOutline only reads h1-h3. The wrapper indents deeper headings as
+// layout: level 1 sits at the content edge, each level a step further in.
+const INDENT_BY_LEVEL: Record<number, string> = { 1: '', 2: 'pl-3', 3: 'pl-6' };
 
 function extractOutline(markdown: string): OutlineHeading[] {
   const headings: OutlineHeading[] = [];
@@ -127,17 +128,20 @@ export function SpecOutline({
             className="pointer-events-none absolute left-3 top-1/2 size-icon-sm -translate-y-1/2 text-muted"
           />
           {searchQuery && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={X}
-              aria-label="Clear search"
-              title="Clear"
-              onClick={() => {
-                onSearchChange('');
-              }}
-              className="absolute right-1 top-1/2 -translate-y-1/2"
-            />
+            // The wrapper carries the position: Button always applies
+            // `relative` itself, so the button cannot position itself.
+            <span className="absolute right-1 top-1/2 -translate-y-1/2">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={X}
+                aria-label="Clear search"
+                title="Clear"
+                onClick={() => {
+                  onSearchChange('');
+                }}
+              />
+            </span>
           )}
         </div>
       </div>
@@ -149,26 +153,17 @@ export function SpecOutline({
             {q ? 'No matching sections' : 'No sections'}
           </div>
         ) : (
-          filtered.map((h) => {
-            const isActive = activeId === h.id;
-            return (
-              <button
-                key={h.id}
+          filtered.map((h) => (
+            <div key={h.id} className={INDENT_BY_LEVEL[h.level]}>
+              <Row
+                label={highlight(h.text)}
+                active={activeId === h.id}
                 onClick={() => {
                   onSelect(h.id);
                 }}
-                className={cn(
-                  'flex w-full items-center rounded-md py-1.5 pr-3 text-left transition duration-150 ease-out',
-                  INDENT_BY_LEVEL[h.level],
-                  isActive
-                    ? 'bg-active text-body-strong text-primary'
-                    : 'text-body text-primary hover:bg-elevated',
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate">{highlight(h.text)}</span>
-              </button>
-            );
-          })
+              />
+            </div>
+          ))
         )}
       </nav>
 

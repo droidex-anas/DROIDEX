@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { X, FileText } from '@droidex/icons';
 import { pushEscapeLayer } from './ui/escapeStack';
 import { wrapTabFocus } from '../lib/focusTrap';
@@ -57,19 +57,29 @@ export function SpecModal({
   const scrollRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const reduceMotion = useReducedMotion();
+
+  // Reduced motion (docs/design-system/feel.md): the dialog cross-fades
+  // instead of translating and scaling.
+  const hidden = reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 8 };
+  const shown = reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 };
 
   const outline = useSpecOutline(open ? content : '');
   const headingIds = useMemo(() => outline.map((h) => h.id), [outline]);
   const activeId = useActiveHeading(scrollRef, headingIds);
 
-  const scrollTo = useCallback((id: string) => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const el = container.querySelector(`#${CSS.escape(id)}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, []);
+  const scrollTo = useCallback(
+    (id: string) => {
+      const container = scrollRef.current;
+      if (!container) return;
+      const el = container.querySelector(`#${CSS.escape(id)}`);
+      if (el) {
+        // 'instant' also overrides the container's CSS smooth scrolling.
+        el.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth', block: 'start' });
+      }
+    },
+    [reduceMotion],
+  );
 
   // Reset search on open
   useEffect(() => {
@@ -113,9 +123,9 @@ export function SpecModal({
             aria-modal="true"
             aria-label={title?.length ? title : 'Specification'}
             tabIndex={-1}
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8, transition: { duration: 0.12, ease: 'easeIn' } }}
+            initial={hidden}
+            animate={shown}
+            exit={{ ...hidden, transition: { duration: 0.12, ease: 'easeIn' } }}
             transition={{ duration: 0.18, ease: EASE }}
             onKeyDown={(e) => {
               wrapTabFocus(e, panelRef.current);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Download, ImageOff, Minus, Plus } from 'lucide-react';
 import { wrapTabFocus } from '../../lib/focusTrap';
+import { pushEscapeLayer } from '../ui/escapeStack';
 import { downloadImage } from './downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from './imageViewerMotion';
 import { useZoomPan, ZOOM_STEP } from './useZoomPan';
@@ -68,14 +69,13 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
     };
   }, []);
 
+  // Escape closes only the topmost layer: a spec behind this viewer stays
+  // open, and the viewer's unmount returns focus to the image inside it.
+  useEffect(() => pushEscapeLayer(onClose), [onClose]);
+
   // Capture keys before the page behind the dialog can handle them.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-        return;
-      }
       if (!failed && (e.key === '+' || e.key === '=')) {
         e.preventDefault();
         zoomBy(ZOOM_STEP);
@@ -97,7 +97,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [failed, onClose, reset, zoomBy]);
+  }, [failed, reset, zoomBy]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
