@@ -1,0 +1,222 @@
+.public-profile {
+  max-width: 960px;
+  margin: auto;
+  padding: max(20px, env(safe-area-inset-top)) 24px max(28px, env(safe-area-inset-bottom));
+}
+.profile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.profile-toolbar button {
+  font-size: 12px;
+  background: transparent;
+}
+.profile-identity {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  padding: 44px 0 32px;
+  text-align: center;
+}
+.avatar {
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 29px;
+  background: var(--droid-elevated);
+  color: var(--droid-text);
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.profile-identity h1 {
+  font-size: 29px;
+}
+.username {
+  font-size: 12px;
+  color: var(--droid-text-secondary);
+  background: var(--droid-surface);
+  padding: 3px 9px;
+  border-radius: 7px;
+}
+.profile-identity > p {
+  font-size: 13px;
+}
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin: 0;
+  padding: 24px;
+  background: var(--droid-surface);
+  border-radius: 18px;
+}
+.profile-stats div {
+  text-align: center;
+}
+.profile-stats dd {
+  margin: 0 0 3px;
+  font-size: 20px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+.profile-stats dt {
+  color: var(--droid-text-secondary);
+  font-size: 11px;
+}
+.profile-stats div:last-child {
+  grid-column: 1 / -1;
+}
+.activity {
+  margin-top: 34px;
+}
+.activity-heading {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 12px;
+}
+.segmented {
+  display: flex;
+  gap: 4px;
+}
+.segmented button {
+  font-size: 12px;
+  min-height: 44px;
+  padding: 6px 12px;
+  background: transparent;
+}
+.activity-value {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  margin-top: 20px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.activity-value strong {
+  font-size: 22px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+.activity-chart {
+  display: block;
+  width: 100%;
+  height: 170px;
+  overflow: visible;
+  margin-top: 8px;
+}
+.chart-baseline {
+  stroke: var(--droid-border);
+  stroke-width: 1;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--droid-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.chart-point {
+  fill: var(--droid-accent);
+}
+.activity-range {
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  accent-color: var(--droid-accent);
+  background: transparent;
+}
+.activity-dates {
+  display: flex;
+  justify-content: space-between;
+  color: var(--droid-text-secondary);
+  font-size: 10px;
+}
+.profile-rankings {
+  display: grid;
+  gap: 30px;
+  margin-top: 34px;
+}
+.ranking h2 {
+  margin-bottom: 19px;
+}
+.ranking-row {
+  margin-top: 15px;
+}
+.ranking-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.ranking-label strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.ranking-label span {
+  flex-shrink: 0;
+}
+.ranking-track {
+  height: 4px;
+  background: var(--droid-elevated);
+  border-radius: 4px;
+  margin-top: 9px;
+  overflow: hidden;
+}
+.ranking-track > span {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--droid-accent) 42%, var(--droid-elevated));
+  border-radius: inherit;
+}
+.profile-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 36px;
+  font-size: 11px;
+  color: var(--droid-text-secondary);
+}
+.profile-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+@media (min-width: 620px) {
+  .workspace {
+    padding: 32px 28px 220px;
+  }
+  .public-profile {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+  .profile-stats {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    padding: 25px 14px;
+  }
+  .profile-stats div:last-child {
+    grid-column: auto;
+  }
+  .activity-heading {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .profile-rankings {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 45px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}
