@@ -136,7 +136,7 @@ function SpawnDetail({
   onOpen: () => void;
 }) {
   return (
-    <div className="mt-2 pl-4.5">
+    <div className="mt-2 pl-4">
       {task !== undefined && <div className="break-words text-body text-muted">{task}</div>}
       {step !== undefined && (
         <div

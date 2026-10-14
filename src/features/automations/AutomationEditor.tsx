@@ -310,7 +310,7 @@ export function AutomationEditor({
           </div>
         </fieldset>
 
-        <div className="px-5 py-4">
+        <div className="flex flex-col px-5 py-4">
           {validation && <p className="mb-2 text-caption text-muted">{validation}</p>}
           <Button
             variant="primary"

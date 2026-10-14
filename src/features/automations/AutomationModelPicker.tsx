@@ -116,7 +116,7 @@ export function AutomationModelPicker({
           if (open) close();
           else setOpen(true);
         }}
-        className={`inline-flex max-w-72 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none transition-colors ${
+        className={`inline-flex max-w-72 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
           open ? 'bg-elevated' : 'hover:bg-elevated/70'
         }`}
       >
@@ -180,7 +180,7 @@ export function AutomationModelPicker({
                         onChange({ modelId: selectedModel.id, reasoningEffort: reasoning });
                       }}
                       disabled={!selectedModel}
-                      className={`rounded-md px-2.5 py-1.5 text-caption capitalize outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      className={`rounded-md px-2.5 py-1.5 text-caption capitalize transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                         selected
                           ? 'bg-raised text-primary shadow-sm'
                           : 'text-muted hover:bg-active hover:text-primary'
@@ -279,7 +279,7 @@ function CategoryButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-2.5 py-1 text-caption outline-none transition-colors ${
+      className={`rounded-md px-2.5 py-1 text-caption transition-colors ${
         active ? 'bg-active text-primary' : 'text-muted hover:bg-active hover:text-primary'
       }`}
     >

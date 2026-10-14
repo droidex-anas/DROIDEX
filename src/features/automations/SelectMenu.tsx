@@ -189,7 +189,7 @@ export function SelectMenu<Value extends string>({
             openMenu();
           }
         }}
-        className={`inline-flex min-w-0 max-w-64 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-right text-body outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`inline-flex min-w-0 max-w-64 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-right text-body transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
           open
             ? 'bg-elevated text-primary'
             : 'text-secondary hover:bg-elevated/70 hover:text-primary'
