@@ -1,10 +1,15 @@
-import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, FileText } from 'lucide-react';
+import { useRef, useEffect, useEffectEvent, useState, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { X, FileText } from '@droidex/icons';
+import { pushEscapeLayer } from './ui/escapeStack';
+import { wrapTabFocus } from '../lib/focusTrap';
+import { Button } from './ui/Button';
 import { SpecRenderer } from './SpecRenderer';
 import { SpecOutline, useSpecOutline } from './SpecOutline';
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+// Dialog motion (docs/design-system/feel.md): 180ms smooth-out in, 120ms
+// ease-in out.
+const EASE = [0.22, 1, 0.36, 1] as const;
 
 function useActiveHeading(scrollRef: React.RefObject<HTMLDivElement | null>, headingIds: string[]) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -50,24 +55,60 @@ export function SpecModal({
   onClose: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const reduceMotion = useReducedMotion();
+
+  // Reduced motion (docs/design-system/feel.md): the dialog cross-fades
+  // instead of translating and scaling.
+  const hidden = reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 8 };
+  const shown = reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 };
 
   const outline = useSpecOutline(open ? content : '');
   const headingIds = useMemo(() => outline.map((h) => h.id), [outline]);
   const activeId = useActiveHeading(scrollRef, headingIds);
 
-  const scrollTo = useCallback((id: string) => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const el = container.querySelector(`#${CSS.escape(id)}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, []);
+  const scrollTo = useCallback(
+    (id: string) => {
+      const container = scrollRef.current;
+      if (!container) return;
+      const el = container.querySelector(`#${CSS.escape(id)}`);
+      if (el) {
+        // 'instant' also overrides the container's CSS smooth scrolling.
+        el.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth', block: 'start' });
+      }
+    },
+    [reduceMotion],
+  );
 
   // Reset search on open
   useEffect(() => {
     if (open) setSearchQuery('');
+  }, [open]);
+
+  // Dialog contract: Escape closes through the shared LIFO layer stack, Tab
+  // stays inside, and focus returns to the opener when the dialog closes.
+  // Tied to `open` only, so a caller's new `onClose` on a rerender neither
+  // refocuses the panel nor moves its Escape layer above a later one.
+  const close = useEffectEvent(onClose);
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const panel = panelRef.current;
+    panel?.focus({ preventScroll: true });
+    let focusInside = true;
+    const track = () => {
+      focusInside = panel?.contains(document.activeElement) ?? false;
+    };
+    document.addEventListener('focusin', track);
+    const popEscape = pushEscapeLayer(() => {
+      close();
+    });
+    return () => {
+      document.removeEventListener('focusin', track);
+      popEscape();
+      if (focusInside && opener?.isConnected) opener.focus();
+    };
   }, [open]);
 
   return (
@@ -77,39 +118,42 @@ export function SpecModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6"
+          transition={{ duration: 0.12, ease: 'easeIn' }}
+          className="fixed inset-0 z-dialog flex items-center justify-center bg-bg/60 p-8"
           onClick={onClose}
         >
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
-            transition={{ duration: 0.3, ease: EASE }}
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title?.length ? title : 'Specification'}
+            tabIndex={-1}
+            initial={hidden}
+            animate={shown}
+            exit={{ ...hidden, transition: { duration: 0.12, ease: 'easeIn' } }}
+            transition={{ duration: 0.18, ease: EASE }}
+            onKeyDown={(e) => {
+              wrapTabFocus(e, panelRef.current);
+            }}
             onClick={(e) => {
               e.stopPropagation();
             }}
-            className="w-full max-w-[1120px] h-[88vh] flex flex-col rounded-xl border border-divider bg-surface shadow-lg overflow-hidden"
+            className="flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-surface shadow-lg"
           >
             {/* Header */}
-            <div className="shrink-0 flex items-center justify-between px-5 h-12 border-b border-divider">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileText className="w-4 h-4 shrink-0 text-muted" />
-                <span className="text-[13px] font-medium text-primary truncate">
+            <div className="flex h-12 shrink-0 items-center justify-between gap-3 px-6">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <FileText className="size-icon-md shrink-0 text-muted" aria-hidden="true" />
+                <span className="truncate text-heading text-primary">
                   {title?.length ? title : 'Specification'}
                 </span>
                 {outline.length > 0 && (
-                  <span className="text-[11px] font-mono text-muted/70 ml-1">
+                  <span className="ml-1 shrink-0 text-caption tabular-nums text-muted">
                     {outline.length} sections
                   </span>
                 )}
               </div>
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <Button variant="ghost" size="sm" icon={X} aria-label="Close" onClick={onClose} />
             </div>
 
             {/* Body */}
@@ -123,7 +167,7 @@ export function SpecModal({
                   {content ? (
                     <SpecRenderer content={content} />
                   ) : (
-                    <div className="flex items-center justify-center h-full text-[13px] text-muted">
+                    <div className="flex items-center justify-center h-full text-body text-muted">
                       No spec content available.
                     </div>
                   )}
