@@ -23,7 +23,8 @@ const MAX_RENDERED_LINES = 3000;
 const CHUNK_ROWS = 200;
 const INITIAL_CHUNKS = 3;
 const CHUNKS_PER_FRAME = 2;
-const EST_ROW_PX = 19.2; // 12px font at 1.6 line-height
+// The `code` type style: 12px font at a 1.5 line-height by default.
+const EST_ROW_PX = 18;
 
 function Gutter({ value }: { value: number | null }) {
   return (
@@ -103,7 +104,7 @@ type Row =
 
 function RowView({ row, wrap }: { row: Row; wrap: boolean }) {
   if (row.kind === 'header') {
-    return <div className="review-diff-hunk px-2 py-0.5 text-[11px]">{row.text}</div>;
+    return <div className="review-diff-hunk px-2 py-0.5 text-code-sm">{row.text}</div>;
   }
   if (row.kind === 'line') return <UnifiedLine line={row.line} wrap={wrap} />;
   return (
@@ -227,16 +228,16 @@ export function DiffBody({
   const pendingRows = Math.max(0, rows.length - mounted * CHUNK_ROWS);
 
   if (binary || parsed.binary) {
-    return <div className="p-4 text-[13px] text-muted">Binary file not shown</div>;
+    return <div className="p-4 text-body text-muted">Binary file not shown</div>;
   }
   if (parsed.hunks.length === 0) {
-    return <div className="p-4 text-[13px] text-muted">No textual changes</div>;
+    return <div className="p-4 text-body text-muted">No textual changes</div>;
   }
 
   return (
     // Wrapped rows already fit the viewport; only the scrolling mode needs the
     // widest-line width that keeps row backgrounds full-width.
-    <div className={`font-mono text-[12px] leading-[1.6] ${wrap ? '' : 'review-diff-content'}`}>
+    <div className={`font-mono text-code ${wrap ? '' : 'review-diff-content'}`}>
       {chunks.slice(0, mounted).map((chunk, ci) => (
         <Chunk key={ci} rows={chunk} wrap={wrap} />
       ))}
@@ -244,7 +245,7 @@ export function DiffBody({
           while the progressive mount catches up. */}
       {pendingRows > 0 && <div style={{ height: Math.round(pendingRows * EST_ROW_PX) }} />}
       {hiddenLines > 0 && (
-        <div className="px-3 py-2 text-[12px] text-muted">
+        <div className="px-3 py-2 text-caption text-muted">
           Diff truncated: {hiddenLines.toLocaleString()} more lines not shown
         </div>
       )}

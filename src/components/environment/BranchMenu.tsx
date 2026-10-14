@@ -1,14 +1,20 @@
 import { useMemo, useRef, useState } from 'react';
-import { Check, Plus, Search, TriangleAlert } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { AlertTriangle, Check, Plus, Search, Spinner } from '@droidex/icons';
 import { GitBranchIcon, GitCommitIcon } from './GithubIcons';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
+import { Menu } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
-import { Row, RowCaret } from './primitives';
+import { Row, RowCaret } from '../ui/Row';
 import { checkoutGitBranch, createGitBranch, aheadBehindLabel } from '../../lib/git';
 import { useGitFetchOnOpen } from '../../hooks/useGitFetchOnOpen';
 import { useBusyAction } from '../../hooks/useBusyAction';
 import { toast } from '../../lib/toast';
 import type { GitActionResult, GitBranchList, GitEnvironment } from '../../types/vcs';
+
+// The pointer is the highlight in these popover lists: elevated on light,
+// active on dark, where the raised layer already is the elevated rung.
+const ITEM_HOVER = 'hover:bg-elevated dark:hover:bg-active';
 
 export function BranchMenu({
   cwd,
@@ -132,8 +138,8 @@ export function BranchMenu({
           else setOpen(true);
         }}
         active={open}
-        expanded={open}
-        hasPopup="dialog"
+        aria-expanded={open}
+        aria-haspopup="dialog"
         trailing={<RowCaret open={open} />}
       />
 
@@ -145,32 +151,33 @@ export function BranchMenu({
         placement="bottom-end"
         width={288}
       >
-        <div className="flex shrink-0 items-center gap-2 border-b border-divider/70 px-2.5 py-2">
-          <Search className="h-3.5 w-3.5 shrink-0 text-muted" />
-          <input
+        <div className="flex shrink-0 items-center gap-2 bg-bg/40 px-2.5 py-2">
+          <Search className="size-icon-sm shrink-0 text-muted" />
+          <Input
+            variant="embedded"
             autoFocus
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
             }}
             placeholder="Search branches"
-            className="w-full bg-transparent text-[13px] text-primary placeholder:text-muted focus:outline-none"
+            aria-label="Search branches"
           />
           {(busy || fetching) && (
-            <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-accent" />
+            <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow text-accent" />
           )}
         </div>
 
         {dirtyRef && (
-          <div className="flex items-center gap-2 bg-warning/10 px-2.5 py-2 text-[12px] text-primary">
-            <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-warning" />
+          <div className="flex items-center gap-2 bg-warning-soft px-2.5 py-2 text-body text-primary">
+            <AlertTriangle className="size-icon-sm shrink-0 text-warning" />
             <span className="flex-1">Uncommitted changes.</span>
             <button
               onClick={() => {
                 void doCheckout(dirtyRef, true);
               }}
               disabled={busy}
-              className="rounded-sm bg-warning/20 px-2 py-0.5 text-[11px] font-medium text-warning hover:bg-warning/30 disabled:opacity-40"
+              className="rounded-sm bg-warning/25 px-2 py-0.5 text-caption font-medium text-warning transition-colors hover:bg-warning/40 disabled:opacity-40"
             >
               Switch anyway
             </button>
@@ -178,9 +185,7 @@ export function BranchMenu({
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
-          <div className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted">
-            Branches
-          </div>
+          <Menu.Label className="px-2.5">Branches</Menu.Label>
           {local.map((b) => {
             const ab = aheadBehindLabel(b.ahead, b.behind);
             return (
@@ -191,32 +196,22 @@ export function BranchMenu({
                   void doCheckout(b.name);
                 }}
                 aria-disabled={busy || fetching}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/60"
+                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${ITEM_HOVER}`}
               >
                 <GitBranchIcon size={14} className="shrink-0 text-muted" />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-primary">{b.name}</span>
-                {ab && <span className="shrink-0 text-[11px] tabular-nums text-muted">{ab}</span>}
-                {b.current && (
-                  <Check
-                    className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: 'var(--accent)' }}
-                    strokeWidth={3}
-                  />
-                )}
+                <span className="min-w-0 flex-1 truncate text-body text-primary">{b.name}</span>
+                {ab && <span className="shrink-0 text-caption tabular-nums text-muted">{ab}</span>}
+                {b.current && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
               </button>
             );
           })}
           {localOverflow > 0 && (
-            <div className="px-2.5 py-1.5 text-[11px] text-muted">
+            <div className="px-2.5 py-1.5 text-caption text-muted">
               + {localOverflow} more, refine the search to see them
             </div>
           )}
 
-          {remote.length > 0 && (
-            <div className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-              Remote
-            </div>
-          )}
+          {remote.length > 0 && <Menu.Label className="px-2.5 pt-2">Remote</Menu.Label>}
           {remote.map((b) => {
             return (
               <button
@@ -226,24 +221,25 @@ export function BranchMenu({
                   void doCheckout(b.name);
                 }}
                 aria-disabled={busy || fetching}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-elevated/60"
+                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${ITEM_HOVER}`}
               >
                 <GitBranchIcon size={14} className="shrink-0 text-muted/70" />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">{b.name}</span>
+                <span className="min-w-0 flex-1 truncate text-body text-secondary">{b.name}</span>
               </button>
             );
           })}
           {remoteOverflow > 0 && (
-            <div className="px-2.5 py-1.5 text-[11px] text-muted">
+            <div className="px-2.5 py-1.5 text-caption text-muted">
               + {remoteOverflow} more, refine the search to see them
             </div>
           )}
         </div>
 
-        <div className="shrink-0 border-t border-divider/70 p-1.5">
+        <div className="shrink-0 bg-bg/40 p-1.5">
           {creating ? (
             <div className="flex items-center gap-1.5">
-              <input
+              <Input
+                variant="compact"
                 autoFocus
                 value={newName}
                 onChange={(e) => {
@@ -251,25 +247,29 @@ export function BranchMenu({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && void doCreate()}
                 placeholder="new-branch-name"
-                className="w-full rounded-sm bg-bg/60 px-2 py-1 text-[12px] text-primary placeholder:text-muted focus:outline-none"
+                aria-label="New branch name"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
               />
-              <button
-                onClick={() => void doCreate()}
+              <Button
+                variant="primary"
+                size="sm"
+                loading={busy}
                 disabled={!newName.trim() || busy}
-                className="flex shrink-0 items-center gap-1 rounded-sm bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent disabled:opacity-40"
+                onClick={() => void doCreate()}
               >
-                {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
                 Create
-              </button>
+              </Button>
             </div>
           ) : (
             <button
               onClick={() => {
                 setCreating(true);
               }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-primary transition-colors hover:bg-elevated/60"
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary transition-colors ${ITEM_HOVER}`}
             >
-              <Plus className="h-3.5 w-3.5 shrink-0 text-muted" />
+              <Plus className="size-icon-sm shrink-0 text-muted" />
               Create and checkout new branch…
             </button>
           )}

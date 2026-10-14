@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Spinner } from '@droidex/icons';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { useStoreSelector } from '../../hooks/useStore';
 import { sessionAttention } from '../../lib/sessionAttention';
@@ -43,11 +44,11 @@ export function ThreadsWaiting({ appSessionId }: { appSessionId: string }) {
     <Tooltip label={names.join(', ')}>
       <span
         data-testid="threads-waiting"
-        className="ml-1.5 flex items-center gap-1.5 px-1 text-[12px] font-medium"
+        className="ml-1.5 flex items-center gap-1.5 px-1 text-label"
       >
-        <span
+        <Spinner
           aria-hidden="true"
-          className="h-2.5 w-2.5 rounded-full border-[1.5px] border-muted border-r-transparent motion-safe:animate-spin-slow"
+          className="h-2.5 w-2.5 motion-safe:animate-spin-slow text-muted"
         />
         <span className="shimmer-text shimmer-slow">
           Waiting for {plural(names.length, 'thread', 'threads')}

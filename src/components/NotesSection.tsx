@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import { RowCaret } from './environment/primitives';
+import { RowCaret } from './ui/Row';
 import {
   NOTE_TAG_CHIP,
   NOTE_TAG_HINT,

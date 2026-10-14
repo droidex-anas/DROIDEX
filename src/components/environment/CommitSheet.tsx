@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Spinner } from '@droidex/icons';
+import { Button } from '../ui/Button';
 import { gitCommit } from '../../lib/git';
 import { toast } from '../../lib/toast';
 import { useBusyAction } from '../../hooks/useBusyAction';
@@ -35,7 +35,7 @@ export function CommitSheet({ cwd, onDone }: { cwd: string; onDone: () => void }
     });
 
   return (
-    <div className="mx-2 mb-1.5 space-y-2 rounded-lg bg-elevated/50 px-2.5 py-2.5">
+    <div className="mx-2 mb-1.5 space-y-2 rounded-lg bg-elevated px-2.5 py-2.5">
       <textarea
         autoFocus
         value={message}
@@ -47,10 +47,10 @@ export function CommitSheet({ cwd, onDone }: { cwd: string; onDone: () => void }
         }}
         rows={3}
         placeholder="Commit message"
-        className="w-full resize-none rounded-md bg-bg/60 px-2.5 py-2 text-[13px] text-primary placeholder:text-muted focus:outline-none"
+        className="w-full resize-none rounded-md bg-field px-2.5 py-2 text-body text-primary placeholder:text-muted"
       />
       <div className="flex items-center justify-between">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-secondary">
+        <label className="flex cursor-pointer items-center gap-1.5 text-label text-secondary">
           <input
             type="checkbox"
             checked={stageAll}
@@ -61,14 +61,15 @@ export function CommitSheet({ cwd, onDone }: { cwd: string; onDone: () => void }
           />
           Stage all changes
         </label>
-        <button
-          onClick={() => void doCommit()}
+        <Button
+          variant="primary"
+          size="sm"
+          loading={busy}
           disabled={!message.trim() || busy}
-          className="flex items-center gap-1.5 rounded-md bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
+          onClick={() => void doCommit()}
         >
-          {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
           Commit
-        </button>
+        </Button>
       </div>
     </div>
   );
