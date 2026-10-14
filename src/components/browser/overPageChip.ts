@@ -1,5 +1,5 @@
 // The small chips that sit over the page: the size chip, and in full screen
-// the activity row above the composer. They wear the composer's surface as a
-// soft pill, with a quiet hover; an open chip keeps its hover rim.
+// the activity row above the composer. They float on the page as a soft pill
+// with a shadow; hovering or opening one brings its surface up a step.
 export const OVER_PAGE_CHIP =
-  'flex h-8 items-center rounded-full border border-divider bg-raised/95 shadow-sm transition-[background-color,border-color,color] duration-150 hover:border-divider-strong aria-expanded:border-divider-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 motion-reduce:transition-none';
+  'flex h-control-md items-center rounded-full bg-raised/90 shadow-sm transition-[background-color,color] duration-150 hover:bg-raised aria-expanded:bg-raised motion-reduce:transition-none';

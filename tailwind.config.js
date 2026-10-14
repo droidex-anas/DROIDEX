@@ -112,8 +112,9 @@ export default {
       },
       height: sizes,
       // The fixed shell columns (rules.md "Sizes"): `w-sidebar` and the
-      // floating context panel the chat insets its content for.
-      width: { ...sizes, sidebar: '280px', 'context-panel': '312px' },
+      // floating context panel the chat insets its content for, plus the
+      // transcript's media and browser cards.
+      width: { ...sizes, sidebar: '280px', 'context-panel': '312px', 'chat-card': '360px' },
       // Dialog widths (rules.md "Sizes"), for ui/Dialog.
       maxWidth: { 'dialog-confirm': '440px', 'dialog-form': '560px', 'dialog-content': '720px' },
       size: sizes,
