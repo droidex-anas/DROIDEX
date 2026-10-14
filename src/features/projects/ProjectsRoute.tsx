@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { ChevronRight, Plus, Spinner } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { Button } from '../../components/ui/Button';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { formatRelativeTime } from '../../lib/time';
 import { toast } from '../../lib/toast';
@@ -114,20 +115,15 @@ function ProjectListView({
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-6 pb-16 pt-4">
         <div className="flex items-center gap-3">
-          <h1 className="flex flex-1 items-baseline gap-2.5 text-[22px] font-semibold tracking-tight">
+          <h1 className="flex flex-1 items-baseline gap-2.5 text-title">
             Projects
-            <span className="text-[13px] font-medium tracking-normal text-muted">Beta</span>
+            <span className="text-body text-muted">Beta</span>
           </h1>
-          <button
-            type="button"
-            onClick={onStartProject}
-            className="flex items-center gap-1.5 rounded-lg bg-active px-3 py-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-elevated"
-          >
-            <Plus className="h-3.5 w-3.5" />
+          <Button variant="primary" icon={Plus} onClick={onStartProject}>
             New project
-          </button>
+          </Button>
         </div>
-        <ProjectsBetaNote className="pb-6 pt-1.5 text-[13px] leading-6 text-muted" />
+        <ProjectsBetaNote className="pb-6 pt-1.5 text-body text-muted" />
 
         {entries.length === 0 ? (
           <Empty loading={loading} error={error} onCreate={onStartProject} />
@@ -169,7 +165,7 @@ function ProjectRow({
   return (
     <div
       data-testid="project-row"
-      className="group flex items-center gap-2 rounded-xl border border-divider bg-surface/40 pr-2 transition-colors hover:border-divider-strong hover:bg-elevated/40"
+      className="group flex items-center gap-2 rounded-xl bg-surface/40 pr-2 transition-colors hover:bg-elevated/40"
     >
       <button
         type="button"
@@ -182,10 +178,10 @@ function ProjectRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2.5">
-            <span className="truncate text-[15px] font-semibold text-primary">{project.title}</span>
-            {folder && <span className="truncate text-[12px] text-muted">{folder}</span>}
+            <span className="truncate text-subheading text-primary">{project.title}</span>
+            {folder && <span className="truncate text-caption text-muted">{folder}</span>}
           </span>
-          <span className="mt-1 block truncate text-[13px] text-secondary">{pulse.summary}</span>
+          <span className="mt-1 block truncate text-body text-secondary">{pulse.summary}</span>
         </span>
         {/* While it runs, the trailing slot carries the work instead of a time
             that would only tell the user how long ago it started. */}
@@ -193,20 +189,20 @@ function ProjectRow({
           {pulse.live ? (
             <WorkingSpinner />
           ) : (
-            <span className="text-[12px] tabular-nums text-muted">
+            <span className="text-caption tabular-nums text-muted">
               {formatRelativeTime(pulse.updatedAt, now)}
             </span>
           )}
         </span>
       </button>
-      <button
-        type="button"
-        onClick={onOpenDetails}
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={ChevronRight}
         aria-label={`Open ${project.title} in Projects`}
-        className="shrink-0 rounded-md p-2 text-muted opacity-0 transition-opacity hover:bg-elevated hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
+        onClick={onOpenDetails}
+        className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+      />
     </div>
   );
 }
@@ -214,7 +210,10 @@ function ProjectRow({
 /** The app's own spinner, tinted to the accent so a running project reads at a glance. */
 function WorkingSpinner() {
   return (
-    <Spinner aria-label="working" className="h-4 w-4 text-accent motion-safe:animate-spin-slow" />
+    <Spinner
+      aria-label="working"
+      className="size-icon-md text-accent motion-safe:animate-spin-slow"
+    />
   );
 }
 
@@ -231,22 +230,18 @@ function Empty({
   onCreate: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-divider px-6 py-10 text-center">
-      <h2 className="text-[15px] font-medium">
+    <div className="rounded-xl bg-surface/40 px-6 py-10 text-center">
+      <h2 className="text-subheading text-primary">
         {error ? 'Projects could not be loaded' : loading ? 'Loading projects…' : 'No projects yet'}
       </h2>
-      <p className="mx-auto mt-2 max-w-sm text-[13px] leading-6 text-muted">
+      <p className="mx-auto mt-2 max-w-sm text-body text-muted">
         {error ||
           'A project is one conversation that leads the work. Give it a goal and it splits the parts that can run at once into threads, each its own chat, reporting back as it finishes.'}
       </p>
       {!loading && !error && (
-        <button
-          type="button"
-          onClick={onCreate}
-          className="mt-5 rounded-lg bg-text px-4 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-80"
-        >
+        <Button variant="primary" className="mt-5" onClick={onCreate}>
           Start a project
-        </button>
+        </Button>
       )}
     </div>
   );

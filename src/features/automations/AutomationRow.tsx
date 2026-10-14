@@ -1,14 +1,14 @@
+import { CircleAlert, CirclePause, History } from 'lucide-react';
 import {
-  CircleAlert,
-  CirclePause,
-  History,
+  Clock,
   MessageSquareText,
   Pencil,
   Play,
-  Trash2,
-} from 'lucide-react';
-import { Clock, Spinner } from '@droidex/icons';
-import type { ReactNode } from 'react';
+  Spinner,
+  Trash,
+  type IconComponent,
+} from '@droidex/icons';
+import { Button } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { AUTONOMY_LABELS } from '../../lib/autonomy';
 import type { ModelInfo } from '../../types/bridge';
@@ -30,7 +30,6 @@ export function AutomationRow({
   targetTitle,
   now,
   deleteArmed,
-  last,
   onEdit,
   onToggle,
   onRun,
@@ -44,7 +43,6 @@ export function AutomationRow({
   targetTitle?: string | undefined;
   now: number;
   deleteArmed: boolean;
-  last: boolean;
   onEdit: () => void;
   onToggle: (enabled: boolean) => void;
   onRun: () => void;
@@ -74,13 +72,9 @@ export function AutomationRow({
   );
 
   return (
-    <div
-      className={`group grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition-colors hover:bg-elevated/30 [@container(min-width:540px)]:flex ${
-        last ? '' : 'border-b border-divider/60'
-      }`}
-    >
+    <div className="group flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3.5 transition-colors hover:bg-elevated/30 [@container(min-width:540px)]:flex-nowrap">
       <span
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${statusTileClass(
+        className={`flex size-control-lg shrink-0 items-center justify-center rounded-lg ${statusTileClass(
           run,
           needsSetup,
           automation.enabled,
@@ -90,10 +84,10 @@ export function AutomationRow({
       </span>
 
       <button type="button" onClick={onEdit} className="min-w-0 flex-1 text-left">
-        <div title={automation.title} className="truncate text-[13px] font-medium text-primary">
+        <div title={automation.title} className="truncate text-body-strong text-primary">
           {automation.title}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
           <span>{formatSchedule(automation.schedule, automation.timezone)}</span>
           <span aria-hidden>·</span>
           {isDelivery ? (
@@ -114,7 +108,7 @@ export function AutomationRow({
             </>
           )}
         </div>
-        <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px]">
+        <div className="mt-1.5 flex min-w-0 items-center gap-2 text-caption">
           {error ? (
             <Tooltip label={error} placement="bottom">
               {statusContent}
@@ -128,9 +122,10 @@ export function AutomationRow({
         </div>
       </button>
 
-      <div className="col-start-2 flex shrink-0 items-center gap-0.5 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:[@container(min-width:540px)]:opacity-0">
+      <div className="flex w-full shrink-0 items-center gap-0.5 pl-12 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:[@container(min-width:540px)]:opacity-0 [@container(min-width:540px)]:w-auto [@container(min-width:540px)]:pl-0">
         {sessionId && (
           <RowAction
+            icon={MessageSquareText}
             label={
               isDelivery
                 ? 'Open target conversation'
@@ -141,11 +136,10 @@ export function AutomationRow({
             onClick={() => {
               onOpenSession(sessionId);
             }}
-          >
-            <MessageSquareText className="h-3.5 w-3.5" />
-          </RowAction>
+          />
         )}
         <RowAction
+          icon={Play}
           label={
             needsSetup
               ? 'Choose a model and reasoning before running'
@@ -157,13 +151,10 @@ export function AutomationRow({
           }
           onClick={onRun}
           disabled={active || needsSetup}
-        >
-          <Play className="h-3.5 w-3.5" />
-        </RowAction>
-        <RowAction label="Edit automation" onClick={onEdit}>
-          <Pencil className="h-3.5 w-3.5" />
-        </RowAction>
+        />
+        <RowAction icon={Pencil} label="Edit automation" onClick={onEdit} />
         <RowAction
+          icon={canPause ? CirclePause : Play}
           label={
             pendingDelivery
               ? 'Cancel pending delivery'
@@ -174,17 +165,14 @@ export function AutomationRow({
           onClick={() => {
             onToggle(!canPause);
           }}
-        >
-          {canPause ? <CirclePause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-        </RowAction>
+        />
         <RowAction
+          icon={Trash}
           label={deleteArmed ? 'Click again to delete' : 'Delete automation'}
           onClick={onDelete}
           danger={deleteArmed}
           disabled={active && run?.status !== 'queued'}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </RowAction>
+        />
       </div>
     </div>
   );
@@ -240,33 +228,28 @@ function rowHint(
 }
 
 function RowAction({
+  icon,
   label,
   onClick,
-  children,
   disabled = false,
   danger = false,
 }: {
+  icon: IconComponent;
   label: string;
   onClick: () => void;
-  children: ReactNode;
   disabled?: boolean;
   danger?: boolean;
 }) {
   return (
     <Tooltip label={label}>
-      <button
-        type="button"
+      <Button
+        variant={danger ? 'danger' : 'ghost'}
+        size="sm"
+        icon={icon}
+        aria-label={label}
         onClick={onClick}
         disabled={disabled}
-        aria-label={label}
-        className={`rounded-md p-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
-          danger
-            ? 'bg-danger/12 text-danger hover:bg-danger/20'
-            : 'text-muted hover:bg-elevated hover:text-primary'
-        }`}
-      >
-        {children}
-      </button>
+      />
     </Tooltip>
   );
 }
@@ -299,7 +282,7 @@ function RunStatusIcon({
   enabled?: boolean;
   needsSetup?: boolean;
 }) {
-  const size = large ? 'h-4 w-4' : 'h-3 w-3';
+  const size = large ? 'size-icon-md' : 'size-icon-sm';
   if (needsSetup && !isAutomationRunActive(run)) {
     return <SetupRequiredIcon className={`${size} text-warning`} />;
   }
@@ -328,16 +311,12 @@ function statusTileClass(
   needsSetup: boolean,
   enabled: boolean,
 ): string {
-  if (needsSetup && !isAutomationRunActive(run)) {
-    return 'border-warning/20 bg-warning/5';
-  }
-  if (run?.status === 'failed') return 'border-danger/20 bg-danger/5';
-  if (run?.status === 'completed') return 'border-divider bg-surface/48';
-  if (run?.status === 'running' || run?.status === 'starting') {
-    return 'border-divider-strong bg-elevated/75';
-  }
-  if (!enabled) return 'border-divider/70 bg-surface/30';
-  return 'border-divider bg-surface/65';
+  if (needsSetup && !isAutomationRunActive(run)) return 'bg-warning-soft';
+  if (run?.status === 'failed') return 'bg-danger-soft';
+  if (run?.status === 'completed') return 'bg-surface';
+  if (run?.status === 'running' || run?.status === 'starting') return 'bg-elevated';
+  if (!enabled) return 'bg-surface/30';
+  return 'bg-surface/65';
 }
 
 function statusClass(run: AutomationRun | undefined, needsSetup = false): string {

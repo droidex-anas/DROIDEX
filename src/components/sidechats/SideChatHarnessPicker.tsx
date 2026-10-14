@@ -8,7 +8,7 @@ import {
   providerDefaultModel,
   providerModelCatalog,
 } from '../../features/providers/providerIdentity';
-import { AnchoredPopover } from '../../features/automations/AnchoredPopover';
+import { Popover } from '../ui/Popover';
 import type { SideChatHarness } from '../../lib/sideChats';
 import ModelCatalogList from '../ModelCatalogList';
 import { ModelIcon } from '../ModelIcon';
@@ -56,16 +56,15 @@ export function SideChatHarnessPicker({
         <span className="min-w-0 truncate">{label}</span>
         <ChevronDown className="h-3 w-3 shrink-0 text-muted" />
       </button>
-      <AnchoredPopover
+      <Popover
         open={open}
         anchorRef={chipRef}
         onClose={() => {
           setOpen(false);
         }}
+        label="Side chat harness and model"
+        placement="bottom-start"
         width={320}
-        align="start"
-        maximumHeight={360}
-        ariaLabel="Side chat harness and model"
       >
         <HarnessSegments
           provider={provider}
@@ -94,7 +93,7 @@ export function SideChatHarnessPicker({
             reasoningLocked={false}
           />
         </div>
-      </AnchoredPopover>
+      </Popover>
     </>
   );
 }

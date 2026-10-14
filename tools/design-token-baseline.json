@@ -105,20 +105,6 @@
   "src/components/SidebarSessionRow.tsx": {
     "border-width": 2
   },
-  "src/components/SpecModal.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 4,
-    "palette-color": 1
-  },
-  "src/components/SpecOutline.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 9
-  },
-  "src/components/SpecRenderer.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 5,
-    "uppercase": 1
-  },
   "src/components/SubagentsPanel.tsx": {
     "arbitrary-value": 8
   },
@@ -253,101 +239,6 @@
   },
   "src/components/transcript/UserBubble.tsx": {
     "arbitrary-value": 3
-  },
-  "src/features/automations/AnchoredPopover.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
-  "src/features/automations/AutomationEditor.tsx": {
-    "arbitrary-value": 11,
-    "border-width": 13
-  },
-  "src/features/automations/AutomationList.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
-  "src/features/automations/AutomationModelPicker.tsx": {
-    "arbitrary-value": 12,
-    "border-width": 13,
-    "focus-ring": 2,
-    "uppercase": 1
-  },
-  "src/features/automations/AutomationProposalCard.tsx": {
-    "arbitrary-value": 14,
-    "border-width": 12,
-    "uppercase": 1
-  },
-  "src/features/automations/AutomationRow.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 3,
-    "focus-ring": 1
-  },
-  "src/features/automations/AutomationSessionBadge.tsx": {
-    "border-width": 3
-  },
-  "src/features/automations/AutomationsView.tsx": {
-    "arbitrary-value": 19,
-    "border-width": 14
-  },
-  "src/features/automations/ScheduleControls.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 5
-  },
-  "src/features/automations/SchedulePromptPopover.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 4
-  },
-  "src/features/automations/ScheduledPrompts.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2,
-    "palette-color": 2
-  },
-  "src/features/automations/SelectMenu.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 7
-  },
-  "src/features/automations/TimeFields.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 12
-  },
-  "src/features/projects/ProjectPlan.tsx": {
-    "arbitrary-value": 4,
-    "uppercase": 1
-  },
-  "src/features/projects/ProjectThreads.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 4
-  },
-  "src/features/projects/ProjectsIntro.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 10
-  },
-  "src/features/projects/ProjectsRoute.tsx": {
-    "arbitrary-value": 11,
-    "border-width": 5
-  },
-  "src/features/projects/ThreadDetail.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2
-  },
-  "src/features/projects/ThreadList.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 7
-  },
-  "src/features/projects/ThreadNoticeCards.tsx": {
-    "arbitrary-value": 5,
-    "border-width": 6
-  },
-  "src/features/projects/ThreadRow.tsx": {
-    "arbitrary-value": 5,
-    "border-width": 2
-  },
-  "src/features/projects/ThreadSpawnLine.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/features/projects/ThreadsWaiting.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 2
   },
   "src/features/providers/HarnessRail.tsx": {
     "border-width": 2
