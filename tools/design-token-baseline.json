@@ -164,76 +164,17 @@
   "src/components/WorktreesSettings.tsx": {
     "border-width": 2
   },
-  "src/components/agents/AgentLifecycleLine.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/agents/AgentMonitorCard.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 3
-  },
-  "src/components/agents/AgentPaneDetail.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 2
-  },
-  "src/components/agents/AgentPaneExpand.tsx": {
-    "focus-ring": 1
-  },
-  "src/components/agents/AgentPaneList.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/components/agents/AgentRow.tsx": {
-    "arbitrary-value": 8
-  },
-  "src/components/agents/AgentRowList.tsx": {
-    "arbitrary-value": 3,
-    "uppercase": 1
-  },
-  "src/components/agents/AgentStatusPill.tsx": {
-    "arbitrary-value": 1
-  },
   "src/components/agents/AgentSummaryLine.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/components/agents/AgentsWorkspace.tsx": {
     "arbitrary-value": 1
-  },
-  "src/components/browser/BrowserActivityLine.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2
-  },
-  "src/components/browser/BrowserCard.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 2,
-    "focus-ring": 2
   },
   "src/components/browser/BrowserPreview.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
+    "arbitrary-value": 1
   },
   "src/components/browser/BrowserToolbar.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 2
-  },
-  "src/components/browser/BrowserWorkspace.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 6,
-    "palette-color": 1
-  },
-  "src/components/browser/DesignModePill.tsx": {
-    "arbitrary-value": 8,
-    "border-width": 4,
-    "focus-ring": 1
-  },
-  "src/components/browser/DesignQuickPrompt.tsx": {
-    "border-width": 2
+    "arbitrary-value": 1
   },
   "src/components/browser/NativeBrowserSurface.tsx": {
-    "border-width": 2,
     "palette-color": 1
-  },
-  "src/components/browser/ViewportMenu.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 2
   },
   "src/components/chat.tsx": {
     "arbitrary-value": 3,
@@ -295,29 +236,10 @@
     "arbitrary-value": 4
   },
   "src/components/files/FilePreviewPane.tsx": {
-    "arbitrary-value": 37,
-    "border-width": 25,
-    "palette-color": 10
-  },
-  "src/components/files/FilesWorkspace.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 10,
-    "focus-ring": 2,
-    "palette-color": 3
-  },
-  "src/components/media/GeneratedImageCard.tsx": {
-    "arbitrary-value": 3
+    "palette-color": 2
   },
   "src/components/media/ImageLightboxContent.tsx": {
-    "arbitrary-value": 9,
-    "palette-color": 1
-  },
-  "src/components/media/TranscriptImage.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 5
-  },
-  "src/components/media/viewerChrome.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 5
   },
   "src/components/modelListParts.tsx": {
     "arbitrary-value": 2
@@ -389,31 +311,11 @@
     "border-width": 14,
     "palette-color": 1
   },
-  "src/components/terminal/TerminalCloseConfirm.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2,
-    "focus-ring": 1
-  },
-  "src/components/terminal/TerminalWorkspace.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 4,
-    "focus-ring": 2
-  },
   "src/components/transcript/UserBubble.tsx": {
     "arbitrary-value": 3
   },
   "src/components/ui/Field.tsx": {
     "border-width": 2
-  },
-  "src/components/utility/UtilityPane.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 5,
-    "focus-ring": 1
-  },
-  "src/components/utility/UtilityToolPicker.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 3,
-    "focus-ring": 2
   },
   "src/features/providers/HarnessRail.tsx": {
     "border-width": 2

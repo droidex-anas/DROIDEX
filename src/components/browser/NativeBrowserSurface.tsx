@@ -130,9 +130,7 @@ export function NativeBrowserSurface({
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden bg-bg">
       <div
-        className={`absolute overflow-hidden bg-white ${
-          viewportMode === 'fit' ? '' : 'shadow-lg ring-1 ring-divider-strong'
-        }`}
+        className={`absolute overflow-hidden bg-white ${viewportMode === 'fit' ? '' : 'shadow-lg'}`}
         style={{
           borderRadius: radius,
           left: surface.left,
@@ -143,7 +141,7 @@ export function NativeBrowserSurface({
         }}
       />
       {!native && (
-        <div className="absolute inset-0 flex items-center justify-center px-6 text-sm text-muted">
+        <div className="absolute inset-0 flex items-center justify-center px-6 text-body text-muted">
           The Browser runs in the DROIDEX desktop app.
         </div>
       )}

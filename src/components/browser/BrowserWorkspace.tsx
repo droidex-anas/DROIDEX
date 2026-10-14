@@ -20,6 +20,7 @@ import {
   viewportForMode,
   viewportFromFrame,
 } from './browserViewport';
+import { Button } from '../ui/Button';
 import { NativeBrowserSurface } from './NativeBrowserSurface';
 import { ViewportMenu } from './ViewportMenu';
 import { isDesktop } from '../../lib/desktop';
@@ -404,21 +405,20 @@ export default function BrowserWorkspace({
       />
 
       {browserError && (
-        <div className="shrink-0 border-b border-divider bg-accent/10 px-4 py-2 text-[12px] text-secondary">
+        <div className="shrink-0 bg-accent/10 px-4 py-2 text-body text-secondary">
           {browserError}
         </div>
       )}
 
       {(pageCrashed || loadFailure) && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-divider bg-red-500/10 px-4 py-2 text-[12px] text-secondary">
+        <div className="flex shrink-0 items-center gap-2 bg-danger-soft py-1.5 pl-4 pr-2 text-body text-secondary">
           <span className="min-w-0 flex-1 truncate">
             {pageCrashed || !loadFailure
               ? 'This page crashed. Retry to load it again.'
               : `Could not load ${loadFailure.url}${loadFailure.error ? ` (${loadFailure.error})` : ''}. Check that the server is running.`}
           </span>
-          <button
-            type="button"
-            className="shrink-0 rounded-sm border border-divider bg-surface px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+          <Button
+            size="sm"
             onClick={() => {
               setLoadFailure(null);
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
@@ -428,18 +428,17 @@ export default function BrowserWorkspace({
             }}
           >
             Retry
-          </button>
-          <button
-            type="button"
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={X}
+            aria-label="Dismiss"
             onClick={() => {
               setLoadFailure(null);
               if (browser) setBrowserPageCrashed(browser.browserSessionId, false);
             }}
-            aria-label="Dismiss"
-          >
-            <X className="h-3 w-3" />
-          </button>
+          />
         </div>
       )}
 
@@ -490,13 +489,13 @@ export default function BrowserWorkspace({
             expanded={expanded}
           />
         ) : (
-          <div className="flex h-full items-center justify-center bg-bg px-6 text-sm text-muted">
+          <div className="flex h-full items-center justify-center bg-bg px-6 text-body text-muted">
             {browserKey ? 'Preparing browser pane...' : 'Select or create a Droid session.'}
           </div>
         )}
 
         {browserKey && !browser && frameReady && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg px-6 text-sm text-muted">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg px-6 text-body text-muted">
             Open a URL to start this chat&apos;s browser.
           </div>
         )}
