@@ -359,43 +359,6 @@
   "src/components/modelListParts.tsx": {
     "arbitrary-value": 2
   },
-  "src/components/onboarding/OnboardingWizard.tsx": {
-    "arbitrary-value": 2
-  },
-  "src/components/onboarding/SetupBanner.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 2
-  },
-  "src/components/onboarding/kit.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 2,
-    "focus-ring": 12,
-    "uppercase": 1
-  },
-  "src/components/onboarding/steps/CoverStep.tsx": {
-    "arbitrary-value": 4,
-    "focus-ring": 3
-  },
-  "src/components/onboarding/steps/DoneStep.tsx": {
-    "arbitrary-value": 8,
-    "border-width": 2,
-    "focus-ring": 3
-  },
-  "src/components/onboarding/steps/InstallStep.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 7
-  },
-  "src/components/onboarding/steps/PreferencesStep.tsx": {
-    "arbitrary-value": 5,
-    "border-width": 4
-  },
-  "src/components/onboarding/steps/SignInStep.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 4
-  },
-  "src/components/onboarding/steps/SystemStep.tsx": {
-    "arbitrary-value": 3
-  },
   "src/components/sidechats/SideChatDetail.tsx": {
     "arbitrary-value": 6
   },

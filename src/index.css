@@ -952,23 +952,6 @@
     @apply overflow-hidden rounded-lg border border-divider bg-elevated/50 shadow-sm;
   }
 
-  .droid-button {
-    @apply px-3 py-1.5 text-sm font-medium rounded-sm transition-all duration-150;
-    @apply bg-elevated text-secondary hover:text-primary hover:bg-active;
-    @apply border border-divider;
-  }
-
-  .droid-button-primary {
-    @apply px-3 py-1.5 text-sm font-medium rounded-sm transition-all duration-150;
-    @apply bg-text text-bg hover:bg-secondary;
-  }
-
-  .droid-input {
-    @apply bg-elevated border border-divider rounded-md px-4 py-2.5 text-sm;
-    @apply text-primary placeholder-muted focus:outline-none focus:border-divider-strong;
-    @apply transition-colors duration-150;
-  }
-
   .transcript-find-hit {
     border-radius: 0.75rem;
     outline: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, RefreshCw } from 'lucide-react';
-import { Download, Spinner } from '@droidex/icons';
+import { ArrowLeft, Check, Download, RefreshCw, Spinner } from '@droidex/icons';
 
 import type { OnboardingController } from '../../../hooks/useOnboarding';
 import type { InstallChannel } from '../../../types/bridge';
-import { BackButton, GhostButton, Panel, PrimaryButton, StepLabel, StepTitle } from '../kit';
+import { Button } from '../../ui/Button';
+import { Row } from '../../ui/Row';
+import { Panel, StepLabel, StepTitle } from '../kit';
 
 const CHANNEL_LABEL: Record<InstallChannel, string> = {
   script: 'Official installer',
@@ -48,21 +49,21 @@ export function InstallStep({
 
   if (installed) {
     return (
-      <div className="w-full max-w-[520px] mx-auto">
+      <div className="mx-auto w-full max-w-lg">
         <StepLabel>Droid CLI</StepLabel>
         <StepTitle
           title="The CLI is ready."
           sub={`Detected ${detectedCli?.version ? `v${detectedCli.version}` : 'an installation'} at ${detectedCli?.path ?? 'droid'}.`}
         />
-        <PrimaryButton onClick={onNext}>
-          Continue <ArrowRight className="w-4 h-4" />
-        </PrimaryButton>
+        <Button variant="primary" size="lg" onClick={onNext} className="w-full">
+          Continue
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-[520px] mx-auto">
+    <div className="mx-auto w-full max-w-lg">
       <StepLabel>Droid CLI</StepLabel>
       <StepTitle
         title="Install the engine."
@@ -70,39 +71,29 @@ export function InstallStep({
       />
 
       {channels.length === 0 && (
-        <div className="rounded-lg border border-divider bg-surface px-4 py-3.5 text-[13px] text-secondary mb-4">
-          <p className="text-warning mb-1">No supported package manager found.</p>
+        <Panel className="mb-4 px-4 py-3 text-body text-secondary">
+          <p className="mb-1 text-warning">No supported package manager found.</p>
           Install Homebrew, npm, or curl, then re-scan. You can also skip this for now and finish
           setup later.
-        </div>
+        </Panel>
       )}
       {channels.length > 0 && (
         <div role="radiogroup" aria-label="Droid CLI installation method" className="mb-4">
-          <Panel>
+          <Panel className="p-2">
             {channels.map((c) => (
-              <button
+              <Row
                 key={c}
-                type="button"
                 role="radio"
                 aria-checked={channel === c}
+                active={channel === c}
+                disabled={!!installing}
                 onClick={() => {
                   setChannel(c);
                 }}
-                disabled={!!installing}
-                className="w-full flex items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-elevated/50"
-              >
-                <span className="flex items-center gap-3 text-[13px] text-primary">
-                  <span
-                    className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      channel === c ? 'border-accent' : 'border-divider-strong'
-                    }`}
-                  >
-                    {channel === c && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
-                  </span>
-                  {CHANNEL_LABEL[c]}
-                </span>
-                {channel === c && <Check className="w-4 h-4 text-accent" strokeWidth={3} />}
-              </button>
+                icon={<RadioMark checked={channel === c} />}
+                label={CHANNEL_LABEL[c]}
+                trailing={channel === c && <Check className="size-icon-md text-accent" />}
+              />
             ))}
           </Panel>
         </div>
@@ -111,7 +102,7 @@ export function InstallStep({
       {(Boolean(installing) || installLog.length > 0) && (
         <div
           ref={logRef}
-          className="mb-4 max-h-40 overflow-auto rounded-lg border border-divider bg-surface p-3.5 font-mono text-[11px] leading-5 text-muted"
+          className="mb-4 max-h-40 overflow-auto rounded-lg bg-surface p-3 font-mono text-code-sm text-muted"
         >
           {installLog.map((line, i) => (
             <div key={i} className="whitespace-pre-wrap break-words">
@@ -120,50 +111,69 @@ export function InstallStep({
           ))}
           {installing && (
             <div className="flex items-center gap-1.5 text-secondary">
-              <Spinner className="w-3 h-3 motion-safe:animate-spin-slow" /> working…
+              <Spinner className="size-3 motion-safe:animate-spin-slow" /> working…
             </div>
           )}
         </div>
       )}
 
       {lastResult && !lastResult.ok && (
-        <p className="text-[12px] text-danger mb-3">
+        <p className="mb-3 text-body text-danger">
           Installation didn&apos;t finish. Review the log and try again.
         </p>
       )}
 
       {installing ? (
-        <PrimaryButton onClick={onNext} disabled>
-          <Spinner className="w-4 h-4 motion-safe:animate-spin-slow" /> Installing…
-        </PrimaryButton>
+        <Button variant="primary" size="lg" icon={Download} loading disabled className="w-full">
+          Installing…
+        </Button>
       ) : channels.length === 0 ? (
-        <PrimaryButton
+        <Button
+          variant="primary"
+          size="lg"
+          icon={RefreshCw}
           onClick={() => {
             refreshEnv();
           }}
+          className="w-full"
         >
-          <RefreshCw className="w-4 h-4" /> Re-scan
-        </PrimaryButton>
+          Re-scan
+        </Button>
       ) : (
-        <PrimaryButton
+        <Button
+          variant="primary"
+          size="lg"
+          icon={Download}
           onClick={() => {
             if (channel) install(channel);
           }}
           disabled={!channel}
+          className="w-full"
         >
-          <Download className="w-4 h-4" /> Install with{' '}
-          {channel ? CHANNEL_LABEL[channel] : 'package manager'}
-        </PrimaryButton>
+          Install with {channel ? CHANNEL_LABEL[channel] : 'package manager'}
+        </Button>
       )}
 
       {!installing && (
-        <div className="flex items-center gap-2 mt-2">
-          <BackButton onClick={onBack} />
-          <div className="flex-1">
-            <GhostButton onClick={onNext}>Skip for now</GhostButton>
-          </div>
+        <div className="mt-2 flex items-center gap-2">
+          <Button variant="ghost" size="lg" icon={ArrowLeft} onClick={onBack}>
+            Back
+          </Button>
+          <Button size="lg" onClick={onNext} className="flex-1">
+            Skip for now
+          </Button>
         </div>
       )}
     </div>
+  );
+}
+
+function RadioMark({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className={`flex size-3.5 items-center justify-center rounded-full ${checked ? 'bg-accent' : 'bg-active'}`}
+    >
+      {checked && <span className="size-1.5 rounded-full bg-bg" />}
+    </span>
   );
 }
