@@ -93,7 +93,7 @@ export function ViewportMenu({
             animate={{ opacity: 1, x: menuX, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: menuX, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute bottom-full z-popover mb-2 w-55 overflow-hidden rounded-lg bg-raised p-1.5 shadow-lg ${
+            className={`absolute bottom-full z-popover mb-2 w-56 overflow-hidden rounded-lg bg-raised p-1.5 shadow-lg ${
               menuAlign === 'end' ? 'right-0' : 'left-1/2'
             }`}
           >

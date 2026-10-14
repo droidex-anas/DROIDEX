@@ -110,7 +110,7 @@ export const AgentRow = memo(function AgentRow({
     </>
   ) : (
     <span className="flex w-full items-center gap-3">
-      <span className="flex w-49 shrink-0 items-center gap-2.5">{identity}</span>
+      <span className="flex w-48 shrink-0 items-center gap-2.5">{identity}</span>
       <span className="min-w-0 flex-1 truncate text-body text-secondary">{row.description}</span>
       {pill}
       <span className="w-14 shrink-0 text-right text-caption tabular-nums text-muted">

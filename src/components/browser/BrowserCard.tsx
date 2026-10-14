@@ -47,7 +47,7 @@ export function BrowserCard({
   const { page, link, title, site, doing } = cardText(events, working);
 
   return (
-    <div className="my-1.5 w-90 max-w-full overflow-hidden rounded-xl bg-surface">
+    <div className="my-1.5 w-chat-card max-w-full overflow-hidden rounded-xl bg-surface">
       <BrowserPreview cardKey={cardKey} browserSessionId={browserSessionId} live={working} />
       <div className="flex items-center gap-1 py-2.5 pl-3.5 pr-2">
         <div className="min-w-0 flex-1">

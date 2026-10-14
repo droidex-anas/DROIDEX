@@ -35,7 +35,7 @@ export function GeneratedImageCard({
   if (src === null || unreadable) {
     return (
       <div
-        className="my-1.5 flex aspect-square w-90 max-w-full items-center justify-center overflow-hidden rounded-xl bg-elevated"
+        className="my-1.5 flex aspect-square w-chat-card max-w-full items-center justify-center overflow-hidden rounded-xl bg-elevated"
         title={label}
         {...(running
           ? { role: 'status', 'aria-label': `Generating ${label}` }
@@ -59,7 +59,7 @@ export function GeneratedImageCard({
           setOpen(true);
         }}
         title={`View ${label}`}
-        className="my-1.5 block aspect-square w-90 max-w-full overflow-hidden rounded-xl bg-elevated"
+        className="my-1.5 block aspect-square w-chat-card max-w-full overflow-hidden rounded-xl bg-elevated"
       >
         <img
           src={src}
