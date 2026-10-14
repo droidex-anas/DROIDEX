@@ -16,7 +16,7 @@ export interface SidebarSessionListProps {
   onShowEarlier?: () => void;
 }
 
-const CONTROL_CLASS = 'text-[12px] text-muted hover:text-primary transition-colors';
+const CONTROL_CLASS = 'text-label text-muted hover:text-primary transition-colors';
 
 // Shows the latest sessions and tucks the rest behind "Show more". A folder
 // that also has older pre-existing Droid sessions the sidecar withheld offers

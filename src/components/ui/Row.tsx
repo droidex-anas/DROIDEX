@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode, Ref } from 'react';
+import type { HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react';
 import { cn } from './cn';
 
 // One row language for side panels and lists (components/PanelRow.md). Put
@@ -21,7 +21,11 @@ interface RowBaseProps extends Omit<HTMLAttributes<HTMLElement>, 'onClick'> {
 // selected or disabled state.
 type RowProps = RowBaseProps &
   (
-    | { onClick: () => void; active?: boolean; disabled?: boolean }
+    | {
+        onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+        active?: boolean;
+        disabled?: boolean;
+      }
     | { onClick?: undefined; active?: never; disabled?: never }
   );
 
