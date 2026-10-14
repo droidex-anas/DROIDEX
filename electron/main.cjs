@@ -198,9 +198,9 @@ if (!app.requestSingleInstanceLock()) {
   app.exit(0);
   return;
 }
+// Startup makes the first window; one made here before it would be a second.
 app.on('second-instance', () => {
-  if (!mainWindow) createMainWindow();
-  else focusMainWindow();
+  if (mainWindow) focusMainWindow();
 });
 const hardwareAccelerationPreferencePath = hardwareAccelerationPreferenceFilePath(
   app.getPath('userData'),
