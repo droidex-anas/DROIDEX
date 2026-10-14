@@ -4,8 +4,6 @@ import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '../../ty
 import { ModelIcon } from '../../components/ModelIcon';
 import { harnessChoice, PROVIDER_MARKS } from './providerIdentity';
 
-const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
-
 // The rail speaks in full harness names; the segmented row has room for short ones.
 const SHORT_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',
@@ -18,10 +16,6 @@ function segmentTone(selected: boolean, unavailable: boolean): string {
   if (unavailable) return 'cursor-not-allowed text-muted/40';
   return 'text-muted hover:text-primary';
 }
-
-// One px inside the track's 10px corner; inline so the one-off radius does not
-// add a utility to the app stylesheet.
-const SEGMENT_RADIUS = { borderRadius: 9 } as const;
 
 /**
  * Compact harness picker for the slider-style model popover: one segment per
@@ -45,7 +39,7 @@ export default function HarnessSegments({
       <div
         role="radiogroup"
         aria-label="Harness"
-        className="relative flex gap-0.5 rounded-lg border border-divider bg-bg/60 p-0.5"
+        className="relative flex gap-0.5 rounded-lg bg-bg/60 p-0.5"
       >
         {PROVIDER_KINDS.map((kind) => {
           const {
@@ -64,22 +58,20 @@ export default function HarnessSegments({
               onClick={() => {
                 if (!selected) onSelect(kind);
               }}
-              className={`relative flex h-7 flex-1 items-center justify-center text-[11px] font-medium transition-colors ${segmentTone(selected, unavailable)}`}
-              style={SEGMENT_RADIUS}
+              className={`relative flex h-control-sm flex-1 items-center justify-center rounded-md text-label transition-colors ${segmentTone(selected, unavailable)}`}
             >
               {selected && (
                 <motion.span
                   layoutId="model-slider-harness-pill"
                   aria-hidden
-                  className="absolute inset-0 bg-surface"
-                  style={{ ...SEGMENT_RADIUS, boxShadow: `inset 0 0 0 1px ${accentMix(33)}` }}
+                  className="absolute inset-0 rounded-md bg-surface"
                   transition={{ type: 'spring', stiffness: 520, damping: 38 }}
                 />
               )}
               <span className="relative flex items-center gap-1.5">
                 <ModelIcon provider={PROVIDER_MARKS[kind]} size={13} />
                 {SHORT_LABELS[kind]}
-                {locked && selected && <Lock className="h-2.5 w-2.5 text-muted" />}
+                {locked && selected && <Lock className="size-icon-sm text-muted" />}
               </span>
             </button>
           );

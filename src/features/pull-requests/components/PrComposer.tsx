@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { ArrowUp } from 'lucide-react';
 
+import { Button } from '../../../components/ui/Button';
 import { GithubAvatar } from './GithubAvatar';
 
 const MAX_HEIGHT = 200;
@@ -41,9 +42,9 @@ export function PrComposer({
   };
 
   // Same shape as the chat composer: one rounded field with the author on the
-  // left of its footer and a round accent send button on the right.
+  // left of its footer and a round send button on the right.
   return (
-    <div className="rounded-xl border border-divider bg-elevated transition-colors focus-within:border-divider-strong">
+    <div className="rounded-xl bg-raised">
       <textarea
         ref={textareaRef}
         value={draft}
@@ -58,24 +59,22 @@ export function PrComposer({
         }}
         rows={1}
         placeholder="Leave a comment"
-        className="max-h-[200px] w-full resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-[1.6] text-primary outline-none placeholder:text-muted"
+        className="w-full resize-none bg-transparent px-3.5 pt-3 text-body-lg text-primary outline-none placeholder:text-muted"
       />
       <div className="flex items-center gap-2 px-3 pb-2.5">
         <GithubAvatar login={viewerLogin} size={20} />
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
+        <span className="min-w-0 flex-1 truncate text-caption text-muted">
           {posting ? 'Posting…' : 'Markdown supported · ⌘⏎ to comment'}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          shape="round"
+          icon={ArrowUp}
           onClick={submit}
           disabled={!draft.trim() || posting}
           title="Comment (⌘⏎)"
           aria-label="Comment"
-          className="shrink-0 rounded-full p-2 text-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-25"
-          style={{ background: 'var(--accent)' }}
-        >
-          <ArrowUp className="h-3.5 w-3.5" />
-        </button>
+        />
       </div>
     </div>
   );

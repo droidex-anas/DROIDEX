@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
+import { Button } from '../../../components/ui/Button';
 import { prKind } from '../../../lib/github';
 import { openExternal } from '../../../lib/onboarding';
 import type { PullRequest } from '../../../types/vcs';
@@ -45,7 +46,7 @@ export function CodePane({ diff, diffError }: { diff: string | null; diffError: 
   if (diffError) {
     return (
       <div className="flex h-full items-center justify-center px-8">
-        <p className="text-[13px] text-muted">{diffError}</p>
+        <p className="text-body text-muted">{diffError}</p>
       </div>
     );
   }
@@ -74,11 +75,12 @@ function ToolbarIconButton({
     <button
       type="button"
       title={label}
+      aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
+      className="grid size-control-sm cursor-default place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
     >
-      <Octicon name={icon} size={14} label={label} className={spinning ? 'animate-spin' : ''} />
+      <Octicon name={icon} size={14} className={spinning ? 'animate-spin' : ''} />
     </button>
   );
 }
@@ -216,10 +218,8 @@ export function PrDetail({
               onClick={() => {
                 setTab(item.id);
               }}
-              className={`rounded-sm px-2.5 py-1 text-[13px] font-medium transition-colors ${
-                tab === item.id
-                  ? 'bg-surface text-primary shadow-[0_1px_2px_0_rgb(0_0_0/0.05)]'
-                  : 'text-muted hover:text-secondary'
+              className={`rounded-sm px-2.5 py-1 text-body-strong transition-colors ${
+                tab === item.id ? 'bg-surface text-primary' : 'text-muted hover:text-secondary'
               }`}
             >
               {item.label}
@@ -241,18 +241,20 @@ export function PrDetail({
               if (headerPr?.url) void openExternal(headerPr.url);
             }}
           />
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             title="Start a chat about this pull request"
             disabled={!headerPr}
             onClick={() => {
               if (headerPr) onOpenChat(headerPr);
             }}
-            className="flex items-center gap-1.5 rounded-md border border-divider px-2.5 py-1.5 text-[13px] font-medium text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
           >
-            <Octicon name="comment-discussion" size={13} />
-            Chat
-          </button>
+            <span className="inline-flex items-center gap-1.5">
+              <Octicon name="comment-discussion" size={13} />
+              Chat
+            </span>
+          </Button>
           <PrReviewButton
             pr={headerPr}
             cubicInstalled={cubicActive || isCubicRemembered(repoKey)}

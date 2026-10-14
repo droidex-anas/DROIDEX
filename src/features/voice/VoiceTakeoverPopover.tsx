@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { Button } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
 
 /**
@@ -31,29 +32,25 @@ export default function VoiceTakeoverPopover({
       width={272}
     >
       <div className="flex flex-col gap-3 p-3.5">
-        <p className="text-[13px] leading-relaxed text-primary">
+        <p className="text-body text-primary">
           You are talking to <span className="font-medium">{runningOn}</span>. Starting here ends
           that conversation.
         </p>
-        <div className="flex justify-end gap-1.5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="cursor-pointer rounded-md px-2.5 py-1.5 text-[12px] text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
-          >
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             ref={confirm}
-            type="button"
+            variant="danger"
+            size="sm"
             onClick={() => {
               onClose();
               onTakeOver();
             }}
-            className="cursor-pointer rounded-md bg-accent px-2.5 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
           >
             End it and start here
-          </button>
+          </Button>
         </div>
       </div>
     </Popover>

@@ -30,7 +30,7 @@ function EventRow({ pr }: { pr: PullRequest }) {
         </span>
       }
     >
-      <p className="pt-1.5 text-[13px] text-secondary">
+      <p className="pt-1.5 text-body text-secondary">
         <span className="font-medium text-primary">{displayLogin(event.author)}</span> opened this
         pull request
         {time ? (
@@ -47,16 +47,16 @@ function EventRow({ pr }: { pr: PullRequest }) {
 function CommitRow({ commit }: { commit: PrCommit }) {
   const time = prRelativeTime(commit.committedDate);
   return (
-    <div className="flex min-w-0 items-center gap-2 py-[3px]">
+    <div className="flex min-w-0 items-center gap-2 py-1">
       <GithubAvatar login={commit.author} size={16} />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-primary">
+      <span className="min-w-0 flex-1 truncate text-body text-primary">
         {commit.headline || shortSha(commit.oid)}
       </span>
-      <span className="shrink-0 font-mono text-[12px] text-muted">{shortSha(commit.oid)}</span>
+      <span className="shrink-0 font-mono text-code text-muted">{shortSha(commit.oid)}</span>
       {time ? (
         <span
           title={prAbsoluteTime(commit.committedDate)}
-          className="shrink-0 text-[12px] text-muted"
+          className="shrink-0 text-caption text-muted"
         >
           {time} ago
         </span>
@@ -79,7 +79,7 @@ function CommitsEntry({ commits }: { commits: PrCommit[] }) {
         </span>
       }
     >
-      <div className="rounded-lg border border-divider bg-surface px-3 py-2">
+      <div className="rounded-lg bg-surface px-3 py-2">
         <button
           type="button"
           aria-expanded={open}
@@ -89,15 +89,15 @@ function CommitsEntry({ commits }: { commits: PrCommit[] }) {
           className="group flex w-full items-center gap-1.5 text-left"
         >
           <FoldChevron open={open} />
-          <span className="text-[13px] font-medium text-primary">
+          <span className="text-body-strong text-primary">
             {commits.length} {commits.length === 1 ? 'commit' : 'commits'}
           </span>
           {time ? (
-            <span className="ml-auto shrink-0 text-[12px] text-muted">{time} ago</span>
+            <span className="ml-auto shrink-0 text-caption text-muted">{time} ago</span>
           ) : null}
         </button>
         <PrCollapse open={open}>
-          <div className="mt-1.5 border-t border-divider pt-1.5">
+          <div className="mt-1.5 pt-1.5">
             {commits.map((commit) => (
               <CommitRow key={commit.oid} commit={commit} />
             ))}
@@ -125,7 +125,7 @@ export function PrTimeline({
   const showEmpty = items.length === 0 && !loading;
   return (
     <div>
-      {error ? <p className="mb-3 text-[13px] text-muted">{error}</p> : null}
+      {error ? <p className="mb-3 text-body text-muted">{error}</p> : null}
       {/* The rail sits behind the markers, which paint their own background so
           the line reads as a connector between events. */}
       <div className="relative">
@@ -148,10 +148,10 @@ export function PrTimeline({
         )}
       </div>
       {loading && items.length === 0 ? (
-        <div className="mt-2 h-20 rounded-lg border border-divider bg-elevated/30" />
+        <div className="mt-2 h-20 rounded-lg bg-elevated/30" />
       ) : null}
       {showEmpty && !error ? (
-        <p className="mt-1 pl-11 text-[13px] text-muted">
+        <p className="mt-1 pl-11 text-body text-muted">
           No comments yet. Start the conversation below.
         </p>
       ) : null}
