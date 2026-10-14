@@ -772,7 +772,7 @@ function ConfigurationSection() {
           <AutonomySelector
             scope="settings"
             value={defaultAutonomy}
-            placement="down"
+            placement="bottom-end"
             onSelect={(level) => {
               dispatch({ type: 'SET_DEFAULT_AUTONOMY', autonomy: level });
             }}

@@ -109,10 +109,14 @@ export function useDraftEditing({
     });
   };
 
-  // Stable, so the menu's window listeners are bound once per opening.
+  // The menu takes focus while open and opens against a point rather than a
+  // focusable trigger, so closing hands focus back to the draft. A press
+  // elsewhere still moves focus to what was pressed. Stable, so the menu's
+  // dismiss listeners are bound once per opening.
   const closeMenu = useCallback(() => {
+    editorRef.current?.focus();
     setMenu(null);
-  }, []);
+  }, [editorRef]);
 
   return { menu, openMenu, closeMenu, applyFormat, applyEdit };
 }
