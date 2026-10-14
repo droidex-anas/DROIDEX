@@ -25,13 +25,9 @@
     "uppercase": 1
   },
   "src/components/ColorPicker.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 18,
-    "palette-color": 2,
-    "uppercase": 1
-  },
-  "src/components/CommandPalette.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 1,
+    "border-width": 8,
+    "palette-color": 2
   },
   "src/components/ConversationList.tsx": {
     "arbitrary-value": 2
@@ -45,9 +41,7 @@
     "border-width": 4
   },
   "src/components/EditorOpenMenu.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 2,
-    "uppercase": 1
+    "arbitrary-value": 1
   },
   "src/components/FeedbackModal.tsx": {
     "arbitrary-value": 33,
@@ -115,8 +109,7 @@
     "border-width": 4
   },
   "src/components/PaletteShell.tsx": {
-    "arbitrary-value": 7,
-    "palette-color": 1
+    "arbitrary-value": 1
   },
   "src/components/PermissionInline.tsx": {
     "arbitrary-value": 7,
@@ -130,16 +123,8 @@
     "arbitrary-value": 8,
     "border-width": 2
   },
-  "src/components/RunningProcessesMenu.tsx": {
-    "arbitrary-value": 4,
-    "focus-ring": 1
-  },
   "src/components/RuntimeStatusBanner.tsx": {
     "arbitrary-value": 1,
-    "border-width": 2
-  },
-  "src/components/SessionContextMenu.tsx": {
-    "arbitrary-value": 12,
     "border-width": 2
   },
   "src/components/SettingsPanel.tsx": {
