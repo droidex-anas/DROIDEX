@@ -2,13 +2,15 @@ import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Markdown } from './Markdown';
 import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
-import { LayoutTemplate } from 'lucide-react';
+import { LayoutTemplate } from '@droidex/icons';
 
 type Segment =
   | { type: 'text'; content: string }
   | { type: 'svg'; content: string; source: 'code' | 'inline' };
 
-const EASE = [0.16, 1, 0.3, 1] as const;
+// Arrival motion (docs/design-system/feel.md): 200ms smooth-out, staggered
+// 30ms per card, rising 8px.
+const EASE = [0.22, 1, 0.36, 1] as const;
 
 function parseSpecSegments(markdown: string): Segment[] {
   const segments: Segment[] = [];
@@ -85,22 +87,19 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.4, ease: EASE, delay: Math.min(index * 0.06, 0.3) }}
-      className="group relative rounded-xl border border-divider bg-elevated/30 overflow-hidden hover:border-accent/20 transition-colors duration-300"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: EASE, delay: Math.min(index * 0.03, 0.3) }}
+      className="rounded-xl bg-elevated p-4"
     >
-      {/* Subtle top bar */}
-      <div className="absolute top-0 inset-x-0 h-7 flex items-center justify-between px-3.5 bg-surface/30 border-b border-divider">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-widest uppercase text-muted/60">
-          <LayoutTemplate className="w-3 h-3" />
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-label text-muted">
+          <LayoutTemplate aria-hidden="true" className="size-icon-sm" />
           Diagram
         </span>
-        <span className="text-[11px] font-mono text-muted/40">SVG</span>
+        <span className="text-caption text-muted">SVG</span>
       </div>
-
-      {/* Rendered SVG */}
-      <div className="pt-9 pb-5 px-5 flex items-center justify-center min-h-[100px]">
+      <div className="flex min-h-24 items-center justify-center pt-3">
         <img className="block w-full h-auto" src={image.src} alt={image.alt} />
       </div>
     </motion.div>
