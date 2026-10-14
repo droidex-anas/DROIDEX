@@ -19,6 +19,8 @@ export const Plus = createIcon(
   </>,
 );
 
+export const Minus = createIcon('minus', <path d="M5.5 12h13" />);
+
 export const Ellipsis = createIcon(
   'ellipsis',
   <>

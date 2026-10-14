@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AudioLines, ChevronRight, FoldVertical, GitFork, Info } from 'lucide-react';
+import { AudioLines, ChevronRight, FoldVertical, Info } from 'lucide-react';
 import { useDocumentVisible } from '../../hooks/useDocumentVisible';
 import { formatDuration } from '../../lib/tools';
 import { openExternal } from '../../lib/onboarding';
@@ -7,10 +7,9 @@ import { useStoreSelector } from '../../hooks/useStore';
 import { PROVIDER_LABELS, providerModelCatalog } from '../../features/providers/providerIdentity';
 import { resetLabel } from '../../lib/usageLimit';
 import type { ModelInfo, TranscriptEvent } from '../../types/bridge';
-
-const ACCENT = 'var(--accent)';
-export const RED = 'var(--danger)';
-export const RED_TINT = 'color-mix(in srgb, var(--danger) 8%, transparent)';
+import { GitFork as ForkIcon } from '@droidex/icons';
+import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
 
 /* ── Live elapsed-time hook: ticks while active and visible. ── */
 export function useElapsed(startTs: number | undefined, active: boolean): number {
@@ -44,7 +43,7 @@ export function httpHref(url: string): string | undefined {
 export function Caret({ open }: { open: boolean }) {
   return (
     <ChevronRight
-      className={`w-3 h-3 shrink-0 text-muted/50 transition-transform duration-200 group-hover:text-muted ${open ? 'rotate-90' : ''}`}
+      className={`size-icon-sm shrink-0 text-muted/50 transition-transform duration-200 group-hover:text-muted ${open ? 'rotate-90' : ''}`}
     />
   );
 }
@@ -62,14 +61,13 @@ export function Expand({ open, children }: { open: boolean; children: React.Reac
     <div
       aria-hidden={!open}
       inert={!open}
-      className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
-        open
-          ? 'pointer-events-auto grid-rows-[1fr] opacity-100'
-          : 'pointer-events-none grid-rows-[0fr] opacity-0'
+      data-open={open || undefined}
+      className={`expand-rows overflow-hidden ${
+        open ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
       }`}
     >
       <div
-        className={`min-h-0 overflow-hidden transition-transform duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+        className={`min-h-0 overflow-hidden transition-transform duration-200 ease-smooth-out motion-reduce:transition-none ${
           open ? 'translate-y-0' : '-translate-y-1.5'
         }`}
       >
@@ -79,21 +77,15 @@ export function Expand({ open, children }: { open: boolean; children: React.Reac
   );
 }
 
-/* ── Bordered panel used for expanded tool/diff bodies. ── */
+/* ── The tone-separated panel for expanded tool and diff bodies. ── */
 export function ToolPanel({
   children,
   className = '',
-  style,
 }: {
   children: React.ReactNode;
   className?: string;
-  style?: React.CSSProperties;
 }) {
-  return (
-    <div className={`droid-tool-panel ${className}`} style={style}>
-      {children}
-    </div>
-  );
+  return <div className={`overflow-hidden rounded-lg bg-elevated/50 ${className}`}>{children}</div>;
 }
 
 // Writes text to the clipboard and reports `copied` for a short beat so the
@@ -125,32 +117,20 @@ export function useCopiedFlash(): { copied: boolean; copy: (text: string) => voi
   return { copied, copy };
 }
 
-// A small red "error" pill beside the label of a failed tool's header row;
-// `emphasis` is the row-level form an error line wears at its right edge.
+// A danger badge beside the label of a failed tool's header row; `emphasis` is
+// the row-level form an error line wears at its right edge.
 export function ErrorTag({ emphasis = false }: { emphasis?: boolean }) {
   return (
-    <span
-      className={`shrink-0 rounded-sm text-[10px] font-medium uppercase tracking-[0.08em] ${
-        emphasis ? 'ml-auto px-2 py-0.5' : 'px-1.5 py-px'
-      }`}
-      style={{
-        backgroundColor: 'color-mix(in srgb, var(--danger) 15%, transparent)',
-        color: RED,
-      }}
-    >
-      ERROR
-    </span>
+    <Badge tone="danger" className={emphasis ? 'ml-auto' : undefined}>
+      Error
+    </Badge>
   );
 }
 
 // A call the user steered or stopped away from. It did not fail, so it wears
-// the row's own muted tone rather than the error red.
+// the neutral badge rather than the error red.
 export function InterruptedTag() {
-  return (
-    <span className="shrink-0 rounded-sm bg-elevated/60 text-[10px] font-medium uppercase tracking-[0.08em] text-muted px-1.5 py-px">
-      Interrupted
-    </span>
-  );
+  return <Badge>Interrupted</Badge>;
 }
 
 export function firstLine(text: string): string {
@@ -178,8 +158,7 @@ export function linkify(text: string): React.ReactNode {
         onClick={(e) => {
           openLink(e, url);
         }}
-        className="underline underline-offset-2 hover:opacity-80 break-all"
-        style={{ color: ACCENT }}
+        className="text-link underline underline-offset-2 hover:opacity-80 break-all"
       >
         {url}
       </a>,
@@ -236,7 +215,7 @@ export function WorkingIndicator({
   const suffix = startTs != null && elapsed >= 1000 ? ` ${formatDuration(elapsed)}` : '';
   return (
     <div className="cue-enter flex h-5 items-center">
-      <span className="shimmer-text text-[13px] font-medium tracking-tight">
+      <span className="shimmer-text text-body-strong">
         <span aria-live="polite">{label}</span>
         <span aria-hidden="true">{suffix}…</span>
       </span>
@@ -249,7 +228,7 @@ export function WorkingIndicator({
    the message the way the steering mark does. ── */
 export function SpokenMark() {
   return (
-    <span className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-muted">
+    <span className="flex items-center gap-1 text-caption font-medium text-muted">
       <AudioLines className="h-3 w-3" aria-hidden />
       Spoken
     </span>
@@ -260,7 +239,7 @@ export function SpokenMark() {
 export function CompactingIndicator() {
   return (
     <div className="flex justify-center py-3">
-      <span className="shimmer-text text-[16px] font-semibold tracking-tight" aria-live="polite">
+      <span className="shimmer-text text-subheading" aria-live="polite">
         Compacting…
       </span>
     </div>
@@ -309,7 +288,7 @@ export function TranscriptNotice({ event }: { event: TranscriptEvent }) {
   return (
     <div
       role="status"
-      className="flex items-center justify-center gap-2 py-1 text-center text-[12px] leading-relaxed text-muted"
+      className="flex items-center justify-center gap-2 py-1 text-center text-body text-muted"
     >
       <Info aria-hidden="true" className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
       <span>{text}</span>
@@ -324,7 +303,7 @@ export function CompactionDivider({ compactType }: { compactType?: 'auto' | 'man
   return (
     <div className={`flex items-center gap-3 py-1 ${manual ? 'text-secondary' : 'text-muted'}`}>
       <div className="h-px flex-1 bg-divider/70" />
-      <span className="flex items-center gap-1.5 text-[12px] whitespace-nowrap">
+      <span className="flex items-center gap-1.5 text-label whitespace-nowrap">
         <FoldVertical className="h-3.5 w-3.5" />
         {label}
       </span>
@@ -338,14 +317,9 @@ export function ForkedFromDivider({ onOpenSource }: { onOpenSource: () => void }
   return (
     <div className="flex items-center gap-3 py-1 text-muted">
       <div className="h-px flex-1 bg-divider/70" />
-      <button
-        type="button"
-        onClick={onOpenSource}
-        className="flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[12px] whitespace-nowrap text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:outline-none"
-      >
-        <GitFork className="h-3.5 w-3.5" />
+      <Button variant="ghost" size="sm" icon={ForkIcon} onClick={onOpenSource}>
         Forked from chat
-      </button>
+      </Button>
       <div className="h-px flex-1 bg-divider/70" />
     </div>
   );

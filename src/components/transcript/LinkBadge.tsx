@@ -55,7 +55,7 @@ export function LinkBadge({
       loading="lazy"
       decoding="async"
       draggable={false}
-      className={`${className} rounded-[3px] object-contain`}
+      className={`${className} rounded-xs object-contain`}
       onError={() => {
         missingIcons.add(link.host);
         setMissing(true);

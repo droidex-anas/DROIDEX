@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { ArrowUp, Check, X } from 'lucide-react';
-import { Copy, GitFork } from '@droidex/icons';
+import { ArrowUp, Check, Copy, GitFork, X } from '@droidex/icons';
 import { useRelativeTimeNow } from '../../hooks/useRelativeTimeNow';
+import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { useCopiedFlash } from './primitives';
 
@@ -40,15 +40,12 @@ function formatResponseTime(ts: number, now: number): string {
   return `${date}, ${time}`;
 }
 
-const buttonClass =
-  'flex h-7 w-7 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50';
-
 function MessageTime({ ts, label }: { ts: number; label?: string }) {
   return (
     <time
       dateTime={new Date(ts).toISOString()}
       title={detailFormat.format(ts)}
-      className="whitespace-nowrap px-1.5 text-[12px] tabular-nums text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
+      className="whitespace-nowrap px-1.5 text-caption tabular-nums text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
     >
       {label ?? formatResponseTime(ts, Date.now())}
     </time>
@@ -78,16 +75,15 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   const { copied, copy } = useCopiedFlash();
   return (
     <Tooltip label={copied ? 'Copied' : 'Copy'}>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={copied ? Check : Copy}
         aria-label={label}
         onClick={() => {
           copy(text);
         }}
-        className={buttonClass}
-      >
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
+      />
     </Tooltip>
   );
 }
@@ -108,31 +104,34 @@ export function PromptActions({
   onWithdraw?: (() => void) | undefined;
 }) {
   return (
-    <div className="absolute right-0 top-full mt-0.5 flex h-7 items-center">
+    <div className="absolute right-0 top-full mt-0.5 flex h-control-sm items-center">
       <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 delay-300 focus-within:pointer-events-auto focus-within:opacity-100 focus-within:delay-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-hover/msg:delay-0">
         {ts !== undefined ? <PromptTime ts={ts} /> : null}
         <CopyButton text={text} label="Copy prompt" />
         {onWithdraw ? (
           <Tooltip label="Edit before sending">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={X}
               aria-label="Take back to edit"
               onClick={onWithdraw}
-              className={buttonClass}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            />
           </Tooltip>
         ) : null}
         {onSendNow ? (
           <Tooltip label="Send now">
-            <button type="button" aria-label="Send now" onClick={onSendNow} className={buttonClass}>
-              <ArrowUp className="h-3.5 w-3.5" />
-            </button>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ArrowUp}
+              aria-label="Send now"
+              onClick={onSendNow}
+            />
           </Tooltip>
         ) : null}
       </div>
-      {onSendNow ? <span className="px-1.5 text-[12px] text-muted">Unread</span> : null}
+      {onSendNow ? <span className="px-1.5 text-caption text-muted">Unread</span> : null}
     </div>
   );
 }
@@ -155,20 +154,19 @@ export function ResponseActions({
 }) {
   return (
     // Pulled left so the first icon lines up with the response text.
-    <div className="-ml-1.5 mt-1.5 flex h-7 items-center gap-0.5">
+    <div className="-ml-1.5 mt-1.5 flex h-control-sm items-center gap-0.5">
       <CopyButton text={text} label="Copy response" />
       {onFork ? (
         <Tooltip label={forking ? 'Forking…' : 'Fork into a new chat'}>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={GitFork}
             aria-label="Fork chat"
-            aria-busy={forking}
+            loading={forking}
             disabled={forking}
             onClick={onFork}
-            className={buttonClass}
-          >
-            <GitFork className="h-3.5 w-3.5" />
-          </button>
+          />
         </Tooltip>
       ) : null}
       {children}

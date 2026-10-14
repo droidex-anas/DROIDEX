@@ -11,7 +11,7 @@ import { ComposerTab } from './ComposerTab';
 // StartInBar's pill. Each action adds its color: the one that can unblock the
 // chat reads brightest.
 export const ACTION_CLASS =
-  'group flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-[11px] transition-colors hover:bg-bg/40 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent/60';
+  'group flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-caption transition-colors hover:bg-elevated hover:text-primary';
 
 // The tab above the composer while the chat is held on a usage limit, in
 // StartInBar's slot and shape. It never blocks the composer: a message sent now
@@ -36,7 +36,7 @@ export function UsageLimitTab({
           role="status"
           aria-live="polite"
           title={`${headline} · ${detail}`}
-          className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-[11px]"
+          className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-caption"
         >
           <span className="shrink-0 text-warning">
             <Gauge className="h-3.5 w-3.5" strokeWidth={2} />
@@ -86,7 +86,7 @@ export function UsageWarningTab({
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 overflow-hidden">
         <div
           title={[headline, ...details].join(' · ')}
-          className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-[11px]"
+          className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1 text-caption"
         >
           <span className="shrink-0 text-muted">
             <Gauge className="h-3.5 w-3.5" strokeWidth={2} />

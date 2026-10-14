@@ -4,8 +4,6 @@ import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '../../ty
 import { ModelIcon } from '../../components/ModelIcon';
 import { harnessChoice, PROVIDER_MARKS } from './providerIdentity';
 
-const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
-
 // The rail speaks in full harness names; the segmented row has room for short ones.
 const SHORT_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',
@@ -45,7 +43,7 @@ export default function HarnessSegments({
       <div
         role="radiogroup"
         aria-label="Harness"
-        className="relative flex gap-0.5 rounded-lg border border-divider bg-bg/60 p-0.5"
+        className="relative flex gap-0.5 rounded-lg bg-bg/60 p-0.5"
       >
         {PROVIDER_KINDS.map((kind) => {
           const {
@@ -64,15 +62,15 @@ export default function HarnessSegments({
               onClick={() => {
                 if (!selected) onSelect(kind);
               }}
-              className={`relative flex h-7 flex-1 items-center justify-center text-[11px] font-medium transition-colors ${segmentTone(selected, unavailable)}`}
+              className={`relative flex h-7 flex-1 items-center justify-center text-label transition-colors ${segmentTone(selected, unavailable)}`}
               style={SEGMENT_RADIUS}
             >
               {selected && (
                 <motion.span
                   layoutId="model-slider-harness-pill"
                   aria-hidden
-                  className="absolute inset-0 bg-surface"
-                  style={{ ...SEGMENT_RADIUS, boxShadow: `inset 0 0 0 1px ${accentMix(33)}` }}
+                  className="absolute inset-0 bg-raised"
+                  style={SEGMENT_RADIUS}
                   transition={{ type: 'spring', stiffness: 520, damping: 38 }}
                 />
               )}

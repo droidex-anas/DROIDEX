@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import { useMemo, useRef, type RefObject } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -12,9 +12,10 @@ import {
   PenLine,
   RefreshCw,
   Search,
-  Spinner,
+  type IconComponent,
 } from '@droidex/icons';
 import { describeLink } from '../../lib/linkPresentation';
+import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { LinkBadge } from '../transcript/LinkBadge';
 import { browserAddressValue } from './browserUrlSafety';
@@ -42,11 +43,6 @@ interface BrowserToolbarProps {
   onToggleExpanded?: () => void;
 }
 
-const EASE = 'ease-[cubic-bezier(0.22,1,0.36,1)]';
-// Short, soft feedback on every control, and none of the movement when the
-// reader asks for less.
-const PRESS = `transition-[background-color,color,box-shadow,transform,opacity] duration-150 ${EASE} active:scale-[0.94] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:pointer-events-none disabled:opacity-30`;
-
 // Navigation quietly on the left, the address as the one wide thing in the
 // middle, the pane's size and the design tools on the right.
 export function BrowserToolbar({
@@ -71,32 +67,26 @@ export function BrowserToolbar({
 }: BrowserToolbarProps) {
   const drawing = designMode && pencilMode;
   return (
-    <header className="relative flex h-12 shrink-0 items-center gap-2 border-b border-divider bg-bg px-2">
+    <header className="relative flex h-12 shrink-0 items-center gap-2 bg-bg px-2">
       <div className="flex shrink-0 items-center gap-1">
         <IconButton
           title="Back: return to the previous page (⌘[)"
           disabled={!canGoBack || loading}
           onClick={onGoBack}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </IconButton>
+          icon={ArrowLeft}
+        />
         <IconButton
           title="Forward: go to the next page in history (⌘])"
           disabled={!canGoForward || loading}
           onClick={onGoForward}
-        >
-          <ArrowRight className="h-4 w-4" />
-        </IconButton>
+          icon={ArrowRight}
+        />
         <IconButton
           title={loading ? 'Loading page' : 'Reload: refresh the current page (⌘R)'}
+          loading={loading}
           onClick={onReload}
-        >
-          {loading ? (
-            <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-        </IconButton>
+          icon={RefreshCw}
+        />
       </div>
 
       <AddressBar
@@ -117,14 +107,13 @@ export function BrowserToolbar({
             }
             active={expanded}
             onClick={onToggleExpanded}
-          >
-            {expanded ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-          </IconButton>
+            icon={expanded ? Minimize : Maximize}
+          />
         )}
         <div
           role="group"
           aria-label="Design tools"
-          className={`flex items-center gap-0.5 rounded-full p-0.5 transition-colors duration-150 ${
+          className={`flex items-center gap-0.5 rounded-full p-0.5 transition-colors duration-150 ease-out ${
             designMode ? 'bg-elevated' : 'bg-elevated/50'
           }`}
         >
@@ -138,9 +127,8 @@ export function BrowserToolbar({
             current={designMode && !drawing}
             disabled={designModeDisabled}
             onClick={onToggleDesignMode}
-          >
-            <MousePointer className="h-4 w-4" />
-          </ToolButton>
+            icon={MousePointer}
+          />
           <ToolButton
             title={
               designModeDisabled
@@ -151,9 +139,8 @@ export function BrowserToolbar({
             current={drawing}
             disabled={designModeDisabled}
             onClick={onTogglePencilMode}
-          >
-            <PenLine className="h-4 w-4" />
-          </ToolButton>
+            icon={PenLine}
+          />
         </div>
       </div>
 
@@ -188,7 +175,7 @@ function AddressBar({
 
   return (
     <form
-      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-elevated/60 pl-3.5 pr-1 transition-[background-color,box-shadow] duration-150 ${EASE} hover:bg-elevated focus-within:!bg-raised focus-within:shadow-[0_0_0_1px_var(--divider-strong),0_0_0_4px_color-mix(in_srgb,var(--accent)_8%,transparent)] motion-reduce:transition-none`}
+      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-elevated/60 pl-3.5 pr-1 transition-colors duration-150 ease-out hover:bg-elevated focus-within:!bg-raised motion-reduce:transition-none`}
       onSubmit={(event) => {
         event.preventDefault();
         onOpen();
@@ -226,7 +213,7 @@ function AddressBar({
             event.currentTarget.blur();
           }}
           spellCheck={false}
-          className="peer absolute inset-0 h-full w-full min-w-0 bg-transparent text-[13px] text-transparent outline-none placeholder:text-muted focus:text-primary"
+          className="peer absolute inset-0 h-full w-full min-w-0 bg-transparent text-body text-transparent outline-none placeholder:text-muted focus:text-primary"
           placeholder="Search or enter address"
           aria-label="Browser address"
         />
@@ -242,17 +229,18 @@ function AddressBar({
         </span>
       )}
       <Tooltip label="Open address (↵)" className="hidden shrink-0 group-focus-within:inline-flex">
-        <button
+        <Button
           type="submit"
+          variant="secondary"
+          size="sm"
+          shape="round"
+          icon={CornerDownLeft}
           aria-label="Open address"
           // Pressing it keeps the field focused, so the button stays to be clicked.
           onMouseDown={(event) => {
             event.preventDefault();
           }}
-          className={`flex h-7 w-7 items-center justify-center rounded-full bg-elevated text-secondary hover:bg-active hover:text-primary ${PRESS}`}
-        >
-          <CornerDownLeft className="h-3.5 w-3.5" />
-        </button>
+        />
       </Tooltip>
     </form>
   );
@@ -267,7 +255,7 @@ function AddressText({ value }: { value: string }) {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-nowrap text-[13px] peer-focus:invisible"
+      className="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-nowrap text-body peer-focus:invisible"
     >
       <span className="truncate">
         <span className="font-medium text-primary">{host}</span>
@@ -305,35 +293,35 @@ function LoadingBar({ loading }: { loading: boolean }) {
   );
 }
 
+// A round ghost button under a tooltip; its title names it for the keyboard
+// and screen readers.
 function IconButton({
   title,
   active,
   disabled,
+  loading = false,
   onClick,
-  children,
+  icon: Icon,
 }: {
   title: string;
   active?: boolean;
   disabled?: boolean;
+  loading?: boolean;
   onClick: () => void;
-  children: ReactNode;
+  icon: IconComponent;
 }) {
   return (
     <Tooltip label={title}>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        shape="round"
+        icon={Icon}
         aria-label={title}
         aria-pressed={active}
         disabled={disabled}
+        loading={loading}
         onClick={onClick}
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${PRESS} ${
-          active
-            ? 'bg-elevated text-primary'
-            : 'text-secondary hover:bg-elevated/70 hover:text-primary'
-        }`}
-      >
-        {children}
-      </button>
+      />
     </Tooltip>
   );
 }
@@ -346,31 +334,28 @@ function ToolButton({
   current,
   disabled,
   onClick,
-  children,
+  icon: Icon,
 }: {
   title: string;
   pressed: boolean;
   current: boolean;
   disabled?: boolean;
   onClick: () => void;
-  children: ReactNode;
+  icon: IconComponent;
 }) {
   return (
     <Tooltip label={title}>
-      <button
-        type="button"
+      <Button
+        variant={current ? 'primary' : 'ghost'}
+        size="sm"
+        shape="round"
+        icon={Icon}
         aria-label={title}
         aria-pressed={pressed}
         disabled={disabled}
         onClick={onClick}
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${PRESS} ${
-          current
-            ? 'bg-text text-bg shadow-sm'
-            : 'text-secondary hover:bg-active hover:text-primary aria-pressed:text-primary'
-        }`}
-      >
-        {children}
-      </button>
+        className={current ? 'shadow-sm' : undefined}
+      />
     </Tooltip>
   );
 }

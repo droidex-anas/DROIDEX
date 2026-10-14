@@ -70,7 +70,7 @@ export function AgentMonitorCard({
         onKeyDown={(event) => {
           if (event.key === 'Escape') setExpanded(false);
         }}
-        className="w-full overflow-hidden rounded-[20px] border border-divider bg-surface shadow-lg transition-colors hover:border-divider-strong"
+        className="w-full overflow-hidden rounded-xl bg-surface"
       >
         <button
           type="button"
@@ -79,13 +79,13 @@ export function AgentMonitorCard({
           }}
           aria-expanded={showRows}
           aria-controls={bodyId}
-          className="block w-full text-left"
+          className="group block w-full text-left"
         >
-          <span className="flex items-center justify-between gap-3 bg-elevated/50 px-4 py-2.5">
-            <span className="truncate text-[13px] font-medium text-secondary">
+          <span className="flex items-center justify-between gap-3 bg-elevated/50 px-4 py-2.5 transition-colors duration-150 ease-out group-hover:bg-elevated">
+            <span className="truncate text-body-strong text-secondary transition-colors duration-150 ease-out group-hover:text-primary">
               {agentMonitorTitle(wave.rows)}
             </span>
-            <span className="shrink-0 truncate text-[12px] text-muted">
+            <span className="shrink-0 truncate text-caption text-muted">
               {agentMonitorMeta({
                 counts: wave.counts,
                 total: wave.rows.length,

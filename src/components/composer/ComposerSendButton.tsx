@@ -96,15 +96,15 @@ export function ComposerSendButton({
             animate={{ opacity: 1, y: 0 }}
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
             transition={{ duration: reducedMotion ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full right-0 z-50 mb-2 flex flex-col gap-0.5 whitespace-nowrap rounded-lg border border-divider bg-raised p-1.5 shadow-lg"
+            className="absolute bottom-full right-0 z-popover mb-2 flex flex-col whitespace-nowrap rounded-lg bg-raised p-1.5 shadow-lg"
           >
             {hintRows.map((row) => (
               <div
                 key={row.label}
-                className="flex items-center justify-between gap-3 rounded-md px-2 py-1 text-[12px] text-primary"
+                className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-body text-primary"
               >
                 <span>{row.label}</span>
-                <span className="flex items-center gap-0.5 rounded-sm bg-bg/70 px-1.5 py-0.5 text-[11px] text-secondary">
+                <span className="flex items-center gap-0.5 rounded-sm bg-bg/70 px-1.5 text-caption text-secondary">
                   {row.keys.map((key) => (
                     <kbd key={key} className="font-sans leading-none">
                       {key}
