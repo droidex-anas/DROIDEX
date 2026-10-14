@@ -22,7 +22,7 @@ Production requires HTTPS for the client and WSS for the relay.
 Run the Vercel CLI from the repository root with `--local-config remote-web/vercel.json`.
 Set `VITE_REMOTE_RELAY_URL` in that Vercel project's build environment. The configuration
 builds the repository's `remote:build` script, serves `remote-web/dist`, and routes usernames
-and `/p` to the single-page app. Set the desired domain in the Vercel project.
+and `/p/<username>` to the single-page app. Set the desired domain in the Vercel project.
 
 For another static host, serve `remote-web/dist` over HTTPS, route application paths to
 `index.html`, and copy the security headers from `vercel.json`. Serve `sw.js` without
@@ -53,13 +53,21 @@ remove the device in DROIDEX or turn remote access off on the laptop.
 
 ## Shared profiles
 
-Settings → Profile creates an opt-in `/p#…` aggregate snapshot. Its fragment stays in the
-browser and is never sent to the static host. Public profiles show observed token activity,
-session counts, streaks, and harness/model rankings. They contain no prompts or workspace
-paths. A copied snapshot cannot be revoked; create a fresh link to share newer figures.
-Activity buckets count new usage when DROIDEX observes it; loaded history supplies only
-the lifetime baseline. Snapshots include at most 366 activity dates and five entries per
-ranking, with a 32 KiB encoded-fragment limit.
+Settings → Profile creates an opt-in `/p/<username>#…` aggregate snapshot. Its fragment
+stays in the browser and is never sent to the static host. Public profiles show normalized
+local token activity, session counts, streaks, and harness/model rankings. They contain no
+prompts, source paths, session identifiers, workspace paths, or cost data. Signed coverage
+flags label partial token figures as measured minimums. The laptop signs
+the snapshot with the username owner key. The browser verifies the signature locally and
+asks the relay registry to match only that public key to the username; neither service
+receives the profile payload. A copied snapshot cannot be revoked; create a fresh link to
+share newer figures. Snapshots include at most 366 activity dates and five entries per
+ranking. The payload is limited to 20 KiB and the complete fragment to 24 KiB.
+
+Because social crawlers do not receive URL fragments, this private-by-default format does
+not generate Open Graph or Twitter previews. A share-card UI can render the verified data
+to PNG locally. A short URL or server-rendered preview needs a separate opt-in public
+snapshot store. See [`docs/usage.md`](../docs/usage.md) for the ledger and privacy boundaries.
 
 Before publishing, verify pairing, reconnects, device revocation and push delivery on a
 real phone against the deployed relay. Local builds and automated checks cover only the

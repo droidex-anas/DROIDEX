@@ -5,6 +5,6 @@
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src", "../packages/remote/src", "../src/features/profile/profileShare.ts"],
+  "include": ["src", "../packages/remote/src"],
   "references": []
 }

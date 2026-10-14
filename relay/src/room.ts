@@ -140,6 +140,18 @@ export class RelayRoom {
       return new Response(null, response);
     }
     if (request.method !== 'POST') return locked();
+    if (path[4] === 'profile-key') {
+      try {
+        const body = await smallBody(request);
+        const candidate = publicKey(isRecord(body) ? body.publicKey : undefined);
+        const candidateFingerprint = await fingerprint(candidate);
+        const owner = this.owner;
+        const valid = owner?.handle === handle && candidateFingerprint === owner.fingerprint;
+        return Response.json({ valid });
+      } catch {
+        return Response.json({ valid: false });
+      }
+    }
     try {
       if (path[4] === 'challenge') {
         return await this.state.blockConcurrencyWhile(async () => {

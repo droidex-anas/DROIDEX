@@ -203,6 +203,7 @@ contextBridge.exposeInMainWorld('droidex', {
   decideRemoteRequest: (id, approved) => ipcRenderer.invoke('remote-decide', { id, approved }),
   revokeRemoteDevice: (id) => ipcRenderer.invoke('remote-revoke', id),
   resetRemotePairing: () => ipcRenderer.invoke('remote-reset'),
+  signProfilePayload: (payload) => ipcRenderer.invoke('remote-sign-profile', payload),
   remoteQr: (text) => ipcRenderer.invoke('remote-qr', text),
   onRemoteState: (handler) => {
     const listener = (_event, state) => handler(state);
@@ -210,7 +211,6 @@ contextBridge.exposeInMainWorld('droidex', {
     return () => ipcRenderer.removeListener('remote-state-changed', listener);
   },
   getProfileUsage: () => ipcRenderer.invoke('profile-usage-get'),
-  recordProfileUsage: (records) => ipcRenderer.invoke('profile-usage-record', records),
   usageAnalyticsBootstrap: () => ipcRenderer.invoke('usage-analytics-bootstrap'),
   usageAnalyticsFirstLaunchReported: () =>
     ipcRenderer.invoke('usage-analytics-first-launch-reported'),

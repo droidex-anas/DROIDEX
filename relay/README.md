@@ -41,6 +41,13 @@ the existing owner can repeat it. Preserve the laptop identity backup: there
 is deliberately no password reset, account recovery or automatic ownership
 transfer.
 
+`POST /v1/handles/:handle/profile-key` accepts only `{publicKey}` and returns
+`{valid}`. It lets a static public-profile viewer confirm that a locally
+verified signature belongs to the registered username. The signed profile
+payload stays in the URL fragment and is never sent to this endpoint. Unknown
+handles, malformed keys, and wrong keys all return HTTP 200 with
+`{"valid":false}`. The edge CORS rule and connection rate limit apply.
+
 `GET /v1/handles/:handle/socket` upgrades every valid handle to the same
 WebSocket greeting: `{type:"relay-ready", peerId, challenge}`. There is no
 username existence lookup. The laptop sends `{type:"host-auth", publicKey,

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { claimProof, createIdentity, fingerprint, hostProof, isRecord, MAX_RELAY_FRAME_BYTES, signIdentity } from '../packages/remote/src/index';
 import { RelayRoom } from '../relay/src/room';
-import type { ObjectState, RelaySocket } from '../relay/src/runtime';
+import relayWorker from '../relay/src/worker';
+import type { Environment, ObjectState, RelaySocket } from '../relay/src/runtime';
 
 Object.defineProperty(globalThis, 'WebSocketRequestResponsePair', { value: class {
   getRequest() { return 'ping'; }
@@ -75,6 +76,75 @@ test('registry claims require one-use owner proofs and reject another laptop', a
   const stranger = await createIdentity();
   const next = await getChallenge();
   assert.deepEqual(await (await claim({ publicKey: stranger.publicKey, challenge: next, signature: await signIdentity(stranger.privateKey, claimProof('anas', next)) })).json(), { status: 'locked' });
+});
+
+test('profile key checks reveal only whether the supplied key owns the handle', async () => {
+  const owner = await createIdentity();
+  const environment = fixture([]);
+  await environment.state.storage.put('owner', {
+    handle: 'anas',
+    key: owner.publicKey,
+    fingerprint: await fingerprint(owner.publicKey),
+  });
+  const room = new RelayRoom(environment.state);
+  await environment.initialize();
+  const check = (target: RelayRoom, publicKey: unknown) =>
+    target.fetch(
+      new Request('https://relay.test/v1/handles/anas/profile-key', {
+        method: 'POST',
+        body: JSON.stringify({ publicKey }),
+      }),
+    );
+  const expectCheck = async (target: RelayRoom, publicKey: unknown, valid: boolean) => {
+    const response = await check(target, publicKey);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { valid });
+  };
+
+  await expectCheck(room, owner.publicKey, true);
+  const stranger = await createIdentity();
+  await expectCheck(room, stranger.publicKey, false);
+  await expectCheck(room, { kty: 'EC' }, false);
+
+  const unknownEnvironment = fixture([]);
+  const unknown = new RelayRoom(unknownEnvironment.state);
+  await unknownEnvironment.initialize();
+  await expectCheck(unknown, owner.publicKey, false);
+});
+
+test('profile key checks keep the relay CORS, rate limit and no-store boundary', async () => {
+  let allowed = true;
+  let forwarded = 0;
+  const env: Environment = {
+    WEB_ORIGIN: 'https://droidex.test',
+    CONNECTION_LIMIT: { limit: async () => ({ success: allowed }) },
+    ROOMS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async () => {
+          forwarded++;
+          return Response.json({ valid: false });
+        },
+      }),
+    },
+  };
+  const request = (origin = env.WEB_ORIGIN) =>
+    new Request('https://relay.test/v1/handles/anas/profile-key', {
+      method: 'POST',
+      headers: { origin },
+      body: '{}',
+    });
+
+  const response = await relayWorker.fetch(request(), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('access-control-allow-origin'), env.WEB_ORIGIN);
+  assert.equal(forwarded, 1);
+
+  assert.equal((await relayWorker.fetch(request('https://attacker.test'), env)).status, 403);
+  allowed = false;
+  assert.equal((await relayWorker.fetch(request(), env)).status, 429);
+  assert.equal(forwarded, 1);
 });
 
 test('socket attachments restore routing and authority without per-frame durable writes', async (t) => {

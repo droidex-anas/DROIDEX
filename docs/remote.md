@@ -52,23 +52,35 @@ that owns the username. There is no account recovery for a lost laptop key.
 
 ## Profile
 
-**Settings → Profile** shows retained, observed token totals, an interactive
-daily/weekly/cumulative activity chart, streaks and harness/model rankings.
-Loaded chat history establishes a lifetime baseline; daily activity counts token
-increases on the laptop's local day when they are observed after tracking starts.
-Models are ranked by each chat's latest known model. Unreported tokens, external
-CLI activity, billing costs and
-task durations are not invented. The local ledger retains at most 10,000 chat
-counters and 366 activity dates.
+**Settings → Profile** shows normalized local token totals, an interactive
+daily/weekly/cumulative activity chart, streaks, cost coverage, and harness/model
+rankings. A sidecar worker incrementally reads supported harness histories into
+the append-only `usage.sqlite` ledger, including activity created outside the
+DROIDEX window. Unknown categories stay unknown instead of becoming zero. Cost
+is shown only when reported or calculable and is labeled as an API-equivalent
+estimate for subscription usage. Initial indexing is nonblocking and reports
+its state per source; sharing stays unavailable until every source completes.
+See [Local usage ledger](usage.md).
 
-**Share → Copy link** creates a fixed, public aggregate snapshot at `/p#…`.
+**Share → Copy link** creates a fixed, public aggregate snapshot at
+`/p/yourname#…`.
 It contains your chosen name, username, aggregate activity and model/harness
-names. It contains no prompts, workspace paths, session identifiers or keys.
-The fragment never goes to the host; the relay stores no profile. Anyone with
-the copied link can view it, and an already copied snapshot cannot be revoked.
-Create another link to share updated figures.
-Snapshots contain at most 366 activity dates and five entries per ranking, with
-a 32 KiB encoded-fragment limit.
+names. When a harness omits counts, signed coverage flags label the affected
+figures as measured minimums. It contains no prompts, workspace paths, source paths, session
+identifiers, costs, device data or private keys, and viewing it never connects
+to your laptop. The laptop signs the snapshot with the registered username key.
+The web client verifies the signature locally, then sends only that public key
+and username to the registry for an owner match. The fragment never goes to the
+host or relay, and the relay stores no profile. Anyone with the copied link can
+view it, and an already copied snapshot cannot be revoked. Create another link
+to share updated figures.
+
+Snapshots contain at most 366 activity dates and five entries per ranking. The
+payload is limited to 20 KiB and the complete signed fragment to 24 KiB. The
+same verified data can be rendered locally as a PNG share card without laptop
+access. URL-fragment snapshots cannot produce social preview cards because
+crawlers do not receive fragments; a short link or Open Graph image requires a
+separate opt-in public snapshot store.
 
 ## Operate or self-host
 
@@ -85,7 +97,9 @@ sees ciphertext and traffic metadata; compromised web-host JavaScript can read
 the browser view. Self-hosting gives you control of both deployments.
 
 The relay retains only the public handle owner key, short-lived claim
-challenges and bounded socket routing metadata. It persists no ciphertext or
+challenges and bounded socket routing metadata. A rate-limited profile check
+compares a supplied public key with that owner key and returns the same invalid
+shape for an unknown handle or wrong key. It persists no profile, ciphertext or
 offline queue. Forwarding performs no durable writes. Frames are capped at
 64 KiB, receipt windows at 16 frames/256 KiB and connection attempts at 20 per
 IP/minute at each edge. The desktop additionally bounds peers, pending actions,

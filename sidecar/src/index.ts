@@ -14,6 +14,7 @@ import { createDesktopBrowserChannel } from './browser/desktopBrowserChannel.js'
 import { droidexUserDataDir } from './droidexPaths.js';
 import { shutdownSidecar } from './shutdown.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
+import { UsageWorkerClient } from './usage/UsageWorkerClient.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
@@ -21,6 +22,16 @@ const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
 let projects: ProjectService | undefined;
+const usage = new UsageWorkerClient({
+  workerUrl: new URL(
+    import.meta.url.endsWith('.ts') ? './usage/usageWorkerLoader.mjs' : './usageWorker.mjs',
+    import.meta.url,
+  ),
+  workerData: { databasePath: join(droidexUserDataDir(), 'usage.sqlite') },
+  onError: (error) => {
+    console.error('Usage ledger failed:', error);
+  },
+});
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
@@ -35,6 +46,7 @@ const server = startBridgeServer({
     await manager.handle(command);
   },
   getSnapshot: () => manager.runtimeSnapshot(),
+  getProfileUsage: () => usage.snapshot(),
 });
 
 const manager = new SessionManager(
@@ -171,6 +183,7 @@ async function shutdown(): Promise<void> {
           await service?.flush();
         }
       },
+      shutdownUsage: () => usage.close(),
       disableMetrics: () => {
         hotPathMetrics.disable();
       },

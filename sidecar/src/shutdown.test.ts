@@ -16,6 +16,10 @@ test('sidecar shutdown attempts every stage and reports the first failure', asyn
         calls.push('automations');
         throw new Error('automation shutdown failed');
       },
+      shutdownUsage: async () => {
+        calls.push('usage');
+        throw new Error('usage shutdown failed');
+      },
       disableMetrics: () => {
         calls.push('metrics');
         throw new Error('metrics shutdown failed');
@@ -27,5 +31,5 @@ test('sidecar shutdown attempts every stage and reports the first failure', asyn
     }),
     (error) => error === firstError,
   );
-  assert.deepEqual(calls, ['sessions', 'automations', 'metrics', 'bridge']);
+  assert.deepEqual(calls, ['sessions', 'automations', 'usage', 'metrics', 'bridge']);
 });

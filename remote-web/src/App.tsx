@@ -8,13 +8,15 @@ import { Remote } from './Remote';
 import './onboarding.css';
 
 export function App() {
-  const requested = window.location.pathname.slice(1);
+  const path = window.location.pathname.split('/').filter(Boolean);
+  const publicProfile = path[0] === 'p' && path.length === 2 && HANDLE_PATTERN.test(path[1] ?? '');
+  const requested = path.length === 1 ? (path[0] ?? '') : '';
   const [handle, setHandle] = useState(HANDLE_PATTERN.test(requested) ? requested : '');
   const [pin, setPin] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(handle));
   const [error, setError] = useState('');
   useEffect(() => {
-    if (requested) return;
+    if (publicProfile || requested) return;
     try {
       const recent = localStorage.getItem(LAST_HANDLE_KEY);
       if (recent && HANDLE_PATTERN.test(recent)) {
@@ -24,7 +26,7 @@ export function App() {
     } catch {
       setError('Browser storage is unavailable. Enable site storage to remember your laptop.');
     }
-  }, [requested]);
+  }, [publicProfile, requested]);
   useEffect(() => {
     if (!handle) return;
     let cancelled = false;
@@ -51,7 +53,7 @@ export function App() {
       cancelled = true;
     };
   }, [handle]);
-  if (requested === 'p') return <PublicProfile />;
+  if (publicProfile) return <PublicProfile username={path[1] ?? ''} />;
   if (handle && pin)
     return (
       <Remote

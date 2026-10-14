@@ -1,5 +1,5 @@
 import type { RemoteState, RemoteSettings, RemoteSetup } from '../../packages/remote/src/desktop';
-import type { ProfileUsageRecord, ProfileUsageSnapshot } from '../features/profile/profileShare';
+import type { ProfileAttestation, ProfileUsageSnapshot } from '../features/profile/profileShare';
 import type {
   NativeBrowserDesignEvent,
   NativeBrowserDesignState,
@@ -199,10 +199,10 @@ interface DroidexApi {
   decideRemoteRequest: (id: string, approved: boolean) => Promise<RemoteState>;
   revokeRemoteDevice: (id: string) => Promise<RemoteState>;
   resetRemotePairing: () => Promise<RemoteState>;
+  signProfilePayload: (payload: string) => Promise<ProfileAttestation>;
   remoteQr: (text: string) => Promise<string>;
   onRemoteState: (handler: (state: RemoteState) => void) => () => void;
   getProfileUsage: () => Promise<ProfileUsageSnapshot>;
-  recordProfileUsage: (records: ProfileUsageRecord[]) => Promise<void>;
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;

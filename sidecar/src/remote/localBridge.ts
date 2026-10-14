@@ -112,6 +112,7 @@ export class RemoteLocalBridge {
   execute(command: RemoteCommand): void {
     if (command.type === 'push.subscribe' || command.type === 'push.unsubscribe')
       throw new Error('Push subscriptions are handled by the remote host');
+    if (command.type === 'usage') throw new Error('Usage is handled by the remote host');
     if (command.type === 'list') {
       this.send({ type: 'remote.snapshot' });
       return;

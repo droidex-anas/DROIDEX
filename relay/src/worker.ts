@@ -20,7 +20,7 @@ export default {
         },
       });
     }
-    const path = /^\/v1\/handles\/([^/]+)\/(socket|challenge|claim)$/.exec(
+    const path = /^\/v1\/handles\/([^/]+)\/(socket|challenge|claim|profile-key)$/.exec(
       new URL(request.url).pathname,
     );
     if (!path || !HANDLE_PATTERN.test(path[1]))

@@ -1,10 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './profile.css';
 import { Check, Share2, ShieldCheck } from 'lucide-react';
-import {
-  decodeProfileSnapshot,
-  type PublicProfileSnapshot,
-} from '../../src/features/profile/profileShare';
+import { decodeProfileShare, type PublicProfileSnapshot } from '../../packages/remote/src/profile';
+import { verifyProfileShare } from './profileVerification';
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 const integer = new Intl.NumberFormat();
@@ -16,16 +14,48 @@ const formatDate = (date: string) =>
     timeZone: 'UTC',
   });
 
-export function PublicProfile() {
-  const profile = useMemo(() => decodeProfileSnapshot(window.location.hash), []);
+export function PublicProfile({ username }: { username: string }) {
+  const decodedShare = useMemo(() => decodeProfileShare(window.location.hash), []);
+  const profile = decodedShare?.profile;
+  const [verified, setVerified] = useState<boolean | null>(null);
   const [shared, setShared] = useState(false);
   const [error, setError] = useState('');
-  if (!profile)
+  useEffect(() => {
+    let active = true;
+    if (decodedShare?.profile.username === username) {
+      void verifyProfileShare(decodedShare).then((valid) => {
+        if (active) setVerified(valid);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [decodedShare, username]);
+  if (profile?.username !== username)
     return (
       <main className="welcome">
         <img src="/icon.svg" width="32" height="32" alt="DROIDEX" />
         <h1>This profile link is incomplete.</h1>
         <p>Ask its owner to copy a fresh link from Settings → Profile in DROIDEX.</p>
+        <a className="primary button-link" href="/">
+          Open DROIDEX Remote
+        </a>
+      </main>
+    );
+  if (verified === null)
+    return (
+      <main className="welcome">
+        <img src="/icon.svg" width="32" height="32" alt="DROIDEX" />
+        <h1>Verifying this profile…</h1>
+        <p>Checking its signature against the public username registry.</p>
+      </main>
+    );
+  if (!verified)
+    return (
+      <main className="welcome">
+        <img src="/icon.svg" width="32" height="32" alt="DROIDEX" />
+        <h1>This profile could not be verified.</h1>
+        <p>Ask its owner to create a fresh link from DROIDEX.</p>
         <a className="primary button-link" href="/">
           Open DROIDEX Remote
         </a>
@@ -74,32 +104,7 @@ export function PublicProfile() {
         <span className="username">@{profile.username}</span>
         <p className="muted">A little of what gets built.</p>
       </div>
-      <dl className="profile-stats">
-        <div>
-          <dd>{compact.format(profile.lifetimeTokens)}</dd>
-          <dt>Lifetime tokens</dt>
-        </div>
-        <div>
-          <dd>{compact.format(profile.peakDayTokens)}</dd>
-          <dt>Peak observed day</dt>
-        </div>
-        <div>
-          <dd>{integer.format(profile.sessions)}</dd>
-          <dt>Sessions</dt>
-        </div>
-        <div>
-          <dd>
-            {profile.currentStreak} {profile.currentStreak === 1 ? 'day' : 'days'}
-          </dd>
-          <dt>Current streak</dt>
-        </div>
-        <div>
-          <dd>
-            {profile.longestStreak} {profile.longestStreak === 1 ? 'day' : 'days'}
-          </dd>
-          <dt>Longest streak</dt>
-        </div>
-      </dl>
+      <ProfileStats profile={profile} />
       <Activity profile={profile} />
       <div className="profile-rankings">
         <Ranking title="Most used harnesses" values={profile.harnesses} />
@@ -108,10 +113,16 @@ export function PublicProfile() {
       <div className="profile-note">
         <ShieldCheck size={17} />
         <p>
-          Shared aggregate snapshot · {new Date(profile.generatedAt).toLocaleDateString()}
+          Username verified · snapshot from {new Date(profile.generatedAt).toLocaleDateString()}
           <br />
           Observed activity since {new Date(profile.trackingSince).toLocaleDateString()}. No chats,
           prompts, or workspace details.
+          {!profile.tokensComplete && (
+            <>
+              <br />
+              Some harness logs omit token counts, so measured totals are minimums.
+            </>
+          )}
         </p>
       </div>
       {error && (
@@ -120,6 +131,44 @@ export function PublicProfile() {
         </p>
       )}
     </main>
+  );
+}
+
+function ProfileStats({ profile }: { profile: PublicProfileSnapshot }) {
+  const minimum = profile.tokensComplete ? '' : '≥ ';
+  return (
+    <dl className="profile-stats">
+      <div>
+        <dd>
+          {minimum}
+          {compact.format(profile.lifetimeTokens)}
+        </dd>
+        <dt>{profile.tokensComplete ? 'Lifetime tokens' : 'Measured tokens (minimum)'}</dt>
+      </div>
+      <div>
+        <dd>
+          {minimum}
+          {compact.format(profile.peakDayTokens)}
+        </dd>
+        <dt>{profile.tokensComplete ? 'Peak observed day' : 'Peak measured day (minimum)'}</dt>
+      </div>
+      <div>
+        <dd>{integer.format(profile.sessions)}</dd>
+        <dt>Sessions</dt>
+      </div>
+      <div>
+        <dd>
+          {profile.currentStreak} {profile.currentStreak === 1 ? 'day' : 'days'}
+        </dd>
+        <dt>Current streak</dt>
+      </div>
+      <div>
+        <dd>
+          {profile.longestStreak} {profile.longestStreak === 1 ? 'day' : 'days'}
+        </dd>
+        <dt>Longest streak</dt>
+      </div>
+    </dl>
   );
 }
 
@@ -160,20 +209,29 @@ function Activity({ profile }: { profile: PublicProfileSnapshot }) {
   const [selected, setSelected] = useState<number | null>(null);
   const points = useMemo(() => {
     if (mode === 'weekly') {
-      const weeks = new Map<string, number>();
+      const weeks = new Map<string, { tokens: number; complete: boolean }>();
       for (const day of profile.days) {
         const date = new Date(`${day.date}T12:00:00Z`);
         date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
         const key = date.toISOString().slice(0, 10);
-        weeks.set(key, (weeks.get(key) ?? 0) + day.tokens);
+        const current = weeks.get(key) ?? { tokens: 0, complete: true };
+        weeks.set(key, {
+          tokens: current.tokens + day.tokens,
+          complete: current.complete && day.complete,
+        });
       }
-      return Array.from(weeks, ([date, tokens]) => ({ date, tokens }));
+      return Array.from(weeks, ([date, value]) => ({ date, ...value }));
     }
     let total = 0;
-    return profile.days.map((day) => ({
-      ...day,
-      tokens: mode === 'cumulative' ? (total += day.tokens) : day.tokens,
-    }));
+    let complete = true;
+    return profile.days.map((day) => {
+      complete &&= day.complete;
+      return {
+        ...day,
+        tokens: mode === 'cumulative' ? (total += day.tokens) : day.tokens,
+        complete: mode === 'cumulative' ? complete : day.complete,
+      };
+    });
   }, [mode, profile.days]);
   const index = Math.min(selected ?? points.length - 1, points.length - 1);
   const point = points[index];
@@ -207,9 +265,13 @@ function Activity({ profile }: { profile: PublicProfileSnapshot }) {
       {points.length ? (
         <>
           <div className="activity-value">
-            <strong>{integer.format(point.tokens)}</strong>
+            <strong>
+              {point.complete ? '' : '≥ '}
+              {integer.format(point.tokens)}
+            </strong>
             <span className="muted">
-              {`${mode === 'weekly' ? 'Week of ' : ''}${formatDate(point.date)}`} · tokens
+              {`${mode === 'weekly' ? 'Week of ' : ''}${formatDate(point.date)}`} ·{' '}
+              {point.complete ? 'tokens' : 'measured tokens (minimum)'}
             </span>
           </div>
           <svg
