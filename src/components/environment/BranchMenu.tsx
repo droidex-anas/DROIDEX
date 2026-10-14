@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Plus, Search, Spinner } from '@droidex/icons';
 import { GitBranchIcon, GitCommitIcon } from './GithubIcons';
 import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
 import { Menu } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
 import { Row, RowCaret } from '../ui/Row';
@@ -152,14 +153,15 @@ export function BranchMenu({
       >
         <div className="flex shrink-0 items-center gap-2 bg-bg/40 px-2.5 py-2">
           <Search className="size-icon-sm shrink-0 text-muted" />
-          <input
+          <Input
+            variant="embedded"
             autoFocus
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
             }}
             placeholder="Search branches"
-            className="w-full bg-transparent text-body text-primary placeholder:text-muted"
+            aria-label="Search branches"
           />
           {(busy || fetching) && (
             <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow text-accent" />
@@ -236,7 +238,8 @@ export function BranchMenu({
         <div className="shrink-0 bg-bg/40 p-1.5">
           {creating ? (
             <div className="flex items-center gap-1.5">
-              <input
+              <Input
+                variant="compact"
                 autoFocus
                 value={newName}
                 onChange={(e) => {
@@ -244,10 +247,10 @@ export function BranchMenu({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && void doCreate()}
                 placeholder="new-branch-name"
+                aria-label="New branch name"
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
-                className="w-full rounded-sm bg-field px-2 py-1 text-body text-primary placeholder:text-muted"
               />
               <Button
                 variant="primary"

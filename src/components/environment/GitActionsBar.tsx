@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Spinner, Upload } from '@droidex/icons';
+import { Upload } from '@droidex/icons';
 import { GitCommitIcon, GitHubMarkIcon, PrStateIcon } from './GithubIcons';
+import { Button } from '../ui/Button';
 import { Row } from '../ui/Row';
 import { CommitSheet } from './CommitSheet';
 import { CreatePrSheet } from './CreatePrSheet';
@@ -104,21 +105,21 @@ export function GitActionsBar({
           <span className="min-w-0 flex-1 truncate text-body text-primary">Commit or push</span>
         </button>
         {publishable && (
-          <button
-            type="button"
-            onClick={() => void doPush()}
+          <Button
+            variant="secondary"
+            size="sm"
+            shape="round"
+            className="mr-1.5"
+            icon={Upload}
+            loading={pushing}
             disabled={pushing || !!env.detached}
             title={pushLabel}
             aria-label={pushLabel}
-            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-full bg-elevated px-2 py-0.5 text-caption font-medium tabular-nums text-secondary transition-colors hover:bg-active hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            labelClassName="tabular-nums"
+            onClick={() => void doPush()}
           >
-            {pushing ? (
-              <Spinner className="size-icon-sm motion-safe:animate-spin-slow" />
-            ) : (
-              <Upload className="size-icon-sm" />
-            )}
             {aheadCount > 0 ? `↑${String(aheadCount)}` : 'Push'}
-          </button>
+          </Button>
         )}
       </div>
 

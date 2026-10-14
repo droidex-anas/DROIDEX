@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Check, ChevronDown } from '@droidex/icons';
 import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
 import { Popover } from '../ui/Popover';
 import { createPullRequest } from '../../lib/github';
 import { baseDescriptor, gitPush, stripRemotePrefix } from '../../lib/git';
@@ -105,7 +106,8 @@ export function CreatePrSheet({
 
   return (
     <div className="mx-2 mb-1.5 space-y-2 rounded-lg bg-elevated px-2.5 py-2.5">
-      <input
+      <Input
+        variant="compact"
         autoFocus
         value={title}
         onChange={(e) => {
@@ -113,7 +115,7 @@ export function CreatePrSheet({
         }}
         onKeyDown={submitOnMetaEnter}
         placeholder="Pull request title"
-        className="w-full rounded-md bg-field px-2.5 py-1.5 text-body text-primary placeholder:text-muted"
+        aria-label="Pull request title"
       />
       <textarea
         value={body}

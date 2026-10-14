@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { Check, FolderGit, FolderPlus } from '@droidex/icons';
+import { Button } from '../ui/Button';
 import { Popover } from '../ui/Popover';
 import { WorktreeIcon } from '../icons/WorktreeIcon';
 
@@ -54,42 +55,6 @@ import { workspaceName } from '../../lib/workspaces';
 // The pointer is the highlight in these popover lists: elevated on light,
 // active on dark, where the raised layer already is the elevated rung.
 const ITEM_HOVER = 'hover:bg-elevated dark:hover:bg-active';
-
-/** One control of the Start in row. `open` is omitted by a pill with no menu. */
-function Pill({
-  icon,
-  label,
-  title,
-  open,
-  innerRef,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  title: string;
-  open?: boolean;
-  innerRef?: React.RefObject<HTMLButtonElement | null>;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      ref={innerRef}
-      onClick={onClick}
-      title={`${title}: ${label}`}
-      aria-label={`${title}: ${label}`}
-      {...(open === undefined ? {} : { 'aria-expanded': open, 'aria-haspopup': 'dialog' as const })}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-sm px-1.5 py-1 text-caption transition-colors ${
-        open ? 'bg-active text-primary' : 'text-secondary hover:bg-elevated hover:text-primary'
-      }`}
-    >
-      <span className="shrink-0 text-muted transition-colors group-hover:text-secondary">
-        {icon}
-      </span>
-      <span className="max-w-36 truncate text-left">{label}</span>
-    </button>
-  );
-}
 
 /** Where a conversation will start, as the bar reads and writes it. */
 export interface StartInSelection {
@@ -180,29 +145,40 @@ export function StartInBar({
   if (!cwd)
     return (
       <div className="flex min-w-0 items-center gap-4 overflow-hidden">
-        <Pill
+        <Button
+          variant="ghost"
+          size="sm"
           icon={<FolderPlus className="size-icon-sm" />}
-          label="Open folder…"
-          title="Project"
+          labelClassName="max-w-36"
+          title="Project: Open folder…"
+          aria-label="Project: Open folder…"
           onClick={() => void openFolder()}
-        />
+        >
+          Open folder…
+        </Button>
       </div>
     );
 
   return (
     <div className="flex min-w-0 items-center gap-4 overflow-hidden">
-      <Pill
+      <Button
+        ref={repoRef}
+        variant="ghost"
+        size="sm"
         icon={<FolderGit className="size-icon-sm" />}
-        label={workspaceName(repoRoot)}
-        title="Project"
-        open={repoOpen}
-        innerRef={repoRef}
+        labelClassName="max-w-36"
+        title={`Project: ${workspaceName(repoRoot)}`}
+        aria-label={`Project: ${workspaceName(repoRoot)}`}
+        aria-expanded={repoOpen}
+        aria-haspopup="dialog"
         onClick={() => {
           setLocOpen(false);
           setBranchOpen(false);
           setRepoOpen((v) => !v);
         }}
-      />
+      >
+        {workspaceName(repoRoot)}
+      </Button>
       <Popover
         open={repoOpen}
         onClose={() => {
@@ -250,7 +226,10 @@ export function StartInBar({
 
       {isRepo && (
         <>
-          <Pill
+          <Button
+            ref={locRef}
+            variant="ghost"
+            size="sm"
             icon={
               createsWorktree ? (
                 <WorktreeIcon className="size-icon-sm" />
@@ -258,16 +237,19 @@ export function StartInBar({
                 <LocalGlyph className="size-icon-sm" />
               )
             }
-            label={workLocationLabel}
-            title="Work in"
-            open={locOpen}
-            innerRef={locRef}
+            labelClassName="max-w-36"
+            title={`Work in: ${workLocationLabel}`}
+            aria-label={`Work in: ${workLocationLabel}`}
+            aria-expanded={locOpen}
+            aria-haspopup="dialog"
             onClick={() => {
               setRepoOpen(false);
               setBranchOpen(false);
               setLocOpen((v) => !v);
             }}
-          />
+          >
+            {workLocationLabel}
+          </Button>
           <Popover
             open={locOpen}
             onClose={() => {
@@ -344,18 +326,24 @@ export function StartInBar({
             </div>
           </Popover>
 
-          <Pill
+          <Button
+            ref={branchRef}
+            variant="ghost"
+            size="sm"
             icon={<BranchGlyph className="size-icon-sm" />}
-            label={draft.branch ?? env.branch ?? 'detached'}
-            title="Branch"
-            open={branchOpen}
-            innerRef={branchRef}
+            labelClassName="max-w-36"
+            title={`Branch: ${draft.branch ?? env.branch ?? 'detached'}`}
+            aria-label={`Branch: ${draft.branch ?? env.branch ?? 'detached'}`}
+            aria-expanded={branchOpen}
+            aria-haspopup="dialog"
             onClick={() => {
               setRepoOpen(false);
               setLocOpen(false);
               setBranchOpen((v) => !v);
             }}
-          />
+          >
+            {draft.branch ?? env.branch ?? 'detached'}
+          </Button>
           <StartBranchMenu
             open={branchOpen}
             onClose={() => {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ExternalLink, Plus, Spinner, Trash, X } from '@droidex/icons';
 import { Popover } from '../ui/Popover';
 import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
 import { Menu } from '../ui/Menu';
 import { Row, RowCaret } from '../ui/Row';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
@@ -53,6 +54,7 @@ export function WorktreeMenu({
   const dispatch = useStoreDispatch();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const baseRef = useRef<HTMLButtonElement>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const defaultBase = env?.branch ?? env?.defaultBranch ?? 'main';
@@ -291,7 +293,8 @@ export function WorktreeMenu({
         <div className="shrink-0 bg-bg/40 p-1.5">
           {creating ? (
             <div className="space-y-1.5">
-              <input
+              <Input
+                variant="compact"
                 autoFocus
                 value={name}
                 onChange={(e) => {
@@ -299,16 +302,19 @@ export function WorktreeMenu({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && !pickingBase && void doCreate()}
                 placeholder="new-branch-name"
+                aria-label="New branch name"
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
-                className="w-full rounded-sm bg-field px-2 py-1 text-body text-primary placeholder:text-muted"
               />
               <button
+                ref={baseRef}
                 onClick={() => {
                   setPickingBase((v) => !v);
                 }}
-                className="flex w-full items-center gap-1.5 rounded-sm bg-field px-2 py-1 text-label text-secondary hover:bg-active"
+                aria-haspopup="menu"
+                aria-expanded={pickingBase}
+                className="flex w-full items-center gap-1.5 rounded-md bg-field px-2.5 py-1.5 text-label text-secondary hover:bg-active"
               >
                 <span className="text-muted">Base</span>
                 <span className="flex-1 truncate text-left text-primary">{base}</span>
@@ -316,25 +322,30 @@ export function WorktreeMenu({
                   className={`size-icon-sm transition-transform ${pickingBase ? 'rotate-180' : ''}`}
                 />
               </button>
-              {pickingBase && (
-                <div className="max-h-32 overflow-y-auto rounded-sm bg-field p-1">
-                  {baseOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => {
-                        setBase(option);
-                        setPickingBase(false);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-xs px-1.5 py-1 text-left text-label text-secondary hover:bg-active hover:text-primary"
-                    >
-                      <span className="flex-1 truncate">{option}</span>
-                      {option === base && (
-                        <Check aria-hidden="true" className="size-icon-sm text-accent" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <Menu
+                open={pickingBase}
+                onClose={() => {
+                  setPickingBase(false);
+                }}
+                anchorRef={baseRef}
+                label="Base branch"
+                placement="bottom-start"
+                width={248}
+              >
+                {baseOptions.map((option) => (
+                  <Menu.Item
+                    key={option}
+                    onSelect={() => {
+                      setBase(option);
+                    }}
+                  >
+                    <span className="flex-1 truncate">{option}</span>
+                    {option === base && (
+                      <Check aria-hidden="true" className="size-icon-sm text-accent" />
+                    )}
+                  </Menu.Item>
+                ))}
+              </Menu>
               <div className="flex items-center justify-end gap-1.5">
                 <Button
                   variant="ghost"

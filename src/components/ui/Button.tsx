@@ -30,13 +30,17 @@ interface ButtonBaseProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   shape?: 'default' | 'round';
   /** Swaps the icon (or the label) for a spinner and keeps the button's width. */
   loading?: boolean;
+  /** The icon: a component, or a ready-made glyph such as a custom mark. */
+  icon?: IconComponent | ReactNode;
+  /** Classes for the label span, such as a width cap or responsive hiding. */
+  labelClassName?: string;
 }
 
 // Icon-only buttons have no visible label, so they must name themselves.
 type ButtonProps = ButtonBaseProps &
   (
-    | { children: ReactNode; icon?: IconComponent }
-    | { children?: undefined; icon: IconComponent; 'aria-label': string }
+    | { children: ReactNode; icon?: IconComponent | ReactNode }
+    | { children?: undefined; icon: IconComponent | ReactNode; 'aria-label': string }
   );
 
 export function Button({
@@ -46,6 +50,7 @@ export function Button({
   shape = 'default',
   loading = false,
   icon: Icon,
+  labelClassName,
   type = 'button',
   className,
   children,
@@ -71,9 +76,18 @@ export function Button({
         className,
       )}
     >
-      {Icon && (loading ? spinner : <Icon className="size-icon-md shrink-0" aria-hidden="true" />)}
+      {Icon &&
+        (loading ? (
+          spinner
+        ) : typeof Icon === 'function' ? (
+          <Icon className="size-icon-md shrink-0" aria-hidden="true" />
+        ) : (
+          Icon
+        ))}
       {children !== undefined && (
-        <span className={cn('truncate', labelHidden && 'invisible')}>{children}</span>
+        <span className={cn('truncate', labelHidden && 'invisible', labelClassName)}>
+          {children}
+        </span>
       )}
       {labelHidden && <span className="absolute inset-0 grid place-items-center">{spinner}</span>}
     </button>

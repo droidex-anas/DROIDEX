@@ -2,6 +2,7 @@ import { useMemo, useState, type RefObject } from 'react';
 import { Check, ChevronLeft, Plus, Search, Spinner } from '@droidex/icons';
 import { GitBranchIcon } from './GithubIcons';
 import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
 import { Popover } from '../ui/Popover';
 import { Menu } from '../ui/Menu';
 import { checkoutGitBranch, createGitBranch, stripRemotePrefix } from '../../lib/git';
@@ -212,14 +213,15 @@ export function StartBranchMenu({
         <>
           <div className="flex items-center gap-2 bg-bg/40 px-2.5 py-2">
             <Search className="size-icon-sm shrink-0 text-muted" />
-            <input
+            <Input
+              variant="embedded"
               autoFocus
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
               }}
               placeholder="Search branches"
-              className="w-full bg-transparent text-body text-primary placeholder:text-muted"
+              aria-label="Search branches"
             />
             {fetching && (
               <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow text-accent" />
@@ -282,7 +284,8 @@ export function StartBranchMenu({
             <div className="bg-bg/40 p-1.5">
               {creatingNew ? (
                 <div className="space-y-1.5">
-                  <input
+                  <Input
+                    variant="compact"
                     autoFocus
                     value={newName}
                     onChange={(e) => {
@@ -292,10 +295,10 @@ export function StartBranchMenu({
                       if (e.key === 'Enter') void createNewBranch();
                     }}
                     placeholder="new-branch-name"
+                    aria-label="New branch name"
                     spellCheck={false}
                     autoCorrect="off"
                     autoCapitalize="off"
-                    className="w-full rounded-sm bg-field px-2 py-1 text-body text-primary placeholder:text-muted"
                   />
                   <div className="px-0.5 text-caption text-muted">
                     Branches off <span className="text-secondary">{base}</span>

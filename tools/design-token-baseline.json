@@ -540,9 +540,6 @@
     "arbitrary-value": 11,
     "border-width": 2
   },
-  "src/components/ui/Field.tsx": {
-    "border-width": 2
-  },
   "src/components/utility/UtilityPane.tsx": {
     "arbitrary-value": 4,
     "border-width": 5,

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlignLeft,
@@ -16,6 +16,7 @@ import {
   X,
 } from '@droidex/icons';
 import { Copy, PanelLeft, Spinner } from '@droidex/icons';
+import { Button } from '../ui/Button';
 import { Popover } from '../ui/Popover';
 import { Menu } from '../ui/Menu';
 import { Row } from '../ui/Row';
@@ -123,40 +124,6 @@ function ViewToggle() {
         </button>
       ))}
     </div>
-  );
-}
-
-function ToolbarButton({
-  icon: Icon,
-  label,
-  title,
-  active,
-  onClick,
-  innerRef,
-  ...rest
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label?: string;
-  title: string;
-  active?: boolean;
-  onClick: () => void;
-  innerRef?: RefObject<HTMLButtonElement | null>;
-} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      ref={innerRef}
-      onClick={onClick}
-      title={title}
-      aria-label={label ? undefined : title}
-      aria-pressed={active}
-      {...rest}
-      className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-label transition-colors duration-150 ease-out ${
-        active ? 'bg-active text-primary' : 'text-muted hover:bg-elevated hover:text-primary'
-      }`}
-    >
-      <Icon className="size-icon-sm shrink-0" />
-      {label && <span className="review-toolbar-label">{label}</span>}
-    </button>
   );
 }
 
@@ -605,51 +572,68 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
       <div className="flex h-9 shrink-0 items-center gap-1.5 bg-surface px-2">
         <ScopeSelector />
         <div className="flex-1" />
-        <ToolbarButton
+        <Button
+          ref={commitRef}
+          variant="ghost"
+          size="sm"
           icon={GitCommit}
-          label="Commit"
+          labelClassName="review-toolbar-label"
           title="Commit changes"
-          innerRef={commitRef}
-          active={commitOpen}
+          aria-pressed={commitOpen}
           onClick={() => {
             setCommitOpen((v) => !v);
           }}
-        />
+        >
+          Commit
+        </Button>
         {isGitHub && prChecked && !prCreated && !hasPr && (
-          <ToolbarButton
+          <Button
+            ref={prRef}
+            variant="ghost"
+            size="sm"
             icon={GitPullRequest}
-            label="PR"
+            labelClassName="review-toolbar-label"
             title="Open a pull request"
-            innerRef={prRef}
-            active={prOpen}
+            aria-pressed={prOpen}
             onClick={() => {
               setPrOpen((v) => !v);
             }}
-          />
+          >
+            PR
+          </Button>
         )}
         <ViewToggle />
-        <ToolbarButton
+        <Button
+          variant="ghost"
+          size="sm"
           icon={allExpanded ? ChevronsDownUp : ChevronsUpDown}
           title={allExpanded ? 'Collapse all files' : 'Expand all files'}
+          aria-label={allExpanded ? 'Collapse all files' : 'Expand all files'}
           onClick={toggleAll}
         />
-        <ToolbarButton
+        <Button
+          variant="ghost"
+          size="sm"
           icon={PanelLeft}
           title={filesOpen ? 'Hide file list' : 'Show file list'}
-          active={!filesOpen}
+          aria-label={filesOpen ? 'Hide file list' : 'Show file list'}
+          aria-pressed={!filesOpen}
           onClick={() => {
             setFilesOpen((v) => !v);
           }}
         />
-        <ToolbarButton
+        <Button
+          ref={moreRef}
+          variant="ghost"
+          size="sm"
           icon={Ellipsis}
           title="More options"
-          innerRef={moreRef}
-          active={moreOpen}
+          aria-label="More options"
+          aria-pressed={moreOpen}
+          aria-haspopup="menu"
           onClick={() => {
             setMoreOpen((v) => !v);
           }}
-          aria-haspopup="menu"
         />
         {onClose && (
           <button
