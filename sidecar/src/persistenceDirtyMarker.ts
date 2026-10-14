@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 
 import type { PersistenceRecovery } from './protocol.js';
+import { isProcessAlive } from './processes/isProcessAlive.js';
 
 const MARKER_NAME = 'history-unflushed.marker';
 
@@ -95,19 +96,4 @@ function removeMarker(filePath: string): void {
 
 function isMissingFile(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
-}
-
-function isProcessAlive(processId: number): boolean {
-  if (processId <= 0) return false;
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    return !(
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'ESRCH'
-    );
-  }
 }

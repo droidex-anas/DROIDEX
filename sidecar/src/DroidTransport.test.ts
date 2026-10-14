@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RequestPermissionRequestSchema, type DroidClientTransport } from '@factory/droid-sdk';
-import { normalizeDroidTransportMessage, wrapDroidTransport } from './DroidTransport.js';
+import {
+  createDroidTransport,
+  normalizeDroidTransportMessage,
+  wrapDroidTransport,
+} from './DroidTransport.js';
 
 test('normalizes current CLI permission options before SDK validation', () => {
   const message = {
@@ -82,4 +86,26 @@ test('processId survives failed SDK cleanup but excludes an exited child', async
   childProcess.exitCode = null;
   childProcess.signalCode = 'SIGTERM';
   assert.equal(transport.processId, undefined);
+});
+
+test('Droid receives exactly the given environment, not the sidecar’s', async (t) => {
+  process.env.DROIDEX_TRANSPORT_PRIVATE = 'app-only';
+  t.after(() => {
+    delete process.env.DROIDEX_TRANSPORT_PRIVATE;
+  });
+  const report =
+    'console.log(JSON.stringify({ jsonrpc: "2.0", method: "env", params: { private: process.env.DROIDEX_TRANSPORT_PRIVATE ?? null, kept: process.env.KEPT ?? null } }))';
+  const transport = createDroidTransport({
+    execPath: process.execPath,
+    execArgs: ['-e', report],
+    env: { KEPT: 'yes' },
+  });
+  const received = new Promise<Record<string, unknown>>((resolve) => {
+    transport.onMessage(resolve);
+  });
+  transport.onError(() => {});
+  await transport.connect();
+  const message = await received;
+  await transport.close();
+  assert.deepEqual(message.params, { private: null, kept: 'yes' });
 });
