@@ -56,6 +56,7 @@ export default {
         secondary: v('--text-secondary'),
         muted: v('--text-muted'),
         accent: v('--accent'),
+        link: v('--link'),
         skill: v('--skill'),
         'visualize-mark': v('--visualize-mark'),
         ultra: v('--ultra'),
