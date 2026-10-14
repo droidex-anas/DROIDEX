@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useRef, useState, type KeyboardEvent } from 'react';
+import type { Placement } from '@floating-ui/react';
 import { AcceptEdits, AutoApprove, Check, FullAccess, Spinner, Supervised } from '@droidex/icons';
 
 import type { Autonomy, ProviderKind } from '../types/bridge';
@@ -9,6 +9,7 @@ import {
   AUTONOMY_LABELS,
   AUTONOMY_LEVELS,
 } from '../lib/autonomy';
+import { Menu } from './ui/Menu';
 
 // One glyph per mode, reading left to right as the permissions open up.
 const AUTONOMY_GLYPHS = {
@@ -28,13 +29,6 @@ const SCOPE_CAPTIONS: Partial<Record<AutonomyScope, string>> = {
   settings: 'Default for new sessions',
 };
 
-const POPOVER_OFFSET_Y = { up: 8, down: -8 } as const;
-const POPOVER_PLACEMENT_CLASS = {
-  up: 'bottom-full mb-2',
-  down: 'top-full mt-2',
-} as const;
-const POPOVER_ALIGN_CLASS = { start: 'left-0', end: 'right-0' } as const;
-
 // The one autonomy control: a compact pill that opens the four levels with
 // their consequences. Controlled — the parent owns the value and the command
 // that a selection triggers (draft state, live session update, or the
@@ -47,8 +41,7 @@ export default function AutonomySelector({
   pending = false,
   disabled = false,
   onSelect,
-  placement = 'up',
-  align = 'end',
+  placement = 'top-end',
 }: {
   scope: AutonomyScope;
   value: Autonomy;
@@ -57,31 +50,25 @@ export default function AutonomySelector({
   pending?: boolean;
   disabled?: boolean;
   onSelect: (level: Autonomy) => void;
-  placement?: 'up' | 'down';
-  align?: 'start' | 'end';
+  placement?: Placement;
 }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      setOpen(false);
-      // Closing via Escape must return keyboard focus to the pill.
-      buttonRef.current?.focus();
-    };
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
-    };
-  }, [open]);
+  const choose = (level: Autonomy) => {
+    // Reselecting the confirmed level can revoke a different pending grant.
+    if (pending || level !== value) onSelect(level);
+    setOpen(false);
+  };
+
+  // Each level's number picks it; Menu owns the arrows and type-ahead.
+  const pickByNumber = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!/^[1-9]$/.test(e.key)) return;
+    const level = AUTONOMY_LEVELS.at(Number(e.key) - 1);
+    if (!level) return;
+    e.preventDefault();
+    choose(level);
+  };
 
   const inactive = disabled || pending;
   const title = pending
@@ -89,12 +76,12 @@ export default function AutonomySelector({
     : `${AUTONOMY_LABELS[value]} — ${AUTONOMY_DESCRIPTIONS[value]}`;
 
   const Glyph = AUTONOMY_GLYPHS[value];
-  let tone = 'text-secondary hover:text-primary hover:bg-bg/40';
-  if (open) tone = 'bg-bg/60 text-primary';
-  else if (inactive) tone = 'text-muted/60 cursor-not-allowed';
+  let tone = 'text-secondary hover:bg-active/60 hover:text-primary';
+  if (open) tone = 'bg-active text-primary';
+  else if (inactive) tone = 'cursor-not-allowed text-muted';
 
   return (
-    <div ref={rootRef} className="relative shrink-0">
+    <>
       <button
         ref={buttonRef}
         type="button"
@@ -107,148 +94,91 @@ export default function AutonomySelector({
         aria-busy={pending}
         aria-label={`Autonomy: ${AUTONOMY_LABELS[value]}`}
         title={title}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors ${tone}`}
+        className={`flex h-control-sm shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${tone}`}
       >
         {pending ? (
-          <Spinner className="w-3.5 h-3.5 shrink-0 motion-safe:animate-spin-slow" />
+          <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow" />
         ) : (
-          <Glyph className="h-3.5 w-3.5 shrink-0" strokeWidth={GLYPH_STROKE} />
+          <Glyph className="size-icon-sm shrink-0" strokeWidth={GLYPH_STROKE} />
         )}
         <span>{AUTONOMY_LABELS[value]}</span>
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: POPOVER_OFFSET_Y[placement], scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: POPOVER_OFFSET_Y[placement], scale: 0.98 }}
-            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute z-50 w-[360px] ${POPOVER_PLACEMENT_CLASS[placement]} ${POPOVER_ALIGN_CLASS[align]}`}
+      <Menu
+        open={open}
+        onClose={() => {
+          setOpen(false);
+        }}
+        anchorRef={buttonRef}
+        label="Autonomy"
+        placement={placement}
+        width={320}
+        onKeyDown={pickByNumber}
+      >
+        <Menu.Label className="flex items-center justify-between gap-3">
+          <span>Autonomy</span>
+          {SCOPE_CAPTIONS[scope] && (
+            <span className="truncate text-caption text-muted">{SCOPE_CAPTIONS[scope]}</span>
+          )}
+        </Menu.Label>
+        {AUTONOMY_LEVELS.map((level, i) => (
+          <Menu.Item
+            key={level}
+            role="menuitemradio"
+            aria-checked={level === value}
+            onSelect={() => {
+              choose(level);
+            }}
           >
-            <AutonomyMenu
-              scope={scope}
-              value={value}
+            <AutonomyRow
+              level={level}
+              number={i + 1}
+              selected={level === value}
               provider={provider}
-              onSelect={(level) => {
-                // Reselecting the confirmed level can revoke a different pending grant.
-                if (pending || level !== value) onSelect(level);
-                setOpen(false);
-              }}
             />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          </Menu.Item>
+        ))}
+      </Menu>
+    </>
   );
 }
 
-// The level menu panel: header caption plus every level with its consequence
-// description. A check marks the active level and each row's number is its
-// keyboard shortcut. Exported on its own so the menu content is testable
-// without opening the popover.
-export function AutonomyMenu({
-  scope,
-  value,
+// One level with its description; the chosen one also says what it means on
+// this harness. A check marks it, and the number is the row's shortcut.
+function AutonomyRow({
+  level,
+  number,
+  selected,
   provider,
-  onSelect,
 }: {
-  scope: AutonomyScope;
-  value: Autonomy;
+  level: Autonomy;
+  number: number;
+  selected: boolean;
   provider?: ProviderKind;
-  onSelect: (level: Autonomy) => void;
 }) {
-  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  const onMenuKey = (e: React.KeyboardEvent) => {
-    if (/^[1-9]$/.test(e.key)) {
-      const index = Number(e.key) - 1;
-      if (index < AUTONOMY_LEVELS.length) {
-        e.preventDefault();
-        onSelect(AUTONOMY_LEVELS[index]);
-      }
-      return;
-    }
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    e.preventDefault();
-    const options = optionRefs.current.filter((el): el is HTMLButtonElement => el !== null);
-    if (options.length === 0) return;
-    const index = options.indexOf(document.activeElement as HTMLButtonElement);
-    const next =
-      e.key === 'ArrowDown'
-        ? options[(index + 1) % options.length]
-        : options[(index - 1 + options.length) % options.length];
-    next.focus();
-  };
-
+  const Mark = AUTONOMY_GLYPHS[level];
+  const consequence = selected ? autonomyConsequence(provider, level) : undefined;
   return (
-    <div
-      role="menu"
-      aria-label="Autonomy"
-      onKeyDown={onMenuKey}
-      className="rounded-xl border border-divider/60 bg-raised shadow-lg overflow-hidden"
-    >
-      <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1.5">
-        <span className="text-[12px] font-medium text-secondary">Autonomy</span>
-        {SCOPE_CAPTIONS[scope] && (
-          <span className="truncate text-[11px] text-muted">{SCOPE_CAPTIONS[scope]}</span>
+    <span className="flex min-w-0 flex-1 items-start gap-2">
+      <Mark
+        className={`mt-0.5 size-icon-sm shrink-0 ${selected ? 'text-secondary' : 'text-muted'}`}
+        strokeWidth={GLYPH_STROKE}
+      />
+      <span className="min-w-0 flex-1">
+        <span
+          className={`block ${selected ? 'text-body-strong text-primary' : 'text-body text-secondary'}`}
+        >
+          {AUTONOMY_LABELS[level]}
+        </span>
+        <span className="block text-caption text-muted">{AUTONOMY_DESCRIPTIONS[level]}</span>
+        {consequence && (
+          <span className="mt-1 block text-caption text-secondary">{consequence}</span>
         )}
-      </div>
-      <div className="px-1.5 pb-1.5 space-y-0.5">
-        {AUTONOMY_LEVELS.map((level, i) => {
-          const selected = level === value;
-          const Mark = AUTONOMY_GLYPHS[level];
-          const consequence = selected ? autonomyConsequence(provider, level) : undefined;
-          return (
-            <button
-              key={level}
-              type="button"
-              ref={(el) => {
-                optionRefs.current[i] = el;
-              }}
-              role="menuitemradio"
-              aria-checked={selected}
-              autoFocus={selected}
-              onClick={() => {
-                onSelect(level);
-              }}
-              className={`w-full flex items-start gap-3 px-2.5 py-2 rounded-md text-left transition-colors ${
-                selected ? 'bg-surface' : 'hover:bg-surface/60'
-              }`}
-            >
-              <Mark
-                className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
-                  selected ? 'text-secondary' : 'text-muted'
-                }`}
-                strokeWidth={GLYPH_STROKE}
-              />
-              <span className="min-w-0 flex-1">
-                <span
-                  className={`block text-[13px] ${
-                    selected ? 'font-medium text-primary' : 'text-secondary'
-                  }`}
-                >
-                  {AUTONOMY_LABELS[level]}
-                </span>
-                <span className="mt-0.5 block text-[11px] text-muted leading-snug">
-                  {AUTONOMY_DESCRIPTIONS[level]}
-                </span>
-                {consequence && (
-                  <span className="mt-1 block text-[11px] text-secondary leading-snug">
-                    {consequence}
-                  </span>
-                )}
-              </span>
-              {selected && (
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2.6} />
-              )}
-              <span className="mt-0.5 w-3 shrink-0 text-right text-[10px] tabular-nums text-muted/60">
-                {i + 1}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
+      </span>
+      {selected && <Check className="mt-0.5 size-icon-sm shrink-0 text-accent" strokeWidth={2.6} />}
+      <span className="mt-0.5 w-3 shrink-0 text-right text-overline tabular-nums text-muted">
+        {number}
+      </span>
+    </span>
   );
 }

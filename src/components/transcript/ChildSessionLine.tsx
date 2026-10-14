@@ -54,7 +54,7 @@ export function ChildSessionLine({
   const navigate = () => onOpen?.(childSessionTargetFromEvent(event));
   return (
     <div>
-      <div className="group flex items-center gap-1.5 text-[13px]">
+      <div className="group flex items-center gap-1.5 text-body">
         <button
           type="button"
           onClick={() => {
@@ -79,29 +79,21 @@ export function ChildSessionLine({
         {tail && <span className={muted}>{tail}</span>}
       </div>
       <Expand open={open}>
-        <div className="mt-2 pl-[18px]">
-          {description && (
-            <div className="text-[13px] text-muted/70 leading-relaxed break-words">
-              {description}
-            </div>
-          )}
+        <div className="mt-2 pl-5">
+          {description && <div className="text-body text-muted break-words">{description}</div>}
           {latest && (
-            <div className="mt-1.5 text-[13px] leading-relaxed break-words">
+            <div className="mt-1.5 text-body break-words">
               <span className={running ? 'shimmer-text font-medium' : 'text-secondary font-medium'}>
                 {latest.head}
               </span>
-              {latest.body && (
-                <span className="ml-1.5 text-[12px] text-muted/80">{latest.body}</span>
-              )}
+              {latest.body && <span className="ml-1.5 text-muted">{latest.body}</span>}
             </div>
           )}
-          {!latest && (
-            <div className="mt-1.5 text-[12px] text-muted/60">No activity captured yet.</div>
-          )}
+          {!latest && <div className="mt-1.5 text-body text-muted">No activity captured yet.</div>}
           <button
             type="button"
             onClick={navigate}
-            className="mt-2 inline-flex items-center gap-1 text-[12px] text-muted transition-colors hover:text-primary"
+            className="mt-2 inline-flex items-center gap-1 text-label text-muted transition-colors hover:text-primary"
           >
             Open session
             <ChevronRight className="h-3.5 w-3.5" />

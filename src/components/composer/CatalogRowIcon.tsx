@@ -21,7 +21,7 @@ function CommandSigil({ className }: { className: string }) {
   return (
     <span
       aria-hidden
-      className={`flex items-center justify-center text-[13px] leading-none text-muted/70 ${className}`}
+      className={`flex items-center justify-center text-body text-muted ${className}`}
     >
       /
     </span>

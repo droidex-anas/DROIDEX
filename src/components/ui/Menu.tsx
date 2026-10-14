@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useRef,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
@@ -19,7 +20,8 @@ const TYPEAHEAD_RESET_MS = 500;
 // The select blink: highlight off, then on, then close (feel.md).
 const SELECT_BLINK_MS = 90;
 
-const ENABLED_ITEM = '[role="menuitem"]:not([aria-disabled="true"])';
+// Items may pass role="menuitemcheckbox" or "menuitemradio" with aria-checked.
+const ENABLED_ITEM = '[role^="menuitem"]:not([aria-disabled="true"])';
 
 interface MenuContextValue {
   listRef: RefObject<HTMLDivElement | null>;
@@ -46,6 +48,7 @@ type MenuProps = Omit<PopoverProps, 'role'>;
 // blinks it, closes the menu and then runs the item's action.
 function MenuRoot({
   ref,
+  open,
   width = 240,
   onClose,
   onKeyDown,
@@ -58,6 +61,15 @@ function MenuRoot({
   const selectingRef = useRef(false);
   const typeahead = useRef({ query: '', resetAt: 0 });
 
+  // Opening highlights the checked choice, or else the first item, so the
+  // arrows start from where the user already is.
+  useEffect(() => {
+    if (!open) return;
+    const items = enabledItems(listRef.current);
+    const checked = items.find((item) => item.getAttribute('aria-checked') === 'true');
+    (checked ?? items.at(0))?.focus({ preventScroll: true });
+  }, [open]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);
     if (event.defaultPrevented) return;
@@ -67,7 +79,7 @@ function MenuRoot({
       onClose();
       return;
     }
-    const items = Array.from(listRef.current?.querySelectorAll<HTMLElement>(ENABLED_ITEM) ?? []);
+    const items = enabledItems(listRef.current);
     const current = items.findIndex((item) => item === document.activeElement);
     let next = navigationIndex(event.key, current, items.length);
     if (next === null && isTypeaheadKey(event)) {
@@ -89,19 +101,21 @@ function MenuRoot({
       <Popover
         {...rest}
         ref={mergedRef}
+        open={open}
         role="menu"
         width={width}
         onClose={onClose}
         onKeyDown={handleKeyDown}
-        // The menu takes focus itself, so nothing is highlighted until the
-        // keyboard or pointer picks an item.
-        autoFocus
         className={cn('overflow-y-auto p-1.5', className)}
       >
         {children}
       </Popover>
     </MenuContext.Provider>
   );
+}
+
+function enabledItems(list: HTMLElement | null): HTMLElement[] {
+  return Array.from(list?.querySelectorAll<HTMLElement>(ENABLED_ITEM) ?? []);
 }
 
 function isTypeaheadKey(event: KeyboardEvent): boolean {
@@ -216,7 +230,7 @@ function MenuLabel({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
 }
 
 function MenuDivider({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return <div role="separator" {...rest} className={cn('mx-2 my-1 h-px bg-divider', className)} />;
+  return <div role="separator" {...rest} className={cn('h-2', className)} />;
 }
 
 export const Menu = Object.assign(MenuRoot, {
