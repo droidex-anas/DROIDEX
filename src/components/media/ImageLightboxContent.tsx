@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Download, ImageOff, Minus, Plus } from 'lucide-react';
+import { Download, ImageOff, Minus, Plus } from '@droidex/icons';
 import { wrapTabFocus } from '../../lib/focusTrap';
+import { pushEscapeLayer } from '../ui/escapeStack';
 import { downloadImage } from './downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from './imageViewerMotion';
 import { useZoomPan, ZOOM_STEP } from './useZoomPan';
@@ -68,14 +69,22 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
     };
   }, []);
 
+  // Escape closes only the topmost layer: a spec behind this viewer stays
+  // open, and the viewer's unmount returns focus to the image inside it. The
+  // layer is pushed once per mount so a caller's new `onClose` on a rerender
+  // does not move it above a later layer such as a focused toast.
+  const close = useEffectEvent(onClose);
+  useEffect(
+    () =>
+      pushEscapeLayer(() => {
+        close();
+      }),
+    [],
+  );
+
   // Capture keys before the page behind the dialog can handle them.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-        return;
-      }
       if (!failed && (e.key === '+' || e.key === '=')) {
         e.preventDefault();
         zoomBy(ZOOM_STEP);
@@ -97,7 +106,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [failed, onClose, reset, zoomBy]);
+  }, [failed, reset, zoomBy]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -117,7 +126,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={IMAGE_VIEWER_TRANSITION}
-      className="fixed inset-0 z-[1200] bg-black/75 backdrop-blur-md focus:outline-none"
+      className="fixed inset-0 z-dialog bg-bg/60 focus:outline-none"
       onClick={onClose}
     >
       <div
@@ -131,9 +140,9 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
               e.stopPropagation();
             }}
           >
-            <ImageOff className="h-8 w-8" />
-            <span className="max-w-full truncate text-[12px]">{label}</span>
-            <span className="text-[12px]">Image is no longer available</span>
+            <ImageOff className="size-icon-lg" />
+            <span className="max-w-full truncate text-label text-secondary">{label}</span>
+            <span className="text-body-lg">Image is no longer available</span>
           </div>
         ) : (
           <div
@@ -176,10 +185,10 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
               zoomBy(1 / ZOOM_STEP);
             }}
           >
-            <Minus className="h-4 w-4" />
+            <Minus className="size-icon-md" />
           </ViewerToolbarButton>
           <ViewerToolbarButton label={`Zoom ${zoomPercent}%, fit to window (0)`} onClick={reset}>
-            <span className="min-w-[3rem] text-center tabular-nums">{zoomPercent}%</span>
+            <span className="min-w-12 text-center tabular-nums">{zoomPercent}%</span>
           </ViewerToolbarButton>
           <ViewerToolbarButton
             label="Zoom in (+)"
@@ -188,7 +197,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
               zoomBy(ZOOM_STEP);
             }}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="size-icon-md" />
           </ViewerToolbarButton>
           <ViewerToolbarDivider />
           <ViewerToolbarButton
@@ -197,7 +206,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
               void downloadImage(src, label);
             }}
           >
-            <Download className="h-4 w-4" />
+            <Download className="size-icon-md" />
           </ViewerToolbarButton>
         </ViewerToolbar>
       )}

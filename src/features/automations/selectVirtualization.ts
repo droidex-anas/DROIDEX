@@ -1,5 +1,6 @@
 export const LARGE_LIST_THRESHOLD = 72;
-export const VIRTUAL_ROW_HEIGHT = 38;
+// The row height token (control-lg) in CSS pixels, for the virtual window.
+export const VIRTUAL_ROW_HEIGHT = 36;
 const VIRTUAL_LIST_HEIGHT = 288;
 const VIRTUAL_OVERSCAN = 6;
 

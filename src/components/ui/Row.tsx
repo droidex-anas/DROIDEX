@@ -1,4 +1,5 @@
 import type { HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react';
+import { ChevronDown } from '@droidex/icons';
 import { cn } from './cn';
 
 // One row language for side panels and lists (components/PanelRow.md). Put
@@ -106,9 +107,16 @@ export function SectionHeader({ label, trailing, className, ...rest }: SectionHe
   );
 }
 
-// The only line in the system: a translucent hairline between groups.
-export function Divider({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
+// The disclosure caret expandable rows carry on their trailing edge, so every
+// fold rotates and dims identically.
+export function RowCaret({ open }: { open: boolean }) {
   return (
-    <div role="separator" {...rest} className={cn('mx-3 my-1.5 h-px bg-divider', className)} />
+    <ChevronDown
+      aria-hidden="true"
+      className={cn(
+        'size-icon-sm shrink-0 text-muted/60 transition-transform duration-150 ease-out',
+        open && 'rotate-180',
+      )}
+    />
   );
 }

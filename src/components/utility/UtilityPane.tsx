@@ -1,13 +1,13 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { PanelRight, Plus, X } from '@droidex/icons';
+import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
-import { Popover } from '../ui/Popover';
 import type { UtilityPanelState, UtilityTab, UtilityTool } from '../../lib/utilityPanel';
 import { useStoreSelector } from '../../hooks/useStore';
 import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
 import { viewRowHoldsWindowControls } from '../../features/tabs/tabStrip';
 import { PaneResizeHandle } from './PaneResizeHandle';
-import { UtilityToolPicker } from './UtilityToolPicker';
+import { UtilityToolGrid, UtilityToolMenu } from './UtilityToolPicker';
 import { UTILITY_TOOL_OPTIONS, utilityToolOption } from './utilityToolOptions';
 
 export function UtilityPane({
@@ -52,11 +52,8 @@ export function UtilityPane({
   return (
     <aside
       aria-label="Utility pane"
-      className={`relative flex h-full min-w-0 flex-col overflow-hidden ${
-        expanded ? 'w-full border-l-0' : 'w-full border-l border-divider'
-      }`}
+      className="relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-sidebar"
       style={{
-        background: 'var(--sidebar)',
         backdropFilter: 'var(--sidebar-blur)',
         WebkitBackdropFilter: 'var(--sidebar-blur)',
       }}
@@ -73,13 +70,13 @@ export function UtilityPane({
 
       <header
         data-electron-drag-region
-        className="flex h-9 shrink-0 items-center gap-1 border-b border-divider pl-2 pr-1.5"
+        className="flex h-9 shrink-0 items-center gap-1 pl-2 pr-1.5"
         style={leadPx === undefined ? undefined : { paddingLeft: leadPx }}
       >
         <div
           role="tablist"
           aria-label="Open utility tools"
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >
           {panel.tabs.map((tab) => {
             const Icon = utilityToolOption(tab.tool).icon;
@@ -87,10 +84,10 @@ export function UtilityPane({
             return (
               <div
                 key={tab.id}
-                className={`group flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors ${
+                className={`group flex h-control-sm max-w-44 shrink-0 select-none items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
                   active
                     ? 'bg-active text-primary'
-                    : 'text-muted hover:bg-elevated/45 hover:text-primary'
+                    : 'text-muted hover:bg-elevated hover:text-primary'
                 }`}
               >
                 <button
@@ -100,16 +97,16 @@ export function UtilityPane({
                   onClick={() => {
                     onActivateTab(tab.id);
                   }}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm"
                 >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <Icon className="size-icon-sm shrink-0" />
                   <span className="truncate">{tab.label}</span>
                 </button>
                 <Tooltip label={`Close ${tab.label}`} placement="bottom">
                   <button
                     type="button"
                     aria-label={`Close ${tab.label}`}
-                    className="ml-0.5 rounded-sm p-1 text-muted opacity-50 transition hover:bg-elevated hover:text-primary group-hover:opacity-100"
+                    className="ml-0.5 rounded-sm p-1 text-muted opacity-50 transition hover:bg-active hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
                     onClick={(event) => {
                       event.stopPropagation();
                       onCloseTab(tab);
@@ -124,67 +121,46 @@ export function UtilityPane({
         </div>
 
         <Tooltip label="Open another tool" placement="bottom">
-          <button
+          <Button
             ref={addRef}
-            type="button"
+            variant="ghost"
+            size="sm"
+            icon={Plus}
             aria-label="Open another tool"
             aria-expanded={menuOpen}
             onClick={() => {
               setMenuOpen((open) => !open);
             }}
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm transition-colors ${
-              menuOpen
-                ? 'bg-elevated text-primary'
-                : 'text-muted hover:bg-elevated/60 hover:text-primary'
-            }`}
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          />
         </Tooltip>
         <Tooltip label="Hide utility pane" placement="bottom">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={PanelRight}
             aria-label="Hide utility pane"
             onClick={onClosePane}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated/60 hover:text-primary"
-          >
-            <PanelRight className="h-4 w-4" />
-          </button>
+          />
         </Tooltip>
       </header>
 
-      <Popover
+      <UtilityToolMenu
         open={menuOpen}
         onClose={() => {
           setMenuOpen(false);
         }}
         anchorRef={addRef}
-        placement="bottom-end"
-        width={236}
-        label="Open utility tool"
-      >
-        <div>
-          <UtilityToolPicker
-            tools={availableTools}
-            onSelect={(tool) => {
-              setMenuOpen(false);
-              onOpenTool(tool);
-            }}
-          />
-          {availableTools.length === 0 && (
-            <div className="px-2 py-2 text-[12px] text-muted">All utility tools are open.</div>
-          )}
-        </div>
-      </Popover>
+        tools={availableTools}
+        onSelect={onOpenTool}
+      />
 
       <div role="tabpanel" className="min-h-0 flex-1 overflow-hidden">
         {activeTab ? (
           <Fragment key={activeTab.id}>{renderTab(activeTab)}</Fragment>
         ) : (
-          <div className="flex h-full items-center justify-center px-3 pb-[8vh]">
-            <div className="w-full max-w-[320px]">
-              <UtilityToolPicker
-                spacious
+          <div className="flex h-full items-center justify-center px-3 pb-16">
+            <div className="w-full max-w-xs">
+              <UtilityToolGrid
                 tools={UTILITY_TOOL_OPTIONS.map((option) => option.tool)}
                 onSelect={onOpenTool}
               />

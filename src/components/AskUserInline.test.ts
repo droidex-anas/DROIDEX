@@ -39,7 +39,7 @@ test('a single question offers unselected toggles, a custom answer, and a disabl
   assert.ok(!html.includes('aria-pressed="true"'));
   assert.equal((html.match(/aria-pressed="false"/g) ?? []).length, 2);
   // Submit stays disabled until an answer exists.
-  assert.match(html, /<button[^>]*disabled=""[^>]*>Submit</);
+  assert.match(html, /<button[^>]*disabled=""[^>]*><span[^>]*>Submit</);
   // A single question hides the step counter and Back.
   assert.ok(!html.includes(' of '));
   assert.ok(!html.includes('>Back</button>'));
@@ -57,7 +57,7 @@ test('multiple questions show progress and a Next action', () => {
   assert.match(html, /1(?:<!-- -->)? of (?:<!-- -->)?2/);
   assert.match(html, />Next</);
   // Next stays disabled until the first question is answered.
-  assert.match(html, /<button[^>]*disabled=""[^>]*>Next</);
+  assert.match(html, /<button[^>]*disabled=""[^>]*><span[^>]*>Next</);
 });
 
 test('a header names the question and options carry their descriptions', () => {

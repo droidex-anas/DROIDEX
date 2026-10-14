@@ -156,23 +156,16 @@ function MarkdownFence({
 
 function createMarkdownComponents(specMode: boolean): Components {
   return {
-    // Headings read as structure, not as bold text: a clear size ladder with
-    // air above each level, and a hairline under the top level so a document
-    // break is visible even when a model leans on `#`.
+    // Headings read as structure, not as bold text: the type ladder from
+    // docs/design-system/rules.md with air above each level.
     h1: ({ children }) => {
       const id = slugify(reactText(children));
       return specMode ? (
-        <h1
-          id={id}
-          className="text-[24px] font-semibold tracking-tight text-primary mt-10 first:mt-0 mb-4 scroll-mt-8"
-        >
+        <h1 id={id} className="text-display text-primary mt-10 first:mt-0 mb-4 scroll-mt-8">
           {children}
         </h1>
       ) : (
-        <h1
-          id={id}
-          className="text-[19px] font-semibold tracking-tight text-primary mt-5 first:mt-0 mb-2 pb-1.5 border-b border-divider/70 scroll-mt-8"
-        >
+        <h1 id={id} className="text-display text-primary mt-6 first:mt-0 mb-2 scroll-mt-8">
           {children}
         </h1>
       );
@@ -180,17 +173,11 @@ function createMarkdownComponents(specMode: boolean): Components {
     h2: ({ children }) => {
       const id = slugify(reactText(children));
       return specMode ? (
-        <h2
-          id={id}
-          className="text-[18px] font-semibold text-primary mt-7 first:mt-0 mb-2.5 scroll-mt-8"
-        >
+        <h2 id={id} className="text-heading text-primary mt-7 first:mt-0 mb-2.5 scroll-mt-8">
           {children}
         </h2>
       ) : (
-        <h2
-          id={id}
-          className="text-[16px] font-semibold text-primary mt-4 first:mt-0 mb-1.5 scroll-mt-8"
-        >
+        <h2 id={id} className="text-heading text-primary mt-5 first:mt-0 mb-1.5 scroll-mt-8">
           {children}
         </h2>
       );
@@ -198,40 +185,28 @@ function createMarkdownComponents(specMode: boolean): Components {
     h3: ({ children }) => {
       const id = slugify(reactText(children));
       return specMode ? (
-        <h3
-          id={id}
-          className="text-[15px] font-semibold text-secondary mt-5 first:mt-0 mb-2 scroll-mt-8"
-        >
+        <h3 id={id} className="text-heading text-secondary mt-5 first:mt-0 mb-2 scroll-mt-8">
           {children}
         </h3>
       ) : (
-        <h3
-          id={id}
-          className="text-[15px] font-semibold text-primary mt-3.5 first:mt-0 mb-1 scroll-mt-8"
-        >
+        <h3 id={id} className="text-heading text-primary mt-4 first:mt-0 mb-1 scroll-mt-8">
           {children}
         </h3>
       );
     },
     h4: ({ children }) =>
       specMode ? (
-        <h4 className="text-[14px] font-semibold text-secondary mt-4 first:mt-0 mb-1.5">
-          {children}
-        </h4>
+        <h4 className="text-subheading text-secondary mt-4 first:mt-0 mb-1.5">{children}</h4>
       ) : (
-        <h4 className="text-[14px] font-semibold text-primary mt-3.5 first:mt-0 mb-1">
-          {children}
-        </h4>
+        <h4 className="text-subheading text-primary mt-3.5 first:mt-0 mb-1">{children}</h4>
       ),
     h5: ({ children }) => (
-      <h5 className="text-[14px] font-semibold text-secondary mt-3 first:mt-0 mb-1">{children}</h5>
+      <h5 className="text-subheading text-secondary mt-3 first:mt-0 mb-1">{children}</h5>
     ),
     h6: ({ children }) => (
-      <h6 className="text-[12px] font-medium uppercase tracking-wide text-muted mt-3 first:mt-0 mb-1">
-        {children}
-      </h6>
+      <h6 className="text-label text-muted mt-3 first:mt-0 mb-1">{children}</h6>
     ),
-    p: ({ children }) => <p className={specMode ? 'leading-[1.8]' : 'leading-[1.6]'}>{children}</p>,
+    p: ({ children }) => <p>{children}</p>,
     ul: ({ children }) => (
       <ul
         className={`marker:text-muted ${specMode ? 'list-disc pl-6 space-y-2' : 'list-disc pl-5 space-y-1'}`}
@@ -251,15 +226,9 @@ function createMarkdownComponents(specMode: boolean): Components {
     li: ({ children, node }) => {
       const taskItem = hastClassNames(node).includes('task-list-item');
       return taskItem ? (
-        <li className="list-none pl-0 leading-[1.6]">{children}</li>
+        <li className="list-none pl-0">{children}</li>
       ) : (
-        <li
-          className={
-            specMode ? 'leading-[1.75] pl-1' : 'leading-[1.6] pl-0.5 [&>ol]:mt-1 [&>ul]:mt-1'
-          }
-        >
-          {children}
-        </li>
+        <li className={specMode ? 'pl-1' : 'pl-0.5 [&>ol]:mt-1 [&>ul]:mt-1'}>{children}</li>
       );
     },
     input: ({ checked }) => (
@@ -267,7 +236,7 @@ function createMarkdownComponents(specMode: boolean): Components {
         type="checkbox"
         defaultChecked={checked}
         disabled
-        className="mr-1.5 h-3 w-3 translate-y-[0.5px] accent-[var(--accent)]"
+        className="mr-1.5 size-3 align-middle accent-accent"
       />
     ),
     strong: ({ children }) => <strong className="font-semibold text-primary">{children}</strong>,
@@ -299,8 +268,7 @@ function createMarkdownComponents(specMode: boolean): Components {
           target="_blank"
           rel="noreferrer"
           title={href}
-          className="group/link"
-          style={{ color: 'var(--link)' }}
+          className="group/link text-link"
         >
           {link ? <LinkBadge key={link.host} link={link} /> : null}
           <span
@@ -315,7 +283,7 @@ function createMarkdownComponents(specMode: boolean): Components {
     },
     blockquote: ({ children }) => (
       <blockquote
-        className={`text-secondary ${specMode ? 'border-l border-divider pl-4 py-0.5 my-4' : 'border-l-2 border-divider-strong pl-3.5 py-0.5 my-2.5'}`}
+        className={`rounded-lg bg-surface text-secondary ${specMode ? 'px-4 py-3 my-4' : 'px-3.5 py-2 my-2.5'}`}
       >
         {children}
       </blockquote>
@@ -357,11 +325,10 @@ const REMARK_BREAKS_PLUGINS = [remarkGfm, remarkBreaks];
 const CHAT_COMPONENTS = createMarkdownComponents(false);
 const SPEC_COMPONENTS = createMarkdownComponents(true);
 
-// Chat text matches the composer's 14px, so a draft and the message it becomes
-// read at the same size; 1.6 leading keeps paragraphs and lists close without
-// crowding them.
+// Chat and spec text both read in `prose`, the composer's size, so a draft and
+// the message it becomes match; a spec only gives its blocks more air.
 export function markdownShellClass(specMode: boolean): string {
-  return `md-shell min-w-0 max-w-full text-primary break-words ${specMode ? 'text-[15px] leading-[1.8] space-y-5' : 'text-[14px] leading-[1.6] space-y-2.5'}`;
+  return `md-shell min-w-0 max-w-full text-prose text-primary break-words ${specMode ? 'space-y-5' : 'space-y-2.5'}`;
 }
 
 export type MarkdownFenceFlags = Omit<FenceRenderOptions, 'appFences'>;

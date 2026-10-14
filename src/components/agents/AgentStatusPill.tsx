@@ -13,7 +13,7 @@ const PILL_TONE: Record<AgentPillStatus, string> = {
   pending: 'bg-active/60 text-muted',
   queued: 'bg-active/60 text-muted',
   failed: 'bg-danger/15 text-danger',
-  completed: 'border border-divider bg-elevated text-primary',
+  completed: 'bg-elevated text-primary',
 };
 
 // The count pills on the summary line and the status pill on a row are the same
@@ -34,7 +34,7 @@ export function AgentStatusPill({
       {...(layoutId !== undefined ? { layoutId } : {})}
       data-testid="agent-status-pill"
       data-status={status}
-      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12px] font-medium ${PILL_TONE[status]} ${className}`}
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-label ${PILL_TONE[status]} ${className}`}
     >
       {count != null ? `${String(count)} ` : ''}
       {AGENT_STATUS_LABEL[status]}

@@ -13,7 +13,7 @@ import {
 } from '../lib/childSessions';
 import { AgentAvatar } from './AgentAvatar';
 import { Popover } from './ui/Popover';
-import { RowCaret, SectionHeader } from './environment/primitives';
+import { RowCaret, SectionHeader } from './ui/Row';
 
 // Avatars shown side by side on the summary line before a "+N" overflow count.
 const STACK_LIMIT = 4;
