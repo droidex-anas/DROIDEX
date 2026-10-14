@@ -199,6 +199,7 @@ export class SessionInteractions {
       // object, so identity alone tells us this answer no longer applies.
       if (this.dependencies.getLiveSession(appSessionId) !== liveSession) return;
       pending.resolve(result);
+      this.dependencies.emit({ type: 'interaction.cancelled', appSessionId, requestId });
       if (!this.hasPending(liveSession.summary.appSessionId))
         this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
     };
@@ -268,6 +269,17 @@ export class SessionInteractions {
     const scope = liveSession ? this.scopes.get(liveSession.summary.appSessionId) : undefined;
     // One the user has answered is resuming the turn, not waiting on them.
     return [...(scope?.pendingPermissions.values() ?? [])].some((pending) => !pending.responding);
+  }
+
+  pendingApprovals(): PermissionRequest[] {
+    const requests: PermissionRequest[] = [];
+    for (const [id, scope] of this.scopes) {
+      if (!this.dependencies.getLiveSession(id)) continue;
+      for (const pending of scope.pendingPermissions.values()) {
+        if (!pending.responding) requests.push(pending.approval.request);
+      }
+    }
+    return requests;
   }
 
   pendingApproval(appSessionId: string, requestId?: string): PermissionRequest | undefined {

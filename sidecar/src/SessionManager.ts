@@ -1078,6 +1078,7 @@ export class SessionManager {
           this.sessionPrompt(cmd.appSessionId, cmd.text, cmd.responseFormat),
           cmd.mentions,
           cmd.steerId,
+          cmd.remote,
         );
         return;
       case 'session.repairApp':
@@ -1207,6 +1208,13 @@ export class SessionManager {
         await this.agentProcesses.stop(cmd.appSessionId, cmd.pid);
         // Stopping the last process a session was holding can make it retirable.
         this.runtimeRetirement.arm();
+        return;
+      case 'remote.snapshot':
+        this.emit({
+          type: 'remote.snapshot',
+          sessions: this.registry.liveSessionsSnapshot().map((live) => live.summary),
+          approvals: this.interactions.pendingApprovals(),
+        });
         return;
       case 'sessions.list':
         await this.sessionFiles.list(cmd);
