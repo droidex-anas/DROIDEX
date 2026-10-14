@@ -1,7 +1,4 @@
 {
-  "src/App.tsx": {
-    "arbitrary-value": 1
-  },
   "src/components/AppBlockErrorFallback.tsx": {
     "arbitrary-value": 4
   },
@@ -174,61 +171,8 @@
   "src/components/SettingsPanel.tsx": {
     "border-width": 4
   },
-  "src/components/Sidebar.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 4
-  },
-  "src/components/SidebarActivity.tsx": {
-    "arbitrary-value": 2
-  },
-  "src/components/SidebarAppUpdateButton.tsx": {
-    "arbitrary-value": 4,
-    "palette-color": 1
-  },
-  "src/components/SidebarCustomize.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 6,
-    "focus-ring": 1
-  },
-  "src/components/SidebarNavigation.tsx": {
-    "arbitrary-value": 5,
-    "border-width": 2
-  },
-  "src/components/SidebarPullRequests.tsx": {
-    "arbitrary-value": 4,
-    "focus-ring": 1
-  },
-  "src/components/SidebarSearch.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/components/SidebarSearchNotice.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/SidebarSectionHeading.tsx": {
-    "arbitrary-value": 3,
-    "focus-ring": 1
-  },
-  "src/components/SidebarSessionList.tsx": {
-    "arbitrary-value": 3
-  },
   "src/components/SidebarSessionRow.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 2,
-    "focus-ring": 2
-  },
-  "src/components/SidebarWelcomeCard.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 2,
-    "palette-color": 5
-  },
-  "src/components/SidebarWorkspaceList.tsx": {
-    "arbitrary-value": 3,
-    "focus-ring": 1
-  },
-  "src/components/SidebarWorkspaceRow.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 2,
-    "focus-ring": 2
+    "border-width": 2
   },
   "src/components/SpecModal.tsx": {
     "arbitrary-value": 6,
@@ -838,16 +782,6 @@
   "src/features/pull-requests/components/PrWorkspaceEmpty.tsx": {
     "arbitrary-value": 7,
     "focus-ring": 4
-  },
-  "src/features/tabs/HeaderTabs.tsx": {
-    "arbitrary-value": 5,
-    "focus-ring": 3
-  },
-  "src/features/tabs/TileChrome.tsx": {
-    "focus-ring": 1
-  },
-  "src/features/tabs/TileDropTarget.tsx": {
-    "arbitrary-value": 1
   },
   "src/features/transcript-reach/TranscriptReachBar.tsx": {
     "arbitrary-value": 9,

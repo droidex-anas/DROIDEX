@@ -24,6 +24,8 @@ import Sidebar from './components/Sidebar';
 import RightPanel from './components/RightPanel';
 import EditorOpenMenu from './components/EditorOpenMenu';
 import Toaster from './components/ui/Toaster';
+import { Button } from './components/ui/Button';
+import { Tooltip } from './components/ui/Tooltip';
 import { useRepoStatus } from './hooks/useRepoStatus';
 import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
@@ -713,29 +715,31 @@ export default function App() {
             <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
           )}
           {canToggleContext && (
-            <button
-              onClick={toggleRightPanel}
-              aria-label="Toggle context panel"
-              aria-pressed={state.rightPanelOpen}
-              // No pressed fill: like the sidebar and utility toggles beside it,
-              // the open panel is its own evidence; the icon only brightens.
-              className={`rounded-sm p-1.5 transition-colors hover:bg-elevated/60 hover:text-primary ${
-                state.rightPanelOpen ? 'text-primary' : 'text-muted/70'
-              }`}
-              title="Toggle context"
-            >
-              <ContextListIcon className="h-4 w-4" />
-            </button>
+            <Tooltip label="Toggle context" placement="bottom">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={ContextListIcon}
+                onClick={toggleRightPanel}
+                aria-label="Toggle context panel"
+                aria-pressed={state.rightPanelOpen}
+              />
+            </Tooltip>
           )}
           {!!activeSession && (
-            <button
-              ref={bindUtilityToggleIntent}
-              onClick={toggleUtilityPane}
-              className="rounded-sm p-1.5 text-muted/70 transition-colors hover:bg-elevated/60 hover:text-primary"
-              title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
+            <Tooltip
+              label={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
+              placement="bottom"
             >
-              <PanelRight className="h-4 w-4" />
-            </button>
+              <Button
+                ref={bindUtilityToggleIntent}
+                variant="ghost"
+                size="sm"
+                icon={PanelRight}
+                onClick={toggleUtilityPane}
+                aria-label="Toggle utility pane"
+              />
+            </Tooltip>
           )}
         </>
       )}
@@ -1073,7 +1077,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 12 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-none absolute bottom-0 right-0 w-[312px] z-30"
+              className="pointer-events-none absolute bottom-0 right-0 z-30 w-context-panel"
               style={{ top: state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0 }}
             >
               <RightPanel />
@@ -1093,15 +1097,20 @@ export default function App() {
         className="absolute h-9 z-40 flex items-center gap-1.5"
         style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
       >
-        <button
-          onClick={() => {
-            dispatch({ type: 'TOGGLE_SIDEBAR' });
-          }}
-          className="p-1.5 rounded-sm text-muted/70 hover:text-primary hover:bg-elevated/60 transition-colors"
-          title={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
+        <Tooltip
+          label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
+          placement="bottom"
         >
-          <PanelLeft className="w-4 h-4" />
-        </button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={PanelLeft}
+            onClick={() => {
+              dispatch({ type: 'TOGGLE_SIDEBAR' });
+            }}
+            aria-label="Toggle sidebar"
+          />
+        </Tooltip>
       </div>
 
       {/* Without tabs, the session's controls float at the end of the view's own top row. */}
