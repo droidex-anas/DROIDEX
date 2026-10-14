@@ -443,15 +443,8 @@
     "arbitrary-value": 4
   },
   "src/components/files/FilePreviewPane.tsx": {
-    "arbitrary-value": 37,
-    "border-width": 25,
-    "palette-color": 10
-  },
-  "src/components/files/FilesWorkspace.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 10,
-    "focus-ring": 2,
-    "palette-color": 3
+    "border-width": 1,
+    "palette-color": 2
   },
   "src/components/media/GeneratedImageCard.tsx": {
     "arbitrary-value": 3

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import {
   AlertTriangle,
@@ -18,6 +18,7 @@ import {
   sanitizeDocxPreview,
 } from '../../lib/filePreview';
 import { Markdown } from '../Markdown';
+import { Button } from '../ui/Button';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 
 const TEXT_CHAR_LIMIT = 250_000;
@@ -130,29 +131,17 @@ export function FilePreviewPane({
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
       <div className="min-h-0 flex-1 overflow-hidden">
         {state.kind === 'idle' && (
-          <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-muted">
+          <div className="flex h-full items-center justify-center px-6 text-center text-body text-muted">
             Select a file to preview.
           </div>
         )}
-        {state.kind === 'loading' && (
-          <div className="flex h-full items-center justify-center gap-2 text-[12px] text-muted">
-            <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
-            Loading preview…
-          </div>
-        )}
+        {state.kind === 'loading' && <PreviewLoading label="Loading preview…" />}
         {state.kind === 'error' && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <AlertTriangle className="h-5 w-5 text-amber-400" />
-            <p className="max-w-sm text-[12px] leading-relaxed text-secondary">{state.message}</p>
-            <button
-              type="button"
-              onClick={onOpenExternal}
-              className="mt-1 flex items-center gap-1.5 rounded-sm border border-divider bg-surface px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
-            >
-              <ExternalLink className="h-3 w-3" />
+          <PreviewProblem title={state.message}>
+            <Button size="sm" icon={ExternalLink} className="mt-2" onClick={onOpenExternal}>
               Open externally
-            </button>
-          </div>
+            </Button>
+          </PreviewProblem>
         )}
         {state.kind === 'ready' && (
           <PreviewBody
@@ -213,35 +202,25 @@ function FallbackNotice({
   const reason = payload.reason ?? (oversize ? 'File exceeds the inline preview size cap.' : null);
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-      <AlertTriangle className={`h-6 w-6 ${oversize ? 'text-amber-400' : 'text-muted'}`} />
+      <AlertTriangle className={`size-icon-lg ${oversize ? 'text-warning' : 'text-muted'}`} />
       <div className="space-y-1">
-        <p className="text-[13px] font-medium text-primary">
+        <p className="text-subheading text-primary">
           {oversize ? 'File too large to preview inline' : 'No inline preview available'}
         </p>
-        {reason && <p className="max-w-sm text-[12px] leading-relaxed text-muted">{reason}</p>}
+        {reason && <p className="max-w-sm text-body text-muted">{reason}</p>}
         {payload.totalSize > 0 && (
-          <p className="text-[11px] text-muted">
+          <p className="text-caption tabular-nums text-muted">
             {formatBytes(payload.totalSize)} · cap {formatBytes(payload.sizeCapBytes)}
           </p>
         )}
       </div>
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onOpenExternal}
-          className="flex items-center gap-1.5 rounded-sm border border-divider bg-surface px-3 py-1.5 text-[12px] text-primary transition-colors hover:bg-elevated/60"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
+        <Button icon={ExternalLink} onClick={onOpenExternal}>
           Open externally
-        </button>
-        <button
-          type="button"
-          onClick={onReveal}
-          className="flex items-center gap-1.5 rounded-sm border border-divider px-3 py-1.5 text-[12px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary"
-        >
-          <FolderSearch className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" icon={FolderSearch} onClick={onReveal}>
           Reveal
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -269,7 +248,7 @@ function TextPreview({ text, fileName }: { text: string; fileName: string }) {
   return (
     <div className="h-full overflow-auto">
       {truncated && (
-        <div className="sticky top-0 z-10 border-b border-divider bg-surface/80 px-3 py-1.5 text-[11px] text-amber-300 backdrop-blur">
+        <div className="sticky top-0 z-10 bg-surface/80 px-3 py-1.5 text-caption text-warning backdrop-blur">
           Showing first {formatBytes(visibleText.length)} of {formatBytes(text.length)} (truncated
           for performance).
         </div>
@@ -289,7 +268,7 @@ function SyntaxCodePreview({ code, fileName }: { code: string; fileName: string 
   const language = resolveFilePresentation(fileName).language;
   if (!language || code.length > HIGHLIGHT_CHAR_LIMIT) {
     return (
-      <pre className="px-4 py-3 font-mono text-[12px] leading-[1.6] text-secondary [overflow-wrap:anywhere]">
+      <pre className="px-4 py-3 font-mono text-code text-secondary">
         <code className="whitespace-pre-wrap break-all">{code}</code>
       </pre>
     );
@@ -299,7 +278,7 @@ function SyntaxCodePreview({ code, fileName }: { code: string; fileName: string 
     <Highlight theme={CODE_THEME} code={code} language={language}>
       {({ tokens, getLineProps, getTokenProps, className, style }) => (
         <pre
-          className={`${className} min-w-0 px-2 py-3 font-mono text-[12px] leading-[1.6]`}
+          className={`${className} min-w-0 px-2 py-3 font-mono text-code`}
           style={{ ...style, background: 'transparent' }}
         >
           {tokens.map((line, lineIndex) => {
@@ -341,7 +320,7 @@ function CsvPreview({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {truncated && (
-        <div className="shrink-0 border-b border-divider bg-surface/80 px-3 py-1.5 text-[11px] text-amber-300">
+        <div className="shrink-0 bg-surface px-3 py-1.5 text-caption text-warning">
           Showing first {formatBytes(text.length)} of {formatBytes(originalLength)} (truncated for
           performance).
         </div>
@@ -349,7 +328,7 @@ function CsvPreview({
       <PreviewTable rows={rows} />
       {(rows.length >= TABLE_ROW_LIMIT ||
         (rows[rows.length - 1]?.length ?? 0) >= TABLE_COL_LIMIT) && (
-        <div className="shrink-0 border-t border-divider bg-surface/60 px-3 py-1 text-[11px] text-muted">
+        <div className="shrink-0 bg-surface px-3 py-1 text-caption text-muted">
           Limited to {TABLE_ROW_LIMIT} rows × {TABLE_COL_LIMIT} columns.
         </div>
       )}
@@ -360,15 +339,12 @@ function CsvPreview({
 function PreviewTable({ rows }: { rows: string[][] }) {
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full border-collapse text-[11px]">
-        <tbody>
+      <table className="w-full border-collapse text-caption">
+        <tbody className="divide-y divide-divider">
           {rows.map((row, rIdx) => (
             <tr key={rIdx} className={rIdx === 0 ? 'bg-elevated/40 font-medium' : ''}>
               {row.map((cell, cIdx) => (
-                <td
-                  key={cIdx}
-                  className="border-t border-divider px-2 py-1 text-secondary [overflow-wrap:anywhere]"
-                >
+                <td key={cIdx} className="break-words px-2 py-1 text-secondary">
                   {cell}
                 </td>
               ))}
@@ -400,33 +376,18 @@ function ImagePreview({ data, fileName }: { data?: Uint8Array; fileName: string 
     };
   }, [bytes, fileName]);
   if (status === 'error') {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-secondary">Failed to render this image.</p>
-      </div>
-    );
+    return <PreviewProblem title="Failed to render this image." />;
   }
   if (!url) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-[12px] text-muted">
-        <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
-        Loading image…
-      </div>
-    );
+    return <PreviewLoading label="Loading image…" />;
   }
   return (
     <div className="image-checkerboard relative flex h-full items-center justify-center overflow-auto p-4">
-      {status === 'loading' && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm border border-divider bg-surface/90 px-2 py-1 text-[11px] text-muted shadow-[0_1px_2px_0_rgb(0_0_0/0.05)]">
-          <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
-          Decoding…
-        </div>
-      )}
+      {status === 'loading' && <PreviewBusyChip label="Decoding…" />}
       <img
         src={url}
         alt={`Preview of ${fileName}`}
-        className="max-h-full max-w-full rounded-[2px] object-contain shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
+        className="max-h-full max-w-full rounded-xs object-contain shadow-lg"
         onLoad={() => {
           setStatus('ready');
         }}
@@ -548,47 +509,41 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
   }, [page, numPages]);
 
   if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-secondary">Failed to render PDF.</p>
-        <p className="max-w-sm text-[11px] text-muted">{error}</p>
-      </div>
-    );
+    return <PreviewProblem title="Failed to render PDF." detail={error} />;
   }
 
   return (
     <div className="flex h-full flex-col items-center overflow-auto bg-surface/20 p-4">
       <canvas
         ref={canvasRef}
-        className="max-h-full rounded-sm shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
+        className="max-h-full rounded-sm shadow-lg"
         style={{ maxHeight: 'calc(100% - 32px)' }}
       />
       {numPages > 1 && (
-        <div className="mt-2 flex items-center gap-2 rounded-md border border-divider bg-elevated px-2 py-1">
-          <button
-            type="button"
+        <div className="mt-2 flex items-center gap-1 rounded-lg bg-elevated p-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ChevronLeft}
+            aria-label="Previous page"
             disabled={page <= 1 || rendering}
             onClick={() => {
               setPage((p) => Math.max(1, p - 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          <span className="text-[11px] tabular-nums text-secondary">
+          />
+          <span className="px-1 text-caption tabular-nums text-secondary">
             {page} / {numPages}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ChevronRight}
+            aria-label="Next page"
             disabled={page >= numPages || rendering}
             onClick={() => {
               setPage((p) => Math.min(numPages, p + 1));
             }}
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-30"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
+          />
         </div>
       )}
     </div>
@@ -649,26 +604,15 @@ function DocxPreview({ data }: { data?: Uint8Array }) {
   }, [bytes]);
 
   if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-secondary">Failed to render document.</p>
-        <p className="max-w-sm text-[11px] text-muted">{error}</p>
-      </div>
-    );
+    return <PreviewProblem title="Failed to render document." detail={error} />;
   }
 
   return (
     <div className="relative h-full overflow-auto bg-surface/20 p-4">
-      {loading && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm border border-divider bg-elevated px-2 py-1 text-[11px] text-muted">
-          <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
-          Rendering…
-        </div>
-      )}
+      {loading && <PreviewBusyChip label="Rendering…" />}
       <div
         ref={containerRef}
-        className="mx-auto max-w-[800px] rounded-sm bg-white p-6 text-black shadow-[0_10px_15px_-3px_rgb(0_0_0/0.1),0_4px_6px_-4px_rgb(0_0_0/0.1)]"
+        className="mx-auto max-w-3xl rounded-sm bg-white p-6 text-black shadow-lg"
       />
     </div>
   );
@@ -730,22 +674,11 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
   }, [bytes]);
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-[12px] text-muted">
-        <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
-        Parsing spreadsheet…
-      </div>
-    );
+    return <PreviewLoading label="Parsing spreadsheet…" />;
   }
 
   if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <AlertTriangle className="h-5 w-5 text-amber-400" />
-        <p className="text-[12px] text-secondary">Failed to parse spreadsheet.</p>
-        <p className="max-w-sm text-[11px] text-muted">{error}</p>
-      </div>
-    );
+    return <PreviewProblem title="Failed to parse spreadsheet." detail={error} />;
   }
 
   if (!sheets.length) return null;
@@ -754,7 +687,7 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {sheets.length > 1 && (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-divider bg-surface/40 px-2 py-1.5">
+        <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto bg-surface px-2 py-1.5">
           {sheets.map((s, idx) => (
             <button
               key={s.sheet}
@@ -762,10 +695,10 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
               onClick={() => {
                 setActiveSheet(idx);
               }}
-              className={`shrink-0 rounded-sm px-2 py-0.5 text-[11px] transition-colors ${
+              className={`h-6 shrink-0 select-none rounded-sm px-2 text-label transition-colors ${
                 idx === activeSheet
-                  ? 'bg-accent/15 text-primary'
-                  : 'text-muted hover:bg-elevated/60 hover:text-primary'
+                  ? 'bg-active text-primary'
+                  : 'text-muted hover:bg-elevated hover:text-primary'
               }`}
             >
               {s.sheet}
@@ -774,9 +707,46 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
         </div>
       )}
       <PreviewTable rows={sheet.data} />
-      <div className="shrink-0 border-t border-divider bg-surface/60 px-3 py-1 text-[11px] text-muted">
+      <div className="shrink-0 bg-surface px-3 py-1 text-caption text-muted">
         Limited to {TABLE_ROW_LIMIT} rows × {TABLE_COL_LIMIT} columns per sheet.
       </div>
+    </div>
+  );
+}
+
+function PreviewLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-body text-muted">
+      <Spinner className="size-icon-md motion-safe:animate-spin-slow" />
+      {label}
+    </div>
+  );
+}
+
+function PreviewBusyChip({ label }: { label: string }) {
+  return (
+    <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm bg-raised px-2 py-1 text-caption text-muted shadow-sm">
+      <Spinner className="size-3 motion-safe:animate-spin-slow" />
+      {label}
+    </div>
+  );
+}
+
+function PreviewProblem({
+  title,
+  detail,
+  children,
+}: {
+  title: string;
+  detail?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+      <AlertTriangle className="size-icon-lg text-warning" />
+      <p className="max-w-sm text-body text-secondary">{title}</p>
+      {detail && <p className="max-w-sm text-caption text-muted">{detail}</p>}
+      {children}
     </div>
   );
 }
