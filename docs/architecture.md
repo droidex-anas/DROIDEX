@@ -355,6 +355,33 @@ and warned, not failed, on shared runners. Bundle bytes stay gated by
 `npm run quality:bundle-budgets`. Release numbers live in
 `docs/performance-budgets.md`.
 
+## Remote and local profile
+
+Electron owns the opt-in remote host, OS-keychain-encrypted identity/TOTP/device
+state and keep-awake lease. Its separate `sidecar/dist/remoteHost.mjs` bundle
+connects outbound to the hibernating Cloudflare relay and to the existing local
+bridge. The relay stores public name ownership and forwards bounded opaque
+frames; pinned, signed P-256 handshakes derive separate AES-GCM direction keys.
+Only the laptop verifies authenticator codes, admits devices and authorizes
+risky actions. A dedicated `remote.snapshot` returns live sessions and pending
+permissions; settlement removes approval cards for every client. Remote sends
+carry a Supervised-only guard through the sidecar's existing turn queue.
+
+The mobile Vite application is independent of the Electron renderer and keeps
+browser identities non-extractable in IndexedDB. Its lists are virtualized and
+its receive queues/transcript tails bounded. Generic Web Push is sent directly
+by the laptop using locally generated VAPID keys. There is no cloud agent job,
+offline message store or provider credential in the client.
+
+The local profile ledger receives narrow cumulative usage records from the
+renderer on a five-second batch cadence, independently of Remote being on.
+It records monotonic observed totals, daily deltas and chat-based harness/model
+rankings. Claude's per-turn billing totals survive context clearing, and cold
+resumes add the persisted usage basis to its fresh runtime counters. Droid and
+Codex already report cumulative provider counters. Opt-in public profile links
+contain an allowlisted URL-fragment snapshot; neither host stores that profile.
+See [Remote and Profile](remote.md).
+
 ## Build path
 
 `npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus `sidecar/dist/historyPersistenceWorker.mjs`; Electron uses the former unless `SIDECAR_ENTRY` is set and packages both from `sidecar/dist`.

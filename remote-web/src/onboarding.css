@@ -1,0 +1,63 @@
+.welcome {
+  max-width: 420px;
+  margin: auto;
+  padding: max(36px, env(safe-area-inset-top)) 24px 36px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 22px;
+}
+.welcome > .brand {
+  position: absolute;
+  top: max(28px, env(safe-area-inset-top));
+}
+.welcome > p,
+.unlock > p {
+  color: var(--droid-text-secondary);
+}
+.welcome-symbol {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  background: var(--droid-elevated);
+}
+.welcome-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 20px;
+}
+.welcome-card > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.welcome-card strong {
+  font-size: 14px;
+  font-weight: 550;
+}
+.welcome-card p {
+  color: var(--droid-text-secondary);
+  font-size: 13px;
+  margin-top: 6px;
+}
+.handle-form,
+.unlock form {
+  display: grid;
+  gap: 10px;
+}
+.handle-form label,
+.unlock label {
+  font-size: 13px;
+  color: var(--droid-text-secondary);
+}
+.field-row {
+  display: flex;
+  gap: 8px;
+}
+.field-row input {
+  min-width: 0;
+  flex: 1;
+}
