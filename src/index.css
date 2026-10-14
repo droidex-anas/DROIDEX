@@ -948,8 +948,22 @@
     @apply flex flex-col rounded-xl border border-divider bg-surface overflow-hidden shadow-lg;
   }
 
-  .droid-tool-panel {
-    @apply overflow-hidden rounded-lg border border-divider bg-elevated/50 shadow-sm;
+  /* Expand and collapse (feel.md): the grid's single row animates 0fr → 1fr,
+     so the content keeps its natural height without being measured. */
+  .expand-rows {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition:
+      grid-template-rows 240ms var(--ease-smooth-out),
+      opacity 240ms var(--ease-smooth-out);
+  }
+  .expand-rows[data-open] {
+    grid-template-rows: 1fr;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .expand-rows {
+      transition: none;
+    }
   }
 
   .droid-button {

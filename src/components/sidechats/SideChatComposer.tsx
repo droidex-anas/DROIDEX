@@ -45,7 +45,7 @@ export function SideChatComposer({
         leading={leading}
         status={
           blockedReason ? (
-            <span className="min-w-0 truncate text-[11px] text-muted">{blockedReason}</span>
+            <span className="min-w-0 truncate text-caption text-muted">{blockedReason}</span>
           ) : null
         }
         action={

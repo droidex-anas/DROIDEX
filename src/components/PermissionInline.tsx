@@ -6,11 +6,7 @@ import { PROVIDER_LABELS } from '../features/providers/providerIdentity';
 import { extractFileChange } from '../lib/diff';
 import { inlineCardMotion } from './inlineCardMotion';
 import { DiffPreview } from './DiffView';
-
-const ACCENT = 'var(--accent)';
-// Permission asks are an attention signal: a small warning dot marks the ask
-// while the card itself stays on the standard elevated surface.
-const WARN = 'var(--warning)';
+import { Button } from './ui/Button';
 
 // A plain-language explanation of what the agent is asking to do, so the
 // prompt is never just a bare "Permission required". The subject is the chat's
@@ -104,29 +100,22 @@ export default function PermissionInline({ appSessionId }: { appSessionId: strin
       <motion.div
         key={req.requestId}
         {...inlineCardMotion(reduceMotion)}
-        className="mb-2.5 overflow-hidden rounded-xl border border-divider bg-raised shadow-lg"
+        className="mb-2.5 overflow-hidden rounded-xl bg-raised shadow-lg"
       >
         <div className="flex items-start gap-2 px-4 pt-3.5 pb-3">
-          <span
-            className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full"
-            style={{ background: WARN }}
-            aria-hidden
-          />
+          {/* Permission asks are an attention signal: a warning dot marks the ask. */}
+          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium leading-snug">
+            <div className="text-body-strong">
               {detail ? <Subject kind={req.kind} detail={detail} /> : reason}
             </div>
-            {detail && (
-              <div className="mt-0.5 text-[12px] leading-snug break-words text-muted">
-                {explanation}
-              </div>
-            )}
+            {detail && <div className="mt-0.5 text-body break-words text-muted">{explanation}</div>}
           </div>
         </div>
 
         {fullDetail && (
           <div className="px-4 pb-3">
-            <div className="max-h-32 overflow-y-auto rounded-lg border border-divider/70 bg-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed">
+            <div className="max-h-32 overflow-y-auto rounded-lg bg-bg/50 px-3.5 py-2.5 text-body">
               <span className="whitespace-pre-wrap break-words text-primary">{fullDetail}</span>
             </div>
           </div>
@@ -140,34 +129,32 @@ export default function PermissionInline({ appSessionId }: { appSessionId: strin
         )}
 
         <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-3.5">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => {
               respond('refuse');
             }}
-            className="rounded-full px-3.5 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:bg-surface hover:text-primary"
           >
             Deny
-          </button>
+          </Button>
           {/* Only offered when the harness will let a grant be remembered. */}
           {req.canAlwaysAllow && (
-            <button
+            <Button
               onClick={() => {
                 respond('proceed_always');
               }}
-              className="rounded-full border border-divider bg-bg/40 px-3.5 py-1.5 text-[12px] font-medium text-secondary transition-colors hover:border-divider-strong hover:text-primary"
             >
               Always allow
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            variant="primary"
             onClick={() => {
               respond('proceed_once');
             }}
-            className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-bg transition-opacity hover:opacity-90"
-            style={{ background: ACCENT }}
           >
             Allow once
-          </button>
+          </Button>
         </div>
       </motion.div>
     </AnimatePresence>
