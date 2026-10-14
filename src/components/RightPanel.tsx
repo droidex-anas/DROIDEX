@@ -23,7 +23,7 @@ import {
 import NotesSection from './NotesSection';
 import { SubagentsSection } from './SubagentsPanel';
 import { useOpenAgent } from './agents/useOpenAgent';
-import { Row, SectionHeader, Divider } from './environment/primitives';
+import { Row, SectionHeader } from './ui/Row';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
 import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '../types/bridge';
@@ -228,7 +228,6 @@ export default function RightPanel() {
               on a session switch instead of leaking into the next session. */}
           {activeSession && childSessions.length > 0 && (
             <div>
-              <Divider />
               <SubagentsSection
                 key={activeSession.appSessionId}
                 childSessions={childSessions}
@@ -244,7 +243,6 @@ export default function RightPanel() {
           {/* Spec — opens the full wiki reader for sessions that produced one */}
           {activeSession && activeSpec && (
             <div>
-              <Divider />
               <SectionHeader label="Spec" />
               <Row
                 icon={<FileText className="h-4 w-4" />}
@@ -265,7 +263,6 @@ export default function RightPanel() {
               session switch instead of leaking into the next session. */}
           {activeSession && (
             <div>
-              <Divider />
               <NotesSection
                 key={activeSession.appSessionId}
                 appSessionId={activeSession.appSessionId}
@@ -303,10 +300,7 @@ export default function RightPanel() {
                       {f.preconditions.length > 0 && (
                         <div className="space-y-1">
                           {f.preconditions.map((p, i) => (
-                            <div
-                              key={i}
-                              className="text-[12px] text-muted pl-3 border-l-2 border-divider"
-                            >
+                            <div key={i} className="pl-3 text-caption text-muted">
                               {p}
                             </div>
                           ))}

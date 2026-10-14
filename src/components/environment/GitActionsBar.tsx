@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Spinner, Upload } from '@droidex/icons';
+import { Upload } from '@droidex/icons';
 import { GitCommitIcon, GitHubMarkIcon, PrStateIcon } from './GithubIcons';
-import { Row } from './primitives';
+import { Button } from '../ui/Button';
+import { Row } from '../ui/Row';
 import { CommitSheet } from './CommitSheet';
 import { CreatePrSheet } from './CreatePrSheet';
 import { gitPush } from '../../lib/git';
@@ -86,7 +87,7 @@ export function GitActionsBar({
     <div>
       <div
         className={`group flex items-center rounded-md transition-colors ${
-          sheet === 'commit' ? 'bg-elevated' : 'hover:bg-elevated/50'
+          sheet === 'commit' ? 'bg-active' : 'hover:bg-elevated'
         }`}
       >
         <button
@@ -98,29 +99,27 @@ export function GitActionsBar({
           aria-expanded={sheet === 'commit'}
           className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-md px-3 py-2 text-left"
         >
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-colors group-hover:text-secondary">
+          <span className="flex size-icon-md shrink-0 items-center justify-center text-muted transition-colors group-hover:text-secondary">
             <GitCommitIcon size={16} />
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-primary">
-            Commit or push
-          </span>
+          <span className="min-w-0 flex-1 truncate text-body text-primary">Commit or push</span>
         </button>
         {publishable && (
-          <button
-            type="button"
-            onClick={() => void doPush()}
+          <Button
+            variant="secondary"
+            size="sm"
+            shape="round"
+            className="mr-1.5"
+            icon={Upload}
+            loading={pushing}
             disabled={pushing || !!env.detached}
             title={pushLabel}
             aria-label={pushLabel}
-            className="mr-1.5 flex shrink-0 items-center gap-1 rounded-sm border border-divider/70 bg-surface px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-secondary transition-colors hover:bg-elevated hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            labelClassName="tabular-nums"
+            onClick={() => void doPush()}
           >
-            {pushing ? (
-              <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
-            ) : (
-              <Upload className="h-3 w-3" />
-            )}
             {aheadCount > 0 ? `↑${String(aheadCount)}` : 'Push'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -147,7 +146,7 @@ export function GitActionsBar({
           title={`${pr.title} — view checks and comments`}
           onClick={onOpenPr}
           trailing={
-            <ChevronRight className="h-3.5 w-3.5 text-muted/60 transition-colors group-hover:text-secondary" />
+            <ChevronRight className="size-icon-sm text-muted/60 transition-colors group-hover:text-secondary" />
           }
         />
       ) : (
@@ -158,7 +157,7 @@ export function GitActionsBar({
             icon={<GitHubMarkIcon size={16} />}
             label="Create pull request"
             active={sheet === 'pr'}
-            expanded={sheet === 'pr'}
+            aria-expanded={sheet === 'pr'}
             onClick={() => {
               toggle('pr');
             }}

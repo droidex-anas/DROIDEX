@@ -1,4 +1,10 @@
-import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
+import {
+  isValidElement,
+  type ButtonHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import { Spinner, type IconComponent } from '@droidex/icons';
 import { cn } from './cn';
 
@@ -30,13 +36,19 @@ interface ButtonBaseProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   shape?: 'default' | 'round';
   /** Swaps the icon (or the label) for a spinner and keeps the button's width. */
   loading?: boolean;
+  /** The icon: a component, or a ready-made glyph such as a custom mark. */
+  icon?: IconComponent | ReactElement;
+  /** Classes for the label span, such as a width cap or responsive hiding. */
+  labelClassName?: string;
+  /** Lets the button shrink in a crowded row, truncating its label. */
+  shrinkable?: boolean;
 }
 
 // Icon-only buttons have no visible label, so they must name themselves.
 type ButtonProps = ButtonBaseProps &
   (
-    | { children: ReactNode; icon?: IconComponent }
-    | { children?: undefined; icon: IconComponent; 'aria-label': string }
+    | { children: ReactNode; icon?: IconComponent | ReactElement }
+    | { children?: undefined; icon: IconComponent | ReactElement; 'aria-label': string }
   );
 
 export function Button({
@@ -46,6 +58,8 @@ export function Button({
   shape = 'default',
   loading = false,
   icon: Icon,
+  labelClassName,
+  shrinkable = false,
   type = 'button',
   className,
   children,
@@ -63,17 +77,27 @@ export function Button({
       data-loading={loading || undefined}
       {...rest}
       className={cn(
-        'relative inline-flex shrink-0 select-none items-center justify-center gap-1.5 transition duration-150 ease-out',
+        'relative inline-flex select-none items-center justify-center gap-1.5 transition duration-150 ease-out',
         'enabled:active:scale-97 enabled:active:duration-75 disabled:cursor-not-allowed disabled:opacity-40',
+        !shrinkable && 'shrink-0',
         shape === 'round' ? 'rounded-full' : 'rounded-md',
         iconOnly ? SIZE[size].square : SIZE[size].text,
         VARIANT[variant],
         className,
       )}
     >
-      {Icon && (loading ? spinner : <Icon className="size-icon-md shrink-0" aria-hidden="true" />)}
+      {Icon &&
+        (loading ? (
+          spinner
+        ) : isValidElement(Icon) ? (
+          Icon
+        ) : (
+          <Icon className="size-icon-md shrink-0" aria-hidden="true" />
+        ))}
       {children !== undefined && (
-        <span className={cn('truncate', labelHidden && 'invisible')}>{children}</span>
+        <span className={cn('truncate', labelHidden && 'invisible', labelClassName)}>
+          {children}
+        </span>
       )}
       {labelHidden && <span className="absolute inset-0 grid place-items-center">{spinner}</span>}
     </button>
