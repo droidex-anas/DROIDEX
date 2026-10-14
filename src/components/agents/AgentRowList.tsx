@@ -82,10 +82,7 @@ export function AgentRowList({
       {agentPhaseSections(rows).map((section) => (
         <div key={section.key}>
           {section.label ? (
-            <div
-              data-testid="agent-section-label"
-              className="px-4 pb-1 pt-2 text-[11px] uppercase tracking-[0.06em] text-muted"
-            >
+            <div data-testid="agent-section-label" className="px-4 pb-1 pt-2 text-label text-muted">
               {section.label}
             </div>
           ) : null}
@@ -116,7 +113,7 @@ export function AgentRowList({
         <button
           type="button"
           onClick={onShowAll}
-          className="w-full px-4 pb-3 pt-1 text-left text-[12px] text-muted transition-colors hover:text-secondary"
+          className="w-full px-4 pb-3 pt-1 text-left text-label text-muted transition-colors hover:text-secondary"
         >
           Show {foldedCount} more {foldedCount === 1 ? 'agent' : 'agents'}
         </button>
