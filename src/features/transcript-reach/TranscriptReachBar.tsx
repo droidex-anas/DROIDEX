@@ -1,6 +1,6 @@
-import { useEffect, useRef, type Dispatch, type ReactNode } from 'react';
-import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
-import { Copy } from '@droidex/icons';
+import { useEffect, useRef, type Dispatch } from 'react';
+import { ChevronDown, ChevronUp, Copy, Search, X, type IconComponent } from '@droidex/icons';
+import { Button } from '../../components/ui/Button';
 
 import type { TranscriptReachAction, TranscriptReachState } from './transcriptReachState';
 import type { transcriptFindScopeNotice } from './transcriptFind';
@@ -43,10 +43,10 @@ export function TranscriptReachBar({
     <div
       role="search"
       data-testid="transcript-find-bar"
-      className="pointer-events-auto flex max-w-[min(100%,42rem)] flex-col gap-1.5 rounded-lg border border-divider bg-surface/95 px-2 py-1.5 shadow-sm backdrop-blur"
+      className="pointer-events-auto flex max-w-2xl flex-col gap-1.5 rounded-lg bg-raised px-2 py-1.5 shadow-lg"
     >
       <form onSubmit={onSubmit} className="flex items-center gap-1.5">
-        <Search className="h-3.5 w-3.5 shrink-0 text-muted/70" />
+        <Search className="size-icon-sm shrink-0 text-muted" />
         <input
           ref={inputRef}
           data-testid="transcript-find-input"
@@ -62,89 +62,79 @@ export function TranscriptReachBar({
           }}
           placeholder="Find in conversation"
           aria-label="Find in conversation"
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-primary placeholder-muted focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-body text-primary placeholder-muted focus:outline-none"
         />
         <span
           data-testid="transcript-find-count"
-          className="shrink-0 text-[11px] tabular-nums text-muted"
+          className="shrink-0 text-caption tabular-nums text-muted"
         >
           {hasQuery ? countLabel : ''}
         </span>
         <IconButton
           testId="transcript-find-prev"
           title="Previous match"
+          icon={ChevronUp}
           disabled={!hasQuery || state.matches.length === 0}
           onClick={() => {
             dispatch({ type: 'prev' });
           }}
-        >
-          <ChevronUp className="h-3.5 w-3.5" />
-        </IconButton>
+        />
         <IconButton
           testId="transcript-find-next"
           title="Next match"
+          icon={ChevronDown}
           disabled={!hasQuery || state.matches.length === 0}
           onClick={() => {
             dispatch({ type: 'next' });
           }}
-        >
-          <ChevronDown className="h-3.5 w-3.5" />
-        </IconButton>
+        />
         <IconButton
           testId="transcript-range-toggle"
           title="Copy a range of messages"
+          icon={Copy}
           active={state.rangeSelecting}
           onClick={() => {
             dispatch({ type: state.rangeSelecting ? 'cancelRange' : 'beginRange' });
           }}
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </IconButton>
+        />
         <IconButton
           testId="transcript-find-close"
           title="Close"
+          icon={X}
           onClick={() => {
             dispatch({ type: 'close' });
           }}
-        >
-          <X className="h-3.5 w-3.5" />
-        </IconButton>
+        />
       </form>
       {scopeNotice && (
         <div
           role="status"
           data-testid="transcript-find-scope"
-          className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-muted"
+          className="flex flex-wrap items-center gap-2 px-1 text-caption text-muted"
         >
           <span>{scopeNoticeMessage(scopeNotice)}</span>
           {scopeNotice.kind === 'older-history' && (
-            <button
-              type="button"
-              data-testid="transcript-find-load-older"
-              onClick={onLoadOlder}
-              className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
-            >
+            <Button size="sm" data-testid="transcript-find-load-older" onClick={onLoadOlder}>
               Load older history
-            </button>
+            </Button>
           )}
         </div>
       )}
       {state.rangeSelecting && (
         <div
           data-testid="transcript-range-bar"
-          className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-muted"
+          className="flex flex-wrap items-center gap-2 px-1 text-caption text-muted"
         >
           <span>{rangePrompt(rangeReady, state.rangeStartKey)}</span>
           {activeMatchActions(state, dispatch)}
-          <button
-            type="button"
+          <Button
+            size="sm"
             data-testid="transcript-range-copy"
             disabled={!rangeReady}
             onClick={onCopyRange}
-            className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60 disabled:opacity-40"
           >
             {copied ? 'Copied' : 'Copy range'}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -159,59 +149,55 @@ function activeMatchActions(
   if (!match) return null;
   return (
     <>
-      <button
-        type="button"
+      <Button
+        size="sm"
         data-testid="transcript-range-from-match-start"
         onClick={() => {
           dispatch({ type: 'setRangeBound', bound: 'start', itemKey: match.itemKey });
         }}
-        className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
       >
         Start at match
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        size="sm"
         data-testid="transcript-range-from-match-end"
         onClick={() => {
           dispatch({ type: 'setRangeBound', bound: 'end', itemKey: match.itemKey });
         }}
-        className="rounded-sm border border-divider px-1.5 py-0.5 text-[11px] text-secondary transition-colors hover:bg-elevated/60"
       >
         End at match
-      </button>
+      </Button>
     </>
   );
 }
 
 function IconButton({
   title,
+  icon,
   onClick,
-  children,
   disabled,
   active,
   testId,
 }: {
   title: string;
+  icon: IconComponent;
   onClick: () => void;
-  children: ReactNode;
   disabled?: boolean;
   active?: boolean;
   testId: string;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={icon}
       data-testid={testId}
       title={title}
       aria-label={title}
+      aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-sm p-1 text-muted transition-colors hover:bg-elevated/70 hover:text-primary disabled:opacity-40 ${
-        active ? 'bg-accent/15 text-primary' : ''
-      }`}
-    >
-      {children}
-    </button>
+    />
   );
 }
 

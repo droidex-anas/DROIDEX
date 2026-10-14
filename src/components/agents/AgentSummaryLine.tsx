@@ -31,9 +31,7 @@ export function AgentSummaryLine({
           style={{ width: `${String(percent)}%` }}
         />
       </span>
-      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-primary">
-        {percent}%
-      </span>
+      <span className="shrink-0 text-body-strong tabular-nums text-primary">{percent}%</span>
       {/* The counts sit where the rows keep their status pill, so expanding
           drops each one straight down into its row instead of across the card. */}
       {showCounts &&
@@ -54,7 +52,7 @@ export function AgentSummaryLine({
           {...(layoutId('queued') !== undefined ? { layoutId: layoutId('queued') } : {})}
         />
       ) : null}
-      <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-[12px] tabular-nums text-muted">
+      <span className="min-w-14 shrink-0 whitespace-nowrap text-right text-caption tabular-nums text-muted">
         {wave.timeMs != null ? formatDuration(wave.timeMs) : ''}
       </span>
     </span>

@@ -64,7 +64,7 @@ export default function HarnessSegments({
                 <motion.span
                   layoutId="model-slider-harness-pill"
                   aria-hidden
-                  className="absolute inset-0 rounded-md bg-surface"
+                  className="absolute inset-0 rounded-md bg-raised"
                   transition={{ type: 'spring', stiffness: 520, damping: 38 }}
                 />
               )}

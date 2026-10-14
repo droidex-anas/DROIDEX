@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@droidex/icons';
 
 /* Floating controls shared by the full-window viewers. They float on the
    backdrop instead of sitting in a title bar, so nothing collides with the
@@ -22,7 +22,7 @@ export function ViewerCloseButton({ onClose }: { onClose: () => void }) {
       title="Close (Esc)"
       className="no-drag fixed right-4 top-4 flex h-9 w-9 items-center justify-center rounded-lg bg-raised/90 text-secondary shadow-sm backdrop-blur-md transition-colors duration-150 hover:bg-active hover:text-primary focus-visible:bg-active focus-visible:text-primary focus-visible:outline-none"
     >
-      <X className="h-4 w-4" />
+      <X className="size-icon-md" />
     </button>
   );
 }
@@ -61,7 +61,7 @@ export function ViewerToolbarButton({
       disabled={disabled}
       title={label}
       aria-label={label}
-      className={`flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-md px-2 text-[12.5px] font-medium transition-colors duration-150 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-35 ${
+      className={`flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-md px-2 text-label transition-colors duration-150 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40 ${
         primary
           ? 'bg-accent text-bg hover:opacity-90 focus-visible:opacity-90'
           : 'text-secondary hover:bg-active hover:text-primary focus-visible:bg-active focus-visible:text-primary'

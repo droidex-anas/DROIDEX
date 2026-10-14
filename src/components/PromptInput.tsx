@@ -9,7 +9,6 @@ import {
   useCallback,
   type SetStateAction,
 } from 'react';
-import { AnimatePresence } from 'framer-motion';
 import {
   shallowEqual,
   useStoreApi,
@@ -149,6 +148,7 @@ import {
   supportsSpecMode,
 } from '../features/providers/providerIdentity';
 import AutonomySelector from './AutonomySelector';
+import { Popover } from './ui/Popover';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
   buildVisibleChildSettingsTarget,
@@ -219,7 +219,6 @@ const ACCENT = 'var(--accent)';
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
 // The app reads the account itself, so this never reaches a harness as a prompt.
 const USAGE_COMMAND = '/usage';
-const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
 type SubmitMode = 'queue' | 'steer';
 
 export function shouldStopTurnStarting({
@@ -363,6 +362,7 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
+  const modelChipRef = useRef<HTMLButtonElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
@@ -427,7 +427,6 @@ export default function PromptInput({
       composerRevisionRef.current += 1;
     }, []),
   );
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
   // Skills and plugins live on the draft's first line; attachments keep their own
   // row above it. Backspace on an empty draft unwinds both.
   const hasAttachmentChips =
@@ -2058,8 +2057,6 @@ export default function PromptInput({
     }
   };
 
-  const boxBorder = isSpecMode ? 'border-warning/40' : 'border-divider';
-
   const viewerImage = imageAttachments.images.find((i) => i.id === viewerImageId) ?? null;
   // Files attached as paths (the @ menu, the picker, or a queued prompt brought
   // back for editing) show as thumbnails when they are displayable images, so a
@@ -2310,10 +2307,10 @@ export default function PromptInput({
     >
       <div
         // The composer is the transcript column (42rem) plus its own text inset
-        // on each side (1px border, 16px content padding, 6px editor line
-        // padding = 23px), so the text you type starts on the same edge as the
-        // messages above it.
-        className={`relative mx-auto min-w-0 ${compact ? 'max-w-4xl' : 'max-w-[calc(42rem+46px)]'}`}
+        // on each side (16px content padding, 6px editor line padding = 22px),
+        // so the text you type starts on the same edge as the messages above it.
+        className={`relative mx-auto min-w-0 ${compact ? 'max-w-4xl' : ''}`}
+        style={compact ? undefined : { maxWidth: 'calc(42rem + 44px)' }}
         onDragOver={fileDrop.onDragOver}
         onDrop={fileDrop.onDrop}
       >
@@ -2335,14 +2332,14 @@ export default function PromptInput({
 
         {missionPreview ? (
           <div
-            className="absolute -top-5 left-1 flex items-center gap-1.5 text-[11px] font-medium tracking-wide"
+            className="absolute -top-5 left-1 flex items-center gap-1.5 text-caption font-medium"
             style={{ color: ACCENT }}
           >
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: ACCENT }} />
             Mission preview
           </div>
         ) : isSpecMode ? (
-          <div className="absolute -top-5 left-1 text-[11px] font-medium text-warning tracking-wide">
+          <div className="absolute -top-5 left-1 text-caption font-medium text-warning">
             SPEC MODE
           </div>
         ) : null}
@@ -2382,11 +2379,8 @@ export default function PromptInput({
           </Suspense>
         )}
         {showStartIn && !usageOpen && (
-          <div
-            className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-divider bg-surface px-4 pb-4 pt-1.5"
-            // The composer's own 20px corner, carried onto the tab above it.
-            style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
-          >
+          // The composer's own corner, carried onto the tab above it.
+          <div className="relative z-0 mx-10 -mb-3 min-w-0 rounded-t-xl bg-surface px-4 pb-4 pt-1.5 shadow-sm">
             <StartInBar />
           </div>
         )}
@@ -2399,17 +2393,10 @@ export default function PromptInput({
           </Suspense>
         )}
 
-        <div
-          className={`relative z-10 bg-raised border rounded-[20px] shadow-sm transition-colors ${missionPreview ? '' : boxBorder}`}
-          style={
-            missionPreview
-              ? {
-                  borderColor: accentMix(20),
-                  boxShadow: `var(--shadow-sm), 0 0 0 3px ${accentMix(6)}`,
-                }
-              : undefined
-          }
-        >
+        {/* No stroke at rest or in focus: focus lifts the fill a touch with a
+            translucent layer over the elevated rung (raised on light; text on
+            dark, where raised is the elevated rung). */}
+        <div className="relative z-10 rounded-xl bg-elevated focus-within:bg-gradient-to-b focus-within:from-raised/60 focus-within:to-raised/60 dark:focus-within:from-text/5 dark:focus-within:to-text/5">
           {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
               {designMarks.map((mark) => (
@@ -2483,8 +2470,8 @@ export default function PromptInput({
           )}
 
           {missionAutonomyGateOpen && missionPreview && !activeSession && (
-            <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg border border-divider bg-bg/60 px-3 py-2.5">
-              <p className="flex-1 min-w-0 text-[11px] text-secondary leading-snug">
+            <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg bg-bg/60 px-3 py-2.5">
+              <p className="flex-1 min-w-0 text-caption text-secondary">
                 Missions run unattended, so they need{' '}
                 <span className="text-primary font-medium">High autonomy</span> to start.
               </p>
@@ -2494,7 +2481,7 @@ export default function PromptInput({
                   setMissionAutonomyGateOpen(false);
                   void handleSubmit('queue', 'high');
                 }}
-                className="shrink-0 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-bg transition-opacity hover:opacity-90"
+                className="shrink-0 px-2.5 py-1.5 rounded-md text-label text-bg transition-opacity hover:opacity-90"
                 style={{ background: ACCENT }}
               >
                 Set High and start
@@ -2503,7 +2490,7 @@ export default function PromptInput({
                 onClick={() => {
                   setMissionAutonomyGateOpen(false);
                 }}
-                className="shrink-0 px-2 py-1.5 rounded-md text-[11px] text-muted hover:text-primary transition-colors"
+                className="shrink-0 px-2 py-1.5 rounded-md text-label text-muted hover:text-primary transition-colors"
               >
                 Not now
               </button>
@@ -2517,7 +2504,7 @@ export default function PromptInput({
                 seeds, and formatting actions. */}
             <Suspense
               fallback={
-                <div className="min-h-[44px] px-4 pt-3 pb-2 text-sm text-muted/50">
+                <div className="min-h-11 px-4 pt-3 pb-2 text-sm text-muted/50">
                   {promptPlaceholder}
                 </div>
               }
@@ -2544,8 +2531,6 @@ export default function PromptInput({
               It wraps on narrow windows rather than pushing controls offscreen. */}
           <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-1">
             <AddMenu
-              open={addMenuOpen}
-              onOpenChange={setAddMenuOpen}
               visualizeSelected={visualizeSelected}
               // Both rows hand focus to the draft, which is where the prompt
               // continues once the menu has added to it.
@@ -2563,7 +2548,7 @@ export default function PromptInput({
                 open session, draft override before a session exists. */}
             {targetChild ? (
               <span
-                className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-muted"
+                className="flex h-control-sm shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption text-muted"
                 title={
                   targetChild.autonomy
                     ? `Child session autonomy: ${AUTONOMY_LABELS[targetChild.autonomy]}`
@@ -2578,7 +2563,7 @@ export default function PromptInput({
               </span>
             ) : activeSession ? (
               <AutonomySelector
-                align="start"
+                placement="top-start"
                 scope="session"
                 provider={activeSession.provider}
                 value={state.pendingAutonomy?.autonomy ?? activeSession.autonomy}
@@ -2600,7 +2585,7 @@ export default function PromptInput({
               />
             ) : (
               <AutonomySelector
-                align="start"
+                placement="top-start"
                 scope="draft"
                 provider={composerProvider}
                 value={draftAutonomy}
@@ -2615,122 +2600,119 @@ export default function PromptInput({
                 right edge instead of dropping it to the row start. flex-auto
                 (not flex-1) so its content width is what triggers the wrap. */}
             <div className="flex min-w-0 flex-auto items-center justify-end gap-1">
-              <div className="relative shrink-0">
-                <button
-                  onPointerEnter={() => {
-                    void (state.modelSelectorStyle === 'slider'
-                      ? loadModelSliderPopover()
-                      : loadModelSelectorPopover());
-                  }}
-                  onClick={() => {
-                    setModelsOpen((v) => !v);
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors max-w-[200px] ${
-                    modelsOpen
-                      ? 'bg-bg/60 text-primary'
-                      : 'text-secondary hover:text-primary hover:bg-bg/40'
-                  }`}
-                  title={
-                    childSettingsTarget
-                      ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
-                      : missionPreview
-                        ? 'Configure orchestrator / worker / validator models'
-                        : 'Select chat model'
-                  }
-                >
-                  {childSettingsTarget ? (
-                    <>
-                      <ModelIcon
-                        provider={providerOf(
-                          state.models.find((model) => model.id === childSettingsTarget.modelId),
-                          childSettingsTarget.modelId,
-                        )}
-                        size={14}
-                      />
-                      <span className="truncate">{childSettingsTarget.label}</span>
-                    </>
-                  ) : missionPreview ? (
-                    <>
-                      <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-                      <span>Models</span>
-                    </>
-                  ) : (
-                    <>
-                      <ModelIcon
-                        provider={resolveModelProvider(
-                          chipModel,
-                          primaryModelId,
-                          PROVIDER_MARKS[composerProvider],
-                        )}
-                        size={14}
-                      />
-                      {isDroidProxyModel(chipModel, primaryModelId) && (
-                        <span className="shrink-0 flex items-center">
-                          <DroidProxyMark size={12} />
-                        </span>
+              <button
+                ref={modelChipRef}
+                onPointerEnter={() => {
+                  void (state.modelSelectorStyle === 'slider'
+                    ? loadModelSliderPopover()
+                    : loadModelSelectorPopover());
+                }}
+                onClick={() => {
+                  setModelsOpen((v) => !v);
+                }}
+                className={`flex h-control-sm max-w-52 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${
+                  modelsOpen
+                    ? 'bg-active text-primary'
+                    : 'text-secondary hover:bg-active/60 hover:text-primary'
+                }`}
+                title={
+                  childSettingsTarget
+                    ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
+                    : missionPreview
+                      ? 'Configure orchestrator / worker / validator models'
+                      : 'Select chat model'
+                }
+              >
+                {childSettingsTarget ? (
+                  <>
+                    <ModelIcon
+                      provider={providerOf(
+                        state.models.find((model) => model.id === childSettingsTarget.modelId),
+                        childSettingsTarget.modelId,
                       )}
-                      <span className="truncate font-medium text-primary">
-                        {shortModelName(selectedModelLabel)}
+                      size={14}
+                    />
+                    <span className="truncate">{childSettingsTarget.label}</span>
+                  </>
+                ) : missionPreview ? (
+                  <>
+                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                    <span>Models</span>
+                  </>
+                ) : (
+                  <>
+                    <ModelIcon
+                      provider={resolveModelProvider(
+                        chipModel,
+                        primaryModelId,
+                        PROVIDER_MARKS[composerProvider],
+                      )}
+                      size={14}
+                    />
+                    {isDroidProxyModel(chipModel, primaryModelId) && (
+                      <span className="shrink-0 flex items-center">
+                        <DroidProxyMark size={12} />
                       </span>
-                      {fastMode && offersFastMode(composerProvider) && (
-                        <Zap
-                          size={11}
-                          fill="currentColor"
-                          className="shrink-0 text-accent"
-                          aria-label={`Fast mode: ${FAST_MODE_HINT}`}
-                        />
-                      )}
-                      {primaryReasoning && (
-                        <span
-                          className={`shrink-0 capitalize ${
-                            primaryReasoning === 'ultra' ? 'text-ultra' : 'text-muted'
-                          }`}
-                          title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
-                        >
-                          {reasoningEffortLabel(primaryReasoning, composerProvider)}
-                        </span>
-                      )}
-                      {contextWindowTokens !== undefined &&
-                        offersContextWindow(composerProvider) && (
-                          <span
-                            className="shrink-0 text-muted"
-                            title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
-                          >
-                            {primaryReasoning ? '· ' : ''}
-                            {contextWindowLabel(contextWindowTokens)}
-                          </span>
-                        )}
-                    </>
-                  )}
-                </button>
+                    )}
+                    <span className="truncate font-medium text-primary">
+                      {shortModelName(selectedModelLabel)}
+                    </span>
+                    {fastMode && offersFastMode(composerProvider) && (
+                      <Zap
+                        size={11}
+                        fill="currentColor"
+                        className="shrink-0 text-accent"
+                        aria-label={`Fast mode: ${FAST_MODE_HINT}`}
+                      />
+                    )}
+                    {primaryReasoning && (
+                      <span
+                        className={`shrink-0 capitalize ${
+                          primaryReasoning === 'ultra' ? 'text-ultra' : 'text-muted'
+                        }`}
+                        title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
+                      >
+                        {reasoningEffortLabel(primaryReasoning, composerProvider)}
+                      </span>
+                    )}
+                    {contextWindowTokens !== undefined && offersContextWindow(composerProvider) && (
+                      <span
+                        className="shrink-0 text-muted"
+                        title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
+                      >
+                        {primaryReasoning ? '· ' : ''}
+                        {contextWindowLabel(contextWindowTokens)}
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
 
-                <AnimatePresence>
-                  <Suspense fallback={null}>
-                    {modelsOpen &&
-                      // The slider style is a chat-composer picker; Mission Control
-                      // and exact-child editors keep the classic popover's semantics.
-                      (state.modelSelectorStyle === 'slider' &&
-                      !missionPreview &&
-                      !childSettingsTarget ? (
-                        <ModelSliderPopover
-                          appSessionId={appSessionId}
-                          onClose={() => {
-                            setModelsOpen(false);
-                          }}
-                        />
-                      ) : (
-                        <ModelSelectorPopover
-                          appSessionId={appSessionId}
-                          onClose={() => {
-                            setModelsOpen(false);
-                          }}
-                          singleAgent={!missionPreview}
-                          childTarget={childSettingsTarget}
-                        />
-                      ))}
-                  </Suspense>
-                </AnimatePresence>
-              </div>
+              <Popover
+                open={modelsOpen}
+                onClose={() => {
+                  setModelsOpen(false);
+                }}
+                anchorRef={modelChipRef}
+                label={missionPreview ? 'Models' : 'Model'}
+                placement="top-end"
+              >
+                <Suspense fallback={null}>
+                  {/* The slider style is a chat-composer picker; Mission Control
+                        and exact-child editors keep the classic popover's semantics. */}
+                  {state.modelSelectorStyle === 'slider' &&
+                  !missionPreview &&
+                  !childSettingsTarget ? (
+                    <ModelSliderPopover appSessionId={appSessionId} />
+                  ) : (
+                    <ModelSelectorPopover
+                      appSessionId={appSessionId}
+                      singleAgent={!missionPreview}
+                      childTarget={childSettingsTarget}
+                    />
+                  )}
+                </Suspense>
+              </Popover>
 
               <div ref={scheduleAnchorRef} className="shrink-0">
                 {voiceHere ? (

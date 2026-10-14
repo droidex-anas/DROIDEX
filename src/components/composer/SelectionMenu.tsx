@@ -1,11 +1,4 @@
-import {
-  useLayoutEffect,
-  useEffect,
-  useRef,
-  useState,
-  type ComponentType,
-  type MouseEvent as ReactMouseEvent,
-} from 'react';
+import { useRef } from 'react';
 import {
   Bold,
   ClipboardCopy,
@@ -28,7 +21,8 @@ import {
   TextSelect,
 } from 'lucide-react';
 import type { DraftFormatAction } from '../../lib/composerFormatting';
-import { Clock } from '@droidex/icons';
+import { Clock, type IconComponent } from '@droidex/icons';
+import { Menu } from '../ui/Menu';
 
 /* The composer's right-click menu. On a link it leads with opening or copying
    that link; then the editing actions every desktop app has — the draft cancels
@@ -52,12 +46,8 @@ export interface SelectionMenuState {
   link: string | null;
 }
 
-type MenuIcon = ComponentType<{ className?: string }>;
-
-const MENU_WIDTH_PX = 200;
-
 // [icon, label, action, shortcut, needsSelection]
-const EDIT_ROWS: [MenuIcon, string, DraftEditAction, string, boolean][] = [
+const EDIT_ROWS: [IconComponent, string, DraftEditAction, string, boolean][] = [
   [Scissors, 'Cut', 'cut', '⌘X', true],
   [Copy, 'Copy', 'copy', '⌘C', true],
   [ClipboardPaste, 'Paste', 'paste', '⌘V', false],
@@ -65,7 +55,7 @@ const EDIT_ROWS: [MenuIcon, string, DraftEditAction, string, boolean][] = [
 ];
 
 // [icon, name, action, shortcut] — inline marks, then line structure, then blocks.
-type FormatButton = [MenuIcon, string, DraftFormatAction, string?];
+type FormatButton = [IconComponent, string, DraftFormatAction, string?];
 
 const FORMAT_GROUPS: FormatButton[][] = [
   [
@@ -89,37 +79,6 @@ const FORMAT_GROUPS: FormatButton[][] = [
   ],
 ];
 
-function Separator() {
-  return <div role="separator" className="mx-1.5 my-1 h-px bg-active" />;
-}
-
-function TextRow({
-  icon: Icon,
-  label,
-  hint,
-  disabled = false,
-  onSelect,
-}: {
-  icon: MenuIcon;
-  label: string;
-  hint?: string;
-  disabled?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      role="menuitem"
-      disabled={disabled}
-      onClick={onSelect}
-      className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-surface/55 focus:bg-surface focus:outline-none disabled:opacity-40 disabled:hover:bg-transparent"
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
-      <span className="text-[13px] font-medium text-primary">{label}</span>
-      {hint ? <span className="ml-auto text-[11px] text-muted">{hint}</span> : null}
-    </button>
-  );
-}
-
 export default function SelectionMenu({
   menu,
   onFormat,
@@ -135,118 +94,92 @@ export default function SelectionMenu({
   onSchedule?: (() => void) | undefined;
   canSchedule?: boolean;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!menu) return;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && e.target instanceof Node && !menuRef.current.contains(e.target)) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
-    };
-  }, [menu, onClose]);
-
-  // The menu grows upward from the pointer (the draft sits at the bottom of
-  // the window); near the top it flips below so nothing lands off-screen.
-  const [above, setAbove] = useState(true);
-  useLayoutEffect(() => {
-    const height = menuRef.current?.offsetHeight ?? 0;
-    setAbove(menu ? menu.y - height - 4 >= 8 : true);
-  }, [menu]);
-
-  if (!menu) return null;
-  const { x, y, hasSelection, link } = menu;
-
-  const choose = (action: () => void) => () => {
-    onClose();
-    action();
-  };
+  // A point at the pointer for the menu to open against; it grows upward
+  // (the draft sits at the bottom of the window) and flips below near the top.
+  const pointRef = useRef<HTMLSpanElement>(null);
+  const link = menu?.link;
 
   return (
-    <div
-      ref={menuRef}
-      role="menu"
-      aria-label="Prompt actions"
-      onContextMenu={(e: ReactMouseEvent) => {
-        e.preventDefault();
-      }}
-      style={{
-        width: MENU_WIDTH_PX,
-        left: Math.min(x, window.innerWidth - MENU_WIDTH_PX - 10),
-        top: above ? y - 4 : y + 4,
-        transform: above ? 'translateY(-100%)' : undefined,
-      }}
-      className="fixed z-50 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-lg border border-divider-strong bg-raised p-1 shadow-lg"
-    >
-      {link ? (
-        <>
-          <TextRow
-            icon={ExternalLink}
-            label="Open Link"
-            onSelect={choose(() => window.open(link, '_blank', 'noopener,noreferrer'))}
-          />
-          <TextRow
-            icon={ClipboardCopy}
-            label="Copy Link Address"
-            onSelect={choose(() => {
-              navigator.clipboard.writeText(link).catch((error: unknown) => {
-                console.warn('Clipboard write failed', error);
-              });
-            })}
-          />
-          <Separator />
-        </>
-      ) : null}
-      {onSchedule && (
-        <>
-          <TextRow
-            icon={Clock}
-            label="Schedule prompt…"
-            disabled={!canSchedule}
-            onSelect={choose(onSchedule)}
-          />
-          <Separator />
-        </>
-      )}
-      {EDIT_ROWS.map(([icon, label, action, hint, needsSelection]) => (
-        <TextRow
-          key={action}
-          icon={icon}
-          label={label}
-          hint={hint}
-          disabled={needsSelection && !hasSelection}
-          onSelect={choose(() => {
-            onEdit(action);
-          })}
+    <>
+      {menu && (
+        <span
+          ref={pointRef}
+          aria-hidden="true"
+          className="pointer-events-none fixed size-0"
+          style={{ left: menu.x, top: menu.y }}
         />
-      ))}
-      <Separator />
-      {FORMAT_GROUPS.map((group, index) => (
-        <div key={index} className="flex items-center gap-0.5 px-1 py-0.5">
-          {group.map(([Icon, name, action, shortcut]) => (
-            <button
-              key={action}
-              role="menuitem"
-              aria-label={name}
-              title={shortcut ? `${name}  ${shortcut}` : name}
-              onClick={choose(() => {
-                onFormat(action);
-              })}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-secondary transition-colors hover:bg-surface/55 hover:text-primary focus:bg-surface focus:outline-none"
+      )}
+      <Menu
+        open={menu !== null}
+        onClose={onClose}
+        anchorRef={pointRef}
+        label="Prompt actions"
+        placement="top-start"
+        width={200}
+        onContextMenu={(e) => {
+          e.preventDefault();
+        }}
+      >
+        {link ? (
+          <>
+            <Menu.Item
+              icon={ExternalLink}
+              onSelect={() => window.open(link, '_blank', 'noopener,noreferrer')}
             >
-              <Icon className="h-4 w-4" />
-            </button>
-          ))}
-        </div>
-      ))}
-    </div>
+              Open Link
+            </Menu.Item>
+            <Menu.Item
+              icon={ClipboardCopy}
+              onSelect={() => {
+                navigator.clipboard.writeText(link).catch((error: unknown) => {
+                  console.warn('Clipboard write failed', error);
+                });
+              }}
+            >
+              Copy Link Address
+            </Menu.Item>
+            <Menu.Divider />
+          </>
+        ) : null}
+        {onSchedule && (
+          <>
+            <Menu.Item icon={Clock} disabled={!canSchedule} onSelect={onSchedule}>
+              Schedule prompt…
+            </Menu.Item>
+            <Menu.Divider />
+          </>
+        )}
+        {EDIT_ROWS.map(([icon, label, action, shortcut, needsSelection]) => (
+          <Menu.Item
+            key={action}
+            icon={icon}
+            disabled={needsSelection && !menu?.hasSelection}
+            onSelect={() => {
+              onEdit(action);
+            }}
+          >
+            {label}
+            <Menu.Shortcut>{shortcut}</Menu.Shortcut>
+          </Menu.Item>
+        ))}
+        <Menu.Divider />
+        {FORMAT_GROUPS.map((group, index) => (
+          <div key={index} className="grid grid-cols-5">
+            {group.map(([icon, name, action, shortcut]) => (
+              <Menu.Item
+                key={action}
+                icon={icon}
+                aria-label={name}
+                title={shortcut ? `${name}  ${shortcut}` : name}
+                className="justify-center"
+                onSelect={() => {
+                  onFormat(action);
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </Menu>
+    </>
   );
 }
