@@ -15,6 +15,7 @@ import { formatDuration } from '../../lib/tools';
 import type { FeedItem } from '../chatFeed';
 import { DiffCard } from '../DiffView';
 import { Caret, Expand } from './primitives';
+import { Button } from '../ui/Button';
 import { hasPendingCall, renderToolEvents, summarizeTools } from './rows';
 
 /* ── One run of tool calls at the configured density. Compact folds the run to
@@ -63,15 +64,15 @@ export function ToolGroupItem({
       >
         <Caret open={open} />
         {inFlight ? (
-          <span className="shimmer-text text-[13px] font-medium">{summary}</span>
+          <span className="shimmer-text text-body-strong">{summary}</span>
         ) : (
-          <span className="text-[13px] text-muted group-hover:text-secondary transition-colors">
+          <span className="text-body text-muted group-hover:text-secondary transition-colors">
             {summary}
           </span>
         )}
       </button>
       <Expand open={open}>
-        <div className={`mt-2 pl-[18px] ${rows}`}>
+        <div className={`mt-2 pl-5 ${rows}`}>
           {renderToolEvents(events, sessionLive, false, onOpenReviewFile)}
         </div>
       </Expand>
@@ -102,12 +103,12 @@ export function WorkedGroup({
         className="group flex min-w-0 items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        <span className="shrink-0 text-[13px] text-secondary">
+        <span className="shrink-0 text-body text-secondary">
           {item.durationMs >= 1000 ? `Worked for ${formatDuration(item.durationMs)}` : 'Worked'}
         </span>
       </button>
       <Expand open={open}>
-        <div className="mt-3 space-y-2.5 border-l border-divider pl-[17px]">{children}</div>
+        <div className="mt-3 space-y-2.5 pl-5">{children}</div>
       </Expand>
     </div>
   );
@@ -171,18 +172,24 @@ export function DiffGroup({
         className="group flex w-full min-w-0 items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        <span className="min-w-0 truncate text-[13px] font-medium text-muted group-hover:text-secondary">
+        <span className="min-w-0 truncate text-body-strong text-muted group-hover:text-secondary">
           {label}
         </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: 'var(--diff-add-fg)' }}>
+        <span
+          className="shrink-0 text-caption tabular-nums"
+          style={{ color: 'var(--diff-add-fg)' }}
+        >
           +{added}
         </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: 'var(--diff-del-fg)' }}>
+        <span
+          className="shrink-0 text-caption tabular-nums"
+          style={{ color: 'var(--diff-del-fg)' }}
+        >
           −{removed}
         </span>
       </button>
       <Expand open={open}>
-        <div className="mt-2 space-y-2.5 border-l border-divider pl-[17px]">
+        <div className="mt-2 space-y-2.5 pl-5">
           {shown.map((c) => (
             <DiffCard
               key={c.event.id}
@@ -202,16 +209,16 @@ export function DiffGroup({
             />
           ))}
           {canRevealMore && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setDisclosure((current) => revealNextDiffCards(current, changes.length));
               }}
-              className="rounded-sm px-1.5 py-0.5 text-[12px] text-muted transition-colors hover:bg-elevated/60 hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
             >
               Show next {revealCount} {revealCount === 1 ? 'edit' : 'edits'} ({hiddenCount}{' '}
               remaining)
-            </button>
+            </Button>
           )}
         </div>
       </Expand>

@@ -14,16 +14,6 @@
   "src/components/AppLoadingSurface.tsx": {
     "arbitrary-value": 1
   },
-  "src/components/AskUserInline.tsx": {
-    "arbitrary-value": 12,
-    "border-width": 8
-  },
-  "src/components/ChatView.tsx": {
-    "arbitrary-value": 17,
-    "border-width": 6,
-    "focus-ring": 1,
-    "uppercase": 1
-  },
   "src/components/ColorPicker.tsx": {
     "arbitrary-value": 9,
     "border-width": 18,
@@ -37,8 +27,7 @@
     "arbitrary-value": 2
   },
   "src/components/ConversationTimeline.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 2
+    "arbitrary-value": 1
   },
   "src/components/DiffView.tsx": {
     "arbitrary-value": 11,
@@ -65,21 +54,6 @@
     "border-width": 20,
     "uppercase": 3
   },
-  "src/components/Markdown.tsx": {
-    "arbitrary-value": 17,
-    "border-width": 6,
-    "uppercase": 1
-  },
-  "src/components/MarkdownCode.tsx": {
-    "arbitrary-value": 7
-  },
-  "src/components/MarkdownDiagrams.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/components/MarkdownTable.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 7
-  },
   "src/components/McpServerForm.tsx": {
     "arbitrary-value": 20,
     "border-width": 13,
@@ -88,10 +62,6 @@
   },
   "src/components/McpServersSettings.tsx": {
     "border-width": 2
-  },
-  "src/components/MessageFeed.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 6
   },
   "src/components/MissionControl.tsx": {
     "arbitrary-value": 50,
@@ -117,14 +87,6 @@
   "src/components/PaletteShell.tsx": {
     "arbitrary-value": 7,
     "palette-color": 1
-  },
-  "src/components/PermissionInline.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 7
-  },
-  "src/components/PlanApprovalInline.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 7
   },
   "src/components/RightPanel.tsx": {
     "arbitrary-value": 8,
@@ -161,12 +123,6 @@
     "arbitrary-value": 3,
     "border-width": 5,
     "uppercase": 1
-  },
-  "src/components/StreamingCaret.tsx": {
-    "arbitrary-value": 4
-  },
-  "src/components/SubagentStreamPreview.tsx": {
-    "arbitrary-value": 3
   },
   "src/components/SubagentsPanel.tsx": {
     "arbitrary-value": 8
@@ -363,10 +319,6 @@
   "src/components/media/viewerChrome.tsx": {
     "arbitrary-value": 1
   },
-  "src/components/messageFeedRows.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
   "src/components/modelListParts.tsx": {
     "arbitrary-value": 2
   },
@@ -447,47 +399,8 @@
     "border-width": 4,
     "focus-ring": 2
   },
-  "src/components/transcript/ChildSessionLine.tsx": {
-    "arbitrary-value": 7
-  },
-  "src/components/transcript/ClampedBlock.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 3
-  },
-  "src/components/transcript/LinkBadge.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/transcript/ProseFileLink.tsx": {
-    "arbitrary-value": 8,
-    "focus-ring": 1
-  },
-  "src/components/transcript/ResponseActions.tsx": {
-    "arbitrary-value": 2
-  },
   "src/components/transcript/UserBubble.tsx": {
-    "arbitrary-value": 8,
-    "border-width": 3
-  },
-  "src/components/transcript/commandCard.tsx": {
-    "arbitrary-value": 8,
-    "border-width": 6
-  },
-  "src/components/transcript/groups.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 4,
-    "focus-ring": 1
-  },
-  "src/components/transcript/primitives.tsx": {
-    "arbitrary-value": 17,
-    "uppercase": 2
-  },
-  "src/components/transcript/rows.tsx": {
-    "arbitrary-value": 16,
-    "border-width": 2
-  },
-  "src/components/transcript/webCards.tsx": {
-    "arbitrary-value": 11,
-    "border-width": 2
+    "arbitrary-value": 3
   },
   "src/components/ui/Field.tsx": {
     "border-width": 2
@@ -667,10 +580,6 @@
   "src/features/pull-requests/components/PrWorkspaceEmpty.tsx": {
     "arbitrary-value": 7,
     "focus-ring": 4
-  },
-  "src/features/transcript-reach/TranscriptReachBar.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 10
   },
   "src/features/voice/VoiceMiniBar.tsx": {
     "arbitrary-value": 9,
