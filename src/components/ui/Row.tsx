@@ -73,7 +73,7 @@ export function Row({
       onClick={onClick}
       className={cn(
         layout,
-        'group cursor-default select-none transition-colors duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-40',
+        'group select-none transition-colors duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-40',
         active ? 'bg-active' : 'enabled:hover:bg-elevated',
         className,
       )}
