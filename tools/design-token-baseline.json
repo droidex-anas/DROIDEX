@@ -14,10 +14,6 @@
   "src/components/AppLoadingSurface.tsx": {
     "arbitrary-value": 1
   },
-  "src/components/AskUserInline.tsx": {
-    "arbitrary-value": 12,
-    "border-width": 8
-  },
   "src/components/AutonomySelector.tsx": {
     "arbitrary-value": 8,
     "border-width": 2
@@ -113,14 +109,6 @@
   "src/components/PaletteShell.tsx": {
     "arbitrary-value": 7,
     "palette-color": 1
-  },
-  "src/components/PermissionInline.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 7
-  },
-  "src/components/PlanApprovalInline.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 7
   },
   "src/components/PromptInput.tsx": {
     "arbitrary-value": 12,
@@ -707,10 +695,6 @@
   "src/features/pull-requests/components/PrWorkspaceEmpty.tsx": {
     "arbitrary-value": 7,
     "focus-ring": 4
-  },
-  "src/features/transcript-reach/TranscriptReachBar.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 10
   },
   "src/features/voice/VoiceMiniBar.tsx": {
     "arbitrary-value": 9,
