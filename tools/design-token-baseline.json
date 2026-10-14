@@ -386,23 +386,8 @@
   "src/components/files/FilePreviewPane.tsx": {
     "palette-color": 2
   },
-  "src/components/media/GeneratedImageCard.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/components/media/ImageAttachmentChip.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 5
-  },
   "src/components/media/ImageLightboxContent.tsx": {
-    "arbitrary-value": 9,
-    "palette-color": 1
-  },
-  "src/components/media/TranscriptImage.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 5
-  },
-  "src/components/media/viewerChrome.tsx": {
-    "arbitrary-value": 1
+    "arbitrary-value": 5
   },
   "src/components/messageFeedRows.tsx": {
     "arbitrary-value": 1,
