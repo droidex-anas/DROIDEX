@@ -359,25 +359,8 @@
   "src/components/modelListParts.tsx": {
     "arbitrary-value": 2
   },
-  "src/components/sidechats/SideChatDetail.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/components/sidechats/SideChatHarnessPicker.tsx": {
-    "arbitrary-value": 1,
-    "focus-ring": 1
-  },
-  "src/components/sidechats/SideChatHeader.tsx": {
-    "focus-ring": 1
-  },
-  "src/components/sidechats/SideChatHome.tsx": {
-    "arbitrary-value": 1
-  },
   "src/components/sidechats/SideChatPane.tsx": {
-    "arbitrary-value": 4
-  },
-  "src/components/sidechats/SideChatRestoreButton.tsx": {
-    "arbitrary-value": 1,
-    "focus-ring": 1
+    "arbitrary-value": 1
   },
   "src/components/skeletons/WorkspaceSkeletons.tsx": {
     "arbitrary-value": 1,

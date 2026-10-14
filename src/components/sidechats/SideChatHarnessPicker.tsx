@@ -48,7 +48,7 @@ export function SideChatHarnessPicker({
         onClick={() => {
           setOpen((current) => !current);
         }}
-        className={`flex h-7 max-w-full items-center gap-1.5 rounded-md px-2 text-[12px] text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+        className={`flex h-7 max-w-full items-center gap-1.5 rounded-md px-2 text-label text-secondary transition-colors hover:bg-elevated hover:text-primary ${
           open ? 'bg-elevated text-primary' : ''
         }`}
       >
