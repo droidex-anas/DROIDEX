@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import { useRef, useEffect, useEffectEvent, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { X, FileText } from '@droidex/icons';
 import { pushEscapeLayer } from './ui/escapeStack';
@@ -88,6 +88,9 @@ export function SpecModal({
 
   // Dialog contract: Escape closes through the shared LIFO layer stack, Tab
   // stays inside, and focus returns to the opener when the dialog closes.
+  // Tied to `open` only, so a caller's new `onClose` on a rerender neither
+  // refocuses the panel nor moves its Escape layer above a later one.
+  const close = useEffectEvent(onClose);
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -98,13 +101,15 @@ export function SpecModal({
       focusInside = panel?.contains(document.activeElement) ?? false;
     };
     document.addEventListener('focusin', track);
-    const popEscape = pushEscapeLayer(onClose);
+    const popEscape = pushEscapeLayer(() => {
+      close();
+    });
     return () => {
       document.removeEventListener('focusin', track);
       popEscape();
       if (focusInside && opener?.isConnected) opener.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return (
     <AnimatePresence>
