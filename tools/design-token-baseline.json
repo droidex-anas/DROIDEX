@@ -49,12 +49,6 @@
     "border-width": 2,
     "uppercase": 1
   },
-  "src/components/FeedbackModal.tsx": {
-    "arbitrary-value": 33,
-    "border-width": 20,
-    "palette-color": 3,
-    "uppercase": 1
-  },
   "src/components/HardwareAccelerationSetting.tsx": {
     "arbitrary-value": 7,
     "border-width": 5,
@@ -196,11 +190,6 @@
   "src/components/WorktreeCreatedCard.tsx": {
     "arbitrary-value": 2,
     "border-width": 2
-  },
-  "src/components/WorktreeRemovalDialog.tsx": {
-    "arbitrary-value": 16,
-    "border-width": 6,
-    "palette-color": 7
   },
   "src/components/WorktreeSettingsRow.tsx": {
     "border-width": 2
@@ -406,11 +395,6 @@
   },
   "src/components/onboarding/steps/SystemStep.tsx": {
     "arbitrary-value": 3
-  },
-  "src/components/sidechats/SideChatCloseDialog.tsx": {
-    "arbitrary-value": 6,
-    "focus-ring": 1,
-    "palette-color": 5
   },
   "src/components/sidechats/SideChatDetail.tsx": {
     "arbitrary-value": 6
