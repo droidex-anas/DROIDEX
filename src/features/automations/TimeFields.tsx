@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 const NUMBER_FIELD =
-  'h-8 rounded-md border border-divider bg-bg/70 px-2 text-center text-[13px] tabular-nums text-primary outline-none transition-colors focus:border-divider-strong focus:bg-bg';
+  'h-control-md rounded-md bg-field px-2 text-center text-body tabular-nums text-primary outline-none transition-colors';
 
 export function AutomationTimeInput({
   value,
@@ -63,7 +63,7 @@ export function AutomationTimeInput({
         }}
         className={`${NUMBER_FIELD} w-11`}
       />
-      <span className="text-[13px] text-muted">:</span>
+      <span className="text-muted">:</span>
       <input
         ref={minuteRef}
         value={minute}
@@ -116,7 +116,7 @@ export function AutomationMinuteInput({
 
   return (
     <div className="inline-flex items-center gap-2">
-      <span className="text-[12px] text-muted">minute</span>
+      <span className="text-label text-muted">minute</span>
       <input
         value={text}
         inputMode="numeric"
@@ -194,7 +194,7 @@ export function AutomationDateInput({
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur();
       }}
-      className={`${NUMBER_FIELD} w-[112px]`}
+      className={`${NUMBER_FIELD} w-28`}
     />
   );
 }

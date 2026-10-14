@@ -47,8 +47,8 @@ export function ThreadReportNotice({ reports }: { reports: readonly ThreadReport
   );
 }
 
-// MessageBody's markdown sets 14px text at 1.6 leading.
-const BUBBLE_LINE_PX = 22.4;
+// MessageBody's markdown uses the text-prose token: 14px on a 22px line.
+const BUBBLE_LINE_PX = 22;
 
 function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string; index: number }) {
   const provider = useStoreSelector((state) =>
@@ -62,25 +62,29 @@ function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string
       data-testid="thread-message"
       // A row that just arrived pops its bubbles in one after another.
       style={{ '--bubble-index': index } as CSSProperties}
-      className="thread-bubble flex items-start gap-2.5 pr-[12%]"
+      className="thread-bubble flex items-start gap-2.5 pr-12"
     >
       <span
         role="img"
         aria-label={provider ? `${PROVIDER_LABELS[provider]} thread` : 'Thread'}
+        // eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat report/instruction: marks the speaker
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-divider bg-surface"
       >
         {provider ? (
           <ModelIcon provider={PROVIDER_MARKS[provider]} size={14} />
         ) : (
-          <MessageSquareText className="h-3.5 w-3.5 text-muted" />
+          <MessageSquareText className="size-icon-sm text-muted" />
         )}
       </span>
       <div className="min-w-0">
-        <p className="flex min-w-0 items-baseline gap-1.5 pb-1 pl-1 pt-1 text-[12px] leading-5">
-          <span className="truncate font-medium text-primary">{from.name}</span>
+        <p className="flex min-w-0 items-baseline gap-1.5 pb-1 pl-1 pt-1 text-label">
+          <span className="truncate text-primary">{from.name}</span>
           <span className={`shrink-0 ${asks ? 'text-warning' : 'text-muted'}`}>{from.action}</span>
         </p>
-        <div className="rounded-xl rounded-tl-sm border border-divider bg-bg px-3.5 py-2.5 text-[13px] leading-6 text-secondary">
+        <div
+          // eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat report/instruction: marks the speaker
+          className="rounded-xl rounded-tl-sm border border-divider bg-bg px-3.5 py-2.5 text-body text-secondary"
+        >
           <ClampedBlock lines={8} lineHeightPx={BUBBLE_LINE_PX} fade="from-bg via-bg/90">
             <MessageBody text={text} live={false} cacheId={`thread-message:${from.threadId}`} />
           </ClampedBlock>
@@ -104,9 +108,13 @@ function NoticeCard({
   testId?: string;
 }) {
   return (
-    <div data-testid={testId} className="rounded-xl border border-divider bg-surface/35 px-4 py-3">
-      <p className="text-[12px] font-medium text-muted">{lead}</p>
-      <div className="mt-1.5 text-[13px] leading-6 text-secondary">
+    <div
+      data-testid={testId}
+      // eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat report/instruction: marks the speaker
+      className="rounded-xl border border-divider bg-surface/35 px-4 py-3"
+    >
+      <p className="text-label text-muted">{lead}</p>
+      <div className="mt-1.5 text-body text-secondary">
         <MessageBody text={text} live={false} cacheId={cacheId} />
       </div>
     </div>

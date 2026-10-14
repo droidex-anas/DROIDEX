@@ -29,10 +29,6 @@
   "src/components/ConversationTimeline.tsx": {
     "arbitrary-value": 1
   },
-  "src/components/DiffView.tsx": {
-    "arbitrary-value": 11,
-    "border-width": 4
-  },
   "src/components/EditorOpenMenu.tsx": {
     "arbitrary-value": 7,
     "border-width": 2,
@@ -89,8 +85,7 @@
     "palette-color": 1
   },
   "src/components/RightPanel.tsx": {
-    "arbitrary-value": 8,
-    "border-width": 2
+    "arbitrary-value": 7
   },
   "src/components/RunningProcessesMenu.tsx": {
     "arbitrary-value": 4,
@@ -109,20 +104,6 @@
   },
   "src/components/SidebarSessionRow.tsx": {
     "border-width": 2
-  },
-  "src/components/SpecModal.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 4,
-    "palette-color": 1
-  },
-  "src/components/SpecOutline.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 9
-  },
-  "src/components/SpecRenderer.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 5,
-    "uppercase": 1
   },
   "src/components/SubagentsPanel.tsx": {
     "arbitrary-value": 8
@@ -179,61 +160,6 @@
   "src/components/chat.tsx": {
     "arbitrary-value": 3,
     "border-width": 2
-  },
-  "src/components/environment/BranchMenu.tsx": {
-    "arbitrary-value": 13,
-    "border-width": 4,
-    "uppercase": 2
-  },
-  "src/components/environment/CommitSheet.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/components/environment/CreatePrSheet.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/components/environment/DiffBody.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/components/environment/DiffFileSection.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 4
-  },
-  "src/components/environment/DiffStat.tsx": {
-    "arbitrary-value": 4
-  },
-  "src/components/environment/EnvironmentSection.tsx": {
-    "arbitrary-value": 2
-  },
-  "src/components/environment/GitActionsBar.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 2
-  },
-  "src/components/environment/GithubSetupCard.tsx": {
-    "arbitrary-value": 12,
-    "border-width": 10,
-    "focus-ring": 4
-  },
-  "src/components/environment/ReviewPanel.tsx": {
-    "arbitrary-value": 18,
-    "border-width": 8,
-    "palette-color": 1
-  },
-  "src/components/environment/StartBranchMenu.tsx": {
-    "arbitrary-value": 18,
-    "border-width": 4,
-    "uppercase": 2
-  },
-  "src/components/environment/StartInBar.tsx": {
-    "arbitrary-value": 12,
-    "border-width": 2
-  },
-  "src/components/environment/WorktreeMenu.tsx": {
-    "arbitrary-value": 13,
-    "border-width": 2,
-    "uppercase": 2
-  },
-  "src/components/environment/primitives.tsx": {
-    "arbitrary-value": 4
   },
   "src/components/files/FilePreviewPane.tsx": {
     "palette-color": 2
@@ -313,104 +239,6 @@
   },
   "src/components/transcript/UserBubble.tsx": {
     "arbitrary-value": 3
-  },
-  "src/components/ui/Field.tsx": {
-    "border-width": 2
-  },
-  "src/features/automations/AnchoredPopover.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
-  "src/features/automations/AutomationEditor.tsx": {
-    "arbitrary-value": 11,
-    "border-width": 13
-  },
-  "src/features/automations/AutomationList.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
-  "src/features/automations/AutomationModelPicker.tsx": {
-    "arbitrary-value": 12,
-    "border-width": 13,
-    "focus-ring": 2,
-    "uppercase": 1
-  },
-  "src/features/automations/AutomationProposalCard.tsx": {
-    "arbitrary-value": 14,
-    "border-width": 12,
-    "uppercase": 1
-  },
-  "src/features/automations/AutomationRow.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 3,
-    "focus-ring": 1
-  },
-  "src/features/automations/AutomationSessionBadge.tsx": {
-    "border-width": 3
-  },
-  "src/features/automations/AutomationsView.tsx": {
-    "arbitrary-value": 19,
-    "border-width": 14
-  },
-  "src/features/automations/ScheduleControls.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 5
-  },
-  "src/features/automations/SchedulePromptPopover.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 4
-  },
-  "src/features/automations/ScheduledPrompts.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2,
-    "palette-color": 2
-  },
-  "src/features/automations/SelectMenu.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 7
-  },
-  "src/features/automations/TimeFields.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 12
-  },
-  "src/features/projects/ProjectPlan.tsx": {
-    "arbitrary-value": 4,
-    "uppercase": 1
-  },
-  "src/features/projects/ProjectThreads.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 4
-  },
-  "src/features/projects/ProjectsIntro.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 10
-  },
-  "src/features/projects/ProjectsRoute.tsx": {
-    "arbitrary-value": 11,
-    "border-width": 5
-  },
-  "src/features/projects/ThreadDetail.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2
-  },
-  "src/features/projects/ThreadList.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 7
-  },
-  "src/features/projects/ThreadNoticeCards.tsx": {
-    "arbitrary-value": 5,
-    "border-width": 6
-  },
-  "src/features/projects/ThreadRow.tsx": {
-    "arbitrary-value": 5,
-    "border-width": 2
-  },
-  "src/features/projects/ThreadSpawnLine.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/features/projects/ThreadsWaiting.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 2
   },
   "src/features/pull-requests/PullRequestsView.tsx": {
     "arbitrary-value": 1
