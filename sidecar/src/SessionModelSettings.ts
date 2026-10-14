@@ -36,6 +36,11 @@ interface Dependencies {
   ) => Promise<void>;
   refreshPrimary: (live: LiveSession, modelChanged: boolean) => Promise<void>;
   onPrimaryModelChanged: (summary: SessionSummary, modelSwitch: ModelSwitch) => Promise<void>;
+  updateChildAgentModel: (
+    appSessionId: string,
+    agent: Exclude<ConfigurableSessionRole, 'primary'>,
+    effectiveModelId: string,
+  ) => Promise<boolean>;
   onSettled: (appSessionId: string) => void;
   emitError: (error: SettingsError) => void;
 }
@@ -171,6 +176,20 @@ export class SessionModelSettings {
         if (!isCurrent()) return false;
         if (!restart) await this.applyProvider(summary, live, agent, runtimeSettings, isCurrent);
         if (!isCurrent()) return false;
+        if (agent !== 'primary' && changes.modelId !== undefined) {
+          if (!selection.modelId)
+            throw new Error(`No effective ${agent} model is available for live child sessions.`);
+          const childrenUpdated = await this.d.updateChildAgentModel(
+            appSessionId,
+            agent,
+            selection.modelId,
+          );
+          if (!childrenUpdated)
+            throw new Error(
+              `Some live ${agent} child sessions could not update. Retry the model change to update those sessions.`,
+            );
+          if (!isCurrent()) return false;
+        }
         await this.persistAccepted(summary, live, agent, selection);
         if (!isCurrent()) return false;
         if (restart) live.restartBeforeNextTurn = true;

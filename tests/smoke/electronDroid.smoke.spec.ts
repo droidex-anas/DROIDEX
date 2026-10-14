@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -22,7 +22,7 @@ import {
   type Page,
 } from '@playwright/test';
 
-import { resolveDroidPath } from '../../sidecar/src/Environment.ts';
+import { hasCliLogin, resolveDroidPath } from '../../sidecar/src/Environment.ts';
 import { BRIDGE_PROTOCOL_VERSION } from '../../src/types/bridge.ts';
 
 type SmokeResult = { appSessionId: string; assistantText: string };
@@ -312,9 +312,14 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
     return new Promise<SmokeResult>((resolve, reject) => {
       const clientRef = `e1-${Date.now()}`;
       let appSessionId = '';
+      let providerSessionId = '';
       let assistantText = '';
       let settled = false;
       let closeSent = false;
+      let lastEventType = 'none';
+      let streaming = false;
+      let turnStarted = false;
+      let textEvents = 0;
       const sendSessionClose = () => {
         if (!appSessionId || closeSent || ws.readyState !== WebSocket.OPEN) return;
         closeSent = true;
@@ -337,7 +342,16 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
         if (error) reject(error);
         else resolve({ appSessionId, assistantText });
       };
-      const timer = window.setTimeout(() => settle(new Error('E1 timed out')), 120_000);
+      const timer = window.setTimeout(
+        () =>
+          settle(
+            new Error(
+              `E1 timed out (created=${Boolean(appSessionId)}, assistantChars=${assistantText.length}, streaming=${streaming}, closeSent=${closeSent}, lastEvent=${lastEventType})`,
+            ),
+          ),
+        120_000,
+      );
+      ws.onclose = () => settle(new Error('E1 bridge closed before the round trip completed'));
       ws.onopen = () => {
         if (settled) return;
         try {
@@ -375,6 +389,11 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
         for (const entry of entries) {
           if (!entry || typeof entry !== 'object' || !('event' in entry)) continue;
           const value = entry.event as Record<string, unknown>;
+          lastEventType = String(value.type);
+          if (value.type === 'approval.requested' || value.type === 'question.requested') {
+            settle(new Error(`E1 unexpectedly required interaction: ${value.type}`));
+            return;
+          }
           if (value.type === 'error') {
             settle(new Error(String(value.message ?? 'E1 sidecar error')));
             return;
@@ -382,8 +401,10 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
           if (value.type === 'session.created' && value.clientRef === clientRef) {
             const session = value.session as Record<string, unknown>;
             appSessionId = String(session.appSessionId ?? '');
+            providerSessionId = String(session.providerSessionId ?? '');
             if (
               !appSessionId ||
+              !providerSessionId ||
               session.sessionPurpose !== 'chat' ||
               session.interactionMode !== 'auto' ||
               session.autonomy !== 'off' ||
@@ -394,6 +415,12 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
           }
           if (value.type === 'event.appended') {
             const transcript = value.event as Record<string, unknown>;
+            if (transcript.appSessionId === appSessionId && transcript.kind === 'text')
+              textEvents += 1;
+            if (transcript.appSessionId === appSessionId && transcript.kind === 'error') {
+              settle(new Error(String(transcript.text ?? 'E1 provider error')));
+              return;
+            }
             if (
               transcript.appSessionId === appSessionId &&
               transcript.sourceSessionId === appSessionId &&
@@ -408,6 +435,16 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
           }
           if (value.type === 'session.updated') {
             const session = value.session as Record<string, unknown>;
+            if (session.appSessionId === appSessionId) {
+              streaming = session.streaming === true;
+              turnStarted ||= streaming;
+              if (turnStarted && !streaming && !assistantText.trim()) {
+                settle(
+                  new Error(`E1 turn ended without assistant text (textEvents=${textEvents})`),
+                );
+                return;
+              }
+            }
             if (
               session.appSessionId === appSessionId &&
               session.streaming === false &&
@@ -417,21 +454,162 @@ async function runRoundTrip(page: Page): Promise<SmokeResult> {
               sendSessionClose();
             continue;
           }
-          if (value.type === 'sessions.list' && closeSent) settle();
+          if (value.type === 'session.closed' && value.appSessionId === appSessionId && closeSent)
+            settle();
         }
       };
     });
   }, BRIDGE_PROTOCOL_VERSION);
 }
 
-test('[E1] Authenticated desktop round trip', async () => {
+// Exercise the real Mission Control daemon without starting an autonomous mission.
+// Exact live-child compaction and provider-failure behavior are covered through
+// SessionManager's public commands in compactionLifecycle/childSettingsRaces.
+async function runMissionControlSettingsSmoke(page: Page): Promise<void> {
+  await page.evaluate(async (bridgeProtocol) => {
+    const { port, token } = await window.droidControl!.bridgeInfo();
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${port}?token=${encodeURIComponent(token)}&bridgeProtocol=${bridgeProtocol}`,
+    );
+    await new Promise<void>((resolve, reject) => {
+      const clientRef = `mc-smoke-${Date.now()}`;
+      let appSessionId = '';
+      let models: string[] = [];
+      let compactionTokenLimit: unknown;
+      let stage: 'catalog' | 'create' | 'worker' | 'validator' | 'close' = 'catalog';
+      let settled = false;
+      const send = (command: Record<string, unknown>) => socket.send(JSON.stringify(command));
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        if (error && appSessionId && stage !== 'close' && socket.readyState === WebSocket.OPEN)
+          send({ type: 'session.close', appSessionId });
+        socket.close();
+        if (error) reject(error);
+        else resolve();
+      };
+      const timeout = window.setTimeout(
+        () => finish(new Error(`Mission Control smoke timed out at ${stage}`)),
+        45_000,
+      );
+      socket.onerror = () => finish(new Error('Mission Control bridge failed'));
+      socket.onclose = () => finish(new Error('Mission Control bridge closed before completion'));
+      socket.onopen = () => send({ type: 'catalog.models' });
+      socket.onmessage = ({ data }) => {
+        const wire = JSON.parse(data);
+        const entries = wire.type === 'events.batch' ? wire.events : [{ event: wire }];
+        for (const { event } of entries) {
+          if (event.type === 'error') {
+            finish(new Error(String(event.message)));
+            return;
+          }
+          if (
+            stage === 'catalog' &&
+            event.type === 'catalog.updated' &&
+            event.catalog === 'models'
+          ) {
+            models = event.items.map((model: { id: string }) => model.id);
+            if (models.length < 2) {
+              finish(new Error('Mission Control smoke requires two catalog models'));
+              return;
+            }
+            stage = 'create';
+            send({
+              type: 'session.create',
+              clientRef,
+              title: 'Mission Control settings smoke',
+              goal: '',
+              sessionPurpose: 'mission-control',
+              interactionMode: 'auto',
+              autonomy: 'off',
+              modelId: models[0],
+              workerModel: models[0],
+              validatorModel: models[0],
+              compactionTokenLimit: 100_000,
+            });
+          }
+          if (
+            stage === 'create' &&
+            event.type === 'session.created' &&
+            event.clientRef === clientRef
+          ) {
+            const session = event.session;
+            appSessionId = session.appSessionId;
+            compactionTokenLimit = session.compactionTokenLimit;
+            if (
+              !appSessionId ||
+              session.sessionPurpose !== 'mission-control' ||
+              session.streaming ||
+              typeof compactionTokenLimit !== 'number'
+            ) {
+              finish(new Error('Mission Control creation or compaction contract drift'));
+              return;
+            }
+            stage = 'worker';
+            send({
+              type: 'settings.agent.update',
+              appSessionId,
+              agent: 'worker',
+              modelId: models[1],
+            });
+          }
+          if (event.type === 'session.updated' && event.session.appSessionId === appSessionId) {
+            const session = event.session;
+            if (
+              session.modelId !== models[0] ||
+              session.compactionTokenLimit !== compactionTokenLimit
+            ) {
+              finish(new Error('Role settings changed the primary model or compaction limit'));
+              return;
+            }
+            if (stage === 'worker' && session.workerModelId === models[1]) {
+              if (session.validatorModelId !== models[0]) {
+                finish(new Error('Worker settings changed the validator'));
+                return;
+              }
+              stage = 'validator';
+              send({
+                type: 'settings.agent.update',
+                appSessionId,
+                agent: 'validator',
+                modelId: models[1],
+              });
+            } else if (stage === 'validator' && session.validatorModelId === models[1]) {
+              if (session.workerModelId !== models[1]) {
+                finish(new Error('Validator settings changed the worker'));
+                return;
+              }
+              stage = 'close';
+              send({ type: 'session.close', appSessionId });
+            }
+          }
+          if (
+            stage === 'close' &&
+            event.type === 'session.closed' &&
+            event.appSessionId === appSessionId
+          )
+            finish();
+        }
+      };
+    });
+  }, BRIDGE_PROTOCOL_VERSION);
+}
+
+test('[E1] Authenticated desktop round trip and Mission Control settings', async () => {
   const { FACTORY_API_KEY: apiKey, ...childEnv } = process.env;
   assert.equal(
     process.env.RUN_AUTHENTICATED_DROID_SMOKE,
     '1',
     'run npm run test:smoke:electron-droid',
   );
-  assert.ok(apiKey, 'FACTORY_API_KEY is required');
+  const authMode = process.env.DROIDEX_SMOKE_AUTH ?? 'api-key';
+  assert.ok(
+    authMode === 'api-key' || authMode === 'cli',
+    'DROIDEX_SMOKE_AUTH must be api-key or cli',
+  );
+  if (authMode === 'api-key') assert.ok(apiKey, 'FACTORY_API_KEY is required for api-key mode');
+  else assert.ok(hasCliLogin(), 'Sign in with droid before running CLI-authenticated smoke');
   for (const artifact of ['dist/index.html', 'sidecar/dist/sidecar.mjs', 'electron/main.cjs'])
     assert.ok(existsSync(artifact), `missing ${artifact}`);
   const droidPath = resolveDroidPath();
@@ -452,12 +630,14 @@ test('[E1] Authenticated desktop round trip', async () => {
   const bootstrapUrl = createPreloadOnlyBootstrapUrl();
   const launchEnv = {
     ...childEnv,
-    HOME: home,
-    USERPROFILE: home,
+    // CLI login uses the existing home/keychain explicitly; app data stays isolated.
+    HOME: authMode === 'cli' ? homedir() : home,
+    USERPROFILE: authMode === 'cli' ? homedir() : home,
     XDG_CONFIG_HOME: profile.config,
     XDG_DATA_HOME: profile.data,
     APPDATA: profile.roamingAppData,
     LOCALAPPDATA: profile.localAppData,
+    DROIDEX_USER_DATA_DIR: profile.userData,
     // Claude Code's updater installs into XDG_DATA_HOME and links the launcher
     // to it; from this profile that would leave the launcher dangling once the
     // profile is deleted.
@@ -496,15 +676,18 @@ test('[E1] Authenticated desktop round trip', async () => {
     await verifySidecarReadyProof(sidecarReadyProof, bridge);
     await verifyOwnedBridge(page, bridge);
 
-    await page.evaluate(async (key) => {
-      await window.droidControl!.setApiKey(key);
-      await window.droidControl!.setOnboarding({
-        completed: false,
-        cliAutoUpdate: false,
-        harnessCliAutoUpdate: false,
-        appAutoUpdate: false,
-      });
-    }, apiKey);
+    await page.evaluate(
+      async (key) => {
+        if (key) await window.droidControl!.setApiKey(key);
+        await window.droidControl!.setOnboarding({
+          completed: false,
+          cliAutoUpdate: false,
+          harnessCliAutoUpdate: false,
+          appAutoUpdate: false,
+        });
+      },
+      authMode === 'api-key' ? apiKey : undefined,
+    );
     const rendererUrl = pathToFileURL(path.resolve('dist', 'index.html')).href;
     await page.goto(rendererUrl);
     assert.equal(page.url(), rendererUrl, 'E1 did not navigate to the built renderer.');
@@ -512,8 +695,10 @@ test('[E1] Authenticated desktop round trip', async () => {
     await page.getByRole('button', { name: /^Continue/ }).click();
     await expect(page.getByText("You're signed in.")).toBeVisible();
     await page.getByRole('button', { name: /^Continue/ }).click();
+    await expect(page.getByRole('heading', { name: 'Make it yours.', exact: true })).toBeVisible();
     await page.getByRole('button', { name: /^Continue/ }).click();
-    await page.getByRole('button', { name: /Start using DROIDEX/i }).click();
+    await expect(page.getByRole('heading', { name: "You're all set.", exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Start building', exact: true }).click();
     const onboarding = JSON.parse(
       readFileSync(path.join(userData, 'onboarding.json'), 'utf8'),
     ) as Record<string, unknown>;
@@ -525,13 +710,14 @@ test('[E1] Authenticated desktop round trip', async () => {
       },
       { completed: true, cliAutoUpdate: false, appAutoUpdate: false },
     );
+    await runMissionControlSettingsSmoke(page);
     const result = await runRoundTrip(page);
     expect(result.assistantText.trim()).toBe('E1_OK');
   } finally {
     try {
       await app?.close();
     } finally {
-      rmSync(home, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   }
 });

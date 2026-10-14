@@ -402,6 +402,144 @@ test('Stop reaches the parent and child providers while the daemon compacts them
   }
 });
 
+test('role model changes retune only the matching live child sessions', async () => {
+  const h = createSessionManagerTestContext({
+    defaults: {
+      modelId: 'model-default',
+      workerModelId: 'model-worker-default',
+      validatorModelId: 'model-validator-default',
+      interactionMode: 'auto',
+      autonomy: 'low',
+    },
+  });
+  const parent = new FakeFactorySession('provider-1', {}, h.calls);
+  const worker = new FakeFactorySession('worker-c5', {}, h.calls);
+  const validator = new FakeFactorySession('validator-c5', {}, h.calls);
+  parent.setInitModel('model-parent-loaded');
+  worker.setInitModel('model-worker-loaded');
+  validator.setInitModel('model-validator-loaded');
+  h.runtime.createQueue.push(parent);
+  h.runtime.loadQueue.set('worker-c5', [worker]);
+  h.runtime.loadQueue.set('validator-c5', [validator]);
+
+  try {
+    await h.create({
+      sessionPurpose: 'mission-control',
+      clientRef: 'c5',
+      title: 'C5',
+      goal: 'go',
+      interactionMode: 'agi',
+      autonomy: 'low',
+      modelId: 'model-parent-effective',
+      workerModel: 'model-worker-fallback',
+      validatorModel: 'model-validator-fallback',
+    });
+    await h.waitForIdle();
+    h.history.seedChildSessions([
+      {
+        parentAppSessionId: 'provider-1',
+        childSessionId: 'worker-logical-c5',
+        providerSessionId: 'worker-c5',
+        role: 'worker',
+        status: 'paused',
+        modelId: 'model-worker-loaded',
+        transcriptAvailable: true,
+        updatedAt: Date.now(),
+      },
+      {
+        parentAppSessionId: 'provider-1',
+        childSessionId: 'validator-logical-c5',
+        providerSessionId: 'validator-c5',
+        role: 'validator',
+        status: 'paused',
+        modelId: 'model-validator-loaded',
+        transcriptAvailable: true,
+        updatedAt: Date.now(),
+      },
+    ]);
+    await h.handle({
+      type: 'child.open',
+      parentAppSessionId: 'provider-1',
+      childSessionId: 'worker-logical-c5',
+      requestId: 'open-worker-c5',
+    });
+    await h.handle({
+      type: 'child.open',
+      parentAppSessionId: 'provider-1',
+      childSessionId: 'validator-logical-c5',
+      requestId: 'open-validator-c5',
+    });
+
+    await h.handle({
+      type: 'settings.compaction.update',
+      compactionTokenLimit: 400,
+      compactionTokenLimitPerModel: {
+        'model-parent-effective': 100,
+        'model-default': 260,
+        'model-worker-loaded': 200,
+        'model-worker-new': 250,
+        'model-worker-default': 260,
+        'model-validator-loaded': 300,
+        'model-validator-new': 350,
+        'model-worker-fallback': 201,
+        'model-validator-fallback': 301,
+      },
+    });
+    const compactionWrites = (id: string) =>
+      h.provider
+        .session(id)
+        .settings.filter((settings) => settings['compactionThresholdCheckEnabled'] === true);
+    const latestCompactionLimit = (id: string) =>
+      compactionWrites(id).at(-1)?.['compactionTokenLimit'];
+    assert.equal(latestCompactionLimit('provider-1'), 100);
+    assert.equal(latestCompactionLimit('worker-c5'), 200);
+    assert.equal(latestCompactionLimit('validator-c5'), 300);
+
+    const parentCompactions = compactionWrites('provider-1').length;
+    const validatorCompactions = compactionWrites('validator-c5').length;
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'worker',
+      modelId: 'model-worker-new',
+    });
+    assert.equal(latestCompactionLimit('worker-c5'), 250);
+    assert.equal(compactionWrites('provider-1').length, parentCompactions);
+    assert.equal(compactionWrites('validator-c5').length, validatorCompactions);
+
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'worker',
+      modelId: null,
+    });
+    assert.equal(latestCompactionLimit('worker-c5'), 260);
+
+    const workerCompactions = compactionWrites('worker-c5').length;
+    parent.nextUpdateSettingsError = new Error('role default rejected');
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'validator',
+      modelId: 'model-validator-new',
+    });
+    assert.equal(compactionWrites('worker-c5').length, workerCompactions);
+    assert.equal(compactionWrites('validator-c5').length, validatorCompactions);
+
+    await h.handle({
+      type: 'settings.agent.update',
+      appSessionId: 'provider-1',
+      agent: 'validator',
+      modelId: 'model-validator-new',
+    });
+    assert.equal(latestCompactionLimit('validator-c5'), 350);
+    assert.equal(compactionWrites('provider-1').length, parentCompactions);
+    assert.equal(compactionWrites('worker-c5').length, workerCompactions);
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('a learned context window retunes with the 80% ceiling', async () => {
   const h = createSessionManagerTestContext();
   const custom = new FakeFactorySession('provider-1', {}, h.calls, {
