@@ -66,7 +66,7 @@ export function ViewportMenu({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className={`${OVER_PAGE_CHIP} gap-2 px-3 text-[12px] text-muted hover:text-secondary aria-expanded:text-secondary`}
+        className={`${OVER_PAGE_CHIP} gap-2 px-3 text-label text-muted hover:text-secondary aria-expanded:text-secondary`}
       >
         <span className="tabular-nums text-primary">{size(mode)}</span>
         <span>{VIEWPORT_LABELS[mode]}</span>
@@ -93,7 +93,7 @@ export function ViewportMenu({
             animate={{ opacity: 1, x: menuX, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: menuX, y: 8, scale: 0.98 }}
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute bottom-full z-50 mb-2 w-[220px] overflow-hidden rounded-xl border border-divider/60 bg-raised p-1.5 shadow-lg ${
+            className={`absolute bottom-full z-popover mb-2 w-55 overflow-hidden rounded-lg bg-raised p-1.5 shadow-lg ${
               menuAlign === 'end' ? 'right-0' : 'left-1/2'
             }`}
           >
@@ -115,20 +115,20 @@ export function ViewportMenu({
                     buttonRef.current?.focus();
                     if (!selected) onSelect(choice);
                   }}
-                  className={`flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
                     selected ? 'bg-surface' : 'hover:bg-surface/60'
                   }`}
                 >
                   <span
-                    className={`flex-1 text-[13px] ${
-                      selected ? 'font-medium text-primary' : 'text-secondary'
+                    className={`flex-1 ${
+                      selected ? 'text-body-strong text-primary' : 'text-body text-secondary'
                     }`}
                   >
                     {VIEWPORT_LABELS[choice]}
                   </span>
-                  <span className="text-[11px] tabular-nums text-muted">{size(choice)}</span>
+                  <span className="text-caption tabular-nums text-muted">{size(choice)}</span>
                   <Check
-                    className={`h-3.5 w-3.5 shrink-0 text-accent ${selected ? '' : 'invisible'}`}
+                    className={`size-icon-sm shrink-0 text-accent ${selected ? '' : 'invisible'}`}
                     strokeWidth={2.6}
                   />
                 </button>
