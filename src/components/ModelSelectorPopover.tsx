@@ -154,7 +154,7 @@ export default function ModelSelectorPopover({
                         setAgent(a.kind);
                       }}
                       className={`flex-1 truncate rounded-md px-2 py-1.5 text-label transition-colors ${
-                        on ? 'bg-raised text-primary shadow-sm' : 'text-muted hover:text-secondary'
+                        on ? 'bg-raised text-primary' : 'text-muted hover:text-secondary'
                       }`}
                     >
                       {a.label}

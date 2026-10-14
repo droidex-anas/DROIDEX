@@ -2396,7 +2396,7 @@ export default function PromptInput({
         {/* No stroke at rest or in focus: focus lifts the fill a touch with a
             translucent layer over the elevated rung (raised on light; text on
             dark, where raised is the elevated rung). */}
-        <div className="relative z-10 rounded-xl bg-elevated shadow-sm focus-within:bg-gradient-to-b focus-within:from-raised/60 focus-within:to-raised/60 dark:focus-within:from-text/5 dark:focus-within:to-text/5">
+        <div className="relative z-10 rounded-xl bg-elevated focus-within:bg-gradient-to-b focus-within:from-raised/60 focus-within:to-raised/60 dark:focus-within:from-text/5 dark:focus-within:to-text/5">
           {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
               {designMarks.map((mark) => (

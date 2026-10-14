@@ -9,8 +9,7 @@ import {
   AUTONOMY_LABELS,
   AUTONOMY_LEVELS,
 } from '../lib/autonomy';
-import { navigationIndex } from './ui/menuKeys';
-import { Popover } from './ui/Popover';
+import { Menu } from './ui/Menu';
 
 // One glyph per mode, reading left to right as the permissions open up.
 const AUTONOMY_GLYPHS = {
@@ -62,24 +61,13 @@ export default function AutonomySelector({
     setOpen(false);
   };
 
-  // Arrows walk the levels and each level's number picks it.
-  const onMenuKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (/^[1-9]$/.test(e.key)) {
-      const level = AUTONOMY_LEVELS.at(Number(e.key) - 1);
-      if (level) {
-        e.preventDefault();
-        choose(level);
-      }
-      return;
-    }
-    const options = Array.from(
-      e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
-    );
-    const current = options.findIndex((option) => option === document.activeElement);
-    const next = navigationIndex(e.key, current, options.length);
-    if (next === null) return;
+  // Each level's number picks it; Menu owns the arrows and type-ahead.
+  const pickByNumber = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!/^[1-9]$/.test(e.key)) return;
+    const level = AUTONOMY_LEVELS.at(Number(e.key) - 1);
+    if (!level) return;
     e.preventDefault();
-    options[next].focus();
+    choose(level);
   };
 
   const inactive = disabled || pending;
@@ -116,91 +104,81 @@ export default function AutonomySelector({
         <span>{AUTONOMY_LABELS[value]}</span>
       </button>
 
-      <Popover
+      <Menu
         open={open}
         onClose={() => {
           setOpen(false);
         }}
         anchorRef={buttonRef}
         label="Autonomy"
-        role="menu"
         placement={placement}
         width={320}
-        onKeyDown={onMenuKey}
-        className="overflow-y-auto p-1.5"
+        onKeyDown={pickByNumber}
       >
-        <AutonomyMenu scope={scope} value={value} provider={provider} onSelect={choose} />
-      </Popover>
+        <Menu.Label className="flex items-center justify-between gap-3">
+          <span>Autonomy</span>
+          {SCOPE_CAPTIONS[scope] && (
+            <span className="truncate text-caption text-muted">{SCOPE_CAPTIONS[scope]}</span>
+          )}
+        </Menu.Label>
+        {AUTONOMY_LEVELS.map((level, i) => (
+          <Menu.Item
+            key={level}
+            role="menuitemradio"
+            aria-checked={level === value}
+            onSelect={() => {
+              choose(level);
+            }}
+          >
+            <AutonomyRow
+              level={level}
+              number={i + 1}
+              selected={level === value}
+              provider={provider}
+            />
+          </Menu.Item>
+        ))}
+      </Menu>
     </>
   );
 }
 
-// The levels with their consequences: a caption, then every level with its
-// description. A check marks the active level and each row's number is its
-// keyboard shortcut. Exported on its own so the content renders without
-// opening the popover.
-export function AutonomyMenu({
-  scope,
-  value,
+// One level with its description; the chosen one also says what it means on
+// this harness. A check marks it, and the number is the row's shortcut.
+function AutonomyRow({
+  level,
+  number,
+  selected,
   provider,
-  onSelect,
 }: {
-  scope: AutonomyScope;
-  value: Autonomy;
+  level: Autonomy;
+  number: number;
+  selected: boolean;
   provider?: ProviderKind;
-  onSelect: (level: Autonomy) => void;
 }) {
+  const Mark = AUTONOMY_GLYPHS[level];
+  const consequence = selected ? autonomyConsequence(provider, level) : undefined;
   return (
-    <>
-      <div className="flex select-none items-center justify-between gap-3 px-2 pb-1 pt-1.5">
-        <span className="text-label text-muted">Autonomy</span>
-        {SCOPE_CAPTIONS[scope] && (
-          <span className="truncate text-caption text-muted">{SCOPE_CAPTIONS[scope]}</span>
+    <span className="flex min-w-0 flex-1 items-start gap-2">
+      <Mark
+        className={`mt-0.5 size-icon-sm shrink-0 ${selected ? 'text-secondary' : 'text-muted'}`}
+        strokeWidth={GLYPH_STROKE}
+      />
+      <span className="min-w-0 flex-1">
+        <span
+          className={`block ${selected ? 'text-body-strong text-primary' : 'text-body text-secondary'}`}
+        >
+          {AUTONOMY_LABELS[level]}
+        </span>
+        <span className="block text-caption text-muted">{AUTONOMY_DESCRIPTIONS[level]}</span>
+        {consequence && (
+          <span className="mt-1 block text-caption text-secondary">{consequence}</span>
         )}
-      </div>
-      {AUTONOMY_LEVELS.map((level, i) => {
-        const selected = level === value;
-        const Mark = AUTONOMY_GLYPHS[level];
-        const consequence = selected ? autonomyConsequence(provider, level) : undefined;
-        return (
-          <button
-            key={level}
-            type="button"
-            role="menuitemradio"
-            aria-checked={selected}
-            autoFocus={selected}
-            onClick={() => {
-              onSelect(level);
-            }}
-            onPointerMove={(e) => {
-              e.currentTarget.focus({ preventScroll: true });
-            }}
-            className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none focus:bg-elevated dark:focus:bg-active"
-          >
-            <Mark
-              className={`mt-0.5 size-icon-sm shrink-0 ${selected ? 'text-secondary' : 'text-muted'}`}
-              strokeWidth={GLYPH_STROKE}
-            />
-            <span className="min-w-0 flex-1">
-              <span
-                className={`block ${selected ? 'text-body-strong text-primary' : 'text-body text-secondary'}`}
-              >
-                {AUTONOMY_LABELS[level]}
-              </span>
-              <span className="block text-caption text-muted">{AUTONOMY_DESCRIPTIONS[level]}</span>
-              {consequence && (
-                <span className="mt-1 block text-caption text-secondary">{consequence}</span>
-              )}
-            </span>
-            {selected && (
-              <Check className="mt-0.5 size-icon-sm shrink-0 text-accent" strokeWidth={2.6} />
-            )}
-            <span className="mt-0.5 w-3 shrink-0 text-right text-overline tabular-nums text-muted">
-              {i + 1}
-            </span>
-          </button>
-        );
-      })}
-    </>
+      </span>
+      {selected && <Check className="mt-0.5 size-icon-sm shrink-0 text-accent" strokeWidth={2.6} />}
+      <span className="mt-0.5 w-3 shrink-0 text-right text-overline tabular-nums text-muted">
+        {number}
+      </span>
+    </span>
   );
 }

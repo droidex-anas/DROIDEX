@@ -80,7 +80,7 @@ export function Popover({
     track();
     // Nothing inside took focus (an autoFocus input, a menu): move it in so
     // the first Tab is trapped rather than walking out of the portal. Items
-    // out of the tab order (a menu's) wait for the keyboard or pointer.
+    // out of the tab order are skipped; Menu focuses its own.
     if (!focusInsideRef.current) {
       const first = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).find(
         (element) => element.tabIndex >= 0,
