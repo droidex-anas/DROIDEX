@@ -46,6 +46,7 @@ export default tseslint.config(
       'benchmark-runs/',
       'benchmarks/',
       'public/',
+      'reports/',
       'tools/**/*',
       '!tools/**/',
       ...TEST_FILES.map((pattern) => `!tools/${pattern}`),

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Download, ImageOff, Minus, Plus } from '@droidex/icons';
 import { wrapTabFocus } from '../../lib/focusTrap';
+import { pushEscapeLayer } from '../ui/escapeStack';
 import { downloadImage } from './downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from './imageViewerMotion';
 import { useZoomPan, ZOOM_STEP } from './useZoomPan';
@@ -68,14 +69,22 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
     };
   }, []);
 
+  // Escape closes only the topmost layer: a spec behind this viewer stays
+  // open, and the viewer's unmount returns focus to the image inside it. The
+  // layer is pushed once per mount so a caller's new `onClose` on a rerender
+  // does not move it above a later layer such as a focused toast.
+  const close = useEffectEvent(onClose);
+  useEffect(
+    () =>
+      pushEscapeLayer(() => {
+        close();
+      }),
+    [],
+  );
+
   // Capture keys before the page behind the dialog can handle them.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-        return;
-      }
       if (!failed && (e.key === '+' || e.key === '=')) {
         e.preventDefault();
         zoomBy(ZOOM_STEP);
@@ -97,7 +106,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [failed, onClose, reset, zoomBy]);
+  }, [failed, reset, zoomBy]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
