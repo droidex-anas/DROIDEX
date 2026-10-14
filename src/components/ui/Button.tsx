@@ -34,6 +34,8 @@ interface ButtonBaseProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: IconComponent | ReactNode;
   /** Classes for the label span, such as a width cap or responsive hiding. */
   labelClassName?: string;
+  /** Lets the button shrink in a crowded row, truncating its label. */
+  shrinkable?: boolean;
 }
 
 // Icon-only buttons have no visible label, so they must name themselves.
@@ -51,6 +53,7 @@ export function Button({
   loading = false,
   icon: Icon,
   labelClassName,
+  shrinkable = false,
   type = 'button',
   className,
   children,
@@ -68,8 +71,9 @@ export function Button({
       data-loading={loading || undefined}
       {...rest}
       className={cn(
-        'relative inline-flex shrink-0 select-none items-center justify-center gap-1.5 transition duration-150 ease-out',
+        'relative inline-flex select-none items-center justify-center gap-1.5 transition duration-150 ease-out',
         'enabled:active:scale-97 enabled:active:duration-75 disabled:cursor-not-allowed disabled:opacity-40',
+        !shrinkable && 'shrink-0',
         shape === 'round' ? 'rounded-full' : 'rounded-md',
         iconOnly ? SIZE[size].square : SIZE[size].text,
         VARIANT[variant],

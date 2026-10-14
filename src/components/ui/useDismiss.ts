@@ -1,55 +1,67 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  type RefObject,
+} from 'react';
 import { pushEscapeLayer } from './escapeStack';
 
-// Open layers, each stamped with the order it first opened. A layer opened
-// from inside another (a picker in a popover form) portals to the body, so
-// it is outside its parent's DOM; a press in any layer that opened no
-// earlier still counts as inside the parent. The stamp is assigned once, so
-// an effect re-run never re-dates a parent after the child it opened.
-const openLayers: RefObject<HTMLElement | null>[] = [];
-const layerOrder = new WeakMap<object, number>();
-let nextOrder = 0;
+type LayerRef = RefObject<HTMLElement | null>;
 
-function orderOf(layer: RefObject<HTMLElement | null>): number {
-  let order = layerOrder.get(layer);
-  if (order === undefined) {
-    order = nextOrder++;
-    layerOrder.set(layer, order);
+// The open layer a nested layer opens from. A picker inside a popover form
+// portals to the body, outside its parent's DOM, so a press in it only counts
+// as inside the parent through this registry of open child layers.
+export const DismissLayerContext = createContext<LayerRef | null>(null);
+const openChildLayers = new WeakMap<LayerRef, Set<LayerRef>>();
+
+function pressedInside(layer: LayerRef, target: Node): boolean {
+  if (layer.current?.contains(target)) return true;
+  for (const child of openChildLayers.get(layer) ?? []) {
+    if (pressedInside(child, target)) return true;
   }
-  return order;
-}
-
-function pressedInLayerFrom(layer: RefObject<HTMLElement | null>, target: Node): boolean {
-  const from = orderOf(layer);
-  return openLayers.some((open) => orderOf(open) >= from && open.current?.contains(target));
+  return false;
 }
 
 // Closes a floating layer on Escape (through the shared stack) or on a press
-// outside it, and returns the ref for the layer's container. A press on
-// `anchorRef` is not outside: the trigger toggles the layer itself.
+// outside it and its open child layers, and returns the ref for the layer's
+// container. A press on `anchorRef` is not outside: the trigger toggles the
+// layer itself.
 export function useDismiss<T extends HTMLElement = HTMLDivElement>(
   open: boolean,
   onClose: () => void,
   anchorRef?: RefObject<HTMLElement | null>,
 ) {
   const ref = useRef<T>(null);
+  const parent = useContext(DismissLayerContext);
+  // Registration follows `open` only: re-registering when `onClose` changes
+  // identity would move a parent above the child it just opened on the
+  // Escape stack.
+  const close = useEffectEvent(onClose);
   useEffect(() => {
     if (!open) return;
-    orderOf(ref);
-    openLayers.push(ref);
+    let siblings: Set<LayerRef> | undefined;
+    if (parent) {
+      siblings = openChildLayers.get(parent) ?? new Set();
+      openChildLayers.set(parent, siblings);
+      siblings.add(ref);
+    }
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (!ref.current || anchorRef?.current?.contains(target)) return;
-      if (pressedInLayerFrom(ref, target)) return;
-      onClose();
+      if (pressedInside(ref, target)) return;
+      close();
     };
-    const pop = pushEscapeLayer(onClose);
+    const pop = pushEscapeLayer(() => {
+      close();
+    });
     window.addEventListener('mousedown', onDown);
     return () => {
       window.removeEventListener('mousedown', onDown);
-      openLayers.splice(openLayers.indexOf(ref), 1);
+      siblings?.delete(ref);
       pop();
     };
-  }, [open, onClose, anchorRef]);
+  }, [open, anchorRef, parent]);
   return ref;
 }

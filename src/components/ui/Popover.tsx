@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom';
 import { useMergeRefs, type Placement } from '@floating-ui/react';
 import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { cn } from './cn';
-import { useDismiss } from './useDismiss';
+import { DismissLayerContext, useDismiss } from './useDismiss';
 import { usePopoverPosition } from './usePopoverPosition';
 
 export interface PopoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
@@ -116,7 +116,7 @@ export function Popover({
           className,
         )}
       >
-        {children}
+        <DismissLayerContext.Provider value={panelRef}>{children}</DismissLayerContext.Provider>
       </div>
     </div>,
     document.body,

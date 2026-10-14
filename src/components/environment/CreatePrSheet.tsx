@@ -1,8 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Check, ChevronDown } from '@droidex/icons';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Field';
-import { Popover } from '../ui/Popover';
+import { Menu } from '../ui/Menu';
 import { createPullRequest } from '../../lib/github';
 import { baseDescriptor, gitPush, stripRemotePrefix } from '../../lib/git';
 import { openExternal } from '../../lib/onboarding';
@@ -144,34 +144,29 @@ export function CreatePrSheet({
             className={`size-icon-sm transition-transform ${pickingBase ? 'rotate-180' : ''}`}
           />
         </button>
-        <Popover
+        <Menu
           open={pickingBase}
-          onClose={useCallback(() => {
+          onClose={() => {
             setPickingBase(false);
-          }, [])}
+          }}
           anchorRef={baseRef}
           label="Base branch"
           placement="bottom-start"
           style={{ minWidth: baseMinWidth }}
+          className="max-h-40"
         >
-          <div className="max-h-32 overflow-y-auto p-1">
-            {baseOptions.map((option) => (
-              <button
-                key={option}
-                onClick={() => {
-                  setBase(option);
-                  setPickingBase(false);
-                }}
-                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-body text-secondary hover:bg-elevated dark:hover:bg-active hover:text-primary"
-              >
-                <span className="flex-1 truncate">{option}</span>
-                {option === base && (
-                  <Check aria-hidden="true" className="size-icon-sm text-accent" />
-                )}
-              </button>
-            ))}
-          </div>
-        </Popover>
+          {baseOptions.map((option) => (
+            <Menu.Item
+              key={option}
+              onSelect={() => {
+                setBase(option);
+              }}
+            >
+              <span className="flex-1 truncate">{option}</span>
+              {option === base && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
+            </Menu.Item>
+          ))}
+        </Menu>
       </div>
       <div className="flex items-center justify-between">
         <label className="flex cursor-pointer items-center gap-1.5 text-label text-secondary">

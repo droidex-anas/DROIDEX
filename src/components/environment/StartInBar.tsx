@@ -150,6 +150,7 @@ export function StartInBar({
           size="sm"
           icon={<FolderPlus className="size-icon-sm" />}
           labelClassName="max-w-36"
+          shrinkable
           title="Project: Open folder…"
           aria-label="Project: Open folder…"
           onClick={() => void openFolder()}
@@ -167,6 +168,7 @@ export function StartInBar({
         size="sm"
         icon={<FolderGit className="size-icon-sm" />}
         labelClassName="max-w-36"
+        shrinkable
         title={`Project: ${workspaceName(repoRoot)}`}
         aria-label={`Project: ${workspaceName(repoRoot)}`}
         aria-expanded={repoOpen}
@@ -238,6 +240,7 @@ export function StartInBar({
               )
             }
             labelClassName="max-w-36"
+            shrinkable
             title={`Work in: ${workLocationLabel}`}
             aria-label={`Work in: ${workLocationLabel}`}
             aria-expanded={locOpen}
@@ -332,6 +335,7 @@ export function StartInBar({
             size="sm"
             icon={<BranchGlyph className="size-icon-sm" />}
             labelClassName="max-w-36"
+            shrinkable
             title={`Branch: ${draft.branch ?? env.branch ?? 'detached'}`}
             aria-label={`Branch: ${draft.branch ?? env.branch ?? 'detached'}`}
             aria-expanded={branchOpen}
