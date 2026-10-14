@@ -58,7 +58,7 @@ export function AgentsWorkspace({
 
   if (childSessions.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-muted">
+      <div className="flex h-full items-center justify-center px-6 text-center text-body text-muted">
         This chat has not started any agents.
       </div>
     );
