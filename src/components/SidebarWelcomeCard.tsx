@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
-import { X } from 'lucide-react';
-import { SquarePen } from '@droidex/icons';
+import { SquarePen, X } from '@droidex/icons';
+import { Button } from './ui/Button';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -32,42 +32,31 @@ export function SidebarWelcomeCard({
       transition={{ duration: 0.22, ease: EASE }}
       className="mb-2 overflow-hidden"
     >
-      <div className="relative overflow-hidden rounded-xl border border-divider bg-raised shadow-lg">
-        {/* Visual: nebula artwork melting into the card body — a multi-stop
-            blend instead of a hard edge, slightly enriched so the color carries,
-            with a soft top scrim keeping the dismiss button legible. */}
+      <div className="relative overflow-hidden rounded-xl bg-raised shadow-lg">
+        {/* Visual: nebula artwork melting into the card body, a multi-stop
+            blend instead of a hard edge. */}
         <div className="relative h-28 overflow-hidden">
-          <img
-            src={WELCOME_IMAGE_URL}
-            alt=""
-            className="h-full w-full scale-105 object-cover saturate-[1.2]"
-          />
+          <img src={WELCOME_IMAGE_URL} alt="" className="h-full w-full scale-105 object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-elevated via-elevated/35 to-transparent" />
-          <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/45 to-transparent" />
         </div>
 
         <div className="relative -mt-6 px-3.5 pb-3">
-          <span className="text-[13px] font-semibold text-primary">Welcome to DROIDEX</span>
-          <p className="mt-1 text-[12px] leading-snug text-muted">
+          <span className="text-body-strong text-primary">Welcome to DROIDEX</span>
+          <p className="mt-1 text-body text-muted">
             Chats, workspaces and missions live here. Start a chat and put Droid to work.
           </p>
-          <button
-            type="button"
-            onClick={onStart}
-            className="mt-2.5 flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
-          >
-            <SquarePen className="h-3.5 w-3.5" />
+          <Button variant="primary" size="sm" icon={SquarePen} onClick={onStart} className="mt-2.5">
             Start a chat
-          </button>
+          </Button>
         </div>
 
         <button
           type="button"
           aria-label="Dismiss"
           onClick={onDismiss}
-          className="absolute right-2 top-2 rounded-sm bg-black/35 p-1 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/55 hover:text-white"
+          className="absolute right-2 top-2 rounded-sm bg-raised/70 p-1 text-secondary backdrop-blur-sm transition-colors hover:bg-raised hover:text-primary"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="size-icon-sm" />
         </button>
       </div>
     </motion.div>

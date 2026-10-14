@@ -6,6 +6,7 @@ import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
 import { formatChord } from '../../lib/shortcuts';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { Button } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
@@ -247,10 +248,10 @@ const TabList = memo(function TabList() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className={`group relative flex h-7 w-[200px] min-w-[120px] items-center rounded-md transition-colors ${
+              className={`group relative flex h-control-sm w-52 min-w-32 items-center rounded-md transition-colors ${
                 active
-                  ? 'bg-elevated/60 text-primary'
-                  : 'text-muted hover:bg-elevated/40 hover:text-primary'
+                  ? 'bg-active text-primary'
+                  : 'text-muted hover:bg-elevated hover:text-primary'
               }`}
             >
               <Tooltip label={item.title} placement="bottom" className="h-full min-w-0 flex-1">
@@ -278,19 +279,19 @@ const TabList = memo(function TabList() {
                   }}
                   // A background tab's label takes the close button's room
                   // until the button shows.
-                  className={`flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md pl-2.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+                  className={`flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md pl-2.5 text-left ${
                     active ? 'pr-7' : 'pr-2.5 group-focus-within:pr-7 group-hover:pr-7'
                   }`}
                 >
-                  <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                  <span className="flex size-icon-sm shrink-0 items-center justify-center">
                     <TabGlyph item={item} />
                   </span>
-                  <span className={`truncate text-[13px] ${active ? 'font-medium' : ''}`}>
+                  <span className={`truncate ${active ? 'text-body-strong' : 'text-body'}`}>
                     {item.label}
                   </span>
                   {item.tileCount > 1 && (
-                    <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] text-muted">
-                      <Columns className="h-3 w-3" />
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5 text-caption text-muted">
+                      <Columns className="size-3" />
                       <span aria-hidden="true">{item.tileCount}</span>
                       <span className="sr-only">, {item.tileCount} panes side by side</span>
                     </span>
@@ -315,11 +316,11 @@ const TabList = memo(function TabList() {
                       stripRef.current?.contains(document.activeElement) ?? false;
                     close(item.id);
                   }}
-                  className={`flex h-5 w-5 items-center justify-center rounded-sm text-muted transition-[opacity,color,background-color] hover:bg-active hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 ${
+                  className={`flex size-5 items-center justify-center rounded-sm text-muted transition hover:bg-active hover:text-primary focus-visible:opacity-100 ${
                     active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                   }`}
                 >
-                  <X className="h-3 w-3" />
+                  <X className="size-3" />
                 </button>
               </Tooltip>
             </Reorder.Item>
@@ -327,16 +328,15 @@ const TabList = memo(function TabList() {
         })}
       </Reorder.Group>
       <Tooltip label={`New tab (${formatChord(newTabChord)})`} placement="bottom">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={Plus}
           aria-label="New tab"
           onClick={() => {
             dispatch({ type: 'OPEN_NEW_CHAT_TAB' });
           }}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/40"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
+        />
       </Tooltip>
     </>
   );

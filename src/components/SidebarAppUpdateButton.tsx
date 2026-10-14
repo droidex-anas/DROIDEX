@@ -22,7 +22,7 @@ export function SidebarAppUpdateButton() {
 // pill. The open width is measured from the rendered label rather than guessed,
 // so "Update" and "Downloading" each get an exact fit at any UI font size.
 const RESTING_SIZE = 20;
-const LABEL_INSET = 9;
+const LABEL_INSET = 8;
 // The label fades out before its text swaps, so the pill never shows the new
 // word sliding in from the old one's position.
 const LABEL_SWAP_MS = 90;
@@ -104,15 +104,15 @@ export function AppUpdateButtonView({
       data-open={open}
       data-swapping={swapping}
       style={{ width: open ? openWidth : RESTING_SIZE }}
-      className="update-pill relative h-5 shrink-0 cursor-pointer overflow-hidden rounded-full bg-update text-white enabled:hover:bg-update-hover disabled:bg-update-hover"
+      className="update-pill relative mr-3 h-5 shrink-0 cursor-pointer overflow-hidden rounded-full bg-update text-on-update enabled:hover:bg-update-hover disabled:bg-update-hover"
     >
       <span className="update-pill-icon absolute inset-0 grid place-items-center">
         <Download size={13} strokeWidth={2} />
       </span>
       <span
         ref={labelRef}
-        className={`update-pill-label absolute inset-y-0 flex items-center whitespace-nowrap pr-[9px] text-[11px] font-semibold tracking-[0.01em] ${
-          downloading ? 'left-[9px]' : 'right-0'
+        className={`update-pill-label absolute inset-y-0 flex items-center whitespace-nowrap pr-2 text-caption font-semibold ${
+          downloading ? 'left-2' : 'right-0'
         }`}
       >
         {label}

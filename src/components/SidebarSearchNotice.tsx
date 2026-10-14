@@ -16,14 +16,14 @@ export default function SidebarSearchNotice({
 
   if (layout === 'inline') {
     return (
-      <div role="status" data-testid={testId} className="px-2.5 py-2 text-[12px] text-muted">
+      <div role="status" data-testid={testId} className="px-2.5 py-2 text-caption text-muted">
         {message}
       </div>
     );
   }
 
   return (
-    <div role="status" data-testid={testId} className="px-4 py-8 text-center text-sm text-muted">
+    <div role="status" data-testid={testId} className="px-4 py-8 text-center text-body text-muted">
       {message}
     </div>
   );

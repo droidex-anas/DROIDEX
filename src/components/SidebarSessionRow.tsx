@@ -1,6 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
-import { MoreHorizontal } from 'lucide-react';
-import { GitFork, Spinner } from '@droidex/icons';
+import { Ellipsis, GitFork, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
 import { opensInNewTab } from '../lib/shortcuts';
@@ -26,7 +25,7 @@ const AutomationSessionBadge = lazy(async () => {
 // Row controls are bare icons: hover brightens the glyph instead of adding a
 // filled square on top of the row's own hover tint.
 const HOVER_ACTION =
-  'absolute top-1/2 -translate-y-1/2 flex w-6 h-6 cursor-pointer items-center justify-center rounded-sm text-muted opacity-0 pointer-events-none transition-[opacity,color] hover:text-primary group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60';
+  'absolute top-1/2 -translate-y-1/2 flex size-6 cursor-pointer items-center justify-center rounded-sm text-muted opacity-0 pointer-events-none transition hover:text-primary group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100';
 
 // A blocked chat cannot move until the user acts, so list rows still mark it.
 const WAITING_ON_USER: ReadonlySet<SessionActivityStatus> = new Set(['approval', 'input', 'plan']);
@@ -215,7 +214,7 @@ export const SessionRow = memo(function SessionRow({
           onBlur={(e) => {
             if (!renameHandled.current) onRenameCommit(session.appSessionId, e.currentTarget.value);
           }}
-          className="min-w-0 flex-1 rounded-sm bg-elevated px-1.5 py-0.5 text-[13px] text-primary ring-1 ring-accent/50 focus:outline-none"
+          className="min-w-0 flex-1 rounded-sm bg-elevated px-1.5 py-0.5 text-body text-primary outline-none ring-1.5 ring-focus-ring"
         />
       </div>
     );
@@ -265,7 +264,7 @@ export const SessionRow = memo(function SessionRow({
     if (WAITING_ON_USER.has(activityStatus)) return <ActivityStatusGlyph status={activityStatus} />;
     if (prIcon) return prIcon;
     if (session.lineage?.kind === 'fork') {
-      return <GitFork className="h-3.5 w-3.5" role="img" aria-label="Forked chat" />;
+      return <GitFork className="size-icon-sm" role="img" aria-label="Forked chat" />;
     }
     return null;
   };
@@ -286,7 +285,7 @@ export const SessionRow = memo(function SessionRow({
     >
       <span
         ref={titleRef}
-        className={`block text-[13px] ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
+        className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
           active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
         } ${unread && !active ? 'font-semibold' : ''}`}
       >
@@ -329,8 +328,8 @@ export const SessionRow = memo(function SessionRow({
           e.preventDefault();
           onMenu(session.appSessionId, { x: e.clientX, y: e.clientY });
         }}
-        className={`w-full flex cursor-pointer ${inbox ? 'items-start py-2.5' : 'items-center py-[7px]'} gap-2.5 pl-3 pr-3 rounded-lg text-left transition-colors ${
-          active ? 'bg-active' : 'hover:bg-elevated/40'
+        className={`flex w-full cursor-pointer ${inbox ? 'items-start py-2.5' : 'items-center py-2'} gap-2.5 rounded-md px-3 text-left transition-colors ${
+          active ? 'bg-active' : 'hover:bg-elevated'
         }`}
       >
         {/* On two-line rows the mark sits in a box the height of the title
@@ -357,7 +356,7 @@ export const SessionRow = memo(function SessionRow({
             </span>
             {/* While the chat works its live activity shimmers across the whole
                 line; otherwise the reason shares it with the time. */}
-            <span className="mt-1 flex min-w-0 items-center gap-2 text-[12px] leading-4 text-muted">
+            <span className="mt-1 flex min-w-0 items-center gap-2 text-caption text-muted">
               <span className={`min-w-0 flex-1 truncate ${working ? 'shimmer-text' : ''}`}>
                 {detail}
               </span>
@@ -371,7 +370,7 @@ export const SessionRow = memo(function SessionRow({
               <AutomationSessionBadge appSessionId={session.appSessionId} />
             </Suspense>
             <span className="ml-1 flex shrink-0 items-center gap-2">
-              <span className={`w-[30px] text-right text-[12px] tabular-nums ${timeTone}`}>
+              <span className={`w-8 text-right text-caption tabular-nums ${timeTone}`}>
                 {timeLabel}
               </span>
               {harnessMark}
@@ -390,7 +389,7 @@ export const SessionRow = memo(function SessionRow({
             e.stopPropagation();
             onToggleSettled(session);
           }}
-          className={`${HOVER_ACTION} inbox-mark-control left-[7px] ${inbox ? 'top-2 translate-y-0' : ''} ${
+          className={`${HOVER_ACTION} inbox-mark-control left-1.5 ${inbox ? 'top-2 translate-y-0' : ''} ${
             settled ? 'hover:text-primary' : 'hover:text-success'
           }`}
         >
@@ -409,9 +408,9 @@ export const SessionRow = memo(function SessionRow({
           const rect = e.currentTarget.getBoundingClientRect();
           onMenu(session.appSessionId, { x: rect.right - SESSION_MENU_WIDTH, y: rect.bottom + 4 });
         }}
-        className={`${HOVER_ACTION} right-[7px] ${inbox ? 'top-2 translate-y-0' : ''}`}
+        className={`${HOVER_ACTION} right-1.5 ${inbox ? 'top-2 translate-y-0' : ''}`}
       >
-        <MoreHorizontal className="w-4 h-4" />
+        <Ellipsis className="size-icon-md" />
       </button>
     </div>
   );

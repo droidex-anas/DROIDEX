@@ -6,10 +6,13 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 // Hover states only apply while enabled, so a disabled button stays still.
+// A ghost toggle that is on (pressed, its menu open, or `data-selected`)
+// brightens its icon instead of taking a fill.
 const VARIANT: Record<ButtonVariant, string> = {
   primary: 'bg-text text-bg enabled:hover:opacity-90',
   secondary: 'bg-elevated text-secondary enabled:hover:bg-active enabled:hover:text-primary',
-  ghost: 'text-muted enabled:hover:bg-elevated enabled:hover:text-secondary',
+  ghost:
+    'text-muted enabled:hover:bg-elevated enabled:hover:text-secondary enabled:aria-pressed:text-primary enabled:aria-expanded:text-primary enabled:data-[selected]:text-primary',
   danger: 'bg-danger-soft text-danger enabled:hover:bg-danger enabled:hover:text-bg',
   success: 'bg-success-soft text-success enabled:hover:bg-success enabled:hover:text-bg',
 };
