@@ -137,7 +137,7 @@ function ThemeColorRow({
       </button>
       {open && (
         <ColorPopover
-          anchor={pillRef.current}
+          anchorRef={pillRef}
           onClose={() => {
             setOpen(false);
           }}

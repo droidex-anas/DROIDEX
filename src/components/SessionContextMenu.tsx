@@ -1,38 +1,27 @@
-import { useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
+import { useRef } from 'react';
 import {
   AppWindow,
   Archive,
+  CircleCheck,
   FileText,
   Folder,
   Link2,
   Pencil,
-  CircleCheck,
   RotateCcw,
 } from 'lucide-react';
+import type { Placement } from '@floating-ui/react';
 import { Copy, GitFork, Pin, PinOff } from '@droidex/icons';
-import { pushEscapeLayer } from './ui/escapeStack';
+import { Menu } from './ui/Menu';
 import { toast } from '../lib/toast';
 import { PROVIDER_LABELS, sessionResumeCommand } from '../features/providers/providerIdentity';
 import type { ProviderKind } from '../types/bridge';
 
-const EASE = [0.16, 1, 0.3, 1] as const;
-export const SESSION_MENU_WIDTH = 220;
-const MENU_MARGIN = 8;
-// Fixed chrome of the panel (padding + divider) plus one row's height. The
-// row count varies with which copy actions are available, so the clamp
-// estimate is computed per-open instead of using a worst-case constant.
-const MENU_CHROME_PX = 18;
-const MENU_ROW_PX = 30;
+const MENU_WIDTH = 220;
 
 // POSIX single-quote: wrap in '...', escaping embedded quotes as '\''. The
 // resume recipe is pasted into a shell, so an unquoted path with spaces (or
 // shell metacharacters) would break or execute unintended text.
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
-
-const itemClass =
-  'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-secondary transition-colors hover:bg-elevated/60 hover:text-primary focus-visible:bg-elevated/60 focus-visible:text-primary focus-visible:outline-none';
 
 // Where the Factory web app renders a synced session. Deep links only resolve
 // for sessions that cloud sync has uploaded (signed-in, non-airgap).
@@ -51,6 +40,9 @@ function copyText(text: string, message: string): void {
 export interface SessionContextMenuProps {
   x: number;
   y: number;
+  // Which way the menu grows from the point: `bottom-start` under a
+  // right-click, `bottom-end` under a row's trailing actions button.
+  placement?: Placement;
   pinned: boolean;
   settled?: boolean;
   onToggleSettled?: () => void;
@@ -77,32 +69,13 @@ export interface SessionContextMenuProps {
 // Action menu for a sidebar chat row (right-click or the hover "..." button).
 // Organization actions (open/pin/rename/archive) are app-level; the copy actions
 // expose the harness's own session so the user can continue it in that
-// harness's official CLI, or for Droid in the Factory web app. The portal + click-away
-// backdrop live here; the panel is separate so tests can render it without a
-// DOM (portals reject fake containers even in SSR).
-export function SessionContextMenu(props: SessionContextMenuProps) {
-  return createPortal(
-    <>
-      {/* Click-away layer; a right-click outside dismisses instead of stacking menus. */}
-      <div
-        className="fixed inset-0 z-[990]"
-        data-testid="session-context-menu-backdrop"
-        onMouseDown={props.onClose}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          props.onClose();
-        }}
-      />
-      {/* The panel suppresses the native context menu so right-clicking an item doesn't stack a browser menu over ours. */}
-      <SessionContextMenuPanel {...props} />
-    </>,
-    document.body,
-  );
-}
-
-export function SessionContextMenuPanel({
+// harness's official CLI, or for Droid in the Factory web app. A zero-size
+// point anchor stands in for the click, so the shared positioning hook places
+// the menu and keeps it inside the window.
+export function SessionContextMenu({
   x,
   y,
+  placement = 'bottom-start',
   pinned,
   settled,
   onToggleSettled,
@@ -118,248 +91,94 @@ export function SessionContextMenuPanel({
   onCopyMarkdown,
   onClose,
 }: SessionContextMenuProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  // Escape uses the shared layer stack so a menu opened over another overlay
-  // closes first; blur and scroll dismiss like a native context menu.
-  useEffect(() => {
-    const pop = pushEscapeLayer(onClose);
-    window.addEventListener('blur', onClose);
-    window.addEventListener('scroll', onClose, true);
-    return () => {
-      pop();
-      window.removeEventListener('blur', onClose);
-      window.removeEventListener('scroll', onClose, true);
-    };
-  }, [onClose]);
-
-  // Keyboard access: focus the first item on open, arrows walk the items, and
-  // Enter/Space activate the focused button natively. On close, focus returns
-  // to the element that opened the menu (WAI-ARIA menu pattern) unless the
-  // user already moved it — e.g. the rename flow's autofocused input, or a
-  // click that focused another control. The opener is captured only once:
-  // StrictMode replays this effect, and by the replay focus already sits on a
-  // menu button, so recapturing would restore focus to a node that unmounts
-  // with the menu.
-  const openerRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (openerRef.current === null) {
-      const active = document.activeElement;
-      if (active instanceof HTMLElement && active !== document.body) openerRef.current = active;
-    }
-    const opener = openerRef.current;
-    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
-    return () => {
-      const focusDiedWithMenu =
-        document.activeElement === null || document.activeElement === document.body;
-      if (opener !== null && opener.isConnected && focusDiedWithMenu) opener.focus();
-    };
-  }, []);
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    e.preventDefault();
-    const items = panelRef.current?.querySelectorAll<HTMLButtonElement>('button');
-    if (!items || items.length === 0) return;
-    // activeElement is a DOM `Element | null`; narrowed only for the indexOf
-    // walk (a non-button simply yields -1 and navigation starts from item 0).
-    const index = [...items].indexOf(document.activeElement as HTMLButtonElement);
-    const next =
-      e.key === 'ArrowDown'
-        ? (index + 1) % items.length
-        : (index - 1 + items.length) % items.length;
-    items[next].focus();
-  };
-
-  // Clamp to the viewport so the menu never opens partly off-screen. The
-  // height estimate counts the rows actually rendered so a short menu doesn't
-  // jump away from the pointer near the bottom edge. SSR (the panel's tests
-  // render with renderToStaticMarkup) has no viewport, so it renders
-  // unclamped; the clamp applies on the client where a window exists.
-  const viewportWidth = typeof window === 'undefined' ? undefined : window.innerWidth;
-  const viewportHeight = typeof window === 'undefined' ? undefined : window.innerHeight;
-  const rowCount =
-    5 + (onFork ? 1 : 0) + (onToggleSettled ? 1 : 0) + (cwd ? 1 : 0) + (providerSessionId ? 2 : 0);
-  const estimatedMenuHeight = MENU_CHROME_PX + rowCount * MENU_ROW_PX;
-  const left =
-    viewportWidth === undefined
-      ? Math.max(MENU_MARGIN, x)
-      : Math.min(
-          Math.max(MENU_MARGIN, x),
-          Math.max(MENU_MARGIN, viewportWidth - SESSION_MENU_WIDTH - MENU_MARGIN),
-        );
-  const top =
-    viewportHeight === undefined
-      ? Math.max(MENU_MARGIN, y)
-      : Math.min(
-          Math.max(MENU_MARGIN, y),
-          Math.max(MENU_MARGIN, viewportHeight - estimatedMenuHeight - MENU_MARGIN),
-        );
-
-  const copyAndClose = (text: string, message: string) => {
-    copyText(text, message);
-    onClose();
-  };
+  const pointRef = useRef<HTMLSpanElement>(null);
 
   return (
-    <motion.div
-      ref={panelRef}
-      role="menu"
-      aria-label="Chat actions"
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.12, ease: EASE }}
-      onKeyDown={onKeyDown}
-      onContextMenu={(e) => {
-        e.preventDefault();
-      }}
-      style={{ position: 'fixed', left, top, width: SESSION_MENU_WIDTH }}
-      className="z-[991] rounded-lg border border-divider bg-surface p-1 shadow-lg"
-    >
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onOpenInTab();
-          onClose();
+    <>
+      <span
+        ref={pointRef}
+        aria-hidden="true"
+        className="pointer-events-none fixed size-0"
+        style={{ left: x, top: y }}
+      />
+      <Menu
+        open
+        onClose={onClose}
+        anchorRef={pointRef}
+        label="Chat actions"
+        placement={placement}
+        width={MENU_WIDTH}
+        // The menu owns the surface, so right-clicking it must not stack the
+        // native browser menu over ours.
+        onContextMenu={(event) => {
+          event.preventDefault();
         }}
-        className={itemClass}
       >
-        <AppWindow className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        Open in new tab
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onTogglePin();
-          onClose();
-        }}
-        className={itemClass}
-      >
-        {pinned ? (
-          <PinOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        ) : (
-          <Pin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+        <Menu.Item icon={AppWindow} onSelect={onOpenInTab}>
+          Open in new tab
+        </Menu.Item>
+        <Menu.Item icon={pinned ? PinOff : Pin} onSelect={onTogglePin}>
+          {pinned ? 'Unpin chat' : 'Pin chat'}
+        </Menu.Item>
+        <Menu.Item icon={Pencil} onSelect={onRename}>
+          Rename chat
+        </Menu.Item>
+        {onFork && (
+          <Menu.Item icon={GitFork} onSelect={onFork}>
+            Fork chat
+          </Menu.Item>
         )}
-        {pinned ? 'Unpin chat' : 'Pin chat'}
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onRename();
-          onClose();
-        }}
-        className={itemClass}
-      >
-        <Pencil className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        Rename chat
-      </button>
-      {onFork && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onFork();
-            onClose();
-          }}
-          className={itemClass}
-        >
-          <GitFork className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          Fork chat
-        </button>
-      )}
-      {onToggleSettled && (
-        <button
-          type="button"
-          role="menuitem"
-          className={itemClass}
-          onClick={() => {
-            onToggleSettled();
-            onClose();
-          }}
-        >
-          {settled ? (
-            <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.5} />
-          ) : (
-            <CircleCheck aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.5} />
-          )}
-          {settled ? 'Reopen task' : 'Mark as settled'}
-        </button>
-      )}
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onArchive();
-          onClose();
-        }}
-        className={itemClass}
-      >
-        <Archive className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        Archive chat
-      </button>
-      <div role="separator" className="mx-1 my-1 h-px bg-divider" />
-      {cwd && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            copyAndClose(cwd, 'Working directory copied.');
-          }}
-          className={itemClass}
-        >
-          <Folder className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          Copy Working Directory
-        </button>
-      )}
-      {resumeSessionId && (
-        <button
-          type="button"
-          role="menuitem"
-          // Sessions are filed per working directory, so the reliable resume
-          // recipe is cd + resume; the toast spells out both, shell-quoted so
-          // a path with spaces pastes back intact.
-          onClick={() => {
-            const command = sessionResumeCommand(provider, shellQuote(resumeSessionId));
-            const resume = cwd ? `cd ${shellQuote(cwd)} && ${command}` : command;
-            copyAndClose(
-              resumeSessionId,
-              `${PROVIDER_LABELS[provider]} session ID copied. Continue in the official CLI: ${resume}`,
-            );
-          }}
-          className={itemClass}
-        >
-          <Copy className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          Copy Session ID
-        </button>
-      )}
-      {provider === 'droid' && providerSessionId && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            copyAndClose(sessionWebLink(providerSessionId), 'Session link copied.');
-          }}
-          className={itemClass}
-        >
-          <Link2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          Copy Session Link
-        </button>
-      )}
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onCopyMarkdown();
-          onClose();
-        }}
-        className={itemClass}
-      >
-        <FileText className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        Copy as Markdown
-      </button>
-    </motion.div>
+        {onToggleSettled && (
+          <Menu.Item icon={settled ? RotateCcw : CircleCheck} onSelect={onToggleSettled}>
+            {settled ? 'Reopen task' : 'Mark as settled'}
+          </Menu.Item>
+        )}
+        <Menu.Item icon={Archive} onSelect={onArchive}>
+          Archive chat
+        </Menu.Item>
+        <Menu.Divider />
+        {cwd && (
+          <Menu.Item
+            icon={Folder}
+            onSelect={() => {
+              copyText(cwd, 'Working directory copied.');
+            }}
+          >
+            Copy Working Directory
+          </Menu.Item>
+        )}
+        {resumeSessionId && (
+          <Menu.Item
+            icon={Copy}
+            // Sessions are filed per working directory, so the reliable resume
+            // recipe is cd + resume; the toast spells out both, shell-quoted so
+            // a path with spaces pastes back intact.
+            onSelect={() => {
+              const command = sessionResumeCommand(provider, shellQuote(resumeSessionId));
+              const resume = cwd ? `cd ${shellQuote(cwd)} && ${command}` : command;
+              copyText(
+                resumeSessionId,
+                `${PROVIDER_LABELS[provider]} session ID copied. Continue in the official CLI: ${resume}`,
+              );
+            }}
+          >
+            Copy Session ID
+          </Menu.Item>
+        )}
+        {provider === 'droid' && providerSessionId && (
+          <Menu.Item
+            icon={Link2}
+            onSelect={() => {
+              copyText(sessionWebLink(providerSessionId), 'Session link copied.');
+            }}
+          >
+            Copy Session Link
+          </Menu.Item>
+        )}
+        <Menu.Item icon={FileText} onSelect={onCopyMarkdown}>
+          Copy as Markdown
+        </Menu.Item>
+      </Menu>
+    </>
   );
 }

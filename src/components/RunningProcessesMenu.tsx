@@ -79,7 +79,7 @@ export function RunningProcessesMenu({
         aria-expanded={open}
         aria-label={label}
         title={label}
-        className={`flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 ${
+        className={`flex shrink-0 items-center gap-1.5 px-2.5 text-caption tabular-nums transition-colors ${
           overPage
             ? `${OVER_PAGE_CHIP} text-muted hover:text-secondary aria-expanded:text-secondary`
             : `rounded-md py-1.5 ${
@@ -89,7 +89,7 @@ export function RunningProcessesMenu({
               }`
         }`}
       >
-        <Globe className="h-3.5 w-3.5" />
+        <Globe className="size-icon-sm" />
         {count}
       </button>
 
@@ -103,13 +103,15 @@ export function RunningProcessesMenu({
         placement="bottom-start"
         width={260}
       >
-        <div className="max-h-[min(70vh,400px)] overflow-y-auto p-1">
+        {/* The shared positioning hook caps the panel at the room left on its
+            side, so the list scrolls inside instead of the window clipping it. */}
+        <div className="min-h-0 overflow-y-auto p-1">
           {processes.map((process) => {
             const port = process.ports.at(0);
             return (
               <div
                 key={process.pid}
-                className="group flex h-8 items-center gap-2 rounded-md px-2 text-[12px] transition-colors hover:bg-elevated/60"
+                className="group flex h-8 items-center gap-2 rounded-md px-2 text-body transition-colors hover:bg-elevated/60"
               >
                 <span className="min-w-0 flex-1 truncate text-primary" title={process.command}>
                   {process.name}
@@ -122,7 +124,7 @@ export function RunningProcessesMenu({
                     absolutely so hover/focus swaps between them without
                     reflowing the row. */}
                 <span className="relative ml-2 h-6 w-14 shrink-0">
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 tabular-nums text-[11px] text-muted transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
+                  <span className="absolute right-0 top-1/2 -translate-y-1/2 tabular-nums text-caption text-muted transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
                     {elapsed(process.startedAt, now)}
                   </span>
                   <span className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-0.5 pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">

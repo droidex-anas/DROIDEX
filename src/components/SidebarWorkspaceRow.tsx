@@ -1,17 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Folder, FolderMinus, FolderOpen, Plus } from '@droidex/icons';
-import { pushEscapeLayer } from './ui/escapeStack';
+import { Menu } from './ui/Menu';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MENU_WIDTH = 200;
-const MENU_MARGIN = 8;
-const MENU_CHROME_PX = 18;
-const MENU_ROW_PX = 30;
-
-const itemClass =
-  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary outline-none transition-colors hover:bg-elevated focus-visible:bg-elevated dark:hover:bg-active dark:focus-visible:bg-active';
 
 function WorkspaceFolderIcon({ open }: { open: boolean }) {
   const reduceMotion = useReducedMotion();
@@ -38,77 +31,8 @@ function WorkspaceFolderIcon({ open }: { open: boolean }) {
   );
 }
 
-export function WorkspaceContextMenuPanel({
-  x,
-  y,
-  name,
-  onRemove,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  name: string;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const pop = pushEscapeLayer(onClose);
-    window.addEventListener('blur', onClose);
-    window.addEventListener('scroll', onClose, true);
-    return () => {
-      pop();
-      window.removeEventListener('blur', onClose);
-      window.removeEventListener('scroll', onClose, true);
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
-  }, []);
-
-  const viewportWidth = typeof window === 'undefined' ? undefined : window.innerWidth;
-  const viewportHeight = typeof window === 'undefined' ? undefined : window.innerHeight;
-  const estimatedMenuHeight = MENU_CHROME_PX + MENU_ROW_PX;
-  const left =
-    viewportWidth === undefined
-      ? Math.max(MENU_MARGIN, x)
-      : Math.min(Math.max(MENU_MARGIN, x), viewportWidth - MENU_WIDTH - MENU_MARGIN);
-  const top =
-    viewportHeight === undefined
-      ? Math.max(MENU_MARGIN, y)
-      : Math.min(Math.max(MENU_MARGIN, y), viewportHeight - estimatedMenuHeight - MENU_MARGIN);
-
-  return (
-    <motion.div
-      ref={panelRef}
-      role="menu"
-      aria-label={`${name} workspace`}
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.12, ease: EASE }}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      style={{ position: 'fixed', left, top, width: MENU_WIDTH }}
-      className="z-popover rounded-lg bg-raised p-1.5 shadow-lg"
-    >
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onRemove();
-          onClose();
-        }}
-        className={itemClass}
-      >
-        <FolderMinus className="size-icon-md shrink-0 text-muted" />
-        Remove workspace
-      </button>
-    </motion.div>
-  );
-}
-
+// The workspace's right-click menu, opened at the pointer through a zero-size
+// point anchor so the shared positioning hook keeps it inside the window.
 function WorkspaceContextMenu({
   x,
   y,
@@ -122,19 +46,31 @@ function WorkspaceContextMenu({
   onRemove: () => void;
   onClose: () => void;
 }) {
-  return createPortal(
+  const pointRef = useRef<HTMLSpanElement>(null);
+
+  return (
     <>
-      <div
-        className="fixed inset-0 z-popover"
-        onMouseDown={onClose}
+      <span
+        ref={pointRef}
+        aria-hidden="true"
+        className="pointer-events-none fixed size-0"
+        style={{ left: x, top: y }}
+      />
+      <Menu
+        open
+        onClose={onClose}
+        anchorRef={pointRef}
+        label={`${name} workspace`}
+        width={MENU_WIDTH}
         onContextMenu={(event) => {
           event.preventDefault();
-          onClose();
         }}
-      />
-      <WorkspaceContextMenuPanel x={x} y={y} name={name} onRemove={onRemove} onClose={onClose} />
-    </>,
-    document.body,
+      >
+        <Menu.Item icon={FolderMinus} onSelect={onRemove}>
+          Remove workspace
+        </Menu.Item>
+      </Menu>
+    </>
   );
 }
 
