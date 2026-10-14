@@ -1,3 +1,5 @@
+import type { RemoteState, RemoteSettings, RemoteSetup } from '../../packages/remote/src/desktop';
+import type { ProfileUsageRecord, ProfileUsageSnapshot } from '../features/profile/profileShare';
 import type {
   NativeBrowserDesignEvent,
   NativeBrowserDesignState,
@@ -190,6 +192,17 @@ export type NotifyResult =
 type SaveImageResult = { saved: true; filePath: string } | { saved: false };
 
 interface DroidexApi {
+  getRemoteState: () => Promise<RemoteState>;
+  configureRemote: (patch: Partial<RemoteSettings>) => Promise<RemoteState>;
+  setupRemoteAuthenticator: () => Promise<RemoteSetup>;
+  confirmRemoteAuthenticator: (code: string) => Promise<RemoteState>;
+  decideRemoteRequest: (id: string, approved: boolean) => Promise<RemoteState>;
+  revokeRemoteDevice: (id: string) => Promise<RemoteState>;
+  resetRemotePairing: () => Promise<RemoteState>;
+  remoteQr: (text: string) => Promise<string>;
+  onRemoteState: (handler: (state: RemoteState) => void) => () => void;
+  getProfileUsage: () => Promise<ProfileUsageSnapshot>;
+  recordProfileUsage: (records: ProfileUsageRecord[]) => Promise<void>;
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;

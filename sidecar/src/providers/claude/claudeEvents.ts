@@ -115,11 +115,8 @@ export class ClaudeEventMapper {
       case 'auth_status':
       case 'prompt_suggestion':
         return [];
-      // /clear starts a fresh conversation, and the CLI's own usage counting
-      // starts again with it, so the session's totals follow.
+      // Clearing context does not undo tokens already spent by this app chat.
       case 'conversation_reset':
-        this.totals.tokensIn = 0;
-        this.totals.tokensOut = 0;
         return [];
       default:
         // Fails the build when the SDK adds a top-level message type.

@@ -242,7 +242,8 @@ function createHarness(
       delivery?.accepted();
     },
     context: {
-      preserveUsage: () => undefined,
+      preserveUsage: (appSessionId, offset) =>
+        record('provider', 'context.preserveUsage', appSessionId, offset),
       refresh: (target) => {
         record('provider', 'context.refresh', target.sourceSessionId);
         return Promise.resolve();
@@ -766,6 +767,70 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
   // reorders the queue instead of interrupting the turn that sends it; the
   // rest keeps the order it was sent in.
   assert.equal(interruptCount(steered), 1);
+});
+
+test('remote sends require Supervised mode again when their queued turn is delivered', async (context) => {
+  const h = createHarness();
+  context.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, 'remote');
+  const firstTurn = provider.deferNextStream();
+  await h.lifecycle.create({ ...createCommand(''), autonomy: 'high' });
+  await assert.rejects(
+    h.lifecycle.send('remote', 'unsafe remote send', undefined, undefined, true),
+    /Remote messages require Supervised mode/,
+  );
+  const live = requireLive(h, 'remote');
+  await live.session.setAutonomy('off');
+  h.registry.updateSummary('remote', { autonomy: 'off' });
+  const working = h.lifecycle.send('remote', 'working');
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('remote', 'queued remote send', undefined, undefined, true);
+  await h.lifecycle.send('remote', 'local follow-up');
+  assert.equal(requireLive(h, 'remote').pendingSends.length, 2);
+  h.registry.updateSummary('remote', { autonomy: 'high' });
+  await live.session.setAutonomy('high');
+  firstTurn.resolve();
+  await working;
+  await provider.waitForPrompts(2);
+  await requireLive(h, 'remote').turnPromise;
+  assert.deepEqual(provider.prompts, ['working', 'local follow-up']);
+  assert.equal(requireLive(h, 'remote').pendingSends.length, 0);
+});
+
+test('remote steering interrupts into a guarded turn without entering the provider steer queue', async (context) => {
+  for (const withdraw of [false, true]) {
+    const h = createHarness();
+    const provider = queueCreate(h, 'remote-steer');
+    const firstTurn = provider.deferNextStream();
+    context.after(() => {
+      firstTurn.resolve();
+      return h.lifecycle.closeAll();
+    });
+    await h.lifecycle.create({ ...createCommand('working'), autonomy: 'off' });
+    await provider.waitForPrompts(1);
+    const interrupt = provider.deferNextInterrupt();
+    const redirect = h.lifecycle.send(
+      'remote-steer',
+      'redirect',
+      undefined,
+      'remote-steer-id',
+      true,
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(h.calls.filter((call) => call.method === 'steer').length, 0);
+    assert.equal(interruptCount(h), 1);
+    if (withdraw) {
+      h.registry.updateSummary('remote-steer', { autonomy: 'high' });
+      await requireLive(h, 'remote-steer').session.setAutonomy('high');
+    }
+    firstTurn.resolve();
+    interrupt.resolve();
+    await redirect;
+    if (!withdraw) await provider.waitForPrompts(2);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(provider.prompts, withdraw ? ['working'] : ['working', 'redirect']);
+    assert.equal(requireLive(h, 'remote-steer').pendingSends.length, 0);
+  }
 });
 
 test('withdrawal requires harness confirmation, including during Send now, and never resends', async () => {
@@ -2154,6 +2219,21 @@ test('closing a pending fork refuses its first open but permits a later resume',
   await harness.lifecycle.closeAll();
   queueLoad(harness, 'provider-copy');
   assert.equal(await harness.lifecycle.resume('provider-copy'), true);
+});
+
+test('a cold Claude resume seeds historical billing usage once before new turns', async (context) => {
+  const h = createHarness([
+    summary('claude-chat', 'claude-provider', { provider: 'claude', tokensIn: 100, tokensOut: 40 }),
+  ]);
+  context.after(() => h.lifecycle.closeAll());
+  const provider = queueLoad(h, 'claude-provider');
+  h.setProvider(claudeResumeProvider(h, provider));
+  assert.equal(await h.lifecycle.resume('claude-chat'), true);
+  assert.equal(await h.lifecycle.resume('claude-chat'), true);
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'context.preserveUsage').map((call) => call.args),
+    [['claude-chat', { tokensIn: 100, tokensOut: 40 }]],
+  );
 });
 
 test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {

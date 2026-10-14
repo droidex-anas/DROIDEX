@@ -1,3 +1,6 @@
+import { RemoteSettings } from './RemoteSettings';
+import { ProfileSettings } from './ProfileSettings';
+import { useRemoteAccess } from '../features/remote/useRemoteAccess';
 import {
   shallowEqual,
   useStoreDispatch,
@@ -57,6 +60,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { label: 'General' },
       { label: 'Setup & updates' },
       { label: 'Profile' },
+      { label: 'Remote' },
       { label: 'Appearance' },
       { label: 'Notifications' },
       { label: 'Configuration' },
@@ -889,6 +893,12 @@ export default function SettingsPanel() {
   const hits = q ? searchSettings(q) : [];
   let content: React.ReactNode;
   switch (active) {
+    case 'Profile':
+      content = <ProfileSection />;
+      break;
+    case 'Remote':
+      content = <RemoteSettings />;
+      break;
     case 'Appearance':
       content = <AppearanceSection />;
       break;
@@ -1015,3 +1025,21 @@ export default function SettingsPanel() {
 }
 
 /* theme application lives in ../lib/theme (imported above) */
+
+function ProfileSection() {
+  const { state, error } = useRemoteAccess();
+  if (!state)
+    return <p className="text-[13px] text-droid-text-muted">{error || 'Loading profile…'}</p>;
+  return (
+    <ProfileSettings
+      usernameLocked={state.authenticatorReady}
+      profile={state.profile}
+      webClientUrl={state.clientUrl}
+      onProfileChange={(profile) => {
+        const api = window.droidControl;
+        if (!api) return Promise.reject(new Error('Open the desktop app to edit your profile.'));
+        return api.configureRemote({ profile });
+      }}
+    />
+  );
+}

@@ -462,7 +462,7 @@ test("a subagent's progress reports its own token spend", () => {
 
 // modelUsage is cumulative but counts every subagent and compaction call the
 // query made. The session's own totals are the main loop's, which arrives per
-// turn, so the turns are summed and /clear starts the tally again.
+// turn, so the turns are summed even when /clear resets the context.
 test("the session's totals count the main loop, not its subagents", () => {
   const mapper = new ClaudeEventMapper('app-1');
   const tokens = (entry: SDKMessage) =>
@@ -487,7 +487,7 @@ test("the session's totals count the main loop, not its subagents", () => {
   assert.deepEqual(tokens(turn(100, 20)), [{ tokensIn: 100, tokensOut: 20, contextTokens: 0 }]);
   assert.deepEqual(tokens(turn(50, 10)), [{ tokensIn: 150, tokensOut: 30, contextTokens: 0 }]);
   assert.deepEqual(tokens(message({ type: 'conversation_reset' })), []);
-  assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 7, tokensOut: 3, contextTokens: 0 }]);
+  assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 157, tokensOut: 33, contextTokens: 0 }]);
 });
 
 test('requested fast mode reports unavailability once without marking the row as an error', () => {
