@@ -99,7 +99,7 @@
     "autoprefixer": "^10.4.20",
     "dependency-cruiser": "^17.4.3",
     "docx-preview": "^0.4.0",
-    "electron": "^39.2.6",
+    "electron": "^43.7.7",
     "electron-builder": "^26.15.3",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
@@ -145,7 +145,7 @@
   "allowScripts": {
     "@droidex/sparkle-updater@0.1.0": true,
     "sparkle-updater@0.1.0": true,
-    "electron@39.8.10": true,
+    "electron@43.7.7": true,
     "esbuild@0.25.12": true,
     "node-pty@1.1.0": true,
     "esbuild@0.28.1": true,

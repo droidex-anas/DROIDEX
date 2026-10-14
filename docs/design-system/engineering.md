@@ -21,7 +21,7 @@ All floating UI (menus, pickers, tooltips, the model selector, the branch menu) 
 - **Size to the space.** Set `max-height` to the room left on its side minus 8px and scroll inside. Never let the window scroll or clip it. Keep width 200–320px for menus, and at least the trigger's width for selects.
 - **Offset from the anchor.** 4–6px between trigger and popover, 8px for tooltips.
 - **Open from the anchor.** Set `transform-origin` to the anchor side of the final placement, and fade in while rising 4px from that side (120–150ms, `ease-smooth-out`). A popover that flipped upward animates from below.
-- **Animate from the side it actually landed on.** A tooltip or menu that flipped at the window edge must animate from its real side, not the one you asked for. Have the positioning hook write the final placement to `data-side="top|bottom|left|right"` and key the entrance animation off that. CSS anchored container queries (`@container anchored(fallback: flip-block)`) will do this in pure CSS, but they're newer than the Chromium in Electron 39, so use `data-side` for now.
+- **Animate from the side it actually landed on.** A tooltip or menu that flipped at the window edge must animate from its real side, not the one you asked for. Have the positioning hook write the final placement to `data-side="top|bottom|left|right"` and key the entrance animation off that. CSS anchored container queries (`@container anchored(fallback: flip-block)`) will do this in pure CSS, but they're newer than the Chromium in Electron 43, so use `data-side` for now.
 - **Portal and layer.** Render into a body-level portal so a parent's `overflow: hidden` or transform can't clip it. Give the layers fixed z-index tokens: popovers, then dialogs, then toasts, then tooltips.
 - **Track the anchor.** Reposition on scroll, resize and anchor size changes. Close when the anchor scrolls out of view.
 - **Close cleanly.** Escape, a click outside, choosing an item, and focus leaving all close it. Focus then returns to the trigger.
@@ -86,7 +86,7 @@ Small engineering choices that decide whether the app feels finished.
 
 **Moving and animating**
 
-- **Move live embeds with `moveBefore()`.** Moving a playing iframe, video or browser surface with `appendChild` removes it and inserts it again, which reloads it. `moveBefore()` moves it while it keeps its state (Electron 39's Chromium supports it). Use it when docking or undocking the browser pane or a media player:
+- **Move live embeds with `moveBefore()`.** Moving a playing iframe, video or browser surface with `appendChild` removes it and inserts it again, which reloads it. `moveBefore()` moves it while it keeps its state (Electron 43's Chromium supports it). Use it when docking or undocking the browser pane or a media player:
 
   ```ts
   if ("moveBefore" in slot) slot.moveBefore(player, null);
