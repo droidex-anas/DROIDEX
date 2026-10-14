@@ -47,8 +47,8 @@ export function ThreadReportNotice({ reports }: { reports: readonly ThreadReport
   );
 }
 
-// MessageBody's markdown sets 14px text at 1.6 leading.
-const BUBBLE_LINE_PX = 22.4;
+// MessageBody's markdown uses the text-prose token: 14px on a 22px line.
+const BUBBLE_LINE_PX = 22;
 
 function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string; index: number }) {
   const provider = useStoreSelector((state) =>

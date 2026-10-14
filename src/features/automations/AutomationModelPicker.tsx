@@ -182,8 +182,8 @@ export function AutomationModelPicker({
                       disabled={!selectedModel}
                       className={`rounded-md px-2.5 py-1.5 text-caption capitalize outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                         selected
-                          ? 'bg-surface text-primary'
-                          : 'text-muted hover:bg-surface/60 hover:text-primary'
+                          ? 'bg-raised text-primary shadow-sm'
+                          : 'text-muted hover:bg-active hover:text-primary'
                       }`}
                     >
                       {reasoning}
@@ -280,7 +280,7 @@ function CategoryButton({
       type="button"
       onClick={onClick}
       className={`rounded-md px-2.5 py-1 text-caption outline-none transition-colors ${
-        active ? 'bg-surface text-primary' : 'text-muted hover:bg-surface/60 hover:text-primary'
+        active ? 'bg-active text-primary' : 'text-muted hover:bg-active hover:text-primary'
       }`}
     >
       {label}

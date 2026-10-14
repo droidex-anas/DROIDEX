@@ -107,14 +107,10 @@ export function ProjectsIntro({
                 Start a project
               </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={X}
-              aria-label="Dismiss"
-              onClick={dismiss}
-              className="absolute right-2 top-2"
-            />
+            {/* Button's own `relative` would win over an `absolute` passed to it. */}
+            <span className="absolute right-2 top-2">
+              <Button variant="ghost" size="sm" icon={X} aria-label="Dismiss" onClick={dismiss} />
+            </span>
           </div>
           {/* Caret pointing back at the Projects entry, filled like the card it
               extends */}
