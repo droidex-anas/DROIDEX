@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Clock, Spinner } from '@droidex/icons';
-import { Pencil, X } from 'lucide-react';
+import { Clock, Pencil, X } from '@droidex/icons';
 import { PendingPromptPreview } from '../../components/composer/PendingPromptPreview';
+import { Button } from '../../components/ui/Button';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { toast } from '../../lib/toast';
 import { setAutomationEnabled, useAutomationSnapshot } from './client';
@@ -55,8 +55,8 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
 
   return (
     <section aria-label="Scheduled prompts" className="mb-2 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-muted">
-        <Clock className="h-3 w-3" />
+      <div className="flex items-center gap-1.5 px-1 text-label text-muted">
+        <Clock className="size-icon-sm" />
         Scheduled · sends to this conversation
       </div>
       {prompts.slice(0, VISIBLE_PROMPTS).map(({ automation, status }) => {
@@ -69,29 +69,31 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
         return (
           <div
             key={automation.id}
-            className="group flex items-start gap-2 rounded-lg border border-divider bg-elevated px-2 py-1.5 transition-colors"
+            className="group flex items-start gap-2 rounded-lg bg-elevated px-2 py-1.5 transition-colors"
           >
-            <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted/60" />
+            <Clock className="mt-0.5 size-icon-sm shrink-0 text-muted/60" />
             <PendingPromptPreview text={automation.prompt} files={automation.files}>
-              <span aria-live="polite" className="mt-1 block text-[11px] text-muted">
+              <span aria-live="polite" className="mt-1 block text-caption text-muted">
                 {hint}
               </span>
             </PendingPromptPreview>
             <div className="flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Pencil}
                 title="Edit in Automations"
                 aria-label="Edit scheduled prompt"
                 disabled={cancelingId !== null}
                 onClick={() => {
                   dispatch({ type: 'OPEN_AUTOMATIONS', automationId: automation.id });
                 }}
-                className="rounded-xs p-1 text-muted hover:text-primary hover:bg-black/20 focus-visible:outline focus-visible:outline-divider-strong disabled:opacity-30"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={X}
+                loading={canceling}
                 title={
                   delivering
                     ? 'Cancel pending delivery; requests already sent cannot be retracted'
@@ -100,14 +102,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
                 aria-label="Cancel scheduled prompt"
                 disabled={cancelingId !== null}
                 onClick={() => void cancel(automation.id)}
-                className="rounded-xs p-1 text-muted hover:text-warning hover:bg-black/20 focus-visible:outline focus-visible:outline-divider-strong disabled:opacity-30"
-              >
-                {canceling ? (
-                  <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
-                ) : (
-                  <X className="h-3.5 w-3.5" />
-                )}
-              </button>
+              />
             </div>
           </div>
         );
@@ -118,7 +113,7 @@ export default function ScheduledPrompts({ appSessionId }: { appSessionId: strin
           onClick={() => {
             dispatch({ type: 'OPEN_AUTOMATIONS' });
           }}
-          className="rounded-xs px-1 text-left text-[11px] text-muted hover:text-primary focus-visible:outline focus-visible:outline-divider-strong"
+          className="rounded-xs px-1 text-left text-caption text-muted transition-colors hover:text-primary"
         >
           {prompts.length - VISIBLE_PROMPTS} more in Automations
         </button>

@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { LayoutGroup, useReducedMotion } from 'framer-motion';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { SidebarSectionHeading } from '../../components/SidebarSectionHeading';
+import { Button } from '../../components/ui/Button';
 import { ProjectPlan } from './ProjectPlan';
 import { ThreadRow } from './ThreadRow';
 import { threadCounts, threadGroups, type ThreadRow as ThreadRowModel } from './threadBoard';
@@ -124,45 +125,35 @@ export function ThreadList({
     key: 'head',
     node: (
       <div className="px-4 pb-2 pt-5">
-        <h2 className="text-[22px] font-semibold leading-tight tracking-tight text-primary">
-          {threadGreeting(rows, counts, done)}
-        </h2>
-        {title && (
-          <p className="mt-2.5 truncate text-[15px] font-semibold leading-5 tracking-tight text-primary">
-            {title}
-          </p>
-        )}
-        {timeline && <p className="mt-0.5 text-[12px] leading-5 text-muted">{timeline}</p>}
+        <h2 className="text-title text-primary">{threadGreeting(rows, counts, done)}</h2>
+        {title && <p className="mt-2.5 truncate text-subheading text-primary">{title}</p>}
+        {timeline && <p className="mt-0.5 text-label text-muted">{timeline}</p>}
         {held ? (
           <div className="mt-2 flex items-center gap-3">
-            <p className="min-w-0 flex-1 text-[13px] leading-5 text-secondary">
+            <p className="min-w-0 flex-1 text-body text-secondary">
               {uncertain > 0
                 ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
                 : 'Paused. Work and queued messages are kept.'}
             </p>
             {onResume && (
-              <button
-                type="button"
-                onClick={onResume}
-                className="shrink-0 rounded-md bg-active px-2.5 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-elevated"
-              >
+              <Button variant="secondary" size="sm" onClick={onResume}>
                 Resume
-              </button>
+              </Button>
             )}
           </div>
         ) : (
           leadStopped && (
-            <p className="mt-1 text-[13px] leading-5 text-secondary">
+            <p className="mt-1 text-body text-secondary">
               Lead stopped. The team keeps working; reports wait until you message it.
             </p>
           )
         )}
         {done && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-divider px-3 py-2.5">
+          <div className="mt-3 flex items-start gap-2 rounded-lg bg-surface px-3 py-2.5">
             <span className="mt-1 shrink-0">
               <ActivityStatusGlyph status="settled" />
             </span>
-            <p className="min-w-0 text-[12px] leading-5 text-secondary">{done.outcome}</p>
+            <p className="min-w-0 text-body text-secondary">{done.outcome}</p>
           </div>
         )}
       </div>
@@ -181,7 +172,7 @@ export function ThreadList({
             }}
             placeholder="Search threads"
             aria-label="Search threads"
-            className="w-full rounded-md border border-divider bg-transparent px-2.5 py-1.5 text-[13px] text-primary placeholder:text-muted focus:border-divider-strong focus:outline-none"
+            className="w-full rounded-md bg-field px-2.5 py-1.5 text-body text-primary outline-none placeholder:text-muted"
           />
         </div>
       ),
@@ -207,7 +198,7 @@ export function ThreadList({
     entries.push({
       key: 'empty',
       node: (
-        <p className="px-5 py-2 text-[13px] leading-5 text-muted">
+        <p className="px-5 py-2 text-body text-muted">
           This project has not started any threads. Tell its chat what to run in parallel and it
           will open them here.
         </p>
@@ -244,10 +235,7 @@ export function ThreadList({
       </div>
 
       {error && (
-        <p
-          role="alert"
-          className="shrink-0 border-t border-divider/70 px-4 py-3 text-[12px] leading-5 text-secondary"
-        >
+        <p role="alert" className="shrink-0 bg-danger-soft px-4 py-3 text-body text-danger">
           {error}
         </p>
       )}

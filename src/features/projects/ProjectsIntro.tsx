@@ -1,8 +1,9 @@
 import { useEffect, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { Button } from '../../components/ui/Button';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { dismissSidebarCard, loadSidebarCardSeen } from '../../lib/sidebarCards';
 import { resolveNewChatCwd } from '../../lib/workspaces';
@@ -82,42 +83,44 @@ export function ProjectsIntro({
           style={{ position: 'fixed', top: position.top, left: position.left, width: INTRO_WIDTH }}
           className="z-50"
         >
-          <div className="relative overflow-hidden rounded-xl border border-divider bg-raised shadow-lg">
+          <div className="relative overflow-hidden rounded-xl bg-raised shadow-lg">
             <ProjectGlyph />
             <div className="px-3.5 pb-3.5 pt-2.5">
               <div className="flex items-baseline gap-2">
-                <span className="text-[13px] font-semibold text-primary">Projects</span>
-                <span className="text-[11px] font-medium text-muted">Beta</span>
+                <span className="text-subheading text-primary">Projects</span>
+                <span className="text-label text-muted">Beta</span>
               </div>
-              <p className="mt-1 text-[12px] leading-snug text-muted">
+              <p className="mt-1 text-body text-muted">
                 Give one chat a goal. It plans the work and hands the parts that can run at once to
                 agents on any harness, which report back as they finish.
               </p>
-              <ProjectsBetaNote className="mt-2 text-[12px] leading-snug text-muted" />
-              <button
-                type="button"
+              <ProjectsBetaNote className="mt-2 text-body text-muted" />
+              <Button
+                variant="primary"
+                size="sm"
+                className="mt-3"
                 onClick={() => {
                   dismiss();
                   dispatch({ type: 'START_CHAT', cwd, executionMode: 'local', project: true });
                 }}
-                className="mt-3 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-opacity hover:opacity-90"
               >
                 Start a project
-              </button>
+              </Button>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={X}
               aria-label="Dismiss"
               onClick={dismiss}
-              className="absolute right-2 top-2 rounded-sm p-1 text-muted transition-colors hover:bg-droid-hover hover:text-primary"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+              className="absolute right-2 top-2"
+            />
           </div>
-          {/* Caret pointing back at the Projects entry, filled like the band it meets */}
+          {/* Caret pointing back at the Projects entry, filled like the card it
+              extends */}
           <span
             aria-hidden
-            className="absolute -left-[5px] h-2.5 w-2.5 rotate-45 border-b border-l border-divider bg-bg"
+            className="absolute -left-1.5 h-2.5 w-2.5 rotate-45 bg-raised"
             style={{ top: position.caretTop }}
           />
         </motion.div>
@@ -132,14 +135,19 @@ export function ProjectsIntro({
 function ProjectGlyph() {
   const row = (width: string) => <span className={`h-1.5 rounded-full bg-muted/30 ${width}`} />;
   return (
-    <div className="relative flex h-24 flex-col justify-center gap-2 border-b border-divider/60 bg-bg px-6">
+    <div className="relative flex h-24 flex-col justify-center gap-2 bg-bg px-6">
       <div className="flex items-center gap-2">
         <ActivityStatusGlyph status="ready" decorative />
         {row('w-32')}
       </div>
       {['w-24', 'w-20'].map((width) => (
         <div key={width} className="flex items-center gap-2 pl-2">
-          <span className="-mt-4 h-4 w-3 shrink-0 rounded-bl-sm border-b border-l border-muted/40" />
+          {/* The branch connector: a filled L where the border version drew two
+              edges, so the illustration carries no surface borders. */}
+          <span className="relative -mt-4 h-4 w-3 shrink-0">
+            <span className="absolute bottom-0 left-0 h-4 w-px bg-muted/40" />
+            <span className="absolute bottom-0 left-0 h-px w-3 bg-muted/40" />
+          </span>
           <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted">
             <ActivityStatusGlyph status="working" decorative />
           </span>

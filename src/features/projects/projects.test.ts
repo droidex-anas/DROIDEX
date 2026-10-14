@@ -426,7 +426,10 @@ test('opening spawns publish queued rows and disable Open until their session is
       ),
     );
   const waiting = render(unregistered);
-  assert.match(waiting, /<button[^>]*disabled=""[^>]*>Open/);
+  // The Open control is now the ui/Button, so its label sits in a span after
+  // the icon; the assertion still pins the button as disabled until the
+  // thread's session is registered.
+  assert.match(waiting, /<button[^>]*disabled=""[\s\S]*>Open</);
   assert.doesNotMatch(waiting, /Loading this thread/);
 
   opening.resolve();

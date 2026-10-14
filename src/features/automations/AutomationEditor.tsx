@@ -1,6 +1,8 @@
-import { MessageSquareText, X } from 'lucide-react';
+import { MessageSquareText } from 'lucide-react';
+import { X } from '@droidex/icons';
 import { useMemo } from 'react';
 import { FileChip } from '../../components/composer/FileChip';
+import { Button } from '../../components/ui/Button';
 import type { WorkspaceScope } from '../../lib/workspaces';
 import type { ModelInfo } from '../../types/bridge';
 import { AutomationModelPicker } from './AutomationModelPicker';
@@ -30,7 +32,7 @@ interface AutomationEditorProps {
 }
 
 const CONTROL =
-  'w-full rounded-lg border border-divider bg-surface/55 px-3 py-2.5 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus:bg-surface';
+  'w-full resize-none rounded-lg bg-field px-3 py-2.5 text-body-lg text-primary outline-none transition-colors placeholder:text-muted';
 
 export function AutomationEditor({
   editor,
@@ -88,35 +90,31 @@ export function AutomationEditor({
   };
 
   return (
-    <aside
-      aria-busy={saving}
-      className="flex h-full w-full flex-col border-l border-divider bg-bg shadow-lg"
-    >
+    <aside aria-busy={saving} className="flex h-full w-full flex-col bg-bg shadow-lg">
       <div data-electron-drag-region className="h-9 shrink-0" />
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-5 pb-3 pt-2">
           <div>
-            <div className="text-[12px] font-medium text-secondary">
+            <div className="text-label text-secondary">
               {isDelivery
                 ? 'Scheduled prompt'
                 : editor.mode === 'create'
                   ? 'New automation'
                   : 'Edit automation'}
             </div>
-            <div className="mt-0.5 text-[11px] text-muted">
+            <div className="mt-0.5 text-caption text-muted">
               {isDelivery
                 ? 'Continue a conversation at the right time'
                 : 'Schedule a task that runs as a DROIDEX chat'}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={X}
             aria-label="Close automation editor"
-          >
-            <X className="h-4 w-4" />
-          </button>
+            onClick={onClose}
+          />
         </div>
 
         <fieldset disabled={saving} className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 pb-8">
@@ -127,7 +125,7 @@ export function AutomationEditor({
               update('title', event.target.value);
             }}
             placeholder="Automation title"
-            className="mb-4 w-full bg-transparent text-[22px] font-medium tracking-[-0.02em] text-primary outline-none placeholder:text-muted"
+            className="mb-4 w-full bg-transparent text-title text-primary outline-none placeholder:text-muted"
             autoFocus
           />
           <textarea
@@ -142,7 +140,7 @@ export function AutomationEditor({
                 : 'Describe the task DROIDEX should complete each time'
             }
             rows={6}
-            className={`${CONTROL} resize-none leading-5`}
+            className={CONTROL}
           />
           {draft.files.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Scheduled attachments">
@@ -162,11 +160,11 @@ export function AutomationEditor({
           )}
 
           {isDelivery ? (
-            <div className="mt-5 flex items-start gap-2.5 text-[12px] text-secondary">
-              <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+            <div className="mt-5 flex items-start gap-2.5 text-body text-secondary">
+              <MessageSquareText className="mt-0.5 size-icon-md shrink-0 text-muted" />
               <div className="min-w-0">
                 <p className="truncate">{targetTitle ?? 'Original conversation'}</p>
-                <p className="mt-1 text-[11px] leading-4 text-muted">
+                <p className="mt-1 text-caption text-muted">
                   Keeps its model, workspace, and permissions. No new chat is created.
                 </p>
               </div>
@@ -174,7 +172,7 @@ export function AutomationEditor({
           ) : (
             <>
               <SectionLabel>Run configuration</SectionLabel>
-              <div className="overflow-visible rounded-xl border border-divider bg-surface/35">
+              <div className="divide-y divide-divider overflow-visible rounded-xl bg-surface/35">
                 <EditorRow label="Model">
                   <AutomationModelPicker
                     models={models}
@@ -222,7 +220,7 @@ export function AutomationEditor({
                     ]}
                   />
                 </EditorRow>
-                <EditorRow label="Checkout" last>
+                <EditorRow label="Checkout">
                   <SelectMenu
                     value={draft.executionMode}
                     ariaLabel="Automation checkout mode"
@@ -249,7 +247,7 @@ export function AutomationEditor({
           )}
 
           <SectionLabel>Schedule</SectionLabel>
-          <div className="overflow-visible rounded-xl border border-divider bg-surface/35">
+          <div className="divide-y divide-divider overflow-visible rounded-xl bg-surface/35">
             {!isDelivery && (
               <EditorRow label="Repeat">
                 <SelectMenu
@@ -284,7 +282,7 @@ export function AutomationEditor({
                 onChange={updateTimezone}
               />
             </EditorRow>
-            <EditorRow label="Status" last>
+            <EditorRow label="Status">
               <SelectMenu
                 value={draft.enabled ? 'active' : 'paused'}
                 ariaLabel="Automation status"
@@ -303,7 +301,7 @@ export function AutomationEditor({
             </EditorRow>
           </div>
 
-          <div className="mt-4 rounded-lg border border-divider/70 bg-surface/25 px-3 py-2.5 text-[11px] leading-4 text-muted">
+          <div className="mt-4 rounded-lg bg-surface/25 px-3 py-2.5 text-caption text-muted">
             {isDelivery
               ? 'Sends once, after any active turn finishes. Delivered means the conversation accepted the prompt, not that the agent finished its work. Attachments are saved copies.'
               : 'Every run opens as a background chat. Open it here to follow its progress.'}{' '}
@@ -312,16 +310,17 @@ export function AutomationEditor({
           </div>
         </fieldset>
 
-        <div className="border-t border-divider px-5 py-4">
-          {validation && <p className="mb-2 text-[11px] text-muted">{validation}</p>}
-          <button
-            type="button"
+        <div className="px-5 py-4">
+          {validation && <p className="mb-2 text-caption text-muted">{validation}</p>}
+          <Button
+            variant="primary"
+            size="md"
+            className="ml-auto"
             onClick={onSave}
             disabled={saving || Boolean(validation)}
-            className="ml-auto block rounded-lg bg-text px-4 py-2 text-[13px] font-medium text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
           >
             {saving ? 'Saving…' : editor.mode === 'create' ? 'Create automation' : 'Save changes'}
-          </button>
+          </Button>
         </div>
       </div>
     </aside>
@@ -329,5 +328,5 @@ export function AutomationEditor({
 }
 
 function SectionLabel({ children }: { children: string }) {
-  return <h3 className="mb-2 mt-6 text-[12px] font-medium text-muted">{children}</h3>;
+  return <h3 className="mb-2 mt-6 text-label text-muted">{children}</h3>;
 }
