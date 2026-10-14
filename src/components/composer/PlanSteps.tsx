@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Circle } from 'lucide-react';
+import { Spinner } from '@droidex/icons';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import {
@@ -91,11 +92,9 @@ function StepRing({
     );
   }
   if (active && spinning) {
-    return (
-      <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-text border-r-transparent motion-safe:animate-spin-slow" />
-    );
+    return <Spinner className="size-icon-sm shrink-0 text-primary motion-safe:animate-spin-slow" />;
   }
-  return <span className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-muted/30" />;
+  return <Circle className="size-icon-sm shrink-0 text-muted/30" strokeWidth={2.5} />;
 }
 
 // The model's plan for the composer's session, tucked behind the composer.
@@ -189,7 +188,7 @@ export function PlanStepsPanel({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ duration: 0.22, ease: EASE }}
-          className="relative z-0 mx-[6%] -mb-3 min-w-0 overflow-hidden rounded-t-xl border border-divider bg-surface pb-4"
+          className="relative z-0 mx-10 -mb-3 min-w-0 overflow-hidden rounded-t-xl bg-surface pb-4 shadow-sm"
         >
           <button
             type="button"
@@ -198,14 +197,14 @@ export function PlanStepsPanel({
             }}
             aria-expanded={expanded}
             aria-controls={listId}
-            className="flex w-full min-w-0 items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-active/40"
+            className="flex w-full min-w-0 items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-elevated"
           >
             <StepRing
               status={allDone ? 'completed' : current.status}
               active={!allDone}
               spinning={isRunning}
             />
-            <span className="min-w-0 flex-1 truncate text-[12px] text-primary">{current.text}</span>
+            <span className="min-w-0 flex-1 truncate text-body text-primary">{current.text}</span>
             <ChevronDown
               className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
             />
@@ -216,7 +215,8 @@ export function PlanStepsPanel({
             initial={false}
             animate={{ height: expanded ? 'auto' : 0 }}
             transition={{ duration: 0.24, ease: EASE }}
-            className="expanded-steps min-h-0 max-h-[min(40vh,350px)] overflow-y-auto"
+            className="expanded-steps min-h-0 overflow-y-auto"
+            style={{ maxHeight: 'min(40vh, 350px)' }}
           >
             {steps.map((step, i) =>
               i === activeIndex ? null : (
@@ -225,7 +225,7 @@ export function PlanStepsPanel({
                   className="flex min-w-0 items-center gap-2.5 px-4 py-1.5"
                 >
                   <StepRing status={step.status} active={false} spinning={false} />
-                  <span className={`min-w-0 flex-1 truncate text-[12px] ${stepTone(step, false)}`}>
+                  <span className={`min-w-0 flex-1 truncate text-body ${stepTone(step, false)}`}>
                     {step.text}
                   </span>
                 </div>

@@ -430,7 +430,7 @@ function AgentsSection({
           provider={mission.provider}
           value={mission.autonomy}
           pending={pendingAutonomy}
-          placement="down"
+          placement="bottom-end"
           onSelect={(level) => {
             const requestId = newClientRef();
             dispatch({
