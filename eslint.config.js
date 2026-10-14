@@ -27,6 +27,9 @@ export default tseslint.config(
       'dist/',
       'sidecar/dist/',
       'packages/icons/dist/',
+      'remote-web/dist/',
+      'relay/.wrangler/',
+      'electron/vendor/',
       'node_modules/',
       'sidecar/node_modules/',
       '.worktrees/',
@@ -44,9 +47,17 @@ export default tseslint.config(
   },
 
   js.configs.recommended,
+  { files: ['remote-web/public/sw.js'], languageOptions: { globals: globals.serviceworker } },
 
   {
-    files: ['src/**/*.{ts,tsx}', 'sidecar/src/**/*.ts', 'packages/icons/src/**/*.{ts,tsx}'],
+    files: [
+      'src/**/*.{ts,tsx}',
+      'sidecar/src/**/*.ts',
+      'packages/icons/src/**/*.{ts,tsx}',
+      'packages/remote/src/**/*.ts',
+      'remote-web/src/**/*.{ts,tsx}',
+      'relay/src/**/*.ts',
+    ],
     ignores: TEST_FILES,
     extends: [...tseslint.configs.strictTypeChecked, ...tseslint.configs.stylisticTypeChecked],
     languageOptions: {
@@ -85,7 +96,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['src/**/*.tsx', 'packages/icons/src/**/*.tsx'],
+    files: ['src/**/*.tsx', 'packages/icons/src/**/*.tsx', 'remote-web/src/**/*.tsx'],
     plugins: {
       react: reactPlugin,
       'react-hooks': reactHooks,
@@ -104,7 +115,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.{test,spec}.{ts,tsx,cts,mts}', 'vite.config.ts'],
+    files: ['**/*.{test,spec}.{ts,tsx,cts,mts}', 'vite.config.ts', 'remote-web/vite.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       globals: {
