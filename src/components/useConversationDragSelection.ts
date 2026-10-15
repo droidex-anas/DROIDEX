@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 import { defaultRangeExtractor, type Range } from '@tanstack/react-virtual';
 
+import type { FeedItem } from './chatFeed';
 import { CONVERSATION_LIST_GAP_PX } from './conversationListState';
 
 // Pointer depth into this band at a scroller's edge, or any distance past it,
@@ -15,7 +16,15 @@ const NATIVE_TARGETS =
 interface Caret {
   node: Node;
   offset: number;
-  rowIndex: number;
+}
+
+type RowKey = string | number;
+
+// Rows are held by key so a history prepend, which shifts every index, keeps
+// the selected rows mounted.
+interface SelectedRows {
+  anchorKey: RowKey;
+  focusKey: RowKey;
 }
 
 interface Drag {
@@ -45,13 +54,28 @@ function caretInRow(list: HTMLElement, x: number, y: number): Caret | null {
     for (const probeY of step === 0 ? [y] : [y - step, y + step]) {
       const position = document.caretPositionFromPoint(x, probeY);
       if (!position) continue;
-      const rowIndex = rowIndexOf(position.offsetNode, list);
-      if (rowIndex !== null) {
-        return { node: position.offsetNode, offset: position.offset, rowIndex };
+      if (rowIndexOf(position.offsetNode, list) !== null) {
+        return { node: position.offsetNode, offset: position.offset };
       }
     }
   }
   return null;
+}
+
+function selectedRowsIn(
+  list: HTMLElement,
+  getItemKey: (index: number) => RowKey,
+): SelectedRows | null {
+  const selection = window.getSelection();
+  if (!selection?.anchorNode || !selection.focusNode || selection.isCollapsed) return null;
+  const anchor = rowIndexOf(selection.anchorNode, list);
+  const focus = rowIndexOf(selection.focusNode, list);
+  if (anchor === null || focus === null) return null;
+  return { anchorKey: getItemKey(anchor), focusKey: getItemKey(focus) };
+}
+
+function isSameRows(a: SelectedRows | null, b: SelectedRows | null): boolean {
+  return a?.anchorKey === b?.anchorKey && a?.focusKey === b?.focusKey;
 }
 
 // How deep the pointer is in an edge band: negative toward the start edge,
@@ -92,8 +116,10 @@ function sidewaysScroller(target: Element): HTMLElement | null {
 export function useConversationDragSelection(
   listRef: RefObject<HTMLElement | null>,
   getScrollElement: () => HTMLElement | null,
+  items: readonly FeedItem[],
+  getItemKey: (index: number) => RowKey,
 ): (range: Range) => number[] {
-  const spanRef = useRef<{ from: number; to: number } | null>(null);
+  const [selectedRows, setSelectedRows] = useState<SelectedRows | null>(null);
 
   useEffect(() => {
     const list = listRef.current;
@@ -102,8 +128,7 @@ export function useConversationDragSelection(
 
     const extendSelection = (current: Drag) => {
       const scroller = getScrollElement();
-      const span = spanRef.current;
-      if (!scroller || !span) return;
+      if (!scroller) return;
       const listBox = list.getBoundingClientRect();
       const scrollBox = scroller.getBoundingClientRect();
       const caret = caretInRow(
@@ -115,10 +140,7 @@ export function useConversationDragSelection(
           Math.min(listBox.bottom, scrollBox.bottom) - 1,
         ),
       );
-      if (!caret) return;
-      window.getSelection()?.extend(caret.node, caret.offset);
-      span.from = Math.min(span.from, caret.rowIndex);
-      span.to = Math.max(span.to, caret.rowIndex);
+      if (caret) window.getSelection()?.extend(caret.node, caret.offset);
     };
 
     const tick = () => {
@@ -151,7 +173,6 @@ export function useConversationDragSelection(
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', stop);
       window.removeEventListener('blur', stop);
-      if (window.getSelection()?.isCollapsed !== false) spanRef.current = null;
     };
 
     const onDown = (event: MouseEvent) => {
@@ -170,7 +191,6 @@ export function useConversationDragSelection(
       // releases it, as the browser would.
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       selection.setBaseAndExtent(caret.node, caret.offset, caret.node, caret.offset);
-      spanRef.current = { from: caret.rowIndex, to: caret.rowIndex };
       drag = {
         pointerX: event.clientX,
         pointerY: event.clientY,
@@ -183,7 +203,8 @@ export function useConversationDragSelection(
     };
 
     const onSelectionChange = () => {
-      if (!drag && window.getSelection()?.isCollapsed !== false) spanRef.current = null;
+      const next = selectedRowsIn(list, getItemKey);
+      setSelectedRows((current) => (isSameRows(current, next) ? current : next));
     };
 
     list.addEventListener('mousedown', onDown);
@@ -193,16 +214,26 @@ export function useConversationDragSelection(
       list.removeEventListener('mousedown', onDown);
       document.removeEventListener('selectionchange', onSelectionChange);
     };
-  }, [getScrollElement, listRef]);
+  }, [getItemKey, getScrollElement, listRef]);
 
-  return useCallback((range: Range) => {
-    const indexes = defaultRangeExtractor(range);
-    const span = spanRef.current;
-    const last = indexes.at(-1);
-    // A span recorded before the rows changed may point past the new end.
-    if (!span || last === undefined || span.to >= range.count) return indexes;
-    const from = Math.min(span.from, indexes[0]);
-    const to = Math.max(span.to, last);
-    return Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
-  }, []);
+  const selectedSpan = useMemo(() => {
+    if (!selectedRows) return null;
+    const anchor = items.findIndex((item) => item.key === selectedRows.anchorKey);
+    const focus = items.findIndex((item) => item.key === selectedRows.focusKey);
+    if (anchor < 0 || focus < 0) return null;
+    return { from: Math.min(anchor, focus), to: Math.max(anchor, focus) };
+  }, [items, selectedRows]);
+
+  // TanStack memoizes the mounted rows on this function's identity, so it
+  // changes whenever the selected span does.
+  return useCallback(
+    (range: Range) => {
+      const indexes = defaultRangeExtractor(range);
+      if (!selectedSpan) return indexes;
+      const mounted = new Set(indexes);
+      for (let index = selectedSpan.from; index <= selectedSpan.to; index += 1) mounted.add(index);
+      return [...mounted].sort((a, b) => a - b);
+    },
+    [selectedSpan],
+  );
 }

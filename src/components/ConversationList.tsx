@@ -84,7 +84,12 @@ export function ConversationList({
     return itemsRef.current[index]?.key ?? index;
   }, []);
 
-  const rangeExtractor = useConversationDragSelection(listElRef, getScrollElement);
+  const rangeExtractor = useConversationDragSelection(
+    listElRef,
+    getScrollElement,
+    items,
+    getItemKey,
+  );
 
   const virtualizer = useVirtualizer({
     count: items.length,
