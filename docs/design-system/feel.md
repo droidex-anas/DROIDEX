@@ -11,7 +11,7 @@ How DROIDEX should feel: calm, quick and certain. The UI stays quiet so the agen
 - **Consistency beats cleverness.** The same thing looks and behaves the same everywhere. One menu, one row, one way to confirm, one way to close.
 - **The details are the product.** Alignment to the pixel, truncation that keeps the useful end of a path, numbers that don't jitter, focus that lands in the right place. People can't name these, but they feel them.
 - **Fast is a feature.** Respond to input within one frame, show something in under 100ms, and never block typing.
-- **Native, not webby.** It's a Mac app, so behave like one: no text selection on chrome, no I-beam cursor on buttons, the default cursor on controls rather than a pointer, menus that blink on select, and Escape that always backs out.
+- **Native, not webby.** It's a Mac app, so behave like one: no text selection on chrome, no I-beam cursor on buttons, a pointer cursor on anything clickable, menus that blink on select, and Escape that always backs out.
 
 ## Visual cues that carry meaning
 

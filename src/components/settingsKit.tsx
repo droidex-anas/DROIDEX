@@ -165,7 +165,7 @@ export function Dropdown({
                   onChange(o.value);
                   close();
                 }}
-                className={`flex w-full cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary ${
+                className={`flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary ${
                   active ? 'bg-active' : 'hover:bg-elevated dark:hover:bg-active'
                 }`}
               >
