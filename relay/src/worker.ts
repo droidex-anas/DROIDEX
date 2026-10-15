@@ -15,18 +15,23 @@ export default {
         status: 204,
         headers: {
           ...cors,
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type',
         },
       });
     }
-    const path = /^\/v1\/handles\/([^/]+)\/(socket|challenge|claim)$/.exec(
-      new URL(request.url).pathname,
-    );
+    const path =
+      /^\/v1\/handles\/([^/]+)\/(socket|challenge|claim|profile-challenge|profile)$/.exec(
+        new URL(request.url).pathname,
+      );
     if (!path || !HANDLE_PATTERN.test(path[1]))
       return new Response('{"status":"locked"}', { status: 404, headers: cors });
     const ip = request.headers.get('CF-Connecting-IP') ?? 'local';
-    if (!(await env.CONNECTION_LIMIT.limit({ key: ip })).success) {
+    const limiter =
+      path[2] === 'profile' && request.method === 'GET'
+        ? env.PROFILE_READ_LIMIT
+        : env.CONNECTION_LIMIT;
+    if (!(await limiter.limit({ key: ip })).success) {
       return new Response('{"status":"locked"}', {
         status: 429,
         headers: { ...cors, 'Retry-After': '60' },

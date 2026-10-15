@@ -8,6 +8,7 @@ import {
   finishHostHello,
   fingerprint,
   hostProof,
+  profileShareProof,
   signIdentity,
   totpCode,
   verifyIdentity,
@@ -33,6 +34,34 @@ test('pairing pins the laptop identity before accepting authenticator data', asy
   await assert.rejects(crypto.subtle.exportKey('jwk', identity.privateKey));
   const signature = await signIdentity(identity.privateKey, claimProof('anas', 'challenge'));
   assert.equal(await verifyIdentity(identity.publicKey, hostProof('anas', 'challenge'), signature), false);
+});
+
+test('profile share signatures are bound to the version, username and payload', async () => {
+  const identity = await createIdentity();
+  const profileSignature = await signIdentity(
+    identity.privateKey,
+    profileShareProof('anas', 'profile-payload'),
+  );
+  assert.equal(
+    await verifyIdentity(
+      identity.publicKey,
+      profileShareProof('anas', 'profile-payload'),
+      profileSignature,
+    ),
+    true,
+  );
+  assert.equal(
+    await verifyIdentity(
+      identity.publicKey,
+      profileShareProof('other-user', 'profile-payload'),
+      profileSignature,
+    ),
+    false,
+  );
+  assert.equal(
+    await verifyIdentity(identity.publicKey, claimProof('anas', 'profile-payload'), profileSignature),
+    false,
+  );
 });
 
 test('encrypted sessions reject reflection, replay, tampering and frames from old sessions', async () => {

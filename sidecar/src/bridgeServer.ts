@@ -24,6 +24,7 @@ import { providerKind } from './providers/providerKind.js';
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
+import { serveProfileUsage } from './usage/profileRoute.js';
 
 const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
@@ -46,6 +47,7 @@ export function startBridgeServer(options: {
   token: string;
   onCommand: (command: ClientCommand) => Promise<void>;
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
+  getProfileUsage?: () => unknown;
 }): BridgeServer {
   const clients = new Set<WebSocket>();
   const voiceOwners = new VoiceConnectionOwners((appSessionId) => {
@@ -64,6 +66,7 @@ export function startBridgeServer(options: {
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
+    if (serveProfileUsage(req, res, options.token, options.getProfileUsage)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;
     res.writeHead(404).end('not found');

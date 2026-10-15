@@ -50,6 +50,7 @@ const Sentry = require('@sentry/electron/main');
 const { createDiagnostics } = require('./diagnostics.cjs');
 const { createUsageAnalytics } = require('./usageAnalytics.cjs');
 const { createRemoteAccess } = require('./remoteAccess.cjs');
+const { createProfileUsage } = require('./profileUsage.cjs');
 const {
   preferenceFilePath: hardwareAccelerationPreferenceFilePath,
   readHardwareAccelerationPreferenceSync,
@@ -229,6 +230,7 @@ const remoteAccess = createRemoteAccess({
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send('remote-state-changed', state);
   },
 });
+const profileUsage = createProfileUsage({ bridgeInfo: () => sidecarSupervisor.getBridgeInfo() });
 
 usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
@@ -244,6 +246,7 @@ app.whenReady().then(async () => {
     logError: (message) => console.error('[menu] %s', message),
   });
   remoteAccess.registerIpc();
+  profileUsage.registerIpc({ ipcMain, assertRenderer: assertMainRenderer });
   registerIpc();
   registerLocalImageProtocol();
   registerMediaPermissions();

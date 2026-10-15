@@ -479,6 +479,68 @@
       transform: translateY(0);
     }
   }
+  /* Profile heatmap cells pop in column by column; the delay is set inline per
+     column and the whole effect is gated behind a reduced-motion check. */
+  @keyframes profile-cell-in {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Profile avatar pixels and banner bars grow from their own box, so a new
+     username visibly re-assembles the creature. */
+  @keyframes profile-pixel-in {
+    from {
+      opacity: 0;
+      transform: scale(0.2);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .profile-avatar-pixel {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: profile-pixel-in 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  }
+
+  @keyframes profile-bar-in {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+
+  .profile-banner-bar {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: profile-bar-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes profile-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(300%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .profile-avatar-pixel,
+    .profile-banner-bar {
+      animation: none;
+    }
+  }
 
   .droid-rise {
     animation: droid-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;

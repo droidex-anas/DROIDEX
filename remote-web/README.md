@@ -19,21 +19,36 @@ Production requires HTTPS for the client and WSS for the relay.
 
 ## Vercel or self-hosting
 
-Run the Vercel CLI from the repository root with `--local-config remote-web/vercel.json`.
-Set `VITE_REMOTE_RELAY_URL` in that Vercel project's build environment. The configuration
-builds the repository's `remote:build` script, serves `remote-web/dist`, and routes usernames
-and `/p` to the single-page app. Set the desired domain in the Vercel project.
+The official client is deployed as the separate `droidex-remote` Vercel project. Run the
+Vercel CLI from the repository root with `--local-config remote-web/vercel.json`. The build
+uses the production relay by default; set `VITE_REMOTE_RELAY_URL` only for another relay.
+The bundle owns the `/__droidex_remote/` namespace so its assets cannot collide with the
+marketing app that owns `droidex.vercel.app`.
+
+The `droidex` Vercel project composes the two deployments with ordered project routes:
+
+1. `/__droidex_remote/sw.js`, hashed assets, then other namespaced files go to
+   `https://droidex-remote.vercel.app`.
+2. `/public/<username>` and `/<username>` go to the same Remote deployment.
+3. Product routes such as `/classic`, `/projects`, and `/public` stay with marketing.
+
+Keep the service worker uncached with `Service-Worker-Allowed: /`. Cache only hashed files
+under `/__droidex_remote/assets/`. Stage and test project-route changes before publishing;
+the marketing homepage and its fixed routes must return the same deployment throughout.
+Handles use the shared `HANDLE_PATTERN`, which reserves product and infrastructure routes.
 
 For another static host, serve `remote-web/dist` over HTTPS, route application paths to
-`index.html`, and copy the security headers from `vercel.json`. Serve `sw.js` without
-caching. Restrict CSP `connect-src` to your configured relay origin when deploying.
+`index.html`, and copy the security headers from `vercel.json`. Preserve the
+`/__droidex_remote/` paths or change Vite's base and the manifest together. Serve the worker
+without caching. Restrict CSP `connect-src` to your configured relay origin when deploying.
 Secure the source repository and deployment account with two-factor authentication;
 code served by the web host has access to the decrypted browser view.
 
 ## Pair and use
 
-1. Open DROIDEX **Settings → Remote**, enter your name, username and hosting addresses,
-   then save the address.
+1. Open DROIDEX **Settings → Remote**, then enter your name and username. The official
+   client and relay are preconfigured; custom addresses live under **Advanced →
+   Self-host Remote**.
 2. Set up the authenticator on the laptop and verify its current code to enable Remote.
    The laptop claims the username before displaying the authenticator QR.
 3. Scan **Connect your phone** with the phone camera, enter a fresh authenticator code,
@@ -53,13 +68,18 @@ remove the device in DROIDEX or turn remote access off on the laptop.
 
 ## Shared profiles
 
-Settings → Profile creates an opt-in `/p#…` aggregate snapshot. Its fragment stays in the
-browser and is never sent to the static host. Public profiles show observed token activity,
-session counts, streaks, and harness/model rankings. They contain no prompts or workspace
-paths. A copied snapshot cannot be revoked; create a fresh link to share newer figures.
-Activity buckets count new usage when DROIDEX observes it; loaded history supplies only
-the lifetime baseline. Snapshots include at most 366 activity dates and five entries per
-ranking, with a 32 KiB encoded-fragment limit.
+Settings → Profile publishes an opt-in
+`https://droidex.vercel.app/public/<username>` aggregate snapshot. Public
+profiles show normalized local token activity, DROIDEX session count, streaks, and
+harness/model rankings. They contain no prompts, source paths, raw session identifiers,
+workspace paths, device data, or cost data. Signed coverage flags distinguish unknown,
+complete and measured-minimum token figures. The relay stores the signed public aggregate;
+the browser verifies the bounded v3 payload and username-owner signature before rendering.
+The owner can update or revoke the exact current snapshot. Revocation prevents future views
+but cannot erase copies or screenshots. Snapshots include at most 366 activity dates and
+five entries per ranking, with a 20 KiB payload limit. A share-card UI can render the
+verified data to PNG locally; rich social previews need a dynamic image or metadata
+endpoint. See [`docs/usage.md`](../docs/usage.md) for ledger and privacy boundaries.
 
 Before publishing, verify pairing, reconnects, device revocation and push delivery on a
 real phone against the deployed relay. Local builds and automated checks cover only the

@@ -7,14 +7,23 @@ import { Brand } from './Brand';
 import { Remote } from './Remote';
 import './onboarding.css';
 
+function currentRoute(): { publicUsername: string | null; requested: string } {
+  const path = window.location.pathname.split('/').filter(Boolean);
+  if (path[0] === 'public') {
+    return { publicUsername: path.length === 2 ? (path[1] ?? '') : '', requested: '' };
+  }
+  return { publicUsername: null, requested: path.length === 1 ? (path[0] ?? '') : '' };
+}
+
 export function App() {
-  const requested = window.location.pathname.slice(1);
+  const { publicUsername, requested } = currentRoute();
+  const publicProfile = publicUsername !== null;
   const [handle, setHandle] = useState(HANDLE_PATTERN.test(requested) ? requested : '');
   const [pin, setPin] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(handle));
   const [error, setError] = useState('');
   useEffect(() => {
-    if (requested) return;
+    if (publicProfile || requested) return;
     try {
       const recent = localStorage.getItem(LAST_HANDLE_KEY);
       if (recent && HANDLE_PATTERN.test(recent)) {
@@ -24,7 +33,7 @@ export function App() {
     } catch {
       setError('Browser storage is unavailable. Enable site storage to remember your laptop.');
     }
-  }, [requested]);
+  }, [publicProfile, requested]);
   useEffect(() => {
     if (!handle) return;
     let cancelled = false;
@@ -51,7 +60,7 @@ export function App() {
       cancelled = true;
     };
   }, [handle]);
-  if (requested === 'p') return <PublicProfile />;
+  if (publicUsername !== null) return <PublicProfile username={publicUsername} />;
   if (handle && pin)
     return (
       <Remote

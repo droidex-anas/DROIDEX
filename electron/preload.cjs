@@ -203,6 +203,9 @@ contextBridge.exposeInMainWorld('droidControl', {
   decideRemoteRequest: (id, approved) => ipcRenderer.invoke('remote-decide', { id, approved }),
   revokeRemoteDevice: (id) => ipcRenderer.invoke('remote-revoke', id),
   resetRemotePairing: () => ipcRenderer.invoke('remote-reset'),
+  getPublishedProfile: () => ipcRenderer.invoke('profile-public-get'),
+  publishPublicProfile: (payload) => ipcRenderer.invoke('profile-public-publish', payload),
+  revokePublicProfile: (payload) => ipcRenderer.invoke('profile-public-revoke', payload),
   remoteQr: (text) => ipcRenderer.invoke('remote-qr', text),
   onRemoteState: (handler) => {
     const listener = (_event, state) => handler(state);
@@ -210,7 +213,6 @@ contextBridge.exposeInMainWorld('droidControl', {
     return () => ipcRenderer.removeListener('remote-state-changed', listener);
   },
   getProfileUsage: () => ipcRenderer.invoke('profile-usage-get'),
-  recordProfileUsage: (records) => ipcRenderer.invoke('profile-usage-record', records),
   usageAnalyticsBootstrap: () => ipcRenderer.invoke('usage-analytics-bootstrap'),
   usageAnalyticsFirstLaunchReported: () =>
     ipcRenderer.invoke('usage-analytics-first-launch-reported'),

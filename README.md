@@ -60,9 +60,10 @@ leaving the conversation.
 view of tasks, messages and approvals. Pair with an authenticator and approve
 the device locally, with no remote account or VPN. [Set up Remote](docs/remote.md).
 
-**See and share your coding activity.** Profile shows observed local token activity,
-streaks and the harnesses and models you use most. Share an aggregate snapshot
-without sharing your conversations.
+**See and share your coding activity.** Profile keeps token activity, DROIDEX
+session count, streaks, and harness/model rankings in a local SQLite ledger.
+Publish an optional signed profile at `https://droidex.vercel.app/public/yourname`
+without publishing conversations, files, paths, costs, or device data.
 
 ## Supported agents
 

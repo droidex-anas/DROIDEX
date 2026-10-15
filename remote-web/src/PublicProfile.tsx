@@ -1,254 +1,352 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { BadgeCheck, Check, Flame, ImageDown, Link2, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { HANDLE_PATTERN, type PublicProfileSnapshot } from '../../packages/remote/src/profile';
+import { pixelCreature } from '../../src/lib/pixelCreature';
+import { ProfileAvatar, profileSeed } from '../../src/features/profile/ProfileAvatar';
+import { ProfileBanner } from '../../src/features/profile/ProfileBanner';
+import { downloadProfileCard } from '../../src/features/profile/profileCard';
+import { dateFromDayKey } from '../../src/features/profile/activityCalendar';
+import { ActivityHeatmap } from './ActivityHeatmap';
+import { Brand } from './Brand';
+import { loadPublishedProfile, type ProfileLoadResult } from './profileVerification';
 import './profile.css';
-import { Check, Share2, ShieldCheck } from 'lucide-react';
-import {
-  decodeProfileSnapshot,
-  type PublicProfileSnapshot,
-} from '../../src/features/profile/profileShare';
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 const integer = new Intl.NumberFormat();
-const formatDate = (date: string) =>
-  new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, {
+const GET_DROIDEX_URL = 'https://github.com/droidex-anas/droidex-releases#readme';
+
+function dayCount(count: number) {
+  return `${integer.format(count)} ${count === 1 ? 'day' : 'days'}`;
+}
+
+function formatDay(day: string) {
+  return dateFromDayKey(day).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    timeZone: 'UTC',
   });
+}
 
-export function PublicProfile() {
-  const profile = useMemo(() => decodeProfileSnapshot(window.location.hash), []);
-  const [shared, setShared] = useState(false);
-  const [error, setError] = useState('');
-  if (!profile)
-    return (
-      <main className="welcome">
-        <img src="/icon.svg" width="32" height="32" alt="DROIDEX" />
-        <h1>This profile link is incomplete.</h1>
-        <p>Ask its owner to copy a fresh link from Settings → Profile in DROIDEX.</p>
-        <a className="primary button-link" href="/">
-          Open DROIDEX Remote
-        </a>
-      </main>
-    );
-  const initial = profile.displayName
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase();
-  const displayName = profile.displayName;
-  async function share() {
-    try {
-      if (Reflect.has(navigator, 'share'))
-        await navigator.share({
-          title: `${displayName} on DROIDEX`,
-          url: window.location.href,
-        });
-      else await navigator.clipboard.writeText(window.location.href);
-      setShared(true);
-      setError('');
-    } catch (reason) {
-      if (reason instanceof DOMException && reason.name === 'AbortError') return;
-      setError('Unable to share automatically. Copy this page’s address to share the profile.');
-    }
-  }
+function ProfileState({
+  icon,
+  title,
+  children,
+  busy,
+}: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+  busy?: boolean;
+}) {
   return (
-    <main className="public-profile">
-      <header className="profile-toolbar">
-        <a className="brand" href="/">
-          <img src="/icon.svg" width="27" height="27" alt="" />
-          <span>DROIDEX</span>
-        </a>
-        <button onClick={() => void share()}>
-          {shared ? <Check size={17} /> : <Share2 size={17} />}{' '}
-          {shared ? 'Shared' : 'Share profile'}
-        </button>
-      </header>
-      <div className="profile-identity">
-        <div className="avatar" aria-hidden="true">
-          {initial}
-        </div>
-        <h1>{profile.displayName}</h1>
-        <span className="username">@{profile.username}</span>
-        <p className="muted">A little of what gets built.</p>
-      </div>
-      <dl className="profile-stats">
-        <div>
-          <dd>{compact.format(profile.lifetimeTokens)}</dd>
-          <dt>Lifetime tokens</dt>
-        </div>
-        <div>
-          <dd>{compact.format(profile.peakDayTokens)}</dd>
-          <dt>Peak observed day</dt>
-        </div>
-        <div>
-          <dd>{integer.format(profile.sessions)}</dd>
-          <dt>Sessions</dt>
-        </div>
-        <div>
-          <dd>
-            {profile.currentStreak} {profile.currentStreak === 1 ? 'day' : 'days'}
-          </dd>
-          <dt>Current streak</dt>
-        </div>
-        <div>
-          <dd>
-            {profile.longestStreak} {profile.longestStreak === 1 ? 'day' : 'days'}
-          </dd>
-          <dt>Longest streak</dt>
-        </div>
-      </dl>
-      <Activity profile={profile} />
-      <div className="profile-rankings">
-        <Ranking title="Most used harnesses" values={profile.harnesses} />
-        <Ranking title="Most used models" values={profile.models} />
-      </div>
-      <div className="profile-note">
-        <ShieldCheck size={17} />
-        <p>
-          Shared aggregate snapshot · {new Date(profile.generatedAt).toLocaleDateString()}
-          <br />
-          Observed activity since {new Date(profile.trackingSince).toLocaleDateString()}. No chats,
-          prompts, or workspace details.
-        </p>
-      </div>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+    <main className="profile-state">
+      <Brand />
+      <div className={`profile-state-symbol ${busy ? 'busy' : ''}`}>{icon}</div>
+      <h1>{title}</h1>
+      {children}
     </main>
   );
 }
 
-function Ranking({
-  title,
-  values,
-}: {
-  title: string;
-  values: { name: string; sessions: number }[];
-}) {
-  const maximum = Math.max(1, ...values.map((value) => value.sessions));
+export function PublicProfile({ username }: { username: string }) {
+  const validUsername = HANDLE_PATTERN.test(username);
+  const [attempt, setAttempt] = useState(0);
+  const [result, setResult] = useState<ProfileLoadResult | { status: 'loading' }>({
+    status: 'loading',
+  });
+  useEffect(() => {
+    if (!validUsername) return;
+    let active = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      controller.abort();
+    }, 8_000);
+    setResult({ status: 'loading' });
+    void loadPublishedProfile(username, controller.signal)
+      .then((next) => {
+        if (active) setResult(next);
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+      });
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [attempt, username, validUsername]);
+
+  if (!validUsername)
+    return (
+      <ProfileState
+        icon={<Link2 size={26} strokeWidth={1.6} />}
+        title="This profile link is invalid."
+      >
+        <p>Check the username in the link, or ask its owner to share it again.</p>
+        <a className="primary button-link" href={GET_DROIDEX_URL} rel="noreferrer">
+          Get DROIDEX
+        </a>
+      </ProfileState>
+    );
+  if (result.status === 'loading')
+    return (
+      <ProfileState
+        busy
+        icon={<ShieldCheck size={26} strokeWidth={1.6} />}
+        title="Loading profile…"
+      >
+        <p>Fetching @{username}’s published usage and checking its signature.</p>
+      </ProfileState>
+    );
+  if (result.status === 'not-published')
+    return (
+      <ProfileState icon={<Link2 size={26} strokeWidth={1.6} />} title="Profile not published">
+        <p>@{username} has not published a public usage profile.</p>
+        <button
+          className="primary button-link"
+          onClick={() => {
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Check again
+        </button>
+      </ProfileState>
+    );
+  if (result.status === 'unavailable')
+    return (
+      <ProfileState icon={<ShieldAlert size={26} strokeWidth={1.6} />} title="Profile unavailable">
+        <p>DROIDEX could not reach the profile service. Try again in a moment.</p>
+        <button
+          className="primary button-link"
+          onClick={() => {
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Try again
+        </button>
+      </ProfileState>
+    );
+  if (result.status === 'unverified')
+    return (
+      <ProfileState
+        icon={<ShieldAlert size={26} strokeWidth={1.6} />}
+        title="This profile could not be verified."
+      >
+        <p>
+          The published data does not match @{username}’s signature. Ask its owner to publish the
+          profile again.
+        </p>
+        <button
+          className="primary button-link"
+          onClick={() => {
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Try again
+        </button>
+      </ProfileState>
+    );
+  return <ProfilePage profile={result.profile} />;
+}
+
+function ProfilePage({ profile }: { profile: PublicProfileSnapshot }) {
+  const seed = profileSeed(profile);
+  const { color } = pixelCreature(seed);
+  const [copied, setCopied] = useState(false);
+  const [rendering, setRendering] = useState(false);
+  const [error, setError] = useState('');
+  const minimum = profile.tokensComplete ? '' : '≥ ';
+  const lifetimeTokens = profile.tokensReported
+    ? `${minimum}${compact.format(profile.lifetimeTokens)}`
+    : 'Unknown';
+  const peakDayTokens = profile.tokensReported
+    ? `${minimum}${compact.format(profile.peakDayTokens)}`
+    : 'Unknown';
+
+  useEffect(() => {
+    document.title = `${profile.displayName} (@${profile.username}) · DROIDEX`;
+  }, [profile]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => {
+      setCopied(false);
+    }, 1400);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [copied]);
+
+  const copyLink = () => {
+    void navigator.clipboard
+      .writeText(`${window.location.origin}/public/${encodeURIComponent(profile.username)}`)
+      .then(() => {
+        setCopied(true);
+        setError('');
+      })
+      .catch(() => {
+        setError('Could not copy automatically. Copy this page’s address instead.');
+      });
+  };
+  const saveCard = async () => {
+    setRendering(true);
+    setError('');
+    try {
+      await downloadProfileCard(profile);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not render the profile card.');
+    } finally {
+      setRendering(false);
+    }
+  };
+
   return (
-    <section className="ranking">
-      <h2>{title}</h2>
-      {values.length ? (
-        values.slice(0, 5).map((value) => (
-          <div className="ranking-row" key={value.name}>
-            <div className="ranking-label">
-              <strong>{value.name}</strong>
-              <span className="muted">
-                {integer.format(value.sessions)} {value.sessions === 1 ? 'session' : 'sessions'}
-              </span>
-            </div>
-            <div className="ranking-track">
-              <span style={{ width: `${String((value.sessions / maximum) * 100)}%` }} />
-            </div>
+    <main className="public-profile" style={{ '--profile-color': color } as CSSProperties}>
+      <header className="profile-toolbar">
+        <Brand />
+        <a className="profile-get" href={GET_DROIDEX_URL} rel="noreferrer">
+          Get DROIDEX
+        </a>
+      </header>
+
+      <div className="profile-cover rise">
+        <ProfileBanner
+          days={profile.days}
+          end={dateFromDayKey(profile.generatedDay)}
+          color={color}
+          height={168}
+        />
+      </div>
+
+      <div className="profile-layout">
+        <aside className="profile-sidebar rise" style={{ animationDelay: '60ms' }}>
+          <div className="profile-avatar">
+            <ProfileAvatar seed={seed} size={168} />
           </div>
-        ))
-      ) : (
-        <p className="muted">No sessions recorded yet.</p>
-      )}
-    </section>
+          <h1>{profile.displayName}</h1>
+          <p className="profile-handle">
+            @{profile.username}
+            <span className="profile-verified" title="Signature matches the username registry">
+              <BadgeCheck size={15} /> Verified
+            </span>
+          </p>
+          {profile.currentStreak > 0 && (
+            <p className="profile-streak">
+              <Flame size={14} /> {dayCount(profile.currentStreak)} streak
+            </p>
+          )}
+          <div className="profile-actions">
+            <button className="primary" onClick={copyLink}>
+              {copied ? <Check size={16} /> : <Link2 size={16} />}
+              {copied ? 'Copied' : 'Copy link'}
+            </button>
+            <button disabled={rendering} onClick={() => void saveCard()}>
+              <ImageDown size={16} />
+              {rendering ? 'Rendering…' : 'Save card'}
+            </button>
+          </div>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <p className="profile-since">
+            Usage tracked since{' '}
+            {dateFromDayKey(profile.trackingDay).toLocaleDateString(undefined, {
+              month: 'long',
+              year: 'numeric',
+            })}
+          </p>
+        </aside>
+
+        <div className="profile-main">
+          <dl className="profile-stats rise" style={{ animationDelay: '120ms' }}>
+            <Stat
+              value={lifetimeTokens}
+              label={
+                profile.tokensReported && !profile.tokensComplete
+                  ? 'Measured tokens (minimum)'
+                  : 'Lifetime tokens'
+              }
+            />
+            <Stat value={integer.format(profile.sessions)} label="DROIDEX sessions" />
+            <Stat
+              value={peakDayTokens}
+              label={
+                profile.tokensReported && !profile.tokensComplete
+                  ? 'Peak day (minimum)'
+                  : 'Peak day'
+              }
+            />
+            <Stat value={dayCount(profile.longestStreak)} label="Longest streak" />
+          </dl>
+          <ActivityHeatmap
+            className="rise"
+            days={profile.days}
+            endDay={profile.generatedDay}
+            trackingDay={profile.trackingDay}
+            color={color}
+            tokensReported={profile.tokensReported}
+          />
+          <div className="profile-rankings rise" style={{ animationDelay: '240ms' }}>
+            <Ranking title="Harnesses" rows={profile.harnesses} />
+            <Ranking title="Models" rows={profile.models} />
+          </div>
+        </div>
+      </div>
+
+      <footer className="profile-note">
+        <ShieldCheck size={15} />
+        <p>
+          Published {formatDay(profile.generatedDay)}. Public aggregates only: no prompts,
+          responses, chats, files, paths, costs, device data or workspace details.
+          {!profile.tokensReported
+            ? ' Token totals are unavailable because the indexed sessions did not report them.'
+            : !profile.tokensComplete &&
+              ' Some harness logs omit token counts, so totals marked ≥ are measured minimums.'}
+        </p>
+      </footer>
+    </main>
   );
 }
 
-function Activity({ profile }: { profile: PublicProfileSnapshot }) {
-  const [mode, setMode] = useState<'daily' | 'weekly' | 'cumulative'>('daily');
-  const [selected, setSelected] = useState<number | null>(null);
-  const points = useMemo(() => {
-    if (mode === 'weekly') {
-      const weeks = new Map<string, number>();
-      for (const day of profile.days) {
-        const date = new Date(`${day.date}T12:00:00Z`);
-        date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-        const key = date.toISOString().slice(0, 10);
-        weeks.set(key, (weeks.get(key) ?? 0) + day.tokens);
-      }
-      return Array.from(weeks, ([date, tokens]) => ({ date, tokens }));
-    }
-    let total = 0;
-    return profile.days.map((day) => ({
-      ...day,
-      tokens: mode === 'cumulative' ? (total += day.tokens) : day.tokens,
-    }));
-  }, [mode, profile.days]);
-  const index = Math.min(selected ?? points.length - 1, points.length - 1);
-  const point = points[index];
-  const maximum = Math.max(1, ...points.map((value) => value.tokens));
-  const line = points
-    .map(
-      (value, position) =>
-        `${String((position / Math.max(1, points.length - 1)) * 600)},${String(130 - (value.tokens / maximum) * 110)}`,
-    )
-    .join(' ');
+function Stat({ value, label }: { value: string; label: string }) {
   return (
-    <section className="activity">
-      <div className="activity-heading">
-        <h2>Token activity</h2>
-        <div className="segmented" role="group" aria-label="Activity grouping">
-          {(['daily', 'weekly', 'cumulative'] as const).map((value) => (
-            <button
-              key={value}
-              className={value === mode ? 'selected' : ''}
-              aria-pressed={value === mode}
-              onClick={() => {
-                setMode(value);
-                setSelected(null);
-              }}
-            >
-              {value[0].toUpperCase() + value.slice(1)}
-            </button>
+    <div>
+      <dd>{value}</dd>
+      <dt>{label}</dt>
+    </div>
+  );
+}
+
+function Ranking({ title, rows }: { title: string; rows: { name: string; sessions: number }[] }) {
+  const top = Math.max(1, ...rows.map((row) => row.sessions));
+  return (
+    <section className="surface ranking">
+      <h2>{title}</h2>
+      {rows.length ? (
+        <ol>
+          {rows.map((row, index) => (
+            <li key={row.name}>
+              <div className="ranking-label">
+                <strong>{row.name}</strong>
+                <span className="muted">
+                  {integer.format(row.sessions)} {row.sessions === 1 ? 'session' : 'sessions'}
+                </span>
+              </div>
+              <div className="ranking-track">
+                <span
+                  className={index === 0 ? 'lead' : ''}
+                  style={{
+                    width: `${String((row.sessions / top) * 100)}%`,
+                    animationDelay: `${String(300 + index * 60)}ms`,
+                  }}
+                />
+              </div>
+            </li>
           ))}
-        </div>
-      </div>
-      {points.length ? (
-        <>
-          <div className="activity-value">
-            <strong>{integer.format(point.tokens)}</strong>
-            <span className="muted">
-              {`${mode === 'weekly' ? 'Week of ' : ''}${formatDate(point.date)}`} · tokens
-            </span>
-          </div>
-          <svg
-            className="activity-chart"
-            viewBox="0 0 600 150"
-            role="img"
-            aria-label={`${mode} token activity`}
-          >
-            <line x1="0" y1="132" x2="600" y2="132" className="chart-baseline" />
-            <polyline points={line} className="chart-line" />
-            <circle
-              cx={(index / Math.max(1, points.length - 1)) * 600}
-              cy={130 - (point.tokens / maximum) * 110}
-              r="4"
-              className="chart-point"
-            />
-          </svg>
-          <label className="sr-only" htmlFor="activity-day">
-            Explore recorded activity
-          </label>
-          <input
-            id="activity-day"
-            className="activity-range"
-            type="range"
-            min="0"
-            max={points.length - 1}
-            value={Math.max(0, index)}
-            onChange={(event) => {
-              setSelected(Number(event.target.value));
-            }}
-            aria-valuetext={`${formatDate(point.date)}, ${integer.format(point.tokens)} tokens`}
-          />
-          <div className="activity-dates">
-            <span>{formatDate(points[0].date)}</span>
-            <span>{formatDate(points[points.length - 1].date)}</span>
-          </div>
-        </>
+        </ol>
       ) : (
-        <p className="muted">Activity appears as DROIDEX observes token usage.</p>
+        <p className="muted">Nothing measured yet.</p>
       )}
     </section>
   );

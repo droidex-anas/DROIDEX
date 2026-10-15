@@ -35,3 +35,4 @@ docs/superpowers/
 
 remote-web/dist/
 relay/.wrangler/
+.vercel/

@@ -23,6 +23,8 @@ import type {
 } from '../../../packages/remote/src/desktop.js';
 import { RemoteLocalBridge } from './localBridge.js';
 import { createPushNotifications, validatePushSubscription } from './push.js';
+import { readRemoteUsage } from './profileUsage.js';
+import { publishProfile, readPublishedProfile, revokeProfile } from './profilePublication.js';
 
 interface Peer {
   id: string;
@@ -34,6 +36,7 @@ interface Peer {
   selectedSession?: string;
   queued: number;
   outgoing: number;
+  usageAvailableAt: number;
   queue: Promise<void>;
 }
 interface Pending {
@@ -95,6 +98,7 @@ export async function createRemoteHost(options: {
           queue: Promise.resolve(),
           queued: 0,
           outgoing: 0,
+          usageAvailableAt: 0,
         };
         peers.set(id, peer);
         forward(peer, handshake.hello);
@@ -152,6 +156,14 @@ export async function createRemoteHost(options: {
   }
   function persist(): Promise<void> {
     return options.save(JSON.stringify(state));
+  }
+  function profileCredentials(): { identity: Identity; relayUrl: string; username: string } {
+    const username = state.settings.profile.username;
+    if (!identity || !username) {
+      throw new Error('Finish Remote setup before publishing your profile');
+    }
+    if (!state.settings.relayUrl) throw new Error('Configure the Remote relay before publishing');
+    return { identity, relayUrl: state.settings.relayUrl, username };
   }
   function active(peer: Peer): boolean {
     return state.settings.enabled && peers.get(peer.id) === peer;
@@ -254,6 +266,14 @@ export async function createRemoteHost(options: {
         return;
       }
       const command = remoteCommand(payload);
+      if (command.type === 'usage') {
+        const now = Date.now();
+        if (peer.usageAvailableAt > now)
+          throw new Error('Wait 10 seconds before refreshing usage again');
+        peer.usageAvailableAt = now + 10_000;
+        await send(peer, { type: 'usage', snapshot: await readRemoteUsage(options.bridgeInfo) });
+        return;
+      }
       if (command.type === 'open') peer.selectedSession = command.sessionId;
       if (bridge.needsApproval(command)) {
         if (pending.size >= 20) throw new Error('Too many pending requests');
@@ -368,6 +388,32 @@ export async function createRemoteHost(options: {
 
   return {
     snapshot,
+    getPublishedProfile() {
+      const credentials = profileCredentials();
+      return readPublishedProfile(credentials.relayUrl, credentials.username, credentials.identity);
+    },
+    publishPublicProfile(payload: unknown) {
+      return mutate(async () => {
+        const credentials = profileCredentials();
+        return publishProfile(
+          credentials.relayUrl,
+          credentials.username,
+          credentials.identity,
+          payload,
+        );
+      });
+    },
+    revokePublicProfile(payload: unknown) {
+      return mutate(async () => {
+        const credentials = profileCredentials();
+        await revokeProfile(
+          credentials.relayUrl,
+          credentials.username,
+          credentials.identity,
+          payload,
+        );
+      });
+    },
     configure(patch: unknown) {
       return mutate(async () => {
         if (!isRecord(patch)) throw new Error('Invalid remote settings');
@@ -379,6 +425,18 @@ export async function createRemoteHost(options: {
           throw new Error(
             'Your paired username is fixed. Turn remote off and reset pairing before changing it',
           );
+        const publicationLocationChanged =
+          next.profile.username !== state.settings.profile.username ||
+          next.relayUrl !== state.settings.relayUrl;
+        if (identity && publicationLocationChanged) {
+          const currentUsername = state.settings.profile.username;
+          if (!currentUsername || !state.settings.relayUrl) {
+            throw new Error('Restore your Remote address before changing username or relay');
+          }
+          if (await readPublishedProfile(state.settings.relayUrl, currentUsername, identity)) {
+            throw new Error('Unpublish your profile before changing username or relay');
+          }
+        }
         const reconnect =
           next.enabled !== state.settings.enabled || next.relayUrl !== state.settings.relayUrl;
         if (reconnect) stop();

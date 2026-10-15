@@ -26,6 +26,7 @@ async function bridgeServer(
   t: TestContext,
   onCommand: (command: ClientCommand) => Promise<void> = async () => undefined,
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot,
+  getProfileUsage?: () => Promise<unknown> | unknown,
 ): Promise<Harness> {
   const token = 'test-token';
   const server = startBridgeServer({
@@ -33,6 +34,7 @@ async function bridgeServer(
     token,
     onCommand,
     ...(getSnapshot ? { getSnapshot } : {}),
+    ...(getProfileUsage ? { getProfileUsage } : {}),
   });
   await server.ready;
   t.after(() => server.close());
@@ -41,6 +43,54 @@ async function bridgeServer(
     token,
     broadcast: server.broadcast,
     close: () => server.close(),
+  };
+}
+
+test('profile usage is available only through the authenticated local route', async (t) => {
+  const profile = usageSnapshot();
+  const harness = await bridgeServer(t, undefined, undefined, () => ({
+    ...profile,
+    sourcePath: '/private/log.jsonl',
+  }));
+  const url = `http://127.0.0.1:${String(harness.port)}/profile/usage`;
+
+  assert.equal((await fetch(url)).status, 401);
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${harness.token}` },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), profile);
+});
+
+function usageSnapshot() {
+  return {
+    sync: {
+      status: 'ready',
+      sources: { jsonl: 'ready', openCode: 'ready', droid: 'ready' },
+    },
+    lifetimeTokens: 42,
+    peakDayTokens: 42,
+    sessions: 1,
+    currentStreak: 1,
+    longestStreak: 1,
+    trackingSince: 1,
+    days: [{ date: '2026-10-14', tokens: 42, events: 1, complete: true }],
+    harnesses: [{ name: 'Codex', sessions: 1, events: 1, tokens: 42, complete: true }],
+    models: [{ name: 'gpt-6', sessions: 1, events: 1, tokens: 42, complete: true }],
+    totals: {
+      events: 1,
+      inputTokens: 40,
+      outputTokens: 2,
+      cacheWriteTokens: null,
+      cacheReadTokens: null,
+      reasoningTokens: null,
+      providerCostMicrousd: null,
+      estimatedCostMicrousd: null,
+      tokensComplete: true,
+    },
+    coverage: { inputTokens: { known: 1, events: 1 } },
+    timeZone: 'UTC',
   };
 }
 

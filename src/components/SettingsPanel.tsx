@@ -1047,9 +1047,10 @@ function ProfileSection() {
     return <p className="text-[13px] text-droid-text-muted">{error || 'Loading profile…'}</p>;
   return (
     <ProfileSettings
+      publishingReady={Boolean(state.pairingUrl)}
       usernameLocked={state.authenticatorReady}
       profile={state.profile}
-      webClientUrl={state.clientUrl}
+      webClientUrl={state.clientUrl.trim() || 'https://droidex.vercel.app'}
       onProfileChange={(profile) => {
         const api = window.droidControl;
         if (!api) return Promise.reject(new Error('Open the desktop app to edit your profile.'));

@@ -425,6 +425,17 @@ export class HistoryIndex {
     return { patches, hiddenProviderSessionIds: hiddenProviderSessionIdsFromRows(rows) };
   }
 
+  appSessionIds(): string[] {
+    const rows = this.db
+      .prepare('SELECT app_session_id FROM app_sessions ORDER BY app_session_id')
+      .all() as { app_session_id: unknown }[];
+    return rows.map((row) => {
+      const id = stringValue(row.app_session_id);
+      if (!id) throw new Error('Canonical history contains an invalid app session ID.');
+      return id;
+    });
+  }
+
   private summaryPatches(): Map<string, Partial<SessionSummary>> {
     const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
     const patches = summaryPatchesFromRows(rows);

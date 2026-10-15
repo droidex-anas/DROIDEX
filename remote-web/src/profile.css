@@ -1,153 +1,162 @@
 .public-profile {
-  max-width: 960px;
+  max-width: 1080px;
   margin: auto;
-  padding: max(20px, env(safe-area-inset-top)) 24px max(28px, env(safe-area-inset-bottom));
+  padding: max(16px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
 }
 .profile-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding-bottom: 16px;
 }
-.profile-toolbar button {
-  font-size: 12px;
-  background: transparent;
+.profile-get {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--droid-text-secondary);
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 10px;
+  transition:
+    background 150ms,
+    color 150ms;
 }
-.profile-identity {
-  display: flex;
-  align-items: center;
-  flex-direction: column;
-  gap: 12px;
-  padding: 44px 0 32px;
-  text-align: center;
-}
-.avatar {
-  width: 86px;
-  height: 86px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 29px;
+.profile-get:hover {
   background: var(--droid-elevated);
   color: var(--droid-text);
-  font-weight: 500;
-  margin-bottom: 6px;
 }
-.profile-identity h1 {
-  font-size: 29px;
+.profile-cover {
+  overflow: hidden;
+  border-radius: 20px;
 }
-.username {
-  font-size: 12px;
+
+.profile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  padding: 0 4px;
+}
+.profile-sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.profile-avatar {
+  margin-top: -64px;
+  padding: 6px;
+  border-radius: 50px;
+  background: var(--droid-bg);
+  width: max-content;
+}
+.profile-avatar svg {
+  width: 120px;
+  height: 120px;
+}
+.profile-sidebar h1 {
+  margin-top: 14px;
+  font-size: 26px;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.profile-handle {
+  font-size: 16px;
   color: var(--droid-text-secondary);
-  background: var(--droid-surface);
-  padding: 3px 9px;
-  border-radius: 7px;
+  margin-top: 2px;
 }
-.profile-identity > p {
+.profile-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--droid-green);
+  vertical-align: 1px;
+}
+.profile-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--profile-color);
+  background: color-mix(in srgb, var(--profile-color) 15%, transparent);
+}
+.profile-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  margin-top: 18px;
+}
+.profile-actions button {
+  min-height: 40px;
   font-size: 13px;
+  border-radius: 11px;
+}
+.profile-actions button:active {
+  transform: scale(0.97);
+}
+.profile-sidebar .error {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.profile-since {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--droid-text-muted);
+}
+
+.profile-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
 }
 .profile-stats {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   margin: 0;
-  padding: 24px;
-  background: var(--droid-surface);
-  border-radius: 18px;
 }
 .profile-stats div {
-  text-align: center;
+  padding: 14px 16px;
+  background: var(--droid-surface);
+  border-radius: 14px;
 }
 .profile-stats dd {
-  margin: 0 0 3px;
-  font-size: 20px;
-  font-weight: 550;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
   font-variant-numeric: tabular-nums;
 }
 .profile-stats dt {
-  color: var(--droid-text-secondary);
-  font-size: 11px;
-}
-.profile-stats div:last-child {
-  grid-column: 1 / -1;
-}
-.activity {
-  margin-top: 34px;
-}
-.activity-heading {
-  display: flex;
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 12px;
-}
-.segmented {
-  display: flex;
-  gap: 4px;
-}
-.segmented button {
+  margin-top: 2px;
+  color: var(--droid-text-muted);
   font-size: 12px;
-  min-height: 44px;
-  padding: 6px 12px;
-  background: transparent;
 }
-.activity-value {
-  display: flex;
-  gap: 9px;
-  align-items: baseline;
-  margin-top: 20px;
-  font-size: 12px;
-  flex-wrap: wrap;
-}
-.activity-value strong {
-  font-size: 22px;
-  font-weight: 550;
-  font-variant-numeric: tabular-nums;
-}
-.activity-chart {
-  display: block;
-  width: 100%;
-  height: 170px;
-  overflow: visible;
-  margin-top: 8px;
-}
-.chart-baseline {
-  stroke: var(--droid-border);
-  stroke-width: 1;
-}
-.chart-line {
-  fill: none;
-  stroke: var(--droid-accent);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
-.chart-point {
-  fill: var(--droid-accent);
-}
-.activity-range {
-  width: 100%;
-  min-height: 44px;
-  padding: 0;
-  accent-color: var(--droid-accent);
-  background: transparent;
-}
-.activity-dates {
-  display: flex;
-  justify-content: space-between;
-  color: var(--droid-text-secondary);
-  font-size: 10px;
-}
+
 .profile-rankings {
   display: grid;
-  gap: 30px;
-  margin-top: 34px;
+  gap: 12px;
+}
+.ranking {
+  padding: 18px;
 }
 .ranking h2 {
-  margin-bottom: 19px;
+  font-size: 14px;
+  font-weight: 550;
 }
-.ranking-row {
-  margin-top: 15px;
+.ranking ol {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
 }
 .ranking-label {
   display: flex;
@@ -157,66 +166,186 @@
 }
 .ranking-label strong {
   font-weight: 500;
+  color: var(--droid-text-secondary);
   overflow-wrap: anywhere;
 }
 .ranking-label span {
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 .ranking-track {
-  height: 4px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 6px;
   background: var(--droid-elevated);
-  border-radius: 4px;
-  margin-top: 9px;
   overflow: hidden;
 }
 .ranking-track > span {
   display: block;
   height: 100%;
-  background: color-mix(in srgb, var(--droid-accent) 42%, var(--droid-elevated));
   border-radius: inherit;
+  background: color-mix(in srgb, var(--profile-color) 50%, var(--droid-elevated));
+  transform-origin: left;
+  animation: profile-bar-grow 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+.ranking-track > span.lead {
+  background: color-mix(in srgb, var(--profile-color) 85%, var(--droid-elevated));
+}
+
 .profile-note {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  margin-top: 36px;
-  font-size: 11px;
-  color: var(--droid-text-secondary);
+  gap: 8px;
+  margin: 28px 4px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--droid-text-muted);
 }
 .profile-note svg {
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 3px;
 }
-@media (min-width: 620px) {
-  .workspace {
-    padding: 32px 28px 220px;
+
+.rise {
+  animation: profile-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes profile-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes profile-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes profile-pixel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes profile-bar-in {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.profile-avatar-pixel {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: profile-pixel-in 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+.profile-banner-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: profile-bar-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (min-width: 760px) {
   .public-profile {
-    padding-left: 40px;
-    padding-right: 40px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+  .profile-layout {
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 32px;
+    padding: 0 8px;
+  }
+  .profile-avatar {
+    margin-top: -88px;
+    border-radius: 58px;
+  }
+  .profile-avatar svg {
+    width: 168px;
+    height: 168px;
+  }
+  .profile-main {
+    padding-top: 20px;
   }
   .profile-stats {
-    grid-template-columns: repeat(5, 1fr);
-    gap: 12px;
-    padding: 25px 14px;
-  }
-  .profile-stats div:last-child {
-    grid-column: auto;
-  }
-  .activity-heading {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
+    grid-template-columns: repeat(4, 1fr);
   }
   .profile-rankings {
     grid-template-columns: repeat(2, 1fr);
-    gap: 45px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition: none !important;
+  .rise,
+  .profile-state-symbol,
+  .ranking-track > span,
+  .profile-avatar-pixel,
+  .profile-banner-bar {
+    animation: none;
+  }
+  .profile-actions button {
+    transition: none;
+  }
+}
+
+.profile-state {
+  min-height: 100dvh;
+  max-width: 420px;
+  margin: auto;
+  padding: max(24px, env(safe-area-inset-top)) 24px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+}
+.profile-state > .brand {
+  margin-bottom: 28px;
+}
+.profile-state h1 {
+  font-size: 22px;
+  letter-spacing: -0.4px;
+}
+.profile-state p {
+  color: var(--droid-text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.profile-state .button-link {
+  margin-top: 12px;
+}
+.profile-state-symbol {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: var(--droid-surface);
+  color: var(--droid-text-secondary);
+  animation: profile-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.profile-state-symbol.busy {
+  animation:
+    profile-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both,
+    profile-state-pulse 1.8s ease-in-out 0.5s infinite;
+}
+@keyframes profile-state-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--droid-surface) 100%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--droid-surface) 0%, transparent);
   }
 }

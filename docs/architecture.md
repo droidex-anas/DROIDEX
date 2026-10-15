@@ -372,18 +372,39 @@ its receive queues/transcript tails bounded. Generic Web Push is sent directly
 by the laptop using locally generated VAPID keys. There is no cloud agent job,
 offline message store or provider credential in the client.
 
-The local profile ledger receives narrow cumulative usage records from the
-renderer on a five-second batch cadence, independently of Remote being on.
-It records monotonic observed totals, daily deltas and chat-based harness/model
-rankings. Claude's per-turn billing totals survive context clearing, and cold
-resumes add the persisted usage basis to its fresh runtime counters. Droid and
-Codex already report cumulative provider counters. Opt-in public profile links
-contain an allowlisted URL-fragment snapshot; neither host stores that profile.
-See [Remote and Profile](remote.md).
+The sidecar's dedicated usage worker incrementally ingests Claude Code and Codex
+JSONL, Factory Droid's mutable settings metadata, and OpenCode's read-only
+SQLite usage rows into the profile-scoped, append-only `usage.sqlite` ledger.
+Normalized events and their cursors commit together; harness-specific dedupe
+keys make replay and rotation idempotent. Each adapter has an independent
+indexing state, so a failed source cannot poison the database or stop other
+sources. Snapshots remain responsive while indexing and are explicitly labeled;
+the renderer does not publish partial totals as a finished profile. Token
+categories remain nullable, daily activity and session/model sets are
+rebuildable caches, and the renderer reads only bounded aggregates through an
+authenticated localhost endpoint. This work stays off both the renderer and
+Remote host event loops.
+
+The same ledger has an append-only, ID-only `droidex_session` table for the
+profile headline session count. The sidecar seeds durable top-level
+`app_sessions` from canonical history at startup and records every successful
+create or resume idempotently. Profile reads wait for that worker write tail.
+Child sessions and session metadata never enter the table; harness and model
+rankings continue to count only usage-bearing provider sessions.
+
+Opt-in public profiles use the stable `/public/<username>` route. The laptop
+signs a strictly allowlisted aggregate with its P-256 username-owner key and
+explicitly publishes the bounded payload and signature to the handle's Durable
+Object. The viewer fetches that public bundle, verifies the owner signature, and
+never contacts the laptop. Update and exact-current revoke remain owner-signed;
+private usage events and Remote credentials stay local. The short route trusts
+the relay's username-to-key registry for public-profile authenticity; paired
+Remote sessions independently pin the laptop key. See [Local usage ledger](usage.md)
+and [Remote and Profile](remote.md).
 
 ## Build path
 
-`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus `sidecar/dist/historyPersistenceWorker.mjs`; Electron uses the former unless `SIDECAR_ENTRY` is set and packages both from `sidecar/dist`.
+`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs`, `sidecar/dist/historyPersistenceWorker.mjs`, `sidecar/dist/usageWorker.mjs`, and the Remote host bundle; Electron uses the main sidecar unless `SIDECAR_ENTRY` is set and packages the bundles from `sidecar/dist`.
 
 ## Update path
 

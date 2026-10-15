@@ -20,6 +20,7 @@ import { useRemote, type ConnectionStatus } from './useRemote';
 import { Brand } from './Brand';
 import { PushSettings } from './PushSettings';
 import { AgentList, SessionStatus } from './AgentList';
+import { UsageScreen } from './UsageScreen';
 
 const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
   ready: 'Connected to your laptop',
@@ -40,7 +41,7 @@ export function Remote({
   onForget: () => Promise<void>;
 }) {
   const remote = useRemote(handle, pin);
-  const [tab, setTab] = useState<'agents' | 'approvals'>('agents');
+  const [tab, setTab] = useState<'agents' | 'approvals' | 'usage'>('agents');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const selected = remote.sessions.find((session) => session.id === remote.selectedSessionId);
@@ -193,6 +194,13 @@ export function Remote({
                   </p>
                 </article>
               </>
+            ) : tab === 'usage' ? (
+              <UsageScreen
+                usage={remote.usage}
+                handle={handle}
+                ready={ready}
+                refresh={() => remote.send({ type: 'usage' })}
+              />
             ) : (
               <>
                 <div className="page-heading">
@@ -311,6 +319,16 @@ export function Remote({
                 {remote.approvals.length > 0 && (
                   <span className="badge">{remote.approvals.length}</span>
                 )}
+              </button>
+              <button
+                className={tab === 'usage' ? 'selected' : ''}
+                onClick={() => {
+                  setTab('usage');
+                  remote.closeSession();
+                  if (ready) void command({ type: 'usage' });
+                }}
+              >
+                Usage
               </button>
               <button onClick={forget}>Forget browser</button>
             </nav>

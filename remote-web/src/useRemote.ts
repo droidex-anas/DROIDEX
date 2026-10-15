@@ -11,8 +11,11 @@ import {
   type RemoteCommand,
   type RemoteSession,
 } from '../../packages/remote/src/application';
+import type { RemoteUsageSnapshot } from '../../packages/remote/src/usage';
 import { parseRemoteMessage } from './messages';
 import { LAST_HANDLE_KEY, prepareDevice, writeDevice, type BrowserDevice } from './deviceStore';
+
+const DEFAULT_RELAY_URL = 'wss://droidex-relay.mdanas7869292.workers.dev';
 
 export type ConnectionStatus = 'connecting' | 'offline' | 'code' | 'pairing' | 'ready' | 'error';
 interface RemoteState {
@@ -24,6 +27,7 @@ interface RemoteState {
   expiresAt: number;
   pushPublicKey: string | null;
   selectedSessionId: string | null;
+  usage: RemoteUsageSnapshot | null;
 }
 interface Connection {
   socket: WebSocket;
@@ -36,12 +40,19 @@ interface PendingCommand {
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
+interface PendingUsage {
+  operationId: string;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 function relayUrl(handle: string): string {
   const configured: unknown = import.meta.env.VITE_REMOTE_RELAY_URL;
-  if (typeof configured !== 'string' || !configured)
-    throw new Error('This site needs a relay URL. Set VITE_REMOTE_RELAY_URL and rebuild.');
-  const url = new URL(configured);
+  const url = new URL(
+    typeof configured === 'string' && configured.trim() ? configured : DEFAULT_RELAY_URL,
+  );
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   if (url.protocol !== 'wss:' && !(local && url.protocol === 'ws:'))
     throw new Error('Remote access requires a secure WebSocket relay.');
@@ -61,10 +72,12 @@ export function useRemote(handle: string, pin: string | null) {
     expiresAt: 0,
     pushPublicKey: null,
     selectedSessionId: null,
+    usage: null,
   });
   const active = useRef<Connection | null>(null);
   const selectedSessionId = useRef<string | null>(null);
   const pending = useRef(new Map<string, PendingCommand>());
+  const pendingUsage = useRef<PendingUsage | null>(null);
   const reconnect = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -92,6 +105,12 @@ export function useRemote(handle: string, pin: string | null) {
         command.reject(new Error('Your laptop disconnected before confirming the request.'));
       }
       pending.current.clear();
+      const usageRequest = pendingUsage.current;
+      if (usageRequest) {
+        clearTimeout(usageRequest.timer);
+        pendingUsage.current = null;
+        usageRequest.reject(new Error('Your laptop disconnected before returning usage.'));
+      }
     };
 
     const connect = async () => {
@@ -148,6 +167,12 @@ export function useRemote(handle: string, pin: string | null) {
               if (!isRecord(message)) throw new Error('Invalid relay message.');
               if (message.type === 'relay-ready') return;
               if (message.type === 'locked') {
+                const usageRequest = pendingUsage.current;
+                if (usageRequest) {
+                  clearTimeout(usageRequest.timer);
+                  pendingUsage.current = null;
+                  usageRequest.reject(new Error('The relay rejected the usage request.'));
+                }
                 update({
                   status: 'error',
                   feedback: 'Unable to connect. Wait a moment and retry.',
@@ -208,6 +233,12 @@ export function useRemote(handle: string, pin: string | null) {
                     command.reject(new Error('Unlock this browser before sending a request.'));
                   }
                   pending.current.clear();
+                  if (pendingUsage.current) {
+                    const usageRequest = pendingUsage.current;
+                    clearTimeout(usageRequest.timer);
+                    pendingUsage.current = null;
+                    usageRequest.reject(new Error('Unlock this browser before requesting usage.'));
+                  }
                   connection.device = { ...device, expiresAt: 0 };
                   await writeDevice(connection.device);
                   if (isCurrent())
@@ -216,6 +247,7 @@ export function useRemote(handle: string, pin: string | null) {
                       sessions: [],
                       approvals: [],
                       streams: {},
+                      usage: null,
                       selectedSessionId: null,
                       feedback: 'Unable to unlock. Check your code or wait before trying again.',
                     });
@@ -223,6 +255,16 @@ export function useRemote(handle: string, pin: string | null) {
                 case 'pairing':
                   update({ status: 'pairing', feedback: '' });
                   break;
+                case 'usage': {
+                  update({ usage: decoded.snapshot });
+                  const usageRequest = pendingUsage.current;
+                  if (usageRequest) {
+                    clearTimeout(usageRequest.timer);
+                    pendingUsage.current = null;
+                    usageRequest.resolve();
+                  }
+                  break;
+                }
                 case 'snapshot': {
                   const liveIds = new Set(decoded.sessions.map((session) => session.id));
                   const removedSelection =
@@ -273,6 +315,12 @@ export function useRemote(handle: string, pin: string | null) {
                   break;
                 case 'result':
                   if (decoded.operationId) {
+                    const usageRequest = pendingUsage.current;
+                    if (usageRequest?.operationId === decoded.operationId && !decoded.ok) {
+                      clearTimeout(usageRequest.timer);
+                      pendingUsage.current = null;
+                      usageRequest.reject(new Error(decoded.message));
+                    }
                     const command = pending.current.get(decoded.operationId);
                     if (command) {
                       clearTimeout(command.timer);
@@ -305,6 +353,12 @@ export function useRemote(handle: string, pin: string | null) {
             command.reject(new Error('Your laptop disconnected before confirming the request.'));
           }
           pending.current.clear();
+          const usageRequest = pendingUsage.current;
+          if (usageRequest) {
+            clearTimeout(usageRequest.timer);
+            pendingUsage.current = null;
+            usageRequest.reject(new Error('Your laptop disconnected before returning usage.'));
+          }
           clearInterval(heartbeat);
           update({ status: 'offline' });
           const delay = Math.min(30_000, 1_000 * 2 ** Math.min(attempts++, 5));
@@ -358,6 +412,51 @@ export function useRemote(handle: string, pin: string | null) {
     const connection = active.current;
     if (state.status !== 'ready' || !connection?.channel)
       throw new Error('Reconnect to your laptop before sending a command.');
+    if (command.type === 'usage') {
+      if (pendingUsage.current) {
+        await pendingUsage.current.promise;
+        return;
+      }
+      let resolveRequest!: () => void;
+      let rejectRequest!: (error: Error) => void;
+      const promise = new Promise<void>((resolve, reject) => {
+        resolveRequest = resolve;
+        rejectRequest = reject;
+      });
+      const timer = setTimeout(() => {
+        const request = pendingUsage.current;
+        if (request?.promise !== promise) return;
+        pendingUsage.current = null;
+        request.reject(
+          new Error(
+            'Your laptop has not returned usage. Check its connection before trying again.',
+          ),
+        );
+      }, 15_000);
+      const request: PendingUsage = {
+        operationId: crypto.randomUUID(),
+        promise,
+        resolve: resolveRequest,
+        reject: rejectRequest,
+        timer,
+      };
+      pendingUsage.current = request;
+      try {
+        await Promise.all([
+          sendOn(connection, { ...command, operationId: request.operationId }),
+          promise,
+        ]);
+      } catch (reason) {
+        const error = reason instanceof Error ? reason : new Error('Unable to request usage.');
+        if (pendingUsage.current === request) {
+          clearTimeout(timer);
+          pendingUsage.current = null;
+          request.reject(error);
+        }
+        throw error;
+      }
+      return;
+    }
     if (command.type === 'list' || command.type === 'open') {
       if (command.type === 'open') {
         selectedSessionId.current = command.sessionId;

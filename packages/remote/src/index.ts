@@ -1,7 +1,8 @@
 export * from './crypto';
+export * from './profile';
 export * from './totp';
+export * from './usage';
 
-export const HANDLE_PATTERN = /^[a-z][a-z0-9-]{2,29}$/;
 export const MAX_RELAY_FRAME_BYTES = 65_536;
 
 export type RelayMessage =

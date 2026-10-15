@@ -3,7 +3,31 @@
   "outputDirectory": "remote-web/dist",
   "rewrites": [
     {
-      "source": "/((?!assets/|sw.js|manifest.webmanifest|icon.svg|icon.png).*)",
+      "source": "/__droidex_remote/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/__droidex_remote/sw.js",
+      "destination": "/sw.js"
+    },
+    {
+      "source": "/__droidex_remote/manifest.webmanifest",
+      "destination": "/manifest.webmanifest"
+    },
+    {
+      "source": "/__droidex_remote/icon.svg",
+      "destination": "/icon.svg"
+    },
+    {
+      "source": "/__droidex_remote/icon.png",
+      "destination": "/icon.png"
+    },
+    {
+      "source": "/__droidex_remote/app",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/((?!assets/|sw.js|manifest.webmanifest|icon.svg|icon.png|__droidex_remote/).*)",
       "destination": "/index.html"
     }
   ],
@@ -16,8 +40,15 @@
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; img-src 'self' data:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://droidex-relay.mdanas7869292.workers.dev wss://droidex-relay.mdanas7869292.workers.dev; img-src 'self' data:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         }
+      ]
+    },
+    {
+      "source": "/__droidex_remote/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     },
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }

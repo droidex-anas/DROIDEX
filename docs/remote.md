@@ -6,9 +6,9 @@ messages; no account, VPN or inbound laptop port is required.
 
 ## Set up
 
-1. Open **Settings → Remote**. Enter your name and a public username. Use the hosting
-   addresses supplied by your operator, or enter your own HTTPS client and WSS
-   relay origins under Hosting.
+1. Open **Settings → Remote**. Enter your name and a public username. The official
+   client and relay are already configured. To run your own, open **Advanced →
+   Self-host Remote** and enter your HTTPS client and WSS relay origins.
 2. Save the address, set up an authenticator, and enter its current code. The
    laptop claims the username before displaying the authenticator QR.
 3. Scan **Connect your phone** with the phone camera. Enter a fresh authenticator
@@ -52,23 +52,40 @@ that owns the username. There is no account recovery for a lost laptop key.
 
 ## Profile
 
-**Settings → Profile** shows retained, observed token totals, an interactive
-daily/weekly/cumulative activity chart, streaks and harness/model rankings.
-Loaded chat history establishes a lifetime baseline; daily activity counts token
-increases on the laptop's local day when they are observed after tracking starts.
-Models are ranked by each chat's latest known model. Unreported tokens, external
-CLI activity, billing costs and
-task durations are not invented. The local ledger retains at most 10,000 chat
-counters and 366 activity dates.
+**Settings → Profile** shows normalized local token totals, an interactive
+daily/weekly/cumulative activity chart, streaks, cost coverage, and harness/model
+rankings. A sidecar worker incrementally reads supported harness histories into
+the append-only `usage.sqlite` ledger, including activity created outside the
+DROIDEX window. Unknown categories stay unknown instead of becoming zero. Cost
+is shown only when reported or calculable and is labeled as an API-equivalent
+estimate for subscription usage. Initial indexing is nonblocking and reports
+its state per source; sharing stays unavailable until every source completes.
+See [Local usage ledger](usage.md).
 
-**Share → Copy link** creates a fixed, public aggregate snapshot at `/p#…`.
+**Share → Copy link** publishes an opt-in aggregate snapshot at
+`https://droidex.vercel.app/public/yourname`.
 It contains your chosen name, username, aggregate activity and model/harness
-names. It contains no prompts, workspace paths, session identifiers or keys.
-The fragment never goes to the host; the relay stores no profile. Anyone with
-the copied link can view it, and an already copied snapshot cannot be revoked.
-Create another link to share updated figures.
-Snapshots contain at most 366 activity dates and five entries per ranking, with
-a 32 KiB encoded-fragment limit.
+names. When a harness omits counts, signed coverage flags label the affected
+figures as measured minimums; completely unreported token totals stay unknown.
+The headline session count covers durable top-level sessions DROIDEX has
+created or resumed; harness/model ranking counts remain observed usage
+sessions. “Tracked since” includes imported harness history. The snapshot
+contains no prompts, workspace paths,
+source paths, raw session identifiers, costs, device data or private keys.
+The laptop signs it with the registered username key. The relay stores the
+signed public aggregate so the link works while the laptop is offline, and the
+web client verifies the signature before rendering it. Publishing, updating
+and revoking are explicit owner-signed actions tied to the exact current
+snapshot. Revocation stops future views but cannot erase copies or screenshots.
+Because the short URL carries no key pin, public-profile authenticity trusts the
+relay's username-to-owner-key registry. A compromised relay could substitute a
+different public profile, but it still cannot reach the laptop or decrypt Remote
+traffic; paired Remote devices pin the laptop key separately through the QR link.
+
+Snapshots contain at most 366 activity dates and five entries per ranking. The
+payload is limited to 20 KiB. The same verified data can be rendered locally as
+a PNG share card without laptop access. Per-user Open Graph images still need a
+dynamic image or metadata endpoint.
 
 ## Operate or self-host
 
@@ -78,16 +95,26 @@ origin and the client's `VITE_REMOTE_RELAY_URL` to the relay's WSS origin.
 Set `DROIDEX_REMOTE_RELAY_URL` and `DROIDEX_REMOTE_CLIENT_URL` for development;
 the same addresses can be saved in the desktop onboarding flow.
 
+The official site keeps marketing and Remote in separate Vercel projects. Ordered
+project routes on `droidex.vercel.app` proxy valid `/<username>` and
+`/public/<username>` pages plus `/__droidex_remote/*` static files to
+`droidex-remote.vercel.app`. Fixed marketing and infrastructure names are reserved
+and cannot be claimed as usernames. The browser still sees one origin, so the
+marketing deployment and Vercel account are part of the Remote client trust boundary.
+Deploy Remote first, verify its stable alias, stage and test the routes, then publish
+them. The marketing checkout does not need to be rebuilt for a Remote release.
+
 Before a public launch, verify pairing, trust expiry, revocation, reconnects,
 WebSocket hibernation and push delivery against the deployed Worker on a real
 phone. Protect repository and hosting accounts with 2FA. A compromised relay
 sees ciphertext and traffic metadata; compromised web-host JavaScript can read
 the browser view. Self-hosting gives you control of both deployments.
 
-The relay retains only the public handle owner key, short-lived claim
-challenges and bounded socket routing metadata. It persists no ciphertext or
-offline queue. Forwarding performs no durable writes. Frames are capped at
-64 KiB, receipt windows at 16 frames/256 KiB and connection attempts at 20 per
+The relay retains the public handle owner key, short-lived challenges, bounded
+socket routing metadata and an opt-in signed public aggregate. It persists no
+private messages, ciphertext or offline queue. Forwarding performs no durable
+writes. Frames are capped at 64 KiB, receipt windows at 16 frames/256 KiB,
+connection attempts at 20 per IP/minute and public profile reads at 120 per
 IP/minute at each edge. The desktop additionally bounds peers, pending actions,
 encryption queues, transcript tails and snapshots. Five incorrect authenticator
 codes lock new pairing for fifteen minutes; used time steps cannot be replayed.
