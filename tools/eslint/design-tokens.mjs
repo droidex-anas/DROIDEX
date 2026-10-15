@@ -32,6 +32,9 @@ const EDGE_RESETS = new Set([
 ]);
 const DIVIDE_WIDTH = /^divide-[xy](?:-\d+)?$/;
 const DIVIDE_DIVIDER_COLOR = /^divide-divider(?:\/\d+)?$/;
+// Data tables are the one place row rules stay: everywhere else rows separate
+// by space and tone (docs/design-system/rules.md, rule 4).
+const TABLE_ROW_ELEMENTS = new Set(['tbody', 'tr']);
 const FONT_WEIGHT = /^font-(?:bold|light|thin|extralight|extrabold|black)$/;
 const FOCUS_VISIBLE = /(^|:)focus-visible:/;
 
@@ -209,7 +212,7 @@ export default {
       'palette-color':
         "Tailwind default palette '{{cls}}'. Use a theme token (bg-active, text-secondary, text-danger).{{note}}",
       'border-width':
-        "Surface edge '{{cls}}'. Separate with tone, space and floating shadow. Use divide-y/divide-x with divide-divider for dense rows; document semantic exceptions with a reasoned inline directive (docs/design-system/rules.md).{{note}}",
+        "Surface edge '{{cls}}'. Separate with space, tone and floating shadow, never a line. Only data-table rows (<tbody>, <tr>) take divide-y/divide-x with divide-divider; document semantic exceptions with a reasoned inline directive (docs/design-system/rules.md).{{note}}",
       'font-weight': "Font weight '{{cls}}'. Use font-medium or font-semibold.{{note}}",
       'focus-ring':
         "Focus ring '{{cls}}'. Use the focus-ring token (ALLOWED_FOCUS_CLASSES in tools/eslint/design-tokens.mjs).{{note}}",
@@ -235,14 +238,16 @@ export default {
         .map((directive) => directive.node.loc.end.line + 1),
     );
 
-    // Dividers from unconditional parts apply inside conditional forks;
-    // sibling alternatives never exempt each other.
-    const reportGroup = (group, inherited) => {
+    // On table rows, dividers from unconditional parts apply inside conditional
+    // forks; sibling alternatives never exempt each other.
+    const reportGroup = (group, inherited, isTableRows) => {
       const divide = new Set(inherited);
-      for (const token of group.parts.flatMap((part) => part.text.split(/\s+/))) {
-        if (!token) continue;
-        const { prefix, cls } = splitClassToken(token);
-        if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
+      if (isTableRows) {
+        for (const token of group.parts.flatMap((part) => part.text.split(/\s+/))) {
+          if (!token) continue;
+          const { prefix, cls } = splitClassToken(token);
+          if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
+        }
       }
       for (const part of group.parts) {
         for (const token of part.text.split(/\s+/)) {
@@ -250,23 +255,26 @@ export default {
           if (category) findings.push({ category, cls: token, node: part.node });
         }
       }
-      for (const forked of group.forks) reportGroup(forked, divide);
+      for (const forked of group.forks) reportGroup(forked, divide, isTableRows);
     };
 
-    const visitValue = (node) => {
+    const visitValue = (node, isTableRows) => {
       const root = newGroup(null);
       collectClassStrings(node, root, resolve, seen);
-      if (root.parts.length > 0 || root.forks.length > 0) reportGroup(root, new Set());
+      if (root.parts.length > 0 || root.forks.length > 0) reportGroup(root, new Set(), isTableRows);
     };
 
     return {
       JSXAttribute(node) {
-        if (node.name.type === 'JSXIdentifier' && node.name.name === 'className') {
-          visitValue(node.value);
-        }
+        if (node.name.type !== 'JSXIdentifier' || node.name.name !== 'className') return;
+        const element = node.parent.name;
+        visitValue(
+          node.value,
+          element.type === 'JSXIdentifier' && TABLE_ROW_ELEMENTS.has(element.name),
+        );
       },
       CallExpression(node) {
-        visitValue(node);
+        visitValue(node, false);
       },
       'Program:exit'() {
         const fileKey = hasBaseline

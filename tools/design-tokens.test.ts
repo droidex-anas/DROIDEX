@@ -37,7 +37,7 @@ const CASES = [
   ['arbitrary-value', 'text-secondary px-3 rounded-lg', 'text-[12.5px]'],
   ['hex-color', 'bg-surface', '#1c6f46'],
   ['palette-color', 'text-danger', 'bg-red-500'],
-  ['border-width', 'divide-y divide-divider', 'border-divider'],
+  ['border-width', 'border-0', 'border-divider'],
   ['font-weight', 'font-semibold', 'font-bold'],
   ['focus-ring', 'focus-visible:ring-focus-ring', 'focus-visible:ring-accent/60'],
   ['uppercase', 'tracking-wide', 'uppercase'],
@@ -130,21 +130,30 @@ test('allows edge resets and keyboard focus, but still requires focus colour tok
   ]);
 });
 
-test('row dividers inherit only same-variant colours from unconditional parts', () => {
+test('row dividers are a surface edge outside data-table rows', () => {
+  for (const code of [
+    '<div className="divide-y divide-divider" />',
+    '<ul className="divide-x divide-divider" />',
+  ]) {
+    assert.deepEqual(messageIds(lintDesignTokens(code)), ['border-width'], code);
+  }
+});
+
+test('table-row dividers inherit only same-variant colours from unconditional parts', () => {
   assert.deepEqual(
-    messageIds(lintDesignTokens("const cls = cn('divide-divider', active && 'divide-y');\n<div className={cls} />")),
+    messageIds(lintDesignTokens('<tbody className={cn("divide-divider", striped && "divide-y")} />')),
     [],
   );
   assert.deepEqual(
-    messageIds(lintDesignTokens('<div className="divide-x divide-divider hover:divide-y hover:divide-divider" />')),
+    messageIds(lintDesignTokens('<tr className="divide-x divide-divider hover:divide-y hover:divide-divider" />')),
     [],
   );
   for (const code of [
-    '<div className="divide-y hover:divide-divider" />',
-    '<div className={wide ? "divide-y" : "divide-divider"} />',
-    '<div className="divide-y-2 divide-divider" />',
+    '<tbody className="divide-y hover:divide-divider" />',
+    '<tbody className={wide ? "divide-y" : "divide-divider"} />',
+    '<tbody className="divide-y-2 divide-divider" />',
   ]) {
-    assert.deepEqual(messageIds(lintDesignTokens(code)), ['border-width']);
+    assert.deepEqual(messageIds(lintDesignTokens(code)), ['border-width'], code);
   }
 });
 

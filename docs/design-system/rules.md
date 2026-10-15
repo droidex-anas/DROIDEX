@@ -7,7 +7,7 @@ The checkable rulebook. Anyone building DROIDEX UI, person or agent, follows the
 1. **Only tokens.** Every colour, size, space, radius and shadow comes from this system. No hex, no `[13.5px]`, no `rounded-[5px]`.
 2. **Eleven type styles, nothing else.** See the table below. If text needs to look different, it is a different style, not a tweak.
 3. **Three weights.** 400 for reading, 500 for anything you click or label, 600 for headings. Never 300 or 700.
-4. **Borders only where necessary.** Default: no outline or stroke around cards, panels, the composer, chips, menus, popovers, sheets, dialogs or inputs. Separate surfaces by a tone step (`bg` → `surface` → `elevated` → `raised`), with shadow when they float. Hover, active and focused surfaces change tone, never add a stroke or ring. Keep keyboard focus on individual controls via `:focus-visible`. An outline is allowed only where it carries meaning tone cannot; see the cases below.
+4. **Space and tone, not lines.** Separate things with space and a subtle tone step, never with a line. No outline or stroke around cards, panels, the composer, chips, menus, popovers, sheets, dialogs or inputs, and no divider between rows, under headers, above footers or around groups. Surfaces step in tone (`bg` → `surface` → `elevated` → `raised`), with shadow when they float. Hover, selected and focused things change fill, never add a stroke or ring. A line is allowed only for data tables and the few cases below where it carries meaning tone cannot.
 5. **Colour is a signal.** Neutral by default. Colour appears only for links, status, destructive or confirming actions, and the brand mark.
 6. **One primary action per surface.** Everything else is secondary or ghost.
 7. **Radius grows with size.** 8px controls inside 12px menus inside 16px cards inside 24px dialogs.
@@ -17,14 +17,23 @@ The checkable rulebook. Anyone building DROIDEX UI, person or agent, follows the
 
 ## Lines that carry meaning
 
+Lines are rare. These are the only places one belongs:
+
+- Data tables (Markdown tables, rendered JSON tables, spreadsheet previews) rule their body rows with `divide-y divide-divider` on `<tbody>`, so long rows of cells can be read across.
 - Agent-to-agent reports and instruction messages in project chats keep their hairline: it marks who is speaking.
 - A dashed drop-target outline is an interaction cue, only while dragging.
-- Diff line and gutter markers encode data.
-- `divide-y` / `divide-x` with `divide-divider` separates rows of a dense list only when space alone would hurt scanning.
+- Diff lines, gutter markers and the split between a diff's old and new sides encode data.
 - `divider-strong` is only for a split that must survive a busy area, such as a docked panel beside the transcript.
 - The keyboard focus ring belongs to individual controls, only on `:focus-visible`.
 
-No hairline under a header, above a footer or around a group. A sidebar or panel footer uses a soft blur/fade where content scrolls under it, not a line. Leave surfaces that already work without lines alone.
+Everything else separates by space and tone:
+
+- **Grouped rows in a card** (settings groups, automation fields) sit on one `surface` card with no divider between them. Each row carries the same vertical padding, so the rhythm alone separates them; an interactive row also takes a soft `elevated` fill on hover. Never swap a divider for a bordered box or a card nested in the card.
+- **Lists and menus** separate items by their padding and highlight the hovered or selected one with a fill.
+- **Headers, footers and groups** have no hairline. A sidebar or panel footer uses a soft blur/fade where content scrolls under it.
+- **Open layers** (menus, popovers, dropdowns) lift off what's beneath by tone and shadow, which is enough to read as on top in both themes.
+
+Leave surfaces that already work without lines alone.
 
 ## Type: what to use where
 
@@ -65,6 +74,7 @@ Spacing is how DROIDEX groups things, instead of lines. The closer two things ar
 | Field and its hint | `space-1.5` |
 | Items in a menu | 0, so hit areas touch |
 | Rows in a list | 0, since rows carry their own padding |
+| Rows in a grouped card | 0, each row `space-3.5` top and bottom (`space-3` in a dense card such as theme colours); no divider |
 | Buttons in a group | `space-2` |
 | Fields in a form | `space-4` |
 | Title and body in a card or dialog | `space-1` (subtitle), `space-3` (body) |
@@ -192,7 +202,7 @@ If a screen has more than three colours besides the neutrals, something is decor
 ## Before shipping a screen
 
 - [ ] Only tokens, and only the type styles above.
-- [ ] Surfaces separate by tone, with shadow when floating; no outlines except the meaningful cases in rule 4. Dense-row dividers only, no header, footer or group hairlines.
+- [ ] Things separate by space and tone, with shadow when floating. No outlines and no row, header, footer or group dividers; lines only for data tables and the meaningful cases in rule 4.
 - [ ] Hover, pressed, keyboard focus and disabled all checked, with no ring on mouse click.
 - [ ] Loading, empty and error states designed, not left blank.
 - [ ] Popovers stay inside the window at every edge.
