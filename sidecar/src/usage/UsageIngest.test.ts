@@ -178,7 +178,9 @@ test('persists oversized discard state across an ingester restart', async (t) =>
   assert.equal(partialCursor?.discardingOversized, true);
   assert.equal(partialCursor?.byteOffset, 4 * 1024 * 1024);
 
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
   await harness.ingest.close();
+  assert.equal(harness.database.snapshot().totals.events, 0);
   harness.database.close();
   harness.database = openDatabase(harness.databasePath);
   harness.ingest = createIngest(harness.database, harness.sourceRoot);
@@ -258,7 +260,7 @@ async function createHarness(t: TestContext): Promise<Harness> {
   };
   t.after(async () => {
     await harness.ingest.close();
-    database.close();
+    harness.database.close();
     await rm(directory, { force: true, recursive: true });
   });
   return harness;
