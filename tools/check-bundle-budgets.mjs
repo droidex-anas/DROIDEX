@@ -153,8 +153,13 @@ import { join } from 'node:path';
 // and its close path (~3KB); both render with the chat. Main measured
 // 1_457_268, the steer change 1_461_815 and the side chat change 1_460_242, so
 // the two together leave ~3.2KB of headroom.
+//
+// Raised from 1_468_000 to 1_472_000 for restoring the last view on restart:
+// the snapshot's confirmed session ids and the persisted revealed folders
+// must hydrate with the store, so they load at first frame. The change
+// measured 1_468_015, so this leaves ~4KB of headroom.
 const BUDGETS = {
-  initialRendererJsBytes: 1_468_000,
+  initialRendererJsBytes: 1_472_000,
   initialCssBytes: 106_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
