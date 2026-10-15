@@ -135,7 +135,7 @@ export function RunningProcessesMenu({
                         onClick={() => {
                           openInBrowser(port);
                         }}
-                        className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors hover:bg-bg/60 hover:text-primary"
+                        className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated hover:text-primary dark:hover:bg-bg/60"
                       >
                         <Globe className="h-3.5 w-3.5" />
                       </button>
@@ -146,7 +146,7 @@ export function RunningProcessesMenu({
                       onClick={() => {
                         stopAgentProcess(appSessionId, process.pid);
                       }}
-                      className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors hover:bg-bg/60 hover:text-primary"
+                      className="flex h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated hover:text-primary dark:hover:bg-bg/60"
                     >
                       <Square className="h-3 w-3" fill="currentColor" strokeWidth={0} />
                     </button>

@@ -207,7 +207,7 @@ const ModelRow = memo(function ModelRow({
           ? 'cursor-not-allowed opacity-50'
           : selected
             ? 'cursor-default'
-            : 'cursor-pointer hover:bg-surface/60'
+            : 'cursor-pointer hover:bg-elevated dark:hover:bg-surface/60'
       }`}
     >
       <span

@@ -48,7 +48,9 @@ export default function ModelCategoryFilter({
         title="Filter models by category"
         aria-expanded={open}
         className={`relative flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-          open ? 'bg-surface text-primary' : 'bg-bg/50 hover:bg-surface/60 hover:text-primary'
+          open
+            ? 'bg-active text-primary dark:bg-surface'
+            : 'bg-field hover:bg-active dark:bg-bg/50 dark:hover:bg-surface/60 hover:text-primary'
         } ${filtered ? 'text-primary' : 'text-muted'}`}
       >
         <ListFilter className="h-4 w-4" strokeWidth={1.5} />
@@ -80,7 +82,9 @@ export default function ModelCategoryFilter({
                     onOpenChange(false);
                   }}
                   className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body transition-colors ${
-                    on ? 'bg-surface text-primary' : 'text-secondary hover:bg-surface/60'
+                    on
+                      ? 'bg-active text-primary dark:bg-surface'
+                      : 'text-secondary hover:bg-elevated dark:hover:bg-surface/60'
                   }`}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
