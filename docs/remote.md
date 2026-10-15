@@ -95,6 +95,15 @@ origin and the client's `VITE_REMOTE_RELAY_URL` to the relay's WSS origin.
 Set `DROIDEX_REMOTE_RELAY_URL` and `DROIDEX_REMOTE_CLIENT_URL` for development;
 the same addresses can be saved in the desktop onboarding flow.
 
+The official site keeps marketing and Remote in separate Vercel projects. Ordered
+project routes on `droidex.vercel.app` proxy valid `/<username>` and
+`/public/<username>` pages plus `/__droidex_remote/*` static files to
+`droidex-remote.vercel.app`. Fixed marketing and infrastructure names are reserved
+and cannot be claimed as usernames. The browser still sees one origin, so the
+marketing deployment and Vercel account are part of the Remote client trust boundary.
+Deploy Remote first, verify its stable alias, stage and test the routes, then publish
+them. The marketing checkout does not need to be rebuilt for a Remote release.
+
 Before a public launch, verify pairing, trust expiry, revocation, reconnects,
 WebSocket hibernation and push delivery against the deployed Worker on a real
 phone. Protect repository and hosting accounts with 2FA. A compromised relay

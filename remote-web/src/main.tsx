@@ -30,7 +30,7 @@ createRoot(root).render(
 );
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {
+  navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: '/' }).catch(() => {
     console.warn('DROIDEX Remote could not register its app worker.');
   });
 }
