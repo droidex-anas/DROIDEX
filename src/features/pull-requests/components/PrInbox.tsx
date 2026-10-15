@@ -373,7 +373,7 @@ export function PrInbox({
           type="button"
           onClick={onRetry}
           title="Refresh"
-          className="ml-auto grid size-control-sm cursor-default place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary"
+          className="ml-auto grid size-control-sm place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary"
         >
           <Octicon
             name="sync"

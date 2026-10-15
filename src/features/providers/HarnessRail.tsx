@@ -38,7 +38,7 @@ export default function HarnessRail({
             onClick={() => {
               if (!selected) onSelect(provider);
             }}
-            className={`grid size-control-md cursor-default place-items-center rounded-md transition-colors ${tone}`}
+            className={`grid size-control-md place-items-center rounded-md transition-colors ${tone}`}
           >
             <ModelIcon provider={PROVIDER_MARKS[provider]} size={16} />
           </button>

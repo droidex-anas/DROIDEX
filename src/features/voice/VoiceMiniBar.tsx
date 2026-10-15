@@ -215,7 +215,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
           title={session.muted ? 'Unmute' : 'Mute'}
           aria-pressed={session.muted}
           onClick={session.toggleMuted}
-          className="grid size-control-sm cursor-default place-items-center rounded-full text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
+          className="grid size-control-sm place-items-center rounded-full text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
         >
           {session.muted ? (
             <MicOff className="h-3.5 w-3.5 text-danger" />

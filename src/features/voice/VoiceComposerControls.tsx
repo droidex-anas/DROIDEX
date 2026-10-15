@@ -18,7 +18,7 @@ export function VoiceComposerControls() {
         title={session.muted ? 'Unmute' : 'Mute'}
         aria-pressed={session.muted}
         onClick={session.toggleMuted}
-        className={`grid size-control-md cursor-default place-items-center rounded-full transition-colors ${
+        className={`grid size-control-md place-items-center rounded-full transition-colors ${
           session.muted ? 'bg-surface text-primary' : 'text-muted hover:bg-bg/40 hover:text-primary'
         }`}
       >

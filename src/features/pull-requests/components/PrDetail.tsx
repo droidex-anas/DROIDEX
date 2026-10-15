@@ -78,7 +78,7 @@ function ToolbarIconButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-control-sm cursor-default place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
+      className="grid size-control-sm place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
     >
       <Octicon name={icon} size={14} className={spinning ? 'animate-spin' : ''} />
     </button>

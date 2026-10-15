@@ -156,7 +156,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
             aria-pressed={session.muted}
             aria-label={session.muted ? 'Unmute microphone' : 'Mute microphone'}
             title={session.muted ? 'Unmute' : 'Mute'}
-            className="grid size-control-md cursor-default place-items-center rounded-full text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
+            className="grid size-control-md place-items-center rounded-full text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
           >
             {session.muted ? (
               <MicOff className="h-4 w-4 text-danger" />
