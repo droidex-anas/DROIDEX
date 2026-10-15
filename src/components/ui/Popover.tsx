@@ -31,9 +31,9 @@ export interface PopoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chil
 
 // The floating layer for menus, pickers and option lists: positioned against
 // its anchor, portaled to <body> (or above the Dialog it opens from) so no
-// ancestor clips it, closed by Escape, a
-// press outside or the anchor scrolling away, with focus kept inside while
-// open and handed back to the anchor on close. The caller's trigger opens it.
+// ancestor clips it, closed by Escape, a press outside or the anchor scrolling
+// away, with focus kept inside while open and handed back to the anchor on
+// close. The caller's trigger opens it.
 export function Popover({
   ref,
   open,
