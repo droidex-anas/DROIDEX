@@ -20,7 +20,7 @@ export default function HarnessRail({
     <div
       role="radiogroup"
       aria-label="Harness"
-      className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-divider/60 py-2"
+      className="flex w-11 shrink-0 flex-col items-center gap-1 py-2"
     >
       {PROVIDER_KINDS.map((provider) => {
         const { selected, disabled, title } = harnessChoice(provider, current, statuses, locked);
@@ -38,7 +38,7 @@ export default function HarnessRail({
             onClick={() => {
               if (!selected) onSelect(provider);
             }}
-            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${tone}`}
+            className={`grid size-control-md place-items-center rounded-md transition-colors ${tone}`}
           >
             <ModelIcon provider={PROVIDER_MARKS[provider]} size={16} />
           </button>

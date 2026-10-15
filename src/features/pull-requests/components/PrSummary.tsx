@@ -1,9 +1,10 @@
 import { CheckStatusIcon, Octicon } from '../../../components/environment/GithubIcons';
-import { bucketToStatus, checksSummary } from '../../../lib/github';
+import { Button } from '../../../components/ui/Button';
+import { Badge } from '../../../components/ui/Badge';
+import { bucketToStatus, checksBadge, checksSummary } from '../../../lib/github';
 import { openExternal } from '../../../lib/onboarding';
 import type { PrCheck, PrComment, PrCommit, PullRequest } from '../../../types/vcs';
 import { prCommentBlocks } from '../lib/prCommentBody';
-import { PR_TONE_TEXT_CLASS, checksBadge } from '../../../lib/github';
 import { hasMergeConflicts } from '../lib/prMeta';
 import { prRelativeTime } from '../lib/prTime';
 import { PrBody } from './PrBody';
@@ -26,12 +27,12 @@ function CheckRow({ check }: { check: PrCheck }) {
     >
       <CheckStatusIcon status={bucketToStatus(check.bucket)} size={14} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] text-primary">{check.name}</span>
+        <span className="block truncate text-body text-primary">{check.name}</span>
         {check.workflow ? (
-          <span className="mt-0.5 block truncate text-[12px] text-muted">{check.workflow}</span>
+          <span className="mt-0.5 block truncate text-caption text-muted">{check.workflow}</span>
         ) : null}
       </span>
-      {finished ? <span className="shrink-0 text-[12px] text-muted">{finished}</span> : null}
+      {finished ? <span className="shrink-0 text-caption text-muted">{finished}</span> : null}
       {check.link ? (
         <Octicon name="link-external" size={12} className="shrink-0 text-muted" />
       ) : null}
@@ -51,7 +52,7 @@ function ChecksBody({
   if (checks.length > 0) {
     return (
       <div className="-ml-1">
-        {error ? <p className="mb-1 text-[13px] text-muted">{error}</p> : null}
+        {error ? <p className="mb-1 text-body text-muted">{error}</p> : null}
         {checks.map((check, index) => (
           <CheckRow
             // A matrix job or a re-run reports the same name and workflow
@@ -64,7 +65,7 @@ function ChecksBody({
     );
   }
   if (loading) return <div className="h-12 rounded-lg bg-elevated/40" />;
-  return <p className="text-[13px] text-muted">{error ?? 'No checks reported'}</p>;
+  return <p className="text-body text-muted">{error ?? 'No checks reported'}</p>;
 }
 
 function Description({
@@ -81,13 +82,13 @@ function Description({
   // as bot comments, so they go through the same renderer.
   const blocks = body ? prCommentBlocks(body) : [];
   if (blocks.length === 0) {
-    return <p className="text-[13px] text-muted">{metaError ?? 'No description.'}</p>;
+    return <p className="text-body text-muted">{metaError ?? 'No description.'}</p>;
   }
   return (
     <>
       {/* A refresh that fails after the description loaded still has to report
           the failure; the cached body must not read as a successful load. */}
-      {metaError ? <p className="mb-2 text-[13px] text-muted">{metaError}</p> : null}
+      {metaError ? <p className="mb-2 text-body text-muted">{metaError}</p> : null}
       <PrBody blocks={blocks} />
     </>
   );
@@ -97,22 +98,25 @@ function Description({
 // the fact and links out instead of offering a resolve button it cannot honor.
 function MergeConflicts({ pr }: { pr: PullRequest }) {
   return (
-    <div className="rounded-lg border border-divider bg-elevated/30 px-3 py-2.5">
-      <p className="text-[13px] text-secondary">
+    <div className="rounded-lg bg-elevated/30 px-3 py-2.5">
+      <p className="text-body text-secondary">
         <span className="text-primary">{pr.headRefName ?? 'This branch'}</span> cannot be merged
         into <span className="text-primary">{pr.baseRefName ?? 'the base branch'}</span>{' '}
         automatically. Resolve the conflicts in a checkout of the branch.
       </p>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
+        className="mt-2"
         onClick={() => {
           void openExternal(pr.url);
         }}
-        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-divider px-2 py-1 text-[13px] text-secondary transition-colors hover:bg-active hover:text-primary"
       >
-        <Octicon name="link-external" size={12} />
-        View conflicts on GitHub
-      </button>
+        <span className="inline-flex items-center gap-1.5">
+          <Octicon name="link-external" size={12} />
+          View conflicts on GitHub
+        </span>
+      </Button>
     </div>
   );
 }
@@ -181,11 +185,7 @@ export function PrSummary({
         key="checks"
         title="Checks"
         count={checks.length > 0 ? checks.length : undefined}
-        meta={
-          badge ? (
-            <span className={`text-[12px] ${PR_TONE_TEXT_CLASS[badge.tone]}`}>{badge.label}</span>
-          ) : null
-        }
+        meta={badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
         // Failures, work in progress, and a load error all need to be read
         // without opening the section first.
         defaultOpen={
@@ -207,7 +207,7 @@ export function PrSummary({
         count={comments.length}
         meta={
           commits.length > 0 ? (
-            <span className="text-[12px] text-muted">
+            <span className="text-caption text-muted">
               {commits.length} {commits.length === 1 ? 'commit' : 'commits'}
             </span>
           ) : null

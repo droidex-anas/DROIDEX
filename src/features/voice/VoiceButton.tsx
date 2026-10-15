@@ -1,4 +1,5 @@
 import { AudioLines } from 'lucide-react';
+import { Button } from '../../components/ui/Button';
 
 /** The composer's idle action, a solid circle twinned with the send button.
     The action slot parks it offstage once the draft has content; parked
@@ -11,16 +12,15 @@ export function VoiceButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="primary"
+      shape="round"
+      icon={AudioLines}
       onClick={onClick}
       title="Voice mode"
       aria-label="Start voice mode"
       aria-hidden={parked || undefined}
       tabIndex={parked ? -1 : undefined}
-      className="flex h-8 w-8 items-center justify-center rounded-full bg-text text-bg transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-divider-strong"
-    >
-      <AudioLines className="h-4 w-4" />
-    </button>
+    />
   );
 }

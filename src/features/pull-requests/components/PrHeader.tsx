@@ -1,14 +1,19 @@
 import type { ReactNode } from 'react';
 
-import { CheckStatusIcon, Octicon } from '../../../components/environment/GithubIcons';
+import { Badge } from '../../../components/ui/Badge';
 import {
-  PR_TONE_TEXT_CLASS,
+  CheckStatusIcon,
+  Octicon,
+  type OcticonName,
+} from '../../../components/environment/GithubIcons';
+import {
   checksBadge,
   checksSummary,
   prKind,
   prKindLabel,
   reviewDecisionBadge,
-  type PrBadge,
+  type PrKind,
+  type PrTone,
 } from '../../../lib/github';
 import type { PrCheck, PullRequest } from '../../../types/vcs';
 import { displayLogin } from '../lib/prIdentity';
@@ -16,31 +21,28 @@ import { REVIEWER_STATE_LABEL, mergeStateBadge, reviewerRows } from '../lib/prMe
 import { prAbsoluteTime, prRelativeTime } from '../lib/prTime';
 import { GithubAvatar } from './GithubAvatar';
 
-const STATE_PILL = {
-  open: { class: 'bg-[#238636] text-white', icon: 'git-pull-request' },
-  draft: { class: 'bg-elevated text-secondary', icon: 'git-pull-request-draft' },
-  merged: { class: 'bg-[#8250df] text-white', icon: 'git-merge' },
-  closed: { class: 'bg-[#da3633] text-white', icon: 'git-pull-request-closed' },
-} as const;
+// Plain status text (no badge fill) for a PR fact, such as the checks rollup
+// beside the reviewers. Badges use the same tones in ui/Badge.
+const TONE_TEXT: Record<PrTone, string> = {
+  neutral: 'text-secondary',
+  success: 'text-success',
+  danger: 'text-danger',
+  accent: 'text-accent',
+};
 
-function Badge({ badge }: { badge: PrBadge }) {
-  return (
-    <span
-      className={`rounded-full border border-divider px-2 py-0.5 text-[12px] font-medium ${
-        PR_TONE_TEXT_CLASS[badge.tone]
-      }`}
-    >
-      {badge.label}
-    </span>
-  );
-}
+const STATE_PILL: Record<PrKind, { tone: PrTone; icon: OcticonName }> = {
+  open: { tone: 'success', icon: 'git-pull-request' },
+  draft: { tone: 'neutral', icon: 'git-pull-request-draft' },
+  merged: { tone: 'accent', icon: 'git-merge' },
+  closed: { tone: 'danger', icon: 'git-pull-request-closed' },
+};
 
 function MetaRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <>
-      <dt className="pt-0.5 text-[13px] text-muted">{label}</dt>
-      <dd className="min-w-0 text-[13px] text-secondary">{children}</dd>
-    </>
+    <div className="flex gap-x-4">
+      <dt className="w-20 shrink-0 pt-0.5 text-body text-muted">{label}</dt>
+      <dd className="min-w-0 flex-1 text-body text-secondary">{children}</dd>
+    </div>
   );
 }
 
@@ -82,7 +84,7 @@ function ChecksMeta({
   return (
     <span className="flex items-center gap-1.5">
       <CheckStatusIcon status={summary.status === 'none' ? 'neutral' : summary.status} size={14} />
-      <span className={PR_TONE_TEXT_CLASS[badge.tone]}>{badge.label}</span>
+      <span className={TONE_TEXT[badge.tone]}>{badge.label}</span>
     </span>
   );
 }
@@ -109,7 +111,7 @@ export function PrHeader({
 
   return (
     <header>
-      <h1 className="text-[22px] leading-snug font-semibold text-primary">
+      <h1 className="text-title text-primary">
         {pr ? (
           <>
             {pr.title}
@@ -121,17 +123,15 @@ export function PrHeader({
       </h1>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         {kind ? (
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium ${STATE_PILL[kind].class}`}
-          >
-            <Octicon name={STATE_PILL[kind].icon} size={13} />
+          <Badge tone={STATE_PILL[kind].tone}>
+            <Octicon name={STATE_PILL[kind].icon} size={12} />
             {prKindLabel(kind)}
-          </span>
+          </Badge>
         ) : (
-          <span className="inline-flex h-7 w-20 rounded-full bg-elevated/60" />
+          <span className="inline-flex h-5 w-20 rounded-full bg-elevated/60" />
         )}
         {pr ? (
-          <span className="flex items-center gap-1.5 text-[13px] text-secondary">
+          <span className="flex items-center gap-1.5 text-body text-secondary">
             <GithubAvatar login={pr.author} size={20} />
             <span className="text-primary">{displayLogin(pr.author)}</span>
             {updated ? (
@@ -143,10 +143,10 @@ export function PrHeader({
             ) : null}
           </span>
         ) : null}
-        {decision ? <Badge badge={decision} /> : null}
+        {decision ? <Badge tone={decision.tone}>{decision.label}</Badge> : null}
       </div>
       {pr ? (
-        <dl className="mt-4 grid grid-cols-[86px_minmax(0,1fr)] gap-x-4 gap-y-2">
+        <dl className="mt-4 flex flex-col gap-y-2">
           <MetaRow label="Branch">
             <span className="flex min-w-0 items-center gap-1.5">
               <Octicon name="git-branch" size={13} className="shrink-0 text-muted" />
@@ -175,7 +175,7 @@ export function PrHeader({
           </MetaRow>
           {mergeState ? (
             <MetaRow label="Status">
-              <span className={PR_TONE_TEXT_CLASS[mergeState.tone]}>{mergeState.label}</span>
+              <span className={TONE_TEXT[mergeState.tone]}>{mergeState.label}</span>
             </MetaRow>
           ) : null}
         </dl>

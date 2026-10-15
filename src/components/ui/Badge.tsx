@@ -2,13 +2,14 @@ import type { HTMLAttributes, ReactNode, Ref } from 'react';
 import type { IconComponent } from '@droidex/icons';
 import { cn } from './cn';
 
-type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger';
+type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'accent';
 
 const TONE: Record<BadgeTone, string> = {
   neutral: 'bg-elevated text-secondary',
   success: 'bg-success-soft text-success',
   warning: 'bg-warning-soft text-warning',
   danger: 'bg-danger-soft text-danger',
+  accent: 'bg-accent/15 text-accent',
 };
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {

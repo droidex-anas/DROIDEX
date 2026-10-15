@@ -33,11 +33,11 @@ function FileRow({
       }`}
     >
       <FileTypeIcon filename={file.path} className="h-3.5 w-3.5" />
-      <span className="min-w-0 flex-1 truncate text-[13px]">
+      <span className="min-w-0 flex-1 truncate text-body">
         {dir ? <span className="text-muted/70">{dir}</span> : null}
         <span className="text-primary">{name}</span>
       </span>
-      <span className="shrink-0 text-[11px] tabular-nums">
+      <span className="shrink-0 text-caption tabular-nums">
         {file.additions > 0 ? (
           <span style={{ color: 'var(--diff-add-fg)' }}>+{file.additions}</span>
         ) : null}{' '}
@@ -93,7 +93,7 @@ export function PrDiff({ diff }: { diff: string }) {
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-8">
-        <p className="text-[13px] text-muted">No file changes.</p>
+        <p className="text-body text-muted">No file changes.</p>
       </div>
     );
   }
@@ -102,7 +102,7 @@ export function PrDiff({ diff }: { diff: string }) {
     <div className="flex h-full min-h-0">
       <nav
         aria-label="Changed files"
-        className="pr-workspace-scroll w-[220px] shrink-0 overflow-y-auto py-1"
+        className="pr-workspace-scroll w-56 shrink-0 overflow-y-auto py-1"
       >
         {files.map((item) => (
           <FileRow

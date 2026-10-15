@@ -17,10 +17,6 @@ function segmentTone(selected: boolean, unavailable: boolean): string {
   return 'text-muted hover:text-primary';
 }
 
-// One px inside the track's 10px corner; inline so the one-off radius does not
-// add a utility to the app stylesheet.
-const SEGMENT_RADIUS = { borderRadius: 9 } as const;
-
 /**
  * Compact harness picker for the slider-style model popover: one segment per
  * harness with a sliding selection pill. Lock and availability semantics match
@@ -62,22 +58,20 @@ export default function HarnessSegments({
               onClick={() => {
                 if (!selected) onSelect(kind);
               }}
-              className={`relative flex h-7 flex-1 items-center justify-center text-label transition-colors ${segmentTone(selected, unavailable)}`}
-              style={SEGMENT_RADIUS}
+              className={`relative flex h-control-sm flex-1 items-center justify-center rounded-md text-label transition-colors ${segmentTone(selected, unavailable)}`}
             >
               {selected && (
                 <motion.span
                   layoutId="model-slider-harness-pill"
                   aria-hidden
-                  className="absolute inset-0 bg-raised"
-                  style={SEGMENT_RADIUS}
+                  className="absolute inset-0 rounded-md bg-raised"
                   transition={{ type: 'spring', stiffness: 520, damping: 38 }}
                 />
               )}
               <span className="relative flex items-center gap-1.5">
                 <ModelIcon provider={PROVIDER_MARKS[kind]} size={13} />
                 {SHORT_LABELS[kind]}
-                {locked && selected && <Lock className="h-2.5 w-2.5 text-muted" />}
+                {locked && selected && <Lock className="size-icon-sm text-muted" />}
               </span>
             </button>
           );

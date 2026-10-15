@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { ChevronRight, ListTodo, Search, Undo2 } from 'lucide-react';
 
 import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
+import { Button } from '../../../components/ui/Button';
+import { Input } from '../../../components/ui/Field';
 import { comparablePath } from '../../../lib/pathComparison';
 import { prKind } from '../../../lib/github';
 import { workspaceName } from '../../../lib/workspaces';
@@ -94,22 +96,19 @@ function PrInboxRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-start justify-between gap-2">
-            <span
-              title={pr.title}
-              className="min-w-0 truncate text-[13px] leading-snug font-medium text-primary"
-            >
+            <span title={pr.title} className="min-w-0 truncate text-body-strong text-primary">
               {pr.title}
             </span>
             {time ? (
               <span
                 title={prAbsoluteTime(pr.updatedAt ?? pr.createdAt)}
-                className="shrink-0 text-[11px] text-muted"
+                className="shrink-0 text-caption text-muted"
               >
                 {time}
               </span>
             ) : null}
           </span>
-          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
+          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-caption text-muted">
             <GithubAvatar login={pr.author} size={16} />
             <span className="shrink-0 text-secondary">{displayLogin(pr.author)}</span>
             <span className="shrink-0 tabular-nums">#{pr.number}</span>
@@ -123,7 +122,7 @@ function PrInboxRow({
               </>
             ) : null}
           </span>
-          <span className="mt-1 block text-[11px] tabular-nums">
+          <span className="mt-1 block text-caption tabular-nums">
             <span style={{ color: 'var(--diff-add-fg)' }}>+{pr.additions}</span>{' '}
             <span style={{ color: 'var(--diff-del-fg)' }}>−{pr.deletions}</span>
           </span>
@@ -220,7 +219,7 @@ function InboxList({
 }) {
   if (loading) return <SkeletonRows />;
   if (groups.length === 0) {
-    return error ? null : <p className="px-1 py-6 text-[13px] text-muted">{emptyCopy}</p>;
+    return error ? null : <p className="px-1 py-6 text-body text-muted">{emptyCopy}</p>;
   }
   const errorByCwd = new Map(repoErrors.map((item) => [comparablePath(item.cwd), item] as const));
   return (
@@ -249,10 +248,10 @@ function InboxList({
           return (
             <section key={group.cwd}>
               {repoError ? (
-                <p className="px-1 pb-2 text-[12px] text-muted">{repoError.message}</p>
+                <p className="px-1 pb-2 text-caption text-muted">{repoError.message}</p>
               ) : null}
               {group.prs.length === 0 && !repoError ? (
-                <p className="px-1 py-4 text-[13px] text-muted">{currentEmptyCopy}</p>
+                <p className="px-1 py-4 text-body text-muted">{currentEmptyCopy}</p>
               ) : (
                 rows
               )}
@@ -274,9 +273,9 @@ function InboxList({
                 size={14}
                 className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
               />
-              <span className="min-w-0 truncate text-[12px] font-medium">{group.repoName}</span>
+              <span className="min-w-0 truncate text-label">{group.repoName}</span>
               {group.prs.length > 0 ? (
-                <span className="ml-auto shrink-0 text-[11px] tabular-nums opacity-60">
+                <span className="ml-auto shrink-0 text-caption tabular-nums opacity-60">
                   {group.prs.length}
                 </span>
               ) : null}
@@ -284,7 +283,7 @@ function InboxList({
             {expanded ? (
               <div className="mt-1">
                 {repoError ? (
-                  <p className="px-1 pb-2 text-[12px] text-muted">{repoError.message}</p>
+                  <p className="px-1 pb-2 text-caption text-muted">{repoError.message}</p>
                 ) : null}
                 {rows}
               </div>
@@ -362,7 +361,7 @@ export function PrInbox({
               onClick={() => {
                 setTab(item.id);
               }}
-              className={`shrink-0 text-[13px] font-medium transition-colors ${
+              className={`shrink-0 text-body-strong transition-colors ${
                 tab === item.id ? 'text-primary' : 'text-muted hover:text-secondary'
               }`}
             >
@@ -370,44 +369,36 @@ export function PrInbox({
             </button>
           ))}
         </div>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          icon={<Octicon name="sync" size={14} className={loading ? 'animate-spin' : ''} />}
           onClick={onRetry}
           title="Refresh"
-          className="ml-auto rounded-md p-1.5 text-muted transition-colors hover:bg-elevated hover:text-primary"
-        >
-          <Octicon
-            name="sync"
-            size={14}
-            label="Refresh"
-            className={loading ? 'animate-spin' : ''}
-          />
-        </button>
+          aria-label="Refresh"
+        />
       </div>
 
       <div className="relative mt-3">
         <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
-        <input
+        <Input
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
           }}
           aria-label="Search pull requests"
           placeholder="Search"
-          className="w-full rounded-lg bg-field py-2 pr-3 pl-9 text-[13px] text-primary outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent/60"
+          className="pl-9"
         />
       </div>
 
       {error ? (
-        <div className="mt-2 flex items-center gap-2 px-1 text-[12px] text-muted">
+        <div className="mt-2 flex items-center gap-2 px-1 text-caption text-muted">
           <span className="min-w-0 flex-1">{error}</span>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="shrink-0 rounded-lg px-2 py-1 font-medium text-primary transition-colors hover:bg-elevated"
-          >
+          <Button variant="ghost" size="sm" onClick={onRetry}>
             Retry
-          </button>
+          </Button>
         </div>
       ) : null}
 

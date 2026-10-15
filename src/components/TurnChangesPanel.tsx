@@ -25,7 +25,7 @@ export interface TurnChangesItem {
 function ChangeCount({ added, removed }: { added: number; removed: number }) {
   if (added === 0 && removed === 0) return null;
   return (
-    <span className="shrink-0 tabular-nums text-[11px]">
+    <span className="shrink-0 text-caption tabular-nums">
       {added > 0 && <span style={{ color: 'var(--diff-add-fg)' }}>+{added}</span>}
       {added > 0 && removed > 0 && ' '}
       {removed > 0 && <span style={{ color: 'var(--diff-del-fg)' }}>−{removed}</span>}
@@ -58,9 +58,9 @@ export default function TurnChangesPanel({
             open ? 'rotate-90' : ''
           }`}
         />
-        <span className="text-[13px] font-medium text-secondary">Changes</span>
+        <span className="text-body-strong text-secondary">Changes</span>
         <span className="ml-auto flex shrink-0 items-center gap-2.5">
-          <span className="text-[11px] text-muted">
+          <span className="text-caption text-muted">
             {files.length} {files.length === 1 ? 'file' : 'files'}
           </span>
           <ChangeCount added={added} removed={removed} />
@@ -78,9 +78,7 @@ export default function TurnChangesPanel({
                 title={file.path}
                 className="flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors enabled:hover:bg-elevated/40 disabled:cursor-default"
               >
-                <span className="min-w-0 flex-1 truncate text-[13px] text-secondary">
-                  {display}
-                </span>
+                <span className="min-w-0 flex-1 truncate text-body text-secondary">{display}</span>
                 <ChangeCount added={file.added} removed={file.removed} />
               </button>
             );

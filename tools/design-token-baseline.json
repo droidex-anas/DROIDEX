@@ -1,19 +1,4 @@
 {
-  "src/components/AppBlockErrorFallback.tsx": {
-    "arbitrary-value": 4
-  },
-  "src/components/AppBlockExpandableSurface.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2,
-    "palette-color": 1
-  },
-  "src/components/AppBlockRepair.tsx": {
-    "arbitrary-value": 5,
-    "focus-ring": 3
-  },
-  "src/components/AppLoadingSurface.tsx": {
-    "arbitrary-value": 1
-  },
   "src/components/ColorPicker.tsx": {
     "border-width": 5,
     "palette-color": 2
@@ -28,11 +13,6 @@
     "arbitrary-value": 7,
     "border-width": 5,
     "palette-color": 1
-  },
-  "src/components/JsonRender.tsx": {
-    "arbitrary-value": 22,
-    "border-width": 20,
-    "uppercase": 3
   },
   "src/components/McpServerForm.tsx": {
     "arbitrary-value": 20,
@@ -56,16 +36,8 @@
     "arbitrary-value": 2,
     "border-width": 2
   },
-  "src/components/NotesSection.tsx": {
-    "arbitrary-value": 16,
-    "border-width": 8,
-    "uppercase": 3
-  },
   "src/components/NotificationsSettings.tsx": {
     "border-width": 4
-  },
-  "src/components/RightPanel.tsx": {
-    "arbitrary-value": 7
   },
   "src/components/RuntimeStatusBanner.tsx": {
     "arbitrary-value": 1,
@@ -76,9 +48,6 @@
   },
   "src/components/SidebarSessionRow.tsx": {
     "border-width": 2
-  },
-  "src/components/SubagentsPanel.tsx": {
-    "arbitrary-value": 8
   },
   "src/components/ThemeEditor.tsx": {
     "arbitrary-value": 10,
@@ -93,18 +62,11 @@
   "src/components/ThemePreview.tsx": {
     "arbitrary-value": 20
   },
-  "src/components/TurnChangesPanel.tsx": {
-    "arbitrary-value": 4
-  },
   "src/components/UnreadFilterActions.tsx": {
     "arbitrary-value": 2
   },
   "src/components/WelcomeScreen.tsx": {
     "arbitrary-value": 8
-  },
-  "src/components/WorktreeCreatedCard.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 2
   },
   "src/components/WorktreeSettingsRow.tsx": {
     "border-width": 2
@@ -148,93 +110,10 @@
   "src/components/transcript/UserBubble.tsx": {
     "arbitrary-value": 3
   },
-  "src/features/providers/HarnessRail.tsx": {
-    "border-width": 2
-  },
   "src/features/pull-requests/PullRequestsView.tsx": {
-    "arbitrary-value": 2
-  },
-  "src/features/pull-requests/components/GithubAvatar.tsx": {
-    "border-width": 3
-  },
-  "src/features/pull-requests/components/PrBody.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 2
-  },
-  "src/features/pull-requests/components/PrCollapse.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/features/pull-requests/components/PrCommentCard.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 4,
-    "focus-ring": 1
-  },
-  "src/features/pull-requests/components/PrCommentContent.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 6
-  },
-  "src/features/pull-requests/components/PrComposer.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 3
-  },
-  "src/features/pull-requests/components/PrDetail.tsx": {
-    "arbitrary-value": 4,
-    "border-width": 2
-  },
-  "src/features/pull-requests/components/PrDiff.tsx": {
-    "arbitrary-value": 4
-  },
-  "src/features/pull-requests/components/PrHeader.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 2
-  },
-  "src/features/pull-requests/components/PrInbox.tsx": {
-    "arbitrary-value": 13,
-    "focus-ring": 1
-  },
-  "src/features/pull-requests/components/PrMergeButton.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2,
-    "hex-color": 2,
-    "palette-color": 1
-  },
-  "src/features/pull-requests/components/PrReviewButton.tsx": {
-    "arbitrary-value": 6,
-    "border-width": 4,
-    "uppercase": 1
-  },
-  "src/features/pull-requests/components/PrSection.tsx": {
-    "arbitrary-value": 2,
-    "focus-ring": 1
-  },
-  "src/features/pull-requests/components/PrSummary.tsx": {
-    "arbitrary-value": 11,
-    "border-width": 4
-  },
-  "src/features/pull-requests/components/PrTimeline.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 6
-  },
-  "src/features/pull-requests/components/PrWorkspaceEmpty.tsx": {
-    "arbitrary-value": 7,
-    "focus-ring": 4
-  },
-  "src/features/voice/VoiceMiniBar.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 2
-  },
-  "src/features/voice/VoiceOrbDock.tsx": {
     "arbitrary-value": 1
   },
-  "src/features/voice/VoiceSettingsSheet.tsx": {
-    "arbitrary-value": 9,
-    "border-width": 4
-  },
-  "src/features/voice/VoiceSurface.tsx": {
-    "arbitrary-value": 5,
-    "border-width": 2
-  },
-  "src/features/voice/VoiceTakeoverPopover.tsx": {
+  "src/features/pull-requests/components/PrCollapse.tsx": {
     "arbitrary-value": 3
   }
 }
