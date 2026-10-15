@@ -173,6 +173,38 @@
     outline: 1.5px solid var(--focus-ring);
   }
 
+  /* Anything clickable shows a pointer so it reads as clickable; a disabled
+     control shows not-allowed instead. `:where` keeps this at zero
+     specificity so the disabled rule and cursor utilities win. */
+  :where(
+    button,
+    a[href],
+    summary,
+    select,
+    label:has(> input[type='checkbox'], > input[type='radio']),
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='range'],
+    input[type='color'],
+    [role='button'],
+    [role='link'],
+    [role='tab'],
+    [role='option'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='radio'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio']
+  ) {
+    cursor: pointer;
+  }
+
+  :disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
   /* Scrollbars stay out of sight at rest: no track, and a 6px pill that shows
      while its scroller moves (`data-scrolling`, set by useScrolling)
      or is dragged. Only some scrollers report `data-scrolling` so far, so

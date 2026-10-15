@@ -211,7 +211,7 @@ function CompactionModelPicker({
         onClick={() => {
           choose(id);
         }}
-        className={`flex w-full cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+        className={`flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left ${
           active ? 'bg-active' : 'hover:bg-elevated dark:hover:bg-active'
         }`}
       >
@@ -839,7 +839,7 @@ function SettingsSearchResults({
               onClick={() => {
                 onOpen(hit);
               }}
-              className={`group flex w-full cursor-default select-none items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition-colors duration-150 ease-out ${
+              className={`group flex w-full select-none items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition-colors duration-150 ease-out ${
                 onActiveTab ? 'bg-active' : 'hover:bg-elevated'
               }`}
             >

@@ -192,7 +192,7 @@ function MenuItem({
         if (!selectingRef.current) listRef.current?.focus({ preventScroll: true });
       }}
       className={cn(
-        'flex w-full cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-body outline-none',
+        'flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-body outline-none',
         'aria-disabled:cursor-not-allowed aria-disabled:opacity-40',
         ITEM_TONE[danger ? 'danger' : 'neutral'],
         className,

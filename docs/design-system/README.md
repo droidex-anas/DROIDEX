@@ -110,7 +110,7 @@ Every interactive thing has the same five states, and none of them adds a line:
 | State | What changes |
 | --- | --- |
 | Rest | Its fill: none for ghost, `elevated` for secondary, `text` for primary, a `-soft` fill for coloured actions |
-| Hover | One rung up the ramp (none → `elevated` → `active`), and the text steps up to `text` |
+| Hover | One rung up the ramp (none → `elevated` → `active`), the text steps up to `text`, and the cursor becomes a pointer on anything clickable |
 | Pressed / selected | `active` |
 | Keyboard focus | A 1.5px `focus-ring`, only on `:focus-visible`. Never show a ring or outline on mouse click. Set `outline: none` on `:focus` and draw the ring only for `:focus-visible` |
 | Disabled | 40% opacity, a not-allowed cursor, no hover |
