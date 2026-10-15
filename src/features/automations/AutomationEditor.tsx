@@ -172,7 +172,7 @@ export function AutomationEditor({
           ) : (
             <>
               <SectionLabel>Run configuration</SectionLabel>
-              <div className="overflow-visible rounded-xl bg-surface">
+              <div className="overflow-visible rounded-xl bg-surface dark:bg-surface/35">
                 <EditorRow label="Model">
                   <AutomationModelPicker
                     models={models}
@@ -247,7 +247,7 @@ export function AutomationEditor({
           )}
 
           <SectionLabel>Schedule</SectionLabel>
-          <div className="overflow-visible rounded-xl bg-surface">
+          <div className="overflow-visible rounded-xl bg-surface dark:bg-surface/35">
             {!isDelivery && (
               <EditorRow label="Repeat">
                 <SelectMenu

@@ -102,7 +102,7 @@ export function VoiceSettingsSheet({
                   className={`flex items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
                     selected
                       ? 'bg-active dark:bg-surface'
-                      : 'hover:bg-elevated dark:hover:bg-surface/60'
+                      : 'hover:bg-active/60 dark:hover:bg-surface/60'
                   }`}
                 >
                   <span className="min-w-0">
@@ -140,8 +140,8 @@ function VoiceRow({
       onClick={onSelect}
       className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-body transition-colors ${
         selected
-          ? 'bg-surface text-primary'
-          : 'text-secondary hover:bg-elevated dark:hover:bg-surface/60 hover:text-primary'
+          ? 'bg-active text-primary dark:bg-surface'
+          : 'text-secondary hover:bg-active/60 dark:hover:bg-surface/60 hover:text-primary'
       }`}
     >
       {label}

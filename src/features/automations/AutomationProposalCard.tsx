@@ -149,7 +149,7 @@ export function AutomationProposalCard({
       initial={reduceMotion ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.18, ease: EASE }}
-      className="overflow-hidden rounded-xl bg-surface"
+      className="overflow-hidden rounded-xl bg-surface dark:bg-surface/35"
       aria-label="DROIDEX automation proposal"
     >
       <div className="px-4 pb-3 pt-3.5">
