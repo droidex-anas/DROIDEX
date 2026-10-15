@@ -135,10 +135,11 @@ function BoxEl({ props, children }: { props: Record<string, unknown>; children: 
   const row = props.flexDirection === 'row';
   const padding = asNumber(props.padding);
   const gap = asNumber(props.gap);
-  const bordered = !!props.borderStyle;
+  // A spec's borderStyle asks for a framed box; frames separate by tone, not outline.
+  const framed = !!props.borderStyle;
   return (
     <div
-      className={bordered ? 'rounded-lg border border-divider' : undefined}
+      className={framed ? 'rounded-lg bg-elevated/50' : undefined}
       style={{
         display: 'flex',
         flexDirection: row ? 'row' : 'column',
@@ -156,7 +157,7 @@ function BoxEl({ props, children }: { props: Record<string, unknown>; children: 
 function TextEl({ props }: { props: Record<string, unknown> }) {
   return (
     <span
-      className="text-[13px] leading-relaxed break-words"
+      className="text-body break-words"
       style={{ color: resolveColor(props.color), fontWeight: props.bold ? 600 : undefined }}
     >
       {asString(props.text)}
@@ -169,10 +170,10 @@ function HeadingEl({ props }: { props: Record<string, unknown> }) {
   const text = asString(props.text);
   const cls =
     level === 'h1'
-      ? 'text-[17px] font-semibold'
+      ? 'text-heading'
       : level === 'h3'
-        ? 'text-[13px] font-semibold text-secondary'
-        : 'text-[15px] font-semibold';
+        ? 'text-body-strong text-secondary'
+        : 'text-subheading';
   return <div className={`${cls} text-primary break-words`}>{text}</div>;
 }
 
@@ -182,7 +183,7 @@ function DividerEl({ props }: { props: Record<string, unknown> }) {
   return (
     <div className="flex items-center gap-2.5 my-1 text-muted">
       <div className="h-px flex-1 bg-divider/70" />
-      <span className="text-[11px] tracking-wide uppercase whitespace-nowrap">{title}</span>
+      <span className="text-caption whitespace-nowrap">{title}</span>
       <div className="h-px flex-1 bg-divider/70" />
     </div>
   );
@@ -200,17 +201,17 @@ function BarChartEl({ props }: { props: Record<string, unknown> }) {
         const color = resolveColor(d.color) ?? 'var(--accent)';
         const label = showPct ? `${Math.round((value / total) * 100)}%` : String(value);
         return (
-          <div key={i} className="flex items-center gap-2 text-[12px]">
+          <div key={i} className="flex items-center gap-2 text-caption">
             <span className="w-24 shrink-0 truncate text-secondary text-right">
               {asString(d.label)}
             </span>
-            <div className="flex-1 h-3.5 rounded-[2px] bg-elevated/60 overflow-hidden">
+            <div className="flex-1 h-3.5 rounded-xs bg-elevated/60 overflow-hidden">
               <div
-                className="h-full rounded-[2px]"
+                className="h-full rounded-xs"
                 style={{ width: `${(value / max) * 100}%`, backgroundColor: color }}
               />
             </div>
-            <span className="w-12 shrink-0 font-mono text-muted">{label}</span>
+            <span className="w-12 shrink-0 tabular-nums text-muted">{label}</span>
           </div>
         );
       })}
@@ -229,7 +230,7 @@ function SparklineEl({ props }: { props: Record<string, unknown> }) {
       {data.map((v, i) => (
         <div
           key={i}
-          className="w-1 rounded-[2px]"
+          className="w-1 rounded-xs"
           style={{ height: `${Math.max(8, ((v - min) / span) * 100)}%`, backgroundColor: color }}
         />
       ))}
@@ -248,14 +249,15 @@ function TableEl({ props }: { props: Record<string, unknown> }) {
         .slice(0, MAX_TABLE_COLUMNS)
         .map((key) => ({ header: key, key }));
   return (
-    <div className="overflow-x-auto rounded-lg border border-divider w-full">
-      <table className="w-full border-collapse text-[13px]">
-        <thead className="bg-elevated/25">
+    <div className="overflow-x-auto rounded-lg bg-surface w-full">
+      {/* Row dividers only draw on <tr> when borders collapse. */}
+      <table className="w-full text-body" style={{ borderCollapse: 'collapse' }}>
+        <thead className="bg-elevated">
           <tr>
             {cols.map((c, i) => (
               <th
                 key={i}
-                className="border-b border-divider text-left align-top font-medium whitespace-nowrap px-2.5 py-1.5"
+                className="text-left align-top text-body-strong whitespace-nowrap px-2.5 py-1.5"
                 style={{ color: headerColor ?? 'var(--text)', width: asNumber(c.width) }}
               >
                 {asString(c.header ?? c.key)}
@@ -263,13 +265,13 @@ function TableEl({ props }: { props: Record<string, unknown> }) {
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-divider">
           {rows.map((r, ri) => (
             <tr key={ri}>
               {cols.map((c, ci) => (
                 <td
                   key={ci}
-                  className="border-t border-divider align-top text-secondary first:whitespace-nowrap first:pr-4 first:font-medium first:text-primary px-2.5 py-1.5"
+                  className="align-top text-secondary first:whitespace-nowrap first:pr-4 first:font-medium first:text-primary px-2.5 py-1.5"
                 >
                   {asString(r[asString(c.key)])}
                 </td>
@@ -284,7 +286,7 @@ function TableEl({ props }: { props: Record<string, unknown> }) {
 
 function ListEl({ props }: { props: Record<string, unknown> }) {
   const items = asArray(props.items).map((v) => asString(v));
-  const cls = 'marker:text-muted pl-5 space-y-1 text-[13px] text-primary';
+  const cls = 'marker:text-muted pl-5 space-y-1 text-body text-primary';
   return props.ordered ? (
     <ol className={`list-decimal ${cls}`}>
       {items.map((it, i) => (
@@ -304,12 +306,8 @@ function CardEl({ props, children }: { props: Record<string, unknown>; children:
   const title = asString(props.title);
   const padding = asNumber(props.padding);
   return (
-    <div className="rounded-lg border border-divider bg-elevated/20 overflow-hidden w-full">
-      {title && (
-        <div className="px-3.5 py-2 border-b border-divider text-[12px] font-medium text-primary">
-          {title}
-        </div>
-      )}
+    <div className="rounded-lg bg-surface overflow-hidden w-full">
+      {title && <div className="px-3 pt-3 text-label text-primary">{title}</div>}
       <div style={{ padding: (padding != null ? padding : 1.5) * CELL }}>{children}</div>
     </div>
   );
@@ -318,7 +316,7 @@ function CardEl({ props, children }: { props: Record<string, unknown>; children:
 function StatusLineEl({ props }: { props: Record<string, unknown> }) {
   const status = asString(props.status, 'info').toLowerCase();
   return (
-    <span className="inline-flex items-center gap-2 text-[13px] text-primary">
+    <span className="inline-flex items-center gap-2 text-body text-primary">
       <span
         className="h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ background: statusColor(status) }}
@@ -330,7 +328,7 @@ function StatusLineEl({ props }: { props: Record<string, unknown> }) {
 
 function KeyValueEl({ props }: { props: Record<string, unknown> }) {
   return (
-    <div className="flex items-baseline gap-2 text-[13px]">
+    <div className="flex items-baseline gap-2 text-body">
       <span className="shrink-0 text-muted">{asString(props.label)}</span>
       <span className="min-w-0 text-primary font-medium break-words">{asString(props.value)}</span>
     </div>
@@ -341,10 +339,9 @@ function BadgeEl({ props }: { props: Record<string, unknown> }) {
   const color = resolveColor(props.variant) ?? 'var(--text-secondary)';
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border"
+      className="inline-flex h-5 items-center px-2 rounded-full text-caption font-medium"
       style={{
         color,
-        borderColor: color,
         background: `color-mix(in srgb, ${color} 12%, transparent)`,
       }}
     >
@@ -360,9 +357,9 @@ function ProgressBarEl({ props }: { props: Record<string, unknown> }) {
   return (
     <div className="flex flex-col gap-1 w-full">
       {label && (
-        <div className="flex justify-between text-[12px] text-secondary">
+        <div className="flex justify-between text-caption text-secondary">
           <span>{label}</span>
-          <span className="font-mono text-muted">{Math.round(pct)}%</span>
+          <span className="tabular-nums text-muted">{Math.round(pct)}%</span>
         </div>
       )}
       <div className="h-2 rounded-full bg-elevated/60 overflow-hidden">
@@ -382,10 +379,8 @@ function MetricEl({ props }: { props: Record<string, unknown> }) {
   const TrendIcon = trend === 'up' ? ArrowUp : trend === 'down' ? ArrowDown : null;
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] uppercase tracking-wide text-muted">
-        {asString(props.label)}
-      </span>
-      <span className="inline-flex items-center gap-1 text-[20px] font-semibold text-primary leading-tight">
+      <span className="text-caption text-muted">{asString(props.label)}</span>
+      <span className="inline-flex items-center gap-1 text-heading tabular-nums text-primary">
         {asString(props.value)}
         {TrendIcon && <TrendIcon className="w-4 h-4" style={{ color: trendColor }} />}
       </span>
@@ -401,16 +396,16 @@ function CalloutEl({ props, children }: { props: Record<string, unknown>; childr
   // A single colored dot carries the severity; the card itself is a plain
   // elevated surface so P-level/danger notes read as clean cards, not stickers.
   return (
-    <div className="w-full rounded-lg border border-divider bg-elevated px-4 py-3">
+    <div className="w-full rounded-lg bg-elevated px-4 py-3">
       {title && (
-        <div className="flex items-center gap-2 text-[13px] font-semibold text-primary break-words">
+        <div className="flex items-center gap-2 text-body-strong text-primary break-words">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
           {title}
         </div>
       )}
       {content && (
         <div
-          className={`flex gap-2 text-[13px] leading-relaxed text-secondary break-words ${title ? 'mt-1.5 pl-3.5' : ''}`}
+          className={`flex gap-2 text-body text-secondary break-words ${title ? 'mt-1.5 pl-3.5' : ''}`}
         >
           {!title && (
             <span
@@ -441,9 +436,9 @@ function TimelineEl({ props }: { props: Record<string, unknown> }) {
               {!last && <span className="w-px flex-1 bg-muted/30 my-1" />}
             </div>
             <div className={`flex flex-col gap-0.5 ${last ? '' : 'pb-3'}`}>
-              <span className="text-[13px] font-medium text-primary">{asString(it.title)}</span>
+              <span className="text-body-strong text-primary">{asString(it.title)}</span>
               {asString(it.description) && (
-                <span className="text-[12px] text-secondary">{asString(it.description)}</span>
+                <span className="text-caption text-secondary">{asString(it.description)}</span>
               )}
             </div>
           </div>
@@ -530,12 +525,10 @@ function renderNode(
 
 function ErrorFallback({ raw }: { raw: string }) {
   return (
-    <div className="rounded-lg border border-divider bg-elevated/20 overflow-hidden my-2.5">
-      <div className="px-3.5 h-7 flex items-center text-[11px] font-medium tracking-widest uppercase text-muted/60 border-b border-divider">
-        Render spec (unparseable)
-      </div>
-      <pre className="overflow-x-auto p-3.5">
-        <code className="font-mono text-[12px] text-secondary whitespace-pre">{raw}</code>
+    <div className="rounded-lg bg-elevated/50 overflow-hidden my-2.5">
+      <div className="px-3 pt-2.5 text-label text-muted">Render spec (unparseable)</div>
+      <pre className="overflow-x-auto px-3 pb-2.5 pt-1.5">
+        <code className="font-mono text-code text-secondary whitespace-pre">{raw}</code>
       </pre>
     </div>
   );

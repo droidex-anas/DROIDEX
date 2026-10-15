@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { Maximize, Minimize } from '@droidex/icons';
+import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 
 export interface AppExpansion {
@@ -83,33 +84,31 @@ export function ExpandableAppSurface({
           }
           className={
             isExpanded
-              ? 'cue-enter fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none justify-center overflow-hidden border-0 bg-black/40 p-3 text-primary backdrop-blur-sm sm:p-6'
+              ? 'cue-enter fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none justify-center overflow-hidden border-0 bg-bg/60 p-3 text-primary sm:p-6'
               : 'min-w-0'
           }
         >
           <div
             className={
               isExpanded
-                ? 'flex h-full w-full max-w-[1600px] flex-col overflow-hidden rounded-xl border border-divider bg-bg shadow-lg'
+                ? 'flex h-full w-full max-w-screen-2xl flex-col overflow-hidden rounded-xl bg-bg shadow-lg'
                 : 'min-w-0'
             }
           >
             {isExpanded && (
               <div className="flex h-12 shrink-0 items-center gap-3 pl-5 pr-2.5">
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-secondary">
+                <span className="min-w-0 flex-1 truncate text-body-strong text-secondary">
                   Visualization
                 </span>
-                <span className="hidden text-[11px] text-muted sm:inline">Esc to close</span>
-                <button
+                <span className="hidden text-caption text-muted sm:inline">Esc to close</span>
+                <Button
                   ref={collapseButtonRef}
-                  type="button"
+                  variant="ghost"
+                  icon={Minimize}
                   onClick={onCollapse}
                   aria-label="Exit full screen"
                   title="Exit full screen"
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-secondary transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none"
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </button>
+                />
               </div>
             )}
             <div
@@ -134,9 +133,11 @@ export function ExpandableAppSurface({
       {canExpand && (
         <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
           <Tooltip label="Full screen">
-            <button
+            <Button
               ref={expandButtonRef}
-              type="button"
+              variant="ghost"
+              size="sm"
+              icon={Maximize}
               aria-label="Open visualization full screen"
               tabIndex={isExpanded ? -1 : undefined}
               onClick={() => {
@@ -144,10 +145,7 @@ export function ExpandableAppSurface({
                 if (!surface) return;
                 onExpand({ placeholderHeight: surface.offsetHeight });
               }}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary focus-visible:bg-elevated focus-visible:text-primary focus-visible:outline-none"
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-            </button>
+            />
           </Tooltip>
         </div>
       )}
