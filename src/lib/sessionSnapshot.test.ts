@@ -14,7 +14,7 @@ import {
 import { sessionSummary } from '../test/sessionSummary';
 import { textEvent } from '../test/textEvent';
 
-const SNAPSHOT_KEY = 'droid-session-snapshot-v1';
+const SNAPSHOT_KEY = 'droid-session-snapshot-v2';
 
 function feature(id: string, overrides: Partial<BridgeFeature> = {}): BridgeFeature {
   return {
@@ -56,11 +56,12 @@ function saveAndLoad(
 ): ReturnType<typeof loadSessionSnapshot> {
   let snapshot: ReturnType<typeof loadSessionSnapshot>;
   withLocalStorageMap({}, () => {
-    saveSessionSnapshot(
-      Object.fromEntries(sessions.map((item) => [item.appSessionId, item])),
-      sessions.map((item) => item.appSessionId),
-      transcript,
-    );
+    saveSessionSnapshot({
+      sessions: Object.fromEntries(sessions.map((item) => [item.appSessionId, item])),
+      sessionOrder: sessions.map((item) => item.appSessionId),
+      listConfirmedSessionIds: null,
+      activeTranscript: transcript,
+    });
     snapshot = loadSessionSnapshot();
   });
   return snapshot!;
@@ -222,9 +223,9 @@ test('an unchanged push never cancels a pending write', (t) => {
     const scheduler = createSnapshotScheduler(400);
     const sessions = { s1: summary('s1') };
     const sessionOrder = ['s1'];
-    scheduler.push({ sessions, sessionOrder });
+    scheduler.push({ sessions, sessionOrder, listConfirmedSessionIds: null });
     t.mock.timers.tick(200);
-    scheduler.push({ sessions, sessionOrder });
+    scheduler.push({ sessions, sessionOrder, listConfirmedSessionIds: null });
     t.mock.timers.tick(200);
     assert.deepEqual(loadSessionSnapshot()?.sessionOrder, ['s1']);
   });
@@ -234,11 +235,16 @@ test('a changed push reschedules and the latest input wins', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   withLocalStorageMap({}, () => {
     const scheduler = createSnapshotScheduler(400);
-    scheduler.push({ sessions: { s1: summary('s1') }, sessionOrder: ['s1'] });
+    scheduler.push({
+      sessions: { s1: summary('s1') },
+      sessionOrder: ['s1'],
+      listConfirmedSessionIds: null,
+    });
     t.mock.timers.tick(200);
     scheduler.push({
       sessions: { s1: summary('s1'), s2: summary('s2') },
       sessionOrder: ['s2', 's1'],
+      listConfirmedSessionIds: null,
     });
     t.mock.timers.tick(399);
     assert.equal(loadSessionSnapshot(), undefined, 'rescheduled write has not fired yet');
@@ -251,7 +257,11 @@ test('cancel discards a pending write', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   withLocalStorageMap({}, () => {
     const scheduler = createSnapshotScheduler(400);
-    scheduler.push({ sessions: { s1: summary('s1') }, sessionOrder: ['s1'] });
+    scheduler.push({
+      sessions: { s1: summary('s1') },
+      sessionOrder: ['s1'],
+      listConfirmedSessionIds: null,
+    });
     scheduler.cancel();
     t.mock.timers.tick(1000);
     assert.equal(loadSessionSnapshot(), undefined);
@@ -261,7 +271,11 @@ test('cancel discards a pending write', (t) => {
 test('storage failures are swallowed on both read and write', () => {
   withFailingLocalStorage(() => {
     assert.equal(loadSessionSnapshot(), undefined);
-    saveSessionSnapshot({ s1: summary('s1') }, ['s1']);
+    saveSessionSnapshot({
+      sessions: { s1: summary('s1') },
+      sessionOrder: ['s1'],
+      listConfirmedSessionIds: null,
+    });
   });
 });
 

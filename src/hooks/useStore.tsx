@@ -837,7 +837,7 @@ export const initialState: AppState = {
   projects: [],
   projectsLoaded: false,
   projectsError: '',
-  listConfirmedSessionIds: sessionSnapshot?.sessionOrder ?? null,
+  listConfirmedSessionIds: sessionSnapshot?.listConfirmedSessionIds ?? null,
   earlierSessionsByCwd: {},
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
   sessionLastSeen: loadSessionLastSeen(),
@@ -3106,6 +3106,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     snapshotScheduler.push({
       sessions: state.sessions,
       sessionOrder: state.sessionOrder,
+      listConfirmedSessionIds: state.listConfirmedSessionIds,
       activeTranscript:
         activeId !== null && activeTranscriptEvents !== undefined
           ? { appSessionId: activeId, events: activeTranscriptEvents }
@@ -3115,6 +3116,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     snapshotScheduler,
     state.sessions,
     state.sessionOrder,
+    state.listConfirmedSessionIds,
     state.activeAppSessionId,
     activeTranscriptEvents,
   ]);
