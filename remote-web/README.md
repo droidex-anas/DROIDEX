@@ -19,14 +19,28 @@ Production requires HTTPS for the client and WSS for the relay.
 
 ## Vercel or self-hosting
 
-Run the Vercel CLI from the repository root with `--local-config remote-web/vercel.json`.
-Set `VITE_REMOTE_RELAY_URL` in that Vercel project's build environment. The configuration
-builds the repository's `remote:build` script, serves `remote-web/dist`, and routes usernames
-and `/public/<username>` to the single-page app. Set the desired domain in the Vercel project.
+The official client is deployed as the separate `droidex-remote` Vercel project. Run the
+Vercel CLI from the repository root with `--local-config remote-web/vercel.json`. The build
+uses the production relay by default; set `VITE_REMOTE_RELAY_URL` only for another relay.
+The bundle owns the `/__droidex_remote/` namespace so its assets cannot collide with the
+marketing app that owns `droidex.vercel.app`.
+
+The `droidex` Vercel project composes the two deployments with ordered project routes:
+
+1. `/__droidex_remote/sw.js`, hashed assets, then other namespaced files go to
+   `https://droidex-remote.vercel.app`.
+2. `/public/<username>` and `/<username>` go to the same Remote deployment.
+3. Product routes such as `/classic`, `/projects`, and `/public` stay with marketing.
+
+Keep the service worker uncached with `Service-Worker-Allowed: /`. Cache only hashed files
+under `/__droidex_remote/assets/`. Stage and test project-route changes before publishing;
+the marketing homepage and its fixed routes must return the same deployment throughout.
+Handles use the shared `HANDLE_PATTERN`, which reserves product and infrastructure routes.
 
 For another static host, serve `remote-web/dist` over HTTPS, route application paths to
-`index.html`, and copy the security headers from `vercel.json`. Serve `sw.js` without
-caching. Restrict CSP `connect-src` to your configured relay origin when deploying.
+`index.html`, and copy the security headers from `vercel.json`. Preserve the
+`/__droidex_remote/` paths or change Vite's base and the manifest together. Serve the worker
+without caching. Restrict CSP `connect-src` to your configured relay origin when deploying.
 Secure the source repository and deployment account with two-factor authentication;
 code served by the web host has access to the decrypted browser view.
 

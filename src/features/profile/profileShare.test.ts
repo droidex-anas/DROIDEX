@@ -107,6 +107,21 @@ test('published bundles reject malformed data, wrong usernames and altered paylo
   assert.equal(await verifyPublishedProfile({ ...published, payload: changed }), null);
 });
 
+test('profile usernames cannot claim public, marketing or system routes', () => {
+  for (const username of ['api', 'assets', 'classic', 'projects', 'public']) {
+    assert.throws(
+      () => createPublicProfileSnapshot({ displayName: 'Anas', username }, usage, 2),
+      /Complete your name and username/,
+    );
+  }
+
+  assert.equal(
+    createPublicProfileSnapshot({ displayName: 'Anas', username: 'public-work' }, usage, 2)
+      .username,
+    'public-work',
+  );
+});
+
 test('sharing refuses a partial or failed local index', () => {
   assert.throws(
     () =>

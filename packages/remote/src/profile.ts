@@ -1,6 +1,32 @@
 import { decodeBase64, encodeBase64, profileShareProof, publicKey, verifyIdentity } from './crypto';
 
-export const HANDLE_PATTERN = /^[a-z][a-z0-9-]{2,29}$/;
+const RESERVED_HANDLE_PATTERN = [
+  'api',
+  'assets',
+  'blog',
+  'classic',
+  'clean',
+  'demo',
+  'docs',
+  'download',
+  'help',
+  'login',
+  'pricing',
+  'privacy',
+  'projects',
+  'public',
+  'remote',
+  'settings',
+  'shell',
+  'status',
+  'terms',
+  'www',
+].join('|');
+
+// Public handles and product routes share the droidex.vercel.app top-level namespace.
+export const HANDLE_PATTERN = new RegExp(
+  `^(?!(?:${RESERVED_HANDLE_PATTERN})$)[a-z][a-z0-9-]{2,29}$`,
+);
 export const MAX_PROFILE_PAYLOAD_LENGTH = 20 * 1024;
 
 const MAX_DATE_MS = 8_640_000_000_000_000;

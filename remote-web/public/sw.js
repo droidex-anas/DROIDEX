@@ -3,7 +3,7 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 
 // No session, keys, or profile payloads are cached by the service worker.
 self.addEventListener('push', (event) => {
-  let url = '/';
+  let url = '/__droidex_remote/app';
   try {
     const payload = event.data?.json();
     if (typeof payload?.url === 'string') {
@@ -13,7 +13,7 @@ self.addEventListener('push', (event) => {
   } catch { /* Invalid payloads still show a generic notification. */ }
   event.waitUntil(self.registration.showNotification('DROIDEX needs your attention', {
     body: 'Open DROIDEX Remote to view your laptop.',
-    icon: '/icon.svg',
+    icon: '/__droidex_remote/icon.svg',
     tag: 'droidex-attention',
     data: { url },
   }));
