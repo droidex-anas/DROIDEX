@@ -425,13 +425,16 @@ export async function createRemoteHost(options: {
           throw new Error(
             'Your paired username is fixed. Turn remote off and reset pairing before changing it',
           );
-        if (identity && next.profile.username !== state.settings.profile.username) {
+        const publicationLocationChanged =
+          next.profile.username !== state.settings.profile.username ||
+          next.relayUrl !== state.settings.relayUrl;
+        if (identity && publicationLocationChanged) {
           const currentUsername = state.settings.profile.username;
           if (!currentUsername || !state.settings.relayUrl) {
-            throw new Error('Restore your Remote relay settings before changing username');
+            throw new Error('Restore your Remote address before changing username or relay');
           }
           if (await readPublishedProfile(state.settings.relayUrl, currentUsername, identity)) {
-            throw new Error('Unpublish your profile before changing username');
+            throw new Error('Unpublish your profile before changing username or relay');
           }
         }
         const reconnect =

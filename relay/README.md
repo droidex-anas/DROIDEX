@@ -42,11 +42,12 @@ is deliberately no password reset, account recovery or automatic ownership
 transfer.
 
 `POST /v1/handles/:handle/profile-challenge` accepts an owner-signed client
-nonce and registers it for one profile mutation. `POST /profile` publishes or
-updates a signed snapshot when `currentPayload` exactly matches the stored
-payload. `DELETE /profile` revokes the exact current payload. Mutation proofs
-bind the handle, one-use nonce, current payload and next payload, so copied or
-stale requests cannot restore, replace or remove a profile.
+nonce and returns a fresh relay-generated challenge for one profile mutation.
+`POST /profile` publishes or updates a signed snapshot when `currentPayload`
+exactly matches the stored payload. `DELETE /profile` revokes the exact current
+payload. Mutation proofs bind the handle, server challenge, current payload and
+next payload, so copied or stale requests cannot restore, replace or remove a
+profile.
 
 `GET /v1/handles/:handle/profile` returns the signed public bundle or 404. The
 browser validates the bounded v3 payload, username and owner signature before
