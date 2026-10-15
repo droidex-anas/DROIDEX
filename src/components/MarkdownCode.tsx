@@ -44,7 +44,7 @@ export async function copyMarkdownCode(
 
 export function CardHeader({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex h-8 items-center justify-between gap-2 pl-3.5 pr-1.5">
+    <div className="flex h-8 select-none items-center justify-between gap-2 pl-3.5 pr-1.5">
       <span className="truncate text-label text-muted">{label}</span>
       <div className="flex shrink-0 items-center gap-0.5">{children}</div>
     </div>

@@ -55,7 +55,9 @@ export function InlineCode({ children }: { children?: ReactNode }) {
         event.preventDefault();
         open();
       }}
-      className={`${PILL} cursor-pointer underline decoration-transparent underline-offset-2 transition-colors hover:bg-text/[0.14] hover:decoration-current`}
+      // The underline appears on hover rather than fading in from transparent:
+      // a selection repaints a transparent decoration in the selection colour.
+      className={`${PILL} cursor-pointer underline-offset-2 transition-colors hover:bg-text/[0.14] hover:underline`}
     >
       {children}
     </code>

@@ -211,6 +211,12 @@
     cursor: not-allowed;
   }
 
+  /* A button is chrome, not text: a selection across it, such as a tool row's
+     header in the transcript, copies the content around it without its label. */
+  button {
+    user-select: none;
+  }
+
   /* Scrollbars stay out of sight at rest: no track, and a 6px pill that shows
      while its scroller moves (`data-scrolling`, set by useScrolling)
      or is dragged. Only some scrollers report `data-scrolling` so far, so
