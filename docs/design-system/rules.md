@@ -22,6 +22,7 @@ Lines are rare. These are the only places one belongs:
 - Data tables (Markdown tables, rendered JSON tables, spreadsheet previews) rule their body rows with `divide-y divide-divider` on `<tbody>`, so long rows of cells can be read across.
 - Agent-to-agent reports and instruction messages in project chats keep their hairline: it marks who is speaking.
 - A dashed drop-target outline is an interaction cue, only while dragging.
+- A colour swatch keeps a hairline edge, because an arbitrary user colour must read on any surface.
 - Diff lines, gutter markers and the split between a diff's old and new sides encode data.
 - `divider-strong` is only for a split that must survive a busy area, such as a docked panel beside the transcript.
 - The keyboard focus ring belongs to individual controls, only on `:focus-visible`.
