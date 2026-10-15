@@ -20,12 +20,12 @@ export function fitSvgMarkup(content: string): string {
 
 // Authored SVGs assume a white page: dark ink, and `currentColor` resolves to
 // black inside an image. The image carries its own paper so it reads on a dark
-// canvas too; an authored root background still wins.
+// canvas too. The paper rule has zero specificity and comes first, so any
+// background the author set, in a style attribute or a stylesheet, wins.
 export function svgImageSrc(content: string): string {
-  const onPaper = fitSvgMarkup(content).replace(/<svg\b[^>]*>/i, (tag) =>
-    /\sstyle\s*=\s*["']/i.test(tag)
-      ? tag.replace(/(\sstyle\s*=\s*["'])/i, '$1background:#fff;')
-      : tag.replace('<svg', '<svg style="background:#fff"'),
+  const onPaper = fitSvgMarkup(content).replace(
+    /<svg\b[^>]*>/i,
+    (tag) => `${tag}<style>:where(:root){background:#fff}</style>`,
   );
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(onPaper)}`;
 }

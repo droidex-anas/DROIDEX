@@ -19,12 +19,11 @@ test('the SVG root owns its namespace and scales while child shapes keep their s
   assert.equal(fitSvgMarkup(spacedNamespace), spacedNamespace);
 });
 
-test('an SVG image gets a white page without a second style attribute', () => {
+test('an SVG image gets a white page that its own background overrides', () => {
   const markup = (content: string) =>
     decodeURIComponent(svgImageSrc(content).replace('data:image/svg+xml;charset=utf-8,', ''));
-  assert.match(markup('<svg viewBox="0 0 4 2"></svg>'), /^<svg style="background:#fff"/);
-  assert.match(
-    markup('<svg viewBox="0 0 4 2" style="background:#111"></svg>'),
-    /^<svg [^>]*style="background:#fff;background:#111"[^>]*><\/svg>$/,
+  assert.equal(
+    markup('<svg viewBox="0 0 4 2" style="background:#111"><style>svg{fill:red}</style></svg>'),
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 2" style="background:#111"><style>:where(:root){background:#fff}</style><style>svg{fill:red}</style></svg>',
   );
 });
