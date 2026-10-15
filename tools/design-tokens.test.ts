@@ -157,6 +157,15 @@ test('table-row dividers inherit only same-variant colours from unconditional pa
   }
 });
 
+test('a class helper held in a const is exempt only where a table row wears it', () => {
+  const rows = 'const rows = cn("divide-divider", striped && "divide-y");\n';
+  assert.deepEqual(messageIds(lintDesignTokens(`${rows}<tbody className={rows} />`)), []);
+  assert.deepEqual(
+    messageIds(lintDesignTokens(`${rows}<><tbody className={rows} /><div className={rows} /></>`)),
+    ['border-width'],
+  );
+});
+
 test('documented semantic outlines use a reasoned inline directive, not a divider allowance', () => {
   const code = `// eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat instruction: marks the speaker
 <div className="border border-divider" />`;

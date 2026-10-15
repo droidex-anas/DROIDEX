@@ -85,9 +85,40 @@ const isTernaryOfResolvableStrings = (node) =>
   isResolvableString(node.consequent) &&
   isResolvableString(node.alternate);
 
-// Resolves `const tone = '…'`, a template of literals, or a ternary of those,
-// one level up the scope chain, same file, when used directly in a className
-// or class helper.
+const isHelperCall = (node) => node?.type === 'CallExpression' && helperName(node.callee);
+
+// True when collectClassStrings reaches this identifier from a className value.
+function isClassNameValue(identifier) {
+  let child = identifier;
+  let node = identifier.parent;
+  while (node) {
+    if (node.type === 'JSXAttribute') {
+      return node.name.type === 'JSXIdentifier' && node.name.name === 'className';
+    }
+    const passesClasses =
+      node.type === 'JSXExpressionContainer' ||
+      node.type === 'LogicalExpression' ||
+      node.type === 'ArrayExpression' ||
+      node.type === 'TemplateLiteral' ||
+      (node.type === 'ConditionalExpression' && node.test !== child) ||
+      (isHelperCall(node) && node.callee !== child);
+    if (!passesClasses) return false;
+    child = node;
+    node = node.parent;
+  }
+  return false;
+}
+
+// A `const cls = cn(…)` read only in className values is checked at each use,
+// so a <tbody> use gets the table-row exemption and any other use does not.
+function isCheckedAtUses(variable) {
+  const reads = variable.references.filter((reference) => reference.isRead());
+  return reads.length > 0 && reads.every((reference) => isClassNameValue(reference.identifier));
+}
+
+// Resolves `const tone = '…'`, a template of literals, a ternary of those, or a
+// class-helper call checked at its uses, one level up the scope chain, same
+// file, when used directly in a className or class helper.
 function makeConstResolver(context) {
   return (identifier) => {
     let scope = context.sourceCode.getScope(identifier);
@@ -96,13 +127,15 @@ function makeConstResolver(context) {
       if (variable) {
         const definition = variable.defs[0];
         if (
-          variable.defs.length === 1 &&
-          definition?.type === 'Variable' &&
-          definition.parent?.kind === 'const' &&
-          (isResolvableString(definition.node.init) || isTernaryOfResolvableStrings(definition.node.init))
+          variable.defs.length !== 1 ||
+          definition?.type !== 'Variable' ||
+          definition.parent?.kind !== 'const'
         ) {
-          return definition.node.init;
+          return null;
         }
+        const init = definition.node.init;
+        if (isResolvableString(init) || isTernaryOfResolvableStrings(init)) return init;
+        if (isHelperCall(init) && isCheckedAtUses(variable)) return init;
         return null;
       }
       scope = scope.upper;
@@ -175,7 +208,8 @@ function collectClassStrings(node, group, resolve, seen) {
       // Report resolved strings at the use site; the definition may be far
       // from the element that wears them.
       const resolved = newGroup(group);
-      collectClassStrings(init, resolved, resolve, seen);
+      // A fresh set: a helper held in a const is checked again at every use.
+      collectClassStrings(init, resolved, resolve, new Set());
       group.parts.push(...resolved.parts.map((part) => ({ ...part, node })));
       group.forks.push(
         ...resolved.forks.map((forked) => {
@@ -274,6 +308,20 @@ export default {
         );
       },
       CallExpression(node) {
+        const declarator = node.parent;
+        if (
+          isHelperCall(node) &&
+          declarator.type === 'VariableDeclarator' &&
+          declarator.init === node &&
+          declarator.parent.kind === 'const'
+        ) {
+          const [variable] = context.sourceCode.getDeclaredVariables(declarator);
+          if (variable && isCheckedAtUses(variable)) {
+            // Mark it and its nested helpers seen; the className uses report them.
+            collectClassStrings(node, newGroup(null), resolve, seen);
+            return;
+          }
+        }
         visitValue(node, false);
       },
       'Program:exit'() {
