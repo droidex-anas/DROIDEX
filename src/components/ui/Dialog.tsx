@@ -5,6 +5,7 @@ import {
   useId,
   useLayoutEffect,
   useRef,
+  useState,
   type HTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
@@ -15,6 +16,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { cn } from './cn';
 import { pushEscapeLayer } from './escapeStack';
+import { FloatingLayerRoot } from './floatingLayerRoot';
 
 type DialogSize = 'confirm' | 'form' | 'content';
 
@@ -61,6 +63,7 @@ export function Dialog({
   ...rest
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [layerRoot, setLayerRoot] = useState<HTMLDivElement | null>(null);
   const titleId = useId();
   const reduceMotion = useReducedMotion();
   const closeRef = useRef(onClose);
@@ -93,9 +96,13 @@ export function Dialog({
     };
   }, []);
 
+  // React bubbles keys from the popovers this dialog opens through the panel;
+  // those portal outside it and trap their own Tab.
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);
-    if (!event.defaultPrevented) wrapTabFocus(event, panelRef.current);
+    const panel = panelRef.current;
+    const fromPanel = event.target instanceof Node && panel?.contains(event.target);
+    if (!event.defaultPrevented && fromPanel) wrapTabFocus(event, panel);
   };
 
   const layer = (
@@ -127,12 +134,23 @@ export function Dialog({
           className,
         )}
       >
-        <TitleIdContext.Provider value={titleId}>{children}</TitleIdContext.Provider>
+        <TitleIdContext.Provider value={titleId}>
+          <FloatingLayerRoot.Provider value={layerRoot}>{children}</FloatingLayerRoot.Provider>
+        </TitleIdContext.Provider>
       </motion.div>
     </motion.div>
   );
   // A static render (renderToStaticMarkup) has no <body> to portal into.
-  return typeof document === 'undefined' ? layer : createPortal(layer, document.body);
+  if (typeof document === 'undefined') return layer;
+  // The popover root sits after the scrim, not inside it: floating layers
+  // apply the UI zoom themselves and position in unzoomed window pixels.
+  return createPortal(
+    <>
+      {layer}
+      <div ref={setLayerRoot} className="relative z-dialog" />
+    </>,
+    document.body,
+  );
 }
 
 export function DialogTitle({ className, ...rest }: HTMLAttributes<HTMLHeadingElement>) {

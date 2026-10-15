@@ -102,7 +102,7 @@ export function InstallStep({
       {(Boolean(installing) || installLog.length > 0) && (
         <div
           ref={logRef}
-          className="mb-4 max-h-40 overflow-auto rounded-lg bg-surface p-3 font-mono text-code-sm text-muted"
+          className="mb-4 max-h-40 overflow-auto rounded-lg bg-surface p-3 font-mono text-code text-muted"
         >
           {installLog.map((line, i) => (
             <div key={i} className="whitespace-pre-wrap break-words">
