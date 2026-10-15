@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, KeyRound } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { ArrowLeft, Check, KeyRound } from '@droidex/icons';
 
 import type { OnboardingController } from '../../../hooks/useOnboarding';
-import { BackButton, GhostButton, PrimaryButton, StepLabel, StepTitle } from '../kit';
+import { Button } from '../../ui/Button';
+import { Input } from '../../ui/Field';
+import { Panel, StepLabel, StepTitle } from '../kit';
 
 export function SignInStep({
   controller,
@@ -47,7 +48,7 @@ export function SignInStep({
   };
 
   return (
-    <div className="w-full max-w-[520px] mx-auto">
+    <div className="mx-auto w-full max-w-lg">
       <StepLabel>Factory account</StepLabel>
       <StepTitle
         title="Bring your account."
@@ -55,41 +56,47 @@ export function SignInStep({
       />
 
       {signedIn ? (
-        <div className="rounded-lg border border-divider bg-surface px-4 py-3.5 mb-6 flex items-center gap-2.5 text-[13px] text-primary">
-          <Check className="w-4 h-4 text-success" strokeWidth={3} /> You&apos;re signed in.
-        </div>
+        <Panel className="mb-6 flex items-center gap-2.5 px-4 py-3 text-body text-primary">
+          <Check className="size-icon-md text-success" /> You&apos;re signed in.
+        </Panel>
       ) : (
-        <div className="space-y-2 mb-6">
-          <PrimaryButton
+        <div className="mb-6 space-y-2">
+          <Button
+            ref={checkButtonRef}
+            variant="primary"
+            size="lg"
+            icon={Check}
             onClick={() => {
               focusContinueAfterCheck.current = document.activeElement === checkButtonRef.current;
               controller.refreshEnv();
             }}
             disabled={!env?.cli.present}
-            buttonRef={checkButtonRef}
+            className="w-full"
           >
-            <Check className="w-4 h-4" /> Check CLI sign-in
-          </PrimaryButton>
+            Check CLI sign-in
+          </Button>
           {!env?.cli.present && (
-            <p className="text-[12px] text-muted text-center">Install the Droid CLI first.</p>
+            <p className="text-center text-caption text-muted">Install the Droid CLI first.</p>
           )}
           {env?.cli.present && (
-            <p className="text-[12px] text-muted text-center">
+            <p className="text-center text-caption text-muted">
               Sign in with the Droid CLI in Terminal, then check the status here.
             </p>
           )}
           {!showKey ? (
-            <button
+            <Button
+              variant="ghost"
+              icon={KeyRound}
               onClick={() => {
                 setShowKey(true);
               }}
-              className="w-full text-[13px] text-muted hover:text-primary transition-colors py-2 flex items-center justify-center gap-1.5"
+              className="w-full"
             >
-              <KeyRound className="w-3.5 h-3.5" /> Use an API key instead
-            </button>
+              Use an API key instead
+            </Button>
           ) : (
-            <div className="rounded-lg border border-divider bg-surface p-3.5 space-y-2">
-              <input
+            <Panel className="space-y-2 p-3">
+              <Input
                 type="password"
                 aria-label="Factory API key"
                 value={key}
@@ -97,37 +104,48 @@ export function SignInStep({
                   setKey(e.target.value);
                 }}
                 placeholder="FACTORY_API_KEY"
-                className="droid-input w-full font-mono text-[12px]"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
+                className="font-mono"
               />
-              <PrimaryButton
+              <Button
+                variant="primary"
+                size="lg"
+                loading={saving}
                 onClick={() => {
                   void saveKey();
                 }}
                 disabled={!key.trim() || saving}
+                className="w-full"
               >
-                {saving ? (
-                  <Spinner className="w-4 h-4 motion-safe:animate-spin-slow" />
-                ) : (
-                  'Save key'
-                )}
-              </PrimaryButton>
-              {keyError && <p className="text-[12px] text-danger">{keyError}</p>}
-            </div>
+                Save key
+              </Button>
+              {keyError && <p className="text-body text-danger">{keyError}</p>}
+            </Panel>
           )}
         </div>
       )}
 
       <div className="flex items-center gap-2">
-        <BackButton onClick={onBack} />
-        <div className="flex-1">
-          {signedIn ? (
-            <PrimaryButton onClick={onNext} buttonRef={continueButtonRef}>
-              Continue <ArrowRight className="w-4 h-4" />
-            </PrimaryButton>
-          ) : (
-            <GhostButton onClick={onNext}>Skip for now</GhostButton>
-          )}
-        </div>
+        <Button variant="ghost" size="lg" icon={ArrowLeft} onClick={onBack}>
+          Back
+        </Button>
+        {signedIn ? (
+          <Button
+            ref={continueButtonRef}
+            variant="primary"
+            size="lg"
+            onClick={onNext}
+            className="flex-1"
+          >
+            Continue
+          </Button>
+        ) : (
+          <Button size="lg" onClick={onNext} className="flex-1">
+            Skip for now
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -50,9 +50,8 @@ export function SideChatPane({
           onClick={() => {
             closeSideChat.requestClose(sourceAppSessionId);
           }}
-        >
-          <X className="h-3.5 w-3.5" />
-        </SideChatHeaderButton>
+          icon={X}
+        />
       )}
       {closeSideChat.dialog}
     </>
@@ -75,12 +74,12 @@ export function SideChatPane({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <SideChatHeader controls={headerControls}>
-          <span className="shimmer-text min-w-0 flex-1 truncate px-1 text-[13px] font-medium">
+          <span className="shimmer-text min-w-0 flex-1 truncate px-1 text-body-strong">
             Starting side chat
           </span>
         </SideChatHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-elevated px-3.5 py-2 text-[13px] leading-5 text-primary">
+          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-elevated px-3.5 py-2 text-prose text-primary">
             {view.prompt}
           </p>
         </div>
@@ -91,7 +90,7 @@ export function SideChatPane({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideChatHeader controls={headerControls}>
-        <span className="min-w-0 flex-1 truncate px-1 text-[13px] font-medium text-primary">
+        <span className="min-w-0 flex-1 truncate px-1 text-body-strong text-primary">
           Side chat
         </span>
       </SideChatHeader>

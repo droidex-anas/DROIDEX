@@ -1,133 +1,37 @@
-import { ArrowLeft, Check, RefreshCw } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
-import type { ReactNode, Ref } from 'react';
-import { Switch } from '../Switch';
+import { Check, Spinner } from '@droidex/icons';
+import type { ReactNode } from 'react';
+import { cn } from '../ui/cn';
 
-// Shared furniture for the first-run wizard, built entirely from the app's own
-// design system: droid-* theme tokens and the droid-button/droid-input classes
-// in index.css. Nothing here invents a palette, so the tour matches the active
-// theme exactly like every other screen.
-
-export const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+// Shared furniture for the first-run wizard. Controls come from ui/ and the
+// settings kit, so the tour matches the active theme like every other screen.
 
 /** Quiet section label, matching the settings group headers. */
 export function StepLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="text-[11px] font-medium text-muted uppercase tracking-wider mb-2">
-      {children}
-    </div>
-  );
+  return <div className="mb-2 select-none text-label text-muted">{children}</div>;
 }
 
 export function StepTitle({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="mb-6">
-      <h2 className="text-[16px] font-semibold tracking-tight text-primary">{title}</h2>
-      {sub && <p className="mt-2 text-[13px] leading-relaxed text-secondary">{sub}</p>}
+      <h2 className="text-subheading text-primary">{title}</h2>
+      {sub && <p className="mt-1 text-body text-secondary">{sub}</p>}
     </div>
   );
 }
 
-/** Bordered surface for grouped rows (settings-panel style). */
-export function Panel({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return (
-    <div
-      className={`rounded-lg border border-divider bg-surface divide-y divide-divider overflow-hidden ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-interface BtnProps {
-  children: ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  buttonRef?: Ref<HTMLButtonElement>;
-}
-
-const btnLayout =
-  'w-full h-10 flex items-center justify-center gap-2 text-[13px] disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
-
-export function PrimaryButton({ children, onClick, disabled, buttonRef }: BtnProps) {
-  return (
-    <button
-      ref={buttonRef}
-      onClick={onClick}
-      disabled={disabled}
-      className={`droid-button-primary ${btnLayout}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function GhostButton({ children, onClick, disabled, buttonRef }: BtnProps) {
-  return (
-    <button
-      ref={buttonRef}
-      onClick={onClick}
-      disabled={disabled}
-      className={`droid-button ${btnLayout}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function BackButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="px-3 h-10 inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-primary transition-colors shrink-0 disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-    >
-      <ArrowLeft className="w-3.5 h-3.5" /> Back
-    </button>
-  );
-}
-
-export function RescanButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button onClick={onClick} className={`droid-button ${btnLayout}`}>
-      <RefreshCw className="w-4 h-4" /> Re-scan
-    </button>
-  );
+/** A surface one tone up from the canvas for grouped rows. */
+export function Panel({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn('overflow-hidden rounded-lg bg-surface', className)}>{children}</div>;
 }
 
 export function StatusDot({ status }: { status: 'pending' | 'ok' | 'missing' }) {
   return (
-    <span className="w-5 h-5 flex items-center justify-center shrink-0">
+    <span className="flex size-5 shrink-0 items-center justify-center">
       {status === 'pending' && (
-        <Spinner className="w-3.5 h-3.5 motion-safe:animate-spin-slow text-muted" />
+        <Spinner className="size-icon-sm text-muted motion-safe:animate-spin-slow" />
       )}
-      {status === 'ok' && <Check className="w-4 h-4 text-success" strokeWidth={3} />}
-      {status === 'missing' && <span className="w-1.5 h-1.5 rounded-full bg-muted" />}
+      {status === 'ok' && <Check className="size-icon-md text-success" />}
+      {status === 'missing' && <span className="size-1.5 rounded-full bg-muted" />}
     </span>
-  );
-}
-
-/** Row with the same switch control the settings panel uses. */
-export function ToggleRow({
-  label,
-  sub,
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  sub?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3.5">
-      <div className="pr-4">
-        <div className="text-[13px] text-primary">{label}</div>
-        {sub && <div className="text-[12px] text-muted mt-0.5">{sub}</div>}
-      </div>
-      <Switch label={label} checked={checked} onChange={onChange} disabled={disabled} />
-    </div>
   );
 }
