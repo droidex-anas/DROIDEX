@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { Placement } from '@floating-ui/react';
+import { useCallback, useEffect, useState, type RefObject } from 'react';
+import type { AnchorPoint } from '../components/ui/usePopoverPosition';
 import { useStoreDispatch } from './useStore';
 import { chatDisplayTitle, isChatHidden, type ChatMetadataMap } from '../lib/chatMetadata';
 import { exportSessionMarkdown, renameSession } from '../lib/commands';
@@ -44,12 +44,11 @@ export function rowMenuTarget(
   return sessions[rowMenu.appSessionId];
 }
 
-// Where a row's action menu opens: the point it anchors to, and which way it
-// grows from there (under a right-click, or under the row's actions button).
-export interface RowMenuPosition {
-  x: number;
-  y: number;
-  placement: Placement;
+// What a row's action menu opens from: the row's actions button, or the
+// right-clicked row together with the click point.
+export interface RowMenuAnchor {
+  anchorRef: RefObject<HTMLElement | null>;
+  anchorPoint?: AnchorPoint;
 }
 
 // Owns chat action targeting, inline rename settlement, and stale-target cleanup.
@@ -60,10 +59,15 @@ export function useSidebarRowActions(
   const dispatch = useStoreDispatch();
   // Target of the chat row action menu (opened by right-click or the hover
   // "..." button) and the row currently being renamed inline.
-  const [rowMenu, setRowMenu] = useState<({ appSessionId: string } & RowMenuPosition) | null>(null);
+  const [rowMenu, setRowMenu] = useState<({ appSessionId: string } & RowMenuAnchor) | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const handleRowMenu = useCallback((appSessionId: string, position: RowMenuPosition) => {
-    setRowMenu({ appSessionId, ...position });
+  // The actions button toggles its menu; a right-click always opens a new one.
+  const handleRowMenu = useCallback((appSessionId: string, anchor: RowMenuAnchor) => {
+    setRowMenu((current) =>
+      current?.anchorRef === anchor.anchorRef && !anchor.anchorPoint
+        ? null
+        : { appSessionId, ...anchor },
+    );
   }, []);
 
   // Stable identity so SessionContextMenu's escape-layer/listener effect does

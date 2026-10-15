@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Folder, FolderMinus, FolderOpen, Plus } from '@droidex/icons';
 import { Menu } from './ui/Menu';
+import type { AnchorPoint } from './ui/usePopoverPosition';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MENU_WIDTH = 200;
@@ -31,49 +32,6 @@ function WorkspaceFolderIcon({ open }: { open: boolean }) {
   );
 }
 
-// The workspace's right-click menu, opened at the pointer through a zero-size
-// point anchor so the shared positioning hook keeps it inside the window.
-function WorkspaceContextMenu({
-  x,
-  y,
-  name,
-  onRemove,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  name: string;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  const pointRef = useRef<HTMLSpanElement>(null);
-
-  return (
-    <>
-      <span
-        ref={pointRef}
-        aria-hidden="true"
-        className="pointer-events-none fixed size-0"
-        style={{ left: x, top: y }}
-      />
-      <Menu
-        open
-        onClose={onClose}
-        anchorRef={pointRef}
-        label={`${name} workspace`}
-        width={MENU_WIDTH}
-        onContextMenu={(event) => {
-          event.preventDefault();
-        }}
-      >
-        <Menu.Item icon={FolderMinus} onSelect={onRemove}>
-          Remove workspace
-        </Menu.Item>
-      </Menu>
-    </>
-  );
-}
-
 export function SidebarWorkspaceRow({
   name,
   open,
@@ -89,20 +47,22 @@ export function SidebarWorkspaceRow({
   onRemove: () => void;
   children: ReactNode;
 }) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const rowButtonRef = useRef<HTMLButtonElement>(null);
+  const [menuPoint, setMenuPoint] = useState<AnchorPoint | null>(null);
   const closeMenu = useCallback(() => {
-    setMenu(null);
+    setMenuPoint(null);
   }, []);
 
   return (
     <div>
       <div className="group flex items-center gap-1 py-1.5 pl-3 pr-2.5">
         <button
+          ref={rowButtonRef}
           type="button"
           onClick={onToggle}
           onContextMenu={(event) => {
             event.preventDefault();
-            setMenu({ x: event.clientX, y: event.clientY });
+            setMenuPoint({ x: event.clientX, y: event.clientY });
           }}
           aria-expanded={open}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-sm text-left"
@@ -123,14 +83,22 @@ export function SidebarWorkspaceRow({
         </button>
       </div>
       {children}
-      {menu ? (
-        <WorkspaceContextMenu
-          x={menu.x}
-          y={menu.y}
-          name={name}
-          onRemove={onRemove}
+      {menuPoint ? (
+        <Menu
+          open
           onClose={closeMenu}
-        />
+          anchorRef={rowButtonRef}
+          anchorPoint={menuPoint}
+          label={`${name} workspace`}
+          width={MENU_WIDTH}
+          onContextMenu={(event) => {
+            event.preventDefault();
+          }}
+        >
+          <Menu.Item icon={FolderMinus} onSelect={onRemove}>
+            Remove workspace
+          </Menu.Item>
+        </Menu>
       ) : null}
     </div>
   );

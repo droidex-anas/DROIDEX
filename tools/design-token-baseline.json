@@ -15,17 +15,13 @@
     "arbitrary-value": 1
   },
   "src/components/ColorPicker.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 8,
+    "border-width": 5,
     "palette-color": 2
   },
   "src/components/ConversationList.tsx": {
     "arbitrary-value": 2
   },
   "src/components/ConversationTimeline.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/EditorOpenMenu.tsx": {
     "arbitrary-value": 1
   },
   "src/components/FeedbackModal.tsx": {
@@ -73,9 +69,6 @@
   },
   "src/components/NotificationsSettings.tsx": {
     "border-width": 4
-  },
-  "src/components/PaletteShell.tsx": {
-    "arbitrary-value": 1
   },
   "src/components/RightPanel.tsx": {
     "arbitrary-value": 7

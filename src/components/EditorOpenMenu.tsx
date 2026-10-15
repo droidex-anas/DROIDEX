@@ -125,7 +125,7 @@ export default function EditorOpenMenu({
           }`}
         >
           <EditorIcon editor={selected} size={14} />
-          <span className="max-w-[72px] truncate">{editorLabel(selected)}</span>
+          <span className="max-w-20 truncate">{editorLabel(selected)}</span>
           <ChevronDown
             className={`size-icon-sm transition-transform ${open ? 'rotate-180' : ''}`}
           />

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Pipette } from 'lucide-react';
+import { Input } from './ui/Field';
 import { Popover } from './ui/Popover';
 
 /* ── color math ── */
@@ -150,7 +151,7 @@ export function ColorPicker({
         onPointerDown={drag((x, y) => {
           updateSat(x, y);
         })}
-        className="relative h-[150px] rounded-md cursor-crosshair overflow-hidden"
+        className="relative h-40 rounded-md cursor-crosshair overflow-hidden"
         style={{ background: `hsl(${h}, 100%, 50%)` }}
       >
         <div
@@ -285,14 +286,15 @@ export function ColorField({
           style={{ backgroundColor: value }}
           title="Pick color"
         />
-        <input
-          type="text"
+        <Input
+          variant="compact"
           value={draft}
           onChange={(e) => {
             commit(e.target.value);
           }}
           spellCheck={false}
-          className="w-24 bg-elevated border border-divider rounded-md px-2 py-1.5 font-mono text-code-sm text-secondary focus:outline-none focus:border-divider-strong"
+          aria-label={`${label} hex value`}
+          className="w-24 font-mono text-code-sm"
         />
         {open && (
           <ColorPopover

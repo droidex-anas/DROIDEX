@@ -6,7 +6,7 @@ import { opensInNewTab } from '../lib/shortcuts';
 import { isEmbedded } from '../lib/embed';
 import { endPlaceDrag, startPlaceDrag } from '../features/tabs/tileDrag';
 import { reasoningEffortLabel } from '../lib/reasoningEffort';
-import type { RowMenuPosition } from '../hooks/useSidebarRowActions';
+import type { RowMenuAnchor } from '../hooks/useSidebarRowActions';
 import type { SessionSummary } from '../types/bridge';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
 import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
@@ -69,7 +69,7 @@ export interface SessionRowProps {
   now: number;
   onSelect: (appSessionId: string) => void;
   onOpenInTab: (appSessionId: string) => void;
-  onMenu: (appSessionId: string, position: RowMenuPosition) => void;
+  onMenu: (appSessionId: string, anchor: RowMenuAnchor) => void;
   onRenameCommit: (appSessionId: string, title: string) => void;
   onRenameCancel: () => void;
   // Activity view only: the status mark doubles as a control that settles the
@@ -129,6 +129,7 @@ export const SessionRow = memo(function SessionRow({
   const renameHandled = useRef(false);
   const titleRef = useRef<HTMLSpanElement>(null);
   const rowButtonRef = useRef<HTMLButtonElement>(null);
+  const actionsButtonRef = useRef<HTMLButtonElement>(null);
   const wasRenaming = useRef(false);
   const [marqueePx, setMarqueePx] = useState(0);
   const timeLabel = formatRelativeTime(session.updatedAt, now);
@@ -326,8 +327,10 @@ export const SessionRow = memo(function SessionRow({
         }}
         onContextMenu={(e) => {
           e.preventDefault();
-          // The click point anchors the menu, so it opens where the pointer is.
-          onMenu(session.appSessionId, { x: e.clientX, y: e.clientY, placement: 'bottom-start' });
+          onMenu(session.appSessionId, {
+            anchorRef: rowButtonRef,
+            anchorPoint: { x: e.clientX, y: e.clientY },
+          });
         }}
         className={`flex w-full cursor-pointer ${inbox ? 'items-start py-2.5' : 'items-center py-2'} gap-2.5 rounded-md px-3 text-left transition-colors ${
           active ? 'bg-active' : 'hover:bg-elevated'
@@ -401,19 +404,13 @@ export const SessionRow = memo(function SessionRow({
           It stays tabbable while hidden so keyboard users can reach it;
           opacity (not display) keeps it in the tab order. */}
       <button
+        ref={actionsButtonRef}
         type="button"
         aria-label={`Actions for ${title}`}
         title="Chat actions"
         onClick={(e) => {
           e.stopPropagation();
-          // Anchored to the button's bottom-right corner, so the menu hangs
-          // inside the sidebar rather than off its right edge.
-          const rect = e.currentTarget.getBoundingClientRect();
-          onMenu(session.appSessionId, {
-            x: rect.right,
-            y: rect.bottom + 4,
-            placement: 'bottom-end',
-          });
+          onMenu(session.appSessionId, { anchorRef: actionsButtonRef });
         }}
         className={`${HOVER_ACTION} right-1.5 ${inbox ? 'top-2 translate-y-0' : ''}`}
       >

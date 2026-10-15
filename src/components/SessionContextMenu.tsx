@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import type { RefObject } from 'react';
 import {
   AppWindow,
   Archive,
@@ -9,9 +9,9 @@ import {
   Pencil,
   RotateCcw,
 } from 'lucide-react';
-import type { Placement } from '@floating-ui/react';
 import { Copy, GitFork, Pin, PinOff } from '@droidex/icons';
 import { Menu } from './ui/Menu';
+import type { AnchorPoint } from './ui/usePopoverPosition';
 import { toast } from '../lib/toast';
 import { PROVIDER_LABELS, sessionResumeCommand } from '../features/providers/providerIdentity';
 import type { ProviderKind } from '../types/bridge';
@@ -38,11 +38,10 @@ function copyText(text: string, message: string): void {
 }
 
 export interface SessionContextMenuProps {
-  x: number;
-  y: number;
-  // Which way the menu grows from the point: `bottom-start` under a
-  // right-click, `bottom-end` under a row's trailing actions button.
-  placement?: Placement;
+  // The row's actions button, or the right-clicked row with the click point.
+  // Either way the anchor takes focus back when the menu closes.
+  anchorRef: RefObject<HTMLElement | null>;
+  anchorPoint?: AnchorPoint;
   pinned: boolean;
   settled?: boolean;
   onToggleSettled?: () => void;
@@ -69,13 +68,10 @@ export interface SessionContextMenuProps {
 // Action menu for a sidebar chat row (right-click or the hover "..." button).
 // Organization actions (open/pin/rename/archive) are app-level; the copy actions
 // expose the harness's own session so the user can continue it in that
-// harness's official CLI, or for Droid in the Factory web app. A zero-size
-// point anchor stands in for the click, so the shared positioning hook places
-// the menu and keeps it inside the window.
+// harness's official CLI, or for Droid in the Factory web app.
 export function SessionContextMenu({
-  x,
-  y,
-  placement = 'bottom-start',
+  anchorRef,
+  anchorPoint,
   pinned,
   settled,
   onToggleSettled,
@@ -91,94 +87,87 @@ export function SessionContextMenu({
   onCopyMarkdown,
   onClose,
 }: SessionContextMenuProps) {
-  const pointRef = useRef<HTMLSpanElement>(null);
-
   return (
-    <>
-      <span
-        ref={pointRef}
-        aria-hidden="true"
-        className="pointer-events-none fixed size-0"
-        style={{ left: x, top: y }}
-      />
-      <Menu
-        open
-        onClose={onClose}
-        anchorRef={pointRef}
-        label="Chat actions"
-        placement={placement}
-        width={MENU_WIDTH}
-        // The menu owns the surface, so right-clicking it must not stack the
-        // native browser menu over ours.
-        onContextMenu={(event) => {
-          event.preventDefault();
-        }}
-      >
-        <Menu.Item icon={AppWindow} onSelect={onOpenInTab}>
-          Open in new tab
+    <Menu
+      open
+      onClose={onClose}
+      anchorRef={anchorRef}
+      anchorPoint={anchorPoint}
+      label="Chat actions"
+      // Under the actions button the menu hangs from its right edge, inside
+      // the sidebar; under a right-click it grows from the pointer.
+      placement={anchorPoint ? 'bottom-start' : 'bottom-end'}
+      width={MENU_WIDTH}
+      // The menu owns the surface, so right-clicking it must not stack the
+      // native browser menu over ours.
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <Menu.Item icon={AppWindow} onSelect={onOpenInTab}>
+        Open in new tab
+      </Menu.Item>
+      <Menu.Item icon={pinned ? PinOff : Pin} onSelect={onTogglePin}>
+        {pinned ? 'Unpin chat' : 'Pin chat'}
+      </Menu.Item>
+      <Menu.Item icon={Pencil} onSelect={onRename}>
+        Rename chat
+      </Menu.Item>
+      {onFork && (
+        <Menu.Item icon={GitFork} onSelect={onFork}>
+          Fork chat
         </Menu.Item>
-        <Menu.Item icon={pinned ? PinOff : Pin} onSelect={onTogglePin}>
-          {pinned ? 'Unpin chat' : 'Pin chat'}
+      )}
+      {onToggleSettled && (
+        <Menu.Item icon={settled ? RotateCcw : CircleCheck} onSelect={onToggleSettled}>
+          {settled ? 'Reopen task' : 'Mark as settled'}
         </Menu.Item>
-        <Menu.Item icon={Pencil} onSelect={onRename}>
-          Rename chat
+      )}
+      <Menu.Item icon={Archive} onSelect={onArchive}>
+        Archive chat
+      </Menu.Item>
+      <Menu.Divider />
+      {cwd && (
+        <Menu.Item
+          icon={Folder}
+          onSelect={() => {
+            copyText(cwd, 'Working directory copied.');
+          }}
+        >
+          Copy Working Directory
         </Menu.Item>
-        {onFork && (
-          <Menu.Item icon={GitFork} onSelect={onFork}>
-            Fork chat
-          </Menu.Item>
-        )}
-        {onToggleSettled && (
-          <Menu.Item icon={settled ? RotateCcw : CircleCheck} onSelect={onToggleSettled}>
-            {settled ? 'Reopen task' : 'Mark as settled'}
-          </Menu.Item>
-        )}
-        <Menu.Item icon={Archive} onSelect={onArchive}>
-          Archive chat
+      )}
+      {resumeSessionId && (
+        <Menu.Item
+          icon={Copy}
+          // Sessions are filed per working directory, so the reliable resume
+          // recipe is cd + resume; the toast spells out both, shell-quoted so
+          // a path with spaces pastes back intact.
+          onSelect={() => {
+            const command = sessionResumeCommand(provider, shellQuote(resumeSessionId));
+            const resume = cwd ? `cd ${shellQuote(cwd)} && ${command}` : command;
+            copyText(
+              resumeSessionId,
+              `${PROVIDER_LABELS[provider]} session ID copied. Continue in the official CLI: ${resume}`,
+            );
+          }}
+        >
+          Copy Session ID
         </Menu.Item>
-        <Menu.Divider />
-        {cwd && (
-          <Menu.Item
-            icon={Folder}
-            onSelect={() => {
-              copyText(cwd, 'Working directory copied.');
-            }}
-          >
-            Copy Working Directory
-          </Menu.Item>
-        )}
-        {resumeSessionId && (
-          <Menu.Item
-            icon={Copy}
-            // Sessions are filed per working directory, so the reliable resume
-            // recipe is cd + resume; the toast spells out both, shell-quoted so
-            // a path with spaces pastes back intact.
-            onSelect={() => {
-              const command = sessionResumeCommand(provider, shellQuote(resumeSessionId));
-              const resume = cwd ? `cd ${shellQuote(cwd)} && ${command}` : command;
-              copyText(
-                resumeSessionId,
-                `${PROVIDER_LABELS[provider]} session ID copied. Continue in the official CLI: ${resume}`,
-              );
-            }}
-          >
-            Copy Session ID
-          </Menu.Item>
-        )}
-        {provider === 'droid' && providerSessionId && (
-          <Menu.Item
-            icon={Link2}
-            onSelect={() => {
-              copyText(sessionWebLink(providerSessionId), 'Session link copied.');
-            }}
-          >
-            Copy Session Link
-          </Menu.Item>
-        )}
-        <Menu.Item icon={FileText} onSelect={onCopyMarkdown}>
-          Copy as Markdown
+      )}
+      {provider === 'droid' && providerSessionId && (
+        <Menu.Item
+          icon={Link2}
+          onSelect={() => {
+            copyText(sessionWebLink(providerSessionId), 'Session link copied.');
+          }}
+        >
+          Copy Session Link
         </Menu.Item>
-      </Menu>
-    </>
+      )}
+      <Menu.Item icon={FileText} onSelect={onCopyMarkdown}>
+        Copy as Markdown
+      </Menu.Item>
+    </Menu>
   );
 }
