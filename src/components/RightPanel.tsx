@@ -144,7 +144,7 @@ export default function RightPanel() {
       trailing={
         reasoningEffort ? (
           <span
-            className={`shrink-0 text-[12px] capitalize leading-none ${
+            className={`shrink-0 text-caption capitalize leading-none ${
               reasoningEffort === 'ultra' ? 'text-ultra' : 'text-muted'
             }`}
           >
@@ -158,7 +158,7 @@ export default function RightPanel() {
   return (
     <div
       data-testid="right-context-panel"
-      className="pointer-events-none shrink-0 w-[300px] pt-11 pb-3 pr-3 h-full flex items-start"
+      className="pointer-events-none shrink-0 w-full pt-11 pb-3 px-3 h-full flex items-start"
     >
       {/* The card hugs its content (capped at the available height). The rows
           that used to arrive late and grow it — PR detection, notes pad,
@@ -167,8 +167,8 @@ export default function RightPanel() {
       <div className="pointer-events-auto flex w-full max-h-full flex-col overflow-hidden rounded-xl bg-surface shadow-lg">
         {/* Header (no close button — the top toolbar button toggles this panel) */}
         <div className="mb-1 flex h-11 shrink-0 items-center justify-between pl-4 pr-3">
-          <span className="text-[13px] font-semibold tracking-[-0.01em] text-primary">Context</span>
-          {working && <span className="shimmer-text text-[11px] font-medium">Working</span>}
+          <span className="text-body font-semibold text-primary">Context</span>
+          {working && <span className="shimmer-text text-caption font-medium">Working</span>}
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-2">
@@ -286,13 +286,11 @@ export default function RightPanel() {
                     className="overflow-hidden"
                   >
                     <div className="mx-3 my-1.5 rounded-lg bg-elevated/50 px-3 py-2.5 space-y-2">
-                      <div className="text-[13px] text-primary leading-relaxed">
-                        {f.description}
-                      </div>
+                      <div className="text-body text-primary">{f.description}</div>
                       {f.skillName && (
                         <div className="flex items-center gap-2">
                           <Hash className="w-3.5 h-3.5 text-muted" />
-                          <span className="text-[11px] font-medium text-secondary">
+                          <span className="text-caption font-medium text-secondary">
                             {f.skillName}
                           </span>
                         </div>
