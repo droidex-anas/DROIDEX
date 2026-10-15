@@ -1,17 +1,19 @@
 import {
+  hasReportedTokens,
   parsePublicProfileSnapshot,
   type ProfileIdentity,
   type PublicProfileSnapshot,
   type RemoteUsageSnapshot,
 } from '../../../packages/remote/src';
+import { dayKeyInTimeZone } from './activityCalendar';
 
 export {
-  decodeProfileShare,
+  decodePublishedProfile,
   encodeProfilePayload,
-  encodeProfileShare,
-  type DecodedProfileShare,
-  type ProfileAttestation,
+  verifyPublishedProfile,
+  type DecodedPublishedProfile,
   type ProfileIdentity,
+  type PublishedProfile,
   type PublicProfileRanking,
   type PublicProfileSnapshot,
 } from '../../../packages/remote/src';
@@ -34,13 +36,15 @@ export function createPublicProfileSnapshot(
     version: 3,
     ...profile,
     generatedAt,
+    generatedDay: dayKeyInTimeZone(generatedAt, usage.timeZone),
+    trackingDay: dayKeyInTimeZone(usage.trackingSince, usage.timeZone),
     lifetimeTokens: usage.lifetimeTokens,
+    tokensReported: hasReportedTokens(usage),
     tokensComplete: usage.totals.tokensComplete,
     peakDayTokens: usage.peakDayTokens,
     sessions: usage.sessions,
     currentStreak: usage.currentStreak,
     longestStreak: usage.longestStreak,
-    trackingSince: usage.trackingSince,
     days: usage.days.map(({ date, tokens, complete }) => ({ date, tokens, complete })),
     harnesses: usage.harnesses.map(({ name, sessions }) => ({ name, sessions })),
     models: usage.models.map(({ name, sessions }) => ({ name, sessions })),

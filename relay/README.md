@@ -3,9 +3,10 @@
 The Worker assigns one Durable Object to each lowercase handle. The laptop
 and browser both connect outbound. The object forwards encrypted application
 frames directly; it never records their content or logs request bodies.
-Only the public handle owner key and short-lived claim challenges use durable
-storage. Socket attachments contain routing IDs, roles, limits and receipt
-counts, never payloads, authenticator secrets or device private keys.
+Only the public handle owner key, opt-in signed public profile, and short-lived
+claim challenges use durable storage. Socket attachments contain routing IDs,
+roles, limits and receipt counts, never private messages, authenticator secrets
+or device private keys.
 
 ## Deploy
 

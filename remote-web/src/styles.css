@@ -215,6 +215,11 @@ h2 {
 .workspace {
   padding: 27px 20px 220px;
 }
+@media (min-width: 620px) {
+  .workspace {
+    padding: 32px 28px 220px;
+  }
+}
 .page-heading {
   display: grid;
   gap: 7px;

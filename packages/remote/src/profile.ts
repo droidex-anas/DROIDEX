@@ -18,6 +18,7 @@ export interface PublicProfileRanking {
 export interface PublicProfileSnapshot extends ProfileIdentity {
   version: 3;
   generatedAt: number;
+  generatedDay: string;
   lifetimeTokens: number;
   tokensReported: boolean;
   tokensComplete: boolean;
@@ -25,7 +26,7 @@ export interface PublicProfileSnapshot extends ProfileIdentity {
   sessions: number;
   currentStreak: number;
   longestStreak: number;
-  trackingSince: number;
+  trackingDay: string;
   days: { date: string; tokens: number; complete: boolean }[];
   harnesses: PublicProfileRanking[];
   models: PublicProfileRanking[];
@@ -47,7 +48,9 @@ interface ProfileWire {
   n: string;
   u: string;
   g: number;
-  s: [number, boolean, boolean, number, number, number, number, number];
+  a: string;
+  t: string;
+  s: [number, boolean, boolean, number, number, number, number];
   d: [date: string, tokens: number, complete: boolean][];
   h: RankingWire[];
   m: RankingWire[];
@@ -57,18 +60,20 @@ export function parsePublicProfileSnapshot(value: unknown): PublicProfileSnapsho
   if (!record(value) || value.version !== 3) return null;
   const identity = profileIdentity(value);
   const generatedAt = dateTimestamp(value.generatedAt);
+  const generatedDay = calendarDay(value.generatedDay) ? value.generatedDay : null;
   const lifetimeTokens = count(value.lifetimeTokens);
   const peakDayTokens = count(value.peakDayTokens);
   const sessions = count(value.sessions);
   const currentStreak = count(value.currentStreak);
   const longestStreak = count(value.longestStreak);
-  const trackingSince = dateTimestamp(value.trackingSince);
+  const trackingDay = calendarDay(value.trackingDay) ? value.trackingDay : null;
   const days = activityDays(value.days);
   const harnesses = rankings(value.harnesses);
   const models = rankings(value.models);
   if (
     !identity ||
     generatedAt === null ||
+    generatedDay === null ||
     lifetimeTokens === null ||
     typeof value.tokensReported !== 'boolean' ||
     typeof value.tokensComplete !== 'boolean' ||
@@ -76,7 +81,7 @@ export function parsePublicProfileSnapshot(value: unknown): PublicProfileSnapsho
     sessions === null ||
     currentStreak === null ||
     longestStreak === null ||
-    trackingSince === null ||
+    trackingDay === null ||
     !days ||
     !harnesses ||
     !models
@@ -87,6 +92,7 @@ export function parsePublicProfileSnapshot(value: unknown): PublicProfileSnapsho
     version: 3,
     ...identity,
     generatedAt,
+    generatedDay,
     lifetimeTokens,
     tokensReported: value.tokensReported,
     tokensComplete: value.tokensComplete,
@@ -94,7 +100,7 @@ export function parsePublicProfileSnapshot(value: unknown): PublicProfileSnapsho
     sessions,
     currentStreak,
     longestStreak,
-    trackingSince,
+    trackingDay,
     days,
     harnesses,
     models,
@@ -226,6 +232,8 @@ function toWire(profile: PublicProfileSnapshot): ProfileWire {
     n: profile.displayName,
     u: profile.username,
     g: profile.generatedAt,
+    a: profile.generatedDay,
+    t: profile.trackingDay,
     s: [
       profile.lifetimeTokens,
       profile.tokensReported,
@@ -234,7 +242,6 @@ function toWire(profile: PublicProfileSnapshot): ProfileWire {
       profile.sessions,
       profile.currentStreak,
       profile.longestStreak,
-      profile.trackingSince,
     ],
     d: profile.days.map(({ date, tokens, complete }) => [date, tokens, complete]),
     h: profile.harnesses.map(ranking),
@@ -245,12 +252,14 @@ function toWire(profile: PublicProfileSnapshot): ProfileWire {
 function fromWire(value: unknown): PublicProfileSnapshot | null {
   if (!record(value) || value.v !== 3 || !wireRows(value.d, 366, 3)) return null;
   if (!wireRows(value.h, 5, 2) || !wireRows(value.m, 5, 2)) return null;
-  if (!unknownList(value.s) || value.s.length !== 8) return null;
+  if (!unknownList(value.s) || value.s.length !== 7) return null;
   return parsePublicProfileSnapshot({
     version: 3,
     displayName: value.n,
     username: value.u,
     generatedAt: value.g,
+    generatedDay: value.a,
+    trackingDay: value.t,
     lifetimeTokens: value.s[0],
     tokensReported: value.s[1],
     tokensComplete: value.s[2],
@@ -258,7 +267,6 @@ function fromWire(value: unknown): PublicProfileSnapshot | null {
     sessions: value.s[4],
     currentStreak: value.s[5],
     longestStreak: value.s[6],
-    trackingSince: value.s[7],
     days: value.d.map((row) => ({ date: row[0], tokens: row[1], complete: row[2] })),
     harnesses: value.h.map((row) => ({ name: row[0], sessions: row[1] })),
     models: value.m.map((row) => ({ name: row[0], sessions: row[1] })),

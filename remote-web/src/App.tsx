@@ -7,10 +7,17 @@ import { Brand } from './Brand';
 import { Remote } from './Remote';
 import './onboarding.css';
 
-export function App() {
+function currentRoute(): { publicUsername: string | null; requested: string } {
   const path = window.location.pathname.split('/').filter(Boolean);
-  const publicProfile = path[0] === 'p' && path.length === 2 && HANDLE_PATTERN.test(path[1] ?? '');
-  const requested = path.length === 1 ? (path[0] ?? '') : '';
+  if (path[0] === 'public') {
+    return { publicUsername: path.length === 2 ? (path[1] ?? '') : '', requested: '' };
+  }
+  return { publicUsername: null, requested: path.length === 1 ? (path[0] ?? '') : '' };
+}
+
+export function App() {
+  const { publicUsername, requested } = currentRoute();
+  const publicProfile = publicUsername !== null;
   const [handle, setHandle] = useState(HANDLE_PATTERN.test(requested) ? requested : '');
   const [pin, setPin] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(handle));
@@ -53,7 +60,7 @@ export function App() {
       cancelled = true;
     };
   }, [handle]);
-  if (publicProfile) return <PublicProfile username={path[1] ?? ''} />;
+  if (publicUsername !== null) return <PublicProfile username={publicUsername} />;
   if (handle && pin)
     return (
       <Remote

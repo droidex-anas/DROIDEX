@@ -158,6 +158,10 @@ function profileBaseUrl(relayUrl: string, username: string): string {
 }
 
 async function boundedJson(response: Response, maxBytes: number): Promise<unknown> {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new Error('The relay response was too large');
+  }
   const reader = response.body?.getReader();
   if (!reader) throw new Error('The relay returned an empty response');
   const chunks: Uint8Array[] = [];

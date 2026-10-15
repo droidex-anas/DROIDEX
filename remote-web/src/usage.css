@@ -1,0 +1,262 @@
+.usage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.usage > * {
+  animation: usage-rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.usage > :nth-child(2) {
+  animation-delay: 50ms;
+}
+.usage > :nth-child(3) {
+  animation-delay: 100ms;
+}
+.usage > :nth-child(n + 4) {
+  animation-delay: 150ms;
+}
+.usage-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.usage-heading p {
+  margin-top: 7px;
+  color: var(--droid-text-secondary);
+  font-size: 13px;
+}
+.usage-heading .icon-button {
+  height: 40px;
+  width: 40px;
+  background: var(--droid-surface);
+}
+.spin {
+  animation: usage-spin 0.9s linear infinite;
+}
+
+.usage-skeleton {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.usage-skeleton span {
+  height: 76px;
+  border-radius: 14px;
+  background: var(--droid-surface);
+  animation: usage-pulse 1.4s ease-in-out infinite;
+}
+
+.usage-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.usage-stats div {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--droid-surface);
+}
+.usage-stats dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-stats dt {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--droid-text-muted);
+}
+.usage-flame {
+  color: var(--profile-color);
+}
+
+.usage-sync {
+  padding: 18px;
+}
+.usage-sync h2,
+.usage-list h2 {
+  font-size: 14px;
+  font-weight: 550;
+}
+.usage-sync > p {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.usage-progress {
+  position: relative;
+  height: 4px;
+  margin-top: 14px;
+  border-radius: 4px;
+  background: var(--droid-elevated);
+  overflow: hidden;
+}
+.usage-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: inherit;
+  background: var(--droid-text-muted);
+  opacity: 0.5;
+  animation: usage-indeterminate 1.6s ease-in-out infinite;
+}
+.usage-sync ul,
+.usage-list ul,
+.usage-list ol {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.usage-sync li {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  font-size: 13px;
+}
+.usage-sync li .muted {
+  font-size: 12px;
+}
+.usage-sync .ok {
+  color: var(--droid-green);
+}
+.usage-sync .bad {
+  color: var(--droid-red);
+}
+.usage-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: 3px;
+  border-radius: 50%;
+  background: var(--droid-text-muted);
+  animation: usage-pulse 1.2s ease-in-out infinite;
+}
+
+.usage-list {
+  padding: 18px;
+}
+.usage-list ul li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-list ul li > span:first-child {
+  color: var(--droid-text-secondary);
+}
+.usage-list small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.usage-list ol {
+  gap: 12px;
+}
+.usage-rank-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.usage-rank-label strong {
+  font-weight: 500;
+  color: var(--droid-text-secondary);
+  overflow-wrap: anywhere;
+}
+.usage-rank-label span {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.usage-track {
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 6px;
+  background: var(--droid-elevated);
+  overflow: hidden;
+}
+.usage-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--profile-color) 50%, var(--droid-elevated));
+  transform-origin: left;
+  animation: usage-grow 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+.usage-track > span.lead {
+  background: color-mix(in srgb, var(--profile-color) 85%, var(--droid-elevated));
+}
+.usage-footnote {
+  padding: 4px 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@keyframes usage-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes usage-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes usage-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes usage-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes usage-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (min-width: 620px) {
+  .usage-stats {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .usage > *,
+  .usage-track > span,
+  .usage-progress::after,
+  .spin {
+    animation: none;
+  }
+}

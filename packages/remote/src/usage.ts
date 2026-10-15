@@ -43,6 +43,27 @@ export interface RemoteUsageSnapshot {
   timeZone: string;
 }
 
+export type UsageTotalField = Exclude<
+  keyof RemoteUsageSnapshot['totals'],
+  'events' | 'tokensComplete'
+>;
+
+export function hasReportedTokens(usage: Pick<RemoteUsageSnapshot, 'totals'>): boolean {
+  return usage.totals.inputTokens !== null || usage.totals.outputTokens !== null;
+}
+
+export function usageFieldCoverage(
+  usage: Pick<RemoteUsageSnapshot, 'coverage'>,
+  field: UsageTotalField,
+): { partial: boolean; percent: number } {
+  const coverage = Object.hasOwn(usage.coverage, field) ? usage.coverage[field] : undefined;
+  if (!coverage || coverage.events === 0) return { partial: false, percent: 100 };
+  return {
+    partial: coverage.known < coverage.events,
+    percent: Math.round((coverage.known / coverage.events) * 100),
+  };
+}
+
 /** Copies only fields that may leave the laptop as an aggregate usage snapshot. */
 export function remoteUsageSnapshot(value: unknown): RemoteUsageSnapshot {
   if (!record(value)) throw new Error('Invalid usage snapshot');
@@ -99,11 +120,9 @@ function usageSync(value: unknown): RemoteUsageSync | null {
   const openCode = value.sources.openCode;
   const droid = value.sources.droid;
   if (!syncState(jsonl) || !syncState(openCode) || !syncState(droid)) return null;
-  const derived = [jsonl, openCode, droid].includes('error')
-    ? 'error'
-    : [jsonl, openCode, droid].every((state) => state === 'ready')
-      ? 'ready'
-      : 'indexing';
+  let derived: UsageSyncState = 'indexing';
+  if ([jsonl, openCode, droid].includes('error')) derived = 'error';
+  else if ([jsonl, openCode, droid].every((state) => state === 'ready')) derived = 'ready';
   if (value.status !== derived) return null;
   return { status: derived, sources: { jsonl, openCode, droid } };
 }

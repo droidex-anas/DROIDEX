@@ -22,7 +22,7 @@ Production requires HTTPS for the client and WSS for the relay.
 Run the Vercel CLI from the repository root with `--local-config remote-web/vercel.json`.
 Set `VITE_REMOTE_RELAY_URL` in that Vercel project's build environment. The configuration
 builds the repository's `remote:build` script, serves `remote-web/dist`, and routes usernames
-and `/p/<username>` to the single-page app. Set the desired domain in the Vercel project.
+and `/public/<username>` to the single-page app. Set the desired domain in the Vercel project.
 
 For another static host, serve `remote-web/dist` over HTTPS, route application paths to
 `index.html`, and copy the security headers from `vercel.json`. Serve `sw.js` without
@@ -32,8 +32,9 @@ code served by the web host has access to the decrypted browser view.
 
 ## Pair and use
 
-1. Open DROIDEX **Settings → Remote**, enter your name, username and hosting addresses,
-   then save the address.
+1. Open DROIDEX **Settings → Remote**, then enter your name and username. The official
+   client and relay are preconfigured; custom addresses live under **Advanced →
+   Self-host Remote**.
 2. Set up the authenticator on the laptop and verify its current code to enable Remote.
    The laptop claims the username before displaying the authenticator QR.
 3. Scan **Connect your phone** with the phone camera, enter a fresh authenticator code,
@@ -53,8 +54,9 @@ remove the device in DROIDEX or turn remote access off on the laptop.
 
 ## Shared profiles
 
-Settings → Profile publishes an opt-in `/public/<username>` aggregate snapshot. Public
-profiles show normalized local token activity, observed usage sessions, streaks, and
+Settings → Profile publishes an opt-in
+`https://droidex.vercel.app/public/<username>` aggregate snapshot. Public
+profiles show normalized local token activity, DROIDEX session count, streaks, and
 harness/model rankings. They contain no prompts, source paths, raw session identifiers,
 workspace paths, device data, or cost data. Signed coverage flags distinguish unknown,
 complete and measured-minimum token figures. The relay stores the signed public aggregate;
