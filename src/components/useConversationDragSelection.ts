@@ -23,8 +23,8 @@ type RowKey = string | number;
 // Rows are held by key so a history prepend, which shifts every index, keeps
 // the selected rows mounted.
 interface SelectedRows {
-  anchorKey: RowKey;
-  focusKey: RowKey;
+  firstKey: RowKey;
+  lastKey: RowKey;
 }
 
 interface Drag {
@@ -62,20 +62,29 @@ function caretInRow(list: HTMLElement, x: number, y: number): Caret | null {
   return null;
 }
 
+// The rows the selection overlaps, not the rows of its endpoints: a native
+// triple-click on the last paragraph ends the selection outside the list.
 function selectedRowsIn(
   list: HTMLElement,
   getItemKey: (index: number) => RowKey,
 ): SelectedRows | null {
   const selection = window.getSelection();
-  if (!selection?.anchorNode || !selection.focusNode || selection.isCollapsed) return null;
-  const anchor = rowIndexOf(selection.anchorNode, list);
-  const focus = rowIndexOf(selection.focusNode, list);
-  if (anchor === null || focus === null) return null;
-  return { anchorKey: getItemKey(anchor), focusKey: getItemKey(focus) };
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  const rows = Array.from(list.children).filter(
+    (row): row is HTMLElement => row instanceof HTMLElement && range.intersectsNode(row),
+  );
+  const first = rows.at(0);
+  const last = rows.at(-1);
+  if (!first || !last) return null;
+  return {
+    firstKey: getItemKey(Number(first.dataset.index)),
+    lastKey: getItemKey(Number(last.dataset.index)),
+  };
 }
 
 function isSameRows(a: SelectedRows | null, b: SelectedRows | null): boolean {
-  return a?.anchorKey === b?.anchorKey && a?.focusKey === b?.focusKey;
+  return a?.firstKey === b?.firstKey && a?.lastKey === b?.lastKey;
 }
 
 // How deep the pointer is in an edge band: negative toward the start edge,
@@ -218,10 +227,10 @@ export function useConversationDragSelection(
 
   const selectedSpan = useMemo(() => {
     if (!selectedRows) return null;
-    const anchor = items.findIndex((item) => item.key === selectedRows.anchorKey);
-    const focus = items.findIndex((item) => item.key === selectedRows.focusKey);
-    if (anchor < 0 || focus < 0) return null;
-    return { from: Math.min(anchor, focus), to: Math.max(anchor, focus) };
+    const from = items.findIndex((item) => item.key === selectedRows.firstKey);
+    const to = items.findIndex((item) => item.key === selectedRows.lastKey);
+    if (from < 0 || to < 0) return null;
+    return { from, to };
   }, [items, selectedRows]);
 
   // TanStack memoizes the mounted rows on this function's identity, so it
