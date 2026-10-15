@@ -105,7 +105,12 @@ export class UsageIngest {
     void operation
       .finally(() => {
         if (this.inFlight === operation) this.inFlight = null;
-        if (!this.closed && !this.drainingStartup && (this.wakePending || this.hasQueuedWork())) {
+        if (
+          !this.closed &&
+          this.started &&
+          !this.drainingStartup &&
+          (this.wakePending || this.hasQueuedWork())
+        ) {
           this.wakePending = false;
           this.scheduleReconcile(0, false);
         }
