@@ -42,6 +42,7 @@ interface ClaimChallenge {
 }
 
 interface ProfileChallenge extends ClaimChallenge {
+  clientNonce: string;
   used: boolean;
 }
 
@@ -200,10 +201,18 @@ export class RelayRoom {
           const challenges = (
             (await this.state.storage.get<ProfileChallenge[]>('profileChallenges')) ?? []
           ).filter((item) => item.expiresAt > Date.now());
-          if (challenges.length >= 8 || challenges.some((item) => item.nonce === body.nonce)) {
+          if (
+            challenges.length >= 8 ||
+            challenges.some((item) => item.clientNonce === body.nonce)
+          ) {
             return locked();
           }
-          const challenge = { nonce: body.nonce, expiresAt: Date.now() + 60_000, used: false };
+          const challenge = {
+            nonce: randomNonce(),
+            clientNonce: body.nonce,
+            expiresAt: Date.now() + 60_000,
+            used: false,
+          };
           await this.state.storage.put('profileChallenges', [...challenges, challenge]);
           return Response.json({ challenge: challenge.nonce });
         });
@@ -247,8 +256,9 @@ export class RelayRoom {
           return locked();
         const pin = await fingerprint(key);
         if (this.owner && this.owner.fingerprint !== pin) return locked();
-        this.owner = { handle, key, fingerprint: pin };
-        await this.state.storage.put('owner', this.owner);
+        const owner = { handle, key, fingerprint: pin };
+        await this.state.storage.put('owner', owner);
+        this.owner = owner;
         return Response.json({ status: 'claimed' });
       });
     } catch {
@@ -306,8 +316,8 @@ export class RelayRoom {
         ) {
           return locked();
         }
-        this.profile = undefined;
         await this.state.storage.delete('profile');
+        this.profile = undefined;
         return Response.json({ status: 'revoked' });
       }
 
@@ -331,8 +341,9 @@ export class RelayRoom {
         ),
       ]);
       if (!validSnapshot || !validMutation) return locked();
-      this.profile = { payload: body.payload, signature: body.signature };
-      await this.state.storage.put('profile', this.profile);
+      const nextProfile = { payload: body.payload, signature: body.signature };
+      await this.state.storage.put('profile', nextProfile);
+      this.profile = nextProfile;
       return this.publicProfile(handle);
     } catch {
       return locked();
