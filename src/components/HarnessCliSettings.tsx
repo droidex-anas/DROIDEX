@@ -27,7 +27,7 @@ export function HarnessCliSettings({
   const clis = useHarnessClis();
 
   return (
-    <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+    <div className="rounded-xl bg-surface shadow-lg mb-8">
       {clis === null ? (
         <SettingRow label="Claude Code and Codex" description="Detecting installed CLIs…">
           <span />

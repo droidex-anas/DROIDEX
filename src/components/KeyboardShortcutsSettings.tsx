@@ -61,7 +61,7 @@ export function KeyboardShortcutsSettings() {
         title="Keyboard"
         sub={`Press a new chord after choosing Change. Escape cancels, Delete restores the default. Every shortcut needs ${PRIMARY_MODIFIER_LABEL}.`}
       />
-      <div className="divide-y divide-divider overflow-hidden rounded-xl bg-surface shadow-lg">
+      <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
         {SHORTCUT_DEFINITIONS.map((definition) => {
           const active = capturing === definition.action;
           const conflicts = conflictingActions(bindings, definition.action);

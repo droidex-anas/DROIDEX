@@ -180,7 +180,7 @@ export function McpServersSection(props: McpServersSectionProps) {
     );
   } else {
     serverList = (
-      <div className="divide-y divide-divider overflow-hidden rounded-xl bg-surface shadow-lg">
+      <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
         {props.servers.map((server) => (
           <McpServerCard
             key={`${server.source}:${server.name}`}

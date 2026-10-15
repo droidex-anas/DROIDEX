@@ -346,7 +346,7 @@ function GeneralSection() {
       />
 
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Enter while working"
           description="What Enter does while the agent works. Steer hands the message to the agent at its next step; Queue sends it after the turn. Cmd/Ctrl+Enter does the other."
@@ -391,7 +391,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Voice</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Voice"
           description="Which voice speaks in voice mode. The harness offers the list; leave this on its default to take whichever voice it picks."
@@ -426,7 +426,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Diff display</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Diff view"
           description="How file diffs render in the Review tab — one column or side-by-side."
@@ -469,7 +469,7 @@ function GeneralSection() {
       <HardwareAccelerationSetting />
 
       <GroupLabel>Compaction</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Compaction model"
           description="Model that summarizes a conversation when it is compacted."
@@ -603,7 +603,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>Droid CLI</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="CLI status"
           description={env?.cli.present ? env.cli.path : 'Not detected on this machine.'}
@@ -662,7 +662,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>DROIDEX app</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow label="Current version" description={updateStatus}>
           <div className="flex items-center gap-2">
             <Button
@@ -710,7 +710,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       </div>
 
       <GroupLabel>Onboarding</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider">
+      <div className="rounded-xl bg-surface shadow-lg">
         <SettingRow label="Run setup again" description="Re-open the first-run setup tour.">
           <Button
             size="sm"
@@ -739,7 +739,7 @@ function ConfigurationSection() {
       <GroupLabel>Default models</GroupLabel>
       <HarnessModelSettings />
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Model selector"
           description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
@@ -764,7 +764,7 @@ function ConfigurationSection() {
       <GroupLabel>Transcript</GroupLabel>
       <ToolActivitySettings />
       <GroupLabel>Sessions</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Default autonomy"
           description="How much new sessions may do without asking. The composer can override it for a single session."

@@ -30,7 +30,7 @@ export function SettingRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="flex items-center justify-between gap-4 px-4 py-3.5">
       <div className="min-w-0">
         <div className="text-body text-primary">{label}</div>
         {description && <div className="mt-0.5 text-caption text-muted">{description}</div>}
