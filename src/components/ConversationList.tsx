@@ -25,6 +25,7 @@ import {
   nearestOverflowParent,
   shouldAdjustConversationRowOnSizeChange,
 } from './conversationListState';
+import { useConversationDragSelection } from './useConversationDragSelection';
 import { useConversationListLayout } from './useConversationListLayout';
 
 export interface ConversationListHandle {
@@ -83,9 +84,17 @@ export function ConversationList({
     return itemsRef.current[index]?.key ?? index;
   }, []);
 
+  const rangeExtractor = useConversationDragSelection(
+    listElRef,
+    getScrollElement,
+    items,
+    getItemKey,
+  );
+
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement,
+    rangeExtractor,
     estimateSize: () => CONVERSATION_LIST_ESTIMATE_PX,
     overscan: CONVERSATION_LIST_OVERSCAN,
     gap: CONVERSATION_LIST_GAP_PX,

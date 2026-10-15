@@ -45,7 +45,7 @@ function MessageTime({ ts, label }: { ts: number; label?: string }) {
     <time
       dateTime={new Date(ts).toISOString()}
       title={detailFormat.format(ts)}
-      className="whitespace-nowrap px-1.5 text-caption tabular-nums text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
+      className="select-none whitespace-nowrap px-1.5 text-caption tabular-nums text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
     >
       {label ?? formatResponseTime(ts, Date.now())}
     </time>
@@ -131,7 +131,9 @@ export function PromptActions({
           </Tooltip>
         ) : null}
       </div>
-      {onSendNow ? <span className="px-1.5 text-caption text-muted">Unread</span> : null}
+      {onSendNow ? (
+        <span className="select-none px-1.5 text-caption text-muted">Unread</span>
+      ) : null}
     </div>
   );
 }
