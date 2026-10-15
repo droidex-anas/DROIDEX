@@ -11,6 +11,7 @@ export interface ObjectState {
   storage: {
     get<T>(key: string): Promise<T | undefined>;
     put(key: string, value: unknown): Promise<void>;
+    delete(key: string): Promise<boolean>;
     getAlarm(): Promise<number | null>;
     setAlarm(time: number): Promise<void>;
   };
@@ -26,6 +27,7 @@ export interface Environment {
     get(id: unknown): { fetch(request: Request): Promise<Response> };
   };
   CONNECTION_LIMIT: { limit(options: { key: string }): Promise<{ success: boolean }> };
+  PROFILE_READ_LIMIT: { limit(options: { key: string }): Promise<{ success: boolean }> };
   WEB_ORIGIN: string;
 }
 

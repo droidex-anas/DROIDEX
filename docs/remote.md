@@ -62,25 +62,24 @@ estimate for subscription usage. Initial indexing is nonblocking and reports
 its state per source; sharing stays unavailable until every source completes.
 See [Local usage ledger](usage.md).
 
-**Share → Copy link** creates a fixed, public aggregate snapshot at
-`/p/yourname#…`.
+**Share → Copy link** publishes an opt-in aggregate snapshot at
+`/public/yourname`.
 It contains your chosen name, username, aggregate activity and model/harness
 names. When a harness omits counts, signed coverage flags label the affected
-figures as measured minimums. It contains no prompts, workspace paths, source paths, session
-identifiers, costs, device data or private keys, and viewing it never connects
-to your laptop. The laptop signs the snapshot with the registered username key.
-The web client verifies the signature locally, then sends only that public key
-and username to the registry for an owner match. The fragment never goes to the
-host or relay, and the relay stores no profile. Anyone with the copied link can
-view it, and an already copied snapshot cannot be revoked. Create another link
-to share updated figures.
+figures as measured minimums; completely unreported token totals stay unknown.
+Session counts are observed usage sessions, and “tracked since” includes
+imported harness history. The snapshot contains no prompts, workspace paths,
+source paths, raw session identifiers, costs, device data or private keys.
+The laptop signs it with the registered username key. The relay stores the
+signed public aggregate so the link works while the laptop is offline, and the
+web client verifies the signature before rendering it. Publishing, updating
+and revoking are explicit owner-signed actions tied to the exact current
+snapshot. Revocation stops future views but cannot erase copies or screenshots.
 
 Snapshots contain at most 366 activity dates and five entries per ranking. The
-payload is limited to 20 KiB and the complete signed fragment to 24 KiB. The
-same verified data can be rendered locally as a PNG share card without laptop
-access. URL-fragment snapshots cannot produce social preview cards because
-crawlers do not receive fragments; a short link or Open Graph image requires a
-separate opt-in public snapshot store.
+payload is limited to 20 KiB. The same verified data can be rendered locally as
+a PNG share card without laptop access. Per-user Open Graph images still need a
+dynamic image or metadata endpoint.
 
 ## Operate or self-host
 
@@ -96,12 +95,11 @@ phone. Protect repository and hosting accounts with 2FA. A compromised relay
 sees ciphertext and traffic metadata; compromised web-host JavaScript can read
 the browser view. Self-hosting gives you control of both deployments.
 
-The relay retains only the public handle owner key, short-lived claim
-challenges and bounded socket routing metadata. A rate-limited profile check
-compares a supplied public key with that owner key and returns the same invalid
-shape for an unknown handle or wrong key. It persists no profile, ciphertext or
-offline queue. Forwarding performs no durable writes. Frames are capped at
-64 KiB, receipt windows at 16 frames/256 KiB and connection attempts at 20 per
+The relay retains the public handle owner key, short-lived challenges, bounded
+socket routing metadata and an opt-in signed public aggregate. It persists no
+private messages, ciphertext or offline queue. Forwarding performs no durable
+writes. Frames are capped at 64 KiB, receipt windows at 16 frames/256 KiB,
+connection attempts at 20 per IP/minute and public profile reads at 120 per
 IP/minute at each edge. The desktop additionally bounds peers, pending actions,
 encryption queues, transcript tails and snapshots. Five incorrect authenticator
 codes lock new pairing for fifteen minutes; used time steps cannot be replayed.

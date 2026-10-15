@@ -1,5 +1,6 @@
+import type { PublishedProfile } from '../../packages/remote/src/profile';
 import type { RemoteState, RemoteSettings, RemoteSetup } from '../../packages/remote/src/desktop';
-import type { ProfileAttestation, ProfileUsageSnapshot } from '../features/profile/profileShare';
+import type { ProfileUsageSnapshot } from '../features/profile/profileShare';
 import type {
   NativeBrowserDesignEvent,
   NativeBrowserDesignState,
@@ -199,7 +200,9 @@ interface DroidControlApi {
   decideRemoteRequest: (id: string, approved: boolean) => Promise<RemoteState>;
   revokeRemoteDevice: (id: string) => Promise<RemoteState>;
   resetRemotePairing: () => Promise<RemoteState>;
-  signProfilePayload: (payload: string) => Promise<ProfileAttestation>;
+  getPublishedProfile: () => Promise<PublishedProfile | null>;
+  publishPublicProfile: (payload: string) => Promise<PublishedProfile>;
+  revokePublicProfile: (payload: string) => Promise<void>;
   remoteQr: (text: string) => Promise<string>;
   onRemoteState: (handler: (state: RemoteState) => void) => () => void;
   getProfileUsage: () => Promise<ProfileUsageSnapshot>;

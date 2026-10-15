@@ -41,12 +41,18 @@ the existing owner can repeat it. Preserve the laptop identity backup: there
 is deliberately no password reset, account recovery or automatic ownership
 transfer.
 
-`POST /v1/handles/:handle/profile-key` accepts only `{publicKey}` and returns
-`{valid}`. It lets a static public-profile viewer confirm that a locally
-verified signature belongs to the registered username. The signed profile
-payload stays in the URL fragment and is never sent to this endpoint. Unknown
-handles, malformed keys, and wrong keys all return HTTP 200 with
-`{"valid":false}`. The edge CORS rule and connection rate limit apply.
+`POST /v1/handles/:handle/profile-challenge` accepts an owner-signed client
+nonce and registers it for one profile mutation. `POST /profile` publishes or
+updates a signed snapshot when `currentPayload` exactly matches the stored
+payload. `DELETE /profile` revokes the exact current payload. Mutation proofs
+bind the handle, one-use nonce, current payload and next payload, so copied or
+stale requests cannot restore, replace or remove a profile.
+
+`GET /v1/handles/:handle/profile` returns the signed public bundle or 404. The
+browser validates the bounded v3 payload, username and owner signature before
+rendering it. The relay stores only the signed aggregate payload and signature;
+the owner public key already belongs to the handle record. Public reads do not
+connect to the laptop.
 
 `GET /v1/handles/:handle/socket` upgrades every valid handle to the same
 WebSocket greeting: `{type:"relay-ready", peerId, challenge}`. There is no
@@ -83,11 +89,14 @@ relay, not JavaScript replaced in the static web deployment.
 ## Bounds
 
 - 20 connection or registry attempts per IP per minute at each Cloudflare edge.
+- 120 public profile reads per IP per minute at each Cloudflare edge.
+- At most eight owner-authenticated profile mutations per handle per minute.
 - At most 33 sockets per room; pairing sockets expire after two minutes.
 - At most 64 KiB per relay frame; encrypted plaintext is capped at 46 KB.
 - Browser: 120 frames and 256 KiB per second; host: 480 frames and 1 MiB per second.
 - At most 16 outstanding frames and 256 KiB awaiting receiver receipts per socket.
 
 Slow or abusive sockets close immediately. There is no offline queue or
-ciphertext persistence. Claim operations write storage; message forwarding
-only updates bounded socket metadata. Idle approved connections can hibernate.
+ciphertext persistence. Claim and opt-in profile mutations write storage;
+message forwarding only updates bounded socket metadata. Idle approved
+connections can hibernate.

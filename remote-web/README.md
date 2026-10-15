@@ -53,21 +53,17 @@ remove the device in DROIDEX or turn remote access off on the laptop.
 
 ## Shared profiles
 
-Settings → Profile creates an opt-in `/p/<username>#…` aggregate snapshot. Its fragment
-stays in the browser and is never sent to the static host. Public profiles show normalized
-local token activity, session counts, streaks, and harness/model rankings. They contain no
-prompts, source paths, session identifiers, workspace paths, or cost data. Signed coverage
-flags label partial token figures as measured minimums. The laptop signs
-the snapshot with the username owner key. The browser verifies the signature locally and
-asks the relay registry to match only that public key to the username; neither service
-receives the profile payload. A copied snapshot cannot be revoked; create a fresh link to
-share newer figures. Snapshots include at most 366 activity dates and five entries per
-ranking. The payload is limited to 20 KiB and the complete fragment to 24 KiB.
-
-Because social crawlers do not receive URL fragments, this private-by-default format does
-not generate Open Graph or Twitter previews. A share-card UI can render the verified data
-to PNG locally. A short URL or server-rendered preview needs a separate opt-in public
-snapshot store. See [`docs/usage.md`](../docs/usage.md) for the ledger and privacy boundaries.
+Settings → Profile publishes an opt-in `/public/<username>` aggregate snapshot. Public
+profiles show normalized local token activity, observed usage sessions, streaks, and
+harness/model rankings. They contain no prompts, source paths, raw session identifiers,
+workspace paths, device data, or cost data. Signed coverage flags distinguish unknown,
+complete and measured-minimum token figures. The relay stores the signed public aggregate;
+the browser verifies the bounded v3 payload and username-owner signature before rendering.
+The owner can update or revoke the exact current snapshot. Revocation prevents future views
+but cannot erase copies or screenshots. Snapshots include at most 366 activity dates and
+five entries per ranking, with a 20 KiB payload limit. A share-card UI can render the
+verified data to PNG locally; rich social previews need a dynamic image or metadata
+endpoint. See [`docs/usage.md`](../docs/usage.md) for ledger and privacy boundaries.
 
 Before publishing, verify pairing, reconnects, device revocation and push delivery on a
 real phone against the deployed relay. Local builds and automated checks cover only the
