@@ -81,22 +81,33 @@ const FOCUS_RING_ALPHA = { dark: 0.4, light: 0.55 } as const;
 
 // Each shadow carries a faint 1px ring (white on dark, ink on light) that
 // gives floating layers their edge in place of a border. Dark drops are deep
-// and near-black; light ones barely lift, so cards don't look dirty on paper.
+// and near-black. Light layers can't lift by tone (raised is already near
+// white), so their ring and drop carry the lift, kept soft so paper stays clean.
 const SHADOWS = {
   dark: {
     sm: '0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.28)',
     lg: '0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.35)',
   },
   light: {
-    sm: '0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 2px rgba(28, 25, 23, 0.03), 0 4px 12px rgba(28, 25, 23, 0.035)',
-    lg: '0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 3px rgba(28, 25, 23, 0.03), 0 10px 28px rgba(28, 25, 23, 0.05)',
+    sm: '0 0 0 1px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.05), 0 4px 12px rgba(28, 25, 23, 0.06)',
+    lg: '0 0 0 1px rgba(28, 25, 23, 0.06), 0 2px 6px rgba(28, 25, 23, 0.05), 0 12px 32px rgba(28, 25, 23, 0.1)',
   },
 } as const;
+
+// How far the hover (`elevated`) and selected (`active`) rungs step from their
+// base, in RGB units. Contrast ratios compress near white, so light rungs step
+// further to read as clearly as dark ones: about 1.13:1 for hover and 1.3:1
+// for selection against the sidebar in both schemes.
+const RUNG_STEPS = {
+  dark: { elevated: 13, active: 26 },
+  light: { elevated: 20, active: 34 },
+} as const;
+type Rung = keyof (typeof RUNG_STEPS)['dark'];
 
 export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
   const scheme: Scheme = isDarkCanvas(theme.bg) ? 'dark' : 'light';
   const elevated = elevatedSurfaceColor(theme);
-  const active = surfaceStep(theme, 26);
+  const active = surfaceStep(theme, 'active');
   const raised = raisedSurfaceColor(theme);
   // A light sidebar sits a shade below the canvas, like paper under a page,
   // so the near-white reading area stays the brightest region of the window.
@@ -219,22 +230,21 @@ export function isDarkCanvas(bg: string): boolean {
   return colorLuminance(bg) < 0.4;
 }
 
-// One rung of the tint ramp (hover, selection, user bubbles, code blocks),
-// `amount` steps away from the canvas.
+// One rung of the tint ramp (hover, selection, user bubbles, code blocks).
 //
 // Dark presets keep headroom above their surface, so each rung lightens it and
 // the ramp reads bg < surface < elevated < active. Light presets put the
 // surface ABOVE the canvas with nothing left above it, so their rungs step
 // darker, measured from the canvas: stepping down from the surface would land
 // the first rung back on the canvas and make every tint vanish.
-export function surfaceStep(theme: { bg: string; surface: string }, amount: number): string {
+export function surfaceStep(theme: { bg: string; surface: string }, rung: Rung): string {
   return isDarkCanvas(theme.bg)
-    ? adjustColor(theme.surface, amount)
-    : adjustColor(theme.bg, -amount);
+    ? adjustColor(theme.surface, RUNG_STEPS.dark[rung])
+    : adjustColor(theme.bg, -RUNG_STEPS.light[rung]);
 }
 
 export function elevatedSurfaceColor(theme: { bg: string; surface: string }): string {
-  return surfaceStep(theme, 13);
+  return surfaceStep(theme, 'elevated');
 }
 
 // Floating layers (composer, menus, popovers, tooltips, toasts) need the

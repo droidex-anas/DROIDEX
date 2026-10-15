@@ -37,36 +37,36 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #ebeae7; --field: #ebeae7; --active: #deddda; --raised: #fefefd; --sidebar: #f2f1ee;
+    --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #e4e3e0; --field: #e4e3e0; --active: #d6d5d2; --raised: #fefefd; --sidebar: #f2f1ee;
     --divider: rgba(45, 42, 38, 0.08); --divider-strong: rgba(45, 42, 38, 0.14);
-    --text: #2d2a26; --text-secondary: #4f4d49; --text-muted: #64615e;
+    --text: #2d2a26; --text-secondary: #4a4844; --text-muted: #5f5c59;
     --accent: #2d2a26; --focus-ring: rgba(45, 42, 38, 0.55);
     --link: #1d4ed8; --skill: #1d4ed8; --skill-mark: #b82950; --ultra: #6d28d9;
-    --success: #1c6f46; --success-soft: rgba(28, 111, 70, 0.08);
-    --warning: #8f530e; --warning-soft: rgba(143, 83, 14, 0.08);
-    --danger: #b3312a; --danger-soft: rgba(179, 49, 42, 0.08);
+    --success: #1b6943; --success-soft: rgba(27, 105, 67, 0.08);
+    --warning: #884f0d; --warning-soft: rgba(136, 79, 13, 0.08);
+    --danger: #ab2f28; --danger-soft: rgba(171, 47, 40, 0.08);
     --diff-add-fg: #177030; --diff-add-bg: #eaf7ee; --diff-del-fg: #c0202b; --diff-del-bg: #fff0f0;
     --tile: var(--brand-paper); --tile-d: var(--brand-ink);
-    --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.03), 0 4px 12px rgba(28, 25, 23, 0.035);
-    --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 3px rgba(28, 25, 23, 0.03), 0 10px 28px rgba(28, 25, 23, 0.05);
+    --shadow-sm: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.05), 0 4px 12px rgba(28, 25, 23, 0.06);
+    --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 2px 6px rgba(28, 25, 23, 0.05), 0 12px 32px rgba(28, 25, 23, 0.1);
     --scroll-thumb: rgba(45, 42, 38, 0.18);
     --veil: rgba(248, 247, 244, 0.6);
   }
 }
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #ebeae7; --field: #ebeae7; --active: #deddda; --raised: #fefefd; --sidebar: #f2f1ee;
+  --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #e4e3e0; --field: #e4e3e0; --active: #d6d5d2; --raised: #fefefd; --sidebar: #f2f1ee;
   --divider: rgba(45, 42, 38, 0.08); --divider-strong: rgba(45, 42, 38, 0.14);
-  --text: #2d2a26; --text-secondary: #4f4d49; --text-muted: #64615e;
+  --text: #2d2a26; --text-secondary: #4a4844; --text-muted: #5f5c59;
   --accent: #2d2a26; --focus-ring: rgba(45, 42, 38, 0.55);
   --link: #1d4ed8; --skill: #1d4ed8; --skill-mark: #b82950; --ultra: #6d28d9;
-  --success: #1c6f46; --success-soft: rgba(28, 111, 70, 0.08);
-  --warning: #8f530e; --warning-soft: rgba(143, 83, 14, 0.08);
-  --danger: #b3312a; --danger-soft: rgba(179, 49, 42, 0.08);
+  --success: #1b6943; --success-soft: rgba(27, 105, 67, 0.08);
+  --warning: #884f0d; --warning-soft: rgba(136, 79, 13, 0.08);
+  --danger: #ab2f28; --danger-soft: rgba(171, 47, 40, 0.08);
   --diff-add-fg: #177030; --diff-add-bg: #eaf7ee; --diff-del-fg: #c0202b; --diff-del-bg: #fff0f0;
   --tile: var(--brand-paper); --tile-d: var(--brand-ink);
-  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.03), 0 4px 12px rgba(28, 25, 23, 0.035);
-  --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 3px rgba(28, 25, 23, 0.03), 0 10px 28px rgba(28, 25, 23, 0.05);
+  --shadow-sm: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.05), 0 4px 12px rgba(28, 25, 23, 0.06);
+  --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 2px 6px rgba(28, 25, 23, 0.05), 0 12px 32px rgba(28, 25, 23, 0.1);
   --scroll-thumb: rgba(45, 42, 38, 0.18);
   --veil: rgba(248, 247, 244, 0.6);
 }
@@ -595,7 +595,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
   <section class="s" id="surfaces">
     <div class="s-head">
       <div><div class="k">05 / Surfaces</div><h2>No hard lines</h2></div>
-      <p>Surfaces separate by tone, with shadow when floating. Lines stay only when they carry meaning: agent reports and instructions in project chats, drop targets, diff markers, dense rows and busy panel splits. Focus shows only for the keyboard, never on click.</p>
+      <p>Surfaces separate by tone, with shadow when floating. Rows separate by space, never a line. Lines stay only when they carry meaning: data tables, agent reports and instructions in project chats, drop targets, diff markers and busy panel splits. Focus shows only for the keyboard, never on click.</p>
     </div>
     <div class="dd">
       <div class="panel">
@@ -743,7 +743,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
       <li><div><b>Only tokens</b><p>No hex values, no <code>[13.5px]</code>, no one-off radii.</p></div></li>
       <li><div><b>Eleven type styles</b><p>If text needs to look different, it's a different style, not a tweak.</p></div></li>
       <li><div><b>Three weights</b><p>400 to read, 500 to click, 600 for headings.</p></div></li>
-      <li><div><b>Borders only where necessary</b><p>Tone, space and floating shadow. Only the meaningful lines in rule 4; no header, footer or group hairlines.</p></div></li>
+      <li><div><b>Space and tone, not lines</b><p>Space, tone and floating shadow. No row, header, footer or group dividers; lines only for data tables and the meaningful cases in rule 4.</p></div></li>
       <li><div><b>Colour is a signal</b><p>Links, status, consequential actions, the brand mark.</p></div></li>
       <li><div><b>One primary per surface</b><p>Everything else is secondary or ghost.</p></div></li>
       <li><div><b>Radius grows with size</b><p>8 → 12 → 16 → 24.</p></div></li>
