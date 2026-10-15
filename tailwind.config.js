@@ -48,6 +48,7 @@ export default {
         field: v('--field'),
         active: v('--active'),
         raised: v('--raised'),
+        'prompt-bubble': v('--prompt-bubble-bg'),
         sidebar: v('--sidebar'),
         divider: v('--divider'),
         'divider-strong': v('--divider-strong'),
@@ -111,12 +112,25 @@ export default {
         'code-sm': ['11px', { lineHeight: '16px', letterSpacing: '0px', fontWeight: '400' }],
       },
       height: sizes,
-      // The fixed shell columns (rules.md "Sizes"): `w-sidebar` and the
-      // floating context panel the chat insets its content for, plus the
-      // transcript's media and browser cards.
-      width: { ...sizes, sidebar: '280px', 'context-panel': '312px', 'chat-card': '360px' },
-      // Dialog widths (rules.md "Sizes"), for ui/Dialog.
-      maxWidth: { 'dialog-confirm': '440px', 'dialog-form': '560px', 'dialog-content': '720px' },
+      // The fixed shell columns (rules.md "Sizes"): `w-sidebar`, the floating
+      // context panel the chat insets its content for and the pull-request
+      // inbox, plus the transcript's media and browser cards.
+      width: {
+        ...sizes,
+        sidebar: '280px',
+        'context-panel': '312px',
+        'chat-card': '360px',
+        'pr-inbox': '360px',
+      },
+      // Dialog and palette widths (rules.md "Sizes"), for ui/Dialog and
+      // PaletteShell, and the share of the transcript a prompt bubble may take.
+      maxWidth: {
+        bubble: '80%',
+        'dialog-confirm': '440px',
+        'dialog-form': '560px',
+        'dialog-content': '720px',
+        palette: '576px',
+      },
       size: sizes,
       minHeight: sizes,
       minWidth: sizes,
@@ -124,6 +138,8 @@ export default {
       // button press, the 1.5px ring (focus, invalid fields) and the smooth-out
       // curve for anything that moves or opens.
       scale: { 97: '0.97' },
+      // The browser preview card's box; the page picture is fitted inside it.
+      aspectRatio: { browser: '16 / 10' },
       ringWidth: { 1.5: '1.5px' },
       transitionTimingFunction: { 'smooth-out': 'var(--ease-smooth-out)' },
       // Floating layers stack popovers < dialogs < toasts < tooltips.

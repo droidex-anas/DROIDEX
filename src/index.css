@@ -17,6 +17,12 @@
   --icon-swap-ease: var(--ease-in-out);
 }
 
+/* The prompt bubble steps one tone above the transcript it sits in; a
+   transcript on a raised layer (the side chat) overrides it. */
+:root {
+  --prompt-bubble-bg: var(--elevated);
+}
+
 /* Icon swap in the inbox row's mark slot: the status mark and the settle
    control share one cell; hovering the row cross-fades them with blur and
    scale (transitions.dev icon swap, hover-driven). The control's own hidden
@@ -657,6 +663,24 @@
 }
 
 @layer components {
+  /* An inline link inside text: it reads by colour and underlines on hover,
+     like Markdown links. The caller sets the colour (`text-link` for a URL,
+     the entity's own colour for an in-app name). */
+  .inline-link {
+    text-decoration-line: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 2px;
+    transition:
+      color 150ms ease-out,
+      text-decoration-color 150ms ease-out;
+  }
+
+  @media (hover: hover) {
+    .inline-link:hover:not(:disabled) {
+      text-decoration-color: currentColor;
+    }
+  }
+
   /* The sidebar footer floats over the session list (SidebarFooter). The list
      reserves the footer's height at its end, and its scrollbar stops above it. */
   .sidebar-list {
@@ -971,13 +995,6 @@
       8px -8px,
       -8px 0;
     background-size: 16px 16px;
-  }
-
-  /* Reusable floating card. Used by the right panel and can be applied to any
-     surface (e.g. the left sidebar) that should read as a rounded, elevated
-     card rather than an edge-to-edge rectangle. */
-  .droid-card {
-    @apply flex flex-col rounded-xl border border-divider bg-surface overflow-hidden shadow-lg;
   }
 
   /* Expand and collapse (feel.md): the grid's single row animates 0fr → 1fr,

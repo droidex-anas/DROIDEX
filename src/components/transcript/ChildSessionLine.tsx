@@ -70,7 +70,7 @@ export function ChildSessionLine({
         <button
           type="button"
           onClick={navigate}
-          className="font-semibold underline-offset-2 hover:underline"
+          className="inline-link font-semibold"
           style={{ color }}
           title="Open child session"
         >

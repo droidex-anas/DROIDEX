@@ -57,6 +57,7 @@ In code this is `usePopoverPosition` (`src/components/ui/usePopoverPosition.ts`)
 | Menus | 200–320px wide, items 30px tall |
 | Tooltips | max 240px wide, `label` text |
 | Dialogs | 440px (confirm), 560px (form), 720px (content) |
+| Command palette | 576px |
 | Reading column | 60–80 characters of `prose` |
 
 Truncate single-line labels with an ellipsis and show the full text in a tooltip. Never let a label wrap inside a control.
@@ -110,6 +111,7 @@ Small engineering choices that decide whether the app feels finished.
 
 **Text and inputs**
 
+- **Inline links** use `.inline-link` (`src/index.css`): coloured text that underlines on hover, the same as Markdown links. Give it `text-link` for a URL, or the entity's own colour for an in-app name; don't hand-roll `underline` and `hover:` styles.
 - **Text wrapping.** Use `text-wrap: balance` on headings and `text-wrap: pretty` on `prose`, so no orphaned single words.
 - **Truncate where the meaning is.** Paths truncate in the middle (`src/…/Popover.tsx`), branch names at the end. Show the full value in a tooltip.
 - **Inputs for code-ish values** (branch names, paths, commands) get `spellCheck={false} autoCorrect="off" autoCapitalize="off"`.

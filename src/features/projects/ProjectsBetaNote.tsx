@@ -62,7 +62,7 @@ function NoteLink({ onClick, children }: { onClick: () => void; children: ReactN
     <button
       type="button"
       onClick={onClick}
-      className="font-medium text-secondary underline-offset-2 transition-colors hover:text-primary hover:underline"
+      className="inline-link font-medium text-secondary hover:text-primary"
     >
       {children}
     </button>

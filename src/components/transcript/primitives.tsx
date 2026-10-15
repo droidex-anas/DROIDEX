@@ -158,7 +158,7 @@ export function linkify(text: string): React.ReactNode {
         onClick={(e) => {
           openLink(e, url);
         }}
-        className="text-link underline underline-offset-2 hover:opacity-80 break-all"
+        className="inline-link break-all text-link"
       >
         {url}
       </a>,

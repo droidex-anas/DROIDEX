@@ -92,7 +92,7 @@ export function ThreadSpawnLine({
           type="button"
           disabled={!spawned}
           onClick={openSpawned}
-          className="font-semibold text-primary underline-offset-2 hover:underline disabled:no-underline"
+          className="inline-link font-semibold text-primary"
           title={words.openTitle}
         >
           {title}
