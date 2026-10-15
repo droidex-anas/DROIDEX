@@ -369,19 +369,15 @@ export function PrInbox({
             </button>
           ))}
         </div>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          icon={<Octicon name="sync" size={14} className={loading ? 'animate-spin' : ''} />}
           onClick={onRetry}
           title="Refresh"
-          className="ml-auto grid size-control-sm place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary"
-        >
-          <Octicon
-            name="sync"
-            size={14}
-            label="Refresh"
-            className={loading ? 'animate-spin' : ''}
-          />
-        </button>
+          aria-label="Refresh"
+        />
       </div>
 
       <div className="relative mt-3">

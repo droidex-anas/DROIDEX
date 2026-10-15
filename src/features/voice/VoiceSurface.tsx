@@ -117,7 +117,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
       {/* The agent can stop and ask while the conversation holds the screen.
           It asks with the app's own cards, in the same place the composer
           would have shown them, rather than behind this surface. */}
-      <div className="mx-auto max-h-[35vh] w-full max-w-2xl shrink-0 overflow-y-auto px-6">
+      <div className="mx-auto max-h-80 w-full max-w-2xl shrink-0 overflow-y-auto px-6">
         <InlineInteractions appSessionId={appSessionId} asks />
       </div>
 
@@ -150,20 +150,21 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
           <Button variant="ghost" shape="round" size="sm" icon={Keyboard} onClick={voice.minimize}>
             Type
           </Button>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            shape="round"
+            icon={
+              session.muted ? (
+                <MicOff className="size-icon-md text-danger" aria-hidden="true" />
+              ) : (
+                <Mic className="size-icon-md" aria-hidden="true" />
+              )
+            }
             onClick={session.toggleMuted}
             aria-pressed={session.muted}
             aria-label={session.muted ? 'Unmute microphone' : 'Mute microphone'}
             title={session.muted ? 'Unmute' : 'Mute'}
-            className="grid size-control-md place-items-center rounded-full text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
-          >
-            {session.muted ? (
-              <MicOff className="h-4 w-4 text-danger" />
-            ) : (
-              <Mic className="h-4 w-4" />
-            )}
-          </button>
+          />
           <Button
             variant="ghost"
             shape="round"

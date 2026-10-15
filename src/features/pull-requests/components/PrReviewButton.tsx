@@ -67,10 +67,10 @@ export function PrReviewButton({
         label="Review pull request"
         width={288}
       >
-        <div className="flex items-center gap-2 px-3 pb-1 pt-1.5">
-          <span className="text-label text-muted">Review pull request</span>
+        <Menu.Label className="flex items-center gap-2">
+          Review pull request
           {cubicInstalled ? <Badge>Cubic connected</Badge> : null}
-        </div>
+        </Menu.Label>
         {options.map((option) => (
           <Menu.Item
             key={option.action}
@@ -93,7 +93,7 @@ export function PrReviewButton({
         {options.some((option) => option.action === 'enable-cubic') ? (
           <p
             title="DROIDEX may receive a reward if you upgrade."
-            className="px-3 pb-1 pt-0.5 text-caption text-muted"
+            className="px-2 pb-1 pt-0.5 text-caption text-muted"
           >
             Referral link
           </p>

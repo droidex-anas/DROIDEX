@@ -58,33 +58,6 @@ export function CodePane({ diff, diffError }: { diff: string | null; diffError: 
   );
 }
 
-function ToolbarIconButton({
-  label,
-  icon,
-  disabled,
-  spinning,
-  onClick,
-}: {
-  label: string;
-  icon: 'link-external' | 'sync';
-  disabled?: boolean;
-  spinning?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="grid size-control-sm place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary disabled:opacity-40"
-    >
-      <Octicon name={icon} size={14} className={spinning ? 'animate-spin' : ''} />
-    </button>
-  );
-}
-
 export function PrDetail({
   cwd,
   number,
@@ -227,15 +200,22 @@ export function PrDetail({
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <ToolbarIconButton
-            label="Refresh"
-            icon="sync"
-            spinning={detail.loading}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={
+              <Octicon name="sync" size={14} className={detail.loading ? 'animate-spin' : ''} />
+            }
+            title="Refresh"
+            aria-label="Refresh"
             onClick={detail.refresh}
           />
-          <ToolbarIconButton
-            label="Open on GitHub"
-            icon="link-external"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Octicon name="link-external" size={14} />}
+            title="Open on GitHub"
+            aria-label="Open on GitHub"
             disabled={!headerPr?.url}
             onClick={() => {
               if (headerPr?.url) void openExternal(headerPr.url);

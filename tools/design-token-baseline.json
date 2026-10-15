@@ -175,11 +175,5 @@
   },
   "src/features/pull-requests/components/PrCollapse.tsx": {
     "arbitrary-value": 3
-  },
-  "src/features/voice/VoiceMiniBar.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/features/voice/VoiceSurface.tsx": {
-    "arbitrary-value": 1
   }
 }

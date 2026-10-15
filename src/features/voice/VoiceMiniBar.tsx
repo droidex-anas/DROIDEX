@@ -172,7 +172,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
                   <span
                     className={
                       line.role === 'user'
-                        ? 'max-w-60 rounded-lg rounded-br-[2px] bg-elevated px-2.5 py-1.5 text-body text-primary'
+                        ? 'max-w-60 rounded-lg rounded-br-xs bg-elevated px-2.5 py-1.5 text-body text-primary'
                         : 'block text-body text-secondary'
                     }
                   >
@@ -209,20 +209,22 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
           {status}
         </span>
         <Hairline />
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          shape="round"
+          size="sm"
+          icon={
+            session.muted ? (
+              <MicOff className="size-icon-sm text-danger" aria-hidden="true" />
+            ) : (
+              <Mic className="size-icon-sm" aria-hidden="true" />
+            )
+          }
           aria-label={session.muted ? 'Unmute microphone' : 'Mute microphone'}
           title={session.muted ? 'Unmute' : 'Mute'}
           aria-pressed={session.muted}
           onClick={session.toggleMuted}
-          className="grid size-control-sm place-items-center rounded-full text-secondary transition-colors hover:bg-bg/50 hover:text-primary"
-        >
-          {session.muted ? (
-            <MicOff className="h-3.5 w-3.5 text-danger" />
-          ) : (
-            <Mic className="h-3.5 w-3.5" />
-          )}
-        </button>
+        />
         <Button
           variant="primary"
           shape="round"

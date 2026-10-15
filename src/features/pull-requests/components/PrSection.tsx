@@ -47,7 +47,7 @@ export function PrSection({
             }`}
           />
           <span className="truncate text-body-strong text-primary">{title}</span>
-          {count != null ? <Badge>{count}</Badge> : null}
+          {count != null ? <Badge className="tabular-nums">{count}</Badge> : null}
         </button>
         {meta ? <div className="ml-auto flex min-w-0 items-center gap-2">{meta}</div> : null}
       </div>

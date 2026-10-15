@@ -12,18 +12,15 @@ export function VoiceComposerControls() {
   const { session } = voice;
   return (
     <div className="flex items-center gap-1">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        shape="round"
+        icon={session.muted ? MicOff : Mic}
         aria-label={session.muted ? 'Unmute' : 'Mute'}
         title={session.muted ? 'Unmute' : 'Mute'}
         aria-pressed={session.muted}
         onClick={session.toggleMuted}
-        className={`grid size-control-md place-items-center rounded-full transition-colors ${
-          session.muted ? 'bg-surface text-primary' : 'text-muted hover:bg-bg/40 hover:text-primary'
-        }`}
-      >
-        {session.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-      </button>
+      />
       <Button
         variant="primary"
         shape="round"

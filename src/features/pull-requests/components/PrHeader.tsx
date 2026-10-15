@@ -128,7 +128,7 @@ export function PrHeader({
             {prKindLabel(kind)}
           </Badge>
         ) : (
-          <span className="inline-flex h-7 w-20 rounded-full bg-elevated/60" />
+          <span className="inline-flex h-5 w-20 rounded-full bg-elevated/60" />
         )}
         {pr ? (
           <span className="flex items-center gap-1.5 text-body text-secondary">
