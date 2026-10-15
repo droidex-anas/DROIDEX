@@ -79,11 +79,17 @@ export function usePopoverPosition({
       refs.setReference(anchor);
       return;
     }
-    // Viewport coordinates, so the point stays right under the UI zoom that
-    // scales everything inside #root.
-    const { x, y } = anchorPoint;
+    // The point is kept as an offset from the anchor's box, in viewport pixels
+    // like the click, so the layer follows the anchor when its list scrolls
+    // and `hide` sees it leave, all unaffected by the UI zoom on #root.
+    const opened = anchor.getBoundingClientRect();
+    const offsetX = anchorPoint.x - opened.left;
+    const offsetY = anchorPoint.y - opened.top;
     refs.setReference({
-      getBoundingClientRect: () => new DOMRect(x, y, 0, 0),
+      getBoundingClientRect: () => {
+        const box = anchor.getBoundingClientRect();
+        return new DOMRect(box.left + offsetX, box.top + offsetY, 0, 0);
+      },
       contextElement: anchor,
     });
   }, [open, anchorRef, anchorPoint, refs]);
