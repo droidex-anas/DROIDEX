@@ -392,11 +392,15 @@ create or resume idempotently. Profile reads wait for that worker write tail.
 Child sessions and session metadata never enter the table; harness and model
 rankings continue to count only usage-bearing provider sessions.
 
-Opt-in public profile links contain a signed, strictly allowlisted URL-fragment
-snapshot. The viewer verifies its P-256 signature and asks the handle registry
-to match only the supplied public key to the username. Neither web host nor
-relay receives or stores the profile payload, and viewing does not contact the
-laptop. See [Local usage ledger](usage.md) and [Remote and Profile](remote.md).
+Opt-in public profiles use the stable `/public/<username>` route. The laptop
+signs a strictly allowlisted aggregate with its P-256 username-owner key and
+explicitly publishes the bounded payload and signature to the handle's Durable
+Object. The viewer fetches that public bundle, verifies the owner signature, and
+never contacts the laptop. Update and exact-current revoke remain owner-signed;
+private usage events and Remote credentials stay local. The short route trusts
+the relay's username-to-key registry for public-profile authenticity; paired
+Remote sessions independently pin the laptop key. See [Local usage ledger](usage.md)
+and [Remote and Profile](remote.md).
 
 ## Build path
 

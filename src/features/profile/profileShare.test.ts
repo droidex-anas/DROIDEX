@@ -1,19 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  createIdentity,
-  profileShareProof,
-  signIdentity,
-  verifyIdentity,
-} from '../../../packages/remote/src';
+import { createIdentity, profileShareProof, signIdentity } from '../../../packages/remote/src';
 import {
   createPublicProfileSnapshot,
-  decodeProfileShare,
+  decodePublishedProfile,
   encodeProfilePayload,
-  encodeProfileShare,
-  type ProfileAttestation,
+  verifyPublishedProfile,
   type ProfileUsageSnapshot,
+  type PublishedProfile,
   type PublicProfileSnapshot,
 } from './profileShare';
 
@@ -48,10 +43,10 @@ const usage: ProfileUsageSnapshot = {
 
 const profile = createPublicProfileSnapshot({ displayName: 'Anas', username: 'anas' }, usage, 2);
 
-async function attest(payload: string): Promise<ProfileAttestation> {
+async function publish(payload: string): Promise<PublishedProfile> {
   const identity = await createIdentity();
   return {
-    username: profile.username,
+    payload,
     publicKey: identity.publicKey,
     signature: await signIdentity(
       identity.privateKey,
@@ -60,7 +55,7 @@ async function attest(payload: string): Promise<ProfileAttestation> {
   };
 }
 
-test('sharing keeps only rendered public fields and binds them to a laptop signature', async () => {
+test('sharing keeps only rendered public fields in a verified published bundle', async () => {
   const withPrivateFields = {
     ...usage,
     sourcePath: '/private/log.jsonl',
@@ -73,29 +68,22 @@ test('sharing keeps only rendered public fields and binds them to a laptop signa
     2,
   );
   const payload = encodeProfilePayload(snapshot);
-  const attestation = await attest(payload);
-  const fragment = encodeProfileShare(payload, attestation);
-  const decoded = decodeProfileShare(`#${fragment}`);
+  const decoded = await verifyPublishedProfile(await publish(payload), profile.username);
+
   assert.deepEqual(decoded?.profile, profile);
   const serialized = JSON.stringify(decoded?.profile);
   for (const privateValue of ['private', 'Asia/Kolkata', 'providerCost', 'cacheRead', 'coverage']) {
     assert.equal(serialized.includes(privateValue), false);
   }
-  assert.equal(
-    await verifyIdentity(
-      decoded?.publicKey ?? {},
-      profileShareProof(profile.username, payload),
-      decoded?.signature ?? '',
-    ),
-    true,
-  );
 });
 
-test('untrusted fragments reject malformed public data and altered signed payloads', async () => {
+test('published bundles reject malformed data, wrong usernames and altered payloads', async () => {
   const payload = encodeProfilePayload(profile);
-  const attestation = await attest(payload);
-  assert.equal(decodeProfileShare('a'.repeat(24 * 1024 + 1)), null);
-  assert.equal(decodeProfileShare('%%%'), null);
+  const published = await publish(payload);
+
+  assert.equal(decodePublishedProfile(null), null);
+  assert.equal(decodePublishedProfile({ ...published, payload: 'a'.repeat(20 * 1024 + 1) }), null);
+  assert.equal(decodePublishedProfile(published, 'someone-else'), null);
   assert.throws(() =>
     encodeProfilePayload({ ...profile, lifetimeTokens: -1 } as PublicProfileSnapshot),
   );
@@ -105,20 +93,18 @@ test('untrusted fragments reject malformed public data and altered signed payloa
   assert.throws(() =>
     encodeProfilePayload({
       ...profile,
-      days: [{ date: '2026-02-31', tokens: 1 }],
+      generatedDay: undefined,
+    } as unknown as PublicProfileSnapshot),
+  );
+  assert.throws(() =>
+    encodeProfilePayload({
+      ...profile,
+      days: [{ date: '2026-02-31', tokens: 1, complete: true }],
     } as PublicProfileSnapshot),
   );
 
   const changed = encodeProfilePayload({ ...profile, lifetimeTokens: 9_999 });
-  const forged = decodeProfileShare(encodeProfileShare(changed, attestation));
-  assert.equal(
-    await verifyIdentity(
-      forged?.publicKey ?? {},
-      profileShareProof(profile.username, changed),
-      forged?.signature ?? '',
-    ).catch(() => false),
-    false,
-  );
+  assert.equal(await verifyPublishedProfile({ ...published, payload: changed }), null);
 });
 
 test('sharing refuses a partial or failed local index', () => {
@@ -152,8 +138,8 @@ test('sharing refuses a partial or failed local index', () => {
   );
 });
 
-test('sharing preserves incomplete token coverage as measured minimums', async () => {
-  const snapshot = createPublicProfileSnapshot(
+test('sharing preserves token availability and incomplete coverage', () => {
+  const partial = createPublicProfileSnapshot(
     { displayName: 'Anas', username: 'anas' },
     {
       ...usage,
@@ -162,15 +148,48 @@ test('sharing preserves incomplete token coverage as measured minimums', async (
     },
     2,
   );
-  const payload = encodeProfilePayload(snapshot);
-  const decoded = decodeProfileShare(encodeProfileShare(payload, await attest(payload)));
+  assert.equal(partial.tokensReported, true);
+  assert.equal(partial.tokensComplete, false);
+  assert.equal(partial.days[0]?.complete, false);
+  assert.equal(partial.lifetimeTokens, usage.lifetimeTokens);
 
-  assert.equal(decoded?.profile.tokensComplete, false);
-  assert.equal(decoded?.profile.days[0]?.complete, false);
-  assert.equal(decoded?.profile.lifetimeTokens, usage.lifetimeTokens);
+  const unreported = createPublicProfileSnapshot(
+    { displayName: 'Anas', username: 'anas' },
+    {
+      ...usage,
+      lifetimeTokens: 0,
+      peakDayTokens: 0,
+      totals: {
+        ...usage.totals,
+        inputTokens: null,
+        outputTokens: null,
+        tokensComplete: false,
+      },
+    },
+    2,
+  );
+  assert.equal(unreported.tokensReported, false);
 });
 
-test('a full year of public activity stays inside the bounded signed link', async () => {
+test('sharing anchors activity to the owner-local generated day', async () => {
+  const generatedAt = Date.UTC(2026, 9, 14, 20, 0);
+  const snapshot = createPublicProfileSnapshot(
+    { displayName: 'Anas', username: 'anas' },
+    usage,
+    generatedAt,
+  );
+
+  assert.equal(snapshot.generatedDay, '2026-10-15');
+  assert.equal(
+    decodePublishedProfile(await publish(encodeProfilePayload(snapshot)))?.profile.generatedDay,
+    '2026-10-15',
+  );
+  assert.throws(() =>
+    encodeProfilePayload({ ...snapshot, generatedDay: '2026-02-31' } as PublicProfileSnapshot),
+  );
+});
+
+test('a full year of public activity stays inside the bounded published payload', async () => {
   const days = Array.from({ length: 366 }, (_, index) => ({
     date: new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10),
     tokens: 1_000_000 + index,
@@ -178,7 +197,6 @@ test('a full year of public activity stays inside the bounded signed link', asyn
   }));
   const snapshot = { ...profile, days };
   const payload = encodeProfilePayload(snapshot);
-  const fragment = encodeProfileShare(payload, await attest(payload));
-  assert.ok(fragment.length < 24 * 1024);
-  assert.deepEqual(decodeProfileShare(fragment)?.profile.days, days);
+  assert.ok(payload.length < 20 * 1024);
+  assert.deepEqual((await verifyPublishedProfile(await publish(payload)))?.profile.days, days);
 });

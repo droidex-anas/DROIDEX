@@ -6,9 +6,9 @@ messages; no account, VPN or inbound laptop port is required.
 
 ## Set up
 
-1. Open **Settings → Remote**. Enter your name and a public username. Use the hosting
-   addresses supplied by your operator, or enter your own HTTPS client and WSS
-   relay origins under Hosting.
+1. Open **Settings → Remote**. Enter your name and a public username. The official
+   client and relay are already configured. To run your own, open **Advanced →
+   Self-host Remote** and enter your HTTPS client and WSS relay origins.
 2. Save the address, set up an authenticator, and enter its current code. The
    laptop claims the username before displaying the authenticator QR.
 3. Scan **Connect your phone** with the phone camera. Enter a fresh authenticator
@@ -63,7 +63,7 @@ its state per source; sharing stays unavailable until every source completes.
 See [Local usage ledger](usage.md).
 
 **Share → Copy link** publishes an opt-in aggregate snapshot at
-`/public/yourname`.
+`https://droidex.vercel.app/public/yourname`.
 It contains your chosen name, username, aggregate activity and model/harness
 names. When a harness omits counts, signed coverage flags label the affected
 figures as measured minimums; completely unreported token totals stay unknown.
@@ -77,6 +77,10 @@ signed public aggregate so the link works while the laptop is offline, and the
 web client verifies the signature before rendering it. Publishing, updating
 and revoking are explicit owner-signed actions tied to the exact current
 snapshot. Revocation stops future views but cannot erase copies or screenshots.
+Because the short URL carries no key pin, public-profile authenticity trusts the
+relay's username-to-owner-key registry. A compromised relay could substitute a
+different public profile, but it still cannot reach the laptop or decrypt Remote
+traffic; paired Remote devices pin the laptop key separately through the QR link.
 
 Snapshots contain at most 366 activity dates and five entries per ranking. The
 payload is limited to 20 KiB. The same verified data can be rendered locally as

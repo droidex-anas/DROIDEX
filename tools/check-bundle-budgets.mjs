@@ -153,9 +153,15 @@ import { join } from 'node:path';
 // and its close path (~3KB); both render with the chat. Main measured
 // 1_457_268, the steer change 1_461_815 and the side chat change 1_460_242, so
 // the two together leave ~3.2KB of headroom.
+//
+// initialCssBytes raised from 106_000 to 110_000 for Profile and Remote setup.
+// Their JavaScript stays in the lazy Settings chunk, while Tailwind collects
+// their layout, state and heatmap utilities into the entry stylesheet. The
+// production build measures 108_631 bytes, leaving ~1.3KB of headroom. The
+// independent phone client remains an 18.5KB stylesheet.
 const BUDGETS = {
   initialRendererJsBytes: 1_468_000,
-  initialCssBytes: 106_000,
+  initialCssBytes: 110_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

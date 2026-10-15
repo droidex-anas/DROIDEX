@@ -175,26 +175,23 @@ public username, generated time, headline counts, daily token totals, explicit
 token-coverage flags, and up to five harness and model rankings. Those flags let
 the viewer label partial counts as measured minimums. Cost, internal coverage
 diagnostics, event counts, time zone, projects, sessions, paths, and source
-status are removed. The laptop
-signs the compact payload with the username owner key only after Remote identity
-and authenticator setup are complete. The viewer verifies that signature and
-asks the relay registry whether the supplied public key owns the username. The
-relay receives only the public key and handle; it never receives the profile
-payload. The encoded payload is capped at 20 KiB and the complete fragment at
-24 KiB.
+status are removed. The laptop signs the compact payload with the username owner
+key only after Remote identity and authenticator setup are complete. Explicit
+publish and update operations send that signed public aggregate to the handle's
+relay object, which stores only the current payload and signature beside the
+existing public owner key. The encoded payload is capped at 20 KiB.
 
-The fixed payload is rendered by the static web client, gives the viewer no
-route into the laptop, and contains no Remote device credential. It remains
-viewable while the laptop is offline as long as the static client and registry
-are reachable. The same verified, allowlisted data can drive a client-side PNG
-share-card renderer without reading the ledger or contacting the laptop.
+The fixed `/public/<username>` route fetches the bounded bundle from the relay.
+The static web client verifies the username-owner signature before rendering and
+gives the viewer no route into the laptop. The page remains viewable while the
+laptop is offline. The same verified, allowlisted data drives the client-side
+PNG share-card renderer without reading the ledger or contacting the laptop.
 
-The no-storage share mode keeps the aggregate payload in the URL fragment, so
-the web host does not receive it. Social crawlers do not receive URL fragments,
-so this mode cannot produce an Open Graph or Twitter card. A short hosted link
-or dynamic social preview requires a separate, explicit publish feature that
-stores the public snapshot. That boundary must never make the laptop publicly
-reachable or put profile data on the ciphertext forwarding path.
+Publishing is opt-in, updating is explicit, and an owner-signed exact-current
+delete removes the relay copy. Revocation prevents future views but cannot erase
+downloaded cards or screenshots. Rich per-user social previews still require a
+separate dynamic image or metadata endpoint; they must consume only this same
+verified public allowlist.
 
 Trusted Remote devices request the same bounded aggregate snapshot over their
 existing end-to-end encrypted channel. Usage is sent only on request, never on
