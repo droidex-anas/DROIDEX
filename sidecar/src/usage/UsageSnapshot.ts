@@ -80,10 +80,7 @@ export function createUsageSnapshot(
   return {
     lifetimeTokens: (inputTokens ?? 0) + (outputTokens ?? 0),
     peakDayTokens: days.reduce((peak, day) => Math.max(peak, day.tokens), 0),
-    sessions: scalar(
-      db,
-      'SELECT COUNT(*) AS value FROM (SELECT harness_id, session_id FROM usage_session_model GROUP BY harness_id, session_id)',
-    ),
+    sessions: scalar(db, 'SELECT COUNT(*) AS value FROM droidex_session'),
     currentStreak: streaks.current,
     longestStreak: streaks.longest,
     trackingSince,

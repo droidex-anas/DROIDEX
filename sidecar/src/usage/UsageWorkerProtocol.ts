@@ -30,9 +30,17 @@ export interface UsageWorkerReconcileResult {
   droidSettings: DroidSettingsReconcileResult;
 }
 
-export type UsageWorkerRequest = { type: 'snapshot' } | { type: 'reconcile' } | { type: 'close' };
+export type UsageWorkerRequest =
+  | { type: 'snapshot' }
+  | { type: 'reconcile' }
+  | { type: 'record-droidex-sessions'; ids: string[] }
+  | { type: 'close' };
 
-export type UsageWorkerValue = UsageWorkerSnapshot | UsageWorkerReconcileResult | { closed: true };
+export type UsageWorkerValue =
+  | UsageWorkerSnapshot
+  | UsageWorkerReconcileResult
+  | { insertedSessions: number }
+  | { closed: true };
 
 export type UsageWorkerResponse =
   | { ok: true; value: UsageWorkerValue }

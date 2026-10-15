@@ -11,11 +11,15 @@ export const SUM_COLUMNS = [
   'estimated_cost_microusd',
 ] as const;
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const UPDATE_TRIGGER = `CREATE TRIGGER usage_event_no_update BEFORE UPDATE ON usage_event BEGIN
   SELECT RAISE(ABORT, 'usage_event is append-only'); END`;
 const DELETE_TRIGGER = `CREATE TRIGGER usage_event_no_delete BEFORE DELETE ON usage_event BEGIN
   SELECT RAISE(ABORT, 'usage_event is append-only'); END`;
+const DROIDEX_SESSION_UPDATE_TRIGGER = `CREATE TRIGGER droidex_session_no_update BEFORE UPDATE ON droidex_session BEGIN
+  SELECT RAISE(ABORT, 'droidex_session is append-only'); END`;
+const DROIDEX_SESSION_DELETE_TRIGGER = `CREATE TRIGGER droidex_session_no_delete BEFORE DELETE ON droidex_session BEGIN
+  SELECT RAISE(ABORT, 'droidex_session is append-only'); END`;
 const SESSION_MODEL_INDEX =
   'CREATE INDEX usage_session_model_model ON usage_session_model(model) WHERE model IS NOT NULL';
 
@@ -43,6 +47,8 @@ export function initializeUsageSchema(db: DatabaseSync, databasePath: string): v
     !hasSqlObject(db, 'index', 'usage_session_model_model', SESSION_MODEL_INDEX) ||
     !hasSqlObject(db, 'trigger', 'usage_event_no_update', UPDATE_TRIGGER) ||
     !hasSqlObject(db, 'trigger', 'usage_event_no_delete', DELETE_TRIGGER) ||
+    !hasSqlObject(db, 'trigger', 'droidex_session_no_update', DROIDEX_SESSION_UPDATE_TRIGGER) ||
+    !hasSqlObject(db, 'trigger', 'droidex_session_no_delete', DROIDEX_SESSION_DELETE_TRIGGER) ||
     !hasSqlObject(db, 'view', 'usage_totals', usageTotalsViewSql())
   ) {
     throw schemaError(databasePath, version);
@@ -72,6 +78,8 @@ function createSchema(db: DatabaseSync): void {
     ${SESSION_MODEL_INDEX};
     ${UPDATE_TRIGGER};
     ${DELETE_TRIGGER};
+    ${DROIDEX_SESSION_UPDATE_TRIGGER};
+    ${DROIDEX_SESSION_DELETE_TRIGGER};
     ${usageTotalsViewSql()};
     PRAGMA user_version = ${String(SCHEMA_VERSION)};
     COMMIT;
@@ -88,6 +96,7 @@ function usageTableSql(): Record<string, string> {
       `${name} INTEGER CHECK (${name} IS NULL OR ${name} >= 0), ${name}_known_events INTEGER NOT NULL CHECK (${name}_known_events >= 0)`,
   ).join(',');
   return {
+    droidex_session: 'CREATE TABLE droidex_session (id TEXT PRIMARY KEY)',
     harness: 'CREATE TABLE harness (id TEXT PRIMARY KEY, display_name TEXT NOT NULL)',
     usage_session: `CREATE TABLE usage_session (
       harness_id TEXT NOT NULL REFERENCES harness(id), id TEXT NOT NULL,

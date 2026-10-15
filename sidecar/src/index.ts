@@ -32,6 +32,31 @@ const usage = new UsageWorkerClient({
     console.error('Usage ledger failed:', error);
   },
 });
+const USAGE_SESSION_BATCH_SIZE = 1_000;
+const pendingUsageSessionIds = new Set<string>();
+let usageSessionWriteTail: Promise<void> = Promise.resolve();
+
+function queueUsageSessions(ids: readonly string[]): Promise<void> {
+  for (const id of ids) pendingUsageSessionIds.add(id);
+  const operation = usageSessionWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      while (pendingUsageSessionIds.size > 0) {
+        const batch: string[] = [];
+        for (const id of pendingUsageSessionIds) {
+          batch.push(id);
+          if (batch.length === USAGE_SESSION_BATCH_SIZE) break;
+        }
+        await usage.recordDroidexSessions(batch);
+        for (const id of batch) pendingUsageSessionIds.delete(id);
+      }
+    });
+  usageSessionWriteTail = operation;
+  void operation.catch((error: unknown) => {
+    console.error('DROIDEX session ledger failed:', error);
+  });
+  return operation;
+}
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
@@ -46,11 +71,15 @@ const server = startBridgeServer({
     await manager.handle(command);
   },
   getSnapshot: () => manager.runtimeSnapshot(),
-  getProfileUsage: () => usage.snapshot(),
+  getProfileUsage: async () => {
+    await queueUsageSessions([]);
+    return await usage.snapshot();
+  },
 });
 
 const manager = new SessionManager(
   (event) => {
+    if (event.type === 'session.created') void queueUsageSessions([event.session.appSessionId]);
     projectSessions.observe(event);
     if (projects) void projects.observe(event).catch(reportProjectError);
     if (automationManager) {
@@ -82,6 +111,7 @@ const manager = new SessionManager(
     },
   },
 );
+void queueUsageSessions(manager.appSessionIds());
 
 // Declared after the manager it wraps, and reached only from its callbacks,
 // which run long after this module has finished loading.
@@ -183,7 +213,13 @@ async function shutdown(): Promise<void> {
           await service?.flush();
         }
       },
-      shutdownUsage: () => usage.close(),
+      shutdownUsage: async () => {
+        try {
+          await queueUsageSessions([]);
+        } finally {
+          await usage.close();
+        }
+      },
       disableMetrics: () => {
         hotPathMetrics.disable();
       },

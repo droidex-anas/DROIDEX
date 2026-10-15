@@ -1,6 +1,7 @@
 # Local usage ledger
 
-DROIDEX records token metadata in one profile-scoped SQLite database. Harness
+DROIDEX records token metadata and the set of sessions it owns in one
+profile-scoped SQLite database. Harness
 logs remain the evidence used for ingestion; `usage.sqlite` is the canonical
 normalized history used by the desktop profile, Remote, and public profile
 snapshots. Prompt text, responses, tool arguments, workspace paths, API keys,
@@ -98,13 +99,22 @@ UTC timestamps, harness/model/session identifiers, normalized token buckets,
 and optional provider-reported cost metadata. It contains no display text from
 the source transcript.
 
+`droidex_session` is a second append-only source-of-truth table containing one
+stable top-level DROIDEX `appSessionId` per row and no other columns. Startup
+seeds it from the canonical top-level history index. Every successfully created
+or resumed session is then inserted idempotently after its history row is
+durable. Child sessions, prompts, paths, titles, timestamps, and transcript
+content never enter this table. The profile headline session count comes only
+from this table, so an empty DROIDEX chat still counts while an external harness
+session does not.
+
 The remaining tables support that event log:
 
 - `harness` names current and external harnesses without constraining them to
   the three providers that can launch inside DROIDEX.
 - `usage_session` namespaces session identifiers by harness.
-- `usage_session_model` is a rebuildable distinct set used for session and
-  ranking counts without rescanning raw events.
+- `usage_session_model` is a rebuildable distinct set used only for per-harness
+  and per-model usage-session rankings without rescanning raw events.
 - `ingest_cursor` makes JSONL reads incremental and restartable.
 - `usage_source_cursor` stores opaque, versioned cursors for structured sources
   such as OpenCode SQLite and Factory Droid settings.
@@ -151,6 +161,9 @@ one consistent source instead of provider files.
 
 The local profile API returns aggregates only: activity days, streaks, known
 token totals and completeness, API-equivalent cost, and harness/model rankings.
+Its headline session count is the number of durable top-level sessions DROIDEX
+has created or resumed; ranking session counts remain usage-bearing harness
+sessions. The API never returns either kind of session identifier.
 It also reports whether JSONL, OpenCode, and Droid indexing is still running,
 complete, or failed. The UI must not publish or present a partial snapshot as a
 finished profile. One adapter failure does not stop the other adapters or make

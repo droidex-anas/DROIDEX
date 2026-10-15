@@ -247,7 +247,7 @@ test('rollups preserve unknown counts and rebuild days for an explicit timezone'
 
   const local = database.snapshot();
   assert.equal(local.lifetimeTokens, 150, 'cache and reasoning subsets are not double counted');
-  assert.equal(local.sessions, 3);
+  assert.equal(local.sessions, 0, 'harness usage does not create DROIDEX app sessions');
   assert.equal(local.currentStreak, 3);
   assert.equal(local.longestStreak, 3);
   assert.equal(local.peakDayTokens, 150);
@@ -273,6 +273,37 @@ test('rollups preserve unknown counts and rebuild days for an explicit timezone'
     { date: '2026-01-03', tokens: 0, events: 1, complete: true },
   ]);
   assert.equal(utc.totals.events, 3);
+});
+
+test('DROIDEX app sessions are idempotent, append-only, and separate from usage sessions', (t) => {
+  const { database, databasePath, sourcePath } = fixture(t);
+  assert.deepEqual(database.recordDroidexSessions(['app-2', 'app-1', 'app-1']), {
+    insertedSessions: 2,
+  });
+  assert.deepEqual(database.recordDroidexSessions(['app-1']), { insertedSessions: 0 });
+  assert.throws(() => database.recordDroidexSessions(['app-3', '']), /session ID is invalid/);
+  assert.equal(database.snapshot().totals.events, 0);
+  assert.deepEqual(database.snapshot().days, []);
+
+  const cursor = nextCursor(sourcePath);
+  ingest(database, null, cursor, [usageEvent(cursor.sourceId)]);
+  const snapshot = database.snapshot();
+  assert.equal(snapshot.sessions, 2);
+  assert.equal(snapshot.harnesses[0]?.sessions, 1);
+  database.rebuildDaily();
+  assert.equal(database.snapshot().sessions, 2);
+
+  const raw = new DatabaseSync(databasePath);
+  assert.deepEqual(
+    raw
+      .prepare("SELECT name FROM pragma_table_info('droidex_session') ORDER BY cid")
+      .all()
+      .map((row) => row['name']),
+    ['id'],
+  );
+  assert.throws(() => raw.prepare("UPDATE droidex_session SET id = 'other'").run(), /append-only/);
+  assert.throws(() => raw.prepare('DELETE FROM droidex_session').run(), /append-only/);
+  raw.close();
 });
 
 test('pricing uses the exact model and effective row before updating daily rollups', (t) => {
@@ -468,7 +499,7 @@ test('schema rejects mutation and version drift, and snapshots omit local identi
   }
 
   const raw = new DatabaseSync(databasePath);
-  assert.equal(raw.prepare('PRAGMA user_version').get()?.user_version, 2);
+  assert.equal(raw.prepare('PRAGMA user_version').get()?.user_version, 3);
   assert.equal(raw.prepare('PRAGMA journal_mode').get()?.journal_mode, 'wal');
   assert.throws(() => raw.prepare("UPDATE usage_event SET model = 'other'").run(), /append-only/);
   assert.throws(() => raw.prepare('DELETE FROM usage_event').run(), /append-only/);
@@ -478,16 +509,16 @@ test('schema rejects mutation and version drift, and snapshots omit local identi
   database.close();
   assert.throws(
     () => new UsageDatabase({ databasePath, timeZone: 'UTC' }),
-    /incomplete schema.*version 2.*remove it.*rebuild usage/i,
+    /incomplete schema.*version 3.*remove it.*rebuild usage/i,
   );
 
   const futurePath = `${databasePath}.future`;
   const future = new DatabaseSync(futurePath);
-  future.exec('PRAGMA user_version = 3');
+  future.exec('PRAGMA user_version = 4');
   future.close();
   assert.throws(
     () => new UsageDatabase({ databasePath: futurePath, timeZone: 'UTC' }),
-    /unsupported.*schema.*version 3.*remove it.*rebuild usage/i,
+    /unsupported.*schema.*version 4.*remove it.*rebuild usage/i,
   );
 });
 
@@ -500,6 +531,6 @@ test('schema rejects altered core tables even when every object still exists', (
 
   assert.throws(
     () => new UsageDatabase({ databasePath, timeZone: 'UTC' }),
-    /unsupported or incomplete schema.*version 2/i,
+    /unsupported or incomplete schema.*version 3/i,
   );
 });

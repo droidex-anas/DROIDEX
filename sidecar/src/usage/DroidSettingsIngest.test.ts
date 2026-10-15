@@ -219,7 +219,9 @@ test('watcher prioritizes exact changed paths and same basenames remain separate
   });
   t.after(() => ingest.close());
   await drainBacklog(ingest);
-  assert.equal(fixture.database.snapshot().sessions, 2);
+  const snapshot = fixture.database.snapshot();
+  assert.equal(snapshot.sessions, 0);
+  assert.equal(snapshot.harnesses[0]?.sessions, 2);
 
   const dirty = new Promise<void>((resolve) => {
     notifyDirty = resolve;

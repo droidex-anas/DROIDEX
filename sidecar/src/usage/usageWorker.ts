@@ -85,6 +85,10 @@ async function handle(envelope: UsageWorkerEnvelope): Promise<void> {
       reply(replyPort, { ok: true, value: await reconcileOnce() });
       return;
     }
+    if (request.type === 'record-droidex-sessions') {
+      reply(replyPort, { ok: true, value: database.recordDroidexSessions(request.ids) });
+      return;
+    }
     reply(replyPort, {
       ok: true,
       value: { ...database.snapshot(), sync: syncStatus() },

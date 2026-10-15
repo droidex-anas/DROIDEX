@@ -27,6 +27,10 @@ test('usage worker owns the ledger and returns an empty snapshot', async () => {
       status: 'ready',
       sources: { jsonl: 'ready', openCode: 'ready', droid: 'ready' },
     });
+    assert.deepEqual(await client.recordDroidexSessions(['app-1', 'app-1', 'app-2']), {
+      insertedSessions: 2,
+    });
+    assert.equal((await client.snapshot()).sessions, 2);
   } finally {
     await client.close();
     await rm(directory, { recursive: true, force: true });

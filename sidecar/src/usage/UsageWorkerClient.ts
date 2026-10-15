@@ -55,6 +55,13 @@ export class UsageWorkerClient {
     return await this.call<UsageWorkerReconcileResult>({ type: 'reconcile' });
   }
 
+  async recordDroidexSessions(ids: readonly string[]): Promise<{ insertedSessions: number }> {
+    return await this.call<{ insertedSessions: number }>({
+      type: 'record-droidex-sessions',
+      ids: [...ids],
+    });
+  }
+
   close(): Promise<void> {
     this.closing ??= this.performClose();
     return this.closing;
