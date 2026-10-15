@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { ArrowRight, Check } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { Check } from '@droidex/icons';
 
 import type { OnboardingController } from '../../../hooks/useOnboarding';
 import { BrandMark } from '../../BrandMark';
+import { Button } from '../../ui/Button';
 
 // Closing cover: the welcome cover mirrored, confirming what is ready before
 // the wizard fades into the app itself.
@@ -44,51 +44,45 @@ export function DoneStep({
         <BrandMark size={34} className="text-accent" />
       </div>
       <h1
-        className="droid-rise mt-6 text-[22px] leading-snug font-semibold tracking-tight text-primary"
+        className="droid-rise mt-6 text-balance text-title text-primary"
         style={{ animationDelay: '90ms' }}
       >
         You&apos;re all set.
       </h1>
       <p
-        className="droid-rise mt-3 max-w-[320px] text-[13px] leading-relaxed text-muted"
+        className="droid-rise mt-3 max-w-xs text-body text-muted"
         style={{ animationDelay: '160ms' }}
       >
         The cockpit is yours. Open a session and give your agents something interesting to do.
       </p>
       <div
-        className="droid-rise mt-8 w-full max-w-[300px] rounded-lg border border-divider bg-surface divide-y divide-divider overflow-hidden"
+        className="droid-rise mt-8 w-full max-w-xs overflow-hidden rounded-lg bg-surface py-1"
         style={{ animationDelay: '230ms' }}
       >
         {summary.map((row) => (
-          <div key={row.label} className="flex items-center justify-between px-4 py-3">
-            <span className="text-[13px] text-secondary">{row.label}</span>
+          <div key={row.label} className="flex items-center justify-between px-4 py-2">
+            <span className="text-body text-secondary">{row.label}</span>
             {row.ok ? (
-              <Check className="w-4 h-4 text-success" strokeWidth={3} />
+              <Check className="size-icon-md text-success" />
             ) : (
-              <span className="text-[12px] text-muted">Pending</span>
+              <span className="text-caption text-muted">Pending</span>
             )}
           </div>
         ))}
       </div>
       <div className="droid-rise mt-8" style={{ animationDelay: '300ms' }}>
-        <button
+        <Button
+          variant="primary"
+          size="lg"
+          loading={finishing}
           onClick={() => {
             void finish();
           }}
           disabled={finishing}
-          className="droid-button-primary inline-flex h-10 items-center gap-2 px-5 text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
-          {finishing ? (
-            <>
-              <Spinner className="w-4 h-4 motion-safe:animate-spin-slow" /> Finishing…
-            </>
-          ) : (
-            <>
-              Start building <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </button>
-        {finishError && <p className="mt-3 text-[12px] text-danger">{finishError}</p>}
+          Start building
+        </Button>
+        {finishError && <p className="mt-3 text-body text-danger">{finishError}</p>}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft } from '@droidex/icons';
+import { ArrowLeft, type IconComponent } from '@droidex/icons';
+import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 
 // Marks the header a floating side-chat window is dragged by.
@@ -27,42 +28,40 @@ export function SideChatHeader({
 
 export function SideChatBackButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={ArrowLeft}
       onClick={onClick}
       aria-label="Back to side chat"
-      className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-elevated hover:text-primary"
-    >
-      <ArrowLeft className="h-3.5 w-3.5" />
-    </button>
+    />
   );
 }
 
 export function SideChatHeaderButton({
   label,
+  icon,
   disabled = false,
   pressed,
   onClick,
-  children,
 }: {
   label: string;
+  icon: IconComponent;
   disabled?: boolean;
   pressed?: boolean;
   onClick: () => void;
-  children: ReactNode;
 }) {
   return (
     <Tooltip label={label} placement="bottom">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={icon}
         aria-label={label}
         aria-pressed={pressed}
         disabled={disabled}
         onClick={onClick}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors enabled:hover:bg-elevated/60 enabled:hover:text-primary disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
-      >
-        {children}
-      </button>
+      />
     </Tooltip>
   );
 }
