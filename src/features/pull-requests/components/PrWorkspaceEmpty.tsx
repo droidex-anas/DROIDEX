@@ -1,3 +1,4 @@
+import { Button } from '../../../components/ui/Button';
 import { GithubAuthPromptContent } from '../../../components/environment/GithubSetupCard';
 import { useGithubAuthCodeCopy } from '../../../hooks/useGithubAuthCodeCopy';
 import { useStoreDispatch } from '../../../hooks/useStore';
@@ -21,7 +22,7 @@ function setupEmptyCopy(setup: GithubSetupController): string {
 }
 
 function EmptyCopy({ children }: { children: string }) {
-  return <p className="max-w-sm text-center text-[13px] leading-5 text-muted">{children}</p>;
+  return <p className="max-w-sm text-center text-body text-muted">{children}</p>;
 }
 
 export function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) {
@@ -34,10 +35,7 @@ export function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) 
     <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center px-8">
       <EmptyCopy>{setupEmptyCopy(setup)}</EmptyCopy>
       {setup.error && (
-        <p
-          aria-live="polite"
-          className="mt-2 max-w-sm text-center text-[12px] leading-4 text-danger"
-        >
+        <p aria-live="polite" className="mt-2 max-w-sm text-center text-caption text-danger">
           {setup.error}
         </p>
       )}
@@ -56,22 +54,13 @@ export function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) 
         </div>
       ) : (
         <div className="mt-4 flex items-center gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={setup.runPrimaryAction}
-            className="rounded-lg bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button variant="secondary" disabled={busy} onClick={setup.runPrimaryAction}>
             {setupActionLabel(setup)}
-          </button>
+          </Button>
           {canCancel && (
-            <button
-              type="button"
-              onClick={setup.cancelAuthentication}
-              className="rounded-lg px-3 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-elevated hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
-            >
+            <Button variant="ghost" onClick={setup.cancelAuthentication}>
               {setup.action === 'installing' ? 'Cancel installation' : 'Cancel sign-in'}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -108,15 +97,15 @@ export function PrWorkspaceEmpty({
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center px-8">
         <EmptyCopy>Open a workspace to see its pull requests.</EmptyCopy>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          className="mt-4"
           onClick={() => {
             void openWorkspace();
           }}
-          className="mt-4 rounded-lg bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           Open workspace
-        </button>
+        </Button>
       </div>
     );
   }
@@ -128,15 +117,15 @@ export function PrWorkspaceEmpty({
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center px-8">
         <EmptyCopy>This folder is not a GitHub repository.</EmptyCopy>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          className="mt-4"
           onClick={() => {
             void openWorkspace();
           }}
-          className="mt-4 rounded-lg bg-elevated px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         >
           Choose another workspace
-        </button>
+        </Button>
       </div>
     );
   }
@@ -147,7 +136,7 @@ export function PrWorkspaceEmpty({
 
   return (
     <div className="flex h-full min-h-0 flex-1 items-center justify-center px-8">
-      <p className="text-[13px] text-muted">Loading pull requests…</p>
+      <p className="text-body text-muted">Loading pull requests…</p>
     </div>
   );
 }

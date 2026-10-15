@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { Badge } from '../../../components/ui/Badge';
 import type { PrComment } from '../../../types/vcs';
 import { hunkLineTone, hunkLines } from '../lib/prTimeline';
 
@@ -32,14 +33,10 @@ export function ReactionChips({ reactions }: { reactions: PrComment['reactions']
             : null;
         if (!details) return null;
         return (
-          <span
-            key={reaction.content}
-            title={`${String(reaction.count)} ${details.label}`}
-            className="inline-flex items-center gap-1 rounded-full border border-divider bg-elevated/60 px-2 py-0.5 text-[12px] text-secondary"
-          >
+          <Badge key={reaction.content} title={`${String(reaction.count)} ${details.label}`}>
             <span aria-hidden="true">{details.emoji}</span>
             <span className="tabular-nums">{reaction.count}</span>
-          </span>
+          </Badge>
         );
       })}
     </div>
@@ -54,14 +51,14 @@ export function HunkPreview({ diffHunk }: { diffHunk: string }) {
     ? { lines: diffHunk.replace(/\n+$/, '').split('\n'), truncated: false }
     : hunkLines(diffHunk);
   return (
-    <div className="mt-2 overflow-hidden rounded-md border border-divider">
+    <div className="mt-2 overflow-hidden rounded-md bg-elevated/40">
       {truncated ? (
         <button
           type="button"
           onClick={() => {
             setExpanded(true);
           }}
-          className="w-full border-b border-divider bg-elevated/40 px-3 py-1 text-left text-[11px] text-muted transition-colors hover:text-primary"
+          className="w-full px-3 py-1 text-left text-caption text-muted transition-colors hover:text-primary"
         >
           Show full hunk
         </button>
@@ -75,7 +72,7 @@ export function HunkPreview({ diffHunk }: { diffHunk: string }) {
               <div
                 key={`${String(index)}-${line}`}
                 style={HUNK_TONE_STYLE[tone]}
-                className="px-3 font-mono text-[12px] leading-[1.5] whitespace-pre text-secondary"
+                className="px-3 font-mono text-code whitespace-pre text-secondary"
               >
                 {line || ' '}
               </div>

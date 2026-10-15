@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useReducedMotion } from 'framer-motion';
 import { ChevronDown, ChevronUp, MessageSquareText, Mic, MicOff, X } from 'lucide-react';
+import { Button } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { VoiceOrb } from './VoiceOrb';
@@ -42,9 +43,6 @@ interface DragBounds {
 
 /** Pinned to the corner until the bar has been measured against the window. */
 const PINNED: DragBounds = { left: 0, right: 0, top: 0, bottom: 0 };
-
-const buttonClass =
-  'cursor-pointer rounded-full p-1.5 text-secondary transition-colors hover:bg-bg/50 hover:text-primary';
 
 export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSessionId: string }) {
   const dispatch = useStoreDispatch();
@@ -144,7 +142,7 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       style={{ x, y, top: EDGE_MARGIN_PX, right: EDGE_MARGIN_PX }}
-      className="fixed z-[1150] cursor-grab active:cursor-grabbing"
+      className="fixed z-popover cursor-grab active:cursor-grabbing"
     >
       {/* The app's own panel: it anchors to the bar wherever it was dragged,
           clamps itself to the window, and closes on an outside click or
@@ -163,10 +161,10 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
           tabIndex={0}
           role="log"
           aria-label="What was said"
-          className="max-h-[220px] overflow-y-auto p-3"
+          className="max-h-56 overflow-y-auto p-3"
         >
           {lines.length === 0 ? (
-            <p className="text-[12px] text-muted">Nothing said yet.</p>
+            <p className="text-caption text-muted">Nothing said yet.</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {lines.map((line) => (
@@ -174,8 +172,8 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
                   <span
                     className={
                       line.role === 'user'
-                        ? 'max-w-[85%] rounded-lg rounded-br-[2px] bg-elevated px-2.5 py-1.5 text-[12px] leading-[1.5] text-primary'
-                        : 'block text-[12px] leading-[1.5] text-secondary'
+                        ? 'max-w-60 rounded-lg rounded-br-xs bg-elevated px-2.5 py-1.5 text-body text-primary'
+                        : 'block text-body text-secondary'
                     }
                   >
                     {line.text}
@@ -190,19 +188,19 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
       <div
         role="group"
         aria-label="Voice conversation"
-        className="flex items-center gap-0.5 rounded-full border border-divider bg-raised p-1.5 shadow-lg"
+        className="flex items-center gap-0.5 rounded-full bg-raised p-1.5 shadow-lg"
       >
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          shape="round"
+          size="sm"
+          icon={MessageSquareText}
           aria-label="Open the chat this conversation belongs to"
           title="Open the chat"
           onClick={() => {
             dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
           }}
-          className={buttonClass}
-        >
-          <MessageSquareText className="h-3.5 w-3.5" />
-        </button>
+        />
         <Hairline />
         <div className="px-1" title={status}>
           <VoiceOrb micStream={session.micStream} replyStream={session.replyStream} size={26} />
@@ -211,41 +209,43 @@ export function VoiceMiniBar({ voice, appSessionId }: { voice: Voice; appSession
           {status}
         </span>
         <Hairline />
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          shape="round"
+          size="sm"
+          icon={
+            session.muted ? (
+              <MicOff className="size-icon-sm text-danger" aria-hidden="true" />
+            ) : (
+              <Mic className="size-icon-sm" aria-hidden="true" />
+            )
+          }
           aria-label={session.muted ? 'Unmute microphone' : 'Mute microphone'}
           title={session.muted ? 'Unmute' : 'Mute'}
           aria-pressed={session.muted}
           onClick={session.toggleMuted}
-          className={buttonClass}
-        >
-          {session.muted ? (
-            <MicOff className="h-3.5 w-3.5 text-danger" />
-          ) : (
-            <Mic className="h-3.5 w-3.5" />
-          )}
-        </button>
-        <button
-          type="button"
+        />
+        <Button
+          variant="primary"
+          shape="round"
+          size="sm"
+          icon={X}
           aria-label="End voice mode"
           title="End voice mode"
           onClick={voice.close}
-          className="cursor-pointer rounded-full bg-accent p-1.5 text-bg transition-opacity hover:opacity-90"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        />
         <Hairline />
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          shape="round"
+          size="sm"
+          icon={panel ? ChevronUp : ChevronDown}
           aria-label={panel ? 'Hide what was said' : 'Show what was said'}
           title={panel ? 'Hide what was said' : 'Show what was said'}
           aria-expanded={panel}
           aria-controls={panelId}
           onClick={togglePanel}
-          className={buttonClass}
-        >
-          {panel ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
+        />
       </div>
     </motion.div>
   );
