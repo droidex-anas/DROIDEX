@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Search } from 'lucide-react';
+import { Input } from './ui/Field';
 import type { AgentKind } from '../hooks/persistedUiPreferences';
 import {
   childSettingsReadinessLabel,
@@ -168,16 +169,17 @@ export default function ModelSelectorPopover({
           {/* Model search + list */}
           <div className="flex min-h-0 flex-col px-2 pt-2 pb-2">
             <div className="flex shrink-0 items-center gap-1.5">
-              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
-                <Search className="w-3.5 h-3.5 text-muted shrink-0" />
-                <input
+              <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
+                <Search className="size-icon-sm shrink-0 text-muted" />
+                <Input
+                  variant="embedded"
                   autoFocus
                   value={query}
                   onChange={(e) => {
                     setQuery(e.target.value);
                   }}
                   placeholder="Search models"
-                  className="min-w-0 flex-1 bg-transparent text-body text-primary placeholder-muted focus:outline-none"
+                  aria-label="Search models"
                 />
               </div>
               {catOptions.length > 0 && (

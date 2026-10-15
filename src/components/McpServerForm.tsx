@@ -1,17 +1,20 @@
-import { motion } from 'framer-motion';
-import { wrapTabFocus } from '../lib/focusTrap';
-import { X } from 'lucide-react';
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type RefObject,
-} from 'react';
-import { createPortal } from 'react-dom';
+import { useId, useRef, useState } from 'react';
+import { X } from '@droidex/icons';
 
 import { parseMcpVariables } from '../lib/mcpConfig';
 import type { McpServerInput } from '../types/bridge';
+import { Dropdown } from './settingsKit';
+import { Button } from './ui/Button';
+import { Dialog, DialogActions, DialogBody, DialogTitle } from './ui/Dialog';
+import { Field, Input } from './ui/Field';
+
+type ServerType = McpServerInput['serverType'];
+
+const SERVER_TYPES: { value: ServerType; label: string }[] = [
+  { value: 'http', label: 'HTTP' },
+  { value: 'sse', label: 'SSE' },
+  { value: 'stdio', label: 'Local command' },
+];
 
 export function AddMcpServerDialog({
   disabled,
@@ -24,32 +27,14 @@ export function AddMcpServerDialog({
   onCancel: () => void;
   onAdd: (server: McpServerInput) => void;
 }) {
-  const [serverType, setServerType] = useState<'http' | 'sse' | 'stdio'>('http');
+  const [serverType, setServerType] = useState<ServerType>('http');
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
   const [argumentsText, setArgumentsText] = useState('');
   const [variablesText, setVariablesText] = useState('');
   const [error, setError] = useState<string>();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const opener = document.activeElement;
-    nameRef.current?.focus();
-    return () => {
-      if (opener instanceof HTMLElement) opener.focus();
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !disabled) onCancel();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => {
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [disabled, onCancel]);
+  const descriptionId = useId();
 
   const submit = () => {
     setError(undefined);
@@ -75,184 +60,127 @@ export function AddMcpServerDialog({
     }
   };
 
-  const trapTab = (event: ReactKeyboardEvent) => {
-    wrapTabFocus(event, dialogRef.current);
-  };
+  const shownError = error ?? serverError;
 
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.14 }}
-      className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm sm:p-6"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !disabled) onCancel();
-      }}
+  return (
+    <Dialog
+      size="form"
+      onClose={onCancel}
+      dismissible={!disabled}
+      initialFocusRef={nameRef}
+      aria-describedby={descriptionId}
+      aria-busy={disabled}
     >
-      <motion.div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-mcp-title"
-        aria-describedby="add-mcp-description"
-        aria-busy={disabled}
-        tabIndex={-1}
-        onKeyDown={trapTab}
-        initial={{ y: 14, scale: 0.98, opacity: 0 }}
-        animate={{ y: 0, scale: 1, opacity: 1 }}
-        exit={{ y: 8, scale: 0.99, opacity: 0 }}
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="max-h-[calc(100vh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-xl border border-divider bg-surface shadow-lg"
+      <form
+        className="flex min-h-0 flex-col"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
       >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <header className="flex items-start justify-between gap-5 px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
-            <div>
-              <h2
-                id="add-mcp-title"
-                className="text-[16px] font-semibold tracking-[-0.015em] text-primary"
-              >
-                Add MCP server
-              </h2>
-              <p
-                id="add-mcp-description"
-                className="mt-1 max-w-md text-[12px] leading-5 text-secondary"
-              >
-                Saved to your Droid CLI user configuration and available to new DROIDEX sessions.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={disabled}
-              aria-label="Close add MCP server"
-              className="rounded-md p-2 text-secondary transition-all duration-150 hover:bg-elevated hover:text-primary active:scale-[0.96] disabled:opacity-40"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </header>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <DialogTitle>Add MCP server</DialogTitle>
+            <p id={descriptionId} className="mt-1 text-body text-secondary">
+              Saved to your Droid CLI user configuration and available to new DROIDEX sessions.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={X}
+            onClick={onCancel}
+            disabled={disabled}
+            aria-label="Close add MCP server"
+            className="-mr-2 -mt-1"
+          />
+        </div>
 
-          <div className="border-y border-divider/70 px-5 py-5 sm:px-6">
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_160px]">
-              <Field
-                inputRef={nameRef}
-                label="Name"
+        <DialogBody className="flex flex-col gap-4">
+          <div className="flex items-start gap-4">
+            <Field label="Name" className="min-w-0 flex-1">
+              <Input
+                ref={nameRef}
                 value={name}
-                onChange={setName}
                 placeholder="sentry"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
               />
-              <label className="block text-[12px] font-medium text-secondary">
-                Type
-                <select
-                  value={serverType}
-                  onChange={(event) => {
-                    setServerType(serverTypeFromValue(event.target.value));
-                  }}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
-                >
-                  <option value="http">HTTP</option>
-                  <option value="sse">SSE</option>
-                  <option value="stdio">Local command</option>
-                </select>
-              </label>
-            </div>
-
-            <div className="mt-4">
-              <Field
-                label={serverType === 'stdio' ? 'Command' : 'URL'}
-                value={location}
-                onChange={setLocation}
-                placeholder={serverType === 'stdio' ? 'npx' : 'https://mcp.example.com/mcp'}
+            </Field>
+            <div className="flex flex-col gap-1.5">
+              <span className="select-none text-label text-secondary">Type</span>
+              <Dropdown
+                value={serverType}
+                options={SERVER_TYPES}
+                ariaLabel="Type"
+                width="w-40"
+                onChange={(value) => {
+                  setServerType(serverTypeFromValue(value));
+                }}
               />
             </div>
-
-            {serverType === 'stdio' && (
-              <TextAreaField
-                label="Arguments"
-                hint="One argument per line"
-                value={argumentsText}
-                onChange={setArgumentsText}
-                placeholder={'-y\n@example/mcp'}
-              />
-            )}
-
-            <TextAreaField
-              label={serverType === 'stdio' ? 'Environment' : 'Headers'}
-              hint="One KEY=VALUE per line"
-              value={variablesText}
-              onChange={setVariablesText}
-            />
-
-            {(error ?? serverError) && (
-              <div role="alert" className="mt-3 text-[12px] text-warning">
-                {error ?? serverError}
-              </div>
-            )}
           </div>
 
-          <footer className="flex items-center justify-end gap-2 bg-bg/30 px-5 py-4 sm:px-6">
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={disabled}
-              className="rounded-md px-3.5 py-2 text-[12px] font-medium text-secondary transition-all duration-150 hover:bg-elevated/70 hover:text-primary active:scale-[0.97] disabled:opacity-40"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={disabled}
-              className="min-w-[104px] rounded-md bg-accent px-4 py-2 text-[12px] font-semibold text-bg transition-all duration-150 hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
-            >
-              {disabled ? 'Adding…' : 'Add server'}
-            </button>
-          </footer>
-        </form>
-      </motion.div>
-    </motion.div>,
-    document.body,
+          <Field label={serverType === 'stdio' ? 'Command' : 'URL'}>
+            <Input
+              value={location}
+              placeholder={serverType === 'stdio' ? 'npx' : 'https://mcp.example.com/mcp'}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              onChange={(event) => {
+                setLocation(event.target.value);
+              }}
+            />
+          </Field>
+
+          {serverType === 'stdio' && (
+            <TextAreaField
+              label="Arguments"
+              hint="One argument per line"
+              value={argumentsText}
+              onChange={setArgumentsText}
+              placeholder={'-y\n@example/mcp'}
+            />
+          )}
+
+          <TextAreaField
+            label={serverType === 'stdio' ? 'Environment' : 'Headers'}
+            hint="One KEY=VALUE per line"
+            value={variablesText}
+            onChange={setVariablesText}
+          />
+
+          {shownError && (
+            <p role="alert" className="text-body text-danger">
+              {shownError}
+            </p>
+          )}
+        </DialogBody>
+
+        <DialogActions>
+          <Button variant="ghost" onClick={onCancel} disabled={disabled}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={disabled} disabled={disabled}>
+            Add server
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
   );
 }
 
-function serverTypeFromValue(value: string): 'http' | 'sse' | 'stdio' {
+function serverTypeFromValue(value: string): ServerType {
   if (value === 'sse' || value === 'stdio') return value;
   return 'http';
 }
 
-function Field({
-  inputRef,
-  label,
-  value,
-  placeholder,
-  onChange,
-}: {
-  inputRef?: RefObject<HTMLInputElement | null>;
-  label: string;
-  value: string;
-  placeholder?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block text-[12px] font-medium text-secondary">
-      {label}
-      <input
-        ref={inputRef}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        className="mt-1.5 h-10 w-full rounded-lg border border-divider bg-field px-3 text-[13px] text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
-      />
-    </label>
-  );
-}
-
+// Field's layout for a multi-line value: label above, hint below.
 function TextAreaField({
   label,
   hint,
@@ -266,18 +194,28 @@ function TextAreaField({
   placeholder?: string;
   onChange: (value: string) => void;
 }) {
+  const textAreaId = useId();
+  const hintId = useId();
   return (
-    <label className="mt-4 block text-[12px] font-medium text-secondary">
-      {label} <span className="font-normal text-muted">· {hint}</span>
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={textAreaId} className="select-none text-label text-secondary">
+        {label}
+      </label>
       <textarea
+        id={textAreaId}
+        aria-describedby={hintId}
         value={value}
+        rows={3}
+        placeholder={placeholder}
+        spellCheck={false}
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        rows={3}
-        placeholder={placeholder}
-        className="mt-1.5 w-full resize-none rounded-lg border border-divider bg-field px-3 py-2.5 text-[13px] leading-5 text-primary outline-none transition-colors placeholder:text-muted focus:border-divider-strong focus-visible:ring-1 focus-visible:ring-accent/30"
+        className="w-full resize-none rounded-md bg-field px-3 py-2 text-body-lg text-primary transition-colors duration-150 ease-out placeholder:text-muted hover:bg-active"
       />
-    </label>
+      <p id={hintId} className="text-caption text-muted">
+        {hint}
+      </p>
+    </div>
   );
 }

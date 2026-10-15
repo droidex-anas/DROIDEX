@@ -6,6 +6,7 @@ import type { WorkspaceScope } from '../../lib/workspaces';
 import { toast } from '../../lib/toast';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Field';
 import type { ModelInfo, ReasoningEffort, SessionSummary } from '../../types/bridge';
 import { AutomationEditor } from './AutomationEditor';
 import { AutomationList } from './AutomationList';
@@ -288,16 +289,19 @@ export function AutomationsView({
               </div>
             ) : (
               <>
-                <div className="mt-8 flex h-control-lg items-center gap-2 rounded-md bg-field px-3 text-muted transition-colors duration-150 ease-out hover:bg-active">
-                  <Search className="size-icon-sm shrink-0" />
-                  <input
+                <div className="relative mt-8">
+                  <Search
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-3 top-1/2 size-icon-sm -translate-y-1/2 text-muted"
+                  />
+                  <Input
                     value={query}
                     aria-label="Search automations"
                     onChange={(event) => {
                       setQuery(event.target.value);
                     }}
                     placeholder="Search automations"
-                    className="min-w-0 flex-1 bg-transparent text-body text-primary outline-none placeholder:text-muted"
+                    className="pl-8"
                   />
                 </div>
 

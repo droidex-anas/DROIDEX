@@ -115,15 +115,15 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
       />
 
       <GroupLabel>Finish alerts</GroupLabel>
-      <div className="mb-6 overflow-hidden rounded-xl bg-surface shadow-lg">
-        {FINISH_NOTIFICATION_TOGGLES.map(({ key, label, description, needsMaster }, index) => {
+      <div className="mb-6 divide-y divide-divider overflow-hidden rounded-xl bg-surface shadow-lg">
+        {FINISH_NOTIFICATION_TOGGLES.map(({ key, label, description, needsMaster }) => {
           const highlighted = rowMatches(label, description, highlightQuery);
           return (
             <div
               key={key}
               className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${
-                index > 0 ? 'border-t border-divider' : ''
-              } ${highlighted ? 'bg-elevated' : ''}`}
+                highlighted ? 'bg-elevated' : ''
+              }`}
             >
               <div className="min-w-0">
                 <div className="text-body text-primary">{label}</div>
@@ -145,7 +145,7 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
           );
         })}
         <div
-          className={`flex items-center justify-between gap-4 border-t border-divider px-4 py-3.5 transition-colors ${
+          className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${
             testHighlighted ? 'bg-elevated' : ''
           }`}
         >

@@ -135,7 +135,7 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
       >
         {failed ? (
           <div
-            className="flex max-w-[90vw] flex-col items-center gap-3 rounded-xl bg-raised px-6 py-5 text-muted shadow-lg"
+            className="flex max-w-full flex-col items-center gap-3 rounded-xl bg-raised px-6 py-5 text-muted shadow-lg"
             onClick={(e) => {
               e.stopPropagation();
             }}
@@ -165,8 +165,10 @@ export function ImageLightboxContent({ src, label, vector = false, onClose }: Im
               {...imageViewerContentMotion(reduceMotion)}
               className={
                 vector
-                  ? 'block h-[calc(100vh-10rem)] w-[calc(100vw-4rem)] select-none rounded-xl bg-bg object-contain p-10 shadow-lg'
-                  : 'block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-md object-contain shadow-lg'
+                  ? // eslint-disable-next-line design-policy/design-tokens -- lightbox fit: the window minus the stage's padding (pt-16 pb-24, px-8)
+                    'block h-[calc(100vh-10rem)] w-[calc(100vw-4rem)] select-none rounded-xl bg-bg object-contain p-10 shadow-lg'
+                  : // eslint-disable-next-line design-policy/design-tokens -- lightbox fit: the window minus the stage's padding (pt-16 pb-24, px-8)
+                    'block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-md object-contain shadow-lg'
               }
               onError={() => {
                 setFailed(true);

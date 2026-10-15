@@ -130,6 +130,7 @@ export function NativeBrowserSurface({
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden bg-bg">
       <div
+        // eslint-disable-next-line design-policy/design-tokens -- web page canvas: pages paint on white unless they set their own background
         className={`absolute overflow-hidden bg-white ${viewportMode === 'fit' ? '' : 'shadow-lg'}`}
         style={{
           borderRadius: radius,

@@ -73,7 +73,7 @@ function StatusBannerRow({
     <div
       role="status"
       data-testid={testId}
-      className="shrink-0 flex items-center gap-2 pr-4 py-1 min-h-8 border-b border-divider bg-elevated/60 text-[12px]"
+      className="shrink-0 flex items-center gap-2 pr-4 py-1 min-h-8 bg-elevated/60 text-body"
       style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
     >
       {createElement(icon, { className: `w-3.5 h-3.5 ${accent}` })}

@@ -12,7 +12,7 @@ import { Maximize } from '@droidex/icons';
 import type { Mermaid } from 'mermaid';
 
 import { useVisibleOnce } from '../hooks/useVisibleOnce';
-import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
+import { svgImageAlternative, svgImageSrc } from '../lib/svgMarkup';
 import { appColorScheme } from './appBlockRuntime';
 import { CardHeader, CodeCard, CodeCopyButton } from './MarkdownCode';
 import { Button } from './ui/Button';
@@ -220,14 +220,18 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
 
 export function SvgCodeBlock({ content }: { content: string }) {
   const image = useMemo(
-    () => ({ src: svgDataUrl(fitSvgMarkup(content)), alt: svgImageAlternative(content) }),
+    () => ({ src: svgImageSrc(content), alt: svgImageAlternative(content) }),
     [content],
   );
 
   return (
     <DiagramCard kind="SVG" source={content} viewLabel={image.alt} imageSrc={() => image.src}>
       {/* Capped so a tall drawing stays a preview; Expand shows it whole. */}
-      <img className="block max-h-96 w-full object-contain" src={image.src} alt={image.alt} />
+      <img
+        className="block max-h-96 w-full rounded-md object-contain"
+        src={image.src}
+        alt={image.alt}
+      />
     </DiagramCard>
   );
 }

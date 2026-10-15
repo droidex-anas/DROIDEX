@@ -175,7 +175,7 @@ function AddressBar({
 
   return (
     <form
-      className={`group mx-auto flex h-9 min-w-0 max-w-[720px] flex-1 items-center gap-2.5 rounded-full bg-elevated/60 pl-3.5 pr-1 transition-colors duration-150 ease-out hover:bg-elevated focus-within:!bg-raised motion-reduce:transition-none`}
+      className={`group mx-auto flex h-9 min-w-0 max-w-2xl flex-1 items-center gap-2.5 rounded-full bg-elevated/60 pl-3.5 pr-1 transition-colors duration-150 ease-out hover:bg-elevated focus-within:!bg-raised motion-reduce:transition-none`}
       onSubmit={(event) => {
         event.preventDefault();
         onOpen();

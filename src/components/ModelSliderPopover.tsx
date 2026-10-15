@@ -29,6 +29,7 @@ import { effortsFor, stepModel } from './ModelCatalogList';
 import useModelPicker from './useModelPicker';
 import ModelSliderCatalogList from './ModelSliderCatalogList';
 import ContextWindowMenu from './ContextWindowMenu';
+import { Input } from './ui/Field';
 import { pushEscapeLayer } from './ui/escapeStack';
 import { Tooltip } from './ui/Tooltip';
 import EffortSlider from './effortSlider/EffortSlider';
@@ -290,16 +291,17 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
 
             <div className="flex min-h-0 flex-col px-3 pt-3 pb-3">
               <div className="flex shrink-0 items-center gap-1.5">
-                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
-                  <Search className="h-3.5 w-3.5 shrink-0 text-muted" />
-                  <input
+                <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
+                  <Search className="size-icon-sm shrink-0 text-muted" />
+                  <Input
+                    variant="embedded"
                     autoFocus
                     value={query}
                     onChange={(e) => {
                       setQuery(e.target.value);
                     }}
                     placeholder="Search models"
-                    className="min-w-0 flex-1 bg-transparent text-body text-primary placeholder-muted focus:outline-none"
+                    aria-label="Search models"
                   />
                 </div>
                 {catOptions.length > 0 && (

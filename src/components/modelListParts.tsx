@@ -56,10 +56,10 @@ export function ModelListStatus({
   query: string;
 }) {
   if (!hasRealModels) {
-    return <div className="px-2 py-3 text-center text-[11px] text-muted">Loading models…</div>;
+    return <div className="px-2 py-3 text-center text-caption text-muted">Loading models…</div>;
   }
   if (!empty) return null;
   return (
-    <div className="px-2 py-3 text-center text-[11px] text-muted">No matches for “{query}”</div>
+    <div className="px-2 py-3 text-center text-caption text-muted">No matches for “{query}”</div>
   );
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fitSvgMarkup } from './svgMarkup';
+import { fitSvgMarkup, svgImageSrc } from './svgMarkup';
 
 test('the SVG root owns its namespace and scales while child shapes keep their size', () => {
   assert.equal(
@@ -17,4 +17,13 @@ test('the SVG root owns its namespace and scales while child shapes keep their s
   );
   const spacedNamespace = '<svg xmlns = "http://www.w3.org/2000/svg" viewBox="0 0 4 2"></svg>';
   assert.equal(fitSvgMarkup(spacedNamespace), spacedNamespace);
+});
+
+test('an SVG image gets a white page that its own background overrides', () => {
+  const markup = (content: string) =>
+    decodeURIComponent(svgImageSrc(content).replace('data:image/svg+xml;charset=utf-8,', ''));
+  assert.equal(
+    markup('<svg viewBox="0 0 4 2" style="background:#111"><style>svg{fill:red}</style></svg>'),
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 2" style="background:#111"><style>:where(:root){background:#fff}</style><style>svg{fill:red}</style></svg>',
+  );
 });

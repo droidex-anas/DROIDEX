@@ -615,6 +615,7 @@ function DocxPreview({ data }: { data?: Uint8Array }) {
       {loading && <PreviewBusyChip label="Rendering…" />}
       <div
         ref={containerRef}
+        // eslint-disable-next-line design-policy/design-tokens -- rendered document paper: documents are authored black on white
         className="mx-auto max-w-3xl rounded-sm bg-white p-6 text-black shadow-lg"
       />
     </div>

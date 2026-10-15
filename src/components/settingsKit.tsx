@@ -85,9 +85,11 @@ export function Dropdown({
     if (!list || !selected) return;
     selected.focus({ preventScroll: true });
     // The popover's position pass sizes the list after this effect runs, so
-    // reveal the selected option whenever the list's box settles.
+    // reveal the selected option once that pass has capped the list. Later
+    // resizes must not pull the list back from where the user scrolled it.
     const observer = new ResizeObserver(() => {
       selected.scrollIntoView({ block: 'nearest' });
+      if (list.scrollHeight > list.clientHeight) observer.disconnect();
     });
     observer.observe(list);
     return () => {

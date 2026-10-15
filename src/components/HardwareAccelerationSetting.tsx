@@ -7,6 +7,7 @@ import {
 import { relaunchApp } from '../lib/onboarding';
 import { GroupLabel } from './settingsKit';
 import { Switch } from './Switch';
+import { Button } from './ui/Button';
 
 export function HardwareAccelerationSetting() {
   if (!isHardwareAccelerationSettingAvailable()) return null;
@@ -53,11 +54,11 @@ function HardwareAccelerationSettingPanel() {
   return (
     <>
       <GroupLabel>Performance</GroupLabel>
-      <div className="mb-8 rounded-lg border border-divider bg-surface divide-y divide-divider">
+      <div className="mb-8 rounded-xl bg-surface shadow-lg divide-y divide-divider">
         <div className="flex items-start justify-between gap-5 px-4 py-4">
           <div className="min-w-0">
-            <div className="text-[13px] text-primary">Hardware acceleration</div>
-            <p className="mt-1 max-w-xl text-[11px] leading-[17px] text-muted">
+            <div className="text-body text-primary">Hardware acceleration</div>
+            <p className="mt-0.5 max-w-xl text-caption text-muted">
               Uses your GPU for smoother rendering. Turn this off if DROIDEX is blank, flickers, or
               crashes because of graphics drivers.
             </p>
@@ -70,21 +71,15 @@ function HardwareAccelerationSettingPanel() {
           />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="text-[11px] leading-[17px] text-muted">
-            Changes take effect after you restart DROIDEX.
-          </p>
+          <p className="text-caption text-muted">Changes take effect after you restart DROIDEX.</p>
           {needsRestart && (
-            <button
-              type="button"
-              onClick={() => void relaunchApp()}
-              className="px-2.5 h-7 rounded-sm bg-elevated border border-divider text-[12px] text-primary hover:border-divider-strong transition-colors"
-            >
+            <Button size="sm" onClick={() => void relaunchApp()}>
               Restart now
-            </button>
+            </Button>
           )}
         </div>
         {error && (
-          <p role="alert" className="px-4 pb-4 text-[12px] text-red-400">
+          <p role="alert" className="px-4 py-3 text-body text-danger">
             {error}
           </p>
         )}

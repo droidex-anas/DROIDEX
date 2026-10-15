@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { Pipette } from 'lucide-react';
+import { Pipette } from '@droidex/icons';
 import { Input } from './ui/Field';
 import { Popover } from './ui/Popover';
 
@@ -163,6 +163,7 @@ export function ColorPicker({
           style={{ background: 'linear-gradient(to top, #000, rgba(0,0,0,0))' }}
         />
         <span
+          // eslint-disable-next-line design-policy/design-tokens -- colour-position handle: a white ring reads on any picked colour
           className="absolute size-icon-sm -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white pointer-events-none"
           style={{
             left: `${s * 100}%`,
@@ -180,6 +181,7 @@ export function ColorPicker({
         style={{ background: HUE_GRADIENT }}
       >
         <span
+          // eslint-disable-next-line design-policy/design-tokens -- colour-position handle: a white ring reads on any hue
           className="absolute top-1/2 size-icon-md -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white pointer-events-none"
           style={{ left: `${(h / 360) * 100}%`, boxShadow: '0 0 0 1px rgba(0,0,0,0.5)' }}
         />
@@ -235,9 +237,6 @@ export function ColorPopover({
       label="Pick a color"
       placement="bottom-end"
       width={260}
-      // Portaled to <body>, so modal hosts (the theme editor's Tab trap)
-      // recognize focus inside it via this attribute instead of containment.
-      data-color-popover=""
     >
       <div className="p-3">{children}</div>
     </Popover>
@@ -282,7 +281,8 @@ export function ColorField({
           onClick={() => {
             setOpen((o) => !o);
           }}
-          className="w-8 h-8 rounded-md border border-divider cursor-pointer hover:border-divider-strong transition-colors"
+          // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
+          className="size-control-md rounded-md border border-divider transition-colors hover:border-divider-strong"
           style={{ backgroundColor: value }}
           title="Pick color"
         />

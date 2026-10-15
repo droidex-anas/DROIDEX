@@ -123,7 +123,7 @@ export function PullRequestsView() {
 
   return (
     <PrWorkspace>
-      <div className="flex h-full min-h-0 w-[360px] shrink-0 flex-col">
+      <div className="flex h-full min-h-0 w-pr-inbox shrink-0 flex-col">
         <PrInbox
           prs={list.prs}
           viewerLogin={list.viewerLogin}

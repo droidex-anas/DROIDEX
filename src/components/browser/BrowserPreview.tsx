@@ -77,7 +77,7 @@ export function BrowserPreview({
     // it takes no room until there is a picture.
     <div
       ref={boxRef}
-      className={`relative overflow-hidden bg-elevated ${frame ? 'aspect-[16/10]' : ''}`}
+      className={`relative overflow-hidden bg-elevated ${frame ? 'aspect-browser' : ''}`}
     >
       <div
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"

@@ -346,7 +346,7 @@ function McpServerCard({
         )}
       </div>
       {expanded && (
-        <div className="ml-6 mt-3 border-l border-divider pl-4">
+        <div className="ml-6 mt-3 pl-4">
           {server.error && <div className="mb-3 text-caption text-warning">{server.error}</div>}
           {tools.length === 0 ? (
             <div className="py-1 text-caption text-muted">No tools reported.</div>

@@ -2,6 +2,7 @@ import { ChevronDown, Search } from 'lucide-react';
 import { X } from '@droidex/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Field';
 import { Popover } from '../../components/ui/Popover';
 import ModelCatalogList from '../../components/ModelCatalogList';
 import { isDroidCoreModel } from '../../components/modelCategories';
@@ -194,9 +195,10 @@ export function AutomationModelPicker({
             </div>
 
             <div className="px-4 pb-3 pt-2">
-              <div className="flex h-9 items-center gap-2 rounded-md bg-field px-3 text-muted">
+              <div className="flex h-control-lg items-center gap-2 rounded-md bg-field px-3 text-muted">
                 <Search className="size-icon-sm shrink-0" />
-                <input
+                <Input
+                  variant="embedded"
                   autoFocus
                   value={query}
                   aria-label="Search models"
@@ -204,7 +206,6 @@ export function AutomationModelPicker({
                     setQuery(event.target.value);
                   }}
                   placeholder="Search models"
-                  className="min-w-0 flex-1 bg-transparent text-body text-primary outline-none placeholder:text-muted/65"
                 />
               </div>
 

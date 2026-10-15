@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Input } from '../../components/ui/Field';
 import { Popover } from '../../components/ui/Popover';
 import {
   LARGE_LIST_THRESHOLD,
@@ -211,9 +212,10 @@ export function SelectMenu<Value extends string>({
       >
         <div className="flex min-h-0 flex-col" onKeyDown={onListKeyDown}>
           {searchable && (
-            <div className="m-2.5 flex h-9 items-center gap-2 rounded-md bg-field px-3 text-muted">
+            <div className="m-2.5 flex h-control-lg items-center gap-2 rounded-md bg-field px-3 text-muted">
               <Search className="size-icon-sm shrink-0" />
-              <input
+              <Input
+                variant="embedded"
                 value={query}
                 aria-label={`Search ${ariaLabel ?? placeholder} options`}
                 onChange={(event) => {
@@ -223,7 +225,6 @@ export function SelectMenu<Value extends string>({
                   if (listRef.current) listRef.current.scrollTop = 0;
                 }}
                 placeholder="Search"
-                className="min-w-0 flex-1 bg-transparent text-body text-primary outline-none placeholder:text-muted"
               />
             </div>
           )}

@@ -9,7 +9,7 @@ export function PanelSkeleton({ title }: { title: string }) {
       aria-label={`Loading ${title}`}
       className="flex h-full min-h-0 flex-col overflow-hidden bg-bg"
     >
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-divider px-3">
+      <div className="flex h-9 shrink-0 items-center gap-2 px-3">
         <SkeletonLine width="28%" height="h-3.5" />
       </div>
       <div className="flex-1 space-y-3 overflow-hidden p-4">
@@ -29,7 +29,7 @@ export function UtilityPaneSkeleton() {
       aria-label="Loading utility workspace"
       className="flex h-full min-h-0 flex-col overflow-hidden bg-bg"
     >
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-divider px-2">
+      <div className="flex h-9 shrink-0 items-center gap-2 px-2">
         <SkeletonLine width="18%" height="h-7" />
         <SkeletonLine width="18%" height="h-7" />
       </div>
@@ -45,7 +45,7 @@ export function UtilityPaneSkeleton() {
 export function SettingsPanelSkeleton() {
   return (
     <div role="status" aria-label="Loading settings" className="flex min-h-0 flex-1 bg-bg">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-divider p-4 space-y-3">
+      <aside className="flex w-60 shrink-0 flex-col bg-surface/40 p-4 space-y-3">
         <SkeletonLine width="60%" />
         <SkeletonLine width="80%" />
         <SkeletonLine width="70%" />
@@ -66,9 +66,9 @@ export function CommandPaletteSkeleton() {
     <div
       role="status"
       aria-label="Loading command palette"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[18vh]"
+      className="fixed inset-0 z-dialog flex items-center justify-center bg-bg/60 p-4"
     >
-      <div className="w-full max-w-xl rounded-xl border border-divider bg-raised p-4 shadow-lg">
+      <div className="w-full max-w-palette rounded-2xl bg-raised p-4 shadow-lg">
         <SkeletonLine width="100%" height="h-10" />
         <div className="mt-3 space-y-2">
           <SkeletonLine width="88%" height="h-8" />
@@ -102,12 +102,12 @@ export function MissionControlSkeleton() {
     <div role="status" aria-label="Loading mission control" className="flex h-full flex-col p-6">
       <SkeletonLine width="36%" height="h-5" />
       <div className="mt-6 grid flex-1 grid-cols-2 gap-4">
-        <div className="rounded-lg border border-divider p-4 space-y-3">
+        <div className="rounded-xl bg-surface p-4 space-y-3">
           <SkeletonLine width="54%" />
           <SkeletonLine width="88%" />
           <SkeletonLine width="72%" />
         </div>
-        <div className="rounded-lg border border-divider p-4 space-y-3">
+        <div className="rounded-xl bg-surface p-4 space-y-3">
           <SkeletonLine width="48%" />
           <SkeletonLine width="80%" />
           <SkeletonLine width="66%" />
@@ -120,7 +120,7 @@ export function MissionControlSkeleton() {
 export function PullRequestsSkeleton() {
   return (
     <div role="status" aria-label="Loading pull requests" className="flex h-full flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-divider px-4">
+      <div className="flex h-12 shrink-0 items-center gap-3 px-4">
         <SkeletonLine width="24%" height="h-4" />
       </div>
       <div className="flex-1 space-y-3 p-4">

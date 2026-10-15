@@ -96,7 +96,7 @@ function ModelCatalogList({
   const rowProps = { pick, provider, disabled, reasoningLocked, showReasoning };
 
   return (
-    <div ref={scrollRef} className="mt-2 max-h-[200px] min-h-0 overflow-y-auto -mx-1 px-1">
+    <div ref={scrollRef} className="mt-2 max-h-52 min-h-0 overflow-y-auto -mx-1 px-1">
       <div
         role="listbox"
         aria-label="Models"
@@ -173,7 +173,7 @@ const ModelRow = memo(function ModelRow({
         e.stopPropagation();
         pick(id, stepEffort(efforts, shown, delta));
       }}
-      className={`w-4 shrink-0 text-[11px] text-secondary hover:text-primary transition-opacity ${
+      className={`w-4 shrink-0 text-caption text-secondary hover:text-primary transition-opacity ${
         selected && canStep ? '' : 'opacity-0 pointer-events-none'
       }`}
     >
@@ -220,7 +220,7 @@ const ModelRow = memo(function ModelRow({
           <DroidProxyMark size={13} />
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-primary">
+      <span className="min-w-0 flex-1 truncate text-body-strong text-primary">
         {shortModelName(label)}
       </span>
       {offersReasoning && (
@@ -241,7 +241,7 @@ const ModelRow = memo(function ModelRow({
                     e.stopPropagation();
                     pick(id, effort);
                   }}
-                  className={`w-2.5 h-2.5 rounded-[3px] ${dotFill(filled, selected, ultra)} ${
+                  className={`h-2.5 w-2.5 rounded-xs ${dotFill(filled, selected, ultra)} ${
                     disabled || reasoningLocked ? 'cursor-not-allowed' : ''
                   }`}
                   style={{
@@ -257,7 +257,7 @@ const ModelRow = memo(function ModelRow({
           </span>
           {arrow(1)}
           <span
-            className={`w-[62px] shrink-0 text-[12px] capitalize truncate ${effortWordTone(selected, ultra)}`}
+            className={`w-16 shrink-0 text-label capitalize truncate ${effortWordTone(selected, ultra)}`}
           >
             {shown === undefined ? 'Default' : reasoningEffortLabel(shown, provider)}
           </span>
