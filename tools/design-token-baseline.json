@@ -121,18 +121,11 @@
   "src/components/ThemePreview.tsx": {
     "arbitrary-value": 20
   },
-  "src/components/TurnChangesPanel.tsx": {
-    "arbitrary-value": 4
-  },
   "src/components/UnreadFilterActions.tsx": {
     "arbitrary-value": 2
   },
   "src/components/WelcomeScreen.tsx": {
     "arbitrary-value": 8
-  },
-  "src/components/WorktreeCreatedCard.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 2
   },
   "src/components/WorktreeRemovalDialog.tsx": {
     "arbitrary-value": 16,
