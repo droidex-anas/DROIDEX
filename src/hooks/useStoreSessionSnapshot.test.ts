@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reducer, initialState } from './useStore';
 import type { AppState } from './useStore';
-import { loadSessionSnapshot, saveSessionSnapshot } from '../lib/sessionSnapshot';
-import { withLocalStorageMap } from '../test/localStorage';
+import { persistStoreChanges } from './storePersistence';
+import { saveTabStrip } from '../features/tabs/tabStorage';
+import { saveSessionSnapshot } from '../lib/sessionSnapshot';
+import { withLocalStorageMap, withLocalStorageMapAsync } from '../test/localStorage';
 import { sessionSummary } from '../test/sessionSummary';
 
 const summary = (id: string, updatedAt = 1) =>
@@ -81,33 +83,46 @@ test('the active session id is cleared when pruned and kept when confirmed', () 
   }
 });
 
-test('a restart keeps an open chat that no list covers, such as one outside the listed folders', () => {
-  const listed = reducer(initialState as unknown as AppState, {
-    type: 'SESSION_LIST',
-    sessions: [summary('kept', 2)],
+// The store reads storage once, when its module loads, so a restart is a fresh
+// import over the storage the previous run wrote.
+async function relaunchStore(storage: Map<string, string>): Promise<typeof import('./useStore')> {
+  let store: typeof import('./useStore') | undefined;
+  await withLocalStorageMapAsync(storage, async () => {
+    const url = new URL(`./useStore.tsx?relaunch=${crypto.randomUUID()}`, import.meta.url);
+    store = (await import(url.href)) as typeof import('./useStore');
   });
-  const updated = reducer(listed, {
-    type: 'SESSION_UPDATED',
-    session: { ...summary('thread', 3), cwd: '/outside-the-workspaces' },
-  });
-  const beforeRestart = reducer(updated, { type: 'SESSION_LIST', sessions: [summary('kept', 2)] });
+  assert.ok(store);
+  return store;
+}
 
-  let snapshot: ReturnType<typeof loadSessionSnapshot>;
-  withLocalStorageMap({}, () => {
-    saveSessionSnapshot(beforeRestart);
-    snapshot = loadSessionSnapshot();
+test('a restart reopens the chat and tab that were open, including ones the first list omits', async () => {
+  const outside = { ...summary('thread', 3), cwd: '/outside-the-workspaces' };
+  let state = reducer(initialState, { type: 'REVEAL_EARLIER_SESSIONS', executionCwds: ['/repo'] });
+  state = reducer(state, { type: 'SESSION_LIST', sessions: [summary('kept', 2)] });
+  state = reducer(state, { type: 'SESSION_UPDATED', session: outside });
+  state = reducer(state, { type: 'SESSION_LIST', sessions: [summary('kept', 2)] });
+  state = reducer(state, { type: 'SET_ACTIVE_SESSION', id: 'thread' });
+  const storage = new Map<string, string>();
+  withLocalStorageMap(storage, () => {
+    // Node reads as an embedded copy, which never saves tabs, so save them directly.
+    persistStoreChanges(initialState, state);
+    saveTabStrip(state);
+    saveSessionSnapshot(state);
   });
-  assert.ok(snapshot);
-  const relaunched: AppState = {
-    ...(initialState as unknown as AppState),
-    sessions: snapshot.sessions,
-    sessionOrder: snapshot.sessionOrder,
-    listConfirmedSessionIds: snapshot.listConfirmedSessionIds,
-    activeAppSessionId: 'thread',
-  };
-  const next = reducer(relaunched, { type: 'SESSION_LIST', sessions: [summary('kept', 4)] });
+
+  const relaunched = await relaunchStore(storage);
+  // The first request reveals the same folders, so it covers what the last list confirmed.
+  assert.deepEqual(relaunched.initialState.revealEarlierCwds, ['/repo']);
+  const next = relaunched.reducer(relaunched.initialState, {
+    type: 'SESSION_LIST',
+    sessions: [summary('kept', 4)],
+    earlierSessionsByCwd: {},
+  });
   assert.equal(next.activeAppSessionId, 'thread');
-  assert.deepEqual(next.sessionOrder, ['kept', 'thread']);
+  assert.deepEqual(
+    next.tabStrip.tabs.map((tab) => tab.page),
+    [{ kind: 'chat', appSessionId: 'thread' }],
+  );
 });
 
 test('a later SESSION_LIST drops rows the previous list confirmed but it omits', () => {

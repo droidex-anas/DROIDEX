@@ -104,6 +104,14 @@ export function removeWorkspaceCwd(existing: string[], cwd: string): string[] {
   return next.length === existing.length ? existing : next;
 }
 
+// The array is the session list's re-request trigger, so revealing folders
+// that are already revealed returns the same one.
+export function withRevealedCwds(revealed: string[], executionCwds: readonly string[]): string[] {
+  const next = new Set(revealed);
+  for (const cwd of executionCwds) next.add(cwd);
+  return next.size === revealed.length ? revealed : [...next];
+}
+
 function repositoryWorkspaceCwd(cwd: string): string {
   const marker = /[\\/]\.worktrees[\\/]/.exec(cwd);
   return marker ? cwd.slice(0, marker.index) : cwd;

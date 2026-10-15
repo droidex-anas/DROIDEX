@@ -14,6 +14,8 @@
 import type { BridgeFeature, SessionSummary, TranscriptEvent } from '../types/bridge';
 
 const SESSION_SNAPSHOT_STORAGE_KEY = 'droid-session-snapshot-v2';
+// Nothing reads it; a v2 write clears what earlier builds left behind.
+const OBSOLETE_SESSION_SNAPSHOT_STORAGE_KEY = 'droid-session-snapshot-v1';
 export const MAX_SNAPSHOT_SESSIONS = 200;
 export const MAX_SNAPSHOT_SUMMARY_BYTES = 512 * 1024;
 export const MAX_SNAPSHOT_TRANSCRIPT_EVENTS = 40;
@@ -239,7 +241,9 @@ export function saveSessionSnapshot({
         payload.transcript = { appSessionId: activeTranscript.appSessionId, events };
       }
     }
-    getLocalStorage()?.setItem(SESSION_SNAPSHOT_STORAGE_KEY, JSON.stringify(payload));
+    const storage = getLocalStorage();
+    storage?.setItem(SESSION_SNAPSHOT_STORAGE_KEY, JSON.stringify(payload));
+    storage?.removeItem(OBSOLETE_SESSION_SNAPSHOT_STORAGE_KEY);
   } catch {
     /* ignore */
   }
