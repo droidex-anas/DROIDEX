@@ -1,27 +1,9 @@
 {
-  "src/components/ColorPicker.tsx": {
-    "border-width": 5,
-    "palette-color": 2
-  },
   "src/components/ConversationList.tsx": {
     "arbitrary-value": 2
   },
   "src/components/ConversationTimeline.tsx": {
     "arbitrary-value": 1
-  },
-  "src/components/HardwareAccelerationSetting.tsx": {
-    "arbitrary-value": 7,
-    "border-width": 5,
-    "palette-color": 1
-  },
-  "src/components/McpServerForm.tsx": {
-    "arbitrary-value": 20,
-    "border-width": 13,
-    "focus-ring": 3,
-    "palette-color": 1
-  },
-  "src/components/McpServersSettings.tsx": {
-    "border-width": 2
   },
   "src/components/MissionControl.tsx": {
     "arbitrary-value": 50,
@@ -36,43 +18,18 @@
     "arbitrary-value": 2,
     "border-width": 2
   },
-  "src/components/NotificationsSettings.tsx": {
-    "border-width": 4
-  },
   "src/components/RuntimeStatusBanner.tsx": {
     "arbitrary-value": 1,
     "border-width": 2
   },
-  "src/components/SettingsPanel.tsx": {
-    "border-width": 4
-  },
   "src/components/SidebarSessionRow.tsx": {
     "border-width": 2
-  },
-  "src/components/ThemeEditor.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 16,
-    "palette-color": 1
-  },
-  "src/components/ThemePresetCard.tsx": {
-    "arbitrary-value": 10,
-    "border-width": 14,
-    "uppercase": 1
-  },
-  "src/components/ThemePreview.tsx": {
-    "arbitrary-value": 20
   },
   "src/components/UnreadFilterActions.tsx": {
     "arbitrary-value": 2
   },
   "src/components/WelcomeScreen.tsx": {
     "arbitrary-value": 8
-  },
-  "src/components/WorktreeSettingsRow.tsx": {
-    "border-width": 2
-  },
-  "src/components/WorktreesSettings.tsx": {
-    "border-width": 2
   },
   "src/components/agents/AgentSummaryLine.tsx": {
     "arbitrary-value": 1

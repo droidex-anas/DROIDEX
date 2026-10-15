@@ -112,7 +112,7 @@ function ConversationList({
   onOpenChat: (appSessionId: string) => void;
 }) {
   return (
-    <div className="ml-6 mt-2 border-l border-divider pl-2.5">
+    <div className="ml-6 mt-2 pl-2.5">
       {linkedSessions.map((session) => (
         <motion.button
           key={session.appSessionId}

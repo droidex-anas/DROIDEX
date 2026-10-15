@@ -407,7 +407,7 @@ export function WorktreesSettings() {
                         return next;
                       });
                     }}
-                    className="flex w-full items-center justify-center border-t border-divider px-3 py-2.5 text-label text-muted transition-colors duration-150 hover:bg-elevated hover:text-primary active:bg-active"
+                    className="flex w-full items-center justify-center px-3 py-2.5 text-label text-muted transition-colors duration-150 hover:bg-elevated hover:text-primary active:bg-active"
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.span

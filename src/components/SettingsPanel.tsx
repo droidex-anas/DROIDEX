@@ -944,7 +944,7 @@ export default function SettingsPanel() {
   return (
     <>
       {/* Left nav */}
-      <aside className="w-60 shrink-0 border-r border-divider flex flex-col bg-surface/40">
+      <aside className="w-60 shrink-0 flex flex-col bg-surface/40">
         {/* Traffic-light clearance */}
         <div data-electron-drag-region className="h-9 shrink-0" />
         <button
@@ -954,28 +954,32 @@ export default function SettingsPanel() {
           <ChevronLeft aria-hidden="true" className="size-icon-md" /> Back to app
         </button>
         <div className="px-2 pb-3">
-          <div className="flex h-control-lg items-center gap-2 rounded-md bg-field px-3 transition-colors duration-150 ease-out hover:bg-active focus-within:ring-1.5 focus-within:ring-focus-ring">
-            <Search aria-hidden="true" className="size-icon-sm shrink-0 text-muted" />
-            <input
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 size-icon-sm -translate-y-1/2 text-muted"
+            />
+            <Input
               aria-label="Search settings"
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
               }}
               placeholder="Search settings…"
-              className="w-full bg-transparent text-body text-primary outline-none placeholder:text-muted"
+              className="pl-8 pr-9"
             />
             {q ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => {
-                  setQuery('');
-                }}
-                className="-mr-1.5 grid size-control-sm shrink-0 place-items-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary"
-              >
-                <X aria-hidden="true" className="size-icon-sm" />
-              </button>
+              <span className="absolute inset-y-0 right-1 flex items-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={X}
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setQuery('');
+                  }}
+                />
+              </span>
             ) : null}
           </div>
         </div>
