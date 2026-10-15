@@ -134,7 +134,7 @@ export function UserBubble({
     <div className="group/msg flex flex-col items-end gap-1.5">
       {event.spoken && <SpokenMark />}
       {hasAttachments && (
-        <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
+        <div className="flex max-w-bubble flex-wrap justify-end gap-1.5">
           {browserRefs.map((reference) => (
             <BrowserReferenceChip key={`${reference.kind}:${reference.id}`} reference={reference} />
           ))}
@@ -158,8 +158,8 @@ export function UserBubble({
         </div>
       )}
       {hasPrompt && (
-        <div className="relative min-w-0 max-w-[80%]">
-          <div className="min-w-0 rounded-xl rounded-br-xs bg-[var(--prompt-bubble-bg,var(--elevated))] px-4 py-2.5 text-prose text-primary">
+        <div className="relative min-w-0 max-w-bubble">
+          <div className="min-w-0 rounded-xl rounded-br-xs bg-prompt-bubble px-4 py-2.5 text-prose text-primary">
             {display.text ? <ClampedPrompt source={display.text} chips={chips} /> : chips}
           </div>
           {/* The pending preview of a first message has no ts, and no actions yet;

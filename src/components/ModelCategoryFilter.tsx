@@ -67,7 +67,7 @@ export default function ModelCategoryFilter({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-lg border border-divider bg-raised p-1 shadow-md"
+            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-lg bg-raised p-1.5 shadow-lg"
           >
             {options.map((option) => {
               const on = option.value === selected;
@@ -79,7 +79,7 @@ export default function ModelCategoryFilter({
                     onSelect(option.value);
                     onOpenChange(false);
                   }}
-                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body transition-colors ${
                     on ? 'bg-surface text-primary' : 'text-secondary hover:bg-surface/60'
                   }`}
                 >
@@ -89,7 +89,7 @@ export default function ModelCategoryFilter({
                     )}
                   </span>
                   <span className="flex-1">{option.label}</span>
-                  <span className="text-[11px] tabular-nums text-muted">{option.count}</span>
+                  <span className="text-caption tabular-nums text-muted">{option.count}</span>
                 </button>
               );
             })}

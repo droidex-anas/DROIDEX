@@ -27,7 +27,7 @@ export function AgentSummaryLine({
         <span
           data-testid="agent-progress"
           data-percent={percent}
-          className="block h-full rounded-full bg-success motion-safe:transition-[width] motion-safe:duration-500"
+          className="block h-full rounded-full bg-success motion-safe:transition-all motion-safe:duration-500"
           style={{ width: `${String(percent)}%` }}
         />
       </span>

@@ -215,7 +215,7 @@ export const SessionRow = memo(function SessionRow({
           onBlur={(e) => {
             if (!renameHandled.current) onRenameCommit(session.appSessionId, e.currentTarget.value);
           }}
-          className="min-w-0 flex-1 rounded-sm bg-elevated px-1.5 py-0.5 text-body text-primary outline-none ring-1.5 ring-focus-ring"
+          className="min-w-0 flex-1 rounded-sm bg-elevated px-1.5 py-0.5 text-body text-primary"
         />
       </div>
     );

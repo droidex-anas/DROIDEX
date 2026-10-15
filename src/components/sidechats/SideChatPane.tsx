@@ -79,7 +79,7 @@ export function SideChatPane({
           </span>
         </SideChatHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-elevated px-3.5 py-2 text-prose text-primary">
+          <p className="ml-auto w-fit max-w-bubble whitespace-pre-wrap break-words rounded-xl bg-elevated px-3.5 py-2 text-prose text-primary">
             {view.prompt}
           </p>
         </div>

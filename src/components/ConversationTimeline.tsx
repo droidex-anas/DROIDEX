@@ -103,10 +103,10 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   };
 
   return (
-    <div className="pointer-events-none absolute left-1 top-1/2 z-10 hidden -translate-y-1/2 lg:block">
+    <div className="pointer-events-none absolute inset-y-24 left-1 z-10 hidden items-center lg:flex">
       <div
         ref={railRef}
-        className="no-scrollbar pointer-events-auto flex max-h-[68vh] flex-col items-start gap-2.5 overflow-y-auto py-1 pl-2 pr-3"
+        className="no-scrollbar pointer-events-auto flex max-h-full flex-col items-start gap-2.5 overflow-y-auto py-1 pl-2 pr-3"
       >
         {anchors.map((a) => {
           const active = a.id === activeId;

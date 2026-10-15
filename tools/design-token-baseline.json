@@ -1,76 +1,8 @@
 {
-  "src/components/ConversationList.tsx": {
-    "arbitrary-value": 2
-  },
-  "src/components/ConversationTimeline.tsx": {
-    "arbitrary-value": 1
-  },
   "src/components/MissionControl.tsx": {
     "arbitrary-value": 50,
     "border-width": 19,
     "palette-color": 1,
     "uppercase": 6
-  },
-  "src/components/ModelCatalogList.tsx": {
-    "arbitrary-value": 6
-  },
-  "src/components/ModelCategoryFilter.tsx": {
-    "arbitrary-value": 2,
-    "border-width": 2
-  },
-  "src/components/RuntimeStatusBanner.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 2
-  },
-  "src/components/SidebarSessionRow.tsx": {
-    "border-width": 2
-  },
-  "src/components/UnreadFilterActions.tsx": {
-    "arbitrary-value": 2
-  },
-  "src/components/WelcomeScreen.tsx": {
-    "arbitrary-value": 8
-  },
-  "src/components/agents/AgentSummaryLine.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/browser/BrowserPreview.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/browser/BrowserToolbar.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/browser/NativeBrowserSurface.tsx": {
-    "palette-color": 1
-  },
-  "src/components/chat.tsx": {
-    "arbitrary-value": 3,
-    "border-width": 2
-  },
-  "src/components/files/FilePreviewPane.tsx": {
-    "palette-color": 2
-  },
-  "src/components/media/ImageLightboxContent.tsx": {
-    "arbitrary-value": 5
-  },
-  "src/components/modelListParts.tsx": {
-    "arbitrary-value": 2
-  },
-  "src/components/sidechats/SideChatPane.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/components/skeletons/WorkspaceSkeletons.tsx": {
-    "arbitrary-value": 1,
-    "border-width": 14,
-    "palette-color": 1
-  },
-  "src/components/transcript/UserBubble.tsx": {
-    "arbitrary-value": 3
-  },
-  "src/features/pull-requests/PullRequestsView.tsx": {
-    "arbitrary-value": 1
-  },
-  "src/features/pull-requests/components/PrCollapse.tsx": {
-    "arbitrary-value": 3
   }
 }
