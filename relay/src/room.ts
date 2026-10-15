@@ -1,9 +1,15 @@
 import {
   claimProof,
+  decodeProfilePayload,
   fingerprint,
   hostProof,
   isRecord,
+  MAX_PROFILE_PAYLOAD_LENGTH,
   MAX_RELAY_FRAME_BYTES,
+  profileChallengeProof,
+  profilePublishProof,
+  profileRevokeProof,
+  profileShareProof,
   publicKey,
   randomNonce,
   verifyIdentity,
@@ -35,10 +41,22 @@ interface ClaimChallenge {
   expiresAt: number;
 }
 
+interface ProfileChallenge extends ClaimChallenge {
+  used: boolean;
+}
+
+interface StoredProfile {
+  payload: string;
+  signature: string;
+}
+
 const locked = () => Response.json({ status: 'locked' }, { status: 403 });
+const conflict = () => Response.json({ status: 'conflict' }, { status: 409 });
+const missing = () => Response.json({ status: 'not-found' }, { status: 404 });
 const encode = (message: unknown) => JSON.stringify(message);
 const encoder = new TextEncoder();
 const bytes = (message: string) => encoder.encode(message).byteLength;
+const MAX_PROFILE_MUTATION_BYTES = MAX_PROFILE_PAYLOAD_LENGTH * 2 + 4096;
 
 function isPeerAttachment(value: unknown): value is Peer {
   return (
@@ -61,7 +79,11 @@ function isPeerAttachment(value: unknown): value is Peer {
   );
 }
 
-async function smallBody(request: Request): Promise<unknown> {
+async function smallBody(request: Request, maxBytes = 4096): Promise<unknown> {
+  const declaredLength = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new Error('Request too large');
+  }
   const reader = request.body?.getReader();
   if (!reader) throw new Error('Missing request');
   const chunks: Uint8Array[] = [];
@@ -70,7 +92,7 @@ async function smallBody(request: Request): Promise<unknown> {
     const next = await reader.read();
     if (next.done) break;
     length += next.value.byteLength;
-    if (length > 4096) {
+    if (length > maxBytes) {
       await reader.cancel();
       throw new Error('Request too large');
     }
@@ -87,14 +109,18 @@ async function smallBody(request: Request): Promise<unknown> {
 
 export class RelayRoom {
   private owner: Owner | undefined;
+  private profile: StoredProfile | undefined;
   private peers = new Map<RelaySocket, Peer>();
   private alarmAt: number | null = null;
 
   constructor(private state: ObjectState) {
     state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     void state.blockConcurrencyWhile(async () => {
-      this.owner = await state.storage.get<Owner>('owner');
-      this.alarmAt = await state.storage.getAlarm();
+      [this.owner, this.profile, this.alarmAt] = await Promise.all([
+        state.storage.get<Owner>('owner'),
+        state.storage.get<StoredProfile>('profile'),
+        state.storage.getAlarm(),
+      ]);
       for (const socket of state.getWebSockets()) {
         const attachment = socket.deserializeAttachment();
         if (isPeerAttachment(attachment)) this.peers.set(socket, attachment);
@@ -139,17 +165,50 @@ export class RelayRoom {
       };
       return new Response(null, response);
     }
+    if (path[4] === 'profile' && request.method === 'GET') {
+      return this.publicProfile(handle);
+    }
+    if (path[4] === 'profile' && (request.method === 'POST' || request.method === 'DELETE')) {
+      try {
+        const body = await smallBody(request, MAX_PROFILE_MUTATION_BYTES);
+        return await this.state.blockConcurrencyWhile(() =>
+          this.mutateProfile(request.method, handle, body),
+        );
+      } catch {
+        return locked();
+      }
+    }
     if (request.method !== 'POST') return locked();
-    if (path[4] === 'profile-key') {
+    if (path[4] === 'profile-challenge') {
       try {
         const body = await smallBody(request);
-        const candidate = publicKey(isRecord(body) ? body.publicKey : undefined);
-        const candidateFingerprint = await fingerprint(candidate);
-        const owner = this.owner;
-        const valid = owner?.handle === handle && candidateFingerprint === owner.fingerprint;
-        return Response.json({ valid });
+        if (
+          !isRecord(body) ||
+          typeof body.nonce !== 'string' ||
+          !/^[A-Za-z0-9_-]{43}$/.test(body.nonce) ||
+          typeof body.signature !== 'string' ||
+          this.owner?.handle !== handle ||
+          !(await verifyIdentity(
+            this.owner.key,
+            profileChallengeProof(handle, body.nonce),
+            body.signature,
+          ))
+        ) {
+          return locked();
+        }
+        return await this.state.blockConcurrencyWhile(async () => {
+          const challenges = (
+            (await this.state.storage.get<ProfileChallenge[]>('profileChallenges')) ?? []
+          ).filter((item) => item.expiresAt > Date.now());
+          if (challenges.length >= 8 || challenges.some((item) => item.nonce === body.nonce)) {
+            return locked();
+          }
+          const challenge = { nonce: body.nonce, expiresAt: Date.now() + 60_000, used: false };
+          await this.state.storage.put('profileChallenges', [...challenges, challenge]);
+          return Response.json({ challenge: challenge.nonce });
+        });
       } catch {
-        return Response.json({ valid: false });
+        return locked();
       }
     }
     try {
@@ -192,6 +251,89 @@ export class RelayRoom {
         await this.state.storage.put('owner', this.owner);
         return Response.json({ status: 'claimed' });
       });
+    } catch {
+      return locked();
+    }
+  }
+
+  private publicProfile(handle: string): Response {
+    if (this.owner?.handle !== handle || !this.profile) return missing();
+    return Response.json({
+      payload: this.profile.payload,
+      publicKey: this.owner.key,
+      signature: this.profile.signature,
+    });
+  }
+
+  private async mutateProfile(method: string, handle: string, body: unknown): Promise<Response> {
+    try {
+      if (
+        !isRecord(body) ||
+        typeof body.challenge !== 'string' ||
+        !/^[A-Za-z0-9_-]{43}$/.test(body.challenge) ||
+        typeof body.authorization !== 'string'
+      ) {
+        return locked();
+      }
+      const owner = this.owner;
+      if (owner?.handle !== handle) return locked();
+      const challenges =
+        (await this.state.storage.get<ProfileChallenge[]>('profileChallenges')) ?? [];
+      const validChallenge = challenges.some(
+        (item) => !item.used && item.nonce === body.challenge && item.expiresAt > Date.now(),
+      );
+      await this.state.storage.put(
+        'profileChallenges',
+        challenges
+          .filter((item) => item.expiresAt > Date.now())
+          .map((item) => (item.nonce === body.challenge ? { ...item, used: true } : item)),
+      );
+      if (!validChallenge) return locked();
+
+      if (method === 'DELETE') {
+        if (
+          typeof body.currentPayload !== 'string' ||
+          body.currentPayload !== this.profile?.payload
+        ) {
+          return conflict();
+        }
+        if (
+          !(await verifyIdentity(
+            owner.key,
+            profileRevokeProof(handle, body.challenge, body.currentPayload),
+            body.authorization,
+          ))
+        ) {
+          return locked();
+        }
+        this.profile = undefined;
+        await this.state.storage.delete('profile');
+        return Response.json({ status: 'revoked' });
+      }
+
+      const currentPayload = body.currentPayload;
+      if (
+        (currentPayload !== null && typeof currentPayload !== 'string') ||
+        currentPayload !== (this.profile?.payload ?? null) ||
+        typeof body.payload !== 'string' ||
+        typeof body.signature !== 'string'
+      ) {
+        return conflict();
+      }
+      const profile = decodeProfilePayload(body.payload);
+      if (profile?.username !== handle) return locked();
+      const [validSnapshot, validMutation] = await Promise.all([
+        verifyIdentity(owner.key, profileShareProof(handle, body.payload), body.signature),
+        verifyIdentity(
+          owner.key,
+          profilePublishProof(handle, body.challenge, currentPayload, body.payload),
+          body.authorization,
+        ),
+      ]);
+      if (!validSnapshot || !validMutation) return locked();
+      this.profile = { payload: body.payload, signature: body.signature };
+      await this.state.storage.put('profile', this.profile);
+      return this.publicProfile(handle);
     } catch {
       return locked();
     }

@@ -9,7 +9,11 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayRoom"] }],
   "ratelimits": [
     { "name": "CONNECTION_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+    {
+      "name": "PROFILE_READ_LIMIT",
+      "namespace_id": "1002",
+      "simple": { "limit": 120, "period": 60 },
+    },
   ],
-  "limits": { "cpu_ms": 20 },
   "observability": { "enabled": false },
 }

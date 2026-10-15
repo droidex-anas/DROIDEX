@@ -1,8 +1,7 @@
-import { decodeBase64, encodeBase64, publicKey } from './crypto';
+import { decodeBase64, encodeBase64, profileShareProof, publicKey, verifyIdentity } from './crypto';
 
 export const HANDLE_PATTERN = /^[a-z][a-z0-9-]{2,29}$/;
 export const MAX_PROFILE_PAYLOAD_LENGTH = 20 * 1024;
-export const MAX_PROFILE_FRAGMENT_LENGTH = 24 * 1024;
 
 const MAX_DATE_MS = 8_640_000_000_000_000;
 
@@ -20,6 +19,7 @@ export interface PublicProfileSnapshot extends ProfileIdentity {
   version: 3;
   generatedAt: number;
   lifetimeTokens: number;
+  tokensReported: boolean;
   tokensComplete: boolean;
   peakDayTokens: number;
   sessions: number;
@@ -31,17 +31,14 @@ export interface PublicProfileSnapshot extends ProfileIdentity {
   models: PublicProfileRanking[];
 }
 
-export interface ProfileAttestation {
-  username: string;
+export interface PublishedProfile {
+  payload: string;
   publicKey: JsonWebKey;
   signature: string;
 }
 
-export interface DecodedProfileShare {
-  payload: string;
+export interface DecodedPublishedProfile extends PublishedProfile {
   profile: PublicProfileSnapshot;
-  publicKey: JsonWebKey;
-  signature: string;
 }
 
 type RankingWire = [name: string, sessions: number];
@@ -50,7 +47,7 @@ interface ProfileWire {
   n: string;
   u: string;
   g: number;
-  s: [number, boolean, number, number, number, number, number];
+  s: [number, boolean, boolean, number, number, number, number, number];
   d: [date: string, tokens: number, complete: boolean][];
   h: RankingWire[];
   m: RankingWire[];
@@ -73,6 +70,7 @@ export function parsePublicProfileSnapshot(value: unknown): PublicProfileSnapsho
     !identity ||
     generatedAt === null ||
     lifetimeTokens === null ||
+    typeof value.tokensReported !== 'boolean' ||
     typeof value.tokensComplete !== 'boolean' ||
     peakDayTokens === null ||
     sessions === null ||
@@ -90,6 +88,7 @@ export function parsePublicProfileSnapshot(value: unknown): PublicProfileSnapsho
     ...identity,
     generatedAt,
     lifetimeTokens,
+    tokensReported: value.tokensReported,
     tokensComplete: value.tokensComplete,
     peakDayTokens,
     sessions,
@@ -112,36 +111,44 @@ export function encodeProfilePayload(snapshot: PublicProfileSnapshot): string {
   return payload;
 }
 
-export function encodeProfileShare(payload: string, attestation: ProfileAttestation): string {
-  const profile = decodeProfilePayload(payload);
-  if (profile?.username !== attestation.username) {
-    throw new Error('The profile signature does not match this username.');
+export function decodePublishedProfile(
+  value: unknown,
+  expectedUsername?: string,
+): DecodedPublishedProfile | null {
+  if (!record(value) || typeof value.payload !== 'string' || typeof value.signature !== 'string') {
+    return null;
   }
-  const key = publicKey(attestation.publicKey);
-  if (!validSignature(attestation.signature)) throw new Error('The profile signature is invalid.');
-  const fragment = `${payload}.${key.x}.${key.y}.${attestation.signature}`;
-  if (fragment.length > MAX_PROFILE_FRAGMENT_LENGTH) {
-    throw new Error('This profile snapshot is too large to share.');
-  }
-  return fragment;
-}
-
-export function decodeProfileShare(fragment: string): DecodedProfileShare | null {
-  const encoded = fragment.replace(/^#/, '');
-  if (encoded.length === 0 || encoded.length > MAX_PROFILE_FRAGMENT_LENGTH) return null;
-  const [payload, x, y, signature, ...extra] = encoded.split('.');
-  if (!payload || !x || !y || !signature || extra.length > 0 || !validSignature(signature)) {
+  const profile = decodeProfilePayload(value.payload);
+  if (!profile || (expectedUsername !== undefined && profile.username !== expectedUsername)) {
     return null;
   }
   try {
-    const profile = decodeProfilePayload(payload);
-    if (!profile) return null;
+    if (!validSignature(value.signature)) return null;
     return {
-      payload,
+      payload: value.payload,
       profile,
-      publicKey: publicKey({ kty: 'EC', crv: 'P-256', x, y }),
-      signature,
+      publicKey: publicKey(value.publicKey),
+      signature: value.signature,
     };
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyPublishedProfile(
+  value: unknown,
+  expectedUsername?: string,
+): Promise<DecodedPublishedProfile | null> {
+  const published = decodePublishedProfile(value, expectedUsername);
+  if (!published) return null;
+  try {
+    return (await verifyIdentity(
+      published.publicKey,
+      profileShareProof(published.profile.username, published.payload),
+      published.signature,
+    ))
+      ? published
+      : null;
   } catch {
     return null;
   }
@@ -163,7 +170,7 @@ export function isProfilePayload(value: unknown): value is string {
   return false;
 }
 
-function decodeProfilePayload(payload: string): PublicProfileSnapshot | null {
+export function decodeProfilePayload(payload: string): PublicProfileSnapshot | null {
   if (!isProfilePayload(payload)) return null;
   try {
     const bytes = decodeBase64(payload);
@@ -221,6 +228,7 @@ function toWire(profile: PublicProfileSnapshot): ProfileWire {
     g: profile.generatedAt,
     s: [
       profile.lifetimeTokens,
+      profile.tokensReported,
       profile.tokensComplete,
       profile.peakDayTokens,
       profile.sessions,
@@ -237,19 +245,20 @@ function toWire(profile: PublicProfileSnapshot): ProfileWire {
 function fromWire(value: unknown): PublicProfileSnapshot | null {
   if (!record(value) || value.v !== 3 || !wireRows(value.d, 366, 3)) return null;
   if (!wireRows(value.h, 5, 2) || !wireRows(value.m, 5, 2)) return null;
-  if (!unknownList(value.s) || value.s.length !== 7) return null;
+  if (!unknownList(value.s) || value.s.length !== 8) return null;
   return parsePublicProfileSnapshot({
     version: 3,
     displayName: value.n,
     username: value.u,
     generatedAt: value.g,
     lifetimeTokens: value.s[0],
-    tokensComplete: value.s[1],
-    peakDayTokens: value.s[2],
-    sessions: value.s[3],
-    currentStreak: value.s[4],
-    longestStreak: value.s[5],
-    trackingSince: value.s[6],
+    tokensReported: value.s[1],
+    tokensComplete: value.s[2],
+    peakDayTokens: value.s[3],
+    sessions: value.s[4],
+    currentStreak: value.s[5],
+    longestStreak: value.s[6],
+    trackingSince: value.s[7],
     days: value.d.map((row) => ({ date: row[0], tokens: row[1], complete: row[2] })),
     harnesses: value.h.map((row) => ({ name: row[0], sessions: row[1] })),
     models: value.m.map((row) => ({ name: row[0], sessions: row[1] })),

@@ -203,7 +203,9 @@ contextBridge.exposeInMainWorld('droidex', {
   decideRemoteRequest: (id, approved) => ipcRenderer.invoke('remote-decide', { id, approved }),
   revokeRemoteDevice: (id) => ipcRenderer.invoke('remote-revoke', id),
   resetRemotePairing: () => ipcRenderer.invoke('remote-reset'),
-  signProfilePayload: (payload) => ipcRenderer.invoke('remote-sign-profile', payload),
+  getPublishedProfile: () => ipcRenderer.invoke('profile-public-get'),
+  publishPublicProfile: (payload) => ipcRenderer.invoke('profile-public-publish', payload),
+  revokePublicProfile: (payload) => ipcRenderer.invoke('profile-public-revoke', payload),
   remoteQr: (text) => ipcRenderer.invoke('remote-qr', text),
   onRemoteState: (handler) => {
     const listener = (_event, state) => handler(state);

@@ -64,7 +64,8 @@ function createRemoteAccess(options) {
           options.changed(state);
         },
         defaults: {
-          relayUrl: process.env.DROIDEX_REMOTE_RELAY_URL || '',
+          relayUrl:
+            process.env.DROIDEX_REMOTE_RELAY_URL || 'wss://droidex-relay.mdanas7869292.workers.dev',
           clientUrl: process.env.DROIDEX_REMOTE_CLIENT_URL || 'https://droidex.vercel.app',
         },
       }),
@@ -81,7 +82,9 @@ function createRemoteAccess(options) {
       'remote-decide': async (value) => (await host()).decide(value?.id, value?.approved),
       'remote-revoke': async (id) => (await host()).revoke(id),
       'remote-reset': async () => (await host()).reset(),
-      'remote-sign-profile': async (payload) => (await host()).signProfilePayload(payload),
+      'profile-public-get': async () => (await host()).getPublishedProfile(),
+      'profile-public-publish': async (payload) => (await host()).publishPublicProfile(payload),
+      'profile-public-revoke': async (payload) => (await host()).revokePublicProfile(payload),
       'remote-qr': qrDataUrl,
     };
     for (const [channel, handler] of Object.entries(handlers)) {

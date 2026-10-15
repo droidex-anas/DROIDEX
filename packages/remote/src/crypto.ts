@@ -127,6 +127,27 @@ export function profileShareProof(handle: string, payload: string): string {
   return `droidex-profile:share:3|${handle}|${payload}`;
 }
 
+export function profileChallengeProof(handle: string, nonce: string): string {
+  return `droidex-profile:challenge:1|${handle}|${nonce}`;
+}
+
+export function profilePublishProof(
+  handle: string,
+  challenge: string,
+  currentPayload: string | null,
+  nextPayload: string,
+): string {
+  return `droidex-profile:publish:1|${handle}|${challenge}|${currentPayload ?? ''}|${nextPayload}`;
+}
+
+export function profileRevokeProof(
+  handle: string,
+  challenge: string,
+  currentPayload: string,
+): string {
+  return `droidex-profile:revoke:1|${handle}|${challenge}|${currentPayload}`;
+}
+
 function helloProof(handle: string, hello: Omit<HostHello, 'signature'>): string {
   return `droidex-remote:hello:1|${handle}|${hello.nonce}|${keyText(hello.publicKey)}|${keyText(hello.ephemeralKey)}`;
 }

@@ -24,7 +24,7 @@ import type {
 import { RemoteLocalBridge } from './localBridge.js';
 import { createPushNotifications, validatePushSubscription } from './push.js';
 import { readRemoteUsage } from './profileUsage.js';
-import { createProfileAttestation } from './profileAttestation.js';
+import { publishProfile, readPublishedProfile, revokeProfile } from './profilePublication.js';
 
 interface Peer {
   id: string;
@@ -156,6 +156,14 @@ export async function createRemoteHost(options: {
   }
   function persist(): Promise<void> {
     return options.save(JSON.stringify(state));
+  }
+  function profileCredentials(): { identity: Identity; relayUrl: string; username: string } {
+    const username = state.settings.profile.username;
+    if (!identity || !username) {
+      throw new Error('Finish Remote setup before publishing your profile');
+    }
+    if (!state.settings.relayUrl) throw new Error('Configure the Remote relay before publishing');
+    return { identity, relayUrl: state.settings.relayUrl, username };
   }
   function active(peer: Peer): boolean {
     return state.settings.enabled && peers.get(peer.id) === peer;
@@ -380,13 +388,31 @@ export async function createRemoteHost(options: {
 
   return {
     snapshot,
-    signProfilePayload(payload: unknown) {
-      return createProfileAttestation(
-        identity,
-        state.authenticatorReady,
-        state.settings.profile.username,
-        payload,
-      );
+    getPublishedProfile() {
+      const credentials = profileCredentials();
+      return readPublishedProfile(credentials.relayUrl, credentials.username, credentials.identity);
+    },
+    publishPublicProfile(payload: unknown) {
+      return mutate(async () => {
+        const credentials = profileCredentials();
+        return publishProfile(
+          credentials.relayUrl,
+          credentials.username,
+          credentials.identity,
+          payload,
+        );
+      });
+    },
+    revokePublicProfile(payload: unknown) {
+      return mutate(async () => {
+        const credentials = profileCredentials();
+        await revokeProfile(
+          credentials.relayUrl,
+          credentials.username,
+          credentials.identity,
+          payload,
+        );
+      });
     },
     configure(patch: unknown) {
       return mutate(async () => {
@@ -399,6 +425,15 @@ export async function createRemoteHost(options: {
           throw new Error(
             'Your paired username is fixed. Turn remote off and reset pairing before changing it',
           );
+        if (identity && next.profile.username !== state.settings.profile.username) {
+          const currentUsername = state.settings.profile.username;
+          if (!currentUsername || !state.settings.relayUrl) {
+            throw new Error('Restore your Remote relay settings before changing username');
+          }
+          if (await readPublishedProfile(state.settings.relayUrl, currentUsername, identity)) {
+            throw new Error('Unpublish your profile before changing username');
+          }
+        }
         const reconnect =
           next.enabled !== state.settings.enabled || next.relayUrl !== state.settings.relayUrl;
         if (reconnect) stop();
