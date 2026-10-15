@@ -3,11 +3,11 @@ import { createContext, useContext, type ReactNode } from 'react';
 import { repoPathInProse } from '../../lib/prosePaths';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 
-// Inline code sits in the line as a quiet pill in the `code` style, tinted from
-// the text colour so it still reads on a message bubble, and cloned across a
-// line break so a wrapped pill keeps both ends.
-const PILL =
-  'rounded-xs bg-text/[0.07] px-1 py-0.5 font-mono text-code text-primary [box-decoration-break:clone] break-words';
+// Inline code sits in the line as a quiet tone in the `code` style, tinted from
+// the text colour so it still reads on a message bubble. A wrapped span keeps
+// one band that runs off the line end and resumes on the next, instead of
+// closing into two separate pills.
+const PILL = 'rounded-sm bg-text/[0.07] px-1 py-px font-mono text-code text-primary break-words';
 
 // A reply names files constantly ("check `docs/architecture.md`"), and those
 // mentions open in Review exactly like a tool row's path. The handler reaches

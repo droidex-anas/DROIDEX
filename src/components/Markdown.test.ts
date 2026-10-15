@@ -265,6 +265,16 @@ test('breaks mode keeps single newlines from typed text as visible breaks', () =
   assert.doesNotMatch(render(false), /<br\/>/);
 });
 
+// A command backticked word by word would otherwise draw a chip per word.
+test('inline code spans separated only by spaces render as one span', () => {
+  const html = renderToStaticMarkup(
+    createElement(Markdown, null, 'run `git` `fetch` `origin` then open `src/App.tsx` `docs/a.md`'),
+  );
+  const spans = [...html.matchAll(/<code[^>]*>([^<]*)<\/code>/g)].map((match) => match[1]);
+
+  assert.deepEqual(spans, ['git fetch origin', 'src/App.tsx', 'docs/a.md']);
+});
+
 // Shortening an arbitrary link would hide where it goes.
 test('a bare non-GitHub URL still shows its full address', () => {
   const html = renderToStaticMarkup(

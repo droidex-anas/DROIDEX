@@ -8,6 +8,7 @@ import { CodeCard, HighlightJson, JSON_HIGHLIGHT_MAX_CHARS } from './MarkdownCod
 import { markdownTableComponents } from './MarkdownTable';
 import { LinkBadge } from './transcript/LinkBadge';
 import { describeLink, linkTextIsUrl } from '../lib/linkPresentation';
+import { remarkInlineCodeRuns } from '../lib/remarkInlineCodeRuns';
 import { TranscriptImage } from './media/TranscriptImage';
 import { MermaidBlock, SvgCodeBlock } from './MarkdownDiagrams';
 import { InlineCode, ProseFileLinks } from './transcript/ProseFileLink';
@@ -317,11 +318,11 @@ function createMarkdownComponents(specMode: boolean): Components {
   };
 }
 
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkInlineCodeRuns];
 // For text the user typed line by line (their own messages, the composer
 // preview): every Enter they pressed stays a visible break, the way GitHub
 // renders issue comments, instead of collapsing into prose paragraphs.
-const REMARK_BREAKS_PLUGINS = [remarkGfm, remarkBreaks];
+const REMARK_BREAKS_PLUGINS = [remarkGfm, remarkBreaks, remarkInlineCodeRuns];
 const CHAT_COMPONENTS = createMarkdownComponents(false);
 const SPEC_COMPONENTS = createMarkdownComponents(true);
 
