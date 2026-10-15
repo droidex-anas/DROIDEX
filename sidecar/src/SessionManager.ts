@@ -152,6 +152,7 @@ type SessionHistoryBase = Pick<
   | 'summaryPatchesAndHidden'
   | 'listHistoricalSessions'
   | 'sessionFileCacheSize'
+  | 'appSessionIds'
   | 'sessionLaunchSettings'
   | 'childSessions'
   | 'childSession'
@@ -950,6 +951,10 @@ export class SessionManager {
       persistence,
       interrupted: [...this.adoption.records()],
     });
+  }
+
+  appSessionIds(): string[] {
+    return this.history.appSessionIds();
   }
 
   // Runs on its own idle timer; exposed so callers can force the sweep.

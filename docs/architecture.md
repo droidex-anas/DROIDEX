@@ -385,6 +385,13 @@ rebuildable caches, and the renderer reads only bounded aggregates through an
 authenticated localhost endpoint. This work stays off both the renderer and
 Remote host event loops.
 
+The same ledger has an append-only, ID-only `droidex_session` table for the
+profile headline session count. The sidecar seeds durable top-level
+`app_sessions` from canonical history at startup and records every successful
+create or resume idempotently. Profile reads wait for that worker write tail.
+Child sessions and session metadata never enter the table; harness and model
+rankings continue to count only usage-bearing provider sessions.
+
 Opt-in public profile links contain a signed, strictly allowlisted URL-fragment
 snapshot. The viewer verifies its P-256 signature and asks the handle registry
 to match only the supplied public key to the username. Neither web host nor

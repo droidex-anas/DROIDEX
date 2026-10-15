@@ -37,6 +37,8 @@ import {
 } from './UsageValidation.js';
 
 export type { UsageCursorAdvance, UsageIngestBatch } from './UsageValidation.js';
+const MAX_DROIDEX_SESSION_IDS_PER_WRITE = 10_000;
+const MAX_DROIDEX_SESSION_ID_LENGTH = 512;
 type RollupEvent = UsageTokenCounts &
   Pick<
     UsageEvent,
@@ -63,6 +65,7 @@ export class UsageDatabase {
   private readonly readCursorStatement: StatementSync;
   private readonly readSourceCursorStatement: StatementSync;
   private readonly insertEventStatement: StatementSync;
+  private readonly insertDroidexSessionStatement: StatementSync;
   private readonly upsertDailyStatement: StatementSync;
   private readonly upsertHarnessStatement: StatementSync;
   private readonly upsertSessionStatement: StatementSync;
@@ -102,6 +105,9 @@ export class UsageDatabase {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(harness_id, dedupe_key) DO NOTHING
       `);
+      this.insertDroidexSessionStatement = this.db.prepare(
+        'INSERT OR IGNORE INTO droidex_session (id) VALUES (?)',
+      );
       this.upsertDailyStatement = this.db.prepare(dailyUpsertSql());
       this.upsertHarnessStatement = this.db.prepare(`
         INSERT INTO harness (id, display_name) VALUES (?, ?)
@@ -250,6 +256,23 @@ export class UsageDatabase {
       this.writeRollupStateStatement.run(canonical, count, firstEventAt, this.now());
       this.db.exec('COMMIT');
       this.timeZone = canonical;
+    } catch (error) {
+      rollback(this.db);
+      throw error;
+    }
+  }
+
+  recordDroidexSessions(ids: readonly string[]): { insertedSessions: number } {
+    this.assertOpen();
+    validateDroidexSessionIds(ids);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      let insertedSessions = 0;
+      for (const id of ids) {
+        insertedSessions += Number(this.insertDroidexSessionStatement.run(id).changes);
+      }
+      this.db.exec('COMMIT');
+      return { insertedSessions };
     } catch (error) {
       rollback(this.db);
       throw error;
@@ -452,6 +475,22 @@ export class UsageDatabase {
       );
     }
     return { ...next, revision };
+  }
+}
+
+function validateDroidexSessionIds(ids: readonly string[]): void {
+  if (!Array.isArray(ids) || ids.length > MAX_DROIDEX_SESSION_IDS_PER_WRITE) {
+    throw new Error('DROIDEX session ID batch is invalid.');
+  }
+  for (const id of ids) {
+    if (
+      typeof id !== 'string' ||
+      id.length === 0 ||
+      id.length > MAX_DROIDEX_SESSION_ID_LENGTH ||
+      id.includes('\0')
+    ) {
+      throw new Error('DROIDEX session ID is invalid.');
+    }
   }
 }
 

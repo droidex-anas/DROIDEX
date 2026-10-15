@@ -132,6 +132,10 @@ export class FakeHistoryIndex implements SessionHistoryDependencies {
     return { patches, hiddenProviderSessionIds };
   }
 
+  appSessionIds(): string[] {
+    return [...this.summariesByAppId.keys()].sort();
+  }
+
   // Apply the fake's in-memory patches before workspace filtering, just as
   // production applies its persisted patches before filtering cached rows.
   listHistoricalSessions(options: HistoricalSummaryFilter = {}): HistoricalSession[] {

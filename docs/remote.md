@@ -67,8 +67,10 @@ See [Local usage ledger](usage.md).
 It contains your chosen name, username, aggregate activity and model/harness
 names. When a harness omits counts, signed coverage flags label the affected
 figures as measured minimums; completely unreported token totals stay unknown.
-Session counts are observed usage sessions, and “tracked since” includes
-imported harness history. The snapshot contains no prompts, workspace paths,
+The headline session count covers durable top-level sessions DROIDEX has
+created or resumed; harness/model ranking counts remain observed usage
+sessions. “Tracked since” includes imported harness history. The snapshot
+contains no prompts, workspace paths,
 source paths, raw session identifiers, costs, device data or private keys.
 The laptop signs it with the registered username key. The relay stores the
 signed public aggregate so the link works while the laptop is offline, and the
