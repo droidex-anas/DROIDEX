@@ -173,6 +173,38 @@
     outline: 1.5px solid var(--focus-ring);
   }
 
+  /* Anything clickable shows a pointer so it reads as clickable; a disabled
+     control shows not-allowed instead. `:where` keeps this at zero
+     specificity so the disabled rule and cursor utilities win. */
+  :where(
+    button,
+    a[href],
+    summary,
+    select,
+    label:has(> input[type='checkbox'], > input[type='radio']),
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='range'],
+    input[type='color'],
+    [role='button'],
+    [role='link'],
+    [role='tab'],
+    [role='option'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='radio'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio']
+  ) {
+    cursor: pointer;
+  }
+
+  :disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
   /* Scrollbars stay out of sight at rest: no track, and a 6px pill that shows
      while its scroller moves (`data-scrolling`, set by useScrolling)
      or is dragged. Only some scrollers report `data-scrolling` so far, so
@@ -964,23 +996,6 @@
     .expand-rows {
       transition: none;
     }
-  }
-
-  .droid-button {
-    @apply px-3 py-1.5 text-sm font-medium rounded-sm transition-all duration-150;
-    @apply bg-elevated text-secondary hover:text-primary hover:bg-active;
-    @apply border border-divider;
-  }
-
-  .droid-button-primary {
-    @apply px-3 py-1.5 text-sm font-medium rounded-sm transition-all duration-150;
-    @apply bg-text text-bg hover:bg-secondary;
-  }
-
-  .droid-input {
-    @apply bg-elevated border border-divider rounded-md px-4 py-2.5 text-sm;
-    @apply text-primary placeholder-muted focus:outline-none focus:border-divider-strong;
-    @apply transition-colors duration-150;
   }
 
   .transcript-find-hit {

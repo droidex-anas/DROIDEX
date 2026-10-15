@@ -160,17 +160,15 @@ export function SideChatWindow({ sourceAppSessionId }: { sourceAppSessionId: str
               onClick={() => {
                 place('minimized');
               }}
-            >
-              <ChevronDown className="h-3.5 w-3.5" />
-            </SideChatHeaderButton>
+              icon={ChevronDown}
+            />
             <SideChatHeaderButton
               label="Dock to side"
               onClick={() => {
                 place('docked');
               }}
-            >
-              <PanelRight className="h-3.5 w-3.5" />
-            </SideChatHeaderButton>
+              icon={PanelRight}
+            />
           </>
         }
       />

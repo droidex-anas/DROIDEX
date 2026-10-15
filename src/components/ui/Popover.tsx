@@ -1,4 +1,5 @@
 import {
+  useContext,
   useEffect,
   useRef,
   type HTMLAttributes,
@@ -11,6 +12,7 @@ import { createPortal } from 'react-dom';
 import { useMergeRefs, type Placement } from '@floating-ui/react';
 import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { cn } from './cn';
+import { FloatingLayerRoot } from './floatingLayerRoot';
 import { useDismiss } from './useDismiss';
 import { usePopoverPosition, type AnchorPoint } from './usePopoverPosition';
 
@@ -31,9 +33,10 @@ export interface PopoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chil
 }
 
 // The floating layer for menus, pickers and option lists: positioned against
-// its anchor, portaled to <body> so no ancestor clips it, closed by Escape, a
-// press outside or the anchor scrolling away, with focus kept inside while
-// open and handed back to the anchor on close. The caller's trigger opens it.
+// its anchor, portaled to <body> (or above the Dialog it opens from) so no
+// ancestor clips it, closed by Escape, a press outside or the anchor scrolling
+// away, with focus kept inside while open and handed back to the anchor on
+// close. The caller's trigger opens it.
 export function Popover({
   ref,
   open,
@@ -111,6 +114,8 @@ export function Popover({
     if (!event.defaultPrevented) wrapTabFocus(event, panelRef.current);
   };
 
+  const layerRoot = useContext(FloatingLayerRoot);
+
   // A static render (renderToStaticMarkup) has no <body> to portal into.
   if (!open || typeof document === 'undefined') return null;
   return createPortal(
@@ -137,6 +142,6 @@ export function Popover({
         {children}
       </div>
     </div>,
-    document.body,
+    layerRoot ?? document.body,
   );
 }

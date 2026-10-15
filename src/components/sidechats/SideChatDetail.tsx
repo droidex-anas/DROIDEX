@@ -17,6 +17,7 @@ import { MessageFeed } from '../MessageFeed';
 import { ModelIcon } from '../ModelIcon';
 import PermissionInline from '../PermissionInline';
 import PlanApprovalInline from '../PlanApprovalInline';
+import { Button } from '../ui/Button';
 import { SideChatComposer } from './SideChatComposer';
 import { SideChatBackButton, SideChatHeader, SideChatHeaderButton } from './SideChatHeader';
 import { runningSideChatCount, sendToSideChat } from './useAskSideChat';
@@ -114,7 +115,7 @@ export function SideChatDetail({
         </span>
         <span
           title={session.title}
-          className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary"
+          className="min-w-0 flex-1 truncate text-body-strong text-primary"
         >
           {session.title}
         </span>
@@ -124,18 +125,16 @@ export function SideChatDetail({
           onClick={() => {
             dispatch({ type: 'ATTACH_SIDE_CHAT_REPLY', sourceAppSessionId, reply });
           }}
-        >
-          <CornerDownLeft className="h-3.5 w-3.5" />
-        </SideChatHeaderButton>
+          icon={CornerDownLeft}
+        />
         <SideChatHeaderButton
           label={forking ? 'Opening as chat…' : 'Continue as chat'}
           disabled={live || forking}
           onClick={() => {
             continueAsChat();
           }}
-        >
-          <GitFork className="h-3.5 w-3.5" />
-        </SideChatHeaderButton>
+          icon={GitFork}
+        />
       </SideChatHeader>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
@@ -145,14 +144,9 @@ export function SideChatDetail({
         >
           {olderCursor && (
             <div className="pb-2 text-center">
-              <button
-                type="button"
-                disabled={state.loadingOlder}
-                onClick={loadEarlier}
-                className="rounded-sm px-2 py-1 text-[11px] text-muted transition-colors hover:bg-elevated hover:text-secondary disabled:hover:bg-transparent"
-              >
+              <Button variant="ghost" size="sm" disabled={state.loadingOlder} onClick={loadEarlier}>
                 {state.loadingOlder ? 'Loading earlier messages…' : 'Show earlier messages'}
-              </button>
+              </Button>
             </div>
           )}
           {events.length > 0 ? (
@@ -203,20 +197,16 @@ function SideChatEmptyState({
   if (restore?.status === 'failed') {
     return (
       <div className="flex flex-col items-center gap-2 pt-6 text-center">
-        <span className="text-[12px] text-primary">Couldn&apos;t load this side chat</span>
-        {restore.error && <span className="text-[11px] text-muted">{restore.error}</span>}
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-sm bg-elevated px-2.5 py-1 text-[11px] text-secondary transition-colors hover:bg-active"
-        >
+        <span className="text-body text-primary">Couldn&apos;t load this side chat</span>
+        {restore.error && <span className="text-caption text-muted">{restore.error}</span>}
+        <Button size="sm" onClick={onRetry}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
   return (
-    <p className="pt-6 text-center text-[12px] text-muted">
+    <p className="pt-6 text-center text-body text-muted">
       {restore?.status === 'loading' ? 'Loading side chat…' : 'Nothing in this side chat yet.'}
     </p>
   );
