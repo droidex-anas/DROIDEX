@@ -191,6 +191,17 @@ try {
   );
 }
 app.setPath('userData', userDataPath);
+// One app per profile. A second copy on the same profile, such as a dev build
+// an agent launches without its own DROIDEX_USER_DATA_DIR, would boot a sidecar
+// that reaps every agent process this one recorded.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+  return;
+}
+// Startup makes the first window; one made here before it would be a second.
+app.on('second-instance', () => {
+  if (mainWindow) focusMainWindow();
+});
 const hardwareAccelerationPreferencePath = hardwareAccelerationPreferenceFilePath(
   app.getPath('userData'),
 );

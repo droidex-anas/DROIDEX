@@ -1,15 +1,19 @@
-import type {
-  LiveChildIdentity,
-  LiveProcessIdentity,
-  LiveRuntimeJournal,
-  LiveSessionIdentity,
+import {
+  systemBootedAt,
+  type LiveChildIdentity,
+  type LiveProcessIdentity,
+  type LiveRuntimeJournal,
+  type LiveSessionIdentity,
 } from './liveRuntimeJournal.js';
 import type { InterruptedSessionRecord, SessionPhase, SessionSummary } from './protocol.js';
 import { DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { errMsg } from './errors.js';
+import { isProcessAlive } from './processes/isProcessAlive.js';
 import type { SessionLifecycle } from './SessionLifecycle.js';
 import { adoptedSessionFacts, retirableSessions } from './sessionRuntimeRetirement.js';
 
+// Boot time is derived from uptime, which drifts by a little between reads.
+const SAME_BOOT_TOLERANCE_MS = 60_000;
 export const TURN_INTERRUPTED = 'The agent runtime restarted and this turn did not continue.';
 const SESSION_UNAVAILABLE = 'This session could not reconnect. Reopen it to continue.';
 const CHILD_INTERRUPTED = 'The agent runtime restarted and this child agent did not continue.';
@@ -60,7 +64,21 @@ export class SessionAdoption {
     return this.started;
   }
 
+  // Another sidecar on this profile that is still running owns the journal: its
+  // sessions and processes are live, so this one must not reap, adopt or
+  // overwrite them. Checked on every write, so the journal is taken over once
+  // that sidecar exits.
+  private journalIsForeign(owner = this.dependencies.journal.read().owner): boolean {
+    return (
+      owner !== undefined &&
+      owner.pid !== process.pid &&
+      Math.abs(owner.bootedAt - systemBootedAt()) < SAME_BOOT_TOLERANCE_MS &&
+      isProcessAlive(owner.pid)
+    );
+  }
+
   persistLiveSet(): void {
+    if (this.journalIsForeign()) return;
     const sessions: LiveSessionIdentity[] = this.dependencies.registry
       .liveSessionsSnapshot()
       .flatMap((live) => {
@@ -77,6 +95,7 @@ export class SessionAdoption {
         ];
       });
     this.dependencies.journal.write({
+      owner: { pid: process.pid, bootedAt: systemBootedAt() },
       sessions,
       children: [...this.dependencies.liveChildren()],
       processes: this.dependencies.recordedProcesses(),
@@ -86,6 +105,12 @@ export class SessionAdoption {
   private async adoptOnce(): Promise<SessionAdoptionResult> {
     const d = this.dependencies;
     const identities = d.journal.read();
+    if (this.journalIsForeign(identities.owner)) {
+      console.warn(
+        `Another DROIDEX sidecar (pid ${String(identities.owner?.pid)}) is running on this profile; leaving its sessions alone.`,
+      );
+      return { interrupted: [] };
+    }
     // Before anything is resurrected: a session that comes back must not
     // inherit a dev server from the run that died holding the port.
     await d.reapProcesses(identities.processes);
