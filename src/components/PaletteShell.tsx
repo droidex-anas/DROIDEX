@@ -1,7 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { Search, X } from 'lucide-react';
+import { Search, X } from '@droidex/icons';
+import { Input } from './ui/Field';
 import { pushEscapeLayer } from './ui/escapeStack';
 import { wrapTabFocus } from '../lib/focusTrap';
 
@@ -76,15 +77,16 @@ export default function PaletteShell({
         transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
         // Capped at the room the backdrop's padding leaves, so the dialog
         // scrolls inside instead of running off the window.
-        className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-raised shadow-lg"
+        className="flex max-h-full w-full max-w-palette flex-col overflow-hidden rounded-2xl bg-raised shadow-lg"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
         <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5">
           <Search className="size-icon-md shrink-0 text-muted" />
-          <input
+          <Input
             ref={inputRef}
+            variant="embedded"
             value={query}
             onChange={(e) => {
               onQueryChange(e.target.value);
@@ -92,7 +94,7 @@ export default function PaletteShell({
             onKeyDown={onKeyDown}
             placeholder={placeholder}
             aria-label={inputAriaLabel}
-            className="min-w-0 flex-1 bg-transparent text-body-lg text-primary placeholder-muted focus:outline-none"
+            className="flex-1"
           />
           <button
             onClick={onClose}
