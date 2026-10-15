@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Markdown } from './Markdown';
-import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
+import { svgImageAlternative, svgImageSrc } from '../lib/svgMarkup';
 import { LayoutTemplate } from '@droidex/icons';
 
 type Segment =
@@ -80,7 +80,7 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
   const reduceMotion = useReducedMotion();
   const image = useMemo(
     () => ({
-      src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fitSvgMarkup(svgContent))}`,
+      src: svgImageSrc(svgContent),
       alt: svgImageAlternative(svgContent),
     }),
     [svgContent],
@@ -101,7 +101,7 @@ function SvgVisualCard({ svgContent, index }: { svgContent: string; index: numbe
         <span className="text-caption text-muted">SVG</span>
       </div>
       <div className="flex min-h-24 items-center justify-center pt-3">
-        <img className="block w-full h-auto" src={image.src} alt={image.alt} />
+        <img className="block h-auto w-full rounded-md" src={image.src} alt={image.alt} />
       </div>
     </motion.div>
   );

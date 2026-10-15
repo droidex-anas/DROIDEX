@@ -18,6 +18,18 @@ export function fitSvgMarkup(content: string): string {
   return raw;
 }
 
+// Authored SVGs assume a white page: dark ink, and `currentColor` resolves to
+// black inside an image. The image carries its own paper so it reads on a dark
+// canvas too; an authored root background still wins.
+export function svgImageSrc(content: string): string {
+  const onPaper = fitSvgMarkup(content).replace(/<svg\b[^>]*>/i, (tag) =>
+    /\sstyle\s*=\s*["']/i.test(tag)
+      ? tag.replace(/(\sstyle\s*=\s*["'])/i, '$1background:#fff;')
+      : tag.replace('<svg', '<svg style="background:#fff"'),
+  );
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(onPaper)}`;
+}
+
 // Reads authored plain-text metadata; this is not a complete XML parser.
 export function svgImageAlternative(content: string): string {
   const descriptions = ['title', 'desc'].flatMap((tag) => {
