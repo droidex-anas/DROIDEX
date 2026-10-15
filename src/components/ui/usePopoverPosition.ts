@@ -36,17 +36,26 @@ export function popoverMiddleware(offsetPx: number): Middleware[] {
   ];
 }
 
+// A viewport point (a right-click) to place the layer at instead of the
+// anchor's box.
+export interface AnchorPoint {
+  x: number;
+  y: number;
+}
+
 // The one positioning hook for menus, popovers and tooltips. The layer is
 // rendered fixed in a body-level portal; `side` is where it actually landed
 // after flipping, for `data-side` and the entrance animation.
 export function usePopoverPosition({
   open,
   anchorRef,
+  anchorPoint,
   placement,
   offsetPx,
 }: {
   open: boolean;
   anchorRef: RefObject<HTMLElement | null>;
+  anchorPoint?: AnchorPoint;
   placement: Placement;
   offsetPx: number;
 }) {
@@ -65,8 +74,25 @@ export function usePopoverPosition({
   });
 
   useLayoutEffect(() => {
-    refs.setReference(open ? anchorRef.current : null);
-  }, [open, anchorRef, refs]);
+    const anchor = open ? anchorRef.current : null;
+    if (!anchor || !anchorPoint) {
+      refs.setReference(anchor);
+      return;
+    }
+    // The point is kept as an offset from the anchor's box, in viewport pixels
+    // like the click, so the layer follows the anchor when its list scrolls
+    // and `hide` sees it leave, all unaffected by the UI zoom on #root.
+    const opened = anchor.getBoundingClientRect();
+    const offsetX = anchorPoint.x - opened.left;
+    const offsetY = anchorPoint.y - opened.top;
+    refs.setReference({
+      getBoundingClientRect: () => {
+        const box = anchor.getBoundingClientRect();
+        return new DOMRect(box.left + offsetX, box.top + offsetY, 0, 0);
+      },
+      contextElement: anchor,
+    });
+  }, [open, anchorRef, anchorPoint, refs]);
 
   return {
     setFloating: refs.setFloating,

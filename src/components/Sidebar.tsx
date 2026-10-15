@@ -440,8 +440,8 @@ export default function Sidebar({
 
       {rowMenu && (
         <SessionContextMenu
-          x={rowMenu.x}
-          y={rowMenu.y}
+          anchorRef={rowMenu.anchorRef}
+          anchorPoint={rowMenu.anchorPoint}
           settled={rowMenuSession ? statusFor(rowMenuSession) === 'settled' : false}
           onToggleSettled={
             rowMenuSession && canSettleSession(statusFor(rowMenuSession))

@@ -1,17 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Folder, FolderMinus, FolderOpen, Plus } from '@droidex/icons';
-import { pushEscapeLayer } from './ui/escapeStack';
+import { Menu } from './ui/Menu';
+import type { AnchorPoint } from './ui/usePopoverPosition';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MENU_WIDTH = 200;
-const MENU_MARGIN = 8;
-const MENU_CHROME_PX = 18;
-const MENU_ROW_PX = 30;
-
-const itemClass =
-  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary outline-none transition-colors hover:bg-elevated focus-visible:bg-elevated dark:hover:bg-active dark:focus-visible:bg-active';
 
 function WorkspaceFolderIcon({ open }: { open: boolean }) {
   const reduceMotion = useReducedMotion();
@@ -38,106 +32,6 @@ function WorkspaceFolderIcon({ open }: { open: boolean }) {
   );
 }
 
-export function WorkspaceContextMenuPanel({
-  x,
-  y,
-  name,
-  onRemove,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  name: string;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const pop = pushEscapeLayer(onClose);
-    window.addEventListener('blur', onClose);
-    window.addEventListener('scroll', onClose, true);
-    return () => {
-      pop();
-      window.removeEventListener('blur', onClose);
-      window.removeEventListener('scroll', onClose, true);
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
-  }, []);
-
-  const viewportWidth = typeof window === 'undefined' ? undefined : window.innerWidth;
-  const viewportHeight = typeof window === 'undefined' ? undefined : window.innerHeight;
-  const estimatedMenuHeight = MENU_CHROME_PX + MENU_ROW_PX;
-  const left =
-    viewportWidth === undefined
-      ? Math.max(MENU_MARGIN, x)
-      : Math.min(Math.max(MENU_MARGIN, x), viewportWidth - MENU_WIDTH - MENU_MARGIN);
-  const top =
-    viewportHeight === undefined
-      ? Math.max(MENU_MARGIN, y)
-      : Math.min(Math.max(MENU_MARGIN, y), viewportHeight - estimatedMenuHeight - MENU_MARGIN);
-
-  return (
-    <motion.div
-      ref={panelRef}
-      role="menu"
-      aria-label={`${name} workspace`}
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.12, ease: EASE }}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      style={{ position: 'fixed', left, top, width: MENU_WIDTH }}
-      className="z-popover rounded-lg bg-raised p-1.5 shadow-lg"
-    >
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onRemove();
-          onClose();
-        }}
-        className={itemClass}
-      >
-        <FolderMinus className="size-icon-md shrink-0 text-muted" />
-        Remove workspace
-      </button>
-    </motion.div>
-  );
-}
-
-function WorkspaceContextMenu({
-  x,
-  y,
-  name,
-  onRemove,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  name: string;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  return createPortal(
-    <>
-      <div
-        className="fixed inset-0 z-popover"
-        onMouseDown={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      />
-      <WorkspaceContextMenuPanel x={x} y={y} name={name} onRemove={onRemove} onClose={onClose} />
-    </>,
-    document.body,
-  );
-}
-
 export function SidebarWorkspaceRow({
   name,
   open,
@@ -153,20 +47,22 @@ export function SidebarWorkspaceRow({
   onRemove: () => void;
   children: ReactNode;
 }) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const rowButtonRef = useRef<HTMLButtonElement>(null);
+  const [menuPoint, setMenuPoint] = useState<AnchorPoint | null>(null);
   const closeMenu = useCallback(() => {
-    setMenu(null);
+    setMenuPoint(null);
   }, []);
 
   return (
     <div>
       <div className="group flex items-center gap-1 py-1.5 pl-3 pr-2.5">
         <button
+          ref={rowButtonRef}
           type="button"
           onClick={onToggle}
           onContextMenu={(event) => {
             event.preventDefault();
-            setMenu({ x: event.clientX, y: event.clientY });
+            setMenuPoint({ x: event.clientX, y: event.clientY });
           }}
           aria-expanded={open}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-sm text-left"
@@ -187,14 +83,22 @@ export function SidebarWorkspaceRow({
         </button>
       </div>
       {children}
-      {menu ? (
-        <WorkspaceContextMenu
-          x={menu.x}
-          y={menu.y}
-          name={name}
-          onRemove={onRemove}
+      {menuPoint ? (
+        <Menu
+          open
           onClose={closeMenu}
-        />
+          anchorRef={rowButtonRef}
+          anchorPoint={menuPoint}
+          label={`${name} workspace`}
+          width={MENU_WIDTH}
+          onContextMenu={(event) => {
+            event.preventDefault();
+          }}
+        >
+          <Menu.Item icon={FolderMinus} onSelect={onRemove}>
+            Remove workspace
+          </Menu.Item>
+        </Menu>
       ) : null}
     </div>
   );

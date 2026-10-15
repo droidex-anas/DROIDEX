@@ -14,13 +14,16 @@ import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { cn } from './cn';
 import { FloatingLayerRoot } from './floatingLayerRoot';
 import { useDismiss } from './useDismiss';
-import { usePopoverPosition } from './usePopoverPosition';
+import { usePopoverPosition, type AnchorPoint } from './usePopoverPosition';
 
 export interface PopoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
   ref?: Ref<HTMLDivElement>;
   open: boolean;
   onClose: () => void;
   anchorRef: RefObject<HTMLElement | null>;
+  /** Open at this viewport point (a right-click); the anchor still takes
+   * focus back on close. A press on the anchor then dismisses too. */
+  anchorPoint?: AnchorPoint;
   /** Accessible name of the layer. */
   label: string;
   placement?: Placement;
@@ -39,6 +42,7 @@ export function Popover({
   open,
   onClose,
   anchorRef,
+  anchorPoint,
   label,
   placement = 'bottom-start',
   width,
@@ -52,11 +56,14 @@ export function Popover({
   // React routes a press inside a nested layer (a menu opened from this panel,
   // portaled beside it) through this panel too, so it does not dismiss it.
   const insidePressRef = useRef<Event | null>(null);
-  const panelRef = useDismiss(open, onClose, anchorRef, insidePressRef);
+  // A pointer-opened layer has no trigger that toggles it, so any press
+  // outside it, the right-clicked anchor included, dismisses it.
+  const panelRef = useDismiss(open, onClose, anchorPoint ? undefined : anchorRef, insidePressRef);
   const mergedRef = useMergeRefs([panelRef, ref]);
   const { setFloating, floatingStyles, side, isPositioned, anchorHidden } = usePopoverPosition({
     open,
     anchorRef,
+    anchorPoint,
     placement,
     offsetPx: 4,
   });
