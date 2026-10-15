@@ -145,7 +145,7 @@ export default function ModelSelectorPopover({
           {/* Agent tabs */}
           {!singleAgent && !childTarget && (
             <div className="px-3">
-              <div className="flex gap-1 rounded-lg bg-bg/60 p-0.5">
+              <div className="flex gap-1 rounded-lg bg-elevated p-0.5 dark:bg-bg/60">
                 {AGENTS.map((a) => {
                   const on = a.kind === agent;
                   return (
@@ -169,7 +169,7 @@ export default function ModelSelectorPopover({
           {/* Model search + list */}
           <div className="flex min-h-0 flex-col px-2 pt-2 pb-2">
             <div className="flex shrink-0 items-center gap-1.5">
-              <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
+              <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-field px-3 dark:bg-bg/50">
                 <Search className="size-icon-sm shrink-0 text-muted" />
                 <Input
                   variant="embedded"

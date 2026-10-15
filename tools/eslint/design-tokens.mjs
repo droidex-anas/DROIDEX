@@ -32,6 +32,9 @@ const EDGE_RESETS = new Set([
 ]);
 const DIVIDE_WIDTH = /^divide-[xy](?:-\d+)?$/;
 const DIVIDE_DIVIDER_COLOR = /^divide-divider(?:\/\d+)?$/;
+// Data tables are the one place row rules stay: everywhere else rows separate
+// by space and tone (docs/design-system/rules.md, rule 4).
+const TABLE_ROW_ELEMENTS = new Set(['tbody', 'tr']);
 const FONT_WEIGHT = /^font-(?:bold|light|thin|extralight|extrabold|black)$/;
 const FOCUS_VISIBLE = /(^|:)focus-visible:/;
 
@@ -82,9 +85,40 @@ const isTernaryOfResolvableStrings = (node) =>
   isResolvableString(node.consequent) &&
   isResolvableString(node.alternate);
 
-// Resolves `const tone = '…'`, a template of literals, or a ternary of those,
-// one level up the scope chain, same file, when used directly in a className
-// or class helper.
+const isHelperCall = (node) => node?.type === 'CallExpression' && helperName(node.callee);
+
+// True when collectClassStrings reaches this identifier from a className value.
+function isClassNameValue(identifier) {
+  let child = identifier;
+  let node = identifier.parent;
+  while (node) {
+    if (node.type === 'JSXAttribute') {
+      return node.name.type === 'JSXIdentifier' && node.name.name === 'className';
+    }
+    const passesClasses =
+      node.type === 'JSXExpressionContainer' ||
+      node.type === 'LogicalExpression' ||
+      node.type === 'ArrayExpression' ||
+      node.type === 'TemplateLiteral' ||
+      (node.type === 'ConditionalExpression' && node.test !== child) ||
+      (isHelperCall(node) && node.callee !== child);
+    if (!passesClasses) return false;
+    child = node;
+    node = node.parent;
+  }
+  return false;
+}
+
+// A `const cls = cn(…)` read only in className values is checked at each use,
+// so a <tbody> use gets the table-row exemption and any other use does not.
+function isCheckedAtUses(variable) {
+  const reads = variable.references.filter((reference) => reference.isRead());
+  return reads.length > 0 && reads.every((reference) => isClassNameValue(reference.identifier));
+}
+
+// Resolves `const tone = '…'`, a template of literals, a ternary of those, or a
+// class-helper call checked at its uses, one level up the scope chain, same
+// file, when used directly in a className or class helper.
 function makeConstResolver(context) {
   return (identifier) => {
     let scope = context.sourceCode.getScope(identifier);
@@ -93,13 +127,15 @@ function makeConstResolver(context) {
       if (variable) {
         const definition = variable.defs[0];
         if (
-          variable.defs.length === 1 &&
-          definition?.type === 'Variable' &&
-          definition.parent?.kind === 'const' &&
-          (isResolvableString(definition.node.init) || isTernaryOfResolvableStrings(definition.node.init))
+          variable.defs.length !== 1 ||
+          definition?.type !== 'Variable' ||
+          definition.parent?.kind !== 'const'
         ) {
-          return definition.node.init;
+          return null;
         }
+        const init = definition.node.init;
+        if (isResolvableString(init) || isTernaryOfResolvableStrings(init)) return init;
+        if (isHelperCall(init) && isCheckedAtUses(variable)) return init;
         return null;
       }
       scope = scope.upper;
@@ -172,7 +208,8 @@ function collectClassStrings(node, group, resolve, seen) {
       // Report resolved strings at the use site; the definition may be far
       // from the element that wears them.
       const resolved = newGroup(group);
-      collectClassStrings(init, resolved, resolve, seen);
+      // A fresh set: a helper held in a const is checked again at every use.
+      collectClassStrings(init, resolved, resolve, new Set());
       group.parts.push(...resolved.parts.map((part) => ({ ...part, node })));
       group.forks.push(
         ...resolved.forks.map((forked) => {
@@ -209,7 +246,7 @@ export default {
       'palette-color':
         "Tailwind default palette '{{cls}}'. Use a theme token (bg-active, text-secondary, text-danger).{{note}}",
       'border-width':
-        "Surface edge '{{cls}}'. Separate with tone, space and floating shadow. Use divide-y/divide-x with divide-divider for dense rows; document semantic exceptions with a reasoned inline directive (docs/design-system/rules.md).{{note}}",
+        "Surface edge '{{cls}}'. Separate with space, tone and floating shadow, never a line. Only data-table rows (<tbody>, <tr>) take divide-y/divide-x with divide-divider; document semantic exceptions with a reasoned inline directive (docs/design-system/rules.md).{{note}}",
       'font-weight': "Font weight '{{cls}}'. Use font-medium or font-semibold.{{note}}",
       'focus-ring':
         "Focus ring '{{cls}}'. Use the focus-ring token (ALLOWED_FOCUS_CLASSES in tools/eslint/design-tokens.mjs).{{note}}",
@@ -235,14 +272,16 @@ export default {
         .map((directive) => directive.node.loc.end.line + 1),
     );
 
-    // Dividers from unconditional parts apply inside conditional forks;
-    // sibling alternatives never exempt each other.
-    const reportGroup = (group, inherited) => {
+    // On table rows, dividers from unconditional parts apply inside conditional
+    // forks; sibling alternatives never exempt each other.
+    const reportGroup = (group, inherited, isTableRows) => {
       const divide = new Set(inherited);
-      for (const token of group.parts.flatMap((part) => part.text.split(/\s+/))) {
-        if (!token) continue;
-        const { prefix, cls } = splitClassToken(token);
-        if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
+      if (isTableRows) {
+        for (const token of group.parts.flatMap((part) => part.text.split(/\s+/))) {
+          if (!token) continue;
+          const { prefix, cls } = splitClassToken(token);
+          if (DIVIDE_DIVIDER_COLOR.test(cls)) divide.add(prefix);
+        }
       }
       for (const part of group.parts) {
         for (const token of part.text.split(/\s+/)) {
@@ -250,23 +289,40 @@ export default {
           if (category) findings.push({ category, cls: token, node: part.node });
         }
       }
-      for (const forked of group.forks) reportGroup(forked, divide);
+      for (const forked of group.forks) reportGroup(forked, divide, isTableRows);
     };
 
-    const visitValue = (node) => {
+    const visitValue = (node, isTableRows) => {
       const root = newGroup(null);
       collectClassStrings(node, root, resolve, seen);
-      if (root.parts.length > 0 || root.forks.length > 0) reportGroup(root, new Set());
+      if (root.parts.length > 0 || root.forks.length > 0) reportGroup(root, new Set(), isTableRows);
     };
 
     return {
       JSXAttribute(node) {
-        if (node.name.type === 'JSXIdentifier' && node.name.name === 'className') {
-          visitValue(node.value);
-        }
+        if (node.name.type !== 'JSXIdentifier' || node.name.name !== 'className') return;
+        const element = node.parent.name;
+        visitValue(
+          node.value,
+          element.type === 'JSXIdentifier' && TABLE_ROW_ELEMENTS.has(element.name),
+        );
       },
       CallExpression(node) {
-        visitValue(node);
+        const declarator = node.parent;
+        if (
+          isHelperCall(node) &&
+          declarator.type === 'VariableDeclarator' &&
+          declarator.init === node &&
+          declarator.parent.kind === 'const'
+        ) {
+          const [variable] = context.sourceCode.getDeclaredVariables(declarator);
+          if (variable && isCheckedAtUses(variable)) {
+            // Mark it and its nested helpers seen; the className uses report them.
+            collectClassStrings(node, newGroup(null), resolve, seen);
+            return;
+          }
+        }
+        visitValue(node, false);
       },
       'Program:exit'() {
         const fileKey = hasBaseline

@@ -445,7 +445,7 @@ function SuggestionList({ onPick }: { onPick: (draft: AutomationSuggestion['draf
   return (
     <section className="mt-8">
       <h2 className="text-label text-muted">Suggestions</h2>
-      <div className="mt-2 divide-y divide-divider overflow-hidden rounded-xl bg-surface/20">
+      <div className="mt-2 overflow-hidden rounded-xl bg-surface dark:bg-surface/20">
         {AUTOMATION_SUGGESTIONS.map((suggestion) => (
           <button
             key={suggestion.title}
@@ -453,9 +453,9 @@ function SuggestionList({ onPick }: { onPick: (draft: AutomationSuggestion['draf
             onClick={() => {
               onPick(suggestion.draft);
             }}
-            className="group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated/45"
+            className="group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated dark:hover:bg-elevated/45"
           >
-            <span className="mt-0.5 flex size-control-md items-center justify-center rounded-lg bg-surface text-muted transition-colors group-hover:text-primary">
+            <span className="mt-0.5 flex size-control-md items-center justify-center rounded-lg bg-bg text-muted transition-colors group-hover:text-primary dark:bg-surface">
               <Clock className="size-icon-md" />
             </span>
             <span className="min-w-0 flex-1">

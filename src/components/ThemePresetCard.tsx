@@ -82,7 +82,7 @@ function ThemeColorRow({
   // (near-black or near-white) has better contrast against it.
   const ink = contrastInk(value);
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 py-3">
       <div>
         <div className="text-body text-primary">{label}</div>
         <div className="text-caption text-muted">{description}</div>
@@ -363,7 +363,7 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
         </p>
       )}
 
-      <div className="divide-y divide-divider px-4">
+      <div className="px-4">
         {COLOR_ROWS.map(({ key, label, description }) => (
           <ThemeColorRow
             key={key}
@@ -375,7 +375,7 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
             }}
           />
         ))}
-        <div className="flex items-center justify-between gap-3 py-2.5">
+        <div className="flex items-center justify-between gap-3 py-3">
           <div>
             <div className="text-body text-primary">Quick accents</div>
             <div className="text-caption text-muted">One-tap accent colors</div>

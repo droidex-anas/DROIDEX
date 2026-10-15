@@ -169,7 +169,7 @@ export function AutomationModelPicker({
                 <span className="text-label text-muted">Reasoning</span>
                 <span className="text-label capitalize text-primary">{selectedReasoning}</span>
               </div>
-              <div className="flex flex-wrap gap-1 rounded-lg bg-bg/65 p-1">
+              <div className="flex flex-wrap gap-1 rounded-lg bg-elevated p-1 dark:bg-bg/65">
                 {reasoningOptions.map((reasoning) => {
                   const selected = reasoning === selectedReasoning;
                   return (

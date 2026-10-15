@@ -36,14 +36,14 @@ export function ArchivedChatsSettings() {
           <p className="text-body text-secondary">No archived chats.</p>
         </div>
       ) : (
-        <div className="divide-y divide-divider overflow-hidden rounded-xl bg-surface shadow-lg">
+        <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
           {rows.map(({ session, archivedAt }) => {
             const title = chatDisplayTitle(session, chatMetadata[session.appSessionId]);
             return (
               <div
                 key={session.appSessionId}
                 data-testid="archived-chat-row"
-                className="flex items-center gap-3 px-4 py-3"
+                className="flex items-center gap-3 px-4 py-3.5"
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body text-primary">{title}</div>

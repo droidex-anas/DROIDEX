@@ -6,7 +6,8 @@ How DROIDEX should feel: calm, quick and certain. The UI stays quiet so the agen
 
 - **Restraint is the style.** Every pixel either helps someone act or understand, or it goes. When in doubt, remove it: a line, a colour, a label, an animation.
 - **Hierarchy through tone, not decoration.** Use weight, size, `text` / `text-secondary` / `text-muted` and the surface ramp. Don't reach for boxes, borders, colour or icons to make something stand out.
-- **Meaningful lines only.** Keep the explicit cases in [rule 4](rules.md#lines-that-carry-meaning). Agent reports and instructions in project chats keep their speaker-marking hairlines. Headers, footers and groups have no line; scrolling content under a sidebar or panel footer gets a soft blur/fade.
+- **Space and tone, not lines.** A clean screen separates things with space and a subtle change of tone, the way an open dropdown reads on a dark surface by contrast alone. Rows in a card, headers, footers and groups have no line; scrolling content under a sidebar or panel footer gets a soft blur/fade. Lines are rare: data tables and the few cases in [rule 4](rules.md#lines-that-carry-meaning), such as the speaker-marking hairlines on agent reports in project chats.
+- **The same cues in both themes.** Hover, selection and open menus must be as easy to see in light as in dark. Light fills step further in tone to get there, and light shadows carry the lift that tone can't.
 - **Density with air.** DROIDEX is a pro tool, so show a lot, but give every group room. Tight inside a group, generous between groups.
 - **Consistency beats cleverness.** The same thing looks and behaves the same everywhere. One menu, one row, one way to confirm, one way to close.
 - **The details are the product.** Alignment to the pixel, truncation that keeps the useful end of a path, numbers that don't jitter, focus that lands in the right place. People can't name these, but they feel them.

@@ -122,7 +122,7 @@ export function DroidProxySettings() {
           title="DroidProxy"
           sub="Use subscription models in Droid sessions through a local proxy."
         />
-        <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+        <div className="rounded-xl bg-surface shadow-lg mb-8">
           <SettingRow label="DroidProxy" description="Detecting the app and its connections…">
             <span />
           </SettingRow>
@@ -153,7 +153,7 @@ export function DroidProxySettings() {
         sub="Use subscription models in Droid sessions through a local proxy."
       />
 
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow label="DroidProxy app" description={appDescription(status, installError)}>
           {status.appInstalled ? (
             <Button
@@ -233,7 +233,7 @@ export function DroidProxySettings() {
       <GroupLabel>
         Subscriptions{connectedCount > 0 ? ` · ${String(connectedCount)} connected` : ''}
       </GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         {PROVIDER_ORDER.map((provider) => {
           const row = status.providers.find((entry) => entry.provider === provider);
           if (!row) return null;
@@ -299,7 +299,7 @@ function DroidProxyProviderRow({
     </div>
   );
   return (
-    <div className="px-4 py-3">
+    <div className="px-4 py-3.5">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         {row.accounts.length > 0 ? (
           <button

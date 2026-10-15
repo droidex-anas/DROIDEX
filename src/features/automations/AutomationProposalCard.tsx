@@ -149,7 +149,7 @@ export function AutomationProposalCard({
       initial={reduceMotion ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.18, ease: EASE }}
-      className="overflow-hidden rounded-xl bg-surface/35"
+      className="overflow-hidden rounded-xl bg-surface dark:bg-surface/35"
       aria-label="DROIDEX automation proposal"
     >
       <div className="px-4 pb-3 pt-3.5">
@@ -178,7 +178,7 @@ export function AutomationProposalCard({
 
       {workingDraft ? (
         scheduledAutomationId ? (
-          <dl className="divide-y divide-divider">
+          <dl>
             <ViewRow
               label="Schedule"
               value={formatSchedule(workingDraft.schedule, workingDraft.timezone)}
@@ -207,7 +207,7 @@ export function AutomationProposalCard({
             />
           </dl>
         ) : (
-          <div className="divide-y divide-divider px-4 pb-1 pt-1">
+          <div className="px-4 pb-1 pt-1">
             <EditorRow label="Repeat">
               <SelectMenu
                 value={workingDraft.schedule.kind}

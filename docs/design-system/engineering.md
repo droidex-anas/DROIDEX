@@ -43,7 +43,7 @@ In code this is `usePopoverPosition` (`src/components/ui/usePopoverPosition.ts`)
 - **Nested radius = outer radius − padding.** A 12px popover with 6px padding holds 6–8px items. That's why menus use `radius-lg` with `space-1.5` padding and `radius-md` items.
 - **Icon + label gap**: `space-1.5` in buttons and chips, `space-2` in menu items, `space-2.5` in rows.
 - **Control padding**: `space-3` sides on `control-md`, `space-2.5` on `control-sm`. Icon-only controls are square.
-- **Groups.** Use `space-1` to `space-2` between items in a group and `space-4` to `space-6` between groups. No lines around groups, under headers or above footers. Use `divide-y` / `divide-x` with `divide-divider` only between dense-list rows where space alone would hurt scanning.
+- **Groups.** Use `space-1` to `space-2` between items in a group and `space-4` to `space-6` between groups. Never a line between rows, around groups, under headers or above footers: rows in a grouped card keep the same vertical padding and an interactive row takes an `elevated` fill on hover. Only data-table bodies (`<tbody>`) use `divide-y divide-divider`.
 - **Optical alignment.** Line up the text edge, not the box edge: a row's label sits on the same vertical line as the section header above it.
 
 ## Sizing where it matters
@@ -75,11 +75,11 @@ Neutral by default, colour when the action has consequences:
 
 Do it in order, one surface at a time:
 
-1. **Keep meaningful lines.** Preserve the explicit cases in [rule 4](rules.md#lines-that-carry-meaning), including project-chat agent reports and instructions. `divider` is for dense rows, not group or header/footer edges.
+1. **Keep meaningful lines.** Preserve the explicit cases in [rule 4](rules.md#lines-that-carry-meaning), including data tables and project-chat agent reports and instructions. `divider` is never a row, group, header or footer edge.
 2. **Remove the focus outlines.** `src/index.css` sets `outline: none` on `:focus` and draws the 1.5px `focus-ring` on `:focus-visible`. Delete per-component rings such as `focus-visible:ring-1 ring-accent/60` so the global ring shows; a control that must draw its own uses `ring-focus-ring`.
 3. **Strip control borders.** Buttons, inputs, chips and segmented controls lose `border` and get their fill from the ramp.
-4. **Strip surface borders.** Cards, panels, popovers and the composer separate by a tone step. Add `shadow-sm`/`shadow-lg` only when floating. Hover, active and focused surfaces change fill, not stroke or ring; the composer's active state is a colour change only.
-5. **Search for leftovers.** Search for `border-divider`, `border `, `ring-` and `outline`. Remove decorative edges, not meaningful ones. Scrolling content under a sidebar or panel footer gets a soft blur/fade, never a hairline. Leave already-borderless surfaces alone.
+4. **Strip surface borders and row dividers.** Cards, panels, popovers and the composer separate by a tone step, and the rows inside them by space. Add `shadow-sm`/`shadow-lg` only when floating. Hover, active and focused surfaces change fill, not stroke or ring; the composer's active state is a colour change only.
+5. **Search for leftovers.** Search for `divide-`, `border-divider`, `border `, `ring-` and `outline`. Remove decorative edges, not meaningful ones. Scrolling content under a sidebar or panel footer gets a soft blur/fade, never a hairline. Leave already-borderless surfaces alone.
 
 ## Interaction details
 
@@ -157,8 +157,8 @@ Small engineering choices that decide whether the app feels finished.
 
 ## Enforcement
 
-- **Where tokens live.** `src/lib/themeTokens.ts` derives every colour and shadow for each theme, and `applyTheme` in `src/lib/theme.ts` writes them on `:root`. `tailwind.config.js` exposes them as classes: colours, type styles, control and icon sizes, radius, shadows and z-index. `src/index.css` holds the base layer: the focus ring and hidden scrollbars. The contrast tests in `src/lib/theme.test.ts` hold every text pair at 4.5:1.
-- **The lint rule.** `tools/eslint/design-tokens.mjs` flags raw hex, Tailwind palette colours, arbitrary values, border edges (including `border-divider`), resting rings/outlines, weights outside 400–600, non-token focus colours, and `uppercase`. Edge resets and `focus-visible:` edges are allowed; dense-row separators use `divide-y` / `divide-x` with same-variant `divide-divider`. `npm run lint` reports only what exceeds a file's count in `tools/design-token-baseline.json`.
+- **Where tokens live.** `src/lib/themeTokens.ts` derives every colour and shadow for each theme, and `applyTheme` in `src/lib/theme.ts` writes them on `:root`. `tailwind.config.js` exposes them as classes: colours, type styles, control and icon sizes, radius, shadows and z-index. `src/index.css` holds the base layer: the focus ring and hidden scrollbars. The contrast tests in `src/lib/theme.test.ts` hold every text pair at 4.5:1 and keep light-theme hover and selection fills about as visible as dark ones.
+- **The lint rule.** `tools/eslint/design-tokens.mjs` flags raw hex, Tailwind palette colours, arbitrary values, border edges (including `border-divider`), resting rings/outlines, weights outside 400–600, non-token focus colours, and `uppercase`. Edge resets and `focus-visible:` edges are allowed; `divide-y` / `divide-x` count as edges too, except with same-variant `divide-divider` on a data table's `<tbody>` or `<tr>`. `npm run lint` reports only what exceeds a file's count in `tools/design-token-baseline.json`.
 - **Meaningful edges.** For the explicit cases in [rule 4](rules.md#lines-that-carry-meaning), put `eslint-disable-next-line design-policy/design-tokens -- <allowed case and why>` immediately before the class value (use a JSX comment inside markup). Name the case, for example `agent-to-agent project-chat instruction: marks the speaker` or `dashed drop target: drag cue`. Both lint and the ratchet respect the directive. Never exempt a whole file or a decorative surface.
 - **The ratchet.** `npm run quality:design-tokens` (`tools/check-design-tokens.mjs`) counts every violation and compares it with the baseline. It runs in CI and in the pre-commit hook when `.tsx` files are staged. The baseline only goes down: after removing violations, lower it with `npm run quality:design-tokens -- --update-baseline` and commit the new numbers.
 - **A deliberate rise.** `--update-baseline --force` writes through a rise once, for a deliberate change such as a stricter matcher. It prints each raise; say why in the pull request. Never use it to land new violations.

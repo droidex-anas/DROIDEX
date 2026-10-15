@@ -115,7 +115,7 @@ export function NotificationsSettings({ highlightQuery = '' }: { highlightQuery?
       />
 
       <GroupLabel>Finish alerts</GroupLabel>
-      <div className="mb-6 divide-y divide-divider overflow-hidden rounded-xl bg-surface shadow-lg">
+      <div className="mb-6 overflow-hidden rounded-xl bg-surface shadow-lg">
         {FINISH_NOTIFICATION_TOGGLES.map(({ key, label, description, needsMaster }) => {
           const highlighted = rowMatches(label, description, highlightQuery);
           return (

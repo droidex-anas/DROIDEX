@@ -54,8 +54,8 @@ function HardwareAccelerationSettingPanel() {
   return (
     <>
       <GroupLabel>Performance</GroupLabel>
-      <div className="mb-8 rounded-xl bg-surface shadow-lg divide-y divide-divider">
-        <div className="flex items-start justify-between gap-5 px-4 py-4">
+      <div className="mb-8 rounded-xl bg-surface shadow-lg">
+        <div className="flex items-start justify-between gap-5 px-4 py-3.5">
           <div className="min-w-0">
             <div className="text-body text-primary">Hardware acceleration</div>
             <p className="mt-0.5 max-w-xl text-caption text-muted">
@@ -70,7 +70,7 @@ function HardwareAccelerationSettingPanel() {
             onChange={(value) => void update(value)}
           />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
           <p className="text-caption text-muted">Changes take effect after you restart DROIDEX.</p>
           {needsRestart && (
             <Button size="sm" onClick={() => void relaunchApp()}>
