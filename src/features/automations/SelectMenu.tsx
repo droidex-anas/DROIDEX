@@ -371,7 +371,7 @@ function OptionButton({
       }}
       className={`flex w-full items-center gap-2 rounded-md px-2 text-left outline-none transition-colors ${
         fixedHeight ? 'h-control-lg' : 'min-h-control-lg py-1.5'
-      } ${active ? 'bg-surface' : 'hover:bg-surface/65'}`}
+      } ${active ? 'bg-active dark:bg-surface' : 'hover:bg-elevated dark:hover:bg-surface/65'}`}
     >
       <span className="min-w-0 flex-1">
         <span className="block truncate text-body text-primary">{option.label}</span>

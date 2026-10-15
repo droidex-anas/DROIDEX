@@ -52,7 +52,7 @@ export function HarnessModelSettings() {
   }, [needsDroidCatalog]);
 
   return (
-    <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+    <div className="rounded-xl bg-surface shadow-lg mb-8">
       {HARNESSES.map((provider) => (
         <HarnessModelRow
           key={provider}
@@ -130,7 +130,7 @@ function HarnessModelRow({
   };
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="flex items-center justify-between gap-4 px-4 py-3.5">
       <div className="flex min-w-0 items-center gap-2.5">
         <ModelIcon provider={PROVIDER_MARKS[provider]} size={16} />
         <div className="min-w-0">

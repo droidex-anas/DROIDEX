@@ -200,7 +200,7 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
                 onClick={() => {
                   setView('list');
                 }}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-surface/60 hover:text-primary"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated dark:hover:bg-surface/60 hover:text-primary"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -217,8 +217,8 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
                     }}
                     className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition-colors disabled:opacity-40 ${
                       fastMode
-                        ? 'bg-surface text-accent'
-                        : 'text-muted enabled:hover:bg-surface/60 enabled:hover:text-primary'
+                        ? 'bg-active text-accent dark:bg-surface'
+                        : 'text-muted enabled:hover:bg-elevated dark:enabled:hover:bg-surface/60 enabled:hover:text-primary'
                     }`}
                   >
                     <Zap
@@ -255,7 +255,7 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
                   onClick={() => {
                     sliderRef.current?.setValue(defaultEffort, { emit: true });
                   }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-surface/60 hover:text-primary"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-elevated dark:hover:bg-surface/60 hover:text-primary"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </button>
@@ -291,7 +291,7 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
 
             <div className="flex min-h-0 flex-col px-3 pt-3 pb-3">
               <div className="flex shrink-0 items-center gap-1.5">
-                <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-bg/50 px-3">
+                <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-field px-3 dark:bg-bg/50">
                   <Search className="size-icon-sm shrink-0 text-muted" />
                   <Input
                     variant="embedded"

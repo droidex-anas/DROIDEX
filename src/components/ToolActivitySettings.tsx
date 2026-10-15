@@ -97,7 +97,7 @@ export function ToolActivitySettings() {
   const current = DENSITY_STOPS[stopIndex];
 
   return (
-    <div className="rounded-xl bg-surface shadow-lg divide-y divide-divider mb-8">
+    <div className="rounded-xl bg-surface shadow-lg mb-8">
       <div className="px-4 py-3.5">
         <div className="text-body text-primary">Tool activity</div>
         <div className="mt-0.5 text-caption text-muted">

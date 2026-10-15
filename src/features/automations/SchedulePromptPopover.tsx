@@ -101,7 +101,7 @@ export default function SchedulePromptPopover({
               </Button>
             ))}
           </div>
-          <div className="divide-y divide-divider rounded-lg bg-surface/30">
+          <div className="rounded-lg bg-bg dark:bg-surface/30">
             <ScheduleControls
               schedule={schedule}
               timezone={timezone}

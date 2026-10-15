@@ -148,6 +148,17 @@ describe('deriveThemeTokens', () => {
     }
   });
 
+  it('makes light hover and selection fills read about as clearly as dark ones', () => {
+    for (const { name, tokens } of EVERY_VARIANT) {
+      for (const ground of ['--sidebar', '--bg'] as const) {
+        const hover = contrastRatio(tokens['--elevated'], tokens[ground]);
+        const selected = contrastRatio(tokens['--active'], tokens[ground]);
+        assert.ok(hover >= 1.12, `${name} hover on ${ground} is ${hover.toFixed(3)}:1`);
+        assert.ok(selected >= 1.28, `${name} selection on ${ground} is ${selected.toFixed(3)}:1`);
+      }
+    }
+  });
+
   it('draws dividers as translucent tints of the text colour', () => {
     for (const { name, tokens } of EVERY_VARIANT) {
       const [r, g, b] = [1, 3, 5].map((i) => parseInt(tokens['--text'].slice(i, i + 2), 16));
@@ -242,8 +253,8 @@ describe('surfaceStep', () => {
     // on the canvas, which hid popovers, menus and fields in light mode.
     for (const preset of BUILT_IN_THEMES) {
       for (const variant of [preset.light, preset.dark]) {
-        const elevated = surfaceStep(variant, 13);
-        const active = surfaceStep(variant, 26);
+        const elevated = surfaceStep(variant, 'elevated');
+        const active = surfaceStep(variant, 'active');
         for (const [rung, name] of [
           [elevated, 'elevated'],
           [active, 'active'],

@@ -47,9 +47,9 @@ Two themes from the **Default** preset, dark first (the app's default and its `:
 
 Text colours use `text-primary` rather than `text-text`; the colour itself is also exposed as `text` for fills. The `diff-*` variables already had their final names.
 
-- **Neutral ramp.** Paint the window `bg`, cards and side panels `surface`, hover fills, chips and the composer `elevated`, inputs `field`, and selected rows and pressed controls `active`. The ramp always reads bg < surface < elevated < active. Floating layers (menus, popovers, tooltips, toasts) use `raised`, which lifts to near-white on light instead of darkening.
+- **Neutral ramp.** Paint the window `bg`, cards and side panels `surface`, hover fills, chips and the composer `elevated`, inputs `field`, and selected rows and pressed controls `active`. The ramp always reads bg < surface < elevated < active, and each step reads about as strongly in light as in dark (hover about 1.13:1 and selection about 1.3:1 against the sidebar), so light rungs step further from the canvas. Floating layers (menus, popovers, tooltips, toasts) use `raised`, which lifts to near-white on light instead of darkening.
 - **Text.** `text` for primary copy and icons, `text-secondary` for supporting text and resting icons, `text-muted` for meta, timestamps and placeholders. All three, and every status colour, hold at least 4.5:1 on every surface, `active` included, in both themes. Don't go lighter than muted for anything that must be read.
-- **Borders only where necessary.** Surfaces separate by tone, with shadow when floating, not an added outline. State changes use fill. Keep only the meaningful lines in [rule 4](rules.md#lines-that-carry-meaning), including agent reports and instructions in project chats. `divider` separates dense rows, never headers, footers or groups; `divider-strong` is for the rare split that has to survive a busy area.
+- **Space and tone, not lines.** Things separate by space and a tone step, with shadow when floating, never an outline or a divider. State changes use fill. Rows in a grouped card separate by their padding, not a line. `divider` is only for data-table rows and the other meaningful lines in [rule 4](rules.md#lines-that-carry-meaning), such as agent reports and instructions in project chats; `divider-strong` is for the rare split that has to survive a busy area.
 - **Accent is neutral.** `accent` is near-white on dark and ink on light. It drives selection, toggles, sliders and the `focus-ring`, never status.
 - **Hue means something.** Links `link`; skills `skill` with `skill-mark`; the Visualize chip `visualize-mark`; the top reasoning level `ultra`.
 - **Actions with consequences get colour.** `success`, `warning` and `danger` each come with a `-soft` fill. A destructive menu item or button shows `danger` text at rest and a `danger-soft` fill on hover; a danger button fills solid `danger` on hover so the click confirms itself. Approve, merge and accept work the same way in `success`. Status badges pair the soft fill with the text colour. Always pair a status hue with a word or an icon.
@@ -57,7 +57,7 @@ Text colours use `text-primary` rather than `text-text`; the colour itself is al
 - **Updates** use `update` with an `on-update` label (white, 6.0:1) in both themes. It is the one solid blue fill in the UI.
 - **Brand colours** `brand-ink`, `brand-paper`, `brand-orange` belong to the mark, the app icon, and marketing surfaces. Don't use them for app chrome or state.
 
-Adjusted from the code to fix contrast: light `text-muted` #6c6966 → #64615e, light `success` #1f7a4d → #1c6f46, light `warning` #9a5a0f → #8f530e, dark `danger` #cf5d54 → #d6766e. Each kept its hue and now reaches 4.5:1 on `active`.
+Muted and status text are tuned in code against `active`, the surface they read worst on: light `text-muted` #5f5c59, light `success` #1b6943, light `warning` #884f0d, light `danger` #ab2f28, dark `danger` #d6766e. Each keeps its hue and reaches 4.5:1 on `active`.
 
 ## Type
 
@@ -101,7 +101,7 @@ The scale is a cleaned-up version of what the code uses today. Sizes 9, 11.5, 12
 
 ## Elevation
 
-Two shadows only. Use `shadow-sm` for floating tool panels, chips and the composer, and `shadow-lg` for floating cards, popovers, menus and dialogs. Both are tuned per theme: dark gets a deep near-black drop with a faint highlight, and light gets a barely-there lift that blends into the paper canvas. Tone is the surface edge; never add a border or state ring on top. `shadow-focus-update` is only for the update pill's keyboard focus halo.
+Two shadows only. Use `shadow-sm` for floating tool panels, chips and the composer, and `shadow-lg` for floating cards, popovers, menus and dialogs. Both are tuned per theme: dark gets a deep near-black drop with a faint highlight. Light layers are already near white and can't lift by tone, so a soft ink ring and drop carry the lift, enough to see a menu over the sidebar without looking dirty. Tone is the surface edge; never add a border or state ring on top. `shadow-focus-update` is only for the update pill's keyboard focus halo.
 
 ## Focus and states
 

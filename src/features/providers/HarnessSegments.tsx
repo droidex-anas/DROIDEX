@@ -39,7 +39,7 @@ export default function HarnessSegments({
       <div
         role="radiogroup"
         aria-label="Harness"
-        className="relative flex gap-0.5 rounded-lg bg-bg/60 p-0.5"
+        className="relative flex gap-0.5 rounded-lg bg-elevated p-0.5 dark:bg-bg/60"
       >
         {PROVIDER_KINDS.map((kind) => {
           const {

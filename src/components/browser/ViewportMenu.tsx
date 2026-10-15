@@ -116,7 +116,9 @@ export function ViewportMenu({
                     if (!selected) onSelect(choice);
                   }}
                   className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
-                    selected ? 'bg-surface' : 'hover:bg-surface/60'
+                    selected
+                      ? 'bg-active dark:bg-surface'
+                      : 'hover:bg-elevated dark:hover:bg-surface/60'
                   }`}
                 >
                   <span

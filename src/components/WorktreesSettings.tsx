@@ -341,7 +341,7 @@ export function WorktreesSettings() {
                   {linkedWorktrees.length === 1 ? 'worktree' : 'worktrees'}
                 </span>
               </div>
-              <div className="divide-y divide-divider overflow-hidden rounded-xl bg-surface shadow-lg">
+              <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
                 <AnimatePresence initial={false}>
                   {visibleWorktrees.map((details) => {
                     const { worktree } = details;

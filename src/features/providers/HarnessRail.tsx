@@ -24,8 +24,8 @@ export default function HarnessRail({
     >
       {PROVIDER_KINDS.map((provider) => {
         const { selected, disabled, title } = harnessChoice(provider, current, statuses, locked);
-        let tone = 'text-muted hover:bg-surface/60 hover:text-primary';
-        if (selected) tone = 'bg-surface text-primary';
+        let tone = 'text-muted hover:bg-elevated dark:hover:bg-surface/60 hover:text-primary';
+        if (selected) tone = 'bg-active text-primary dark:bg-surface';
         else if (disabled) tone = 'cursor-not-allowed text-muted/40';
         return (
           <button

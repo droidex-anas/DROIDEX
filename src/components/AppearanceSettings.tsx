@@ -65,7 +65,7 @@ function Slider({
   suffix?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 py-3">
       <div>
         <div className="text-body text-primary">{label}</div>
         {sub && <div className="text-caption text-muted">{sub}</div>}
@@ -221,8 +221,8 @@ export function AppearanceSection() {
 
       {/* Typography + behavior */}
       <GroupLabel>Typography & behavior</GroupLabel>
-      <div className="divide-y divide-divider rounded-xl bg-surface px-4 shadow-lg">
-        <div className="flex items-center justify-between py-2.5">
+      <div className="rounded-xl bg-surface px-4 shadow-lg">
+        <div className="flex items-center justify-between py-3">
           <div>
             <div className="text-body text-primary">UI font</div>
             <div className="text-caption text-muted">
@@ -271,7 +271,7 @@ export function AppearanceSection() {
             updateTheme({ contrast: v });
           }}
         />
-        <div className="flex items-center justify-between gap-3 py-2.5">
+        <div className="flex items-center justify-between gap-3 py-3">
           <div>
             <div className="text-body text-primary">Translucent sidebar</div>
             <div className="text-caption text-muted">Blur and lighten the sidebar surface</div>
