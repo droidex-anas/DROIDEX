@@ -1,32 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-
-function Chevron({ up }: { up: boolean }) {
-  return (
-    <svg
-      className={`h-3 w-3 transition-transform duration-200 ${up ? 'rotate-180' : ''}`}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4 6l4 4 4-4" />
-    </svg>
-  );
-}
+import { ChevronDown, ChevronUp } from '@droidex/icons';
+import { Button } from '../ui/Button';
 
 function ExpandButton({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {
   return (
-    <button
+    <Button
+      size="sm"
+      shape="round"
+      icon={expanded ? ChevronUp : ChevronDown}
       onClick={onClick}
       aria-expanded={expanded}
-      className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-surface px-2.5 py-1 text-[11px] font-medium text-droid-text-secondary shadow-sm transition-colors hover:border-droid-border-hover hover:text-droid-text"
     >
       {expanded ? 'Show less' : 'Show more'}
-      <Chevron up={expanded} />
-    </button>
+    </Button>
   );
 }
 
@@ -81,7 +67,7 @@ export function ClampedBlock({
   return (
     <div className="relative w-full min-w-0">
       <div
-        className="overflow-hidden transition-[max-height] duration-300 ease-out motion-reduce:transition-none"
+        className="overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none"
         style={maxHeight === undefined ? undefined : { maxHeight }}
       >
         <div ref={contentRef} className={contentClassName}>

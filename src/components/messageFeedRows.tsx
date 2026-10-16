@@ -8,6 +8,7 @@ import {
 import { isThreadReport } from '../features/projects/threadNotices';
 import { hasAppBlock } from './appBlockRuntime';
 import { FeedItemView, feedItemPropsEqual, type FeedItemViewProps } from './chat';
+import { Button } from './ui/Button';
 
 export interface FeedRowProps extends FeedItemViewProps {
   animateOnMount: boolean;
@@ -58,17 +59,17 @@ export const FeedRow = memo(function FeedRow(props: FeedRowProps) {
       } ${isMessage ? 'pb-2' : ''} ${animate ? entranceClass : ''} ${reachClass}`}
     >
       {reach.rangeSelecting && (
-        <button
-          type="button"
+        <Button
+          size="sm"
           data-testid="transcript-range-row"
           aria-label="Select this row for range copy"
           onClick={() => {
             reach.onSelectRangeRow(item.key);
           }}
-          className="mb-1 rounded-md border border-droid-border px-1.5 py-0.5 text-[11px] text-droid-text-muted hover:text-droid-text"
+          className="mb-1"
         >
           {rangeRowLabel(item.key, reach.rangeStartKey, reach.rangeEndKey)}
-        </button>
+        </Button>
       )}
       <FeedItemView {...itemProps} />
     </div>

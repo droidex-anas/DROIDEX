@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { BrandMark } from './BrandMark';
+import { Button } from './ui/Button';
 
 // Quick-start menu for a fresh chat: an entry only seeds the composer with the
 // beginning of a prompt (it never sends), so the user just continues typing
@@ -51,10 +52,10 @@ export function WelcomeScreen({
     // A short tile scrolls the screen instead of clipping its top.
     <div className="flex min-h-full flex-col items-center justify-center px-8 py-6">
       <div className="droid-rise">
-        <BrandMark size={34} className="text-droid-accent" />
+        <BrandMark size={34} className="text-accent" />
       </div>
       <div
-        className="droid-rise mt-6 max-w-lg text-center text-[22px] leading-snug font-semibold tracking-tight text-droid-text"
+        className="droid-rise mt-6 max-w-lg text-balance text-center text-title text-primary"
         style={{ animationDelay: '90ms' }}
       >
         {line(folder)}
@@ -68,15 +69,15 @@ export function WelcomeScreen({
               onSeedPrompt(entry.prompt);
             }}
             style={{ animationDelay: `${String(160 + i * 70)}ms` }}
-            className="droid-rise group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-droid-elevated/60"
+            className="droid-rise group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-elevated/60"
           >
-            <span className="w-3 shrink-0 text-[13px] text-droid-accent opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="w-3 shrink-0 text-body text-accent opacity-0 transition-opacity group-hover:opacity-100">
               &gt;
             </span>
-            <span className="w-[64px] shrink-0 text-[13px] font-medium text-droid-text-secondary transition-colors group-hover:text-droid-accent">
+            <span className="w-16 shrink-0 text-body-strong text-secondary transition-colors group-hover:text-accent">
               {entry.label}
             </span>
-            <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+            <span className="min-w-0 flex-1 truncate text-body text-muted transition-colors group-hover:text-secondary">
               {entry.hint}
             </span>
           </button>
@@ -92,29 +93,29 @@ function ProjectWelcome({ onStartChat }: { onStartChat: () => void }) {
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-8 py-6">
       <div className="droid-rise">
-        <BrandMark size={34} className="text-droid-accent" />
+        <BrandMark size={34} className="text-accent" />
       </div>
       <div
-        className="droid-rise mt-6 max-w-lg text-center text-[22px] leading-snug font-semibold tracking-tight text-droid-text"
+        className="droid-rise mt-6 max-w-lg text-balance text-center text-title text-primary"
         style={{ animationDelay: '90ms' }}
       >
         Start a project
       </div>
       <p
-        className="droid-rise mt-3 max-w-md text-center text-[13px] leading-6 text-droid-text-muted"
+        className="droid-rise mt-3 max-w-md text-pretty text-center text-body text-muted"
         style={{ animationDelay: '160ms' }}
       >
         Say what you want done. Its chat plans the work, asks you what it needs to know, and runs
         the parts that can go in parallel as threads.
       </p>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={onStartChat}
         style={{ animationDelay: '230ms' }}
-        className="droid-rise mt-6 rounded-lg px-3 py-1.5 text-[13px] text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text-secondary"
+        className="droid-rise mt-6"
       >
         Start a chat instead
-      </button>
+      </Button>
     </div>
   );
 }

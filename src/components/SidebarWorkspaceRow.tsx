@@ -1,30 +1,24 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Folder, FolderMinus, FolderOpen, Plus } from 'lucide-react';
-import { pushEscapeLayer } from './environment/usePopover';
+import { Folder, FolderMinus, FolderOpen, Plus } from '@droidex/icons';
+import { Menu } from './ui/Menu';
+import type { AnchorPoint } from './ui/usePopoverPosition';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const MENU_WIDTH = 200;
-const MENU_MARGIN = 8;
-const MENU_CHROME_PX = 18;
-const MENU_ROW_PX = 30;
-
-const itemClass =
-  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:bg-droid-elevated/60 focus-visible:text-droid-text focus-visible:outline-none';
 
 function WorkspaceFolderIcon({ open }: { open: boolean }) {
   const reduceMotion = useReducedMotion();
   const duration = reduceMotion ? 0 : 0.15;
   return (
-    <span className="relative block h-4 w-4 shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
+    <span className="relative block size-icon-md shrink-0 text-muted transition-colors group-hover:text-secondary">
       <motion.span
         className="absolute inset-0 flex items-center justify-center"
         initial={false}
         animate={{ opacity: open ? 0 : 1 }}
         transition={{ duration, ease: EASE }}
       >
-        <Folder className="h-4 w-4" />
+        <Folder className="size-icon-md" />
       </motion.span>
       <motion.span
         className="absolute inset-0 flex items-center justify-center"
@@ -32,109 +26,9 @@ function WorkspaceFolderIcon({ open }: { open: boolean }) {
         animate={{ opacity: open ? 1 : 0 }}
         transition={{ duration, ease: EASE }}
       >
-        <FolderOpen className="h-4 w-4" />
+        <FolderOpen className="size-icon-md" />
       </motion.span>
     </span>
-  );
-}
-
-export function WorkspaceContextMenuPanel({
-  x,
-  y,
-  name,
-  onRemove,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  name: string;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const pop = pushEscapeLayer(onClose);
-    window.addEventListener('blur', onClose);
-    window.addEventListener('scroll', onClose, true);
-    return () => {
-      pop();
-      window.removeEventListener('blur', onClose);
-      window.removeEventListener('scroll', onClose, true);
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
-  }, []);
-
-  const viewportWidth = typeof window === 'undefined' ? undefined : window.innerWidth;
-  const viewportHeight = typeof window === 'undefined' ? undefined : window.innerHeight;
-  const estimatedMenuHeight = MENU_CHROME_PX + MENU_ROW_PX;
-  const left =
-    viewportWidth === undefined
-      ? Math.max(MENU_MARGIN, x)
-      : Math.min(Math.max(MENU_MARGIN, x), viewportWidth - MENU_WIDTH - MENU_MARGIN);
-  const top =
-    viewportHeight === undefined
-      ? Math.max(MENU_MARGIN, y)
-      : Math.min(Math.max(MENU_MARGIN, y), viewportHeight - estimatedMenuHeight - MENU_MARGIN);
-
-  return (
-    <motion.div
-      ref={panelRef}
-      role="menu"
-      aria-label={`${name} workspace`}
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.12, ease: EASE }}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-      style={{ position: 'fixed', left, top, width: MENU_WIDTH }}
-      className="z-[991] rounded-xl border border-droid-border bg-droid-surface p-1 shadow-droid"
-    >
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onRemove();
-          onClose();
-        }}
-        className={itemClass}
-      >
-        <FolderMinus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        Remove workspace
-      </button>
-    </motion.div>
-  );
-}
-
-function WorkspaceContextMenu({
-  x,
-  y,
-  name,
-  onRemove,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  name: string;
-  onRemove: () => void;
-  onClose: () => void;
-}) {
-  return createPortal(
-    <>
-      <div
-        className="fixed inset-0 z-[990]"
-        onMouseDown={onClose}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onClose();
-        }}
-      />
-      <WorkspaceContextMenuPanel x={x} y={y} name={name} onRemove={onRemove} onClose={onClose} />
-    </>,
-    document.body,
   );
 }
 
@@ -153,26 +47,28 @@ export function SidebarWorkspaceRow({
   onRemove: () => void;
   children: ReactNode;
 }) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const rowButtonRef = useRef<HTMLButtonElement>(null);
+  const [menuPoint, setMenuPoint] = useState<AnchorPoint | null>(null);
   const closeMenu = useCallback(() => {
-    setMenu(null);
+    setMenuPoint(null);
   }, []);
 
   return (
     <div>
       <div className="group flex items-center gap-1 py-1.5 pl-3 pr-2.5">
         <button
+          ref={rowButtonRef}
           type="button"
           onClick={onToggle}
           onContextMenu={(event) => {
             event.preventDefault();
-            setMenu({ x: event.clientX, y: event.clientY });
+            setMenuPoint({ x: event.clientX, y: event.clientY });
           }}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-sm text-left"
         >
           <WorkspaceFolderIcon open={open} />
-          <span title={name} className="min-w-0 flex-1 truncate text-[13px] text-droid-text">
+          <span title={name} className="min-w-0 flex-1 truncate text-body text-primary">
             {name}
           </span>
         </button>
@@ -181,20 +77,28 @@ export function SidebarWorkspaceRow({
           onClick={onNewChat}
           title="New chat here"
           aria-label={`New chat in ${name}`}
-          className="shrink-0 cursor-pointer rounded-md p-0.5 text-droid-text-muted/0 transition-colors focus-visible:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 group-hover:text-droid-text-muted hover:text-droid-text"
+          className="shrink-0 cursor-pointer rounded-sm p-0.5 text-muted/0 transition-colors focus-visible:text-primary group-hover:text-muted hover:text-primary"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="size-icon-sm" />
         </button>
       </div>
       {children}
-      {menu ? (
-        <WorkspaceContextMenu
-          x={menu.x}
-          y={menu.y}
-          name={name}
-          onRemove={onRemove}
+      {menuPoint ? (
+        <Menu
+          open
           onClose={closeMenu}
-        />
+          anchorRef={rowButtonRef}
+          anchorPoint={menuPoint}
+          label={`${name} workspace`}
+          width={MENU_WIDTH}
+          onContextMenu={(event) => {
+            event.preventDefault();
+          }}
+        >
+          <Menu.Item icon={FolderMinus} onSelect={onRemove}>
+            Remove workspace
+          </Menu.Item>
+        </Menu>
       ) : null}
     </div>
   );

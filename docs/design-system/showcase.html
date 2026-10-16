@@ -28,7 +28,7 @@
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "JetBrains Mono", monospace;
   --font-pixel: "Silkscreen", "JetBrains Mono", ui-monospace, monospace;
 
-  --space-0-5: 2px; --space-1: 4px; --space-1-5: 6px; --space-2: 8px; --space-2-5: 10px; --space-3: 12px;
+  --space-0-5: 2px; --space-1: 4px; --space-1-5: 6px; --space-2: 8px; --space-2-5: 10px; --space-3: 12px; --space-3-5: 14px;
   --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
   --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px; --radius-2xl: 24px; --radius-full: 9999px;
   --control-sm: 28px; --control-md: 32px; --control-lg: 36px;
@@ -37,36 +37,36 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #ebeae7; --field: #ebeae7; --active: #deddda; --raised: #fefefd; --sidebar: #f2f1ee;
+    --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #e4e3e0; --field: #e4e3e0; --active: #d6d5d2; --raised: #fefefd; --sidebar: #f2f1ee;
     --divider: rgba(45, 42, 38, 0.08); --divider-strong: rgba(45, 42, 38, 0.14);
-    --text: #2d2a26; --text-secondary: #4f4d49; --text-muted: #64615e;
+    --text: #2d2a26; --text-secondary: #4a4844; --text-muted: #5f5c59;
     --accent: #2d2a26; --focus-ring: rgba(45, 42, 38, 0.55);
     --link: #1d4ed8; --skill: #1d4ed8; --skill-mark: #b82950; --ultra: #6d28d9;
-    --success: #1c6f46; --success-soft: rgba(28, 111, 70, 0.08);
-    --warning: #8f530e; --warning-soft: rgba(143, 83, 14, 0.08);
-    --danger: #b3312a; --danger-soft: rgba(179, 49, 42, 0.08);
+    --success: #1b6943; --success-soft: rgba(27, 105, 67, 0.08);
+    --warning: #884f0d; --warning-soft: rgba(136, 79, 13, 0.08);
+    --danger: #ab2f28; --danger-soft: rgba(171, 47, 40, 0.08);
     --diff-add-fg: #177030; --diff-add-bg: #eaf7ee; --diff-del-fg: #c0202b; --diff-del-bg: #fff0f0;
     --tile: var(--brand-paper); --tile-d: var(--brand-ink);
-    --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.03), 0 4px 12px rgba(28, 25, 23, 0.035);
-    --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 3px rgba(28, 25, 23, 0.03), 0 10px 28px rgba(28, 25, 23, 0.05);
+    --shadow-sm: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.05), 0 4px 12px rgba(28, 25, 23, 0.06);
+    --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 2px 6px rgba(28, 25, 23, 0.05), 0 12px 32px rgba(28, 25, 23, 0.1);
     --scroll-thumb: rgba(45, 42, 38, 0.18);
     --veil: rgba(248, 247, 244, 0.6);
   }
 }
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #ebeae7; --field: #ebeae7; --active: #deddda; --raised: #fefefd; --sidebar: #f2f1ee;
+  --bg: #f8f7f4; --surface: #fdfcfa; --elevated: #e4e3e0; --field: #e4e3e0; --active: #d6d5d2; --raised: #fefefd; --sidebar: #f2f1ee;
   --divider: rgba(45, 42, 38, 0.08); --divider-strong: rgba(45, 42, 38, 0.14);
-  --text: #2d2a26; --text-secondary: #4f4d49; --text-muted: #64615e;
+  --text: #2d2a26; --text-secondary: #4a4844; --text-muted: #5f5c59;
   --accent: #2d2a26; --focus-ring: rgba(45, 42, 38, 0.55);
   --link: #1d4ed8; --skill: #1d4ed8; --skill-mark: #b82950; --ultra: #6d28d9;
-  --success: #1c6f46; --success-soft: rgba(28, 111, 70, 0.08);
-  --warning: #8f530e; --warning-soft: rgba(143, 83, 14, 0.08);
-  --danger: #b3312a; --danger-soft: rgba(179, 49, 42, 0.08);
+  --success: #1b6943; --success-soft: rgba(27, 105, 67, 0.08);
+  --warning: #884f0d; --warning-soft: rgba(136, 79, 13, 0.08);
+  --danger: #ab2f28; --danger-soft: rgba(171, 47, 40, 0.08);
   --diff-add-fg: #177030; --diff-add-bg: #eaf7ee; --diff-del-fg: #c0202b; --diff-del-bg: #fff0f0;
   --tile: var(--brand-paper); --tile-d: var(--brand-ink);
-  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.03), 0 4px 12px rgba(28, 25, 23, 0.035);
-  --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.025), 0 1px 3px rgba(28, 25, 23, 0.03), 0 10px 28px rgba(28, 25, 23, 0.05);
+  --shadow-sm: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.05), 0 4px 12px rgba(28, 25, 23, 0.06);
+  --shadow-lg: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 2px 6px rgba(28, 25, 23, 0.05), 0 12px 32px rgba(28, 25, 23, 0.1);
   --scroll-thumb: rgba(45, 42, 38, 0.18);
   --veil: rgba(248, 247, 244, 0.6);
 }
@@ -87,7 +87,7 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 p { margin: 0; text-wrap: pretty; }
 code, .mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .num { font-variant-numeric: tabular-nums; }
-button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 svg.i { width: 16px; height: 16px; flex: none; }
 svg.i-sm { width: 14px; height: 14px; flex: none; }
 
@@ -189,7 +189,7 @@ section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
 .row-btn .meta { flex: none; font: 400 12px/16px var(--font-sans); letter-spacing: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-4) var(--space-3) var(--space-1); font: 500 12px/16px var(--font-sans); color: var(--text-muted); }
 .sec-h span:last-child { font: 400 11px/16px var(--font-sans); letter-spacing: 0.06px; }
-.divider { height: 1px; margin: var(--space-1-5) var(--space-3); background: var(--divider); }
+.divider { margin: var(--space-2) var(--space-3); }
 
 /* ---------- the app mock ---------- */
 .app { position: relative; display: grid; grid-template-columns: 248px minmax(0, 1fr) 272px; height: 640px; border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow-lg); overflow: hidden; }
@@ -200,11 +200,11 @@ section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
 .app .bar { display: flex; align-items: center; gap: var(--space-2); height: 44px; padding: 0 var(--space-4); }
 .app .bar .t { font: 500 13px/18px var(--font-sans); letter-spacing: -0.08px; }
 .app .feed { flex: 1; min-height: 0; overflow: auto; padding: var(--space-4) var(--space-6) var(--space-4); display: flex; flex-direction: column; gap: var(--space-6); }
-.msg-user { align-self: flex-end; max-width: 78%; padding: var(--space-2-5) var(--space-3-5, 14px); border-radius: var(--radius-xl); background: var(--elevated); font: 400 14px/22px var(--font-sans); }
+.msg-user { align-self: flex-end; max-width: 78%; padding: var(--space-2-5) var(--space-3-5); border-radius: var(--radius-xl); background: var(--elevated); font: 400 14px/22px var(--font-sans); }
 .msg-ai { max-width: 64ch; display: flex; flex-direction: column; gap: var(--space-2); }
 .msg-ai p { color: var(--text); }
 .toolp { border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden; }
-.toolp .row-btn { cursor: default; }
+.toolp .row-btn { cursor: pointer; }
 .toolp .out { padding: 0 var(--space-3) var(--space-3); font-family: var(--font-mono); font-size: 12px; line-height: 18px; color: var(--text-secondary); letter-spacing: 0; }
 .diffs { display: grid; gap: 1px; padding: 0 var(--space-3) var(--space-3); font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; }
 .diffs .a { background: var(--diff-add-bg); color: var(--diff-add-fg); padding: 0 var(--space-2); border-radius: 4px; }
@@ -272,7 +272,7 @@ section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
 .mi.danger, .mi.danger .ico { color: var(--danger); }
 .mi.danger:hover, .mi.danger.hl { background: var(--danger-soft) !important; }
 .mi .kbd { margin-left: auto; }
-.mdiv { height: 1px; margin: var(--space-1) var(--space-2); background: var(--divider); }
+.mdiv { margin: var(--space-2); }
 
 /* foundations */
 .ramp { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
@@ -290,7 +290,6 @@ section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
 .ok-n { color: var(--text-secondary); }
 .tscale { display: flex; flex-direction: column; }
 .tscale > div { display: grid; grid-template-columns: 120px minmax(0, 1fr) 96px; gap: var(--space-4); align-items: baseline; padding: var(--space-3) 0; }
-.tscale > div + div { border-top: 1px solid var(--divider); }
 .tscale .spec { text-align: right; }
 @media (max-width: 640px) { .tscale > div { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); } .tscale .spec { text-align: left; } }
 .sp { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -339,7 +338,7 @@ section.s { padding-block: 56px 8px; scroll-margin-top: 64px; }
 .icons span { font: 400 11px/16px var(--font-sans); letter-spacing: 0.06px; color: var(--text-muted); text-align: center; overflow-wrap: anywhere; }
 .icons .new span::after { content: " ·new"; color: var(--brand-orange); }
 .rules { counter-reset: r; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-6); list-style: none; margin: 0; padding: 0; }
-.rules li { counter-increment: r; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-2); padding: var(--space-3) 0; border-top: 1px solid var(--divider); }
+.rules li { counter-increment: r; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-2); padding: var(--space-3) 0; }
 .rules li::before { content: counter(r, decimal-leading-zero); font-family: var(--font-pixel); font-size: 12px; line-height: 20px; color: var(--brand-orange); }
 .rules b { font-weight: 500; }
 .rules p { color: var(--text-secondary); font-size: 13px; line-height: 18px; letter-spacing: -0.08px; margin-top: 2px; }
@@ -421,7 +420,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
   <section class="s" id="app">
     <div class="s-head">
       <div><div class="k">01 / App</div><h2>The system, applied</h2></div>
-      <p>The DROIDEX workspace rebuilt with the new rules: no borders, soft dividers, hover fills that match click areas, and status said in words rather than coloured dots. Hover the rows and try the more-actions button on a session. Switch on the guides to see the alignment lines.</p>
+      <p>The DROIDEX workspace rebuilt with the new rules: no borders or row lines, space and tone between groups, hover fills that match click areas, and status said in words rather than coloured dots. Hover the rows and try the more-actions button on a session. Switch on the guides to see the alignment lines.</p>
     </div>
     <div class="app" id="appmock">
       <aside class="side">
@@ -595,7 +594,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
   <section class="s" id="surfaces">
     <div class="s-head">
       <div><div class="k">05 / Surfaces</div><h2>No hard lines</h2></div>
-      <p>Edges come from tone and shadow. The only line left is the translucent divider. Focus shows only for the keyboard, as a soft 1.5px ring. Never a dark outline on click.</p>
+      <p>Surfaces separate by tone, with shadow when floating. Rows separate by space, never a line. Lines stay only when they carry meaning: data tables, agent reports and instructions in project chats, drop targets, diff markers and busy panel splits. Focus shows only for the keyboard, never on click.</p>
     </div>
     <div class="dd">
       <div class="panel">
@@ -606,7 +605,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
         <div style="margin-top:var(--space-3);display:flex;gap:8px"><button type="button" class="btn secondary bord" style="outline:2px solid #000;outline-offset:0">Clicked</button></div>
       </div>
       <div class="panel">
-        <div class="verdict good"><svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg>After: tone, shadow, soft divider</div>
+        <div class="verdict good"><svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"></path></svg>After: tone, shadow, space</div>
         <div style="border-radius:12px;padding:6px;background:var(--raised);box-shadow:var(--shadow-lg)">
           <div class="mi"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="3"></rect><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"></path></svg>Copy message</div><div class="mi"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 4.2c.75-.85 1.6-.95 2.4-.15l3.35 3.35c.8.8.7 1.65-.15 2.4l-2.5 2.15c-.65.55-1.05 1.3-1.2 2.15l-.45 2.5c-.25 1.4-1.3 1.75-2.3.75L6.65 10.8c-1-1-.65-2.05.75-2.3l2.5-.45c.85-.15 1.6-.55 2.15-1.2Z"></path><path d="m9.5 14-5 5"></path></svg>Pin session</div><div class="mdiv"></div><div class="mi danger"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="4.5" rx="2"></rect><path d="M5 8.5v9A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-9"></path><path d="M10 13h4"></path></svg>Archive session</div>
         </div>
@@ -743,7 +742,7 @@ footer { padding-block: 64px 40px; display: flex; align-items: center; gap: var(
       <li><div><b>Only tokens</b><p>No hex values, no <code>[13.5px]</code>, no one-off radii.</p></div></li>
       <li><div><b>Eleven type styles</b><p>If text needs to look different, it's a different style, not a tweak.</p></div></li>
       <li><div><b>Three weights</b><p>400 to read, 500 to click, 600 for headings.</p></div></li>
-      <li><div><b>No borders</b><p>Tone, space and shadow. The only line is the divider.</p></div></li>
+      <li><div><b>Space and tone, not lines</b><p>Space, tone and floating shadow. No row, header, footer or group dividers; lines only for data tables and the meaningful cases in rule 4.</p></div></li>
       <li><div><b>Colour is a signal</b><p>Links, status, consequential actions, the brand mark.</p></div></li>
       <li><div><b>One primary per surface</b><p>Everything else is secondary or ghost.</p></div></li>
       <li><div><b>Radius grows with size</b><p>8 → 12 → 16 → 24.</p></div></li>

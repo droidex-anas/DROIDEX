@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type DetailedHTMLProps,
   type Ref,
+  type RefObject,
 } from 'react';
 import './effortSliderElement';
 import EffortHelpCard from './EffortHelpCard';
@@ -36,7 +37,7 @@ export default function EffortSlider({
   autoFocus = false,
   onCommit,
   style,
-  helpAnchor = null,
+  helpAnchor,
   ref,
 }: {
   levels: EffortSliderLevel[];
@@ -47,7 +48,7 @@ export default function EffortSlider({
   onCommit: (value: string) => void;
   style?: CSSProperties;
   /** The surface the help explanation floats above; without one it stays hidden. */
-  helpAnchor?: HTMLElement | null;
+  helpAnchor?: RefObject<HTMLElement | null>;
   ref?: Ref<EffortSliderElement>;
 }) {
   const inner = useRef<EffortSliderElement | null>(null);
@@ -92,7 +93,7 @@ export default function EffortSlider({
   return (
     <>
       <effort-slider ref={attach} style={style} />
-      {helpAnchor && <EffortHelpCard button={helpButton} anchor={helpAnchor} />}
+      {helpAnchor && <EffortHelpCard button={helpButton} anchorRef={helpAnchor} />}
     </>
   );
 }

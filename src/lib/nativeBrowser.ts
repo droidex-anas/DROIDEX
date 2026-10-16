@@ -104,33 +104,33 @@ export async function reserveNativeBrowser(
   savedUrl?: string,
   savedMode?: BrowserViewportMode,
 ): Promise<{ src: string; generation: number }> {
-  return window.droidControl!.nativeBrowserReserve(browserSessionId, savedUrl, savedMode);
+  return window.droidex!.nativeBrowserReserve(browserSessionId, savedUrl, savedMode);
 }
 
 export async function releaseNativeBrowser(browserSessionId: string): Promise<void> {
-  await window.droidControl!.nativeBrowserRelease(browserSessionId);
+  await window.droidex!.nativeBrowserRelease(browserSessionId);
 }
 
 /** Sessions main has agent work in flight on, for a host that just mounted. */
 export async function listWorkingNativeBrowsers(): Promise<string[]> {
-  return (await window.droidControl?.nativeBrowserWorkingSessions()) ?? [];
+  return (await window.droidex?.nativeBrowserWorkingSessions()) ?? [];
 }
 
 export async function setNativeBrowserShown(
   browserSessionId: string,
   shown: boolean,
 ): Promise<void> {
-  await window.droidControl!.nativeBrowserShown(browserSessionId, shown);
+  await window.droidex!.nativeBrowserShown(browserSessionId, shown);
 }
 
 export async function goBackNativeBrowser(browserSessionId: string): Promise<boolean> {
   if (!isDesktop()) return false;
-  return window.droidControl!.nativeBrowserGoBack(browserSessionId);
+  return window.droidex!.nativeBrowserGoBack(browserSessionId);
 }
 
 export async function goForwardNativeBrowser(browserSessionId: string): Promise<boolean> {
   if (!isDesktop()) return false;
-  return window.droidControl!.nativeBrowserGoForward(browserSessionId);
+  return window.droidex!.nativeBrowserGoForward(browserSessionId);
 }
 
 export async function setNativeBrowserDesignState(
@@ -138,26 +138,26 @@ export async function setNativeBrowserDesignState(
   state: NativeBrowserDesignState,
 ): Promise<void> {
   if (!isDesktop()) return;
-  await window.droidControl!.nativeBrowserSetDesignState(browserSessionId, state);
+  await window.droidex!.nativeBrowserSetDesignState(browserSessionId, state);
 }
 
 export function onNativeBrowserDesignEvent(
   handler: (event: NativeBrowserDesignEvent) => void,
 ): () => void {
   if (!isDesktop()) return () => undefined;
-  return window.droidControl!.onNativeBrowserDesignEvent(handler);
+  return window.droidex!.onNativeBrowserDesignEvent(handler);
 }
 
 export function onNativeBrowserLoaded(handler: (event: NativeBrowserLoaded) => void): () => void {
   if (!isDesktop()) return () => undefined;
-  return window.droidControl!.onNativeBrowserLoaded(handler);
+  return window.droidex!.onNativeBrowserLoaded(handler);
 }
 
 export function onNativeBrowserLoadFailed(
   handler: (event: NativeBrowserLoadFailed) => void,
 ): () => void {
   if (!isDesktop()) return () => undefined;
-  return window.droidControl!.onNativeBrowserLoadFailed(handler);
+  return window.droidex!.onNativeBrowserLoadFailed(handler);
 }
 
 /**
@@ -168,7 +168,7 @@ export function forwardNativeBrowserShortcuts(
   chords: NativeBrowserChord[],
   onPress: (press: NativeBrowserKeyPress) => void,
 ): () => void {
-  const desktop = window.droidControl;
+  const desktop = window.droidex;
   if (!desktop) return () => undefined;
   const setHostChords = (next: NativeBrowserChord[]) => {
     desktop.nativeBrowserSetShortcuts(next).catch((error: unknown) => {
@@ -186,13 +186,13 @@ export function forwardNativeBrowserShortcuts(
 
 export function onNativeBrowserWorking(handler: (event: NativeBrowserWorking) => void): () => void {
   if (!isDesktop()) return () => undefined;
-  return window.droidControl!.onNativeBrowserWorking(handler);
+  return window.droidex!.onNativeBrowserWorking(handler);
 }
 
 export function onNativeBrowserAgentPoint(
   handler: (event: NativeBrowserAgentPoint) => void,
 ): () => void {
-  return window.droidControl?.onNativeBrowserAgentPoint(handler) ?? (() => undefined);
+  return window.droidex?.onNativeBrowserAgentPoint(handler) ?? (() => undefined);
 }
 
 // How many cards are watching each page: main is told when the first one
@@ -206,7 +206,7 @@ export function watchNativeBrowser(
   browserSessionId: string,
   handler: (frame: NativeBrowserFrame) => void,
 ): () => void {
-  const api = window.droidControl;
+  const api = window.droidex;
   if (!api) return () => undefined;
   // A new watch is a new picture: the card before it takes nothing more.
   awaitingLast.get(browserSessionId)?.();
@@ -245,5 +245,5 @@ export function onNativeBrowserClosed(
   handler: (event: { browserSessionId: string }) => void,
 ): () => void {
   if (!isDesktop()) return () => undefined;
-  return window.droidControl!.onNativeBrowserClosed(handler);
+  return window.droidex!.onNativeBrowserClosed(handler);
 }

@@ -9,7 +9,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AnchoredPopover } from './AnchoredPopover';
+import { Input } from '../../components/ui/Field';
+import { Popover } from '../../components/ui/Popover';
 import {
   LARGE_LIST_THRESHOLD,
   VIRTUAL_ROW_HEIGHT,
@@ -49,7 +50,6 @@ export function SelectMenu<Value extends string>({
   const [activeIndex, setActiveIndex] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const initialIndexRef = useRef(0);
   const listboxId = useId();
@@ -114,11 +114,9 @@ export function SelectMenu<Value extends string>({
         ensureIndexVisible(list, index);
       }
     }
-    if (searchable) searchRef.current?.focus({ preventScroll: true });
-    else list?.focus({ preventScroll: true });
     // `visible` and `options` are deliberately excluded; see comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, searchable]);
+  }, [open]);
 
   useEffect(() => {
     if (!open || visible.length === 0) return;
@@ -185,51 +183,39 @@ export function SelectMenu<Value extends string>({
         aria-haspopup="listbox"
         aria-controls={open ? listboxId : undefined}
         aria-expanded={open}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          // Commit the toggle before focus moves through a portal. The click
-          // event that follows a mouse/pointer press is intentionally ignored.
-          event.preventDefault();
-          toggleMenu();
-          buttonRef.current?.focus({ preventScroll: true });
-        }}
-        onClick={(event) => {
-          // Keyboard activation (Enter/Space) produces a click with detail 0.
-          if (event.detail === 0) toggleMenu();
-        }}
+        onClick={toggleMenu}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
             openMenu();
           }
         }}
-        className={`inline-flex min-w-0 max-w-[260px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-right text-[13px] outline-none transition-colors focus-visible:border-droid-border-hover disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`inline-flex min-w-0 max-w-64 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-right text-body transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
           open
-            ? 'border-droid-border-hover bg-droid-elevated text-droid-text'
-            : 'border-transparent text-droid-text-secondary hover:border-droid-border hover:bg-droid-elevated/70 hover:text-droid-text'
+            ? 'bg-elevated text-primary'
+            : 'text-secondary hover:bg-elevated/70 hover:text-primary'
         }`}
       >
         <span className="truncate">{selected?.label ?? placeholder}</span>
         <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`size-icon-sm shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
-      <AnchoredPopover
+      <Popover
         open={open}
         anchorRef={buttonRef}
         onClose={close}
+        label={ariaLabel ?? placeholder}
+        placement={align === 'end' ? 'bottom-end' : 'bottom-start'}
         width={width}
-        align={align}
-        maximumHeight={searchable ? 356 : 326}
-        ariaLabel={ariaLabel ?? placeholder}
       >
-        <div onKeyDown={onListKeyDown}>
+        <div className="flex min-h-0 flex-col" onKeyDown={onListKeyDown}>
           {searchable && (
-            <label className="m-2.5 flex h-9 items-center gap-2 rounded-xl border border-droid-border bg-droid-surface/55 px-3 text-droid-text-muted transition-colors focus-within:border-droid-border-hover">
-              <Search className="h-3.5 w-3.5 shrink-0" />
-              <input
-                ref={searchRef}
+            <div className="m-2.5 flex h-control-lg items-center gap-2 rounded-md bg-field px-3 text-muted">
+              <Search className="size-icon-sm shrink-0" />
+              <Input
+                variant="embedded"
                 value={query}
                 aria-label={`Search ${ariaLabel ?? placeholder} options`}
                 onChange={(event) => {
@@ -239,9 +225,8 @@ export function SelectMenu<Value extends string>({
                   if (listRef.current) listRef.current.scrollTop = 0;
                 }}
                 placeholder="Search"
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-droid-text outline-none placeholder:text-droid-text-muted"
               />
-            </label>
+            </div>
           )}
           <div
             ref={listRef}
@@ -254,7 +239,7 @@ export function SelectMenu<Value extends string>({
             onScroll={(event) => {
               if (virtualized) setScrollTop(event.currentTarget.scrollTop);
             }}
-            className="max-h-[288px] overflow-y-auto overscroll-contain p-1.5 outline-none"
+            className="min-h-0 max-h-72 overflow-y-auto overscroll-contain p-1.5 outline-none"
           >
             {virtualized ? (
               <VirtualizedOptions
@@ -285,13 +270,11 @@ export function SelectMenu<Value extends string>({
               ))
             )}
             {visible.length === 0 && (
-              <div className="px-3 py-7 text-center text-[11px] text-droid-text-muted">
-                No matches
-              </div>
+              <div className="py-7 text-center text-caption text-muted">No matches</div>
             )}
           </div>
         </div>
-      </AnchoredPopover>
+      </Popover>
     </>
   );
 }
@@ -386,21 +369,17 @@ function OptionButton({
         // committed during pointerdown and must not fire a second change.
         if (event.detail === 0) onChoose();
       }}
-      className={`flex w-full items-center gap-2 rounded-xl px-3 text-left outline-none transition-colors focus-visible:bg-droid-surface ${
-        fixedHeight ? 'h-[38px]' : 'min-h-[38px] py-2'
-      } ${active ? 'bg-droid-surface' : 'hover:bg-droid-surface/65'}`}
+      className={`flex w-full items-center gap-2 rounded-md px-2 text-left outline-none transition-colors ${
+        fixedHeight ? 'h-control-lg' : 'min-h-control-lg py-1.5'
+      } ${active ? 'bg-active dark:bg-surface' : 'hover:bg-elevated dark:hover:bg-surface/65'}`}
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] text-droid-text">{option.label}</span>
+        <span className="block truncate text-body text-primary">{option.label}</span>
         {option.detail && option.detail !== option.label && (
-          <span className="mt-0.5 block truncate text-[11px] text-droid-text-muted">
-            {option.detail}
-          </span>
+          <span className="mt-0.5 block truncate text-caption text-muted">{option.detail}</span>
         )}
       </span>
-      {selected && (
-        <Check className="h-3.5 w-3.5 shrink-0 text-droid-text-secondary" strokeWidth={2.2} />
-      )}
+      {selected && <Check className="size-icon-sm shrink-0 text-secondary" strokeWidth={2.2} />}
     </button>
   );
 }

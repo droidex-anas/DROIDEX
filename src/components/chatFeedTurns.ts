@@ -34,20 +34,34 @@ function turnLabel(text?: string): string {
   return label.length > 160 ? `${label.slice(0, 160).trimEnd()}…` : label;
 }
 
+// The start of the reply under a prompt in the timeline preview, with Markdown
+// emphasis and code marks dropped so it reads as plain text.
+function replySnippet(text: string): string {
+  const snippet = text.replace(/[`*#]/g, '').replace(/\s+/g, ' ').trim();
+  return snippet.length > 160 ? `${snippet.slice(0, 160).trimEnd()}…` : snippet;
+}
+
 export interface ConversationAnchor {
   id: string;
   label: string;
+  reply?: string;
 }
 
-// One anchor per user prompt for the conversation timeline: the dot previews the
-// prompt text and scrolls that prompt to the top. Anchoring on prompts keeps the
-// dot count exactly equal to the number of prompts (a leading model/spec message
-// no longer adds a stray dot) and lets the hover preview show what was asked.
+// One anchor per user prompt for the conversation timeline: the tick previews the
+// prompt and the first reply message under it, and scrolls that prompt to the
+// top. Anchoring on prompts keeps the tick count exactly equal to the number of
+// prompts (a leading model/spec message no longer adds a stray tick).
 export function promptAnchorsFromItems(items: FeedItem[]): ConversationAnchor[] {
   const out: ConversationAnchor[] = [];
   for (const it of items) {
-    if (it.type === 'message' && it.event.author === 'user') {
+    if (it.type !== 'message') continue;
+    if (it.event.author === 'user') {
       out.push({ id: it.key, label: turnLabel(it.event.text) });
+      continue;
+    }
+    const current = out.at(-1);
+    if (current && current.reply === undefined && it.event.text) {
+      current.reply = replySnippet(it.event.text) || undefined;
     }
   }
   return out;

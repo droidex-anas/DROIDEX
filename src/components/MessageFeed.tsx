@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
+import { Button } from './ui/Button';
 import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
 import { SpecRenderer } from './SpecRenderer';
 import type { FileChange } from '../lib/diff';
@@ -62,7 +63,7 @@ const InlineSpecCard = memo(function InlineSpecCard({
   const sections = useMemo(() => (content.match(/^#{1,3}\s+/gm) ?? []).length, [content]);
 
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-elevated/20 overflow-hidden">
+    <div className="rounded-lg bg-surface overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button
           onClick={() => {
@@ -72,22 +73,19 @@ const InlineSpecCard = memo(function InlineSpecCard({
           className="flex items-center gap-2 flex-1 min-w-0 text-left group"
         >
           <ChevronRight
-            className={`w-4 h-4 shrink-0 text-droid-text-muted transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+            className={`w-4 h-4 shrink-0 text-muted transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
           />
-          <span className="truncate text-[13px] font-medium text-droid-text">{title}</span>
+          <span className="truncate text-body-strong text-primary">{title}</span>
           {sections > 0 && (
-            <span className="shrink-0 text-[11px] tabular-nums text-droid-text-muted/70">
+            <span className="shrink-0 text-caption tabular-nums text-muted">
               {sections} sections
             </span>
           )}
         </button>
         {onOpenWiki && (
-          <button
-            onClick={onOpenWiki}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium text-droid-text-secondary bg-droid-elevated/50 border border-droid-border hover:bg-droid-elevated/80 hover:text-droid-text transition-colors"
-          >
+          <Button size="sm" onClick={onOpenWiki}>
             Read spec
-          </button>
+          </Button>
         )}
       </div>
       <AnimatePresence initial={false}>
@@ -98,7 +96,7 @@ const InlineSpecCard = memo(function InlineSpecCard({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.12, ease: 'linear' }}
           >
-            <div className="px-4 pb-4 pt-2 border-t border-droid-border">
+            <div className="px-4 pb-4 pt-2">
               <SpecRenderer content={content} />
             </div>
           </motion.div>

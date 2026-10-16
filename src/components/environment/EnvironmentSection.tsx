@@ -1,5 +1,5 @@
 import { Folder } from 'lucide-react';
-import { Row } from './primitives';
+import { Row } from '../ui/Row';
 import { DiffStat } from './DiffStat';
 import { BranchMenu } from './BranchMenu';
 import { WorktreeMenu } from './WorktreeMenu';
@@ -80,7 +80,7 @@ export function EnvironmentSection({
   return (
     <div>
       <Row
-        icon={<Folder className="h-4 w-4" />}
+        icon={<Folder className="size-icon-md" />}
         label={location}
         title={env?.repoRoot ?? cwd}
         onClick={() => {
@@ -92,9 +92,9 @@ export function EnvironmentSection({
         // env is null until the first fetch for this cwd resolves (it is
         // cleared on every cwd switch), so a null env means "loading", not
         // "not a repo"; only an answered environment may claim the latter.
-        <div className="px-3 py-1.5 text-[12px] text-droid-text-muted">Loading environment…</div>
+        <div className="px-3 py-1.5 text-caption text-muted">Loading environment…</div>
       ) : !isRepo ? (
-        <div className="px-3 py-1.5 text-[12px] text-droid-text-muted">Not a git repository</div>
+        <div className="px-3 py-1.5 text-caption text-muted">Not a git repository</div>
       ) : (
         <>
           <DiffStat

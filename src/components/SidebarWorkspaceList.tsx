@@ -1,7 +1,9 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
 import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Plus, FolderOpen } from 'lucide-react';
+import { FolderOpen, Plus } from '@droidex/icons';
+import { Row } from './ui/Row';
+import { Tooltip } from './ui/Tooltip';
 import { SIDEBAR_VISIBLE_SESSION_LIMIT, type WorkspaceSection } from '../lib/workspaces';
 import type { SessionSummary } from '../types/bridge';
 import { SidebarSectionHeading } from './SidebarSectionHeading';
@@ -99,7 +101,7 @@ export function SidebarWorkspaceList({
     chatSessions.length === 0 &&
     pinnedSessions.length === 0
   ) {
-    return <p className="px-3 py-2 text-[12px] text-droid-text-muted">No tasks match this view.</p>;
+    return <p className="px-3 py-2 text-caption text-muted">No tasks match this view.</p>;
   }
 
   return (
@@ -138,17 +140,18 @@ export function SidebarWorkspaceList({
                 toggleCollapse('__workspaces__');
               }}
               action={
-                <button
-                  type="button"
-                  onClick={() => {
-                    void onAddWorkspace();
-                  }}
-                  title="Add workspace"
-                  aria-label="Add workspace"
-                  className="shrink-0 cursor-pointer rounded-md p-0.5 text-droid-text-muted transition-colors hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
+                <Tooltip label="Add workspace">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onAddWorkspace();
+                    }}
+                    aria-label="Add workspace"
+                    className="shrink-0 cursor-pointer rounded-sm p-0.5 text-muted transition-colors hover:text-primary"
+                  >
+                    <Plus className="size-icon-sm" />
+                  </button>
+                </Tooltip>
               }
             />
 
@@ -184,15 +187,13 @@ export function SidebarWorkspaceList({
                 })}
 
                 {workspaces.length === 0 && (
-                  <button
+                  <Row
+                    icon={<FolderOpen className="size-icon-md" />}
+                    label="Open workspace"
                     onClick={() => {
                       void onAddWorkspace();
                     }}
-                    className="flex w-full cursor-pointer items-center gap-2.5 py-1.5 pl-3 pr-2 text-left text-droid-text-muted transition-colors hover:text-droid-text"
-                  >
-                    <FolderOpen className="w-4 h-4 shrink-0" />
-                    <span className="text-[13px]">Open workspace</span>
-                  </button>
+                  />
                 )}
               </div>
             </Expand>
@@ -216,9 +217,7 @@ export function SidebarWorkspaceList({
             />
             <Expand open={open}>
               {chatSessions.length === 0 ? (
-                <div className="mt-0.5 px-3 py-2 text-[12px] text-droid-text-muted">
-                  No chats yet.
-                </div>
+                <div className="mt-0.5 px-3 py-2 text-caption text-muted">No chats yet.</div>
               ) : (
                 renderSessionList('__chats__', chatSessions)
               )}

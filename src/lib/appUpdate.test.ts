@@ -118,7 +118,7 @@ test('new agent work is blocked for the full automatic update transaction', asyn
   });
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
-    value: { droidControl: { downloadAppUpdate: () => download } },
+    value: { droidex: { downloadAppUpdate: () => download } },
   });
 
   try {

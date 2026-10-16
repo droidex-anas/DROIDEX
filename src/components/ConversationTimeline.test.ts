@@ -99,6 +99,23 @@ test('incremental assistant output reuses long timeline anchors until a prompt c
   );
 });
 
+test('timeline anchors preview the first reply under each prompt', () => {
+  const projection = projectTimelineAnchors(undefined, {
+    conversationKey: 'app-1:primary',
+    feedItems: [
+      message('prompt-1', 'First question', 'user'),
+      message('answer-1', 'Use **`npm test`**\n\nthen ship.'),
+      message('answer-1b', 'A later note'),
+      message('prompt-2', 'Second question', 'user'),
+    ],
+    projectionMode: 'full',
+  });
+  assert.deepEqual(
+    projection.anchors.map((anchor) => anchor.reply),
+    ['Use npm test then ship.', undefined],
+  );
+});
+
 test('history rebuilds and conversation switches never reuse timeline anchors', () => {
   const currentPrompt = message('prompt-2', 'Current question', 'user');
   const initial = projectTimelineAnchors(undefined, {

@@ -448,8 +448,8 @@ export const GUI_BENCH_PROBE_SOURCE = `(function installGuiBenchProbe() {
       return area ? area.value : null;
     },
     async metrics() {
-      if (!window.droidControl || typeof window.droidControl.getPerformanceMetrics !== 'function') return null;
-      return window.droidControl.getPerformanceMetrics();
+      if (!window.droidex || typeof window.droidex.getPerformanceMetrics !== 'function') return null;
+      return window.droidex.getPerformanceMetrics();
     },
   };
   return 'installed';

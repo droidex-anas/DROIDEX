@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw } from '@droidex/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { reanchorSessionsForWorktreeRemoval } from '../lib/commands';
@@ -21,6 +21,8 @@ import { workspaceName } from '../lib/workspaces';
 import type { GitActionResult, GitBranchList, GitWorktree, PullRequest } from '../types/vcs';
 import { WorktreeRemovalDialog } from './WorktreeRemovalDialog';
 import { WorktreeSettingsRow } from './WorktreeSettingsRow';
+import { SectionTitle } from './settingsKit';
+import { Button } from './ui/Button';
 
 const VISIBLE_WORKTREE_LIMIT = 5;
 const PULL_REQUEST_LOOKUP_CONCURRENCY = 6;
@@ -281,23 +283,19 @@ export function WorktreesSettings() {
       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       className="mx-auto max-w-3xl"
     >
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-[16px] font-semibold tracking-[-0.015em] text-droid-text">
-            Worktrees
-          </h2>
-          <p className="mt-1 text-[13px] text-droid-text-muted">
-            Manage worktrees and open their linked conversations.
-          </p>
-        </div>
-        <button
+      <div className="flex items-start justify-between gap-4">
+        <SectionTitle
+          title="Worktrees"
+          sub="Manage worktrees and open their linked conversations."
+        />
+        <Button
+          variant="ghost"
+          icon={RefreshCw}
+          loading={loading}
           onClick={() => void load()}
           title="Refresh worktrees"
           aria-label="Refresh worktrees"
-          className="shrink-0 rounded-lg border border-droid-border bg-droid-surface p-2 text-droid-text-muted transition-all duration-150 hover:-translate-y-px hover:border-droid-border-hover hover:bg-droid-elevated/60 hover:text-droid-text active:scale-[0.94]"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        />
       </div>
 
       {linkedCount === 0 ? (
@@ -305,9 +303,9 @@ export function WorktreesSettings() {
           key={loading ? 'loading' : 'empty'}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-dashed border-droid-border bg-droid-surface/40 p-7 text-center"
+          className="rounded-xl bg-surface p-7 text-center"
         >
-          <p className="text-[13px] text-droid-text-secondary">
+          <p className="text-body text-secondary">
             {loading ? 'Scanning workspaces…' : 'No linked worktrees yet.'}
           </p>
         </motion.div>
@@ -333,19 +331,17 @@ export function WorktreesSettings() {
             >
               <div className="mb-2.5 flex min-w-0 items-end justify-between gap-4 px-0.5">
                 <div className="min-w-0">
-                  <h3 className="truncate text-[13px] font-semibold text-droid-text">
+                  <h3 className="truncate text-body-strong text-primary">
                     {workspaceName(repository.root)}
                   </h3>
-                  <p className="mt-0.5 truncate text-[11px] text-droid-text-muted">
-                    {repository.root}
-                  </p>
+                  <p className="mt-0.5 truncate text-caption text-muted">{repository.root}</p>
                 </div>
-                <span className="shrink-0 pb-0.5 text-[11px] text-droid-text-muted">
+                <span className="shrink-0 pb-0.5 text-caption text-muted">
                   {String(linkedWorktrees.length)}{' '}
                   {linkedWorktrees.length === 1 ? 'worktree' : 'worktrees'}
                 </span>
               </div>
-              <div className="divide-y divide-droid-border/80 overflow-hidden rounded-xl border border-droid-border bg-droid-surface shadow-droid-sm">
+              <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
                 <AnimatePresence initial={false}>
                   {visibleWorktrees.map((details) => {
                     const { worktree } = details;
@@ -411,7 +407,7 @@ export function WorktreesSettings() {
                         return next;
                       });
                     }}
-                    className="flex w-full items-center justify-center border-t border-droid-border/80 px-3 py-2.5 text-[11px] font-medium text-droid-text-muted transition-colors duration-150 hover:bg-droid-elevated/35 hover:text-droid-text active:bg-droid-elevated/55"
+                    className="flex w-full items-center justify-center px-3 py-2.5 text-label text-muted transition-colors duration-150 hover:bg-elevated hover:text-primary active:bg-active"
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.span

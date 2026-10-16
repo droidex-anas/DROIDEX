@@ -24,7 +24,7 @@ export function isGithubAuthCodeCopied(
 }
 
 function githubApi() {
-  return typeof window === 'undefined' ? undefined : window.droidControl;
+  return typeof window === 'undefined' ? undefined : window.droidex;
 }
 
 const unavailableSetup = (): GithubSetupResult => ({
@@ -254,13 +254,6 @@ export interface PrBadge {
   label: string;
   tone: PrTone;
 }
-
-export const PR_TONE_TEXT_CLASS: Record<PrTone, string> = {
-  neutral: 'text-droid-text-secondary',
-  success: 'text-[var(--diff-add-fg)]',
-  danger: 'text-[var(--diff-del-fg)]',
-  accent: 'text-[#a371f7]',
-};
 
 export type CheckStatus = 'success' | 'failure' | 'pending' | 'neutral';
 

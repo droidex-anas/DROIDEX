@@ -40,10 +40,7 @@ test('send stays available without a sidecar supervisor: in a browser, Vite, or 
   assert.equal(getRuntimeHealth().transport, 'disconnected');
   assert.equal(canRunAgents(), true);
 
-  for (const window of [
-    {},
-    { droidControl: { bridgeInfo: async () => ({ port: 1, token: '' }) } },
-  ]) {
+  for (const window of [{}, { droidex: { bridgeInfo: async () => ({ port: 1, token: '' }) } }]) {
     const restoreWindow = replaceGlobal('window', window);
     try {
       assert.equal(canRunAgents(), true);
@@ -55,7 +52,7 @@ test('send stays available without a sidecar supervisor: in a browser, Vite, or 
 
 test('Electron with a sidecar supervisor blocks send until the runtime is healthy', () => {
   const restoreWindow = replaceGlobal('window', {
-    droidControl: {
+    droidex: {
       sidecarStatus: async () => HEALTHY,
       onSidecarStatus: () => () => undefined,
     },
@@ -109,7 +106,7 @@ test('rejected sidecar status falls back without an unhandled rejection', async 
   const onUnhandled = (reason: unknown) => unhandled.push(reason);
   process.on('unhandledRejection', onUnhandled);
   const restoreWindow = replaceGlobal('window', {
-    droidControl: {
+    droidex: {
       sidecarStatus: async () => {
         throw new Error('sidecar restart in progress');
       },

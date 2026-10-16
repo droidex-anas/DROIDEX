@@ -3,7 +3,7 @@ import { commandLineContains } from '../../lib/commandLineMatch';
 import { LiveProcessesContext } from './liveProcessesContext';
 import { stripAnsi } from '../../lib/tools';
 import { TranscriptImage } from '../media/TranscriptImage';
-import { Caret, ErrorTag, Expand, InterruptedTag, linkify, RED, ToolPanel } from './primitives';
+import { Caret, ErrorTag, Expand, InterruptedTag, linkify, ToolPanel } from './primitives';
 
 // A backgrounded server keeps its card "running" after the turn ends as long
 // as a live agent process still carries the command the agent typed.
@@ -45,20 +45,13 @@ export function ToolCallCard({
 }) {
   const out = output ? stripAnsi(output).trimEnd() : '';
   return (
-    <ToolPanel
-      className="group relative"
-      style={
-        error
-          ? { borderColor: 'color-mix(in srgb, var(--droid-red) 30%, var(--droid-border))' }
-          : undefined
-      }
-    >
-      <div className="px-3.5 py-2.5 font-mono text-[12px] leading-[1.6]">
+    <ToolPanel className="group relative">
+      <div className="px-3.5 py-2.5 font-mono text-code">
         {heading}
-        {running && <span className="shimmer-text text-[13px] font-medium">Running</span>}
+        {running && <span className="shimmer-text text-body-strong">Running</span>}
         {interrupted && <InterruptedTag />}
         {images.length > 0 && (
-          <div className="mt-2 border-t border-droid-border/60 pt-1 first:mt-0 first:border-t-0 first:pt-0">
+          <div className="mt-2 first:mt-0">
             {images.map((image, index) => (
               // One result can carry the same picture twice.
               <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
@@ -67,8 +60,7 @@ export function ToolCallCard({
         )}
         {out && (
           <pre
-            className="mt-2 pt-2 border-t border-droid-border/60 first:mt-0 first:border-t-0 first:pt-0 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
-            style={error ? { color: RED } : undefined}
+            className={`mt-2 first:mt-0 max-h-56 overflow-auto whitespace-pre-wrap text-code break-words ${error ? 'text-danger' : 'text-muted'}`}
           >
             {error ? out : linkify(out)}
           </pre>
@@ -98,13 +90,8 @@ export function CommandCard({
     <ToolCallCard
       heading={
         <div className="flex gap-2 break-words">
-          <span
-            className="select-none text-droid-text-muted"
-            style={error ? { color: RED } : undefined}
-          >
-            $
-          </span>
-          <span className="whitespace-pre-wrap text-droid-text">{command}</span>
+          <span className={`select-none ${error ? 'text-danger' : 'text-muted'}`}>$</span>
+          <span className="whitespace-pre-wrap text-primary">{command}</span>
         </div>
       }
       output={output}
@@ -144,9 +131,9 @@ export function CommandLine({
       {running || alive ? (
         <span className="shimmer-text shrink-0 font-medium">Running</span>
       ) : (
-        <span className="shrink-0 text-droid-text-secondary">Ran</span>
+        <span className="shrink-0 text-secondary">Ran</span>
       )}
-      <span className="min-w-0 truncate text-droid-text-muted">{command}</span>
+      <span className="min-w-0 truncate text-muted">{command}</span>
     </>
   );
   // Only a still-running turn hides the expander: a finished call whose
@@ -154,8 +141,8 @@ export function CommandLine({
   // stay reachable. It keeps the Running indicator in place of "Ran".
   if (running) {
     return (
-      <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-relaxed">
-        <span className="w-3 shrink-0" aria-hidden="true" />
+      <div className="flex min-w-0 items-center gap-1.5 text-body">
+        <span className="w-icon-sm shrink-0" aria-hidden="true" />
         {label}
       </div>
     );
@@ -166,7 +153,7 @@ export function CommandLine({
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-[13px] leading-relaxed"
+        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={expanded}
       >
         <Caret open={expanded} />
@@ -174,7 +161,7 @@ export function CommandLine({
         {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </button>
       <Expand open={expanded}>
-        <div className="mt-1.5 pl-[18px]">
+        <div className="mt-1.5 pl-5">
           <CommandCard command={command} output={output} images={images} error={error} />
         </div>
       </Expand>

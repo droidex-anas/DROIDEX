@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
-import { usePopover } from './usePopover';
+import { useRef, useState } from 'react';
+import { Check, ChevronDown } from '@droidex/icons';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
+import { Menu } from '../ui/Menu';
 import { createPullRequest } from '../../lib/github';
 import { baseDescriptor, gitPush, stripRemotePrefix } from '../../lib/git';
 import { openExternal } from '../../lib/onboarding';
@@ -35,15 +36,12 @@ export function CreatePrSheet({
   const [base, setBase] = useState(recordedBase ?? env?.defaultBranch ?? 'main');
   const [draft, setDraft] = useState(false);
   const [pickingBase, setPickingBase] = useState(false);
+  const baseRef = useRef<HTMLButtonElement>(null);
+  // The picker list is at least as wide as its trigger, like any select.
+  const [baseMinWidth, setBaseMinWidth] = useState<number>();
   // run() guards re-entry synchronously so a second Cmd+Enter fired in the
   // same tick can't push/create twice.
   const { busy, run } = useBusyAction();
-  const basePickerRef = usePopover(
-    pickingBase,
-    useCallback(() => {
-      setPickingBase(false);
-    }, []),
-  );
 
   // The PR's own head branch can never be its base, so keep it out of the list.
   const baseOptions = [
@@ -107,8 +105,9 @@ export function CreatePrSheet({
   };
 
   return (
-    <div className="mx-2 mb-1.5 space-y-2 rounded-xl bg-droid-elevated/50 px-2.5 py-2.5">
-      <input
+    <div className="mx-2 mb-1.5 space-y-2 rounded-lg bg-elevated px-2.5 py-2.5">
+      <Input
+        variant="compact"
         autoFocus
         value={title}
         onChange={(e) => {
@@ -116,7 +115,7 @@ export function CreatePrSheet({
         }}
         onKeyDown={submitOnMetaEnter}
         placeholder="Pull request title"
-        className="w-full rounded-lg bg-droid-bg/60 px-2.5 py-1.5 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+        aria-label="Pull request title"
       />
       <textarea
         value={body}
@@ -126,60 +125,70 @@ export function CreatePrSheet({
         onKeyDown={submitOnMetaEnter}
         rows={3}
         placeholder="Description (optional)"
-        className="w-full resize-none rounded-lg bg-droid-bg/60 px-2.5 py-2 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+        className="w-full resize-none rounded-md bg-field px-2.5 py-2 text-body text-primary placeholder:text-muted"
       />
-      <div className="relative" ref={basePickerRef}>
+      <div>
         <button
+          ref={baseRef}
           onClick={() => {
+            setBaseMinWidth(baseRef.current?.offsetWidth);
             setPickingBase((v) => !v);
           }}
-          className="flex w-full items-center gap-1.5 rounded-lg bg-droid-bg/40 px-2.5 py-1.5 text-[12px] hover:bg-droid-bg/60"
+          className="flex w-full items-center gap-1.5 rounded-md bg-field px-2.5 py-1.5 text-label text-secondary hover:bg-active"
         >
-          <span className="text-droid-text-muted">Base</span>
-          <span className="flex-1 truncate text-left text-droid-text">
+          <span className="text-muted">Base</span>
+          <span className="flex-1 truncate text-left text-primary">
             {effectiveBase ?? 'No base branch available'}
           </span>
           <ChevronDown
-            className={`h-3 w-3 transition-transform ${pickingBase ? 'rotate-180' : ''}`}
+            className={`size-icon-sm transition-transform ${pickingBase ? 'rotate-180' : ''}`}
           />
         </button>
-        {pickingBase && (
-          <div className="mt-1 max-h-32 overflow-y-auto rounded-lg bg-droid-bg/60 p-1">
-            {baseOptions.map((option) => (
-              <button
-                key={option}
-                onClick={() => {
-                  setBase(option);
-                  setPickingBase(false);
-                }}
-                className="flex w-full items-center rounded px-1.5 py-1 text-left text-[12px] text-droid-text-secondary hover:bg-droid-elevated/60 hover:text-droid-text"
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        )}
+        <Menu
+          open={pickingBase}
+          onClose={() => {
+            setPickingBase(false);
+          }}
+          anchorRef={baseRef}
+          label="Base branch"
+          placement="bottom-start"
+          style={{ minWidth: baseMinWidth }}
+          className="max-h-40"
+        >
+          {baseOptions.map((option) => (
+            <Menu.Item
+              key={option}
+              onSelect={() => {
+                setBase(option);
+              }}
+            >
+              <span className="flex-1 truncate">{option}</span>
+              {option === base && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
+            </Menu.Item>
+          ))}
+        </Menu>
       </div>
       <div className="flex items-center justify-between">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-droid-text-secondary">
+        <label className="flex cursor-pointer items-center gap-1.5 text-label text-secondary">
           <input
             type="checkbox"
             checked={draft}
             onChange={(e) => {
               setDraft(e.target.checked);
             }}
-            className="accent-droid-accent"
+            className="accent-accent"
           />
           Draft
         </label>
-        <button
-          onClick={() => void doCreate()}
+        <Button
+          variant="primary"
+          size="sm"
+          loading={busy}
           disabled={!title.trim() || !effectiveBase || busy}
-          className="flex items-center gap-1.5 rounded-lg bg-droid-accent/15 px-2.5 py-1 text-[12px] font-medium text-droid-accent transition-colors hover:bg-droid-accent/25 disabled:opacity-40"
+          onClick={() => void doCreate()}
         >
-          {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
           Open PR
-        </button>
+        </Button>
       </div>
     </div>
   );

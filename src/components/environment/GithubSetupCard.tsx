@@ -1,11 +1,12 @@
 import { useRef } from 'react';
-import { Check, CircleUserRound, ExternalLink, GitPullRequest } from 'lucide-react';
-import { Copy, Download, Spinner } from '@droidex/icons';
+import type { IconComponent } from '@droidex/icons';
+import { Check, CircleUser, Copy, Download, ExternalLink, GitPullRequest } from '@droidex/icons';
 
 import type { GithubAvailability } from '../../types/vcs';
 import type { GithubSetupAction } from '../../hooks/useGithubSetup';
 import { useGithubAuthCodeCopy } from '../../hooks/useGithubAuthCodeCopy';
-import { Popover } from './Popover';
+import { Button } from '../ui/Button';
+import { Popover } from '../ui/Popover';
 
 export interface GithubSetupCardProps {
   availability: GithubAvailability | null;
@@ -81,6 +82,14 @@ function setupContent(
   };
 }
 
+// The busy states show the button's own loading spinner instead of an icon.
+const ACTION_ICON: Record<SetupContent['icon'], IconComponent | undefined> = {
+  download: Download,
+  external: ExternalLink,
+  signin: CircleUser,
+  busy: undefined,
+};
+
 export function GithubAuthPromptContent({
   code,
   copied = false,
@@ -96,52 +105,36 @@ export function GithubAuthPromptContent({
 }) {
   return (
     <div className="p-3.5">
-      <div className="text-[13px] font-semibold text-droid-text">Enter this code on GitHub</div>
-      <p className="mt-1 text-[12px] leading-4 text-droid-text-muted">
+      <div className="text-body-strong text-primary">Enter this code on GitHub</div>
+      <p className="mt-1 text-caption text-muted">
         Paste this code into GitHub’s device activation page. The browser is already open.
       </p>
-      <div className="mt-3 flex items-center gap-2 rounded-lg border border-droid-border bg-droid-elevated p-2">
-        <code className="min-w-0 flex-1 select-all text-center font-mono text-[16px] font-semibold tracking-[0.12em] text-droid-text">
+      <div className="mt-3 flex items-center gap-2 rounded-md bg-elevated p-2">
+        <code className="min-w-0 flex-1 select-all text-center font-mono text-subheading tracking-wider text-primary">
           {code}
         </code>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={copied ? Check : Copy}
           onClick={onCopy}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-droid-border bg-droid-surface px-2 py-1.5 text-[12px] font-medium text-droid-text-secondary hover:border-droid-border-hover hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/60"
+          className="shrink-0"
         >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? 'Copied' : 'Copy code'}
-        </button>
+        </Button>
       </div>
       {copyFailed && (
-        <p aria-live="polite" className="mt-2 text-[12px] leading-4 text-droid-red">
+        <p aria-live="polite" className="mt-2 text-caption text-danger">
           Could not copy the code. Select it and copy it manually.
         </p>
       )}
       <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md px-2 py-1.5 text-[12px] font-medium text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/60"
-        >
+        <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel sign-in
-        </button>
+        </Button>
       </div>
     </div>
   );
-}
-
-function SetupActionIcon({ icon }: { icon: SetupContent['icon'] }) {
-  switch (icon) {
-    case 'busy':
-      return <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />;
-    case 'signin':
-      return <CircleUserRound className="h-3.5 w-3.5" />;
-    case 'external':
-      return <ExternalLink className="h-3.5 w-3.5" />;
-    case 'download':
-      return <Download className="h-3.5 w-3.5" />;
-  }
 }
 
 export function GithubSetupCard({
@@ -164,37 +157,38 @@ export function GithubSetupCard({
   const content = setupContent(availability, action, manualGuideOpened, authCode);
 
   return (
-    <div className="mx-1.5 mt-1.5 rounded-xl border border-droid-border bg-droid-surface px-3 py-2.5">
+    <div className="mx-1.5 mt-1.5 rounded-lg bg-elevated px-3 py-2.5">
       <div className="flex items-start gap-2">
-        <GitPullRequest className="mt-0.5 h-4 w-4 shrink-0 text-droid-text-muted" />
+        <GitPullRequest className="mt-0.5 size-icon-md shrink-0 text-muted" />
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-droid-text">{content.title}</div>
-          <p className="mt-0.5 text-[12px] leading-4 text-droid-text-muted">
-            {content.description}
-          </p>
+          <div className="text-body-strong text-primary">{content.title}</div>
+          <p className="mt-0.5 text-caption text-muted">{content.description}</p>
           <div aria-live="polite">
-            {error && <p className="mt-1.5 text-[12px] leading-4 text-droid-red">{error}</p>}
+            {error && <p className="mt-1.5 text-caption text-danger">{error}</p>}
           </div>
-          <button
+          <Button
             ref={actionRef}
-            type="button"
+            variant="secondary"
+            size="sm"
+            icon={ACTION_ICON[content.icon]}
+            loading={isBusy}
             disabled={isBusy}
             onClick={authCode ? onShowAuthPrompt : onPrimaryAction}
             aria-haspopup={authCode ? 'dialog' : undefined}
             aria-expanded={authCode ? isAuthPopoverOpen : undefined}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-droid-border bg-droid-elevated px-2.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-2"
           >
-            <SetupActionIcon icon={content.icon} />
             {content.label}
-          </button>
+          </Button>
           {isBusy && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onCancelAuthentication}
-              className="ml-2 mt-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/60"
+              className="ml-2 mt-2"
             >
               {action === 'installing' ? 'Cancel installation' : 'Cancel sign-in'}
-            </button>
+            </Button>
           )}
           {authCode && (
             <Popover
@@ -202,7 +196,7 @@ export function GithubSetupCard({
               onClose={onCloseAuthPrompt}
               anchorRef={actionRef}
               label="GitHub sign-in code"
-              align="left"
+              placement="bottom-start"
               width={320}
             >
               <GithubAuthPromptContent

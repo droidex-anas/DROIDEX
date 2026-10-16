@@ -1,26 +1,31 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   BUILT_IN_THEMES,
+  CUSTOM_THEME_ID,
+  DEFAULT_THEME,
+  detectPresetId,
+  newCustomThemeId,
+  parseCustomThemes,
+  parseThemePresetImport,
+  removeCustomTheme,
+  resolveVariant,
+  upsertCustomTheme,
+  type ThemeColors,
+  type ThemePreset,
+} from './theme';
+import {
   SKILL_COLORS,
   ULTRA_COLORS,
   UPDATE_COLORS,
   contrastRatio,
-  CUSTOM_THEME_ID,
-  DEFAULT_THEME,
-  detectPresetId,
+  deriveThemeTokens,
   elevatedSurfaceColor,
-  newCustomThemeId,
-  parseCustomThemes,
-  parseThemePresetImport,
+  readableStatusColor,
   relativeLuminance,
-  removeCustomTheme,
-  resolveVariant,
-  statusColorOnLight,
   surfaceStep,
-  upsertCustomTheme,
-  type ThemePreset,
-} from './theme';
+} from './themeTokens';
 
 const EXAMPLE_CUSTOM: ThemePreset = {
   id: 'custom-test',
@@ -91,23 +96,111 @@ describe('BUILT_IN_THEMES', () => {
   });
 });
 
-describe('statusColorOnLight', () => {
-  it('keeps light status text at WCAG AA on every preset canvas', () => {
-    for (const preset of BUILT_IN_THEMES) {
-      for (const tuned of ['#1f7a4d', '#9a5a0f']) {
-        const shade = statusColorOnLight(tuned, preset.light.bg);
-        assert.ok(
-          contrastRatio(shade, preset.light.bg) >= 4.5,
-          `${preset.id} status ${shade} on ${preset.light.bg} should reach 4.5:1`,
-        );
+describe('readableStatusColor', () => {
+  it('returns a shade that already reads on its canvas untouched', () => {
+    const { bg } = DEFAULT_THEME.light;
+    assert.equal(readableStatusColor('#1f7a4d', bg), '#1f7a4d');
+    assert.equal(readableStatusColor('#9a5a0f', bg), '#9a5a0f');
+  });
+});
+
+const tokensFor = (colors: ThemeColors) =>
+  deriveThemeTokens({ ...colors, diffStyle: 'soft', translucentSidebar: false });
+
+const EVERY_VARIANT = BUILT_IN_THEMES.flatMap((preset) =>
+  (['light', 'dark'] as const).map((scheme) => ({
+    name: `${preset.id} ${scheme}`,
+    tokens: tokensFor(preset[scheme]),
+  })),
+);
+
+describe('deriveThemeTokens', () => {
+  it('keeps muted, secondary and status text at AA on every surface, active included', () => {
+    const surfaces = [
+      '--bg',
+      '--surface',
+      '--elevated',
+      '--field',
+      '--active',
+      '--raised',
+      '--sidebar',
+    ] as const;
+    const texts = [
+      '--text-secondary',
+      '--text-muted',
+      '--success',
+      '--warning',
+      '--danger',
+    ] as const;
+    for (const { name, tokens } of EVERY_VARIANT) {
+      for (const text of texts) {
+        for (const surface of surfaces) {
+          const ratio = contrastRatio(tokens[text], tokens[surface]);
+          assert.ok(ratio >= 4.5, `${name} ${text} on ${surface} is ${ratio.toFixed(2)}:1`);
+        }
+      }
+      const onActive = (token: `--${string}`) => contrastRatio(tokens[token], tokens['--active']);
+      assert.ok(
+        onActive('--text') >= onActive('--text-secondary') &&
+          onActive('--text-secondary') > onActive('--text-muted'),
+        `${name} text tones should step down text > secondary > muted`,
+      );
+    }
+  });
+
+  it('makes light hover and selection fills read about as clearly as dark ones', () => {
+    for (const { name, tokens } of EVERY_VARIANT) {
+      for (const ground of ['--sidebar', '--bg'] as const) {
+        const hover = contrastRatio(tokens['--elevated'], tokens[ground]);
+        const selected = contrastRatio(tokens['--active'], tokens[ground]);
+        assert.ok(hover >= 1.12, `${name} hover on ${ground} is ${hover.toFixed(3)}:1`);
+        assert.ok(selected >= 1.28, `${name} selection on ${ground} is ${selected.toFixed(3)}:1`);
       }
     }
   });
 
-  it('returns a shade that already reads on its canvas untouched', () => {
-    const { bg } = DEFAULT_THEME.light;
-    assert.equal(statusColorOnLight('#1f7a4d', bg), '#1f7a4d');
-    assert.equal(statusColorOnLight('#9a5a0f', bg), '#9a5a0f');
+  it('draws dividers as translucent tints of the text colour', () => {
+    for (const { name, tokens } of EVERY_VARIANT) {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(tokens['--text'].slice(i, i + 2), 16));
+      const alphaOf = (token: `--${string}`) => {
+        const match = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(tokens[token]);
+        assert.ok(match, `${name} ${token} should be an rgba tint, got ${tokens[token]}`);
+        assert.deepEqual(match.slice(1, 4).map(Number), [r, g, b], `${name} ${token} tint`);
+        return Number(match[4]);
+      };
+      const divider = alphaOf('--divider');
+      const strong = alphaOf('--divider-strong');
+      assert.ok(divider > 0 && divider < strong && strong <= 0.2, `${name} divider alphas`);
+    }
+  });
+
+  it('keeps the focus ring visible when the accent is close to the surfaces', () => {
+    const tokens = tokensFor({ ...DEFAULT_THEME.light, accent: '#fcfcfc' });
+    const match = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(tokens['--focus-ring']);
+    assert.ok(match, `focus ring should be an rgba colour, got ${tokens['--focus-ring']}`);
+    const [r, g, b, alpha] = match.slice(1).map(Number);
+    for (const surface of ['--bg', '--surface', '--active'] as const) {
+      const ground = [1, 3, 5].map((i) => parseInt(tokens[surface].slice(i, i + 2), 16));
+      const ring = [r, g, b].map((channel, i) =>
+        Math.round(ground[i] * (1 - alpha) + channel * alpha),
+      );
+      const ringHex = `#${ring.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+      const ratio = contrastRatio(ringHex, tokens[surface]);
+      assert.ok(ratio >= 3, `focus ring on ${surface} is ${ratio.toFixed(2)}:1`);
+    }
+  });
+
+  it('derives the Default preset exactly as docs/design-system/tokens.json specifies', () => {
+    const spec = JSON.parse(
+      readFileSync(new URL('../../docs/design-system/tokens.json', import.meta.url), 'utf8'),
+    ) as { color: { tokens: { name: string; value: { dark: string; light: string } }[] } };
+    for (const scheme of ['dark', 'light'] as const) {
+      const tokens = tokensFor(DEFAULT_THEME[scheme]);
+      // Brand colours are fixed :root values in index.css, not theme-derived.
+      for (const { name, value } of spec.color.tokens.filter((t) => !t.name.startsWith('brand-'))) {
+        assert.equal(tokens[`--${name}`], value[scheme], `${scheme} ${name}`);
+      }
+    }
   });
 });
 
@@ -160,8 +253,8 @@ describe('surfaceStep', () => {
     // on the canvas, which hid popovers, menus and fields in light mode.
     for (const preset of BUILT_IN_THEMES) {
       for (const variant of [preset.light, preset.dark]) {
-        const elevated = surfaceStep(variant, 13);
-        const active = surfaceStep(variant, 26);
+        const elevated = surfaceStep(variant, 'elevated');
+        const active = surfaceStep(variant, 'active');
         for (const [rung, name] of [
           [elevated, 'elevated'],
           [active, 'active'],

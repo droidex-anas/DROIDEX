@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { Octicon } from '../../../components/environment/GithubIcons';
+import { Button } from '../../../components/ui/Button';
+import { Menu } from '../../../components/ui/Menu';
 import { prKind } from '../../../lib/github';
 import type { PrMergeMethod, PullRequest } from '../../../types/vcs';
-import { useDismissOnOutside } from '../hooks/useDismissOnOutside';
 import { mergeBlockReason } from '../lib/prMeta';
 
 const METHODS: { id: PrMergeMethod; label: string; hint: string }[] = [
@@ -49,12 +50,11 @@ export function PrMergeButton({
   // while the still-open data is on screen. Keyed by URL because a number
   // repeats across repositories.
   const [mergedKey, setMergedKey] = useState<string | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const close = useCallback(() => {
     setOpen(false);
   }, []);
-  useDismissOnOutside(open, rootRef, close);
 
   const kind = pr ? prKind(pr) : null;
   // A merged or closed pull request has nothing left to merge.
@@ -69,9 +69,11 @@ export function PrMergeButton({
   if (!pr || kind === 'merged' || kind === 'closed' || prKey === null) return null;
 
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
+    <>
+      <Button
+        ref={triggerRef}
+        variant="success"
+        size="sm"
         aria-haspopup="menu"
         aria-expanded={open && !disabled}
         disabled={disabled}
@@ -79,36 +81,37 @@ export function PrMergeButton({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex items-center gap-1.5 rounded-lg bg-[#238636] px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:bg-droid-elevated disabled:text-droid-text-muted"
       >
-        <Octicon name="git-merge" size={13} />
-        {mergeLabel(merging, merged)}
-        <ChevronDown className="h-3 w-3" />
-      </button>
-      {open && !disabled ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-xl border border-droid-border bg-droid-surface py-1 shadow-xl"
-        >
-          {METHODS.map((method) => (
-            <button
-              key={method.id}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                void onMerge(method.id).then((ok) => {
-                  if (ok) setMergedKey(prKey);
-                });
-              }}
-              className="block w-full px-3 py-1.5 text-left transition-colors hover:bg-droid-active"
-            >
-              <span className="block text-[13px] text-droid-text">{method.label}</span>
-              <span className="block text-[12px] text-droid-text-muted">{method.hint}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+        <span className="inline-flex items-center gap-1.5">
+          <Octicon name="git-merge" size={13} />
+          {mergeLabel(merging, merged)}
+          <ChevronDown className="size-icon-sm" />
+        </span>
+      </Button>
+      <Menu
+        open={open && !disabled}
+        onClose={close}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        label="Merge pull request"
+        width={256}
+      >
+        {METHODS.map((method) => (
+          <Menu.Item
+            key={method.id}
+            onSelect={() => {
+              void onMerge(method.id).then((ok) => {
+                if (ok) setMergedKey(prKey);
+              });
+            }}
+          >
+            <span className="min-w-0">
+              <span className="block">{method.label}</span>
+              <span className="block text-caption text-muted">{method.hint}</span>
+            </span>
+          </Menu.Item>
+        ))}
+      </Menu>
+    </>
   );
 }

@@ -41,7 +41,7 @@ export function AgentDockLine({
         if (event.key === 'Escape') onExpandedChange(false);
       }}
       data-testid="agent-dock-line"
-      className="relative z-0 mx-[3%] -mb-3 min-w-0 overflow-hidden rounded-t-2xl border border-droid-border bg-droid-surface pb-4"
+      className="relative z-0 mx-5 -mb-3 min-w-0 overflow-hidden rounded-t-xl bg-surface pb-4 shadow-sm"
     >
       <button
         type="button"
@@ -50,12 +50,10 @@ export function AgentDockLine({
         }}
         aria-expanded={expanded}
         aria-controls={bodyId}
-        className="block w-full text-left transition-colors hover:bg-droid-active/40"
+        className="block w-full text-left transition-colors hover:bg-elevated"
       >
         <span className="flex items-center gap-2 px-4 py-2">
-          <span className="shrink-0 text-[12px] font-medium text-droid-text-secondary">
-            {agentMonitorTitle(wave.rows)}
-          </span>
+          <span className="shrink-0 text-label text-secondary">{agentMonitorTitle(wave.rows)}</span>
           <AgentSummaryLine
             wave={wave}
             showCounts={!expanded}
@@ -70,7 +68,8 @@ export function AgentDockLine({
             key="rows"
             id={bodyId}
             {...agentDisclosureMotion(reduceMotion)}
-            className="max-h-[min(40vh,320px)] overflow-y-auto"
+            className="overflow-y-auto"
+            style={{ maxHeight: 'min(40vh, 320px)' }}
           >
             <AgentRowList
               rows={visibleRows}

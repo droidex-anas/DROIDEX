@@ -65,7 +65,8 @@ export function TileDropTarget({
     >
       {zone && (
         <div
-          className={`pointer-events-none absolute m-1.5 rounded-xl bg-droid-accent/10 transition-[inset] duration-150 ease-out ${ZONE_CLASSES[zone]}`}
+          // eslint-disable-next-line design-policy/design-tokens -- dashed drop target: drag cue
+          className={`pointer-events-none absolute m-1.5 rounded-lg bg-elevated/60 outline-dashed outline-1 -outline-offset-1 outline-divider-strong transition-all duration-150 ease-out ${ZONE_CLASSES[zone]}`}
         />
       )}
     </div>

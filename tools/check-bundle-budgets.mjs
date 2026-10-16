@@ -154,12 +154,14 @@ import { join } from 'node:path';
 // 1_457_268, the steer change 1_461_815 and the side chat change 1_460_242, so
 // the two together leave ~3.2KB of headroom.
 //
-// Raised from 1_468_000 to 1_472_000 for restoring the last view on restart:
-// the snapshot's confirmed session ids and the persisted revealed folders
-// must hydrate with the store, so they load at first frame. The change
-// measured 1_468_015, so this leaves ~4KB of headroom.
+// Raised from 1_468_000 to 1_486_000 for the design-system primitives: every
+// menu, popover and tooltip now positions through @floating-ui/react (~23.5KB
+// minified for the parts used), replacing the hand-rolled popover maths. The
+// header, sidebar and composer render tooltips and popovers at first frame, so
+// it cannot load lazily. ui/design-system at 350127115 measures 1_457_791, with
+// the primitives 1_482_569, leaving ~3.4KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_472_000,
+  initialRendererJsBytes: 1_486_000,
   initialCssBytes: 106_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,

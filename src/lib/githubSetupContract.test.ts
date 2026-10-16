@@ -19,7 +19,7 @@ test('copy acknowledgement belongs only to the code that was copied', () => {
 
 function setDesktopApi(api: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'window', {
-    value: { droidControl: api },
+    value: { droidex: api },
     configurable: true,
     writable: true,
   });

@@ -8,7 +8,7 @@ import type { ThemeColors, ThemePreset } from '../lib/theme';
 function Line({ colors, w, strong = false }: { colors: ThemeColors; w: string; strong?: boolean }) {
   return (
     <div
-      className="h-[5px] rounded-full"
+      className="h-1 rounded-full"
       style={{
         width: w,
         backgroundColor: colors.fg,
@@ -18,7 +18,7 @@ function Line({ colors, w, strong = false }: { colors: ThemeColors; w: string; s
   );
 }
 
-/** Miniature Droid Control window (sidebar + chat + input) in a given palette. */
+/** Miniature DROIDEX window (sidebar + chat + input) in a given palette. */
 export function MiniAppFrame({ colors }: { colors: ThemeColors }) {
   return (
     <div
@@ -27,14 +27,14 @@ export function MiniAppFrame({ colors }: { colors: ThemeColors }) {
     >
       {/* Sidebar */}
       <div
-        className="flex w-[26%] shrink-0 flex-col gap-[6px] p-[8px]"
+        className="flex w-1/4 shrink-0 flex-col gap-1.5 p-2"
         style={{ backgroundColor: colors.surface, borderRight: `1px solid ${colors.border}` }}
       >
         <div
-          className="h-[6px] w-3/5 rounded-full"
+          className="h-1.5 w-3/5 rounded-full"
           style={{ backgroundColor: colors.fg, opacity: 0.5 }}
         />
-        <div className="mt-[2px] flex flex-col gap-[5px]">
+        <div className="mt-0.5 flex flex-col gap-1.5">
           <Line colors={colors} w="85%" />
           <Line colors={colors} w="70%" />
           <Line colors={colors} w="78%" />
@@ -42,15 +42,15 @@ export function MiniAppFrame({ colors }: { colors: ThemeColors }) {
       </div>
 
       {/* Main column */}
-      <div className="relative flex min-w-0 flex-1 flex-col p-[8px]">
-        <div className="flex flex-col gap-[6px]">
+      <div className="relative flex min-w-0 flex-1 flex-col p-2">
+        <div className="flex flex-col gap-1.5">
           <Line colors={colors} w="55%" strong />
           <Line colors={colors} w="80%" />
           <Line colors={colors} w="64%" />
         </div>
         {/* Reply card */}
         <div
-          className="mt-[8px] flex flex-col gap-[5px] rounded-[6px] p-[7px]"
+          className="mt-2 flex flex-col gap-1.5 rounded-sm p-2"
           style={{ backgroundColor: colors.surface, border: `1px solid ${colors.border}` }}
         >
           <Line colors={colors} w="48%" strong />
@@ -59,12 +59,12 @@ export function MiniAppFrame({ colors }: { colors: ThemeColors }) {
         </div>
         {/* Input bar */}
         <div
-          className="mt-auto flex items-center rounded-[6px] px-[7px] py-[5px]"
+          className="mt-auto flex items-center rounded-sm px-2 py-1.5"
           style={{ backgroundColor: colors.surface, border: `1px solid ${colors.border}` }}
         >
           <Line colors={colors} w="45%" />
           <span
-            className="ml-auto h-[8px] w-[8px] shrink-0 rounded-full"
+            className="ml-auto size-2 shrink-0 rounded-full"
             style={{ backgroundColor: colors.accent }}
           />
         </div>
@@ -92,11 +92,13 @@ export function SchemePreview({
   return (
     <div className="relative h-full w-full overflow-hidden">
       <div className="absolute inset-y-0 left-0 w-1/2 overflow-hidden">
+        {/* eslint-disable-next-line design-policy/design-tokens -- theme preview split: each half clips a full-width wireframe */}
         <div className="h-full w-[200%]">
           <MiniAppFrame colors={preset.light} />
         </div>
       </div>
       <div className="absolute inset-y-0 right-0 w-1/2 overflow-hidden">
+        {/* eslint-disable-next-line design-policy/design-tokens -- theme preview split: each half clips a full-width wireframe */}
         <div className="relative h-full w-[200%]" style={{ left: '-100%' }}>
           <MiniAppFrame colors={preset.dark} />
         </div>

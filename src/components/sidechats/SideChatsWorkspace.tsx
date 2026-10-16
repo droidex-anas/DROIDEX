@@ -45,18 +45,16 @@ export function SideChatsWorkspace({
                   appSessionId: sourceAppSessionId,
                 });
               }}
-            >
-              <ChevronDown className="h-3.5 w-3.5" />
-            </SideChatHeaderButton>
+              icon={ChevronDown}
+            />
             <SideChatHeaderButton
               label="Pop out"
               onClick={() => {
                 if (expanded) onToggleExpanded();
                 dispatch({ type: 'PLACE_SIDE_CHATS', sourceAppSessionId, placement: 'floating' });
               }}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </SideChatHeaderButton>
+              icon={ExternalLink}
+            />
             <AgentPaneExpand expanded={expanded} onToggle={onToggleExpanded} />
           </>
         }

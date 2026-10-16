@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { Check, FolderGit2, FolderPlus } from 'lucide-react';
-import { Popover } from './Popover';
+import { Check, FolderGit, FolderPlus } from '@droidex/icons';
+import { Button } from '../ui/Button';
+import { Popover } from '../ui/Popover';
 import { WorktreeIcon } from '../icons/WorktreeIcon';
 
 // Custom composer-bar glyphs (16x16, currentColor) that replace the stock
@@ -51,43 +52,9 @@ import { worktreeName } from '../../lib/git';
 import { resolveMainCheckout } from '../../lib/chatWorkspace';
 import { workspaceName } from '../../lib/workspaces';
 
-/** One control of the Start in row. `open` is omitted by a pill with no menu. */
-function Pill({
-  icon,
-  label,
-  title,
-  open,
-  innerRef,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  title: string;
-  open?: boolean;
-  innerRef?: React.RefObject<HTMLButtonElement | null>;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      ref={innerRef}
-      onClick={onClick}
-      title={`${title}: ${label}`}
-      aria-label={`${title}: ${label}`}
-      {...(open === undefined ? {} : { 'aria-expanded': open, 'aria-haspopup': 'dialog' as const })}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
-        open
-          ? 'bg-droid-bg/60 text-droid-text'
-          : 'text-droid-text-secondary hover:bg-droid-bg/40 hover:text-droid-text'
-      }`}
-    >
-      <span className="shrink-0 text-droid-text-muted transition-colors group-hover:text-droid-text-secondary">
-        {icon}
-      </span>
-      <span className="max-w-[150px] truncate text-left">{label}</span>
-    </button>
-  );
-}
+// The pointer is the highlight in these popover lists: elevated on light,
+// active on dark, where the raised layer already is the elevated rung.
+const ITEM_HOVER = 'hover:bg-elevated dark:hover:bg-active';
 
 /** Where a conversation will start, as the bar reads and writes it. */
 export interface StartInSelection {
@@ -178,29 +145,42 @@ export function StartInBar({
   if (!cwd)
     return (
       <div className="flex min-w-0 items-center gap-4 overflow-hidden">
-        <Pill
-          icon={<FolderPlus className="h-3.5 w-3.5" />}
-          label="Open folder…"
-          title="Project"
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<FolderPlus className="size-icon-sm" />}
+          labelClassName="max-w-36"
+          shrinkable
+          title="Project: Open folder…"
+          aria-label="Project: Open folder…"
           onClick={() => void openFolder()}
-        />
+        >
+          Open folder…
+        </Button>
       </div>
     );
 
   return (
     <div className="flex min-w-0 items-center gap-4 overflow-hidden">
-      <Pill
-        icon={<FolderGit2 className="h-3.5 w-3.5" />}
-        label={workspaceName(repoRoot)}
-        title="Project"
-        open={repoOpen}
-        innerRef={repoRef}
+      <Button
+        ref={repoRef}
+        variant="ghost"
+        size="sm"
+        icon={<FolderGit className="size-icon-sm" />}
+        labelClassName="max-w-36"
+        shrinkable
+        title={`Project: ${workspaceName(repoRoot)}`}
+        aria-label={`Project: ${workspaceName(repoRoot)}`}
+        aria-expanded={repoOpen}
+        aria-haspopup="dialog"
         onClick={() => {
           setLocOpen(false);
           setBranchOpen(false);
           setRepoOpen((v) => !v);
         }}
-      />
+      >
+        {workspaceName(repoRoot)}
+      </Button>
       <Popover
         open={repoOpen}
         onClose={() => {
@@ -208,10 +188,10 @@ export function StartInBar({
         }}
         anchorRef={repoRef}
         label="Projects"
-        align="left"
+        placement="bottom-start"
         width={264}
       >
-        <div className="max-h-[260px] overflow-y-auto py-1">
+        <div className="max-h-64 overflow-y-auto py-1">
           {state.workspaceCwds.map((path) => (
             <button
               key={path}
@@ -220,33 +200,27 @@ export function StartInBar({
                 setRepoOpen(false);
               }}
               aria-pressed={path === repoRoot}
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+              className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${ITEM_HOVER}`}
             >
-              <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+              <FolderGit className="size-icon-sm shrink-0 text-muted" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-droid-text">
-                  {workspaceName(path)}
-                </span>
-                <span className="block truncate text-[11px] text-droid-text-muted">{path}</span>
+                <span className="block truncate text-body text-primary">{workspaceName(path)}</span>
+                <span className="block truncate text-caption text-muted">{path}</span>
               </span>
               {path === repoRoot && (
-                <Check
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: 'var(--droid-accent)' }}
-                  strokeWidth={3}
-                />
+                <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
               )}
             </button>
           ))}
         </div>
-        <div className="border-t border-droid-border/70 p-1.5">
+        <div className="bg-bg/40 p-1.5">
           <button
             onClick={() => {
               void openFolder();
             }}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/60"
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary transition-colors ${ITEM_HOVER}`}
           >
-            <FolderPlus className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+            <FolderPlus className="size-icon-sm shrink-0 text-muted" />
             Open folder…
           </button>
         </div>
@@ -254,24 +228,31 @@ export function StartInBar({
 
       {isRepo && (
         <>
-          <Pill
+          <Button
+            ref={locRef}
+            variant="ghost"
+            size="sm"
             icon={
               createsWorktree ? (
-                <WorktreeIcon className="h-3.5 w-3.5" />
+                <WorktreeIcon className="size-icon-sm" />
               ) : (
-                <LocalGlyph className="h-3.5 w-3.5" />
+                <LocalGlyph className="size-icon-sm" />
               )
             }
-            label={workLocationLabel}
-            title="Work in"
-            open={locOpen}
-            innerRef={locRef}
+            labelClassName="max-w-36"
+            shrinkable
+            title={`Work in: ${workLocationLabel}`}
+            aria-label={`Work in: ${workLocationLabel}`}
+            aria-expanded={locOpen}
+            aria-haspopup="dialog"
             onClick={() => {
               setRepoOpen(false);
               setBranchOpen(false);
               setLocOpen((v) => !v);
             }}
-          />
+          >
+            {workLocationLabel}
+          </Button>
           <Popover
             open={locOpen}
             onClose={() => {
@@ -279,31 +260,27 @@ export function StartInBar({
             }}
             anchorRef={locRef}
             label="Worktrees"
-            align="left"
+            placement="bottom-start"
             width={280}
           >
-            <div className="max-h-[260px] overflow-y-auto py-1">
+            <div className="max-h-64 overflow-y-auto py-1">
               <button
                 onClick={() => {
                   startIn(repoRoot, draft.branch ?? env.branch ?? undefined, 'worktree');
                   setLocOpen(false);
                 }}
                 aria-pressed={createsWorktree}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${ITEM_HOVER}`}
               >
-                <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+                <WorktreeIcon className="size-icon-sm shrink-0 text-muted" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-droid-text">New worktree</span>
-                  <span className="block truncate text-[11px] text-droid-text-muted">
+                  <span className="block truncate text-body text-primary">New worktree</span>
+                  <span className="block truncate text-caption text-muted">
                     Isolated checkout for this chat
                   </span>
                 </span>
                 {createsWorktree && (
-                  <Check
-                    className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: 'var(--droid-accent)' }}
-                    strokeWidth={3}
-                  />
+                  <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
                 )}
               </button>
               <button
@@ -313,23 +290,19 @@ export function StartInBar({
                 }}
                 disabled={!mainCheckout}
                 aria-pressed={onLocal}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-droid-elevated/60 disabled:opacity-50"
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-elevated enabled:dark:hover:bg-active disabled:opacity-50"
               >
-                <LocalGlyph className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+                <LocalGlyph className="size-icon-sm shrink-0 text-muted" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-droid-text">Work locally</span>
-                  <span className="block truncate text-[11px] text-droid-text-muted">
+                  <span className="block truncate text-body text-primary">Work locally</span>
+                  <span className="block truncate text-caption text-muted">
                     {mainCheckout
                       ? `${mainCheckout.branch ?? 'detached'} · main checkout`
                       : 'Loading main checkout…'}
                   </span>
                 </span>
                 {onLocal && (
-                  <Check
-                    className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: 'var(--droid-accent)' }}
-                    strokeWidth={3}
-                  />
+                  <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
                 )}
               </button>
               {localWorktrees
@@ -342,36 +315,39 @@ export function StartInBar({
                       setLocOpen(false);
                     }}
                     aria-pressed={currentWtPath === w.path}
-                    className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-droid-elevated/60"
+                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${ITEM_HOVER}`}
                   >
-                    <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-secondary">
+                    <WorktreeIcon className="size-icon-sm shrink-0 text-muted" />
+                    <span className="min-w-0 flex-1 truncate text-body text-secondary">
                       {worktreeName(w)}
                     </span>
                     {currentWtPath === w.path && (
-                      <Check
-                        className="h-3.5 w-3.5 shrink-0"
-                        style={{ color: 'var(--droid-accent)' }}
-                        strokeWidth={3}
-                      />
+                      <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
                     )}
                   </button>
                 ))}
             </div>
           </Popover>
 
-          <Pill
-            icon={<BranchGlyph className="h-3.5 w-3.5" />}
-            label={draft.branch ?? env.branch ?? 'detached'}
-            title="Branch"
-            open={branchOpen}
-            innerRef={branchRef}
+          <Button
+            ref={branchRef}
+            variant="ghost"
+            size="sm"
+            icon={<BranchGlyph className="size-icon-sm" />}
+            labelClassName="max-w-36"
+            shrinkable
+            title={`Branch: ${draft.branch ?? env.branch ?? 'detached'}`}
+            aria-label={`Branch: ${draft.branch ?? env.branch ?? 'detached'}`}
+            aria-expanded={branchOpen}
+            aria-haspopup="dialog"
             onClick={() => {
               setRepoOpen(false);
               setLocOpen(false);
               setBranchOpen((v) => !v);
             }}
-          />
+          >
+            {draft.branch ?? env.branch ?? 'detached'}
+          </Button>
           <StartBranchMenu
             open={branchOpen}
             onClose={() => {

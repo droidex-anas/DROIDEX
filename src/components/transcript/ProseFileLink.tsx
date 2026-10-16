@@ -3,11 +3,9 @@ import { createContext, useContext, type ReactNode } from 'react';
 import { repoPathInProse } from '../../lib/prosePaths';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 
-// Inline code sits in the line as a quiet pill: sized from the text around it,
-// tinted from the text colour so it still reads on a message bubble, and cloned
-// across a line break so a wrapped pill keeps both ends.
-const PILL =
-  'rounded-[0.35em] bg-droid-text/[0.07] px-[0.38em] py-[0.12em] font-mono text-[0.86em] text-droid-text [box-decoration-break:clone] break-words';
+// Inline code sits in the line as a quiet tone in the `code` style, tinted from
+// the text colour so it still reads on a message bubble (`.inline-code`).
+const PILL = 'inline-code rounded-sm font-mono text-code text-primary break-words';
 
 // A reply names files constantly ("check `docs/architecture.md`"), and those
 // mentions open in Review exactly like a tool row's path. The handler reaches
@@ -55,7 +53,9 @@ export function InlineCode({ children }: { children?: ReactNode }) {
         event.preventDefault();
         open();
       }}
-      className={`${PILL} cursor-pointer underline decoration-transparent underline-offset-2 transition-colors hover:bg-droid-text/[0.14] hover:decoration-current focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60`}
+      // The underline appears on hover rather than fading in from transparent:
+      // a selection repaints a transparent decoration in the selection colour.
+      className={`${PILL} cursor-pointer underline-offset-2 hover:underline`}
     >
       {children}
     </code>

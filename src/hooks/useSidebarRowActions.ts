@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type RefObject } from 'react';
+import type { AnchorPoint } from '../components/ui/usePopoverPosition';
 import { useStoreDispatch } from './useStore';
 import { chatDisplayTitle, isChatHidden, type ChatMetadataMap } from '../lib/chatMetadata';
 import { exportSessionMarkdown, renameSession } from '../lib/commands';
@@ -43,6 +44,13 @@ export function rowMenuTarget(
   return sessions[rowMenu.appSessionId];
 }
 
+// What a row's action menu opens from: the row's actions button, or the
+// right-clicked row together with the click point.
+export interface RowMenuAnchor {
+  anchorRef: RefObject<HTMLElement | null>;
+  anchorPoint?: AnchorPoint;
+}
+
 // Owns chat action targeting, inline rename settlement, and stale-target cleanup.
 export function useSidebarRowActions(
   sessions: Record<string, SessionSummary>,
@@ -51,12 +59,15 @@ export function useSidebarRowActions(
   const dispatch = useStoreDispatch();
   // Target of the chat row action menu (opened by right-click or the hover
   // "..." button) and the row currently being renamed inline.
-  const [rowMenu, setRowMenu] = useState<{ appSessionId: string; x: number; y: number } | null>(
-    null,
-  );
+  const [rowMenu, setRowMenu] = useState<({ appSessionId: string } & RowMenuAnchor) | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const handleRowMenu = useCallback((appSessionId: string, position: { x: number; y: number }) => {
-    setRowMenu({ appSessionId, x: position.x, y: position.y });
+  // The actions button toggles its menu; a right-click always opens a new one.
+  const handleRowMenu = useCallback((appSessionId: string, anchor: RowMenuAnchor) => {
+    setRowMenu((current) =>
+      current?.anchorRef === anchor.anchorRef && !anchor.anchorPoint
+        ? null
+        : { appSessionId, ...anchor },
+    );
   }, []);
 
   // Stable identity so SessionContextMenu's escape-layer/listener effect does

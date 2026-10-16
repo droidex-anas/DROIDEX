@@ -6,7 +6,9 @@ import { opensInNewTab } from '../lib/shortcuts';
 import type { ViewPage } from '../features/tabs/tabStrip';
 import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspaceCwd';
 import { GitPullRequestIcon } from './environment/GithubIcons';
-import { Clock } from '@droidex/icons';
+import { Clock, Spinner } from '@droidex/icons';
+import { Badge } from './ui/Badge';
+import { Row } from './ui/Row';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import { projectsNavSignal } from '../lib/projectThreads';
 import { ProjectsIntro } from '../features/projects/ProjectsIntro';
@@ -72,64 +74,43 @@ export function SidebarNavigation({ announcementShown = false }: { announcementS
 
   return (
     <>
-      <button
+      <Row
         data-testid="pull-requests-nav"
+        icon={<GitPullRequestIcon size={16} />}
+        label="Pull requests"
+        active={state.mainView === 'pull-requests'}
         onClick={openPullRequests}
         onAuxClick={openPullRequests}
         onMouseDown={preventAutoscroll}
-        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
-          state.mainView === 'pull-requests' ? 'bg-droid-active' : ''
-        }`}
-      >
-        <span
-          className={`flex h-4 w-4 shrink-0 items-center justify-center transition-colors ${
-            state.mainView === 'pull-requests'
-              ? 'text-droid-text'
-              : 'text-droid-text-secondary group-hover:text-droid-text'
-          }`}
-        >
-          <GitPullRequestIcon size={15} />
-        </span>
-        Pull requests
-      </button>
-      <button
+      />
+      <Row
         ref={projectsButtonRef}
         data-testid="projects-nav"
         aria-current={state.mainView === 'projects' ? 'page' : undefined}
+        icon={<ActivityStatusGlyph status="ready" decorative />}
+        label="Projects"
+        active={state.mainView === 'projects'}
+        // A project runs while the user is elsewhere, so the entry says when
+        // one is moving and when one is holding for them.
+        trailing={
+          <ProjectsNavBadge attention={projectsSignal.attention} live={projectsSignal.live} />
+        }
         onClick={openProjects}
         onAuxClick={openProjects}
         onMouseDown={preventAutoscroll}
-        className={`group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium transition-colors ${state.mainView === 'projects' ? 'bg-droid-active text-droid-text' : 'text-droid-text hover:bg-droid-elevated'}`}
-      >
-        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-droid-text-secondary">
-          <ActivityStatusGlyph status="ready" decorative />
-        </span>
-        Projects
-        {/* A project runs while the user is elsewhere, so the entry says when
-            one is moving and when one is holding for them. */}
-        <ProjectsNavBadge attention={projectsSignal.attention} live={projectsSignal.live} />
-      </button>
+      />
       <ProjectsIntro anchorRef={projectsButtonRef} held={announcementShown} />
-      <button
+      <Row
         ref={automationsButtonRef}
         data-testid="automations-nav"
+        aria-current={state.mainView === 'automations' ? 'page' : undefined}
+        icon={<Clock className="size-icon-md" />}
+        label="Automations"
+        active={state.mainView === 'automations'}
         onClick={openAutomations}
         onAuxClick={openAutomations}
         onMouseDown={preventAutoscroll}
-        aria-current={state.mainView === 'automations' ? 'page' : undefined}
-        className={`group mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[13px] font-medium text-droid-text transition-colors ${
-          state.mainView === 'automations' ? 'bg-droid-active' : ''
-        }`}
-      >
-        <Clock
-          className={`h-3.5 w-3.5 shrink-0 transition-colors ${
-            state.mainView === 'automations'
-              ? 'text-droid-text'
-              : 'text-droid-text-secondary group-hover:text-droid-text'
-          }`}
-        />
-        Automations
-      </button>
+      />
     </>
   );
 }
@@ -142,20 +123,21 @@ function preventAutoscroll(event: MouseEvent) {
 function ProjectsNavBadge({ attention, live }: { attention: number; live: boolean }) {
   if (attention > 0) {
     return (
-      <span
+      <Badge
+        tone="warning"
         title={`${String(attention)} waiting on you`}
-        className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-droid-orange/20 px-1 text-[11px] font-medium leading-none text-droid-orange"
+        className="-my-0.5 tabular-nums"
       >
         {attention}
-      </span>
+      </Badge>
     );
   }
   if (!live) return null;
   return (
-    <span
+    <Spinner
+      size={14}
       aria-label="threads working"
-      title="Threads working"
-      className="ml-auto h-3 w-3 rounded-full border-[1.5px] border-droid-text-muted border-r-transparent motion-safe:animate-spin-slow"
+      className="shrink-0 text-muted motion-safe:animate-spin-slow"
     />
   );
 }

@@ -14,6 +14,7 @@ import {
   type ShortcutAction,
 } from '../lib/shortcuts';
 import { SectionTitle, SettingRow } from './settingsKit';
+import { Button } from './ui/Button';
 
 export function KeyboardShortcutsSettings() {
   const dispatch = useStoreDispatch();
@@ -60,62 +61,53 @@ export function KeyboardShortcutsSettings() {
         title="Keyboard"
         sub={`Press a new chord after choosing Change. Escape cancels, Delete restores the default. Every shortcut needs ${PRIMARY_MODIFIER_LABEL}.`}
       />
-      <div className="overflow-hidden rounded-2xl border border-droid-border/80 bg-droid-surface">
-        {SHORTCUT_DEFINITIONS.map((definition, index) => {
+      <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
+        {SHORTCUT_DEFINITIONS.map((definition) => {
           const active = capturing === definition.action;
           const conflicts = conflictingActions(bindings, definition.action);
           return (
-            <div
+            <SettingRow
               key={definition.action}
-              className={index > 0 ? 'border-t border-droid-border/50' : ''}
+              label={definition.label}
+              description={
+                conflicts.length > 0 ? (
+                  <span className="text-warning">
+                    Also bound to {conflicts.map((other) => other.label).join(', ')}.
+                  </span>
+                ) : undefined
+              }
             >
-              <SettingRow
-                label={definition.label}
-                description={
-                  conflicts.length > 0 ? (
-                    <span className="text-droid-orange">
-                      Also bound to {conflicts.map((other) => other.label).join(', ')}.
-                    </span>
-                  ) : undefined
-                }
-              >
-                <div className="flex shrink-0 items-center gap-2">
-                  <kbd
-                    className={`min-w-[52px] rounded-md px-2 py-1 text-center font-mono text-[11px] ${
-                      active
-                        ? 'bg-droid-elevated text-droid-text ring-1 ring-inset ring-droid-border-hover'
-                        : 'bg-droid-elevated text-droid-text-muted'
-                    }`}
-                  >
-                    {active ? 'Press…' : formatChord(bindings[definition.action])}
-                  </kbd>
-                  <button
-                    type="button"
-                    aria-label={
-                      active
-                        ? `Cancel changing the ${definition.label.toLowerCase()} shortcut`
-                        : `Change the ${definition.label.toLowerCase()} shortcut`
-                    }
-                    onClick={() => {
-                      setCapturing(active ? null : definition.action);
-                    }}
-                    className="rounded-xl bg-droid-elevated/80 px-3 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
-                  >
-                    {active ? 'Cancel' : 'Change'}
-                  </button>
-                </div>
-              </SettingRow>
-            </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <kbd
+                  className={`min-w-12 rounded-sm px-2 py-1 text-center font-mono text-code-sm ${
+                    active ? 'bg-active text-primary' : 'bg-elevated text-muted'
+                  }`}
+                >
+                  {active ? 'Press…' : formatChord(bindings[definition.action])}
+                </kbd>
+                <Button
+                  size="sm"
+                  aria-label={
+                    active
+                      ? `Cancel changing the ${definition.label.toLowerCase()} shortcut`
+                      : `Change the ${definition.label.toLowerCase()} shortcut`
+                  }
+                  onClick={() => {
+                    setCapturing(active ? null : definition.action);
+                  }}
+                >
+                  {active ? 'Cancel' : 'Change'}
+                </Button>
+              </div>
+            </SettingRow>
           );
         })}
         {/* Browser tab numbering is fixed, so it is listed but not rebindable. */}
-        <div className="border-t border-droid-border/50">
-          <SettingRow label="Go to tab 1–9" description="9 always opens the last tab.">
-            <kbd className="min-w-[52px] shrink-0 rounded-md bg-droid-elevated px-2 py-1 text-center font-mono text-[11px] text-droid-text-muted">
-              {formatChord('Meta+1')}–{formatChord('Meta+9')}
-            </kbd>
-          </SettingRow>
-        </div>
+        <SettingRow label="Go to tab 1–9" description="9 always opens the last tab.">
+          <kbd className="min-w-12 shrink-0 rounded-sm bg-elevated px-2 py-1 text-center font-mono text-code-sm text-muted">
+            {formatChord('Meta+1')}–{formatChord('Meta+9')}
+          </kbd>
+        </SettingRow>
       </div>
     </div>
   );

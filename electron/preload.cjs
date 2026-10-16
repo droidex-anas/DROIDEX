@@ -111,7 +111,7 @@ function subscribeTerminalPort(id) {
   return channel;
 }
 
-contextBridge.exposeInMainWorld('droidControl', {
+contextBridge.exposeInMainWorld('droidex', {
   bridgeInfo: () => ipcRenderer.invoke('bridge-info'),
   sidecarStatus: () => ipcRenderer.invoke('sidecar-status'),
   onSidecarStatus: (handler) => on('sidecar-status', handler),

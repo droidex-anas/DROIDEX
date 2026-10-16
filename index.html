@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Droid Control</title>
+    <title>DROIDEX</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -26,9 +26,9 @@
         };
         if (t && hex(t.bg) && hex(t.fg)) {
           var s = document.documentElement.style;
-          s.setProperty('--droid-bg', t.bg);
-          s.setProperty('--droid-text', t.fg);
-          if (hex(t.surface)) s.setProperty('--droid-surface', t.surface);
+          s.setProperty('--bg', t.bg);
+          s.setProperty('--text', t.fg);
+          if (hex(t.surface)) s.setProperty('--surface', t.surface);
         }
       } catch (e) {
         /* corrupted storage: fall back to the CSS defaults */

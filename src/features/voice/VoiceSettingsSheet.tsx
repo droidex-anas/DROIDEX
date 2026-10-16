@@ -44,7 +44,7 @@ export function VoiceSettingsSheet({
 
   return (
     <div
-      className="absolute inset-0 z-10 flex items-end justify-center pb-28"
+      className="absolute inset-0 z-10 flex items-end justify-center px-4 pb-28"
       onClick={onClose}
       role="presentation"
     >
@@ -58,15 +58,13 @@ export function VoiceSettingsSheet({
         onClick={(event) => {
           event.stopPropagation();
         }}
-        className="w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-droid-border/60 bg-droid-elevated shadow-droid"
+        className="w-96 max-w-full overflow-hidden rounded-2xl bg-elevated shadow-lg"
       >
-        <div className="px-4 pt-3.5 pb-2 text-[12px] font-medium text-droid-text-secondary">
-          Voice
-        </div>
+        <div className="px-4 pt-3.5 pb-2 text-label text-secondary">Voice</div>
         <div
           role="radiogroup"
           aria-label="Voice"
-          className="max-h-[260px] overflow-y-auto px-1.5 pb-1.5"
+          className="max-h-64 overflow-y-auto px-1.5 pb-1.5"
         >
           <VoiceRow
             label={defaultVoice ? `Default · ${capitalize(defaultVoice)}` : 'Harness default'}
@@ -87,10 +85,8 @@ export function VoiceSettingsSheet({
           ))}
         </div>
 
-        <div className="border-t border-droid-border/60 px-4 py-3">
-          <div className="mb-2 text-[12px] font-medium text-droid-text-secondary">
-            While it works
-          </div>
+        <div className="px-4 py-3">
+          <div className="mb-2 text-label text-secondary">While it works</div>
           <div role="radiogroup" aria-label="While it works" className="flex flex-col gap-1">
             {NARRATION.map((option) => {
               const selected = option.value === narration;
@@ -103,22 +99,22 @@ export function VoiceSettingsSheet({
                   onClick={() => {
                     chooseNarration(option.value);
                   }}
-                  className={`flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
-                    selected ? 'bg-droid-surface' : 'hover:bg-droid-surface/60'
+                  className={`flex items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                    selected
+                      ? 'bg-active dark:bg-surface'
+                      : 'hover:bg-active/60 dark:hover:bg-surface/60'
                   }`}
                 >
                   <span className="min-w-0">
-                    <span className="block text-[13px] text-droid-text">{option.label}</span>
-                    <span className="block text-[11px] leading-snug text-droid-text-muted">
-                      {option.hint}
-                    </span>
+                    <span className="block text-body text-primary">{option.label}</span>
+                    <span className="block text-caption text-muted">{option.hint}</span>
                   </span>
-                  {selected && <Check className="h-3.5 w-3.5 shrink-0 text-droid-accent" />}
+                  {selected && <Check className="size-icon-sm shrink-0 text-accent" />}
                 </button>
               );
             })}
           </div>
-          <p className="mt-3 text-[11px] leading-snug text-droid-text-muted">
+          <p className="mt-3 text-caption text-muted">
             A new voice, or a new way of narrating, takes over after a short reconnect.
           </p>
         </div>
@@ -142,14 +138,14 @@ function VoiceRow({
       role="radio"
       aria-checked={selected}
       onClick={onSelect}
-      className={`flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors ${
+      className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-body transition-colors ${
         selected
-          ? 'bg-droid-surface text-droid-text'
-          : 'text-droid-text-secondary hover:bg-droid-surface/60 hover:text-droid-text'
+          ? 'bg-active text-primary dark:bg-surface'
+          : 'text-secondary hover:bg-active/60 dark:hover:bg-surface/60 hover:text-primary'
       }`}
     >
       {label}
-      {selected && <Check className="h-3.5 w-3.5 shrink-0 text-droid-accent" />}
+      {selected && <Check className="size-icon-sm shrink-0 text-accent" />}
     </button>
   );
 }

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import { Maximize2, Minimize2 } from 'lucide-react';
-import { HoverTooltip } from './HoverTooltip';
+import { Maximize, Minimize } from '@droidex/icons';
+import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 
 export interface AppExpansion {
   // The transcript row keeps the inline height while the App sits in the top
@@ -83,35 +84,31 @@ export function ExpandableAppSurface({
           }
           className={
             isExpanded
-              ? 'cue-enter fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none justify-center overflow-hidden border-0 bg-black/40 p-3 text-droid-text backdrop-blur-sm sm:p-6'
+              ? 'cue-enter fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none justify-center overflow-hidden border-0 bg-bg/60 p-3 text-primary sm:p-6'
               : 'min-w-0'
           }
         >
           <div
             className={
               isExpanded
-                ? 'flex h-full w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-droid-border bg-droid-bg shadow-droid'
+                ? 'flex h-full w-full max-w-screen-2xl flex-col overflow-hidden rounded-xl bg-bg shadow-lg'
                 : 'min-w-0'
             }
           >
             {isExpanded && (
               <div className="flex h-12 shrink-0 items-center gap-3 pl-5 pr-2.5">
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text-secondary">
+                <span className="min-w-0 flex-1 truncate text-body-strong text-secondary">
                   Visualization
                 </span>
-                <span className="hidden text-[11px] text-droid-text-muted sm:inline">
-                  Esc to close
-                </span>
-                <button
+                <span className="hidden text-caption text-muted sm:inline">Esc to close</span>
+                <Button
                   ref={collapseButtonRef}
-                  type="button"
+                  variant="ghost"
+                  icon={Minimize}
                   onClick={onCollapse}
                   aria-label="Exit full screen"
                   title="Exit full screen"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:bg-droid-elevated focus-visible:text-droid-text focus-visible:outline-none"
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </button>
+                />
               </div>
             )}
             <div
@@ -135,10 +132,12 @@ export function ExpandableAppSurface({
       {/* Outside the frame, so the button never covers the App's own controls. */}
       {canExpand && (
         <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
-          <HoverTooltip label="Full screen">
-            <button
+          <Tooltip label="Full screen">
+            <Button
               ref={expandButtonRef}
-              type="button"
+              variant="ghost"
+              size="sm"
+              icon={Maximize}
               aria-label="Open visualization full screen"
               tabIndex={isExpanded ? -1 : undefined}
               onClick={() => {
@@ -146,11 +145,8 @@ export function ExpandableAppSurface({
                 if (!surface) return;
                 onExpand({ placeholderHeight: surface.offsetHeight });
               }}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:bg-droid-elevated focus-visible:text-droid-text focus-visible:outline-none"
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-            </button>
-          </HoverTooltip>
+            />
+          </Tooltip>
         </div>
       )}
     </div>

@@ -114,7 +114,7 @@ function filterBreadcrumb(breadcrumb: Sentry.Breadcrumb): Sentry.Breadcrumb | nu
 }
 
 function invokeDiagnosticsBridge(name: string, args: unknown[] = []): Promise<unknown> {
-  const bridge = window.droidControl;
+  const bridge = window.droidex;
   if (!bridge) return Promise.resolve({ enabled: false });
   const method: unknown = Reflect.get(bridge, name);
   if (typeof method !== 'function') return Promise.resolve({ enabled: false });

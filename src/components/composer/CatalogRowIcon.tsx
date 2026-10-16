@@ -8,7 +8,7 @@ import type { SkillInfo } from '../../types/bridge';
 // Icons come from the desktop app's main process (the favicon protocol for a
 // remote logo, the local-image protocol for one on disk); a renderer running
 // without it has nowhere to ask.
-const canLoadIcons = typeof window !== 'undefined' && 'droidControl' in window;
+const canLoadIcons = typeof window !== 'undefined' && 'droidex' in window;
 
 // Icons that failed this session, so a row scrolled back into view goes straight
 // to its mark instead of flashing an empty box while the request fails again.
@@ -21,7 +21,7 @@ function CommandSigil({ className }: { className: string }) {
   return (
     <span
       aria-hidden
-      className={`flex items-center justify-center text-[13px] leading-none text-droid-text-muted/70 ${className}`}
+      className={`flex items-center justify-center text-body text-muted ${className}`}
     >
       /
     </span>
@@ -55,7 +55,7 @@ export function CatalogRowIcon({
         draggable={false}
         loading="lazy"
         decoding="async"
-        className={`rounded object-contain ${className}`}
+        className={`rounded-xs object-contain ${className}`}
         // The brand colour is the harness's own data, in whatever notation it
         // chose, so the tint is mixed rather than built by appending alpha hex.
         style={

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ExternalLink, Plus, Trash2, X } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
-import { Popover } from './Popover';
-import { Row, RowCaret } from './primitives';
+import { Check, ChevronDown, ExternalLink, Plus, Spinner, Trash, X } from '@droidex/icons';
+import { Popover } from '../ui/Popover';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
+import { Menu } from '../ui/Menu';
+import { Row, RowCaret } from '../ui/Row';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { createGitWorktree, isWorktreeInUse, removeGitWorktree, worktreeName } from '../../lib/git';
 import { activeSessionCwds } from '../../lib/sessions';
@@ -14,6 +16,10 @@ import { reanchorSessionsForWorktreeRemoval } from '../../lib/commands';
 import { removeWorktreeAndReanchor } from '../../lib/worktreeRemoval';
 import type { GitBranchList, GitEnvironment, GitWorktree } from '../../types/vcs';
 import { WorktreeIcon } from '../icons/WorktreeIcon';
+
+// The pointer is the highlight in these popover lists: elevated on light,
+// active on dark, where the raised layer already is the elevated rung.
+const ITEM_HOVER = 'hover:bg-elevated dark:hover:bg-active';
 
 function notifyWorktreeRemoved(reanchored: number, reanchorFailed: boolean): void {
   if (reanchorFailed) {
@@ -48,6 +54,7 @@ export function WorktreeMenu({
   const dispatch = useStoreDispatch();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const baseRef = useRef<HTMLButtonElement>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const defaultBase = env?.branch ?? env?.defaultBranch ?? 'main';
@@ -174,15 +181,15 @@ export function WorktreeMenu({
     <>
       <Row
         ref={anchorRef}
-        icon={<WorktreeIcon className="h-4 w-4" />}
+        icon={<WorktreeIcon className="size-icon-md" />}
         label={current ? worktreeName(current) : 'Worktree'}
         title="Worktrees"
         onClick={() => {
           setOpen((v) => !v);
         }}
         active={open}
-        expanded={open}
-        hasPopup="dialog"
+        aria-expanded={open}
+        aria-haspopup="dialog"
         meta={worktrees.length > 1 ? String(worktrees.length) : undefined}
         trailing={<RowCaret open={open} />}
       />
@@ -194,36 +201,26 @@ export function WorktreeMenu({
         }}
         anchorRef={anchorRef}
         label="Worktrees"
-        align="right"
+        placement="bottom-end"
         width={288}
       >
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
-          <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
-            This session
-          </div>
+          <Menu.Label className="px-2.5">This session</Menu.Label>
           {current && (
             <div className="flex items-center gap-2 px-2.5 py-1.5">
-              <Check
-                className="h-3.5 w-3.5 shrink-0"
-                style={{ color: 'var(--droid-accent)' }}
-                strokeWidth={3}
-              />
-              <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text">
+              <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
+              <span className="min-w-0 flex-1 truncate text-body text-primary">
                 {worktreeName(current)}
               </span>
-              <span className="shrink-0 text-[11px] text-droid-text-muted">{current.head}</span>
+              <span className="shrink-0 text-caption text-muted">{current.head}</span>
             </div>
           )}
 
-          {others.length > 0 && (
-            <div className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
-              Other worktrees
-            </div>
-          )}
+          {others.length > 0 && <Menu.Label className="px-2.5 pt-2">Other worktrees</Menu.Label>}
           {others.map((w) => (
             <div
               key={w.path}
-              className="group flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-droid-elevated/60"
+              className={`group flex items-center gap-2 px-2.5 py-1.5 transition-colors ${ITEM_HOVER}`}
             >
               <button
                 onClick={() => {
@@ -232,28 +229,28 @@ export function WorktreeMenu({
                 title="Open this worktree in a new chat"
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <WorktreeIcon className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-droid-text-secondary">
+                <WorktreeIcon className="size-icon-sm shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate text-body text-secondary">
                   {worktreeName(w)}
                 </span>
-                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-droid-text-muted/60" />
+                <ExternalLink className="size-icon-sm shrink-0 text-muted/60" />
               </button>
               {w.isMain ? (
                 <span
                   title="The repository's main worktree can't be removed"
-                  className="shrink-0 rounded bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-muted"
+                  className="shrink-0 rounded-xs bg-elevated px-1.5 py-0.5 text-caption text-muted"
                 >
                   main
                 </span>
               ) : w.path && isWorktreeInUse(w.path, sessionCwds) ? (
                 <span
                   title="A chat is currently using this worktree"
-                  className="shrink-0 rounded bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-muted"
+                  className="shrink-0 rounded-xs bg-elevated px-1.5 py-0.5 text-caption text-muted"
                 >
                   in use
                 </span>
               ) : removing === w.path ? (
-                <Spinner className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin-slow text-droid-text-muted" />
+                <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow text-muted" />
               ) : confirming === w.path ? (
                 <div className="flex shrink-0 items-center gap-0.5">
                   <button
@@ -263,18 +260,18 @@ export function WorktreeMenu({
                     }}
                     disabled={busy}
                     title="Confirm removal"
-                    className="rounded p-1 text-droid-orange hover:bg-droid-orange/15 disabled:opacity-40"
+                    className="rounded-xs p-1 text-warning hover:bg-warning-soft disabled:opacity-40"
                   >
-                    <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                    <Check className="size-icon-sm" />
                   </button>
                   <button
                     onClick={() => {
                       setConfirming(null);
                     }}
                     title="Cancel"
-                    className="rounded p-1 text-droid-text-muted hover:bg-droid-elevated"
+                    className="rounded-xs p-1 text-muted hover:bg-elevated"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="size-icon-sm" />
                   </button>
                 </div>
               ) : (
@@ -284,19 +281,20 @@ export function WorktreeMenu({
                   }}
                   disabled={busy}
                   title="Remove worktree"
-                  className="shrink-0 rounded p-1 text-droid-text-muted/0 transition-colors group-hover:text-droid-text-muted hover:!text-droid-orange disabled:opacity-40"
+                  className="shrink-0 rounded-xs p-1 text-muted/0 transition-colors group-hover:text-muted hover:!text-warning disabled:opacity-40"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash className="size-icon-sm" />
                 </button>
               )}
             </div>
           ))}
         </div>
 
-        <div className="shrink-0 border-t border-droid-border/70 p-1.5">
+        <div className="shrink-0 bg-bg/40 p-1.5">
           {creating ? (
             <div className="space-y-1.5">
-              <input
+              <Input
+                variant="compact"
                 autoFocus
                 value={name}
                 onChange={(e) => {
@@ -304,68 +302,77 @@ export function WorktreeMenu({
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && !pickingBase && void doCreate()}
                 placeholder="new-branch-name"
-                className="w-full rounded-md bg-droid-bg/60 px-2 py-1 text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+                aria-label="New branch name"
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
               />
               <button
+                ref={baseRef}
                 onClick={() => {
                   setPickingBase((v) => !v);
                 }}
-                className="flex w-full items-center gap-1.5 rounded-md bg-droid-bg/40 px-2 py-1 text-[12px] text-droid-text-secondary hover:bg-droid-bg/60"
+                aria-haspopup="menu"
+                aria-expanded={pickingBase}
+                className="flex w-full items-center gap-1.5 rounded-md bg-field px-2.5 py-1.5 text-label text-secondary hover:bg-active"
               >
-                <span className="text-droid-text-muted">Base</span>
-                <span className="flex-1 truncate text-left text-droid-text">{base}</span>
+                <span className="text-muted">Base</span>
+                <span className="flex-1 truncate text-left text-primary">{base}</span>
                 <ChevronDown
-                  className={`h-3 w-3 transition-transform ${pickingBase ? 'rotate-180' : ''}`}
+                  className={`size-icon-sm transition-transform ${pickingBase ? 'rotate-180' : ''}`}
                 />
               </button>
-              {pickingBase && (
-                <div className="max-h-32 overflow-y-auto rounded-md bg-droid-bg/40 p-1">
-                  {baseOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => {
-                        setBase(option);
-                        setPickingBase(false);
-                      }}
-                      className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-droid-text-secondary hover:bg-droid-elevated/60 hover:text-droid-text"
-                    >
-                      <span className="flex-1 truncate">{option}</span>
-                      {option === base && (
-                        <Check
-                          className="h-3 w-3"
-                          style={{ color: 'var(--droid-accent)' }}
-                          strokeWidth={3}
-                        />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <Menu
+                open={pickingBase}
+                onClose={() => {
+                  setPickingBase(false);
+                }}
+                anchorRef={baseRef}
+                label="Base branch"
+                placement="bottom-start"
+                width={248}
+              >
+                {baseOptions.map((option) => (
+                  <Menu.Item
+                    key={option}
+                    onSelect={() => {
+                      setBase(option);
+                    }}
+                  >
+                    <span className="flex-1 truncate">{option}</span>
+                    {option === base && (
+                      <Check aria-hidden="true" className="size-icon-sm text-accent" />
+                    )}
+                  </Menu.Item>
+                ))}
+              </Menu>
               <div className="flex items-center justify-end gap-1.5">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setCreating(false);
                   }}
-                  className="rounded-md px-2 py-1 text-[11px] text-droid-text-muted hover:text-droid-text"
                 >
                   Cancel
-                </button>
-                <button
-                  onClick={() => void doCreate()}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={busy}
                   disabled={!name.trim() || busy}
-                  className="flex items-center gap-1 rounded-md bg-droid-accent/15 px-2 py-1 text-[11px] font-medium text-droid-accent disabled:opacity-40"
+                  onClick={() => void doCreate()}
                 >
-                  {busy && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
                   Create & open
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
             <button
               onClick={startCreating}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/60"
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary transition-colors ${ITEM_HOVER}`}
             >
-              <Plus className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+              <Plus className="size-icon-sm shrink-0 text-muted" />
               New worktree…
             </button>
           )}
