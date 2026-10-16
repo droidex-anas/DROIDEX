@@ -114,7 +114,9 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     [],
   );
 
-  const isPreviewOpen = previewId !== null;
+  const previewIndex = previewId ? anchors.findIndex((a) => a.id === previewId) : -1;
+  const preview = previewIndex >= 0 ? anchors[previewIndex] : undefined;
+  const isPreviewOpen = preview !== undefined;
   useEffect(() => {
     if (!isPreviewOpen) return undefined;
     return pushEscapeLayer(() => {
@@ -173,9 +175,6 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     revealTick(railRef.current, tick.dataset.tickId ?? '', 'auto');
     tick.focus({ preventScroll: true });
   };
-
-  const previewIndex = previewId ? anchors.findIndex((a) => a.id === previewId) : -1;
-  const preview = previewIndex >= 0 ? anchors[previewIndex] : undefined;
 
   return (
     <div className="pointer-events-none absolute inset-y-24 left-1 z-10 hidden items-center lg:flex">
