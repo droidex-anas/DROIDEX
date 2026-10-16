@@ -240,10 +240,16 @@ test('small JSON fences keep token highlighting and large ones stay plain', asyn
   assert.match(largeHtml, /k1199/);
 });
 
-test('fences in a language the highlighter knows render as tokens', () => {
-  const html = renderToStaticMarkup(
-    createElement(Markdown, null, '```ts\nconst answer = "droid";\n\nexport { answer };\n```'),
-  );
+test('fences in a language the highlighter knows render as tokens', async () => {
+  const render = () =>
+    renderToStaticMarkup(
+      createElement(Markdown, null, '```ts\nconst answer = "droid";\n\nexport { answer };\n```'),
+    );
+
+  // The highlighter loads lazily: the first render starts the load.
+  render();
+  await import('./PrismCode');
+  const html = render();
 
   assert.match(html, /--warning\)">const</);
   assert.match(html, /--success\)">&quot;droid&quot;/);

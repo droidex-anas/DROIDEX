@@ -18,7 +18,7 @@ import {
   sanitizeDocxPreview,
 } from '../../lib/filePreview';
 import { Markdown } from '../Markdown';
-import { CODE_THEME } from '../MarkdownCode';
+import { CODE_THEME } from '../codeTheme';
 import { Button } from '../ui/Button';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 import { pathFileName } from '../../lib/pathDisplay';
