@@ -122,9 +122,11 @@ function HighlightPrism({ code, language }: { code: string; language: string }) 
         tokens.map((line, lineIndex) => (
           <Fragment key={lineIndex}>
             {lineIndex > 0 && '\n'}
-            {line.map((token, tokenIndex) => (
-              <span {...getTokenProps({ token })} key={tokenIndex} />
-            ))}
+            {/* Prism gives an empty line a placeholder "\n" token; the join above
+                already supplies that newline, so a copied selection stays exact. */}
+            {line.map((token, tokenIndex) =>
+              token.empty ? null : <span {...getTokenProps({ token })} key={tokenIndex} />,
+            )}
           </Fragment>
         ))
       }

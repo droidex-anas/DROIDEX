@@ -242,11 +242,14 @@ test('small JSON fences keep token highlighting and large ones stay plain', asyn
 
 test('fences in a language the highlighter knows render as tokens', () => {
   const html = renderToStaticMarkup(
-    createElement(Markdown, null, '```ts\nconst answer = "droid";\n```'),
+    createElement(Markdown, null, '```ts\nconst answer = "droid";\n\nexport { answer };\n```'),
   );
 
   assert.match(html, /--warning\)">const</);
   assert.match(html, /--success\)">&quot;droid&quot;/);
+  // Selecting the card copies its text: blank lines must not double.
+  const codeText = /<code[^>]*>([\s\S]*?)<\/code>/.exec(html)?.[1].replace(/<[^>]+>/g, '');
+  assert.equal(codeText, 'const answer = &quot;droid&quot;;\n\nexport { answer };');
 });
 
 test('GFM task lists render as checkbox rows without bullet markers', () => {
