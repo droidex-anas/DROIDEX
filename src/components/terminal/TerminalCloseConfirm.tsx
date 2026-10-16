@@ -1,5 +1,6 @@
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { wrapTabFocus } from '../../lib/focusTrap';
+import { Button } from '../ui/Button';
 
 /* ── Closing a shell that still has something running asks here, over the
    terminal the user is looking at, rather than in a popover hanging off the
@@ -32,28 +33,17 @@ export function TerminalCloseConfirm({
       aria-label="Confirm closing terminal"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="absolute inset-0 z-10 flex animate-fade-in items-center justify-center bg-droid-bg/70 p-4"
+      className="absolute inset-0 z-10 flex animate-fade-in items-center justify-center bg-bg/70 p-4"
     >
-      <div className="w-[280px] rounded-2xl border border-droid-border bg-droid-surface p-4 shadow-droid">
-        <p className="text-[12px] leading-relaxed text-droid-text">
-          A process is still running in this terminal.
-        </p>
-        <div className="mt-3 flex justify-end gap-1.5 text-[12px]">
-          <button
-            type="button"
-            autoFocus
-            onClick={onKeepOpen}
-            className="rounded-md px-2 py-1 leading-none text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus:bg-droid-active focus:text-droid-text focus:outline-none"
-          >
+      <div className="w-72 rounded-xl bg-raised p-4 shadow-lg">
+        <p className="text-body text-primary">A process is still running in this terminal.</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" autoFocus onClick={onKeepOpen}>
             Keep
-          </button>
-          <button
-            type="button"
-            onClick={onStopAndClose}
-            className="rounded-md bg-droid-elevated px-2 py-1 leading-none text-droid-text transition-colors hover:bg-droid-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent"
-          >
+          </Button>
+          <Button variant="danger" size="sm" onClick={onStopAndClose}>
             Stop and close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

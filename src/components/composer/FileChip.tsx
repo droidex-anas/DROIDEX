@@ -1,5 +1,6 @@
-import { FileText, X } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { attachmentDisplayName, fileKindInfo, type FileKind } from '../../lib/fileKind';
+import { ChipRemoveButton } from './ChipRemoveButton';
 
 // One shared glyph; the tile color and subtitle carry the type. Extra Lucide
 // file icons were pulling the initial renderer over its bundle budget.
@@ -14,8 +15,8 @@ const TILE_BY_KIND: Record<FileKind, string> = {
   image: 'bg-teal-500/15 text-teal-400',
   video: 'bg-rose-500/15 text-rose-400',
   audio: 'bg-orange-500/15 text-orange-400',
-  archive: 'bg-droid-text-muted/10 text-droid-text-muted',
-  file: 'bg-droid-text-muted/10 text-droid-text-muted',
+  archive: 'bg-muted/10 text-muted',
+  file: 'bg-muted/10 text-muted',
 };
 
 /**
@@ -58,36 +59,21 @@ export function FileChip({
             },
           }
         : {})}
-      className={`group relative flex max-w-60 items-center gap-2.5 rounded-xl border border-droid-border bg-droid-bg/60 py-2 pl-2 pr-2.5 text-left ${
-        onOpen
-          ? 'transition-colors hover:border-droid-border-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60'
-          : ''
+      className={`group relative flex max-w-60 items-center gap-2.5 rounded-lg bg-bg/60 py-2 pl-2 pr-2.5 text-left ${
+        onOpen ? 'transition-colors hover:bg-bg' : ''
       }`}
       title={onOpen ? `Open ${displayName} in Review` : displayName}
     >
       <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${TILE_BY_KIND[info.kind]}`}
+        className={`flex size-control-md shrink-0 items-center justify-center rounded-md ${TILE_BY_KIND[info.kind]}`}
       >
-        <FileText className="h-4 w-4" />
+        <FileText className="size-icon-md" />
       </span>
-      <span className="min-w-0 leading-tight">
-        <span className="block truncate text-[12px] font-medium text-droid-text">
-          {displayName}
-        </span>
-        <span className="block text-[11px] text-droid-text-muted">{info.label}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-label text-primary">{displayName}</span>
+        <span className="block text-caption text-muted">{info.label}</span>
       </span>
-      {onRemove && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-droid-border bg-droid-raised text-droid-text-muted shadow-sm transition-colors after:absolute after:-inset-0.5 after:content-[''] hover:border-droid-border-hover hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-          title="Remove file"
-        >
-          <X className="h-2.5 w-2.5" strokeWidth={3} />
-        </button>
-      )}
+      {onRemove && <ChipRemoveButton title="Remove file" onRemove={onRemove} />}
     </span>
   );
 }

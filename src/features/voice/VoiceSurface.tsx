@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
 import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
-import { pushEscapeLayer } from '../../components/environment/usePopover';
+import { Button } from '../../components/ui/Button';
+import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { MessageBody } from '../../components/MessageBody';
 import InlineInteractions from '../../components/InlineInteractions';
 import { SpokenMark } from '../../components/transcript/primitives';
@@ -26,9 +27,6 @@ export function VoiceSurface({ voice, appSessionId }: { voice: Voice; appSession
 
 // What a round of Tab visits inside the surface.
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex="0"]';
-
-const controlClass =
-  'rounded-full p-2 text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text';
 
 function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionId: string }) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -104,7 +102,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
       animate={{ opacity: 1, scale: 1 }}
       exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 1.01 }}
       transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed inset-0 z-[1200] flex flex-col bg-droid-bg text-droid-text"
+      className="fixed inset-0 z-dialog flex flex-col bg-bg text-primary"
     >
       {/* Nothing is titled here: the orb is the subject. The row exists so the
           window can be dragged and so the macOS controls have their space. */}
@@ -119,7 +117,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
       {/* The agent can stop and ask while the conversation holds the screen.
           It asks with the app's own cards, in the same place the composer
           would have shown them, rather than behind this surface. */}
-      <div className="mx-auto max-h-[35vh] w-full max-w-[680px] shrink-0 overflow-y-auto px-6">
+      <div className="mx-auto max-h-80 w-full max-w-2xl shrink-0 overflow-y-auto px-6">
         <InlineInteractions appSessionId={appSessionId} asks />
       </div>
 
@@ -138,8 +136,8 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
           <VoiceOrb micStream={session.micStream} replyStream={session.replyStream} />
         </motion.div>
         <p
-          className={`text-[13px] ${
-            voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+          className={`text-body ${
+            voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-muted'
           }`}
           aria-live="polite"
         >
@@ -147,60 +145,53 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
         </p>
       </div>
 
-      <div className="flex justify-center px-4" style={{ paddingBottom: 40 }}>
-        <div className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-raised p-1.5 shadow-droid">
-          <button
-            type="button"
-            onClick={voice.minimize}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-bg/50 hover:text-droid-text"
-          >
-            <Keyboard className="h-3.5 w-3.5" />
+      <div className="flex justify-center px-4 pb-10">
+        <div className="flex items-center gap-1 rounded-full bg-raised p-1.5 shadow-lg">
+          <Button variant="ghost" shape="round" size="sm" icon={Keyboard} onClick={voice.minimize}>
             Type
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="ghost"
+            shape="round"
+            icon={
+              session.muted ? (
+                <MicOff className="size-icon-md text-danger" aria-hidden="true" />
+              ) : (
+                <Mic className="size-icon-md" aria-hidden="true" />
+              )
+            }
             onClick={session.toggleMuted}
             aria-pressed={session.muted}
             aria-label={session.muted ? 'Unmute microphone' : 'Mute microphone'}
             title={session.muted ? 'Unmute' : 'Mute'}
-            className={controlClass}
-          >
-            {session.muted ? (
-              <MicOff className="h-3.5 w-3.5 text-droid-red" />
-            ) : (
-              <Mic className="h-3.5 w-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
+          />
+          <Button
+            variant="ghost"
+            shape="round"
+            icon={Settings2}
             onClick={() => {
               setSettingsOpen((open) => !open);
             }}
             aria-expanded={settingsOpen}
             aria-label="Voice settings"
             title="Voice settings"
-            className={controlClass}
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
+          />
+          <Button
+            variant="ghost"
+            shape="round"
+            icon={ChevronDown}
             onClick={voice.minimize}
             aria-label="Minimize to composer"
             title="Minimize to composer"
-            className={controlClass}
-          >
-            <ChevronDown className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
+          />
+          <Button
+            variant="primary"
+            shape="round"
+            icon={X}
             onClick={voice.close}
             aria-label="End voice mode"
             title="End voice mode"
-            className="rounded-full bg-droid-accent p-2 text-droid-bg transition-opacity hover:opacity-90"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          />
         </div>
       </div>
 
@@ -264,7 +255,7 @@ function SpokenFeed({ appSessionId }: { appSessionId: string }) {
       }}
       className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4"
     >
-      <div ref={contentRef} className="mx-auto flex w-full max-w-[680px] flex-col gap-6">
+      <div ref={contentRef} className="mx-auto flex w-full max-w-2xl flex-col gap-6">
         {lines.map((line) => (
           <SpokenLine key={line.id} line={line} />
         ))}

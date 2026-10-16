@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ImageOff } from 'lucide-react';
+import { ImageOff } from '@droidex/icons';
 import { imageSrc, pathBaseName } from '../../lib/localImage';
 import { ImageLightbox } from './ImageLightbox';
 
@@ -22,9 +22,9 @@ export function ImageAttachmentChip({ path }: { path: string }) {
     return (
       <span
         title={path}
-        className="flex items-center gap-1 rounded-lg border border-droid-border bg-droid-elevated/80 px-2 py-1 text-[11px] text-droid-text-muted"
+        className="flex items-center gap-1 rounded-md bg-elevated/80 px-2 py-1 text-caption text-muted"
       >
-        <ImageOff className="h-3 w-3 shrink-0" />
+        <ImageOff className="size-icon-sm shrink-0" />
         <span className="max-w-40 truncate">{label}</span>
       </span>
     );
@@ -37,7 +37,7 @@ export function ImageAttachmentChip({ path }: { path: string }) {
           setOpen(true);
         }}
         title={`View ${label}`}
-        className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-droid-border bg-droid-bg/60 transition-colors hover:border-droid-border-hover"
+        className="block h-11 w-11 shrink-0 overflow-hidden rounded-md bg-bg/60 transition-opacity duration-150 ease-out hover:opacity-90"
       >
         <img
           src={src}

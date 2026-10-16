@@ -11,15 +11,14 @@ import type {
   ModelSelectorStyle,
   SideChatDefaultPlacement,
 } from '../hooks/persistedUiPreferences';
-import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from '@droidex/icons';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AutonomySelector from './AutonomySelector';
 import { ModelIcon, providerOf } from './ModelIcon';
 import type { ModelInfo, VoiceNarration } from '../types/bridge';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { Switch } from './Switch';
-import { getAppVersion, openExternal, type AppUpdateInfo } from '../lib/onboarding';
-import cursorDesign from './browser/browserAgentCursorDesign.json';
+import { getAppVersion, type AppUpdateInfo } from '../lib/onboarding';
 import { refreshAppUpdate, requestAppUpdate } from '../lib/appUpdate';
 import { hasActiveSessionWork } from '../lib/sessions';
 import { applyTheme } from '../lib/theme';
@@ -42,7 +41,11 @@ import {
   type SettingsSearchHit,
 } from '../lib/settingsSearch';
 import { ToolActivitySettings } from './ToolActivitySettings';
-import { usePopover } from './environment/usePopover';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
+import { Input } from './ui/Field';
+import { Popover } from './ui/Popover';
+import { Row } from './ui/Row';
 
 interface NavItem {
   label: string;
@@ -167,10 +170,11 @@ function CompactionModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => {
     setOpen(false);
+    setQuery('');
   }, []);
-  const ref = usePopover(open, close);
 
   const isCurrent = selected === 'current-model';
   const selModel = isCurrent ? undefined : models.find((m) => m.id === selected);
@@ -185,8 +189,7 @@ function CompactionModelPicker({
 
   const choose = (id: string) => {
     onSelect(id);
-    setOpen(false);
-    setQuery('');
+    close();
   };
 
   const Option = ({
@@ -203,11 +206,12 @@ function CompactionModelPicker({
     const active = selected === id;
     return (
       <button
+        type="button"
         onClick={() => {
           choose(id);
         }}
-        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
-          active ? 'bg-droid-elevated' : 'hover:bg-droid-elevated/50'
+        className={`flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+          active ? 'bg-active' : 'hover:bg-elevated dark:hover:bg-active'
         }`}
       >
         {!current && (
@@ -220,71 +224,72 @@ function CompactionModelPicker({
           />
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] text-droid-text truncate">{l}</div>
-          {sub && <div className="text-[11px] text-droid-text-muted truncate">{sub}</div>}
+          <div className="truncate text-body text-primary">{l}</div>
+          {sub && <div className="truncate text-caption text-muted">{sub}</div>}
         </div>
-        {active && (
-          <Check
-            className="w-3.5 h-3.5 shrink-0"
-            style={{ color: 'var(--droid-accent)' }}
-            strokeWidth={3}
-          />
-        )}
+        {active && <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />}
       </button>
     );
   };
 
   return (
-    <div className="relative shrink-0" ref={ref}>
+    <div className="shrink-0">
       <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={() => {
-          setOpen((v) => !v);
+          if (open) close();
+          else setOpen(true);
         }}
-        className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] transition-colors ${
-          open
-            ? 'bg-droid-active text-droid-text'
-            : 'bg-droid-elevated text-droid-text hover:bg-droid-active'
+        className={`flex h-control-md select-none items-center gap-2 rounded-md px-3 text-body text-primary transition-colors duration-150 ease-out ${
+          open ? 'bg-active' : 'bg-elevated hover:bg-active'
         }`}
       >
         {!isCurrent && <ModelIcon provider={providerOf(selModel, selected)} size={14} />}
-        <span className="max-w-[160px] truncate">{label}</span>
+        <span className="max-w-40 truncate">{label}</span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-droid-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+          className={`size-icon-sm text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-droid-border bg-droid-surface p-2 shadow-droid">
-          <div className="mb-2 flex items-center gap-2 h-8 rounded-md bg-droid-bg/60 border border-droid-border px-2.5">
-            <Search className="w-3.5 h-3.5 text-droid-text-muted" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-              }}
-              placeholder="Search models…"
-              className="w-full bg-transparent text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto space-y-0.5">
-            <Option
-              id="current-model"
-              label="Current model"
-              sub="Use whatever model the session runs"
-              current
-            />
-            {filtered.map((m) => (
-              <Option key={m.id} id={m.id} label={m.displayName} sub={m.provider} />
-            ))}
-            {filtered.length === 0 && (
-              <div className="px-2.5 py-4 text-center text-[12px] text-droid-text-muted">
-                No models match.
-              </div>
-            )}
-          </div>
+      <Popover
+        open={open}
+        onClose={close}
+        anchorRef={triggerRef}
+        label="Compaction model"
+        placement="bottom-end"
+        width={288}
+      >
+        <div className="p-1.5">
+          <Input
+            autoFocus
+            aria-label="Search models"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
+            placeholder="Search models…"
+            spellCheck={false}
+          />
         </div>
-      )}
+        <div className="min-h-0 overflow-y-auto px-1.5 pb-1.5">
+          <Option
+            id="current-model"
+            label="Current model"
+            sub="Use whatever model the session runs"
+            current
+          />
+          {filtered.map((m) => (
+            <Option key={m.id} id={m.id} label={m.displayName} sub={m.provider} />
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-2 py-4 text-center text-body text-muted">No models match.</div>
+          )}
+        </div>
+      </Popover>
     </div>
   );
 }
@@ -340,7 +345,7 @@ function GeneralSection() {
       />
 
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Enter while working"
           description="What Enter does while the agent works. Steer hands the message to the agent at its next step; Queue sends it after the turn. Cmd/Ctrl+Enter does the other."
@@ -385,7 +390,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Voice</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Voice"
           description="Which voice speaks in voice mode. The harness offers the list; leave this on its default to take whichever voice it picks."
@@ -420,7 +425,7 @@ function GeneralSection() {
       </div>
 
       <GroupLabel>Diff display</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Diff view"
           description="How file diffs render in the Review tab — one column or side-by-side."
@@ -463,7 +468,7 @@ function GeneralSection() {
       <HardwareAccelerationSetting />
 
       <GroupLabel>Compaction</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Compaction model"
           description="Model that summarizes a conversation when it is compacted."
@@ -484,23 +489,20 @@ function GeneralSection() {
 
       {/* Per-model token limits */}
       <GroupLabel>Per-model token limits</GroupLabel>
-      <p className="text-[12px] text-droid-text-muted mb-3">
+      <p className="mb-3 text-body text-muted">
         Override the compaction limit for specific models. Models without an override use{' '}
         {defaultLimitLabel}.
       </p>
-      <div className="rounded-xl border border-droid-border bg-droid-surface p-3">
+      <div className="rounded-xl bg-surface shadow-lg p-3">
         {overrideEntries.length === 0 && (
-          <div className="text-[12px] text-droid-text-muted px-1 py-1.5">
+          <div className="px-1 py-1.5 text-body text-muted">
             No overrides — every model uses {defaultLimitLabel}.
           </div>
         )}
 
         <div className="space-y-1.5">
           {overrideEntries.map(([id, limit]) => (
-            <div
-              key={id}
-              className="flex items-center gap-2.5 rounded-lg border border-droid-border bg-droid-bg/40 px-2.5 py-2"
-            >
+            <div key={id} className="flex items-center gap-2.5 rounded-md bg-elevated px-2.5 py-2">
               <ModelIcon
                 provider={providerOf(
                   state.models.find((m) => m.id === id),
@@ -508,7 +510,7 @@ function GeneralSection() {
                 )}
                 size={16}
               />
-              <span className="text-[12px] text-droid-text truncate flex-1">{modelLabel(id)}</span>
+              <span className="flex-1 truncate text-body text-primary">{modelLabel(id)}</span>
               <TokenLimitSelect
                 value={limit}
                 onSelect={(n) => {
@@ -516,15 +518,16 @@ function GeneralSection() {
                 }}
                 width="w-32"
               />
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={X}
+                aria-label={`Remove the ${modelLabel(id)} override`}
+                title="Remove override"
                 onClick={() => {
                   setModelLimit(id, undefined);
                 }}
-                className="p-1 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated transition-colors shrink-0"
-                title="Remove override"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              />
             </div>
           ))}
         </div>
@@ -535,7 +538,7 @@ function GeneralSection() {
               ariaLabel="Add a model override"
               value=""
               placeholder="Add a model override…"
-              triggerIcon={<Plus className="w-3.5 h-3.5 text-droid-text-muted" />}
+              triggerIcon={<Plus aria-hidden="true" className="size-icon-sm text-muted" />}
               width="w-full"
               align="left"
               options={availableForOverride.map((m) => ({
@@ -599,24 +602,24 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>Droid CLI</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="CLI status"
           description={env?.cli.present ? env.cli.path : 'Not detected on this machine.'}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[12px] font-mono text-droid-text-muted">
+            <span className="font-mono text-code text-muted">
               {env?.cli.present ? (env.cli.version ?? 'installed') : 'missing'}
             </span>
-            <button
+            <Button
+              size="sm"
               onClick={() => {
                 onboard.update(onboarding?.installChannel);
               }}
               disabled={!!installing || !env?.cli.present}
-              className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors disabled:opacity-40"
             >
               {installing === 'update' ? 'Updating…' : 'Update'}
-            </button>
+            </Button>
           </div>
         </SettingRow>
         <SettingRow label="Keep the CLI up to date" description="Updates silently on launch.">
@@ -637,16 +640,16 @@ function SetupSection({ onClose }: { onClose: () => void }) {
           }
         >
           {signedIn ? (
-            <span className="text-[12px] text-droid-green">Signed in</span>
+            <Badge tone="success">Signed in</Badge>
           ) : (
-            <button
+            <Button
+              size="sm"
               onClick={onboard.refreshEnv}
               disabled={!env?.cli.present}
               title={env?.cli.present ? undefined : 'The Droid CLI must be installed first.'}
-              className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors disabled:opacity-40"
             >
               Refresh status
-            </button>
+            </Button>
           )}
         </SettingRow>
       </div>
@@ -658,27 +661,28 @@ function SetupSection({ onClose }: { onClose: () => void }) {
       />
 
       <GroupLabel>DROIDEX app</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow label="Current version" description={updateStatus}>
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              size="sm"
               onClick={() => {
                 void runCheck();
               }}
               disabled={checking}
-              className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors disabled:opacity-40"
             >
               {checking ? 'Checking…' : 'Check for updates'}
-            </button>
+            </Button>
             {update?.updateAvailable && update.installMode !== 'sparkle' && (
-              <button
+              <Button
+                size="sm"
+                variant="primary"
                 onClick={() => {
                   void requestAppUpdate(update, hasActiveWork);
                 }}
-                className="px-2.5 h-7 rounded-md bg-droid-accent text-droid-bg text-[12px] hover:opacity-90 transition-opacity"
               >
                 Download update…
-              </button>
+              </Button>
             )}
           </div>
         </SettingRow>
@@ -692,30 +696,20 @@ function SetupSection({ onClose }: { onClose: () => void }) {
             onChange={(v) => void onboard.patch({ appAutoUpdate: v })}
           />
         </SettingRow>
-        <SettingRow label="Credits" description={cursorDesign.attribution}>
-          <button
-            onClick={() => {
-              void openExternal(cursorDesign.attributionUrl);
-            }}
-            className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors"
-          >
-            Flaticon
-          </button>
-        </SettingRow>
       </div>
 
       <GroupLabel>Onboarding</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border">
+      <div className="rounded-xl bg-surface shadow-lg">
         <SettingRow label="Run setup again" description="Re-open the first-run setup tour.">
-          <button
+          <Button
+            size="sm"
             onClick={() => {
               window.dispatchEvent(new CustomEvent('droid:open-onboarding'));
               onClose();
             }}
-            className="px-2.5 h-7 rounded-md bg-droid-elevated border border-droid-border text-[12px] text-droid-text hover:border-droid-border-hover transition-colors"
           >
             Run setup
-          </button>
+          </Button>
         </SettingRow>
       </div>
     </div>
@@ -734,7 +728,7 @@ function ConfigurationSection() {
       <GroupLabel>Default models</GroupLabel>
       <HarnessModelSettings />
       <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Model selector"
           description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
@@ -759,7 +753,7 @@ function ConfigurationSection() {
       <GroupLabel>Transcript</GroupLabel>
       <ToolActivitySettings />
       <GroupLabel>Sessions</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+      <div className="rounded-xl bg-surface shadow-lg mb-8">
         <SettingRow
           label="Default autonomy"
           description="How much new sessions may do without asking. The composer can override it for a single session."
@@ -767,7 +761,7 @@ function ConfigurationSection() {
           <AutonomySelector
             scope="settings"
             value={defaultAutonomy}
-            placement="down"
+            placement="bottom-end"
             onSelect={(level) => {
               dispatch({ type: 'SET_DEFAULT_AUTONOMY', autonomy: level });
             }}
@@ -802,8 +796,8 @@ function PlaceholderSection({ title }: { title: string }) {
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title={title} />
-      <div className="rounded-xl border border-dashed border-droid-border bg-droid-surface/40 p-10 text-center">
-        <p className="text-[13px] text-droid-text-secondary">{title} settings are coming soon.</p>
+      <div className="rounded-xl bg-surface p-10 text-center">
+        <p className="text-body text-secondary">{title} settings are coming soon.</p>
       </div>
     </div>
   );
@@ -821,10 +815,10 @@ function SettingsSearchResults({
 }) {
   return (
     <div className="mx-auto mb-8 max-w-2xl">
-      <div className="mb-2.5 px-0.5 text-[11px] text-droid-text-muted">
+      <div className="mb-2 px-3 text-caption text-muted">
         {hits.length === 1 ? '1 match' : `${String(hits.length)} matches`}
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col">
         {hits.map((hit) => {
           const onActiveTab = hit.tab === activeTab;
           return (
@@ -834,23 +828,17 @@ function SettingsSearchResults({
               onClick={() => {
                 onOpen(hit);
               }}
-              className={`group flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-2.5 text-left transition-colors ${
-                onActiveTab
-                  ? 'bg-droid-active/70 text-droid-text'
-                  : 'text-droid-text-secondary hover:bg-droid-elevated/45 hover:text-droid-text'
+              className={`group flex w-full select-none items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition-colors duration-150 ease-out ${
+                onActiveTab ? 'bg-active' : 'hover:bg-elevated'
               }`}
             >
               <div className="min-w-0">
-                <div className="truncate text-[13px] font-medium tracking-tight text-droid-text">
-                  {hit.label}
-                </div>
-                <div className="mt-0.5 truncate text-[11px] text-droid-text-muted">{hit.tab}</div>
+                <div className="truncate text-body-strong text-primary">{hit.label}</div>
+                <div className="mt-0.5 truncate text-caption text-muted">{hit.tab}</div>
               </div>
               <span
-                className={`shrink-0 text-[11px] transition-opacity ${
-                  onActiveTab
-                    ? 'text-droid-text-muted'
-                    : 'text-droid-text-muted/0 group-hover:text-droid-text-muted'
+                className={`shrink-0 text-caption transition-opacity ${
+                  onActiveTab ? 'text-muted' : 'text-muted/0 group-hover:text-muted'
                 }`}
               >
                 {onActiveTab ? 'Here' : 'Open'}
@@ -945,79 +933,76 @@ export default function SettingsPanel() {
   return (
     <>
       {/* Left nav */}
-      <aside className="w-60 shrink-0 border-r border-droid-border flex flex-col bg-droid-surface/40">
+      <aside className="w-60 shrink-0 flex flex-col bg-surface/40">
         {/* Traffic-light clearance */}
         <div data-electron-drag-region className="h-9 shrink-0" />
         <button
           onClick={close}
-          className="flex items-center gap-1.5 px-4 h-10 text-[12px] text-droid-text-secondary hover:text-droid-text transition-colors shrink-0"
+          className="flex h-10 shrink-0 select-none items-center gap-1.5 px-4 text-label text-secondary transition-colors hover:text-primary"
         >
-          <ChevronLeft className="w-4 h-4" /> Back to app
+          <ChevronLeft aria-hidden="true" className="size-icon-md" /> Back to app
         </button>
-        <div className="px-3 pb-3">
-          <div className="flex h-9 items-center gap-2 rounded-2xl bg-droid-elevated/70 px-3 ring-1 ring-inset ring-droid-border/70 transition-[box-shadow,background-color] focus-within:bg-droid-elevated focus-within:ring-droid-border-hover">
-            <Search className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
-            <input
+        <div className="px-2 pb-3">
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 size-icon-sm -translate-y-1/2 text-muted"
+            />
+            <Input
+              aria-label="Search settings"
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
               }}
               placeholder="Search settings…"
-              className="w-full bg-transparent text-[13px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+              className="pl-8 pr-9"
             />
             {q ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => {
-                  setQuery('');
-                }}
-                className="rounded-full p-0.5 text-droid-text-muted transition-colors hover:text-droid-text"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <span className="absolute inset-y-0 right-1 flex items-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={X}
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setQuery('');
+                  }}
+                />
+              </span>
             ) : null}
           </div>
         </div>
-        <nav className="flex-1 space-y-4 overflow-y-auto px-2.5 pb-3">
+        <nav className="flex-1 space-y-4 overflow-y-auto px-2 pb-3">
           {NAV.map(({ group, items }) => {
             const filtered = items.filter((it) => tabMatchesQuery(it.label, q));
             if (filtered.length === 0) return null;
             return (
               <div key={group}>
-                <div className="mb-1 px-2.5 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted/80">
-                  {group}
-                </div>
-                <div className="flex flex-col gap-0.5">
+                <div className="mb-1 select-none px-3 text-label text-muted">{group}</div>
+                <div className="flex flex-col">
                   {filtered.map(({ label }) => (
-                    <button
+                    <Row
                       key={label}
+                      label={label}
+                      active={active === label}
+                      aria-current={active === label ? 'page' : undefined}
                       onClick={() => {
                         setActive(label);
                       }}
-                      className={`flex h-8 w-full items-center rounded-xl px-2.5 text-left text-[13px] transition-colors ${
-                        active === label
-                          ? 'bg-droid-active text-droid-text'
-                          : 'text-droid-text-secondary hover:bg-droid-elevated/40 hover:text-droid-text'
-                      }`}
-                    >
-                      <span className="truncate">{label}</span>
-                    </button>
+                    />
                   ))}
                 </div>
               </div>
             );
           })}
           {q && hits.length === 0 && (
-            <div className="px-2.5 py-4 text-[12px] leading-relaxed text-droid-text-muted">
-              No matching settings.
-            </div>
+            <div className="px-3 py-4 text-body text-muted">No matching settings.</div>
           )}
         </nav>
       </aside>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <div className="px-10 py-8">
           {q && hits.length > 0 && (
             <SettingsSearchResults hits={hits} activeTab={active} onOpen={openHit} />

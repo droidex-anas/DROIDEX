@@ -5,12 +5,14 @@ import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useSt
 import { useDocumentVisible } from '../hooks/useDocumentVisible';
 import { pickDirectory } from '../lib/desktop';
 import { dismissSidebarCard, loadSidebarCardSeen } from '../lib/sidebarCards';
-import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
-import { SIDEBAR_WELCOME_CARD_ID, SidebarWelcomeCard } from './SidebarWelcomeCard';
+import { SIDEBAR_WELCOME_CARD_ID } from './SidebarWelcomeCard';
 import { BrandMark } from './BrandMark';
 import SidebarSearch from './SidebarSearch';
-import { Search, Settings } from 'lucide-react';
-import { SquarePen, MessageCirclePlus } from '@droidex/icons';
+import { MessageCirclePlus, Search, SquarePen } from '@droidex/icons';
+import { Button } from './ui/Button';
+import { Row } from './ui/Row';
+import { Tooltip } from './ui/Tooltip';
+import { useScrolling } from './ui/useScrolling';
 import { UnreadFilterActions } from './UnreadFilterActions';
 import { buildWorkspaceSections, resolveNewChatCwd, type WorkspaceScope } from '../lib/workspaces';
 import { SidebarCustomize } from './SidebarCustomize';
@@ -38,7 +40,7 @@ import { sessionAttention } from '../lib/sessionAttention';
 import type { SessionSummary } from '../types/bridge';
 import { sessionResumeId } from '../features/providers/providerIdentity';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
-import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
+import { SidebarFooter } from './SidebarFooter';
 import { SidebarNavigation } from './SidebarNavigation';
 
 export default function Sidebar({
@@ -72,9 +74,9 @@ export default function Sidebar({
   // (Codex-style bell toggle) belong to the sidebar, not the root store.
   const [searchOpen, setSearchOpen] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => bindLazySurfaceIntent('settings', settingsButtonRef.current), []);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  useScrolling(scrollRef);
 
   const documentVisible = useDocumentVisible();
   const [now, setNow] = useState(() => Date.now());
@@ -297,9 +299,9 @@ export default function Sidebar({
   return (
     <aside
       data-testid="left-navigation"
-      className="w-[280px] h-full flex flex-col border-r border-droid-border shrink-0"
+      className="flex h-full w-sidebar shrink-0 flex-col"
       style={{
-        background: 'var(--sidebar-bg)',
+        background: 'var(--sidebar)',
         backdropFilter: 'var(--sidebar-blur)',
         WebkitBackdropFilter: 'var(--sidebar-blur)',
       }}
@@ -307,22 +309,22 @@ export default function Sidebar({
       {/* Empty titlebar strip so traffic lights never collide with chrome. */}
       <div data-electron-drag-region className="h-9 shrink-0" />
 
-      {/* Brand row: wordmark left; Codex-style ghost icon actions right
-          (session search palette + unread-only filter). No button chrome,
-          hover state only. */}
+      {/* Brand row: wordmark left; ghost icon actions right (session search
+          palette + unread-only filter). */}
       <div className="px-3 pb-1 pt-0.5 flex items-center justify-between">
-        <BrandMark size={13} className="text-droid-text" />
+        <BrandMark size={13} className="text-primary" />
         <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => {
-              setSearchOpen(true);
-            }}
-            title="Search chats, messages, and PRs"
-            aria-label="Search chats, messages, and PRs"
-            className="cursor-pointer rounded-md p-1.5 text-droid-text-muted transition-colors hover:text-droid-text"
-          >
-            <Search className="w-4 h-4" strokeWidth={1.75} />
-          </button>
+          <Tooltip label="Search chats, messages, and PRs" placement="bottom">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Search}
+              aria-label="Search chats, messages, and PRs"
+              onClick={() => {
+                setSearchOpen(true);
+              }}
+            />
+          </Tooltip>
           <UnreadFilterActions
             unreadOnly={unreadOnly}
             unreadCount={unreadCount}
@@ -337,27 +339,24 @@ export default function Sidebar({
       {/* Navigation rows sit at session-row scale so the sidebar reads as one
           list instead of a banner above it. */}
       <div className="px-2 pb-1.5">
-        {/* The plus overlays the row's right edge, like a session row's menu,
-            so the whole row still highlights as one target. */}
-        <div className="group relative">
-          <button
-            onClick={newChat}
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl py-1.5 pr-8 pl-2.5 text-left text-[13px] font-medium text-droid-text"
+        {/* The plus overlays the row's trailing edge, like a session row's menu. */}
+        <div className="relative">
+          <Row icon={<SquarePen className="size-icon-md" />} label="New chat" onClick={newChat} />
+          <Tooltip
+            label="New chat without a workspace"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2"
           >
-            <SquarePen className="h-4 w-4 shrink-0 text-droid-text-secondary transition-colors group-hover:text-droid-text" />
-            New chat
-          </button>
-          <button
-            data-testid="new-workspaceless-chat"
-            onClick={() => {
-              startChat('');
-            }}
-            title="New chat without a workspace"
-            aria-label="New chat without a workspace"
-            className="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-droid-text-muted transition-colors hover:text-droid-text"
-          >
-            <MessageCirclePlus className="h-4 w-4" />
-          </button>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={MessageCirclePlus}
+              data-testid="new-workspaceless-chat"
+              aria-label="New chat without a workspace"
+              onClick={() => {
+                startChat('');
+              }}
+            />
+          </Tooltip>
         </div>
         <SidebarNavigation announcementShown={welcomeVisible} />
       </div>
@@ -368,79 +367,64 @@ export default function Sidebar({
         onChange={activity.update}
         onMarkAllRead={markAllSessionsRead}
       />
-      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-3">
-        {unreadOnly && unreadCount === 0 && (
-          <div className="px-3 pt-2 pb-1 text-[12px] text-droid-text-muted">
-            No unread sessions.
+      {/* The list runs to the bottom of the sidebar and the footer floats over
+          it, so rows pass underneath the Settings row. */}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          className="sidebar-list scrollbar-while-scrolling h-full overflow-y-auto px-2"
+        >
+          <div ref={listRef} className="space-y-3">
+            {unreadOnly && unreadCount === 0 && (
+              <div className="px-3 pt-2 pb-1 text-caption text-muted">No unread sessions.</div>
+            )}
+            {view === 'activity' ? (
+              <SidebarActivity
+                key={preferences.limit}
+                sessions={visibleSessions}
+                activeAppSessionId={state.activeAppSessionId}
+                statusFor={statusFor}
+                renderRow={renderRow}
+                limit={preferences.limit}
+                showSettled={preferences.filter === 'settled'}
+                hiddenCount={agedOutCount}
+              />
+            ) : view === 'pull-requests' ? (
+              <SidebarPullRequests
+                key={preferences.limit}
+                sessions={visibleSessions}
+                metadata={chatMetadata}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                limit={preferences.limit}
+              />
+            ) : (
+              <SidebarWorkspaceList
+                key={preferences.limit}
+                limit={preferences.limit}
+                workspaces={workspaces}
+                chatSessions={chatSessions}
+                pinnedSessions={pinnedSessions}
+                isFiltered={unreadOnly || preferences.filter !== 'all'}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                onAddWorkspace={pickAndChat}
+                onNewChat={startChat}
+                onRemoveWorkspace={(cwd) => {
+                  dispatch({ type: 'REMOVE_WORKSPACE', cwd });
+                }}
+                onShowEarlierSessions={onShowEarlierSessions}
+              />
+            )}
           </div>
-        )}
-        {view === 'activity' ? (
-          <SidebarActivity
-            key={preferences.limit}
-            sessions={visibleSessions}
-            activeAppSessionId={state.activeAppSessionId}
-            statusFor={statusFor}
-            renderRow={renderRow}
-            limit={preferences.limit}
-            showSettled={preferences.filter === 'settled'}
-            hiddenCount={agedOutCount}
-          />
-        ) : view === 'pull-requests' ? (
-          <SidebarPullRequests
-            key={preferences.limit}
-            sessions={visibleSessions}
-            metadata={chatMetadata}
-            activeAppSessionId={state.activeAppSessionId}
-            renderRow={renderRow}
-            limit={preferences.limit}
-          />
-        ) : (
-          <SidebarWorkspaceList
-            key={preferences.limit}
-            limit={preferences.limit}
-            workspaces={workspaces}
-            chatSessions={chatSessions}
-            pinnedSessions={pinnedSessions}
-            isFiltered={unreadOnly || preferences.filter !== 'all'}
-            activeAppSessionId={state.activeAppSessionId}
-            renderRow={renderRow}
-            onAddWorkspace={pickAndChat}
-            onNewChat={startChat}
-            onRemoveWorkspace={(cwd) => {
-              dispatch({ type: 'REMOVE_WORKSPACE', cwd });
-            }}
-            onShowEarlierSessions={onShowEarlierSessions}
-          />
-        )}
-      </div>
-
-      {/* Settings */}
-      <div className="px-2 py-2 border-t border-droid-border">
-        <AnimatePresence>
-          {welcomeVisible && (
-            <SidebarWelcomeCard
-              onStart={() => {
-                dismissWelcome();
-                newChat();
-              }}
-              onDismiss={dismissWelcome}
-            />
-          )}
-        </AnimatePresence>
-        <div className="flex items-center gap-1">
-          <button
-            ref={settingsButtonRef}
-            onClick={() => {
-              dispatch({ type: 'TOGGLE_SETTINGS' });
-            }}
-            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-2 rounded-lg text-droid-text-secondary hover:text-droid-text transition-colors text-left"
-            title="Open settings"
-          >
-            <Settings className="w-4 h-4 shrink-0" />
-            <span className="text-[13px] font-medium">Settings</span>
-          </button>
-          <SidebarAppUpdateButton />
         </div>
+        <SidebarFooter
+          scrollRef={scrollRef}
+          contentRef={listRef}
+          welcomeVisible={welcomeVisible}
+          onStartChat={newChat}
+          onDismissWelcome={dismissWelcome}
+        />
       </div>
 
       <AnimatePresence>
@@ -456,8 +440,8 @@ export default function Sidebar({
 
       {rowMenu && (
         <SessionContextMenu
-          x={rowMenu.x}
-          y={rowMenu.y}
+          anchorRef={rowMenu.anchorRef}
+          anchorPoint={rowMenu.anchorPoint}
           settled={rowMenuSession ? statusFor(rowMenuSession) === 'settled' : false}
           onToggleSettled={
             rowMenuSession && canSettleSession(statusFor(rowMenuSession))

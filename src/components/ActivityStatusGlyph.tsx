@@ -11,19 +11,19 @@ const LABELS: Record<GlyphStatus, string> = {
   waiting: 'Waiting',
 };
 const TONE: Record<GlyphStatus, string> = {
-  queued: 'text-droid-text-muted',
-  waiting: 'text-droid-text-muted',
-  working: 'text-droid-text',
-  approval: 'text-droid-orange',
-  input: 'text-droid-orange',
-  plan: 'text-droid-orange',
-  failed: 'text-droid-red',
-  interrupted: 'text-droid-orange',
-  reply: 'text-droid-accent',
-  review: 'text-droid-accent',
-  ship: 'text-droid-orange',
-  ready: 'text-droid-text-muted',
-  settled: 'text-droid-green',
+  queued: 'text-muted',
+  waiting: 'text-muted',
+  working: 'text-primary',
+  approval: 'text-warning',
+  input: 'text-warning',
+  plan: 'text-warning',
+  failed: 'text-danger',
+  interrupted: 'text-warning',
+  reply: 'text-accent',
+  review: 'text-accent',
+  ship: 'text-warning',
+  ready: 'text-muted',
+  settled: 'text-success',
 };
 
 type Shape = 'open' | 'active' | 'half' | 'clock' | 'failed' | 'paused' | 'done';
@@ -87,7 +87,7 @@ function ShapePath({ shape }: { shape: Shape }) {
       return (
         <>
           <circle cx="8" cy="8" r="6" fill="currentColor" stroke="none" />
-          <path d="M5.5 8.2l1.8 1.8L10.7 6.5" stroke="var(--droid-bg)" />
+          <path d="M5.5 8.2l1.8 1.8L10.7 6.5" stroke="var(--bg)" />
         </>
       );
   }

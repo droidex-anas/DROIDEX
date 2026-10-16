@@ -1,5 +1,7 @@
 import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
-import { GripVertical, ChevronRight, Square } from 'lucide-react';
+import { GripVertical, ChevronRight } from 'lucide-react';
+import { Square } from '@droidex/icons';
+import { Button } from './ui/Button';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
 import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
@@ -30,7 +32,7 @@ import {
 } from '../lib/childSessions';
 import { useOpenAgent } from './agents/useOpenAgent';
 import { useForkChat, useForkPending, useOpenForkSource } from '../hooks/useForkChat';
-import { useScrollingAttribute } from '../hooks/useScrollingAttribute';
+import { useScrolling } from './ui/useScrolling';
 import { ConversationTimeline } from './ConversationTimeline';
 import { WelcomeScreen } from './WelcomeScreen';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
@@ -83,15 +85,9 @@ function RestoringState() {
 function RestoreFailedState({ message, onRetry }: { message?: string; onRetry: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-      <span className="text-[13px] text-droid-text">Couldn&apos;t restore this conversation</span>
-      {message && <span className="max-w-md text-[12px] text-droid-text-muted">{message}</span>}
-      <button
-        type="button"
-        onClick={onRetry}
-        className="rounded-lg border border-droid-border px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60"
-      >
-        Retry
-      </button>
+      <span className="text-subheading text-primary">Couldn&apos;t restore this conversation</span>
+      {message && <span className="max-w-md text-body text-muted">{message}</span>}
+      <Button onClick={onRetry}>Retry</Button>
     </div>
   );
 }
@@ -134,7 +130,7 @@ export function EarlierHistoryControl({
       <div
         aria-atomic="true"
         aria-live="polite"
-        className={loading ? 'py-1 text-[11px] text-droid-text-muted/70' : ''}
+        className={loading ? 'py-1 text-caption text-muted' : ''}
       >
         {loading ? 'Loading earlier messages…' : ''}
       </div>
@@ -144,17 +140,13 @@ export function EarlierHistoryControl({
 
 function RestoreFailedBanner({ message, onRetry }: { message?: string; onRetry: () => void }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-center gap-2 rounded-lg border border-droid-border bg-droid-elevated/40 px-3 py-2 text-center">
-      <span className="text-[12px] text-droid-text-secondary">
+    <div className="mb-4 flex flex-wrap items-center justify-center gap-2 rounded-lg bg-surface px-3 py-2 text-center">
+      <span className="text-body text-secondary">
         {message ? `Couldn't load earlier messages: ${message}` : "Couldn't load earlier messages"}
       </span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="rounded-md border border-droid-border px-2 py-0.5 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60"
-      >
+      <Button size="sm" onClick={onRetry}>
         Retry
-      </button>
+      </Button>
     </div>
   );
 }
@@ -194,53 +186,45 @@ function ChatHeader({
     >
       <div
         {...(tile ? tileHandleProps(tile.id) : {})}
-        className={`flex min-w-0 items-center gap-1.5 rounded-xl pl-2 py-1.5 transition-colors ${
+        className={`flex min-w-0 items-center gap-1.5 rounded-lg pl-2 py-1.5 transition-colors ${
           tile ? 'no-drag cursor-grab pr-2 active:cursor-grabbing' : 'pr-3'
-        } ${tile && !tile.focused ? 'bg-droid-elevated/25' : 'bg-droid-elevated/60'}`}
+        } ${tile && !tile.focused ? 'bg-elevated/25' : 'bg-elevated/60'}`}
       >
-        <GripVertical className="w-3.5 h-3.5 shrink-0 text-droid-text-muted/40" />
+        <GripVertical className="w-3.5 h-3.5 shrink-0 text-muted/40" />
         {sub ? (
           <button
             type="button"
             onClick={sub.onBack}
             title={sub.backTitle ?? 'Back to primary session'}
-            className="truncate text-[13px] font-medium text-droid-text-muted transition-colors hover:text-droid-text max-w-[200px]"
+            className="truncate text-body-strong text-muted transition-colors hover:text-primary max-w-48"
           >
             {title}
           </button>
         ) : (
           <span
-            className={`truncate text-[13px] font-medium max-w-[240px] ${live ? 'shimmer-text' : 'text-droid-text'}`}
+            className={`truncate text-body-strong max-w-60 ${live ? 'shimmer-text' : 'text-primary'}`}
           >
             {title}
           </span>
         )}
         {sub && (
           <>
-            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-droid-text-muted/50" />
+            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted/50" />
             <span
-              className={`truncate text-[13px] font-medium max-w-[200px] ${sub.running ? 'shimmer-text' : 'text-droid-text'}`}
+              className={`truncate text-body-strong max-w-48 ${sub.running ? 'shimmer-text' : 'text-primary'}`}
             >
               {sub.label}
             </span>
-            {sub.meta && (
-              <span className="shrink-0 text-[11px] text-droid-text-muted/70">{sub.meta}</span>
-            )}
+            {sub.meta && <span className="shrink-0 text-caption text-muted">{sub.meta}</span>}
           </>
         )}
         {tile && <CloseTileButton tileId={tile.id} title={title} />}
       </div>
       {appSessionId && <RunningProcessesMenu appSessionId={appSessionId} />}
       {sub?.onStop && (
-        <button
-          type="button"
-          onClick={sub.onStop}
-          title="Stop child session"
-          className="flex shrink-0 items-center gap-1 rounded-lg bg-droid-elevated/60 px-2.5 py-1.5 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-        >
-          <Square className="h-3 w-3" />
+        <Button size="sm" icon={Square} onClick={sub.onStop} title="Stop child session">
           Stop
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -282,7 +266,7 @@ export default function ChatView({
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useScrollingAttribute(scrollRef, besidePane);
+  useScrolling(scrollRef, besidePane);
   const conversationListRef = useRef<ConversationListHandle>(null);
   const viewportLayoutRef = useRef<ConversationViewportLayout | null>(null);
   const activeSession = state.activeSession;
@@ -706,9 +690,7 @@ export default function ChatView({
     emptyChildActivity = <WorkingIndicator label={`Loading ${selectedChildLabel} activity`} />;
   } else {
     emptyChildActivity = (
-      <span className="text-[13px] text-droid-text-muted">
-        No activity captured for {selectedChildLabel}.
-      </span>
+      <span className="text-body text-muted">No activity captured for {selectedChildLabel}.</span>
     );
   }
 
@@ -788,11 +770,9 @@ export default function ChatView({
     conversationContent = (
       <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 px-8 text-center">
         {selectedChildSession?.prompt && (
-          <div className="max-w-lg rounded-xl bg-droid-elevated/40 px-4 py-3 text-left">
-            <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-droid-text-muted">
-              Task
-            </div>
-            <div className="text-[13px] leading-relaxed text-droid-text-secondary whitespace-pre-wrap break-words">
+          <div className="max-w-lg rounded-lg bg-surface px-4 py-3 text-left">
+            <div className="mb-1 text-label text-muted">Task</div>
+            <div className="text-body text-secondary whitespace-pre-wrap break-words">
               {selectedChildSession.prompt}
             </div>
           </div>
@@ -903,7 +883,7 @@ export default function ChatView({
           <div
             ref={scrollRef}
             onScroll={onScroll}
-            className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden ${
+            className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] ${
               besidePane ? 'scrollbar-while-scrolling' : ''
             }`}
             style={{
@@ -930,7 +910,7 @@ export default function ChatView({
                   key="opening-settling-skeleton"
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute inset-0 z-10 overflow-hidden bg-droid-bg"
+                  className="absolute inset-0 z-10 overflow-hidden bg-bg"
                   style={{ paddingRight: rightInset ? 312 : undefined }}
                 >
                   <RestoringState />

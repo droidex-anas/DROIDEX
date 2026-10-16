@@ -34,26 +34,26 @@ export interface FileTypeIconProps extends Pick<AriaAttributes, 'aria-hidden' | 
 }
 
 const KIND_STYLES: Record<FilePresentationKind, string> = {
-  react: 'text-droid-accent',
-  typescript: 'text-droid-accent',
-  javascript: 'text-droid-orange',
-  json: 'text-droid-orange',
-  css: 'text-droid-accent',
-  html: 'text-droid-orange',
-  markdown: 'text-droid-text-secondary',
-  python: 'text-droid-accent',
-  rust: 'text-droid-orange',
-  shell: 'text-droid-green',
-  docker: 'text-droid-accent',
-  package: 'text-droid-red',
-  config: 'text-droid-text-muted',
-  env: 'text-droid-orange',
-  image: 'text-droid-accent',
-  pdf: 'text-droid-red',
-  document: 'text-droid-accent',
-  spreadsheet: 'text-droid-green',
-  archive: 'text-droid-orange',
-  unknown: 'text-droid-text-muted',
+  react: 'text-accent',
+  typescript: 'text-accent',
+  javascript: 'text-warning',
+  json: 'text-warning',
+  css: 'text-accent',
+  html: 'text-warning',
+  markdown: 'text-secondary',
+  python: 'text-accent',
+  rust: 'text-warning',
+  shell: 'text-success',
+  docker: 'text-accent',
+  package: 'text-danger',
+  config: 'text-muted',
+  env: 'text-warning',
+  image: 'text-accent',
+  pdf: 'text-danger',
+  document: 'text-accent',
+  spreadsheet: 'text-success',
+  archive: 'text-warning',
+  unknown: 'text-muted',
 };
 
 function iconForKind(kind: FilePresentationKind) {
@@ -112,7 +112,7 @@ export function FileTypeIcon({
   const kind = isDirectory ? 'unknown' : presentation.kind;
   const Icon = isDirectory ? (expanded ? FolderOpen : Folder) : iconForKind(kind);
   const sizeClasses = className ? '' : 'h-4 w-4';
-  const colorClass = isDirectory ? 'text-droid-text-muted' : KIND_STYLES[kind];
+  const colorClass = isDirectory ? 'text-muted' : KIND_STYLES[kind];
 
   return (
     <Icon

@@ -20,13 +20,13 @@ export default function HarnessRail({
     <div
       role="radiogroup"
       aria-label="Harness"
-      className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-droid-border/60 py-2"
+      className="flex w-11 shrink-0 flex-col items-center gap-1 py-2"
     >
       {PROVIDER_KINDS.map((provider) => {
         const { selected, disabled, title } = harnessChoice(provider, current, statuses, locked);
-        let tone = 'text-droid-text-muted hover:bg-droid-surface/60 hover:text-droid-text';
-        if (selected) tone = 'bg-droid-surface text-droid-text';
-        else if (disabled) tone = 'cursor-not-allowed text-droid-text-muted/40';
+        let tone = 'text-muted hover:bg-elevated dark:hover:bg-surface/60 hover:text-primary';
+        if (selected) tone = 'bg-active text-primary dark:bg-surface';
+        else if (disabled) tone = 'cursor-not-allowed text-muted/40';
         return (
           <button
             key={provider}
@@ -38,7 +38,7 @@ export default function HarnessRail({
             onClick={() => {
               if (!selected) onSelect(provider);
             }}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${tone}`}
+            className={`grid size-control-md place-items-center rounded-md transition-colors ${tone}`}
           >
             <ModelIcon provider={PROVIDER_MARKS[provider]} size={16} />
           </button>

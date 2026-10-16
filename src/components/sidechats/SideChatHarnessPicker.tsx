@@ -8,7 +8,7 @@ import {
   providerDefaultModel,
   providerModelCatalog,
 } from '../../features/providers/providerIdentity';
-import { AnchoredPopover } from '../../features/automations/AnchoredPopover';
+import { Popover } from '../ui/Popover';
 import type { SideChatHarness } from '../../lib/sideChats';
 import ModelCatalogList from '../ModelCatalogList';
 import { ModelIcon } from '../ModelIcon';
@@ -48,24 +48,23 @@ export function SideChatHarnessPicker({
         onClick={() => {
           setOpen((current) => !current);
         }}
-        className={`flex h-7 max-w-full items-center gap-1.5 rounded-lg px-2 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
-          open ? 'bg-droid-elevated text-droid-text' : ''
+        className={`flex h-7 max-w-full items-center gap-1.5 rounded-md px-2 text-label text-secondary transition-colors hover:bg-elevated hover:text-primary ${
+          open ? 'bg-elevated text-primary' : ''
         }`}
       >
         <ModelIcon provider={PROVIDER_MARKS[provider]} size={13} />
         <span className="min-w-0 truncate">{label}</span>
-        <ChevronDown className="h-3 w-3 shrink-0 text-droid-text-muted" />
+        <ChevronDown className="h-3 w-3 shrink-0 text-muted" />
       </button>
-      <AnchoredPopover
+      <Popover
         open={open}
         anchorRef={chipRef}
         onClose={() => {
           setOpen(false);
         }}
+        label="Side chat harness and model"
+        placement="bottom-start"
         width={320}
-        align="start"
-        maximumHeight={360}
-        ariaLabel="Side chat harness and model"
       >
         <HarnessSegments
           provider={provider}
@@ -94,7 +93,7 @@ export function SideChatHarnessPicker({
             reasoningLocked={false}
           />
         </div>
-      </AnchoredPopover>
+      </Popover>
     </>
   );
 }

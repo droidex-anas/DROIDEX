@@ -50,7 +50,7 @@ export function SidebarActivity({
       <LayoutGroup id="sidebar-inbox">
         <div className="space-y-3">
           {sessions.length === 0 && (
-            <p className="px-3 py-2 text-[12px] text-droid-text-muted">
+            <p className="px-3 py-2 text-caption text-muted">
               {hiddenCount > 0 ? 'Nothing to show right now.' : 'No tasks match this view.'}
             </p>
           )}
@@ -88,7 +88,7 @@ export function SidebarActivity({
             );
           })}
           {hiddenCount > 0 && (
-            <p className="px-3 pt-1 text-[11px] text-droid-text-muted/70">
+            <p className="px-3 pt-1 text-caption text-muted/70">
               {String(hiddenCount)} older {hiddenCount === 1 ? 'chat lives' : 'chats live'} in
               Workspaces.
             </p>

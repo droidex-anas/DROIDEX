@@ -23,7 +23,9 @@ import type { ChildAccess } from './hooks/storeChildSession';
 import Sidebar from './components/Sidebar';
 import RightPanel from './components/RightPanel';
 import EditorOpenMenu from './components/EditorOpenMenu';
-import Toaster from './components/Toaster';
+import Toaster from './components/ui/Toaster';
+import { Button } from './components/ui/Button';
+import { Tooltip } from './components/ui/Tooltip';
 import { useRepoStatus } from './hooks/useRepoStatus';
 import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
@@ -713,29 +715,31 @@ export default function App() {
             <EditorOpenMenu cwd={workingDirectory} hasRepo={!!repoStatus} variant="toolbar" />
           )}
           {canToggleContext && (
-            <button
-              onClick={toggleRightPanel}
-              aria-label="Toggle context panel"
-              aria-pressed={state.rightPanelOpen}
-              // No pressed fill: like the sidebar and utility toggles beside it,
-              // the open panel is its own evidence; the icon only brightens.
-              className={`rounded-md p-1.5 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text ${
-                state.rightPanelOpen ? 'text-droid-text' : 'text-droid-text-muted/70'
-              }`}
-              title="Toggle context"
-            >
-              <ContextListIcon className="h-4 w-4" />
-            </button>
+            <Tooltip label="Toggle context" placement="bottom">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={ContextListIcon}
+                onClick={toggleRightPanel}
+                aria-label="Toggle context panel"
+                aria-pressed={state.rightPanelOpen}
+              />
+            </Tooltip>
           )}
           {!!activeSession && (
-            <button
-              ref={bindUtilityToggleIntent}
-              onClick={toggleUtilityPane}
-              className="rounded-md p-1.5 text-droid-text-muted/70 transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
-              title={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
+            <Tooltip
+              label={`Toggle utility pane (${formatChord(state.shortcutBindings.toggleUtilityPane)})`}
+              placement="bottom"
             >
-              <PanelRight className="h-4 w-4" />
-            </button>
+              <Button
+                ref={bindUtilityToggleIntent}
+                variant="ghost"
+                size="sm"
+                icon={PanelRight}
+                onClick={toggleUtilityPane}
+                aria-label="Toggle utility pane"
+              />
+            </Tooltip>
           )}
         </>
       )}
@@ -745,7 +749,7 @@ export default function App() {
   return (
     <div
       id="app-root"
-      className="h-screen w-screen flex flex-col bg-droid-bg text-droid-text overflow-hidden relative"
+      className="h-screen w-screen flex flex-col bg-bg text-primary overflow-hidden relative"
     >
       <div ref={bannerStackRef} className="shrink-0">
         {showBanner && (
@@ -788,7 +792,7 @@ export default function App() {
             window controls and the floating sidebar toggle into that row; the
             chat header reads the collapsed state and leaves them room. With a
             second tab open, the tab strip stacks above and takes that role. */}
-        <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-droid-bg">
+        <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
           {state.tabStripShown && (
             <HeaderTabs
               leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
@@ -1073,7 +1077,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 12 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-none absolute bottom-0 right-0 w-[312px] z-30"
+              className="pointer-events-none absolute bottom-0 right-0 z-30 w-context-panel"
               style={{ top: state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0 }}
             >
               <RightPanel />
@@ -1093,15 +1097,20 @@ export default function App() {
         className="absolute h-9 z-40 flex items-center gap-1.5"
         style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
       >
-        <button
-          onClick={() => {
-            dispatch({ type: 'TOGGLE_SIDEBAR' });
-          }}
-          className="p-1.5 rounded-md text-droid-text-muted/70 hover:text-droid-text hover:bg-droid-elevated/60 transition-colors"
-          title={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
+        <Tooltip
+          label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
+          placement="bottom"
         >
-          <PanelLeft className="w-4 h-4" />
-        </button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={PanelLeft}
+            onClick={() => {
+              dispatch({ type: 'TOGGLE_SIDEBAR' });
+            }}
+            aria-label="Toggle sidebar"
+          />
+        </Tooltip>
       </div>
 
       {/* Without tabs, the session's controls float at the end of the view's own top row. */}

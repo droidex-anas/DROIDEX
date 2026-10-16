@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Spinner } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { ModelIcon } from '../../components/ModelIcon';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../providers/providerIdentity';
@@ -39,27 +40,27 @@ export function ThreadRow({
         onOpen(row.appSessionId);
       }}
       style={{ paddingLeft: `${String(10 + Math.min(row.depth, 3) * 14)}px` }}
-      className={`group flex w-full items-center gap-2.5 rounded-lg py-1.5 pr-2 text-left transition-colors ${
-        active ? 'bg-droid-active' : 'hover:bg-droid-elevated/50'
+      className={`group flex w-full items-center gap-2.5 rounded-md py-1.5 pr-2 text-left transition-colors ${
+        active ? 'bg-active' : 'hover:bg-elevated/50'
       }`}
     >
       <span className="flex w-3.5 shrink-0 items-center justify-center">
         {row.live ? (
-          <span
+          <Spinner
             aria-label="working"
-            className="h-3 w-3 rounded-full border-[1.5px] border-droid-text border-r-transparent motion-safe:animate-spin-slow"
+            className="h-3 w-3 motion-safe:animate-spin-slow text-primary"
           />
         ) : (
           <ActivityStatusGlyph status={row.status} />
         )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] text-droid-text-secondary group-hover:text-droid-text">
+        <span className="block truncate text-body text-secondary group-hover:text-primary">
           {row.title}
         </span>
         <span
-          className={`mt-0.5 block truncate text-[12px] leading-4 ${
-            row.live ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+          className={`mt-0.5 block truncate text-caption ${
+            row.live ? 'shimmer-text font-medium' : 'text-muted'
           }`}
         >
           {row.detail}
@@ -67,15 +68,15 @@ export function ThreadRow({
       </span>
       {/* The harness mark the chat list uses, so a thread is identified the
           same way its chat is; Droid, the default, wears none there either. */}
-      <span className="ml-2 grid shrink-0 grid-cols-[16px_34px] items-center gap-x-2.5">
-        <span className="flex justify-center">
+      <span className="ml-2 flex shrink-0 items-center gap-2.5">
+        <span className="flex w-4 justify-center">
           {harness && (
             <span role="img" aria-label={`${PROVIDER_LABELS[harness]} thread`}>
               <ModelIcon provider={PROVIDER_MARKS[harness]} size={14} />
             </span>
           )}
         </span>
-        <span className="text-right text-[12px] tabular-nums text-droid-text-muted">
+        <span className="text-right text-caption tabular-nums text-muted">
           {row.updatedAt > 0 ? formatRelativeTime(row.updatedAt, now) : ''}
         </span>
       </span>

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { GitWorktree } from '../types/vcs.js';
-import { WorktreeRemovalDialogContent } from './WorktreeRemovalDialog.js';
+import { WorktreeRemovalDialog } from './WorktreeRemovalDialog.js';
 
 const WORKTREE: GitWorktree = {
   path: '/repo/.worktrees/feature',
@@ -23,7 +23,7 @@ function renderDialog({
   isChecking = false,
 } = {}): string {
   return renderToStaticMarkup(
-    createElement(WorktreeRemovalDialogContent, {
+    createElement(WorktreeRemovalDialog, {
       worktree: WORKTREE,
       changedFileCount,
       linkedSessionCount,

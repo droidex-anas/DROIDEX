@@ -271,8 +271,8 @@ function QuickPromptBox({
         label="Prompt for the selection"
         sendLabel="Send prompt"
         maxHeight={96}
-        // Over the page it floats, so it takes a rim and a deeper shadow.
-        className="border border-droid-border shadow-droid"
+        // Over the page it floats, so it takes a deeper shadow.
+        className="shadow-lg"
       />
     </motion.div>
   );

@@ -1,6 +1,6 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
 import { useState, type ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight } from '@droidex/icons';
 import type { SessionSummary } from '../types/bridge';
 import type { ChatMetadataMap, ChatPullRequest } from '../lib/chatMetadata';
 import { prKind, prKindLabel } from '../lib/github';
@@ -63,7 +63,7 @@ export function SidebarPullRequests({
   return (
     <div className="space-y-3">
       {groups.size === 0 && (
-        <p className="px-3 py-1 text-[11px] leading-relaxed text-droid-text-muted">
+        <p className="px-3 py-1 text-caption text-muted">
           Pull requests are linked automatically from your chats’ worktrees.
         </p>
       )}
@@ -74,7 +74,7 @@ export function SidebarPullRequests({
           <section key={url} aria-label={`PR #${String(pr.number)} ${pr.title}`}>
             <button
               type="button"
-              className="group/heading flex w-full cursor-pointer items-center gap-2.5 rounded-md py-1.5 pl-3 pr-3 text-left text-[13px] font-medium text-droid-text-secondary transition-colors hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40"
+              className="group/heading flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-3 py-1.5 text-left text-body-strong text-secondary transition-colors hover:text-primary"
               title={`${url} · ${prKindLabel(kind)} (last detected)`}
               aria-expanded={open}
               onClick={() => {
@@ -87,14 +87,10 @@ export function SidebarPullRequests({
                   #{pr.number} {pr.title}
                 </span>
                 <ChevronRight
-                  className={`h-3 w-3 shrink-0 opacity-50 transition-[transform,opacity] group-hover/heading:opacity-100 ${open ? 'rotate-90' : ''}`}
-                  strokeWidth={2}
-                  aria-hidden="true"
+                  className={`size-icon-sm shrink-0 opacity-50 transition group-hover/heading:opacity-100 ${open ? 'rotate-90' : ''}`}
                 />
               </span>
-              <span className="shrink-0 text-[11px] font-normal text-droid-text-muted">
-                {prKindLabel(kind)}
-              </span>
+              <span className="shrink-0 text-caption text-muted">{prKindLabel(kind)}</span>
             </button>
             {open && list(url, rows)}
           </section>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ImageOff, X } from 'lucide-react';
+import { ImageOff } from 'lucide-react';
+import { ChipRemoveButton } from './ChipRemoveButton';
 
 // Thumbnail chip for an image staged in the composer. Clicking the image opens
 // the viewer; the corner badge removes it without opening anything. `src` is a
@@ -24,15 +25,15 @@ export function ImageChip({
       <button
         onClick={failed ? undefined : onOpen}
         disabled={failed}
-        className="block h-16 w-16 overflow-hidden rounded-lg border border-droid-border bg-droid-bg/60 transition-colors hover:border-droid-border-hover disabled:cursor-default"
+        className="block size-16 overflow-hidden rounded-md bg-bg/60 shadow-sm transition-opacity enabled:hover:opacity-90 disabled:cursor-default"
         title={failed ? `${label} is no longer available` : `View ${label}`}
       >
         {failed ? (
           // Name the missing file in place: several restored chips can fail at
           // once, and an anonymous icon says nothing about which one is gone.
-          <span className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1 text-droid-text-muted">
-            <ImageOff className="h-4 w-4 shrink-0" />
-            <span className="max-w-full truncate text-[11px] leading-none">{label}</span>
+          <span className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1 text-muted">
+            <ImageOff className="size-icon-md shrink-0" />
+            <span className="max-w-full truncate text-caption">{label}</span>
           </span>
         ) : (
           <img
@@ -46,16 +47,7 @@ export function ImageChip({
           />
         )}
       </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-droid-border bg-droid-raised text-droid-text-muted shadow-sm transition-colors after:absolute after:-inset-0.5 after:content-[''] hover:border-droid-border-hover hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-        title="Remove image"
-      >
-        <X className="h-2.5 w-2.5" strokeWidth={3} />
-      </button>
+      <ChipRemoveButton title="Remove image" onRemove={onRemove} />
     </span>
   );
 }

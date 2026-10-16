@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, ExternalLink } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import { Button } from '../../components/ui/Button';
 import InlineInteractions from '../../components/InlineInteractions';
 import { buildFeed } from '../../components/chatFeed';
 import { MessageFeed } from '../../components/MessageFeed';
@@ -46,28 +47,25 @@ export function ThreadDetail({
 
   return (
     <div data-testid="thread-detail" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-droid-border/70 px-3 py-2.5">
-        <button
-          type="button"
-          onClick={onBack}
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={ArrowLeft}
           aria-label="Back to threads"
-          className="shrink-0 rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-        </button>
+          onClick={onBack}
+        />
         <ActivityStatusGlyph status={row.status} />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
-          {row.title}
-        </span>
-        <button
-          type="button"
+        <span className="min-w-0 flex-1 truncate text-body-strong text-primary">{row.title}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={ExternalLink}
           onClick={onOpenInChat}
           disabled={row.status === 'queued'}
-          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
         >
           Open
-          <ExternalLink className="h-3 w-3" />
-        </button>
+        </Button>
       </div>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
@@ -82,7 +80,7 @@ export function ThreadDetail({
               inlineDiffs={toolActivity.inlineDiffs}
             />
           ) : (
-            <p className="text-[12px] leading-5 text-droid-text-muted">
+            <p className="text-caption text-muted">
               {row.status === 'queued'
                 ? row.detail
                 : historyError || (transcript === undefined ? 'Loading this thread…' : row.detail)}

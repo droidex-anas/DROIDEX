@@ -19,7 +19,7 @@ export function UnreadFilterActions({
         <button
           type="button"
           onClick={onMarkAllRead}
-          className="cursor-pointer rounded-md px-2 py-1.5 text-[11px] font-medium text-droid-text-muted transition-colors hover:text-droid-text"
+          className="cursor-pointer rounded-sm px-2 py-1.5 text-label text-muted transition-colors hover:text-primary"
         >
           Mark all as read
         </button>
@@ -30,13 +30,13 @@ export function UnreadFilterActions({
         title={unreadOnly ? 'Show all sessions' : 'Show unread only'}
         aria-label={unreadOnly ? 'Show all sessions' : 'Show unread only'}
         aria-pressed={unreadOnly}
-        className={`relative cursor-pointer rounded-md p-1.5 transition-colors ${
-          unreadOnly ? 'text-droid-accent' : 'text-droid-text-muted hover:text-droid-text'
+        className={`relative cursor-pointer rounded-sm p-1.5 transition-colors ${
+          unreadOnly ? 'text-accent' : 'text-muted hover:text-primary'
         }`}
       >
         <Bell className="h-4 w-4" strokeWidth={1.75} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-droid-accent px-0.5 text-[11px] font-semibold leading-none tabular-nums text-droid-bg">
+          <span className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-overline tabular-nums text-bg">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}

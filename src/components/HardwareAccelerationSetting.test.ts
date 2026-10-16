@@ -10,7 +10,7 @@ import {
 } from '../lib/hardwareAcceleration.js';
 import { HardwareAccelerationSetting } from './HardwareAccelerationSetting.js';
 
-const g = globalThis as { window?: { droidControl?: Record<string, unknown> } };
+const g = globalThis as { window?: { droidex?: Record<string, unknown> } };
 
 afterEach(() => {
   delete g.window;
@@ -25,7 +25,7 @@ test('without the desktop bridge the setting is absent and the bridge rejects', 
 
 test('with the desktop bridge the setting states its restart and reads the saved preference', async () => {
   g.window = {
-    droidControl: {
+    droidex: {
       getHardwareAcceleration: async () => ({ enabled: false }),
       setHardwareAcceleration: async (enabled: boolean) => ({ enabled }),
       relaunchApp: async () => undefined,

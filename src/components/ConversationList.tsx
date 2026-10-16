@@ -25,6 +25,7 @@ import {
   nearestOverflowParent,
   shouldAdjustConversationRowOnSizeChange,
 } from './conversationListState';
+import { useConversationDragSelection } from './useConversationDragSelection';
 import { useConversationListLayout } from './useConversationListLayout';
 
 export interface ConversationListHandle {
@@ -83,9 +84,17 @@ export function ConversationList({
     return itemsRef.current[index]?.key ?? index;
   }, []);
 
+  const rangeExtractor = useConversationDragSelection(
+    listElRef,
+    getScrollElement,
+    items,
+    getItemKey,
+  );
+
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement,
+    rangeExtractor,
     estimateSize: () => CONVERSATION_LIST_ESTIMATE_PX,
     overscan: CONVERSATION_LIST_OVERSCAN,
     gap: CONVERSATION_LIST_GAP_PX,
@@ -186,7 +195,7 @@ export function ConversationList({
               // and would sit under the next row; the hovered row rises above,
               // and stays raised for the control's 300ms hide delay so it
               // fades instead of dropping behind the next row.
-              className="z-0 [transition:z-index_0s_300ms] hover:z-[1] hover:[transition-delay:0s] focus-within:z-[1] focus-within:[transition-delay:0s]"
+              className="z-0 [transition:z-index_0s_300ms] hover:z-10 hover:[transition-delay:0s] focus-within:z-10 focus-within:[transition-delay:0s]"
               style={{
                 position: 'absolute',
                 top: 0,

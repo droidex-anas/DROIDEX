@@ -12,7 +12,7 @@ import { VoiceProvider } from './features/voice/VoiceProvider';
 import App from './App';
 import './index.css';
 
-if (window.droidControl) void initializeRendererDiagnostics();
+if (window.droidex) void initializeRendererDiagnostics();
 
 // Perf phase 0 instrumentation: long-task tracking plus a console-accessible
 // snapshot (`window.__droidexPerf.getSnapshot()`) for live diagnosis.
@@ -44,6 +44,6 @@ createRoot(root).render(
 // module nor the Datadog SDK sits in the initial bundle. It no-ops outside
 // packaged builds, and the SDK is only fetched once the main process confirms
 // reporting is configured and consented to.
-if (window.droidControl) {
+if (window.droidex) {
   void import('./lib/usageAnalytics').then((module) => module.startUsageAnalytics());
 }

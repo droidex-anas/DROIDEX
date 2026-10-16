@@ -1,13 +1,13 @@
 import {
-  CheckCircle2,
   ChevronRight,
   CircleAlert,
+  CircleCheck,
   Plus,
   RefreshCw,
   Server,
-  Trash2,
-} from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+  Spinner,
+  Trash,
+} from '@droidex/icons';
 import { AnimatePresence } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -21,8 +21,10 @@ import {
 } from '../lib/commands';
 import type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } from '../types/bridge';
 import { AddMcpServerDialog } from './McpServerForm';
-import { SectionTitle } from './settingsKit';
+import { GroupLabel, SectionTitle } from './settingsKit';
 import { Switch } from './Switch';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
 
 let requestSequence = 0;
 const nextRequestId = () => `mcp-${Date.now().toString(36)}-${String(++requestSequence)}`;
@@ -78,7 +80,7 @@ export function McpServersSettings({ cwd }: { cwd?: string }) {
     const unsubscribe = bridge.subscribe((event) => {
       if (!('requestId' in event) || event.requestId !== activeRequest.current) return;
       if (event.type === 'mcp.authRequested' && event.authUrl) {
-        void window.droidControl?.openExternal(event.authUrl);
+        void window.droidex?.openExternal(event.authUrl);
         return;
       }
       if (event.type === 'mcp.error') {
@@ -162,23 +164,23 @@ export function McpServersSection(props: McpServersSectionProps) {
   let serverList: React.ReactNode;
   if (props.isLoading && props.servers.length === 0) {
     serverList = (
-      <div className="flex items-center gap-2 rounded-xl border border-droid-border bg-droid-surface px-4 py-5 text-[12px] text-droid-text-muted">
-        <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" /> Loading MCP servers…
+      <div className="flex items-center gap-2 rounded-xl bg-surface px-4 py-5 text-body text-muted shadow-lg">
+        <Spinner className="size-icon-md motion-safe:animate-spin-slow" /> Loading MCP servers…
       </div>
     );
   } else if (props.servers.length === 0) {
     serverList = (
-      <div className="rounded-xl border border-dashed border-droid-border px-5 py-8 text-center">
-        <Server className="mx-auto mb-2 h-5 w-5 text-droid-text-muted" />
-        <div className="text-[13px] font-medium text-droid-text">No MCP servers configured</div>
-        <div className="mt-1 text-[11px] text-droid-text-muted">
+      <div className="rounded-xl bg-surface px-5 py-8 text-center">
+        <Server className="mx-auto mb-2 size-icon-lg text-muted" />
+        <div className="text-body-strong text-primary">No MCP servers configured</div>
+        <div className="mt-1 text-caption text-muted">
           Add a user server here or define a project server in .factory/mcp.json.
         </div>
       </div>
     );
   } else {
     serverList = (
-      <div className="divide-y divide-droid-border/80 overflow-hidden rounded-xl border border-droid-border bg-droid-surface shadow-droid">
+      <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
         {props.servers.map((server) => (
           <McpServerCard
             key={`${server.source}:${server.name}`}
@@ -201,47 +203,46 @@ export function McpServersSection(props: McpServersSectionProps) {
           title="MCP servers"
           sub="Shows Droid's effective server catalog and authentication state. User and project servers are merged with DROIDEX browser tools when sessions start."
         />
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          icon={RefreshCw}
+          loading={props.isLoading}
           onClick={props.onRefresh}
           disabled={props.isLoading || props.isMutating}
           aria-label="Refresh MCP servers"
-          className="rounded-lg border border-droid-border p-2 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text disabled:opacity-40"
-        >
-          <RefreshCw className={`h-4 w-4 ${props.isLoading ? 'animate-spin' : ''}`} />
-        </button>
+        />
       </div>
 
-      <div className="mb-5 flex items-center gap-2 text-[11px] text-droid-text-muted">
+      <div className="mb-5 flex items-center gap-2 text-caption text-muted">
         <span>{props.summary.connected} connected</span>
         <span>·</span>
         <span>{props.summary.disabled ?? 0} disabled</span>
         {props.summary.failed > 0 && (
           <>
             <span>·</span>
-            <span className="text-droid-orange">{props.summary.failed} failed</span>
+            <span className="text-warning">{props.summary.failed} failed</span>
           </>
         )}
       </div>
 
       {props.error && (
-        <div className="mb-4 flex items-start gap-2 rounded-xl border border-droid-orange/30 bg-droid-orange/10 px-3 py-2.5 text-[12px] text-droid-text">
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-droid-orange" />
+        <div className="mb-4 flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2.5 text-body text-primary">
+          <CircleAlert className="mt-0.5 size-icon-md shrink-0 text-warning" />
           <span>{props.error}</span>
         </div>
       )}
 
       {serverList}
 
-      <button
-        type="button"
+      <Button
+        icon={Plus}
+        className="mt-5"
         onClick={() => {
           setIsAdding(true);
         }}
-        className="mt-5 flex items-center gap-1.5 rounded-lg border border-droid-border bg-droid-elevated px-3.5 py-2 text-[12px] font-medium text-droid-text transition-all duration-150 hover:border-droid-border-hover hover:bg-droid-active active:scale-[0.97]"
       >
-        <Plus className="h-3.5 w-3.5" /> Add server
-      </button>
+        Add server
+      </Button>
 
       <AnimatePresence>
         {isAdding && (
@@ -283,7 +284,7 @@ function McpServerCard({
   const shouldShowAuthenticate = canAuthenticate(server);
 
   return (
-    <div className="group px-4 py-3.5 transition-colors hover:bg-droid-elevated/25">
+    <div className="group px-4 py-3.5">
       <div className="flex items-center gap-2.5">
         <button
           type="button"
@@ -291,27 +292,21 @@ function McpServerCard({
             setExpanded((value) => !value);
           }}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left active:opacity-70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left active:opacity-70"
         >
           <ChevronRight
-            className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform duration-100 ${expanded ? 'rotate-90' : ''}`}
+            className={`size-icon-sm shrink-0 text-muted transition-transform duration-100 ${expanded ? 'rotate-90' : ''}`}
           />
           <StatusIcon status={server.status} />
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-1.5">
-              <span className="truncate text-[13px] font-medium text-droid-text">
-                {server.name}
-              </span>
-              <span className="rounded-full border border-droid-border px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-droid-text-muted">
-                {sourceLabel(server.source)}
-              </span>
+              <span className="truncate text-body-strong text-primary">{server.name}</span>
+              <Badge>{sourceLabel(server.source)}</Badge>
               {server.serverType && (
-                <span className="text-[11px] uppercase text-droid-text-muted">
-                  {server.serverType}
-                </span>
+                <span className="font-mono text-code-sm text-muted">{server.serverType}</span>
               )}
             </span>
-            <span className="mt-0.5 block text-[11px] capitalize text-droid-text-muted">
+            <span className="mt-0.5 block text-caption capitalize text-muted">
               {server.status}
               {server.toolCount !== undefined
                 ? ` · ${String(server.toolCount)} ${server.toolCount === 1 ? 'tool' : 'tools'}`
@@ -320,16 +315,15 @@ function McpServerCard({
           </span>
         </button>
         {shouldShowAuthenticate && (
-          <button
-            type="button"
+          <Button
+            size="sm"
             disabled={disabled}
             onClick={() => {
               onAuthenticate(server.name);
             }}
-            className="rounded-lg border border-droid-border bg-droid-elevated px-2.5 py-1.5 text-[11px] font-medium text-droid-text transition-all duration-150 hover:border-droid-border-hover active:scale-[0.97] disabled:opacity-40"
           >
             Authenticate
-          </button>
+          </Button>
         )}
         <Switch
           checked={isEnabled}
@@ -340,44 +334,34 @@ function McpServerCard({
           label={`${isEnabled ? 'Disable' : 'Enable'} ${server.name}`}
         />
         {canRemove && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            icon={Trash}
             disabled={disabled}
             aria-label={`Remove ${server.name}`}
             onClick={() => {
               onRemove(server.name);
             }}
-            className="rounded-lg border border-transparent p-2 text-droid-text-secondary transition-all duration-150 hover:border-droid-orange/25 hover:bg-droid-orange/10 hover:text-droid-orange active:scale-[0.96] disabled:opacity-40"
-          >
-            <Trash2 className="h-4 w-4" /> <span className="sr-only">Remove</span>
-          </button>
+          />
         )}
       </div>
       {expanded && (
-        <div className="ml-6 mt-3 border-l border-droid-border/70 pl-4">
-          {server.error && <div className="mb-3 text-[11px] text-droid-orange">{server.error}</div>}
+        <div className="ml-6 mt-3 pl-4">
+          {server.error && <div className="mb-3 text-caption text-warning">{server.error}</div>}
           {tools.length === 0 ? (
-            <div className="py-1 text-[11px] text-droid-text-muted">No tools reported.</div>
+            <div className="py-1 text-caption text-muted">No tools reported.</div>
           ) : (
             <>
-              <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-droid-text-muted">
-                Available tools
-              </div>
+              <GroupLabel>Available tools</GroupLabel>
               <div className="grid gap-x-6 gap-y-3 pb-1 sm:grid-cols-2">
                 {tools.map((tool) => (
                   <div key={tool.name} className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="truncate text-[12px] font-medium text-droid-text-secondary">
-                        {tool.name}
-                      </span>
-                      {!tool.isEnabled && (
-                        <span className="shrink-0 rounded-full bg-droid-elevated px-1.5 py-0.5 text-[11px] text-droid-text-muted">
-                          Off
-                        </span>
-                      )}
+                      <span className="truncate text-label text-secondary">{tool.name}</span>
+                      {!tool.isEnabled && <Badge>Off</Badge>}
                     </div>
                     {tool.description && (
-                      <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-droid-text-muted">
+                      <div className="mt-0.5 line-clamp-2 text-caption text-muted">
                         {tool.description}
                       </div>
                     )}
@@ -399,11 +383,11 @@ function canAuthenticate(server: McpServerInfo): boolean {
 }
 
 function StatusIcon({ status }: { status: McpServerInfo['status'] }) {
-  if (status === 'connected') return <CheckCircle2 className="h-4 w-4 text-droid-green" />;
+  if (status === 'connected') return <CircleCheck className="size-icon-md text-success" />;
   if (status === 'connecting')
-    return <Spinner className="h-4 w-4 motion-safe:animate-spin-slow text-droid-accent" />;
-  if (status === 'failed') return <CircleAlert className="h-4 w-4 text-droid-orange" />;
-  return <Server className="h-4 w-4 text-droid-text-muted" />;
+    return <Spinner className="size-icon-md motion-safe:animate-spin-slow text-accent" />;
+  if (status === 'failed') return <CircleAlert className="size-icon-md text-warning" />;
+  return <Server className="size-icon-md text-muted" />;
 }
 
 function sourceLabel(source: McpServerInfo['source']): string {

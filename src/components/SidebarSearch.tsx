@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight } from '@droidex/icons';
 import { useSidebarContentSearch } from '../hooks/useSidebarContentSearch';
 import { shallowEqual, useStoreSelector } from '../hooks/useStore';
 import {
@@ -130,16 +130,16 @@ export default function SidebarSearch({
           onClick={() => {
             open(entry);
           }}
-          className={`w-full flex items-start gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
-            i === selected ? 'bg-droid-accent/[0.07]' : ''
+          className={`w-full flex items-start gap-3 rounded-md px-2.5 py-2.5 text-left transition-colors ${
+            i === selected ? 'bg-elevated dark:bg-active' : ''
           }`}
         >
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-sm text-droid-text">
+              <span className="min-w-0 flex-1 truncate text-body-lg text-primary">
                 {entry.session.title}
               </span>
-              <span className="shrink-0 text-[11px] tabular-nums text-droid-text-muted">
+              <span className="shrink-0 text-caption tabular-nums text-muted">
                 {formatRelativeTime(entry.session.updatedAt, now)}
               </span>
             </span>
@@ -147,21 +147,18 @@ export default function SidebarSearch({
               metadata[entry.session.appSessionId]?.pullRequests
                 ?.filter((pr) => pullRequestMatchesQuery(pr, trimmed))
                 .map((pr) => (
-                  <span
-                    key={pr.url}
-                    className="mt-0.5 block truncate text-[11px] text-droid-text-muted"
-                  >
+                  <span key={pr.url} className="mt-0.5 block truncate text-caption text-muted">
                     #{pr.number} · {pr.title} · {pr.state.toLowerCase()}
                   </span>
                 ))}
             {entry.matches.slice(0, SNIPPETS_PER_ROW).map((m, j) => (
-              <span key={j} className="block truncate text-[12px] text-droid-text-muted mt-0.5">
+              <span key={j} className="mt-0.5 block truncate text-caption text-muted">
                 {m.author === 'user' ? 'You: ' : ''}
                 {m.snippet}
               </span>
             ))}
           </span>
-          {i === selected && <ArrowRight className="w-3.5 h-3.5 mt-1 shrink-0 text-droid-accent" />}
+          {i === selected && <ArrowRight className="mt-0.5 size-icon-sm shrink-0 text-accent" />}
         </button>
       ))}
     </PaletteShell>

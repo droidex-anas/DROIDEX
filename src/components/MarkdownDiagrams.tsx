@@ -8,13 +8,14 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import { Maximize2 } from 'lucide-react';
+import { Maximize } from '@droidex/icons';
 import type { Mermaid } from 'mermaid';
 
 import { useVisibleOnce } from '../hooks/useVisibleOnce';
-import { fitSvgMarkup, svgImageAlternative } from '../lib/svgMarkup';
+import { svgImageAlternative, svgImageSrc } from '../lib/svgMarkup';
 import { appColorScheme } from './appBlockRuntime';
-import { CARD_CONTROL_CLASS, CardHeader, CodeCard, CodeCopyButton } from './MarkdownCode';
+import { CardHeader, CodeCard, CodeCopyButton } from './MarkdownCode';
+import { Button } from './ui/Button';
 import { ImageLightbox } from './media/ImageLightbox';
 
 /* Renderers for the fenced languages that draw a diagram instead of code. */
@@ -46,7 +47,7 @@ async function loadMermaid(scheme: ColorScheme): Promise<Mermaid> {
 }
 
 function currentColorScheme(): ColorScheme {
-  const canvas = getComputedStyle(document.documentElement).getPropertyValue('--droid-bg');
+  const canvas = getComputedStyle(document.documentElement).getPropertyValue('--bg');
   return appColorScheme(canvas.trim());
 }
 
@@ -121,23 +122,23 @@ function DiagramCard({
 }) {
   const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
   return (
-    <div ref={hostRef} className="my-3 overflow-hidden rounded-xl bg-droid-elevated/50">
+    <div ref={hostRef} className="my-3 overflow-hidden rounded-lg bg-elevated/50">
       <CardHeader label={kind}>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={Maximize}
           onClick={() => {
             setExpandedSrc(imageSrc?.() ?? null);
           }}
           disabled={!imageSrc}
-          className={CARD_CONTROL_CLASS}
-          title="Expand diagram"
           aria-label={`Expand ${viewLabel}`}
         >
-          <Maximize2 className="h-3 w-3" />
           Expand
-        </button>
+        </Button>
         <CodeCopyButton text={source} />
       </CardHeader>
-      <div className="flex min-h-[96px] items-center justify-center px-5 pb-5 pt-1">{children}</div>
+      <div className="flex min-h-24 items-center justify-center px-5 pb-5 pt-1">{children}</div>
       {expandedSrc && (
         <ImageLightbox
           src={expandedSrc}
@@ -211,7 +212,7 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
           dangerouslySetInnerHTML={{ __html: rendered.svg }}
         />
       ) : (
-        <span className="text-[12px] text-droid-text-muted/70">Rendering diagram…</span>
+        <span className="text-caption text-muted">Rendering diagram…</span>
       )}
     </DiagramCard>
   );
@@ -219,14 +220,18 @@ export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string 
 
 export function SvgCodeBlock({ content }: { content: string }) {
   const image = useMemo(
-    () => ({ src: svgDataUrl(fitSvgMarkup(content)), alt: svgImageAlternative(content) }),
+    () => ({ src: svgImageSrc(content), alt: svgImageAlternative(content) }),
     [content],
   );
 
   return (
     <DiagramCard kind="SVG" source={content} viewLabel={image.alt} imageSrc={() => image.src}>
       {/* Capped so a tall drawing stays a preview; Expand shows it whole. */}
-      <img className="block max-h-[420px] w-full object-contain" src={image.src} alt={image.alt} />
+      <img
+        className="block max-h-96 w-full rounded-md object-contain"
+        src={image.src}
+        alt={image.alt}
+      />
     </DiagramCard>
   );
 }

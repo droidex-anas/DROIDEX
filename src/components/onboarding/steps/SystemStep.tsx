@@ -1,7 +1,8 @@
-import { ArrowRight } from 'lucide-react';
+import { RefreshCw } from '@droidex/icons';
 
 import type { OnboardingController } from '../../../hooks/useOnboarding';
-import { Panel, PrimaryButton, RescanButton, StatusDot, StepLabel, StepTitle } from '../kit';
+import { Button } from '../../ui/Button';
+import { Panel, StatusDot, StepLabel, StepTitle } from '../kit';
 
 export function SystemStep({
   controller,
@@ -42,47 +43,42 @@ export function SystemStep({
   const ready = Boolean(cli?.present);
 
   return (
-    <div className="w-full max-w-[520px] mx-auto">
+    <div className="mx-auto w-full max-w-lg">
       <StepLabel>System check</StepLabel>
       <StepTitle
         title="A quick look under the hood."
         sub="DROIDEX checked the essentials on this machine. Anything missing can be fixed in the next steps."
       />
 
-      <Panel className="mb-7">
+      <Panel className="mb-7 py-1">
         {rows.map((row) => (
-          <div key={row.label} className="flex items-center gap-3.5 px-4 py-3.5">
+          <div key={row.label} className="flex items-center gap-3.5 px-4 py-2.5">
             <StatusDot status={row.status} />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] text-droid-text">{row.label}</div>
-              <div className="text-[12px] font-mono text-droid-text-muted truncate mt-0.5">
-                {row.detail}
-              </div>
+              <div className="text-body text-primary">{row.label}</div>
+              <div className="mt-0.5 truncate font-mono text-code-sm text-muted">{row.detail}</div>
             </div>
           </div>
         ))}
       </Panel>
 
-      {ready ? (
-        <PrimaryButton onClick={onNext}>
-          Continue <ArrowRight className="w-4 h-4" />
-        </PrimaryButton>
-      ) : (
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <RescanButton
-              onClick={() => {
-                refreshEnv();
-              }}
-            />
-          </div>
-          <div className="flex-1">
-            <PrimaryButton onClick={onNext}>
-              Continue <ArrowRight className="w-4 h-4" />
-            </PrimaryButton>
-          </div>
-        </div>
-      )}
+      <div className="flex gap-2">
+        {!ready && (
+          <Button
+            size="lg"
+            icon={RefreshCw}
+            onClick={() => {
+              refreshEnv();
+            }}
+            className="flex-1"
+          >
+            Re-scan
+          </Button>
+        )}
+        <Button variant="primary" size="lg" onClick={onNext} className="flex-1">
+          Continue
+        </Button>
+      </div>
     </div>
   );
 }

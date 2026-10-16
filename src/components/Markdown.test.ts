@@ -72,7 +72,7 @@ test('plain fenced blocks preserve preformatted multiline layout', () => {
   assert.match(html, /<pre[^>]*>/);
   // A fence without a language is still a code card, not an inline pill on
   // every line, and it does not gain the parser's trailing newline.
-  assert.match(html, /title="Copy"/);
+  assert.match(html, />Copy<\/span><\/button>/);
   assert.match(html, /first line\nsecond line<\/code>/);
 });
 
@@ -223,21 +223,39 @@ test('copy gracefully declines when the Clipboard API is unavailable', async () 
 });
 
 test('small JSON fences keep token highlighting and large ones stay plain', async () => {
-  const { JSON_HIGHLIGHT_MAX_CHARS } = await import('./MarkdownCode');
+  const { HIGHLIGHT_MAX_CHARS } = await import('./MarkdownCode');
   const small = '```json\n{"accent": true, "count": 3, "name": "droid"}\n```';
   const largeObject = Object.fromEntries(
     Array.from({ length: 1200 }, (_, index) => [`k${String(index)}`, index]),
   );
   const large = `\`\`\`json\n${JSON.stringify(largeObject)}\n\`\`\``;
-  assert.ok(JSON.stringify(largeObject).length > JSON_HIGHLIGHT_MAX_CHARS);
+  assert.ok(JSON.stringify(largeObject).length > HIGHLIGHT_MAX_CHARS);
 
   const smallHtml = renderToStaticMarkup(createElement(Markdown, null, small));
   const largeHtml = renderToStaticMarkup(createElement(Markdown, null, large));
   // Keys read by accent, string values by green.
-  assert.match(smallHtml, /--droid-accent\)">&quot;accent&quot;/);
-  assert.match(smallHtml, /--droid-green\)">&quot;droid&quot;/);
-  assert.doesNotMatch(largeHtml, /--droid-green/);
+  assert.match(smallHtml, /--accent\)">&quot;accent&quot;/);
+  assert.match(smallHtml, /--success\)">&quot;droid&quot;/);
+  assert.doesNotMatch(largeHtml, /--success/);
   assert.match(largeHtml, /k1199/);
+});
+
+test('fences in a language the highlighter knows render as tokens', async () => {
+  const render = () =>
+    renderToStaticMarkup(
+      createElement(Markdown, null, '```ts\nconst answer = "droid";\n\nexport { answer };\n```'),
+    );
+
+  // The highlighter loads lazily: the first render starts the load.
+  render();
+  await import('./PrismCode');
+  const html = render();
+
+  assert.match(html, /--warning\)">const</);
+  assert.match(html, /--success\)">&quot;droid&quot;/);
+  // Selecting the card copies its text: blank lines must not double.
+  const codeText = /<code[^>]*>([\s\S]*?)<\/code>/.exec(html)?.[1].replace(/<[^>]+>/g, '');
+  assert.equal(codeText, 'const answer = &quot;droid&quot;;\n\nexport { answer };');
 });
 
 test('GFM task lists render as checkbox rows without bullet markers', () => {
@@ -263,6 +281,16 @@ test('breaks mode keeps single newlines from typed text as visible breaks', () =
 
   assert.match(render(true), /<br\/>/);
   assert.doesNotMatch(render(false), /<br\/>/);
+});
+
+// A command backticked word by word would otherwise draw a chip per word.
+test('inline code spans separated only by spaces render as one span', () => {
+  const html = renderToStaticMarkup(
+    createElement(Markdown, null, 'run `git` `fetch` `origin` then open `src/App.tsx` `docs/a.md`'),
+  );
+  const spans = [...html.matchAll(/<code[^>]*>([^<]*)<\/code>/g)].map((match) => match[1]);
+
+  assert.deepEqual(spans, ['git fetch origin', 'src/App.tsx', 'docs/a.md']);
 });
 
 // Shortening an arbitrary link would hide where it goes.
