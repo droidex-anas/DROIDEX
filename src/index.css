@@ -687,6 +687,48 @@
     }
   }
 
+  /* Markdown blocks flow one gap apart. The gap rule weighs one element
+     selector: enough to beat Preflight's margin resets, less than any utility,
+     so a block's own margins win. A heading keeps its air above, and the block
+     after a heading tucks under it at the heading's bottom margin; a `space-y`
+     utility would override both. */
+  .md-shell {
+    --md-block-gap: theme('spacing[2.5]');
+  }
+
+  .md-shell-spec {
+    --md-block-gap: theme('spacing.5');
+  }
+
+  :where(.md-shell) > * + :not(template) {
+    margin-top: var(--md-block-gap);
+  }
+
+  :where(.md-shell) > :is(h1, h2, h3, h4, h5, h6) + * {
+    margin-top: 0;
+  }
+
+  /* Inline code in prose. A selection highlights glyphs, never an inline box's
+     padding, so padding would open a gap in the band at every chip and push
+     the following punctuation away. The chip takes no padding; its tint
+     reaches 2px past the text through a shadow, which leaves layout and
+     selection alone. Shadows are sliced like the box, so a wrapped chip still
+     runs off the line end and resumes on the next. */
+  .inline-code {
+    --inline-code-tint: color-mix(in srgb, var(--text) 7%, transparent);
+    background-color: var(--inline-code-tint);
+    box-shadow:
+      -2px 0 0 var(--inline-code-tint),
+      2px 0 0 var(--inline-code-tint);
+    padding-block: 1px;
+  }
+
+  @media (hover: hover) {
+    .inline-code[role='button']:hover {
+      --inline-code-tint: color-mix(in srgb, var(--text) 14%, transparent);
+    }
+  }
+
   /* The sidebar footer floats over the session list (SidebarFooter). The list
      reserves the footer's height at its end, and its scrollbar stops above it. */
   .sidebar-list {

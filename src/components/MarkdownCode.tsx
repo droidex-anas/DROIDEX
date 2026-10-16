@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, Copy, WrapText } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
@@ -82,11 +82,31 @@ export function CodeCopyButton({ text }: { text: string }) {
   );
 }
 
-/* ── JSON token highlighting ──
+/* ── Token highlighting ──
    Per-token spans are fine for a snippet and a long task for a dumped payload. */
-export const JSON_HIGHLIGHT_MAX_CHARS = 8_192;
+export const HIGHLIGHT_MAX_CHARS = 8_192;
 
-export function HighlightJson({ code }: { code: string }) {
+// Prism and its grammars stay out of the startup bundle. The plain text holds
+// the same glyphs as the tokens, so highlighting lands without a layout shift.
+const PrismCode = lazy(() => import('./PrismCode'));
+
+/** The highlighted body for a fence, or undefined when it stays plain text. */
+export function highlightFence(className: string | undefined, code: string): ReactNode {
+  if (code.length > HIGHLIGHT_MAX_CHARS) return undefined;
+  const language = className?.match(/language-([\w+#.-]+)/)?.[1].toLowerCase();
+  if (!language) return undefined;
+  if (language === 'json') return <HighlightJson code={code} />;
+  // An SVG fence only reaches a code card when it was refused as an image, and
+  // then it stays verbatim, escaped source.
+  if (language === 'svg') return undefined;
+  return (
+    <Suspense fallback={code}>
+      <PrismCode code={code} language={language} />
+    </Suspense>
+  );
+}
+
+function HighlightJson({ code }: { code: string }) {
   const nodes = useMemo(() => {
     const tokens = code.split(
       /("(?:\\.|[^"\\])*"|:|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[[\]{}!,])/g,

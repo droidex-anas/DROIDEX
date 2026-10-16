@@ -8,7 +8,7 @@ import {
   FolderSearch,
   Spinner,
 } from '@droidex/icons';
-import { Highlight, type PrismTheme } from 'prism-react-renderer';
+import { Highlight } from 'prism-react-renderer';
 import { readFilePreview, type FilePreviewPayload } from '../../lib/desktop';
 import {
   createSanitizedDocxElementFactory,
@@ -18,8 +18,10 @@ import {
   sanitizeDocxPreview,
 } from '../../lib/filePreview';
 import { Markdown } from '../Markdown';
+import { CODE_THEME } from '../codeTheme';
 import { Button } from '../ui/Button';
 import { resolveFilePresentation } from '../../lib/filePresentation';
+import { pathFileName } from '../../lib/pathDisplay';
 
 const TEXT_CHAR_LIMIT = 250_000;
 const HIGHLIGHT_CHAR_LIMIT = 120_000;
@@ -35,10 +37,8 @@ interface FilePreviewPaneProps {
 }
 
 type PreviewState =
-  | { kind: 'idle' }
-  | { kind: 'loading' }
-  | { kind: 'error'; message: string }
-  | { kind: 'ready'; payload: FilePreviewPayload };
+  | { accessToken: string; relative: string; kind: 'error'; message: string }
+  | { accessToken: string; relative: string; kind: 'ready'; payload: FilePreviewPayload };
 
 export function normalizePreviewBytes(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data;
@@ -65,33 +65,6 @@ function extensionOf(name: string): string {
 
 export const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
 const TABULAR_EXTENSIONS = new Set(['csv', 'tsv']);
-const CODE_THEME: PrismTheme = {
-  plain: { color: 'var(--text-secondary)' },
-  styles: [
-    {
-      types: ['comment', 'prolog', 'doctype', 'cdata'],
-      style: { color: 'var(--text-muted)' },
-    },
-    {
-      types: ['property', 'tag', 'boolean', 'number', 'constant', 'symbol', 'deleted'],
-      style: { color: 'var(--danger)' },
-    },
-    {
-      types: ['selector', 'attr-name', 'string', 'char', 'builtin', 'inserted'],
-      style: { color: 'var(--success)' },
-    },
-    {
-      types: ['operator', 'entity', 'url', 'string-variable'],
-      style: { color: 'var(--text-secondary)' },
-    },
-    {
-      types: ['atrule', 'attr-value', 'keyword'],
-      style: { color: 'var(--warning)' },
-    },
-    { types: ['function', 'class-name'], style: { color: 'var(--accent)' } },
-    { types: ['regex', 'important', 'variable'], style: { color: 'var(--warning)' } },
-  ],
-};
 
 export function FilePreviewPane({
   accessToken,
@@ -99,24 +72,22 @@ export function FilePreviewPane({
   onOpenExternal,
   onReveal,
 }: FilePreviewPaneProps) {
-  const [state, setState] = useState<PreviewState>({ kind: 'idle' });
+  const [state, setState] = useState<PreviewState | null>(null);
 
   useEffect(() => {
-    if (!accessToken || !relative) {
-      setState({ kind: 'idle' });
-      return;
-    }
+    if (!accessToken || !relative) return;
     let cancelled = false;
-    setState({ kind: 'loading' });
     readFilePreview(accessToken, relative)
       .then((payload) => {
-        if (!cancelled) setState({ kind: 'ready', payload });
+        if (!cancelled) setState({ accessToken, relative, kind: 'ready', payload });
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setState({
+            accessToken,
+            relative,
             kind: 'error',
-            message: err instanceof Error ? err.message : String(err),
+            message: previewErrorMessage(err),
           });
         }
       });
@@ -125,35 +96,67 @@ export function FilePreviewPane({
     };
   }, [accessToken, relative]);
 
-  const fileName = useMemo(() => relative.split(/[\\/]/).pop() ?? relative, [relative]);
+  if (!relative) {
+    return (
+      <PreviewFrame>
+        <div className="flex h-full items-center justify-center px-6 text-center text-body text-muted">
+          Select a file to preview.
+        </div>
+      </PreviewFrame>
+    );
+  }
 
+  // A result belongs to the path it was read for. Until the selected file's
+  // result arrives the pane shows the loading state, never the previous file:
+  // the header, breadcrumbs and actions around the pane already name the new
+  // one, and rendering old text under a new name flashed Markdown as source.
+  const current = state?.accessToken === accessToken && state.relative === relative ? state : null;
+  if (!current) {
+    return (
+      <PreviewFrame>
+        <PreviewLoading label="Loading preview…" />
+      </PreviewFrame>
+    );
+  }
+  if (current.kind === 'error') {
+    return (
+      <PreviewFrame>
+        <PreviewProblem
+          title={`Couldn't preview ${pathFileName(relative)}`}
+          detail={current.message}
+        >
+          <Button size="sm" icon={ExternalLink} className="mt-2" onClick={onOpenExternal}>
+            Open externally
+          </Button>
+        </PreviewProblem>
+      </PreviewFrame>
+    );
+  }
+  return (
+    <PreviewFrame>
+      <PreviewBody
+        key={relative}
+        payload={current.payload}
+        fileName={pathFileName(relative)}
+        onOpenExternal={onOpenExternal}
+        onReveal={onReveal}
+      />
+    </PreviewFrame>
+  );
+}
+
+function PreviewFrame({ children }: { children: ReactNode }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {state.kind === 'idle' && (
-          <div className="flex h-full items-center justify-center px-6 text-center text-body text-muted">
-            Select a file to preview.
-          </div>
-        )}
-        {state.kind === 'loading' && <PreviewLoading label="Loading preview…" />}
-        {state.kind === 'error' && (
-          <PreviewProblem title={state.message}>
-            <Button size="sm" icon={ExternalLink} className="mt-2" onClick={onOpenExternal}>
-              Open externally
-            </Button>
-          </PreviewProblem>
-        )}
-        {state.kind === 'ready' && (
-          <PreviewBody
-            payload={state.payload}
-            fileName={fileName}
-            onOpenExternal={onOpenExternal}
-            onReveal={onReveal}
-          />
-        )}
-      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </section>
   );
+}
+
+// IPC rejections arrive wrapped as "Error invoking remote method '…': Error: …".
+function previewErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
 }
 
 function PreviewBody({
@@ -254,7 +257,7 @@ function TextPreview({ text, fileName }: { text: string; fileName: string }) {
         </div>
       )}
       {isMarkdown ? (
-        <div className="px-4 py-3">
+        <div className="mx-auto min-w-0 max-w-2xl px-6 py-5">
           <Markdown allowGeneratedContent={false}>{visibleText}</Markdown>
         </div>
       ) : (
@@ -379,18 +382,19 @@ function ImagePreview({ data, fileName }: { data?: Uint8Array; fileName: string 
     };
   }, [bytes, fileName]);
   if (status === 'error') {
-    return <PreviewProblem title="Failed to render this image." />;
+    return <PreviewProblem title="Couldn't render this image" />;
   }
   if (!url) {
     return <PreviewLoading label="Loading image…" />;
   }
   return (
-    <div className="image-checkerboard relative flex h-full items-center justify-center overflow-auto p-4">
+    <div className="relative flex h-full items-center justify-center p-4">
       {status === 'loading' && <PreviewBusyChip label="Decoding…" />}
+      {/* The checkerboard sits behind the image only, where it shows transparency. */}
       <img
         src={url}
         alt={`Preview of ${fileName}`}
-        className="max-h-full max-w-full rounded-xs object-contain shadow-lg"
+        className={`image-checkerboard max-h-full max-w-full rounded-md object-contain shadow-sm ${status === 'ready' ? 'motion-safe:animate-fade-in' : 'opacity-0'}`}
         onLoad={() => {
           setStatus('ready');
         }}
@@ -512,7 +516,7 @@ function PdfPreview({ data }: { data?: Uint8Array }) {
   }, [page, numPages]);
 
   if (error) {
-    return <PreviewProblem title="Failed to render PDF." detail={error} />;
+    return <PreviewProblem title="Couldn't render this PDF" detail={error} />;
   }
 
   return (
@@ -607,7 +611,7 @@ function DocxPreview({ data }: { data?: Uint8Array }) {
   }, [bytes]);
 
   if (error) {
-    return <PreviewProblem title="Failed to render document." detail={error} />;
+    return <PreviewProblem title="Couldn't render this document" detail={error} />;
   }
 
   return (
@@ -682,7 +686,7 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
   }
 
   if (error) {
-    return <PreviewProblem title="Failed to parse spreadsheet." detail={error} />;
+    return <PreviewProblem title="Couldn't read this spreadsheet" detail={error} />;
   }
 
   if (!sheets.length) return null;
@@ -718,9 +722,16 @@ function XlsxPreview({ data }: { data?: Uint8Array }) {
   );
 }
 
+// Most previews arrive within a frame or two; a loading indicator waits before
+// it fades in, so a quick open goes straight from one file to the next.
+const LOADING_REVEAL_DELAY = { animationDelay: '200ms', animationFillMode: 'both' } as const;
+
 function PreviewLoading({ label }: { label: string }) {
   return (
-    <div className="flex h-full items-center justify-center gap-2 text-body text-muted">
+    <div
+      className="flex h-full items-center justify-center gap-2 text-body text-muted motion-safe:animate-fade-in"
+      style={LOADING_REVEAL_DELAY}
+    >
       <Spinner className="size-icon-md motion-safe:animate-spin-slow" />
       {label}
     </div>
@@ -729,7 +740,10 @@ function PreviewLoading({ label }: { label: string }) {
 
 function PreviewBusyChip({ label }: { label: string }) {
   return (
-    <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm bg-raised px-2 py-1 text-caption text-muted shadow-sm">
+    <div
+      className="absolute right-3 top-3 flex items-center gap-1.5 rounded-sm bg-raised px-2 py-1 text-caption text-muted shadow-sm motion-safe:animate-fade-in"
+      style={LOADING_REVEAL_DELAY}
+    >
       <Spinner className="size-3 motion-safe:animate-spin-slow" />
       {label}
     </div>
@@ -748,8 +762,8 @@ function PreviewProblem({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
       <AlertTriangle className="size-icon-lg text-warning" />
-      <p className="max-w-sm text-body text-secondary">{title}</p>
-      {detail && <p className="max-w-sm text-caption text-muted">{detail}</p>}
+      <p className="max-w-sm text-subheading text-primary">{title}</p>
+      {detail && <p className="max-w-sm break-words text-body text-muted">{detail}</p>}
       {children}
     </div>
   );
