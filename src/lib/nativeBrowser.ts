@@ -1,4 +1,4 @@
-import { isDesktop } from './desktop';
+import { isDesktop, isRemoteClient } from './desktop';
 import type { NativeBrowserChord } from './shortcuts';
 import type {
   BrowserBox,
@@ -97,6 +97,9 @@ export interface NativeBrowserWorking {
   browserSessionId: string;
   working: boolean;
 }
+
+/** Browser pages are views in the laptop's own window, so a Remote browser cannot show them. */
+export const hasNativeBrowser = () => isDesktop() && !isRemoteClient();
 
 // Main issues the one-time token a page's <webview> must carry to attach.
 export async function reserveNativeBrowser(

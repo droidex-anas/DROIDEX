@@ -1,6 +1,7 @@
 export * from './crypto';
 export * from './profile';
 export * from './totp';
+export * from './tunnel';
 export * from './usage';
 
 export const MAX_RELAY_FRAME_BYTES = 65_536;

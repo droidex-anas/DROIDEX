@@ -165,7 +165,8 @@ import { join } from 'node:path';
 // Their JavaScript stays in the lazy Settings chunk, while Tailwind collects
 // their layout, state and heatmap utilities into the entry stylesheet. The
 // production build measures 108_631 bytes, leaving ~1.3KB of headroom. The
-// independent phone client remains an 18.5KB stylesheet.
+// Remote browser build compiles its own stylesheet (remote-web/vite.config.ts),
+// so its pairing screens do not count here.
 const BUDGETS = {
   initialRendererJsBytes: 1_486_000,
   initialCssBytes: 110_000,

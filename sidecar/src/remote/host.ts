@@ -5,52 +5,56 @@ import {
   createHostHello,
   fingerprint,
   finishHostHello,
+  HOST_SEND_LIMITS,
   isRecord,
+  SendBudget,
+  Tunnel,
   verifyTotp,
   type HostHandshake,
   type Identity,
   type SecureChannel,
 } from '../../../packages/remote/src/index.js';
 import {
-  remoteCommand,
-  type RemoteCommand,
+  remoteRequest,
   type RemoteMessage,
+  type RemoteRequest,
 } from '../../../packages/remote/src/application.js';
 import type {
   RemoteDevice,
   RemotePending,
   RemoteState,
 } from '../../../packages/remote/src/desktop.js';
-import { RemoteLocalBridge } from './localBridge.js';
 import { createPushNotifications, validatePushSubscription } from './push.js';
-import { readRemoteUsage } from './profileUsage.js';
 import { publishProfile, readPublishedProfile, revokeProfile } from './profilePublication.js';
+import { PeerSession, type PeerSessionRequest, type RemoteDesktop } from './peerSession.js';
 
 interface Peer {
   id: string;
   handshake: HostHandshake;
   channel?: SecureChannel;
+  tunnel?: Tunnel;
+  session?: PeerSession;
   deviceId?: string;
   expiresAt: number;
   deadline: number;
-  selectedSession?: string;
   queued: number;
-  outgoing: number;
-  usageAvailableAt: number;
   queue: Promise<void>;
 }
 interface Pending {
   view: RemotePending;
   peer: Peer;
-  device?: RemoteDevice;
-  rememberDevice?: boolean;
-  command?: RemoteCommand;
+  device: RemoteDevice;
+  rememberDevice: boolean;
 }
+
+// A pasted image travels as a data URL inside one desktop call.
+const MAX_BROWSER_PACKET_CHARS = 32 * 1024 * 1024;
 
 export async function createRemoteHost(options: {
   load: () => Promise<string | null>;
   save: (value: string) => Promise<void>;
   bridgeInfo: () => Promise<{ port: number; token: string }>;
+  desktop: RemoteDesktop;
   changed: (state: RemoteState) => void;
   keepAwake: (enabled: boolean) => void;
   defaults: { relayUrl: string; clientUrl: string };
@@ -64,14 +68,8 @@ export async function createRemoteHost(options: {
   let authQueue = Promise.resolve();
   const peers = new Map<string, Peer>();
   const pending = new Map<string, Pending>();
-  const bridge = new RemoteLocalBridge({
-    bridgeInfo: options.bridgeInfo,
-    workspace: () => state.settings.workspace,
-    publish: (message) => {
-      broadcast(message);
-      if (message.type === 'snapshot' && message.approvals.length) push.notify();
-    },
-  });
+  // One relay socket carries every browser, so they share its send rate.
+  const budget = new SendBudget(HOST_SEND_LIMITS);
   const relay = new RelayConnection(
     () => {
       if (!identity) throw new Error('Set up your authenticator first');
@@ -97,8 +95,6 @@ export async function createRemoteHost(options: {
           deadline: Date.now() + 120_000,
           queue: Promise.resolve(),
           queued: 0,
-          outgoing: 0,
-          usageAvailableAt: 0,
         };
         peers.set(id, peer);
         forward(peer, handshake.hello);
@@ -124,6 +120,7 @@ export async function createRemoteHost(options: {
         if (peer) drop(peer);
       },
       disconnected: () => {
+        for (const peer of peers.values()) release(peer);
         peers.clear();
         pending.clear();
       },
@@ -171,49 +168,30 @@ export async function createRemoteHost(options: {
   function forward(peer: Peer, payload: unknown): void {
     if (active(peer)) relay.send({ type: 'forward', peerId: peer.id, payload });
   }
-  async function send(peer: Peer, message: RemoteMessage): Promise<void> {
-    if (!peer.channel || !active(peer)) return;
-    if (message.type === 'snapshot')
-      message = {
-        ...message,
-        pushPublicKey: state.devices.some((device) => device.id === peer.deviceId)
-          ? state.pushIdentity?.publicKey
-          : undefined,
-      };
-    if (++peer.outgoing > 16) {
-      drop(peer);
-      return;
-    }
-    try {
-      forward(peer, await peer.channel.encrypt(message));
-    } catch {
-      drop(peer);
-    } finally {
-      peer.outgoing--;
-    }
+  function send(peer: Peer, message: RemoteMessage): void {
+    if (active(peer)) peer.tunnel?.send(message);
   }
-  function broadcast(message: RemoteMessage): void {
-    for (const peer of peers.values()) {
-      if (!peer.deviceId || peer.expiresAt <= Date.now()) continue;
-      if (
-        (message.type === 'stream' || message.type === 'history') &&
-        peer.selectedSession !== message.sessionId
-      )
-        continue;
-      void send(peer, message);
-    }
+  function release(peer: Peer): void {
+    peer.session?.close();
+    peer.tunnel?.close();
   }
   function drop(peer: Peer): void {
+    release(peer);
     relay.send({ type: 'disconnect-peer', peerId: peer.id });
     peers.delete(peer.id);
     for (const [id, item] of pending) if (item.peer === peer) pending.delete(id);
     changed();
   }
+  // Disconnects after the browser has been told why.
+  async function dismiss(peer: Peer, message: RemoteMessage): Promise<void> {
+    send(peer, message);
+    await peer.tunnel?.flush();
+    if (peers.get(peer.id) === peer) drop(peer);
+  }
   function stop(): void {
     relay.stop();
     peers.clear();
     pending.clear();
-    bridge.stop();
     options.keepAwake(false);
     status = 'off';
     changed();
@@ -221,92 +199,70 @@ export async function createRemoteHost(options: {
   async function receive(peer: Peer, value: unknown): Promise<void> {
     if (!active(peer)) return;
     if (!peer.channel) {
-      peer.channel = await finishHostHello(state.settings.profile.username, peer.handshake, value);
+      const channel = await finishHostHello(state.settings.profile.username, peer.handshake, value);
+      peer.channel = channel;
+      peer.tunnel = new Tunnel({
+        write: async (frame) => {
+          forward(peer, await channel.encrypt(frame));
+        },
+        deliver: (message) => {
+          dispatch(peer, remoteRequest(message));
+        },
+        fail: () => {
+          drop(peer);
+        },
+        drained: () => peer.session?.resume(),
+        budget,
+        maxReceiveChars: MAX_BROWSER_PACKET_CHARS,
+      });
       return;
     }
-    const payload = await peer.channel.decrypt(value);
-    if (!active(peer)) return;
+    const frame = await peer.channel.decrypt(value);
+    if (active(peer)) await peer.tunnel?.receive(frame);
+  }
+  function dispatch(peer: Peer, request: RemoteRequest): void {
     if (!peer.deviceId) {
-      const run = authQueue.then(() => authenticate(peer, payload));
-      authQueue = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      await run;
+      if (request.type !== 'auth') throw new Error('Authenticate before sending requests');
+      const run = authQueue.then(() => authenticate(peer, request));
+      authQueue = run.catch(() => {
+        drop(peer);
+      });
       return;
     }
     if (peer.expiresAt <= Date.now()) {
-      await send(peer, { type: 'locked' });
-      drop(peer);
+      void dismiss(peer, { type: 'locked' });
       return;
     }
-    const operationId =
-      isRecord(payload) &&
-      typeof payload.operationId === 'string' &&
-      payload.operationId.length <= 64
-        ? payload.operationId
-        : undefined;
-    const reply = (ok: boolean, message: string) =>
-      send(peer, { type: 'result', ok, message, operationId });
+    switch (request.type) {
+      case 'auth':
+        return;
+      case 'ping':
+        send(peer, { type: 'pong' });
+        return;
+      case 'push.subscribe':
+      case 'push.unsubscribe':
+        void updatePush(peer, request);
+        return;
+      default:
+        peer.session?.handle(request satisfies PeerSessionRequest);
+    }
+  }
+  async function updatePush(
+    peer: Peer,
+    request: Extract<RemoteRequest, { type: 'push.subscribe' | 'push.unsubscribe' }>,
+  ): Promise<void> {
+    const deviceId = peer.deviceId;
     try {
-      if (
-        isRecord(payload) &&
-        (payload.type === 'push.subscribe' || payload.type === 'push.unsubscribe')
-      ) {
-        if (!state.devices.some((device) => device.id === peer.deviceId))
-          throw new Error('Notifications need a trusted device');
-        if (payload.type === 'push.subscribe')
-          state.subscriptions[peer.deviceId] = validatePushSubscription(payload.subscription);
-        else Reflect.deleteProperty(state.subscriptions, peer.deviceId);
-        await persist();
-        await reply(
-          true,
-          payload.type === 'push.subscribe' ? 'Notifications on' : 'Notifications off',
-        );
-        return;
-      }
-      const command = remoteCommand(payload);
-      if (command.type === 'usage') {
-        const now = Date.now();
-        if (peer.usageAvailableAt > now)
-          throw new Error('Wait 10 seconds before refreshing usage again');
-        peer.usageAvailableAt = now + 10_000;
-        await send(peer, { type: 'usage', snapshot: await readRemoteUsage(options.bridgeInfo) });
-        return;
-      }
-      if (command.type === 'open') peer.selectedSession = command.sessionId;
-      if (bridge.needsApproval(command)) {
-        if (pending.size >= 20) throw new Error('Too many pending requests');
-        if (
-          command.type === 'approval' &&
-          [...pending.values()].some(
-            (item) =>
-              item.command?.type === 'approval' && item.command.requestId === command.requestId,
-          )
-        )
-          throw new Error('This action is already waiting on your laptop');
-        const id = crypto.randomUUID();
-        pending.set(id, {
-          view: {
-            id,
-            kind: 'action',
-            title: 'Remote action',
-            detail: bridge.describe(command),
-            expiresAt: Date.now() + 120_000,
-          },
-          peer,
-          command,
-        });
-        changed();
-        push.notify();
-        await reply(true, 'Waiting for approval on your laptop');
-      } else {
-        bridge.execute(command);
-        if (command.type !== 'list' && command.type !== 'open')
-          await reply(true, 'Sent to your laptop');
-      }
+      if (!deviceId || !state.devices.some((device) => device.id === deviceId))
+        throw new Error('Notifications need a trusted device');
+      if (request.type === 'push.subscribe')
+        state.subscriptions[deviceId] = validatePushSubscription(request.subscription);
+      else Reflect.deleteProperty(state.subscriptions, deviceId);
+      await persist();
+      send(peer, { type: 'result', id: request.id, ok: true, value: null });
     } catch (cause) {
-      await reply(false, cause instanceof Error ? cause.message : 'Action failed');
+      const message = cause instanceof Error ? cause.message : 'Notifications failed';
+      send(peer, { type: 'result', id: request.id, ok: false, error: message });
     }
   }
   async function authenticate(peer: Peer, value: unknown): Promise<void> {
@@ -316,12 +272,12 @@ export async function createRemoteHost(options: {
     await persist();
     if (!active(peer)) return;
     if (result.kind === 'locked') {
-      await send(peer, { type: 'locked' });
+      send(peer, { type: 'locked' });
       return;
     }
     if (result.kind === 'trusted') {
       if (state.devices.includes(result.device) && result.device.expiresAt > Date.now())
-        await authorize(peer, result.device);
+        authorize(peer, result.device);
       return;
     }
     if (pending.size >= 20) return;
@@ -341,7 +297,6 @@ export async function createRemoteHost(options: {
     pending.set(pendingId, {
       view: {
         id: pendingId,
-        kind: 'device',
         title: `Approve ${proposed.name}?`,
         detail: `Device ${id.slice(0, 12)} · ${state.settings.trustDays === 0 ? 'this connection' : `${String(state.settings.trustDays)} days`}`,
         expiresAt: peer.deadline,
@@ -352,20 +307,29 @@ export async function createRemoteHost(options: {
     });
     changed();
     push.notify();
-    await send(peer, { type: 'pairing', deviceId: id });
+    send(peer, { type: 'pairing', deviceId: id });
   }
-  async function authorize(peer: Peer, device: RemoteDevice): Promise<void> {
+  function authorize(peer: Peer, device: RemoteDevice): void {
+    const tunnel = peer.tunnel;
+    if (!tunnel) return;
     peer.deviceId = device.id;
     peer.expiresAt = device.expiresAt;
     relay.send({ type: 'authorize-peer', peerId: peer.id });
-    await send(peer, { type: 'authorized', expiresAt: device.expiresAt });
-    const snapshot = bridge.snapshot();
-    await send(
-      peer,
-      snapshot.type === 'snapshot'
-        ? { ...snapshot, pushPublicKey: state.pushIdentity?.publicKey }
-        : snapshot,
-    );
+    peer.session = new PeerSession({
+      peerId: peer.id,
+      desktop: options.desktop,
+      bridgeInfo: options.bridgeInfo,
+      send: (message) => {
+        send(peer, message);
+      },
+      queuedChars: () => tunnel.queuedChars,
+    });
+    const remembered = state.devices.some((item) => item.id === device.id);
+    send(peer, {
+      type: 'authorized',
+      expiresAt: device.expiresAt,
+      pushPublicKey: remembered ? (state.pushIdentity?.publicKey ?? null) : null,
+    });
   }
   function mutate<T>(action: () => Promise<T>): Promise<T> {
     const run = mutations.then(action);
@@ -388,6 +352,9 @@ export async function createRemoteHost(options: {
 
   return {
     snapshot,
+    notifyDevices() {
+      push.notify();
+    },
     getPublishedProfile() {
       const credentials = profileCredentials();
       return readPublishedProfile(credentials.relayUrl, credentials.username, credentials.identity);
@@ -444,10 +411,7 @@ export async function createRemoteHost(options: {
         await persist();
         if (next.enabled) {
           options.keepAwake(next.keepAwake);
-          if (reconnect) {
-            bridge.start();
-            relay.start();
-          }
+          if (reconnect) relay.start();
         }
         changed();
         return snapshot();
@@ -489,28 +453,19 @@ export async function createRemoteHost(options: {
         if (!item || item.view.expiresAt <= Date.now() || !active(item.peer))
           throw new Error('This request expired');
         if (!approved) {
-          await send(item.peer, { type: 'result', ok: false, message: 'Denied on your laptop' });
-          if (item.device) drop(item.peer);
+          void dismiss(item.peer, { type: 'denied' });
           return snapshot();
         }
-        if (item.device) {
-          const approvedDevice = item.device;
-          state.devices = state.devices.filter(
-            (device) => device.expiresAt > Date.now() && device.id !== approvedDevice.id,
-          );
-          if (item.rememberDevice) {
-            if (state.devices.length >= 20)
-              throw new Error('Revoke a device before pairing another');
-            state.devices.push(item.device);
-            await persist();
-          }
-          if (active(item.peer)) await authorize(item.peer, item.device);
-        } else if (item.command) {
-          if (!item.peer.deviceId || item.peer.expiresAt <= Date.now())
-            throw new Error('Device access expired');
-          bridge.execute(item.command);
-          await send(item.peer, { type: 'result', ok: true, message: 'Approved on your laptop' });
+        const approvedDevice = item.device;
+        state.devices = state.devices.filter(
+          (device) => device.expiresAt > Date.now() && device.id !== approvedDevice.id,
+        );
+        if (item.rememberDevice) {
+          if (state.devices.length >= 20) throw new Error('Revoke a device before pairing another');
+          state.devices.push(approvedDevice);
+          await persist();
         }
+        if (active(item.peer)) authorize(item.peer, approvedDevice);
         changed();
         return snapshot();
       });
@@ -544,7 +499,6 @@ export async function createRemoteHost(options: {
     resume() {
       if (state.settings.enabled) {
         validateUrls(state.settings);
-        bridge.start();
         options.keepAwake(state.settings.keepAwake);
         relay.start();
       }

@@ -70,7 +70,9 @@ export class RelayConnection {
   send(value: unknown): void {
     const socket = this.socket;
     if (socket?.readyState !== WebSocket.OPEN) return;
-    if (socket.bufferedAmount > 256 * 1024) {
+    // Each browser's tunnel keeps at most four chunks in flight, so only a
+    // stalled socket grows past this.
+    if (socket.bufferedAmount > 2 * 1024 * 1024) {
       socket.close(1013, 'slow connection');
       return;
     }
@@ -161,7 +163,7 @@ export class RelayConnection {
   }
 }
 
-function rawText(raw: RawData): string {
+export function rawText(raw: RawData): string {
   if (raw instanceof ArrayBuffer) return Buffer.from(raw).toString('utf8');
   if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf8');
   return raw.toString('utf8');

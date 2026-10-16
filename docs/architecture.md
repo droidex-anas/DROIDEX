@@ -362,16 +362,32 @@ state and keep-awake lease. Its separate `sidecar/dist/remoteHost.mjs` bundle
 connects outbound to the hibernating Cloudflare relay and to the existing local
 bridge. The relay stores public name ownership and forwards bounded opaque
 frames; pinned, signed P-256 handshakes derive separate AES-GCM direction keys.
-Only the laptop verifies authenticator codes, admits devices and authorizes
-risky actions. A dedicated `remote.snapshot` returns live sessions and pending
-permissions; settlement removes approval cards for every client. Remote sends
-carry a Supervised-only guard through the sidecar's existing turn queue.
+Only the laptop verifies authenticator codes and admits devices.
 
-The mobile Vite application is independent of the Electron renderer and keeps
-browser identities non-extractable in IndexedDB. Its lists are virtualized and
-its receive queues/transcript tails bounded. Generic Web Push is sent directly
-by the laptop using locally generated VAPID keys. There is no cloud agent job,
-offline message store or provider credential in the client.
+A paired browser runs the same renderer as the Electron window; only its
+transport differs. The Remote web client (`remote-web/`) pairs the browser,
+then installs `window.droidControl` from `remoteDesktopApi.ts` before it imports
+`src/App`. Inside the encrypted channel, `packages/remote/src/tunnel.ts` chunks
+and compresses messages, and each authorized browser gets a `PeerSession` in
+the Remote host that owns three things: bridge sockets it opens to the local
+sidecar exactly as the window does, terminal ports, and desktop API calls.
+Desktop calls reach Electron's own handlers through `electron/remoteDesktop.cjs`,
+which binds `electron/desktopApi.cjs` (the method table the preload also
+exposes) to a per-browser sender. `REMOTE_DESKTOP_METHODS` in
+`packages/remote/src/application.ts` lists what a browser may call; methods that
+drive the laptop's own window (native dialogs and browser panes, updates,
+relaunch, Remote pairing) are left out. A trusted browser can therefore do
+what the window can: start and steer agents at any autonomy, answer permission
+requests, run terminals and use Git.
+
+The browser starts from the window's stored projects, theme and agent settings
+(`renderer-storage-read`), so the laptop window must be open. Projects and chat
+organization stay one list: each copy saves locally and relays the value
+through `shared-storage-write`, which Electron forwards to the window and every
+other browser (`useSharedStorage`). Browser identities are non-extractable keys
+in IndexedDB. Generic Web Push is sent directly by the laptop using locally
+generated VAPID keys. There is no cloud agent job, offline message store or
+provider credential in the client.
 
 The sidecar's dedicated usage worker incrementally ingests Claude Code and Codex
 JSONL, Factory Droid's mutable settings metadata, and OpenCode's read-only

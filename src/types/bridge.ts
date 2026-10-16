@@ -768,7 +768,6 @@ export type ClientCommand =
     }
   | {
       type: 'session.send';
-      remote?: true;
       appSessionId: string;
       text: string;
       mentions?: ProviderMention[];
@@ -904,7 +903,6 @@ export type ClientCommand =
       cancelled: boolean;
       answers: QuestionAnswer[];
     }
-  | { type: 'remote.snapshot' }
   | { type: 'history.list' }
   | { type: 'history.page'; providerSessionId: string; cursor?: string; limit?: number }
   | {
@@ -1120,7 +1118,6 @@ export type ServerEvent =
   | ChildUpdatedEvent
   | ChildErrorEvent
   | { type: 'event.appended'; event: TranscriptEvent }
-  | { type: 'remote.snapshot'; sessions: SessionSummary[]; approvals: PermissionRequest[] }
   | { type: 'approval.requested'; request: PermissionRequest }
   | { type: 'question.requested'; question: SessionQuestion }
   // Removes a settled or abandoned approval, or an abandoned question.

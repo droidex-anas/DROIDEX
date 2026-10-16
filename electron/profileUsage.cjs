@@ -47,11 +47,8 @@ function createProfileUsage(options) {
 
   return {
     snapshot,
-    registerIpc({ ipcMain, assertRenderer }) {
-      ipcMain.handle('profile-usage-get', (event) => {
-        assertRenderer(event);
-        return snapshot();
-      });
+    registerIpc(desktopIpc) {
+      desktopIpc.handle('profile-usage-get', () => snapshot());
     },
   };
 }

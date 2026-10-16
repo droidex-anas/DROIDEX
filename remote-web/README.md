@@ -1,8 +1,10 @@
 # DROIDEX Remote web client
 
-The web client is a static phone interface. Agent execution, authenticator verification,
-device trust, and permission decisions stay on the laptop. It requires a running DROIDEX
-app and the separate relay in `../relay`.
+The web client pairs a browser with a laptop, then runs the DROIDEX renderer from `../src`
+over an encrypted tunnel. `remoteDesktopApi.ts` stands in for the Electron preload, so the
+app works as it does in the desktop window while agents, files, authenticator verification
+and device trust stay on the laptop. It also serves public profiles. It requires a running
+DROIDEX app and the separate relay in `../relay`.
 
 ## Develop and build
 
@@ -55,8 +57,8 @@ code served by the web host has access to the decrypted browser view.
    and approve the browser on the laptop. The pairing URL fragment pins the laptop identity;
    a username alone cannot pair a new browser. The laptop chooses its trust expiry.
    Browser signing keys are non-extractable and persist in IndexedDB.
-4. Open an agent to read its activity, send or steer a message, pause, or stop a turn.
-   New tasks and permission grants wait for laptop approval. Keep the laptop awake.
+4. Use DROIDEX as on the laptop. A trusted browser has the same control as the laptop
+   window. Keep the laptop awake with its DROIDEX window open.
 
 On iPhone, use Share → Add to Home Screen to enable Web Push. After pairing a trusted
 device, select **Enable approval notifications**. Notifications contain generic text;

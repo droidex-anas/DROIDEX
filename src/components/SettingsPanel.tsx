@@ -1,4 +1,5 @@
 import { RemoteSettings } from './RemoteSettings';
+import { RemoteBrowserSettings } from './RemoteBrowserSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { useRemoteAccess } from '../features/remote/useRemoteAccess';
 import {
@@ -23,6 +24,7 @@ import { useOnboarding } from '../hooks/useOnboarding';
 import { Switch } from './Switch';
 import { getAppVersion, type AppUpdateInfo } from '../lib/onboarding';
 import { refreshAppUpdate, requestAppUpdate } from '../lib/appUpdate';
+import { isRemoteClient } from '../lib/desktop';
 import { hasActiveSessionWork } from '../lib/sessions';
 import { applyTheme } from '../lib/theme';
 import { AppearanceSection } from './AppearanceSettings';
@@ -94,6 +96,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [{ label: 'Archived chats' }],
   },
 ];
+// The public profile is published with the laptop's Remote identity, which a
+// paired browser cannot use.
+const LAPTOP_ONLY_TABS = new Set(['Profile']);
 
 /* ── compaction token limit helpers ── */
 // Format a raw token count for display: 200000 → "200K", 1500000 → "1.5M".
@@ -796,6 +801,17 @@ function ConfigurationSection() {
   );
 }
 
+function LaptopOnlySection({ title }: { title: string }) {
+  return (
+    <div className="max-w-2xl mx-auto">
+      <SectionTitle title={title} />
+      <p className="text-[13px] text-droid-text-secondary">
+        Open DROIDEX on your laptop to change {title} settings.
+      </p>
+    </div>
+  );
+}
+
 function PlaceholderSection({ title }: { title: string }) {
   return (
     <div className="max-w-2xl mx-auto">
@@ -890,14 +906,19 @@ export default function SettingsPanel() {
     dispatch({ type: 'TOGGLE_SETTINGS' });
   };
   const q = query.trim();
-  const hits = q ? searchSettings(q) : [];
+  const remote = isRemoteClient();
+  const showsTab = (label: string) => !(remote && LAPTOP_ONLY_TABS.has(label));
+  const hits = q ? searchSettings(q).filter((hit) => showsTab(hit.tab)) : [];
   let content: React.ReactNode;
-  switch (active) {
+  switch (showsTab(active) ? active : 'Laptop only') {
+    case 'Laptop only':
+      content = <LaptopOnlySection title={active} />;
+      break;
     case 'Profile':
       content = <ProfileSection />;
       break;
     case 'Remote':
-      content = <RemoteSettings />;
+      content = remote ? <RemoteBrowserSettings /> : <RemoteSettings />;
       break;
     case 'Appearance':
       content = <AppearanceSection />;
@@ -984,7 +1005,9 @@ export default function SettingsPanel() {
         </div>
         <nav className="flex-1 space-y-4 overflow-y-auto px-2 pb-3">
           {NAV.map(({ group, items }) => {
-            const filtered = items.filter((it) => tabMatchesQuery(it.label, q));
+            const filtered = items.filter(
+              (it) => showsTab(it.label) && tabMatchesQuery(it.label, q),
+            );
             if (filtered.length === 0) return null;
             return (
               <div key={group}>

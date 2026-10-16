@@ -1,33 +1,18 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { applyTheme, BUILT_IN_THEMES } from '../../src/lib/theme';
-import { App } from './App';
-import './styles.css';
+const container = document.getElementById('root');
+if (!container) throw new Error('DROIDEX Remote is missing its root element.');
 
-const preference = window.matchMedia('(prefers-color-scheme: light)');
-function applySystemTheme() {
-  const colors = preference.matches ? BUILT_IN_THEMES[0].light : BUILT_IN_THEMES[0].dark;
-  applyTheme({
-    ...colors,
-    diffStyle: 'soft',
-    uiFont: 'system',
-    uiFontSize: 15,
-    codeFontSize: 13,
-    translucentSidebar: false,
-    contrast: 100,
+// Each route loads only its own styles: the public profile's stylesheet and the
+// app's Tailwind base would restyle each other's elements.
+const path = window.location.pathname.split('/').filter(Boolean);
+if (path[0] === 'public') {
+  const username = path.length === 2 ? (path[1] ?? '') : '';
+  void import('./publicEntry').then((entry) => {
+    entry.startPublicProfile(container, username);
   });
-  document.documentElement.style.colorScheme = preference.matches ? 'light' : 'dark';
+} else {
+  const requested = path.length === 1 ? (path[0] ?? '') : '';
+  void import('./remoteEntry').then((entry) => entry.startRemote(container, requested));
 }
-applySystemTheme();
-preference.addEventListener('change', applySystemTheme);
-
-const root = document.getElementById('root');
-if (!root) throw new Error('DROIDEX Remote is missing its root element.');
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: '/' }).catch(() => {

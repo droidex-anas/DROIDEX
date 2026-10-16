@@ -86,7 +86,7 @@ export interface TerminalSessionInfo {
   exitCode?: number | null;
 }
 
-type TerminalEvent =
+export type TerminalEvent =
   | {
       kind: 'replay';
       data: string;
@@ -120,6 +120,20 @@ export interface TerminalDataChannel {
   postInput: (data: string) => void;
   onEvent: (handler: (event: TerminalEvent) => void) => () => void;
   close: () => void;
+}
+
+// Stored values every copy of the app shares; the desktop app accepts no others.
+export type SharedStorageKey = 'droid-workspaces' | 'droid-chat-metadata';
+
+export interface SharedStorageChange {
+  key: SharedStorageKey;
+  value: string;
+}
+
+export interface DirectoryListing {
+  path: string;
+  parent: string | null;
+  directories: string[];
 }
 
 export interface FilesEntry {
@@ -192,7 +206,37 @@ export type NotifyResult =
 
 type SaveImageResult = { saved: true; filePath: string } | { saved: false };
 
-interface DroidexApi {
+export type RemoteNotificationState =
+  | 'on'
+  | 'off'
+  | 'unsupported'
+  | 'needs-home-screen'
+  | 'not-remembered';
+
+/** A Remote browser's own pairing with the laptop. */
+export interface RemoteBrowserControls {
+  handle: string;
+  trustedUntil: () => number;
+  notifications: () => Promise<RemoteNotificationState>;
+  setNotifications: (enabled: boolean) => Promise<RemoteNotificationState>;
+  forget: () => Promise<void>;
+}
+
+/** The part of a WebSocket the bridge uses; a Remote browser tunnels it to the laptop. */
+export interface BridgeSocket {
+  readonly readyState: number;
+  onopen: ((event: Event) => void) | null;
+  onmessage: ((event: MessageEvent) => void) | null;
+  onclose: ((event: CloseEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  send: (data: string) => void;
+  close: (code?: number, reason?: string) => void;
+}
+
+export interface DroidexApi {
+  /** Set by DROIDEX Remote: this window is a browser driving the laptop over the relay. */
+  remoteBrowser?: RemoteBrowserControls;
+  openBridgeSocket?: (url: string) => BridgeSocket;
   getRemoteState: () => Promise<RemoteState>;
   configureRemote: (patch: Partial<RemoteSettings>) => Promise<RemoteState>;
   setupRemoteAuthenticator: () => Promise<RemoteSetup>;
@@ -211,6 +255,7 @@ interface DroidexApi {
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   pickFiles: () => Promise<string[]>;
+  listDirectories: (path: string) => Promise<DirectoryListing>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
   discardImage: (path: string) => Promise<void>;
@@ -229,6 +274,13 @@ interface DroidexApi {
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
   onMemoryPressure: (handler: (payload: { at: number }) => void) => () => void;
   readFile: (path: string) => Promise<string>;
+  /** The bytes behind a droidex-img URL, for a Remote browser that cannot load the scheme. */
+  readLocalImage: (url: string) => Promise<{ mime: string; data: Uint8Array }>;
+  /** The laptop window's stored values for these keys, so a Remote browser starts from its projects and look. */
+  readRendererStorage: (keys: string[]) => Promise<Record<string, string | null>>;
+  /** Relays a saved shared value to the laptop window and every paired Remote browser but this one. */
+  writeSharedStorage: (key: SharedStorageKey, value: string) => Promise<void>;
+  onSharedStorage: (handler: (change: SharedStorageChange) => void) => () => void;
   repoStatus: (dir: string) => Promise<RepoStatus | null>;
   listEditors: () => Promise<EditorId[]>;
   editorIcon: (editor: EditorId) => Promise<string | null>;
@@ -373,6 +425,15 @@ function desktopApi(): DroidexApi | undefined {
 
 export const isDesktop = () => Boolean(desktopApi());
 
+/** True in a DROIDEX Remote browser, where the laptop's own window features are out of reach. */
+export const isRemoteClient = () => Boolean(desktopApi()?.remoteBrowser);
+
+export const remoteBrowser = () => desktopApi()?.remoteBrowser;
+
+export function openBridgeSocket(url: string): BridgeSocket {
+  return desktopApi()?.openBridgeSocket?.(url) ?? new WebSocket(url);
+}
+
 export async function systemIdleTime(): Promise<number | null> {
   const api = desktopApi();
   if (!api) return null;
@@ -426,6 +487,20 @@ export function onSidecarStatus(handler: (status: SidecarSupervisorSnapshot) => 
   const api = desktopApi();
   if (!api?.onSidecarStatus) return () => undefined;
   return api.onSidecarStatus(handler);
+}
+
+export function writeSharedStorage(key: SharedStorageKey, value: string): void {
+  const api = desktopApi();
+  if (!api?.writeSharedStorage) return;
+  void api.writeSharedStorage(key, value).catch(() => {
+    // The other copies read the stored list when they next start.
+  });
+}
+
+export function onSharedStorage(handler: (change: SharedStorageChange) => void): () => void {
+  const api = desktopApi();
+  if (!api?.onSharedStorage) return () => undefined;
+  return api.onSharedStorage(handler);
 }
 
 export async function pickDirectory(): Promise<string | null> {

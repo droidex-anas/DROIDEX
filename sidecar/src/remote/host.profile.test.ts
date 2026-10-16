@@ -65,6 +65,13 @@ test('a published profile blocks relay and username changes through the host bou
     load: async () => stored,
     save: async () => undefined,
     bridgeInfo: async () => ({ port: 1, token: 'unused' }),
+    desktop: {
+      open: () => undefined,
+      close: () => undefined,
+      call: () => undefined,
+      listen: () => () => undefined,
+      openTerminal: () => ({ post: () => undefined, close: () => undefined }),
+    },
     changed: () => undefined,
     keepAwake: () => undefined,
     defaults: { relayUrl: '', clientUrl: '' },

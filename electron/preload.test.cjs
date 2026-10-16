@@ -61,6 +61,7 @@ function loadApi(invokeResult) {
       }
     },
     require(name) {
+      if (name === './desktopApi.cjs') return require('./desktopApi.cjs');
       if (name !== 'electron') throw new Error(`Unexpected preload dependency: ${name}`);
       return {
         contextBridge: {

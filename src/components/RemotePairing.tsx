@@ -73,8 +73,8 @@ export function RemoteAuthenticatorSetup({
     return (
       <div className="space-y-3">
         <p className="text-[12px] leading-[18px] text-droid-text-muted">
-          Every new device needs a fresh code from your authenticator app and your laptop’s
-          approval. Any TOTP app works.
+          Each new device needs a code from your authenticator app, then your approval here. Any
+          authenticator works, such as 1Password, Google Authenticator or Authy.
         </p>
         <button
           className={primaryButton}
@@ -174,15 +174,15 @@ export function RemotePairingCode({
   }
   return (
     <div className="flex flex-col gap-5 sm:flex-row">
-      <QrTile image={qr} alt="Scan with your phone camera to connect to your laptop" />
+      <QrTile image={qr} alt="Scan with your other device’s camera to open this laptop" />
       <div className="flex min-w-0 flex-1 flex-col">
         <ol className="space-y-1 text-[12px] leading-[18px] text-droid-text-secondary">
-          <li>1. Scan with your phone camera.</li>
-          <li>2. Enter a fresh authenticator code on the phone.</li>
-          <li>3. Approve the phone here on your laptop.</li>
+          <li>1. Scan with your phone or tablet camera, or copy the link to another computer.</li>
+          <li>2. Enter the current code from your authenticator there.</li>
+          <li>3. Approve the device here.</li>
         </ol>
         <p className="mt-3 text-[11px] leading-[18px] text-droid-text-muted">
-          The pairing link proves it is your laptop. Your username alone only opens a locked screen.
+          The link carries this laptop’s key. Share it only with your own devices.
         </p>
         <div className="mt-auto pt-4">
           <button

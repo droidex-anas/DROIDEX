@@ -85,8 +85,8 @@ function stepStatus(done: boolean, reachable: boolean): StepStatus {
   return reachable ? 'active' : 'upcoming';
 }
 
-// Four steps derived from Remote state: identity, authenticator, phone, and
-// the laptop's approval of that phone. A step is done once state proves it.
+// Four steps derived from Remote state: identity, authenticator, the other
+// device, and the laptop's approval of it. A step is done once state proves it.
 export function RemoteOnboarding({
   state,
   busy,
@@ -104,15 +104,15 @@ export function RemoteOnboarding({
   const identityReady = state.profile.displayName !== '' && state.profile.username !== '';
   const hostingReady = state.relayUrl !== '' && state.clientUrl !== '';
   const paired = state.devices.length > 0;
-  const deviceRequest = state.pending.find((request) => request.kind === 'device');
+  const deviceRequest = state.pending.at(0);
   const identityDone = identityReady && !editingIdentity;
-  const phoneDone = paired || deviceRequest !== undefined;
+  const deviceDone = paired || deviceRequest !== undefined;
 
   return (
     <ol aria-label="Set up Remote">
       <Step
         number={1}
-        title="Choose your name"
+        title="Choose a username"
         status={stepStatus(identityDone, true)}
         summary={
           identityReady && (
@@ -154,7 +154,7 @@ export function RemoteOnboarding({
 
       <Step
         number={2}
-        title="Protect it with an authenticator"
+        title="Link an authenticator app"
         status={stepStatus(state.authenticatorReady, identityDone)}
         summary={
           state.authenticatorReady && (
@@ -175,8 +175,8 @@ export function RemoteOnboarding({
 
       <Step
         number={3}
-        title="Scan with your phone"
-        status={stepStatus(phoneDone, state.authenticatorReady)}
+        title="Open DROIDEX on your other device"
+        status={stepStatus(deviceDone, state.authenticatorReady)}
         summary={
           paired && (
             <p className="text-[12px] text-droid-text-muted">
@@ -196,13 +196,13 @@ export function RemoteOnboarding({
 
       <Step
         number={4}
-        title="Approve on this laptop"
+        title="Approve it on this laptop"
         status={stepStatus(paired, deviceRequest !== undefined)}
         last
         summary={
           !paired && (
             <p className="text-[12px] text-droid-text-muted">
-              A request appears here after the phone enters its code.
+              Your device asks for access after you enter its code there.
             </p>
           )
         }
@@ -213,8 +213,8 @@ export function RemoteOnboarding({
             <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-droid-green motion-safe:animate-pulse" />
           </span>
           <p className="min-w-0 text-[12px] leading-[18px] text-droid-text-secondary">
-            <span className="text-droid-text">{deviceRequest?.title ?? 'A new device'}</span> is
-            waiting. Approve it in the request card at the bottom right.
+            A device is asking for access. Check that it’s the one you just unlocked, then approve
+            it in the card at the bottom right.
           </p>
         </div>
       </Step>

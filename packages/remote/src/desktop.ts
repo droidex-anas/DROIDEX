@@ -12,7 +12,6 @@ export interface RemoteDevice {
 }
 export interface RemotePending {
   id: string;
-  kind: 'device' | 'action';
   title: string;
   detail: string;
   expiresAt: number;

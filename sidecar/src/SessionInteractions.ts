@@ -271,17 +271,6 @@ export class SessionInteractions {
     return [...(scope?.pendingPermissions.values() ?? [])].some((pending) => !pending.responding);
   }
 
-  pendingApprovals(): PermissionRequest[] {
-    const requests: PermissionRequest[] = [];
-    for (const [id, scope] of this.scopes) {
-      if (!this.dependencies.getLiveSession(id)) continue;
-      for (const pending of scope.pendingPermissions.values()) {
-        if (!pending.responding) requests.push(pending.approval.request);
-      }
-    }
-    return requests;
-  }
-
   pendingApproval(appSessionId: string, requestId?: string): PermissionRequest | undefined {
     const live = this.dependencies.getLiveSession(appSessionId);
     const scope = live ? this.scopes.get(live.summary.appSessionId) : undefined;

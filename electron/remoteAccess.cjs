@@ -59,6 +59,7 @@ function createRemoteAccess(options) {
         save,
         keepAwake,
         bridgeInfo: options.bridgeInfo,
+        desktop: options.desktop,
         changed: (state) => {
           enabled = state.enabled;
           options.changed(state);
@@ -73,7 +74,7 @@ function createRemoteAccess(options) {
     return hostPromise;
   }
 
-  function registerIpc() {
+  function registerIpc(desktopIpc) {
     const handlers = {
       'remote-state': async () => (await host()).snapshot(),
       'remote-configure': async (patch) => (await host()).configure(patch),
@@ -87,17 +88,15 @@ function createRemoteAccess(options) {
       'profile-public-revoke': async (payload) => (await host()).revokePublicProfile(payload),
       'remote-qr': qrDataUrl,
     };
-    for (const [channel, handler] of Object.entries(handlers)) {
-      options.ipcMain.handle(channel, (event, value) => {
-        options.assertRenderer(event);
-        return handler(value);
-      });
-    }
+    for (const [channel, handler] of Object.entries(handlers)) desktopIpc.handle(channel, handler);
   }
 
   return {
     registerIpc,
     isEnabled: () => enabled,
+    notifyDevices() {
+      if (enabled) void host().then((remoteHost) => remoteHost.notifyDevices());
+    },
     async resume() {
       try {
         await fs.access(filename);

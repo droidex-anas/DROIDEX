@@ -7,6 +7,7 @@ import { setBackgroundWork } from '../lib/commands';
 import { resolveBackgroundWorkTier, type BackgroundWorkTier } from '../lib/backgroundWork';
 import {
   desktopPowerTier,
+  isRemoteClient,
   onDesktopMemoryPressure,
   onDesktopPowerTier,
   type DesktopPowerTierSnapshot,
@@ -58,7 +59,8 @@ export function useBackgroundWorkTier(): void {
   }, [dispatch]);
 
   useEffect(() => {
-    if (!connected) {
+    // The sidecar keeps one background-work report, and the laptop window owns it.
+    if (!connected || isRemoteClient()) {
       lastSent.current = null;
       return;
     }

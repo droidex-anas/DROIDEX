@@ -539,6 +539,7 @@ export type Action =
   // A blank RENAME_CHAT title clears the override back to the generated title.
   | { type: 'LINK_CHATS_PR'; appSessionIds: readonly string[]; cwd: string; pr: ChatPullRequest }
   | { type: 'RENAME_CHAT'; appSessionId: string; title: string }
+  | { type: 'SET_CHAT_METADATA'; chatMetadata: ChatMetadataMap }
   | { type: 'PIN_CHAT'; appSessionId: string }
   | { type: 'UNPIN_CHAT'; appSessionId: string }
   | { type: 'ARCHIVE_CHAT'; appSessionId: string }
@@ -1523,6 +1524,9 @@ function reduceAction(state: AppState, action: Action): AppState {
       const chatMetadata = renameChat(state.chatMetadata, action.appSessionId, action.title);
       return chatMetadata ? { ...state, chatMetadata } : state;
     }
+
+    case 'SET_CHAT_METADATA':
+      return { ...state, chatMetadata: action.chatMetadata };
 
     case 'PIN_CHAT': {
       const chatMetadata = pinChat(state.chatMetadata, action.appSessionId, Date.now());

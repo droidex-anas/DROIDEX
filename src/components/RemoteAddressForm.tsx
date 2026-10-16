@@ -81,7 +81,7 @@ export function RemoteAddressForm({
       <p className="text-[11px] leading-[18px] text-droid-text-muted">
         {username && !usernameValid
           ? 'Use 3–30 lowercase letters, numbers or hyphens, starting with a letter.'
-          : 'Your username is public. It names your phone address and your profile page.'}
+          : 'Your username is public. It’s part of your Remote address and your profile page.'}
       </p>
 
       <div>

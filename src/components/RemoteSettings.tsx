@@ -26,12 +26,12 @@ const STATUS_TONE: Record<RemoteState['status'], { dot: string; label: string }>
 };
 
 function connectionDetail(state: RemoteState) {
-  if (state.status === 'connected') return 'End-to-end encrypted to your paired devices.';
+  if (state.status === 'connected') return 'Ready for your paired devices, end-to-end encrypted.';
   if (state.status === 'connecting') return 'Reaching the relay…';
   if (state.status === 'error') return state.error ?? 'Retrying the relay connection.';
   return state.authenticatorReady
     ? 'Paired devices cannot reach this laptop.'
-    : 'Finish setup to reach this laptop from your phone.';
+    : 'Finish setup below to reach this laptop from another device.';
 }
 
 export function RemoteSettings() {
@@ -53,7 +53,7 @@ export function RemoteSettings() {
           <div className="min-w-0">
             <h2 className="text-[16px] font-semibold tracking-tight text-droid-text">Remote</h2>
             <p className="mt-0.5 text-[12px] text-droid-text-muted">
-              Your laptop does the work. Your phone keeps you in the loop.
+              Use DROIDEX on this laptop from your phone, tablet or another computer.
             </p>
           </div>
           {state.authenticatorReady && (
@@ -137,27 +137,6 @@ export function RemoteSettings() {
               }}
             />
           </SettingRow>
-          <SettingRow
-            label="Folder for new tasks"
-            description={
-              <span className="block max-w-[260px] truncate" title={state.workspace || undefined}>
-                {state.workspace || 'Tasks start without a project folder.'}
-              </span>
-            }
-          >
-            <button
-              disabled={busy}
-              className={secondaryButton}
-              onClick={() => {
-                void run(async () => {
-                  const workspace = await api.pickDirectory();
-                  return workspace ? api.configureRemote({ workspace }) : state;
-                });
-              }}
-            >
-              Choose
-            </button>
-          </SettingRow>
         </section>
       )}
 
@@ -165,8 +144,8 @@ export function RemoteSettings() {
         <>
           <p className="flex gap-2 px-1 pt-1 text-[11px] leading-[18px] text-droid-text-muted">
             <ShieldCheck size={13} className="mt-0.5 shrink-0" />
-            New devices and risky actions need this laptop’s approval, and Remote tasks run
-            Supervised. The laptop must be on, awake and running DROIDEX.
+            New devices need this laptop’s approval. A paired browser runs the full app, so pair
+            only devices you trust. The laptop must be on, awake and running DROIDEX.
           </p>
           <ResetPairing busy={busy} reset={() => run(() => api.resetRemotePairing())} />
         </>
@@ -216,7 +195,7 @@ function TrustedDevices({
             setAdding(!adding);
           }}
         >
-          {adding ? 'Done' : 'Pair another'}
+          {adding ? 'Done' : 'Add a device'}
         </button>
       </div>
       <AnimatePresence initial={false}>

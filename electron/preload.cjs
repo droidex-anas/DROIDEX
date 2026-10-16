@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { createDesktopApi } = require('./desktopApi.cjs');
 
 function on(channel, handler) {
   const listener = (_event, payload) => handler(payload);
@@ -112,15 +113,7 @@ function subscribeTerminalPort(id) {
 }
 
 contextBridge.exposeInMainWorld('droidex', {
-  bridgeInfo: () => ipcRenderer.invoke('bridge-info'),
-  sidecarStatus: () => ipcRenderer.invoke('sidecar-status'),
-  onSidecarStatus: (handler) => on('sidecar-status', handler),
-  pickDirectory: () => ipcRenderer.invoke('pick-directory'),
-  pickFiles: () => ipcRenderer.invoke('pick-files'),
-  saveImage: (dataUrl) => ipcRenderer.invoke('save-image', { dataUrl }),
-  saveAttachment: (name, dataUrl) => ipcRenderer.invoke('save-attachment', { name, dataUrl }),
-  discardImage: (path) => ipcRenderer.invoke('discard-image', { path }),
-  saveImageAs: (url, name) => ipcRenderer.invoke('save-image-as', { url, name }),
+  ...createDesktopApi({ invoke: (channel, payload) => ipcRenderer.invoke(channel, payload), on }),
   // Absolute path behind a dropped/pasted File ('' for clipboard snapshots).
   // File.path was removed in Electron 32; webUtils is the supported seam.
   pathForFile: (file) => {
@@ -130,140 +123,5 @@ contextBridge.exposeInMainWorld('droidex', {
       return '';
     }
   },
-  notify: (title, body, options) =>
-    ipcRenderer.invoke('notify', {
-      title,
-      body,
-      silent: options?.silent === true,
-      appSessionId: typeof options?.appSessionId === 'string' ? options.appSessionId : undefined,
-    }),
-  onNotificationActivate: (handler) => on('notification-activate', handler),
-  takePendingNotificationSession: () => ipcRenderer.invoke('notification-take-pending'),
-  ackNotificationActivate: (appSessionId) =>
-    ipcRenderer.invoke('notification-activate-ack', { appSessionId }),
-  getApiKey: () => ipcRenderer.invoke('get-api-key'),
-  setApiKey: (key) => ipcRenderer.invoke('set-api-key', { key }),
-  listFiles: (dir) => ipcRenderer.invoke('list-files', { dir }),
-  getPerformanceMetrics: () => ipcRenderer.invoke('get-performance-metrics'),
-  systemIdleTime: () => ipcRenderer.invoke('system-idle-time'),
-  powerTier: () => ipcRenderer.invoke('power-tier'),
-  onPowerTier: (handler) => on('power-tier', handler),
-  onMemoryPressure: (handler) => on('memory-pressure', handler),
-  readFile: (path) => ipcRenderer.invoke('read-file', { path }),
-  repoStatus: (dir) => ipcRenderer.invoke('repo-status', { dir }),
-  listEditors: () => ipcRenderer.invoke('list-editors'),
-  editorIcon: (editor) => ipcRenderer.invoke('editor-icon', { editor }),
-  openProject: (dir, editor, target) => ipcRenderer.invoke('open-project', { dir, editor, target }),
-
-  gitEnvironment: (dir) => ipcRenderer.invoke('git-environment', { dir }),
-  gitBranches: (dir) => ipcRenderer.invoke('git-branches', { dir }),
-  gitWorktrees: (dir) => ipcRenderer.invoke('git-worktrees', { dir }),
-  gitDiffStat: (dir, options) => ipcRenderer.invoke('git-diff-stat', { dir, options }),
-  gitDiffFiles: (dir, options) => ipcRenderer.invoke('git-diff-files', { dir, options }),
-  gitFileDiff: (dir, options) => ipcRenderer.invoke('git-file-diff', { dir, options }),
-  gitMarkTurnStart: (dir, ownerId) => ipcRenderer.invoke('git-mark-turn-start', { dir, ownerId }),
-  gitAdoptTurnBaseline: (dir, clientRef, appSessionId) =>
-    ipcRenderer.invoke('git-adopt-turn-baseline', { dir, clientRef, appSessionId }),
-  gitCreateBranch: (dir, options) => ipcRenderer.invoke('git-create-branch', { dir, options }),
-  gitCheckout: (dir, options) => ipcRenderer.invoke('git-checkout', { dir, options }),
-  gitCreateWorktree: (dir, options) => ipcRenderer.invoke('git-create-worktree', { dir, options }),
-  gitRemoveWorktree: (dir, options) => ipcRenderer.invoke('git-remove-worktree', { dir, options }),
-  gitCommit: (dir, options) => ipcRenderer.invoke('git-commit', { dir, options }),
-  gitPush: (dir, options) => ipcRenderer.invoke('git-push', { dir, options }),
-  gitFetch: (dir) => ipcRenderer.invoke('git-fetch', { dir }),
-
-  githubAvailable: () => ipcRenderer.invoke('github-available'),
-  githubInstall: () => ipcRenderer.invoke('github-install'),
-  githubAuthenticate: () => ipcRenderer.invoke('github-authenticate'),
-  githubCancelSetup: () => ipcRenderer.invoke('github-cancel-setup'),
-  onGithubAuthCode: (handler) => on('github-auth-code', handler),
-  githubDetectPr: (dir, options) => ipcRenderer.invoke('github-detect-pr', { dir, options }),
-  githubListPrs: (dir, options) => ipcRenderer.invoke('github-list-prs', { dir, options }),
-  githubViewPr: (dir, options) => ipcRenderer.invoke('github-view-pr', { dir, options }),
-  githubPrDiff: (dir, options) => ipcRenderer.invoke('github-pr-diff', { dir, options }),
-  githubPrChecks: (dir, options) => ipcRenderer.invoke('github-pr-checks', { dir, options }),
-  githubPrComments: (dir, options) => ipcRenderer.invoke('github-pr-comments', { dir, options }),
-  githubCreatePr: (dir, options) => ipcRenderer.invoke('github-create-pr', { dir, options }),
-  githubPostComment: (dir, options) => ipcRenderer.invoke('github-post-comment', { dir, options }),
-  githubMergePr: (dir, options) => ipcRenderer.invoke('github-merge-pr', { dir, options }),
-
-  getOnboarding: () => ipcRenderer.invoke('onboarding-get'),
-  setOnboarding: (patch) => ipcRenderer.invoke('onboarding-set', { patch }),
-  appVersion: () => ipcRenderer.invoke('app-version'),
-  checkAppUpdate: (options) => ipcRenderer.invoke('app-check-update', options),
-  downloadAppUpdate: () => ipcRenderer.invoke('app-download-update'),
-  submitFeedbackReport: (report) => ipcRenderer.invoke('feedback-report', report),
-  getAutomaticDiagnostics: () => ipcRenderer.invoke('diagnostics-preference-get'),
-  setAutomaticDiagnostics: (enabled) =>
-    ipcRenderer.invoke('diagnostics-preference-set', { enabled }),
-  getRemoteState: () => ipcRenderer.invoke('remote-state'),
-  configureRemote: (patch) => ipcRenderer.invoke('remote-configure', patch),
-  setupRemoteAuthenticator: () => ipcRenderer.invoke('remote-setup'),
-  confirmRemoteAuthenticator: (code) => ipcRenderer.invoke('remote-confirm', code),
-  decideRemoteRequest: (id, approved) => ipcRenderer.invoke('remote-decide', { id, approved }),
-  revokeRemoteDevice: (id) => ipcRenderer.invoke('remote-revoke', id),
-  resetRemotePairing: () => ipcRenderer.invoke('remote-reset'),
-  getPublishedProfile: () => ipcRenderer.invoke('profile-public-get'),
-  publishPublicProfile: (payload) => ipcRenderer.invoke('profile-public-publish', payload),
-  revokePublicProfile: (payload) => ipcRenderer.invoke('profile-public-revoke', payload),
-  remoteQr: (text) => ipcRenderer.invoke('remote-qr', text),
-  onRemoteState: (handler) => {
-    const listener = (_event, state) => handler(state);
-    ipcRenderer.on('remote-state-changed', listener);
-    return () => ipcRenderer.removeListener('remote-state-changed', listener);
-  },
-  getProfileUsage: () => ipcRenderer.invoke('profile-usage-get'),
-  usageAnalyticsBootstrap: () => ipcRenderer.invoke('usage-analytics-bootstrap'),
-  usageAnalyticsFirstLaunchReported: () =>
-    ipcRenderer.invoke('usage-analytics-first-launch-reported'),
-  getUsageAnalytics: () => ipcRenderer.invoke('usage-analytics-preference-get'),
-  setUsageAnalytics: (enabled) => ipcRenderer.invoke('usage-analytics-preference-set', { enabled }),
-  getHardwareAcceleration: () => ipcRenderer.invoke('hardware-acceleration-preference-get'),
-  setHardwareAcceleration: (enabled) =>
-    ipcRenderer.invoke('hardware-acceleration-preference-set', { enabled }),
-  relaunchApp: () => ipcRenderer.invoke('app-relaunch'),
-  setAppIcon: (mode) => ipcRenderer.invoke('app-set-icon', { mode }),
-  openExternal: (url) => ipcRenderer.invoke('open-external', { url }),
-
-  terminalCreate: (options) => ipcRenderer.invoke('terminal-create', options),
-  terminalResize: (id, cols, rows) => ipcRenderer.invoke('terminal-resize', { id, cols, rows }),
-  terminalKill: (id) => ipcRenderer.invoke('terminal-kill', { id }),
-  terminalHasChildren: (id) => ipcRenderer.invoke('terminal-has-children', { id }),
-  terminalList: (appSessionId) => ipcRenderer.invoke('terminal-list', { appSessionId }),
   terminalSubscribe: (id) => subscribeTerminalPort(id),
-  terminalUnsubscribe: (id) => ipcRenderer.invoke('terminal-unsubscribe', { id }),
-  filesAuthorizeRoot: (root) => ipcRenderer.invoke('files-authorize-root', { root }),
-  filesList: (accessToken, relative) => ipcRenderer.invoke('files-list', { accessToken, relative }),
-  filesPreview: (accessToken, relative) =>
-    ipcRenderer.invoke('files-preview', { accessToken, relative }),
-  filesOpen: (accessToken, relative) => ipcRenderer.invoke('files-open', { accessToken, relative }),
-  filesReveal: (accessToken, relative) =>
-    ipcRenderer.invoke('files-reveal', { accessToken, relative }),
-
-  nativeBrowserReserve: (browserSessionId, savedUrl, savedMode) =>
-    ipcRenderer.invoke('native-browser-reserve', { browserSessionId, savedUrl, savedMode }),
-  nativeBrowserRelease: (browserSessionId) =>
-    ipcRenderer.invoke('native-browser-release', { browserSessionId }),
-  nativeBrowserWorkingSessions: () => ipcRenderer.invoke('native-browser-working-sessions'),
-  nativeBrowserShown: (browserSessionId, shown) =>
-    ipcRenderer.invoke('native-browser-shown', { browserSessionId, shown }),
-  nativeBrowserWatch: (browserSessionId, watching) =>
-    ipcRenderer.invoke('native-browser-watch', { browserSessionId, watching }),
-  nativeBrowserGoBack: (browserSessionId) =>
-    ipcRenderer.invoke('native-browser-go-back', { browserSessionId }),
-  nativeBrowserGoForward: (browserSessionId) =>
-    ipcRenderer.invoke('native-browser-go-forward', { browserSessionId }),
-  nativeBrowserSetDesignState: (browserSessionId, state) =>
-    ipcRenderer.invoke('native-browser-set-design-state', { browserSessionId, state }),
-  nativeBrowserSetShortcuts: (chords) =>
-    ipcRenderer.invoke('native-browser-set-shortcuts', { chords }),
-
-  onNativeBrowserDesignEvent: (handler) => on('native-browser-design-event', handler),
-  onNativeBrowserLoaded: (handler) => on('native-browser-loaded', handler),
-  onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
-  onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
-  onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),
-  onNativeBrowserFrame: (handler) => on('native-browser-frame', handler),
-  onNativeBrowserClosed: (handler) => on('native-browser-closed', handler),
-  onNativeBrowserShortcut: (handler) => on('native-browser-shortcut', handler),
 });

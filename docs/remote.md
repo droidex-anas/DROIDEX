@@ -1,8 +1,9 @@
 # Remote and Profile
 
-Remote keeps agent execution, keys, history and permission decisions on your
-laptop. The phone is a static web client. A Cloudflare Worker forwards encrypted
-messages; no account, VPN or inbound laptop port is required.
+Remote opens the full DROIDEX app in a browser on another computer, tablet or
+phone, while agents, keys, history and files stay on your laptop. The browser
+loads a static web client; a Cloudflare Worker forwards encrypted messages. No
+account, VPN or inbound laptop port is required.
 
 ## Set up
 
@@ -24,26 +25,28 @@ current connection only. Existing devices retain the expiry approved for them.
 Signing keys are non-extractable and stored in the browser's IndexedDB. If the
 browser clears its storage, scan the pairing link and approve it again.
 
-## Use your phone
+## Use DROIDEX in a browser
 
-The home screen lists live tasks and pending approvals. Open a task to follow
-its activity, send a message, steer, pause or stop its current turn. New tasks
-use the laptop's selected folder and always start in **Supervised** mode.
-Remote steering interrupts the current turn and redirects its next supervised
-turn. Existing tasks must be Supervised before they accept remote messages; queued
-remote messages are withdrawn if that permission changes before delivery.
+After approval the browser shows the same app as the laptop window: your
+projects, chats, settings and theme. Start and steer agents at any autonomy,
+answer permission requests, review diffs, use Git and GitHub, and open
+terminals. Everything runs on the laptop. **Open workspace** browses the
+laptop's folders instead of opening a file dialog. Projects you add and chats
+you rename, pin or archive appear on the laptop and in every other paired
+browser right away.
 
-Approving a tool request on the phone queues a confirmation on the laptop.
-Only that local confirmation grants the single-use permission. Denying a
-request takes effect immediately. Remote never grants persistent permissions
-or raises autonomy. Device and action confirmations expire after two minutes.
+A trusted browser has the same control as the laptop window, so approve only
+browsers you own and keep trust durations short on shared machines. A few
+features drive the laptop's own screen and stay there: built-in browser panes,
+native file dialogs, app updates and relaunch, and Remote pairing settings.
 
 On iPhone, add the web client to the home screen, pair a trusted device, then
 choose **Enable approval notifications**. Web Push carries a generic notice;
 the app reconnects to the laptop before displaying any details. Push services
 belong to the browser platform and do not execute agents or store app history.
 
-The laptop must remain on, awake and running Droidex. **Keep laptop awake**
+The laptop must remain on, awake and running DROIDEX with its window open, since
+the browser starts from the window's projects and settings. **Keep laptop awake**
 prevents application suspension while Remote is enabled; closing the lid can
 still suspend it. Turning Remote off disconnects phones immediately. **Revoke**
 removes a device immediately. **Reset pairing** disables Remote, revokes all
@@ -115,8 +118,8 @@ socket routing metadata and an opt-in signed public aggregate. It persists no
 private messages, ciphertext or offline queue. Forwarding performs no durable
 writes. Frames are capped at 64 KiB, receipt windows at 16 frames/256 KiB,
 connection attempts at 20 per IP/minute and public profile reads at 120 per
-IP/minute at each edge. The desktop additionally bounds peers, pending actions,
-encryption queues, transcript tails and snapshots. Five incorrect authenticator
+IP/minute at each edge. The desktop additionally bounds each browser's
+bridge sockets, terminals, in-flight calls and encryption queue. Five incorrect authenticator
 codes lock new pairing for fifteen minutes; used time steps cannot be replayed.
 
 Desktop keys, authenticator and trusted devices are encrypted with the operating
