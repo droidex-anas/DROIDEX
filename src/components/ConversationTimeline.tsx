@@ -1,9 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { KeyboardEvent, RefObject } from 'react';
-import { CornerDownLeft } from 'lucide-react';
+import { CornerDownLeft } from '@droidex/icons';
 import type { ConversationAnchor } from './chatFeedTurns';
 import { cn } from './ui/cn';
+import { pushEscapeLayer } from './ui/escapeStack';
 import { usePopoverPosition } from './ui/usePopoverPosition';
 
 // Moving from a tick onto its preview card crosses a small gap.
@@ -28,6 +29,8 @@ export const ConversationTimeline = memo(function ConversationTimeline({
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // The focused tick, which holds the rail's tab stop while focus is inside it.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement | null>(null);
   const previewAnchorRef = useRef<HTMLElement | null>(null);
   const hideTimerRef = useRef<number | undefined>(undefined);
@@ -45,6 +48,9 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   // without rebuilding an IntersectionObserver.
   useEffect(() => {
     const root = scrollRef.current;
+    // A jump belongs to the anchor set it was made in; a new conversation or
+    // history page must never be held back by it.
+    jumpTargetRef.current = null;
     if (!root || anchors.length === 0) return undefined;
     let frame = 0;
     const update = () => {
@@ -96,7 +102,9 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   // the tick set changes too: an older-history page prepends ticks above the
   // active one, sliding it down without any activeId change.
   useEffect(() => {
-    if (activeId) revealTick(railRef.current, activeId);
+    if (!activeId) return;
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    revealTick(railRef.current, activeId, prefersReducedMotion ? 'auto' : 'smooth');
   }, [activeId, anchorKey]);
 
   useEffect(
@@ -105,6 +113,14 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     },
     [],
   );
+
+  const isPreviewOpen = previewId !== null;
+  useEffect(() => {
+    if (!isPreviewOpen) return undefined;
+    return pushEscapeLayer(() => {
+      setPreviewId(null);
+    });
+  }, [isPreviewOpen]);
 
   if (anchors.length < 2) return null;
 
@@ -128,22 +144,23 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     window.clearTimeout(hideTimerRef.current);
   };
 
-  // Roving focus: one tick is in the tab order, the arrows walk the rest.
-  const focusIndex = Math.max(
-    0,
-    anchors.findIndex((a) => a.id === activeId),
-  );
+  // Roving focus: one tick is in the tab order, the arrows walk the rest. The
+  // rail is entered at the current prompt and keeps the browsed tick while
+  // focus stays inside it.
+  const focusedIndex = anchors.findIndex((a) => a.id === focusedId);
+  const tabStopIndex =
+    focusedIndex >= 0
+      ? focusedIndex
+      : Math.max(
+          0,
+          anchors.findIndex((a) => a.id === activeId),
+        );
   const onRailKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const ticks = Array.from(
       railRef.current?.querySelectorAll<HTMLButtonElement>('[data-tick-id]') ?? [],
     );
     const current = ticks.findIndex((tick) => tick === document.activeElement);
     if (current < 0) return;
-    if (event.key === 'Escape' && previewId) {
-      event.stopPropagation();
-      setPreviewId(null);
-      return;
-    }
     let next: number;
     if (event.key === 'ArrowDown') next = Math.min(current + 1, ticks.length - 1);
     else if (event.key === 'ArrowUp') next = Math.max(current - 1, 0);
@@ -152,8 +169,9 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     else return;
     event.preventDefault();
     const tick = ticks[next];
+    // Reveal at once, so the card opens beside a tick that is already in view.
+    revealTick(railRef.current, tick.dataset.tickId ?? '', 'auto');
     tick.focus({ preventScroll: true });
-    revealTick(railRef.current, tick.dataset.tickId ?? '');
   };
 
   const previewIndex = previewId ? anchors.findIndex((a) => a.id === previewId) : -1;
@@ -166,6 +184,9 @@ export const ConversationTimeline = memo(function ConversationTimeline({
         role="navigation"
         aria-label="Prompts in this chat"
         onKeyDown={onRailKeyDown}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setFocusedId(null);
+        }}
         className="no-scrollbar pointer-events-auto flex max-h-full flex-col overflow-y-auto py-1"
       >
         {anchors.map((a, index) => {
@@ -177,7 +198,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
               data-tick-id={a.id}
               data-active={isActive || undefined}
               type="button"
-              tabIndex={index === focusIndex ? 0 : -1}
+              tabIndex={index === tabStopIndex ? 0 : -1}
               aria-label={`Prompt ${String(index + 1)} of ${String(anchors.length)}: ${a.label}`}
               aria-current={isActive ? 'location' : undefined}
               onClick={() => {
@@ -188,6 +209,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
               }}
               onMouseLeave={hidePreviewSoon}
               onFocus={(event) => {
+                setFocusedId(a.id);
                 if (event.currentTarget.matches(':focus-visible')) {
                   showPreview(event.currentTarget, a.id);
                 }
@@ -212,6 +234,9 @@ export const ConversationTimeline = memo(function ConversationTimeline({
           anchor={preview}
           onPointerEnter={keepPreview}
           onPointerLeave={hidePreviewSoon}
+          onAnchorHidden={() => {
+            setPreviewId(null);
+          }}
           onJump={() => {
             jump(preview.id);
           }}
@@ -235,18 +260,15 @@ function tickTone(distanceFromPreview: number, isActive: boolean): string {
 
 // Scroll only the rail: scrollIntoView could also move ancestor scrollers,
 // including the feed.
-function revealTick(rail: HTMLElement | null, id: string) {
+function revealTick(rail: HTMLElement | null, id: string, behavior: ScrollBehavior) {
   const tick = rail?.querySelector<HTMLElement>(`[data-tick-id="${CSS.escape(id)}"]`);
   if (!rail || !tick) return;
   const railRect = rail.getBoundingClientRect();
   const tickRect = tick.getBoundingClientRect();
   if (tickRect.top < railRect.top) {
-    rail.scrollTo({ top: rail.scrollTop + (tickRect.top - railRect.top) - 8, behavior: 'smooth' });
+    rail.scrollTo({ top: rail.scrollTop + (tickRect.top - railRect.top) - 8, behavior });
   } else if (tickRect.bottom > railRect.bottom) {
-    rail.scrollTo({
-      top: rail.scrollTop + (tickRect.bottom - railRect.bottom) + 8,
-      behavior: 'smooth',
-    });
+    rail.scrollTo({ top: rail.scrollTop + (tickRect.bottom - railRect.bottom) + 8, behavior });
   }
 }
 
@@ -257,20 +279,26 @@ function PromptPreview({
   anchor,
   onPointerEnter,
   onPointerLeave,
+  onAnchorHidden,
   onJump,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   anchor: ConversationAnchor;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
+  onAnchorHidden: () => void;
   onJump: () => void;
 }) {
-  const { setFloating, floatingStyles, side, isPositioned } = usePopoverPosition({
+  const { setFloating, floatingStyles, side, isPositioned, anchorHidden } = usePopoverPosition({
     open: true,
     anchorRef,
     placement: 'right',
     offsetPx: 8,
   });
+  // A tick scrolled out of the rail takes its card with it.
+  useEffect(() => {
+    if (isPositioned && anchorHidden) onAnchorHidden();
+  }, [isPositioned, anchorHidden, onAnchorHidden]);
   return createPortal(
     <div ref={setFloating} style={floatingStyles} className="z-tooltip">
       <div
