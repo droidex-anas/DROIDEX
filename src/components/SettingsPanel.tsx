@@ -18,8 +18,7 @@ import { ModelIcon, providerOf } from './ModelIcon';
 import type { ModelInfo, VoiceNarration } from '../types/bridge';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { Switch } from './Switch';
-import { getAppVersion, openExternal, type AppUpdateInfo } from '../lib/onboarding';
-import cursorDesign from './browser/browserAgentCursorDesign.json';
+import { getAppVersion, type AppUpdateInfo } from '../lib/onboarding';
 import { refreshAppUpdate, requestAppUpdate } from '../lib/appUpdate';
 import { hasActiveSessionWork } from '../lib/sessions';
 import { applyTheme } from '../lib/theme';
@@ -696,16 +695,6 @@ function SetupSection({ onClose }: { onClose: () => void }) {
             checked={appAuto}
             onChange={(v) => void onboard.patch({ appAutoUpdate: v })}
           />
-        </SettingRow>
-        <SettingRow label="Credits" description={cursorDesign.attribution}>
-          <Button
-            size="sm"
-            onClick={() => {
-              void openExternal(cursorDesign.attributionUrl);
-            }}
-          >
-            Flaticon
-          </Button>
         </SettingRow>
       </div>
 
