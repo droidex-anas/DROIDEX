@@ -41,6 +41,7 @@ const UI_STATE_FIELDS = [
   'prWorkspaceCwd',
   'prWorkspaceNumber',
   'prBacklogIds',
+  'revealEarlierCwds',
 ] as const satisfies readonly (keyof PersistedUiStateSource)[];
 
 // Each persisted field and its saver, compared by reference after a commit.

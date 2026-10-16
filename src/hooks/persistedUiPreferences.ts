@@ -157,6 +157,7 @@ interface PersistedUiState {
   prWorkspaceCwd?: string | null;
   prWorkspaceNumber?: number | null;
   prBacklogIds?: string[];
+  revealEarlierCwds?: string[];
 }
 
 export function loadCompactionModel(): string {
@@ -328,6 +329,12 @@ export function saveWorkspaceCwds(cwds: string[]): void {
   saveItem(WORKSPACES_STORAGE_KEY, JSON.stringify(cwds));
 }
 
+function sanitizeRevealEarlierCwds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const cwds = value.filter((cwd): cwd is string => typeof cwd === 'string' && cwd.length > 0);
+  return [...new Set(cwds)];
+}
+
 export function loadPersistedUiState(): Partial<PersistedUiState> {
   try {
     const raw = getLocalStorage()?.getItem(UI_STATE_STORAGE_KEY);
@@ -336,6 +343,7 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
     return {
       ...sanitizePersistedPrWorkspace(parsed.prWorkspaceCwd, parsed.prWorkspaceNumber),
       prBacklogIds: sanitizePersistedPrBacklog(parsed.prBacklogIds),
+      revealEarlierCwds: sanitizeRevealEarlierCwds(parsed.revealEarlierCwds),
       activeAppSessionId:
         typeof parsed.activeAppSessionId === 'string' ? parsed.activeAppSessionId : null,
       rightPanelOpen:
@@ -375,6 +383,7 @@ export interface PersistedUiStateSource {
   prWorkspaceCwd: string | null;
   prWorkspaceNumber: number | null;
   prBacklogIds: string[];
+  revealEarlierCwds: string[];
 }
 
 export function savePersistedUiState(state: PersistedUiStateSource): void {
@@ -391,6 +400,7 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     prWorkspaceCwd: state.prWorkspaceCwd,
     prWorkspaceNumber: state.prWorkspaceNumber,
     prBacklogIds: state.prBacklogIds,
+    revealEarlierCwds: state.revealEarlierCwds,
   };
   saveItem(UI_STATE_STORAGE_KEY, JSON.stringify(snapshot));
 }
