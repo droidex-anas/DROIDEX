@@ -122,10 +122,7 @@ export function FilePreviewPane({
   if (shown.kind === 'error') {
     return (
       <PreviewFrame>
-        <PreviewProblem
-          title={`Couldn't preview ${pathFileName(relative)}`}
-          detail={shown.message}
-        >
+        <PreviewProblem title={`Couldn't preview ${pathFileName(relative)}`} detail={shown.message}>
           <Button size="sm" icon={ExternalLink} className="mt-2" onClick={onOpenExternal}>
             Open externally
           </Button>
