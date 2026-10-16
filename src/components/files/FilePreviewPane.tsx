@@ -106,23 +106,25 @@ export function FilePreviewPane({
     );
   }
 
-  // A result belongs to the path it was read for. While the next file loads,
-  // the previous one stays up under its own name (never the new file's, which
-  // would flash a Markdown file's text as source), and a busy chip appears if
-  // the wait is long enough to notice.
-  const shown = state?.accessToken === accessToken ? state : null;
-  const isLoading = shown?.relative !== relative;
-  if (!shown || (isLoading && shown.kind === 'error')) {
+  // A result belongs to the path it was read for. Until the selected file's
+  // result arrives the pane shows the loading state, never the previous file:
+  // the header, breadcrumbs and actions around the pane already name the new
+  // one, and rendering old text under a new name flashed Markdown as source.
+  const current = state?.accessToken === accessToken && state.relative === relative ? state : null;
+  if (!current) {
     return (
       <PreviewFrame>
         <PreviewLoading label="Loading preview…" />
       </PreviewFrame>
     );
   }
-  if (shown.kind === 'error') {
+  if (current.kind === 'error') {
     return (
       <PreviewFrame>
-        <PreviewProblem title={`Couldn't preview ${pathFileName(relative)}`} detail={shown.message}>
+        <PreviewProblem
+          title={`Couldn't preview ${pathFileName(relative)}`}
+          detail={current.message}
+        >
           <Button size="sm" icon={ExternalLink} className="mt-2" onClick={onOpenExternal}>
             Open externally
           </Button>
@@ -133,13 +135,12 @@ export function FilePreviewPane({
   return (
     <PreviewFrame>
       <PreviewBody
-        key={shown.relative}
-        payload={shown.payload}
-        fileName={pathFileName(shown.relative)}
+        key={relative}
+        payload={current.payload}
+        fileName={pathFileName(relative)}
         onOpenExternal={onOpenExternal}
         onReveal={onReveal}
       />
-      {isLoading && <PreviewBusyChip label="Loading…" />}
     </PreviewFrame>
   );
 }
@@ -147,7 +148,7 @@ export function FilePreviewPane({
 function PreviewFrame({ children }: { children: ReactNode }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
-      <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
+      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </section>
   );
 }
