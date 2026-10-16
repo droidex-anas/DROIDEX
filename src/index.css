@@ -687,6 +687,27 @@
     }
   }
 
+  /* Inline code in prose. A selection highlights glyphs, never an inline box's
+     padding, so padding would open a gap in the band at every chip and push
+     the following punctuation away. The chip takes no padding; its tint
+     reaches 2px past the text through a shadow, which leaves layout and
+     selection alone. Shadows are sliced like the box, so a wrapped chip still
+     runs off the line end and resumes on the next. */
+  .inline-code {
+    --inline-code-tint: color-mix(in srgb, var(--text) 7%, transparent);
+    background-color: var(--inline-code-tint);
+    box-shadow:
+      -2px 0 0 var(--inline-code-tint),
+      2px 0 0 var(--inline-code-tint);
+    padding-block: 1px;
+  }
+
+  @media (hover: hover) {
+    .inline-code[role='button']:hover {
+      --inline-code-tint: color-mix(in srgb, var(--text) 14%, transparent);
+    }
+  }
+
   /* The sidebar footer floats over the session list (SidebarFooter). The list
      reserves the footer's height at its end, and its scrollbar stops above it. */
   .sidebar-list {
