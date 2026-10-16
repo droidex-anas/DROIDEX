@@ -4,7 +4,7 @@ import remarkBreaks from 'remark-breaks';
 import { Children, createContext, isValidElement, useContext, memo, type ReactNode } from 'react';
 import { AppBlock } from './AppBlock';
 import { appFencesInMarkdown, type MarkdownAppFence } from '../lib/appBlocks';
-import { CodeCard, HighlightJson, JSON_HIGHLIGHT_MAX_CHARS } from './MarkdownCode';
+import { CodeCard, highlightFence } from './MarkdownCode';
 import { markdownTableComponents } from './MarkdownTable';
 import { LinkBadge } from './transcript/LinkBadge';
 import { describeLink, linkTextIsUrl } from '../lib/linkPresentation';
@@ -38,7 +38,6 @@ function hasLanguage(className: string | undefined, language: string): boolean {
   );
 }
 
-const isJsonLang = (className?: string) => hasLanguage(className, 'json');
 const isSvgLang = (className?: string) => hasLanguage(className, 'svg');
 const isMermaidLang = (className?: string) => hasLanguage(className, 'mermaid');
 const isAppLang = (className?: string) => hasLanguage(className, 'app');
@@ -138,11 +137,7 @@ function MarkdownFence({
       code={codeText}
       className={className}
       specMode={specMode}
-      highlighted={
-        isJsonLang(className) && codeText.length <= JSON_HIGHLIGHT_MAX_CHARS ? (
-          <HighlightJson code={codeText} />
-        ) : undefined
-      }
+      highlighted={highlightFence(className, codeText)}
     />
   );
 }

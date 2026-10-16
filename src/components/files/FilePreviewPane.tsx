@@ -8,7 +8,7 @@ import {
   FolderSearch,
   Spinner,
 } from '@droidex/icons';
-import { Highlight, type PrismTheme } from 'prism-react-renderer';
+import { Highlight } from 'prism-react-renderer';
 import { readFilePreview, type FilePreviewPayload } from '../../lib/desktop';
 import {
   createSanitizedDocxElementFactory,
@@ -18,6 +18,7 @@ import {
   sanitizeDocxPreview,
 } from '../../lib/filePreview';
 import { Markdown } from '../Markdown';
+import { CODE_THEME } from '../MarkdownCode';
 import { Button } from '../ui/Button';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 
@@ -65,33 +66,6 @@ function extensionOf(name: string): string {
 
 export const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
 const TABULAR_EXTENSIONS = new Set(['csv', 'tsv']);
-const CODE_THEME: PrismTheme = {
-  plain: { color: 'var(--text-secondary)' },
-  styles: [
-    {
-      types: ['comment', 'prolog', 'doctype', 'cdata'],
-      style: { color: 'var(--text-muted)' },
-    },
-    {
-      types: ['property', 'tag', 'boolean', 'number', 'constant', 'symbol', 'deleted'],
-      style: { color: 'var(--danger)' },
-    },
-    {
-      types: ['selector', 'attr-name', 'string', 'char', 'builtin', 'inserted'],
-      style: { color: 'var(--success)' },
-    },
-    {
-      types: ['operator', 'entity', 'url', 'string-variable'],
-      style: { color: 'var(--text-secondary)' },
-    },
-    {
-      types: ['atrule', 'attr-value', 'keyword'],
-      style: { color: 'var(--warning)' },
-    },
-    { types: ['function', 'class-name'], style: { color: 'var(--accent)' } },
-    { types: ['regex', 'important', 'variable'], style: { color: 'var(--warning)' } },
-  ],
-};
 
 export function FilePreviewPane({
   accessToken,

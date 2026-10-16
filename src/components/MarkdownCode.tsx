@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, Copy, WrapText } from '@droidex/icons';
+import { Highlight, Prism, type PrismTheme } from 'prism-react-renderer';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 
@@ -82,11 +83,68 @@ export function CodeCopyButton({ text }: { text: string }) {
   );
 }
 
-/* ── JSON token highlighting ──
+/* ── Token highlighting ──
    Per-token spans are fine for a snippet and a long task for a dumped payload. */
-export const JSON_HIGHLIGHT_MAX_CHARS = 8_192;
+export const HIGHLIGHT_MAX_CHARS = 8_192;
 
-export function HighlightJson({ code }: { code: string }) {
+export const CODE_THEME: PrismTheme = {
+  plain: { color: 'var(--text-secondary)' },
+  styles: [
+    {
+      types: ['comment', 'prolog', 'doctype', 'cdata'],
+      style: { color: 'var(--text-muted)' },
+    },
+    {
+      types: ['property', 'tag', 'boolean', 'number', 'constant', 'symbol', 'deleted'],
+      style: { color: 'var(--danger)' },
+    },
+    {
+      types: ['selector', 'attr-name', 'string', 'char', 'builtin', 'inserted'],
+      style: { color: 'var(--success)' },
+    },
+    {
+      types: ['operator', 'entity', 'url', 'string-variable'],
+      style: { color: 'var(--text-secondary)' },
+    },
+    {
+      types: ['atrule', 'attr-value', 'keyword'],
+      style: { color: 'var(--warning)' },
+    },
+    { types: ['function', 'class-name'], style: { color: 'var(--accent)' } },
+    { types: ['regex', 'important', 'variable'], style: { color: 'var(--warning)' } },
+  ],
+};
+
+function HighlightPrism({ code, language }: { code: string; language: string }) {
+  return (
+    <Highlight theme={CODE_THEME} code={code} language={language}>
+      {({ tokens, getTokenProps }) =>
+        tokens.map((line, lineIndex) => (
+          <Fragment key={lineIndex}>
+            {lineIndex > 0 && '\n'}
+            {line.map((token, tokenIndex) => (
+              <span {...getTokenProps({ token })} key={tokenIndex} />
+            ))}
+          </Fragment>
+        ))
+      }
+    </Highlight>
+  );
+}
+
+/** The highlighted body for a fence, or undefined when it stays plain text. */
+export function highlightFence(className: string | undefined, code: string): ReactNode {
+  if (code.length > HIGHLIGHT_MAX_CHARS) return undefined;
+  const language = className?.match(/language-([\w+#.-]+)/)?.[1].toLowerCase();
+  if (!language) return undefined;
+  if (language === 'json') return <HighlightJson code={code} />;
+  // An SVG fence only reaches a code card when it was refused as an image, and
+  // then it stays verbatim, escaped source.
+  if (language === 'svg' || !(language in Prism.languages)) return undefined;
+  return <HighlightPrism code={code} language={language} />;
+}
+
+function HighlightJson({ code }: { code: string }) {
   const nodes = useMemo(() => {
     const tokens = code.split(
       /("(?:\\.|[^"\\])*"|:|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[[\]{}!,])/g,
