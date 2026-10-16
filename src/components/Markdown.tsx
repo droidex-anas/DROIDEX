@@ -324,7 +324,7 @@ const SPEC_COMPONENTS = createMarkdownComponents(true);
 // Chat and spec text both read in `prose`, the composer's size, so a draft and
 // the message it becomes match; a spec only gives its blocks more air.
 export function markdownShellClass(specMode: boolean): string {
-  return `md-shell min-w-0 max-w-full text-prose text-primary break-words ${specMode ? 'space-y-5' : 'space-y-2.5'}`;
+  return `md-shell min-w-0 max-w-full text-prose text-primary break-words ${specMode ? 'md-shell-spec' : ''}`;
 }
 
 export type MarkdownFenceFlags = Omit<FenceRenderOptions, 'appFences'>;
