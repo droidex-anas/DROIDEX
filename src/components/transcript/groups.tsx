@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import type { TranscriptEvent } from '../../types/bridge';
 import type { ToolActivityDensity } from '../../lib/toolActivity';
 import {
@@ -94,23 +95,31 @@ export function WorkedGroup({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div>
+    <div
+      // eslint-disable-next-line design-policy/design-tokens -- rules.md lines that carry meaning: marks where the turn's work ends and its answer begins
+      className="border-b border-divider pb-1.5"
+    >
       <button
         type="button"
         aria-expanded={open}
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex h-control-sm min-w-0 items-center gap-1.5 text-left"
+        className="flex h-control-sm min-w-0 items-center gap-1 text-left text-body-lg text-quiet transition-colors duration-150 hover:text-secondary focus-visible:text-secondary"
       >
-        {/* The reply's own size, so the fold reads as part of the turn. */}
-        <span className="shrink-0 text-body-lg text-muted transition-colors group-hover:text-secondary">
+        <span className="shrink-0">
           Worked
           {item.durationMs >= 1000 && (
             <span className="tabular-nums"> for {formatDuration(item.durationMs)}</span>
           )}
         </span>
-        <Caret open={open} />
+        {/* Unlike row carets, always shown: it is the only cue that the turn's steps are folded here. */}
+        <ChevronRight
+          aria-hidden="true"
+          className={`size-icon-sm shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none ${
+            open ? 'rotate-90' : ''
+          }`}
+        />
       </button>
       <Expand open={open}>
         <div className="mt-3 space-y-2.5 pl-5">{children}</div>
