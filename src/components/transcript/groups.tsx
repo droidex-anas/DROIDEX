@@ -101,10 +101,14 @@ export function WorkedGroup({
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex min-w-0 items-center gap-1.5 text-left"
+        className="group flex h-control-sm min-w-0 items-center gap-1.5 text-left"
       >
-        <span className="shrink-0 text-body text-secondary">
-          {item.durationMs >= 1000 ? `Worked for ${formatDuration(item.durationMs)}` : 'Worked'}
+        {/* The reply's own size, so the fold reads as part of the turn. */}
+        <span className="shrink-0 text-body-lg text-muted transition-colors group-hover:text-secondary">
+          Worked
+          {item.durationMs >= 1000 && (
+            <span className="tabular-nums"> for {formatDuration(item.durationMs)}</span>
+          )}
         </span>
         <Caret open={open} />
       </button>
