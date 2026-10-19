@@ -591,7 +591,7 @@ export default function ChatView({
         : false),
     restoreStatus: restoreStatusForConversationTimeline(restore?.status, !isEmbedded()),
   });
-  const { onScroll, jumpToLatest, hasOutputBelow, requestOlderHistory, restoredScrollOffset } =
+  const { onScroll, jumpToLatest, isAwayFromLatest, requestOlderHistory, restoredScrollOffset } =
     useConversationScrollWindow({
       scrollRef,
       visibleConversationKey,
@@ -911,7 +911,7 @@ export default function ChatView({
             </AppBlockRepairSessionContext.Provider>
           </div>
           <JumpToLatest
-            visible={hasOutputBelow}
+            visible={isAwayFromLatest}
             onJump={jumpToLatest}
             {...(rightInset ? { rightInsetPx: 312 } : {})}
           />

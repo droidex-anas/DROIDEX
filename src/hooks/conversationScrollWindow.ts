@@ -76,6 +76,16 @@ export function nextPinnedState(options: {
   return options.wasPinned;
 }
 
+// The way back to the tail is offered only once the reader is a full screen
+// above it; a nudge up while reading the latest reply is not "away".
+export function isAwayFromLatest(options: {
+  pinned: boolean;
+  distanceFromEnd: number;
+  viewportHeight: number;
+}): boolean {
+  return !options.pinned && options.distanceFromEnd >= options.viewportHeight;
+}
+
 export function restoreConversationScrollSnapshot(
   element: HTMLDivElement,
   snapshot: ScrollSnapshot | undefined,

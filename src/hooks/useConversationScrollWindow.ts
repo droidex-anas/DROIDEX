@@ -24,6 +24,7 @@ import {
   shouldReleaseConversationTranscript,
   shouldReportPinnedViewport,
   deferredViewportRestoreAction,
+  isAwayFromLatest,
   nextPinnedState,
   TOP_AUTO_LOAD_PX,
   type ConversationContentResizeBinding,
@@ -84,7 +85,7 @@ export function useConversationScrollWindow({
 }: ConversationScrollWindowOptions): {
   onScroll: () => void;
   jumpToLatest: () => void;
-  hasOutputBelow: boolean;
+  isAwayFromLatest: boolean;
   requestOlderHistory: (limit?: number) => void;
   restoredScrollOffset: number | undefined;
 } {
@@ -105,8 +106,20 @@ export function useConversationScrollWindow({
   const userScrollIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settledTopLoadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scrollSnapshots] = useState(() => new Map<string, ScrollSnapshot>());
-  // The conversation that gained output while the reader was scrolled up.
-  const [outputBelowKey, setOutputBelowKey] = useState<string | null>(null);
+  // The conversation whose reader is a screen or more above the latest output.
+  const [awayKey, setAwayKey] = useState<string | null>(null);
+
+  const updateAway = useCallback(
+    (element: HTMLDivElement) => {
+      const away = isAwayFromLatest({
+        pinned: isPinned.current,
+        distanceFromEnd: element.scrollHeight - element.scrollTop - element.clientHeight,
+        viewportHeight: element.clientHeight,
+      });
+      setAwayKey(away ? (visibleConversationKey ?? null) : null);
+    },
+    [visibleConversationKey],
+  );
 
   const cancelSettledTopLoad = useCallback(() => {
     if (settledTopLoadTimer.current === null) return;
@@ -232,7 +245,6 @@ export function useConversationScrollWindow({
   const setPinned = useCallback(
     (pinned: boolean) => {
       isPinned.current = pinned;
-      if (pinned) setOutputBelowKey(null);
       if (!activeAppSessionId || !visibleConversationKey) return;
       if (!shouldReportPinnedViewport(reportedPinned.current, visibleConversationKey, pinned)) {
         return;
@@ -306,6 +318,7 @@ export function useConversationScrollWindow({
     disclosureAnchor.current = null;
     viewportAnchor.current = null;
     setPinned(true);
+    setAwayKey(null);
     element.scrollTop = element.scrollHeight;
   }, [scrollRef, setPinned]);
 
@@ -320,6 +333,7 @@ export function useConversationScrollWindow({
     });
     lastScrollTop.current = element.scrollTop;
     setPinned(pinned);
+    updateAway(element);
     if (
       isRestoringViewport.current &&
       shouldCancelViewportRestore(expectedRestoredScrollTop.current, element.scrollTop)
@@ -373,6 +387,7 @@ export function useConversationScrollWindow({
     scrollRef,
     scrollSnapshots,
     setPinned,
+    updateAway,
     visibleConversationKey,
   ]);
 
@@ -585,16 +600,12 @@ export function useConversationScrollWindow({
     if (!element) return;
     if (isPinned.current) {
       element.scrollTop = element.scrollHeight;
-    } else if (isConversationLive && visibleConversationKey) {
-      setOutputBelowKey(visibleConversationKey);
+    } else {
+      // Output landing below a reader who is not scrolling can carry them a
+      // screen away from the tail.
+      updateAway(element);
     }
-  }, [
-    scrollRef,
-    transcriptLength,
-    transcriptTailLength,
-    visibleConversationKey,
-    isConversationLive,
-  ]);
+  }, [scrollRef, transcriptLength, transcriptTailLength, updateAway]);
 
   useEffect(() => {
     if (
@@ -630,7 +641,7 @@ export function useConversationScrollWindow({
   return {
     onScroll,
     jumpToLatest,
-    hasOutputBelow: outputBelowKey !== null && outputBelowKey === visibleConversationKey,
+    isAwayFromLatest: awayKey !== null && awayKey === visibleConversationKey,
     requestOlderHistory,
     restoredScrollOffset:
       visibleConversationKey && scrollSnapshots.has(visibleConversationKey)

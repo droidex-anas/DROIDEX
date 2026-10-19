@@ -4,8 +4,8 @@ import { Button } from '../ui/Button';
 
 const SMOOTH_OUT = [0.22, 1, 0.36, 1] as const;
 
-// Shown only when the conversation gains output while the reader is scrolled
-// up, so reading back never pulls the view and the way back stays one click.
+// Shown while the reader is a screen or more above the latest output, so
+// reading back never pulls the view and the way back stays one click.
 export function JumpToLatest({
   visible,
   onJump,
