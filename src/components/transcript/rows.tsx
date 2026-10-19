@@ -73,7 +73,7 @@ export function ThinkingItem({
         <Caret open={open} />
       </button>
       <Expand open={open}>
-        <div className="mt-2 pl-5 text-body text-muted whitespace-pre-wrap break-words">
+        <div className="mt-2 pl-5 text-body text-quiet whitespace-pre-wrap break-words">
           {text}
           {active && <StreamingCaret />}
         </div>

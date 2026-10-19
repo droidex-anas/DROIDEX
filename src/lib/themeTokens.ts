@@ -149,6 +149,10 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     '--text': theme.fg,
     '--text-secondary': textTone(theme.fg, ground, scheme, 30, secondaryFloor),
     '--text-muted': textTone(theme.fg, ground, scheme, 50, AA_TEXT),
+    // Readable but receding, for the agent's thinking. Dark themes leave muted
+    // well above AA, so quiet steps further down; light muted already sits at
+    // the floor, so there the two match.
+    '--text-quiet': textTone(theme.fg, ground, scheme, 80, AA_TEXT),
     '--accent': theme.accent,
     '--focus-ring': focusRingColor(theme.accent, theme.fg, ground, FOCUS_RING_ALPHA[scheme]),
     '--link': LINK_COLORS[scheme],
