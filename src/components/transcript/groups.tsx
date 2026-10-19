@@ -12,9 +12,10 @@ import {
 import { pathFileName } from '../../lib/pathDisplay';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { formatDuration } from '../../lib/tools';
-import type { FeedItem } from '../chatFeed';
+import type { FeedChange, FeedItem } from '../chatFeed';
 import { DiffCard } from '../DiffView';
 import { Caret, Expand } from './primitives';
+import { ChangeCount } from './ChangeCount';
 import { Button } from '../ui/Button';
 import { hasPendingCall, renderToolEvents, summarizeTools } from './rows';
 
@@ -123,12 +124,15 @@ export function DiffGroup({
   onOpenDiff,
   onOpenReviewFile,
   inlineDiffs = true,
+  live = false,
 }: {
-  changes: { event: TranscriptEvent; change: FileChange }[];
+  changes: FeedChange[];
   cwd?: string;
   onOpenDiff?: (c: FileChange) => void;
   onOpenReviewFile?: OpenReviewFileHandler;
   inlineDiffs?: boolean;
+  // The turn is still streaming: edits without a result are being written.
+  live?: boolean;
 }) {
   const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? inlineDiffs;
@@ -137,10 +141,12 @@ export function DiffGroup({
   const removed = changes.reduce((s, c) => s + c.change.removed, 0);
   const files = new Set(changes.map((c) => c.change.path));
   const edits = `${String(changes.length)} ${changes.length === 1 ? 'edit' : 'edits'}`;
+  const writing = live && changes.some((c) => c.pending);
+  const verb = writing ? 'Editing' : 'Edited';
   const label =
     files.size <= 1
-      ? `Edited ${pathFileName(changes[0].change.path)} · ${edits}`
-      : `Edited ${String(files.size)} files · ${edits}`;
+      ? `${verb} ${pathFileName(changes[0].change.path)} · ${edits}`
+      : `${verb} ${String(files.size)} files · ${edits}`;
   // Mount bounded chunks so neither opening nor disclosing a genuinely huge
   // edit run creates one long renderer commit. No diff content is discarded.
   const shown = changes.slice(0, disclosure.mountedCount);
@@ -172,28 +178,23 @@ export function DiffGroup({
         className="group flex w-full min-w-0 items-center gap-1.5 text-left"
       >
         <Caret open={open} />
-        <span className="min-w-0 truncate text-body-strong text-muted group-hover:text-secondary">
+        <span
+          className={`min-w-0 truncate text-body-strong ${
+            writing ? 'shimmer-text' : 'text-muted group-hover:text-secondary'
+          }`}
+        >
           {label}
         </span>
-        <span
-          className="shrink-0 text-caption tabular-nums"
-          style={{ color: 'var(--diff-add-fg)' }}
-        >
-          +{added}
-        </span>
-        <span
-          className="shrink-0 text-caption tabular-nums"
-          style={{ color: 'var(--diff-del-fg)' }}
-        >
-          −{removed}
-        </span>
+        <ChangeCount tone="add" value={added} />
+        <ChangeCount tone="del" value={removed} />
       </button>
       <Expand open={open}>
-        <div className="mt-2 space-y-2.5 pl-5">
+        <div className={`mt-2 space-y-2.5 pl-5${live ? ' tool-rows-live' : ''}`}>
           {shown.map((c) => (
             <DiffCard
               key={c.event.id}
               change={c.change}
+              running={live && c.pending === true}
               cwd={cwd}
               onOpen={
                 onOpenReviewFile

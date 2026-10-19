@@ -72,14 +72,22 @@ function isReconnectNotice(event: TranscriptEvent): boolean {
 }
 
 /* ── Feed model ── */
+// `pending` while the edit's call has no result yet, so a live row can say
+// "Editing" until the file is written.
+export interface FeedChange {
+  event: TranscriptEvent;
+  change: FileChange;
+  pending?: boolean;
+}
+
 export type FeedItem =
   | { type: 'message'; key: string; event: TranscriptEvent }
   | { type: 'thinking'; key: string; event: TranscriptEvent; durationMs?: number }
   | { type: 'status'; key: string; event: TranscriptEvent }
   // attempts counts consecutive connection retries folded into this one row.
   | { type: 'error'; key: string; event: TranscriptEvent; attempts?: number }
-  | { type: 'diff'; key: string; event: TranscriptEvent; change: FileChange }
-  | { type: 'diffs'; key: string; changes: { event: TranscriptEvent; change: FileChange }[] }
+  | ({ type: 'diff'; key: string } & FeedChange)
+  | { type: 'diffs'; key: string; changes: FeedChange[] }
   | { type: 'child_session'; key: string; event: TranscriptEvent }
   // One contiguous run of Task spawns (a turn's subagent wave); rendered as a
   // single subagents dock card scoped to just these spawns.
@@ -127,10 +135,15 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'tools' && b.type === 'tools') {
     return a.events.length === b.events.length && a.events.every((e, i) => e === b.events[i]);
   }
+  if (a.type === 'diff' && b.type === 'diff') {
+    return a.event === b.event && a.pending === b.pending;
+  }
   if (a.type === 'diffs' && b.type === 'diffs') {
     return (
       a.changes.length === b.changes.length &&
-      a.changes.every((c, i) => c.event === b.changes[i].event)
+      a.changes.every(
+        (c, i) => c.event === b.changes[i].event && c.pending === b.changes[i].pending,
+      )
     );
   }
   if (a.type === 'child_sessions' && b.type === 'child_sessions') {
@@ -171,7 +184,7 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'error' && b.type === 'error') {
     return a.event === b.event && a.attempts === b.attempts;
   }
-  // message | status | diff | child session each carry one event.
+  // message | status | child session each carry one event.
   return (a as { event: TranscriptEvent }).event === (b as { event: TranscriptEvent }).event;
 }
 
@@ -275,8 +288,10 @@ export function buildFeed(
   // claimed and skipped when iteration later reaches them, instead of rendering
   // as a detached raw "Tool result".
   const resultById = new Map<string, TranscriptEvent>();
+  const answeredToolUseIds = new Set<string>();
   for (const e of events) {
     if (e.kind !== 'tool_result' || !e.toolUseId) continue;
+    answeredToolUseIds.add(e.toolUseId);
     if (imageResultIds.has(e.toolUseId)) imageResults.set(e.toolUseId, e);
     if (!e.isError) resultById.set(e.toolUseId, e);
   }
@@ -365,17 +380,19 @@ export function buildFeed(
       if (change) {
         // Fold a contiguous run of file edits into one collapsible group so a
         // large multi-file change doesn't bury the chat under dozens of cards.
-        const changes: { event: TranscriptEvent; change: FileChange }[] = [];
+        const changes: FeedChange[] = [];
         // Dedupe by toolUseId: a single edit can arrive as many streaming
         // tool_call snapshots; counting each one inflates the diff stats and
         // floods the group with repeated rows. Keep only the latest per call.
         const byToolUse = new Map<string, number>();
         const addChange = (e: TranscriptEvent, c: FileChange) => {
+          const entry: FeedChange = { event: e, change: c };
+          if (e.toolUseId && !answeredToolUseIds.has(e.toolUseId)) entry.pending = true;
           const at = e.toolUseId ? byToolUse.get(e.toolUseId) : undefined;
-          if (at != null) changes[at] = { event: e, change: c };
+          if (at != null) changes[at] = entry;
           else {
             if (e.toolUseId) byToolUse.set(e.toolUseId, changes.length);
-            changes.push({ event: e, change: c });
+            changes.push(entry);
           }
         };
         addChange(ev, change);
@@ -397,12 +414,7 @@ export function buildFeed(
           i++;
         }
         if (changes.length === 1)
-          items.push({
-            type: 'diff',
-            key: changes[0].event.id,
-            event: changes[0].event,
-            change: changes[0].change,
-          });
+          items.push({ type: 'diff', key: changes[0].event.id, ...changes[0] });
         else items.push({ type: 'diffs', key: `diffs-${ev.id}`, changes });
         continue;
       }

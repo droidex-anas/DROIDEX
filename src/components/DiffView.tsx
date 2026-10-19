@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import type { FileChange, DiffOp } from '../lib/diff';
 import { displayPath } from '../lib/pathDisplay';
 import { Expand, ToolPanel } from './transcript/primitives';
+import { ChangeCount } from './transcript/ChangeCount';
 
 const ADD_FG = 'var(--diff-add-fg)';
 const DEL_FG = 'var(--diff-del-fg)';
@@ -74,6 +75,28 @@ const VERB_LABEL: Record<FileChange['verb'], string> = {
   patch: 'Patch',
 };
 
+const LIVE_VERB_LABEL: Record<FileChange['verb'], string> = {
+  edit: 'Editing',
+  create: 'Creating',
+  patch: 'Patching',
+};
+
+// Shimmers in its live form while the edit is written, then settles into the
+// plain verb. Rows that mount settled (history) never animate.
+function ChangeVerb({ verb, running }: { verb: FileChange['verb']; running: boolean }) {
+  const [mountedRunning] = useState(running);
+  if (running) {
+    return <span className="shrink-0 shimmer-text text-body-strong">{LIVE_VERB_LABEL[verb]}</span>;
+  }
+  return (
+    <span
+      className={`shrink-0 text-body-strong text-secondary${mountedRunning ? ' text-swap-enter' : ''}`}
+    >
+      {VERB_LABEL[verb]}
+    </span>
+  );
+}
+
 function DiffHeader({ change, cwd }: { change: FileChange; cwd?: string }) {
   const label = displayPath(change.path, cwd);
   return (
@@ -96,10 +119,12 @@ export function DiffCard({
   change,
   cwd,
   onOpen,
+  running = false,
 }: {
   change: FileChange;
   cwd?: string;
   onOpen?: () => void;
+  running?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const label = displayPath(change.path, cwd);
@@ -129,18 +154,12 @@ export function DiffCard({
           }}
           className="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
-          <span className="shrink-0 text-body-strong text-secondary">
-            {VERB_LABEL[change.verb]}
-          </span>
-          <span title={change.path} className="min-w-0 truncate text-caption text-muted">
+          <ChangeVerb verb={change.verb} running={running} />
+          <span title={change.path} className="min-w-0 flex-1 truncate text-caption text-muted">
             {label}
           </span>
-          <span className="ml-auto text-caption tabular-nums shrink-0" style={{ color: ADD_FG }}>
-            +{change.added}
-          </span>
-          <span className="text-caption tabular-nums shrink-0" style={{ color: DEL_FG }}>
-            −{change.removed}
-          </span>
+          <ChangeCount tone="add" value={change.added} />
+          <ChangeCount tone="del" value={change.removed} />
         </button>
       </div>
       <Expand open={open}>
