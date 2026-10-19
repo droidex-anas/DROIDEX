@@ -55,17 +55,6 @@ export function ChildSessionLine({
   return (
     <div>
       <div className="group flex items-center gap-1.5 text-body">
-        <button
-          type="button"
-          onClick={() => {
-            setOpen((o) => !o);
-          }}
-          className="-m-0.5 flex items-center rounded-xs p-0.5"
-          aria-label="Toggle child session activity"
-          aria-expanded={open}
-        >
-          <Caret open={open} />
-        </button>
         <span className={muted}>{verb}</span>
         <button
           type="button"
@@ -77,6 +66,17 @@ export function ChildSessionLine({
           {name}
         </button>
         {tail && <span className={muted}>{tail}</span>}
+        <button
+          type="button"
+          onClick={() => {
+            setOpen((o) => !o);
+          }}
+          className="-m-0.5 flex items-center rounded-xs p-0.5"
+          aria-label="Toggle child session activity"
+          aria-expanded={open}
+        >
+          <Caret open={open} />
+        </button>
       </div>
       <Expand open={open}>
         <div className="mt-2 pl-5">

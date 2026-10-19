@@ -63,7 +63,6 @@ export function ThinkingItem({
         className="group flex items-center gap-1.5 text-left"
         aria-expanded={open}
       >
-        <Caret open={open} />
         {active ? (
           <span className="shimmer-text text-body-strong">{label}</span>
         ) : (
@@ -71,6 +70,7 @@ export function ThinkingItem({
             {label}
           </span>
         )}
+        <Caret open={open} />
       </button>
       <Expand open={open}>
         <div className="mt-2 pl-5 text-body text-muted whitespace-pre-wrap break-words">
@@ -227,9 +227,9 @@ export function ErrorLine({ text, attempts }: { text: string; attempts?: number 
         className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={open}
       >
-        <Caret open={open} />
         <span className="min-w-0 truncate text-secondary">{label}</span>
         {attempts ? <span className="shrink-0 text-muted">· {attempts} attempts</span> : null}
+        <Caret open={open} />
         <ErrorTag emphasis />
       </button>
       <Expand open={open}>
@@ -328,30 +328,32 @@ function ToolLine({
       )}
     </span>
   );
+  const toggle = () => {
+    setOpen((o) => !o);
+  };
   return (
     <div>
-      <div className="flex min-w-0 items-center gap-1.5 text-body">
+      <div className="group flex min-w-0 items-center gap-1.5 text-body">
         {collapsible ? (
           <button
             type="button"
-            onClick={() => {
-              setOpen((o) => !o);
-            }}
+            onClick={toggle}
             aria-expanded={expanded}
-            className="group flex shrink-0 items-center gap-1.5 text-left"
+            className="flex shrink-0 items-center text-left"
           >
-            <Caret open={expanded} />
             {verb}
           </button>
         ) : (
-          <>
-            {/* Caret-width spacer keeps the label flush with the expandable rows. */}
-            <span className="w-icon-sm shrink-0" aria-hidden="true" />
-            {verb}
-          </>
+          verb
         )}
         <ToolTarget call={call} onOpenReviewFile={onOpenReviewFile} />
         {call.source && !mark && <span className="shrink-0 text-muted/60">· {call.source}</span>}
+        {collapsible && (
+          // The verb is the accessible toggle; the chevron repeats it for the pointer.
+          <button type="button" tabIndex={-1} aria-hidden="true" onClick={toggle}>
+            <Caret open={expanded} />
+          </button>
+        )}
         {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </div>
       {hasBody && (

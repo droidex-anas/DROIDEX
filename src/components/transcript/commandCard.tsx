@@ -140,12 +140,7 @@ export function CommandLine({
   // process is still alive already has captured output, and that output must
   // stay reachable. It keeps the Running indicator in place of "Ran".
   if (running) {
-    return (
-      <div className="flex min-w-0 items-center gap-1.5 text-body">
-        <span className="w-icon-sm shrink-0" aria-hidden="true" />
-        {label}
-      </div>
-    );
+    return <div className="flex min-w-0 items-center gap-1.5 text-body">{label}</div>;
   }
   return (
     <div>
@@ -156,8 +151,8 @@ export function CommandLine({
         className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={expanded}
       >
-        <Caret open={expanded} />
         {label}
+        <Caret open={expanded} />
         {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </button>
       <Expand open={expanded}>

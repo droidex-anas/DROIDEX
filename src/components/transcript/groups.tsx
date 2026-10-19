@@ -63,7 +63,6 @@ export function ToolGroupItem({
         }}
         className="group flex items-center gap-1.5 text-left"
       >
-        <Caret open={open} />
         {inFlight ? (
           <span className="shimmer-text text-body-strong">{summary}</span>
         ) : (
@@ -71,6 +70,7 @@ export function ToolGroupItem({
             {summary}
           </span>
         )}
+        <Caret open={open} />
       </button>
       <Expand open={open}>
         <div className={`mt-2 pl-5 ${rows}`}>
@@ -103,10 +103,10 @@ export function WorkedGroup({
         }}
         className="group flex min-w-0 items-center gap-1.5 text-left"
       >
-        <Caret open={open} />
         <span className="shrink-0 text-body text-secondary">
           {item.durationMs >= 1000 ? `Worked for ${formatDuration(item.durationMs)}` : 'Worked'}
         </span>
+        <Caret open={open} />
       </button>
       <Expand open={open}>
         <div className="mt-3 space-y-2.5 pl-5">{children}</div>
@@ -177,7 +177,6 @@ export function DiffGroup({
         }}
         className="group flex w-full min-w-0 items-center gap-1.5 text-left"
       >
-        <Caret open={open} />
         <span
           className={`min-w-0 truncate text-body-strong ${
             writing ? 'shimmer-text' : 'text-muted group-hover:text-secondary'
@@ -185,6 +184,7 @@ export function DiffGroup({
         >
           {label}
         </span>
+        <Caret open={open} />
         <ChangeCount tone="add" value={added} />
         <ChangeCount tone="del" value={removed} />
       </button>

@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import type { FileChange, DiffOp } from '../lib/diff';
 import { displayPath } from '../lib/pathDisplay';
-import { Expand, ToolPanel } from './transcript/primitives';
+import { Caret, Expand, ToolPanel } from './transcript/primitives';
 import { ChangeCount } from './transcript/ChangeCount';
 
 const ADD_FG = 'var(--diff-add-fg)';
@@ -128,39 +127,36 @@ export function DiffCard({
 }) {
   const [open, setOpen] = useState(false);
   const label = displayPath(change.path, cwd);
+  const toggle = () => {
+    setOpen((value) => !value);
+  };
 
   return (
     <div>
-      <div className="flex w-full min-w-0 items-center gap-1.5">
+      <div className="group flex w-full min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          aria-expanded={onOpen ? undefined : open}
+          onClick={onOpen ?? toggle}
+          className="flex min-w-0 items-center gap-1.5 text-left"
+        >
+          <ChangeVerb verb={change.verb} running={running} />
+          <span title={change.path} className="min-w-0 truncate text-caption text-muted">
+            {label}
+          </span>
+        </button>
         <button
           type="button"
           aria-label={`Preview ${label}`}
           aria-expanded={open}
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
-          className="group flex shrink-0 items-center justify-center"
+          onClick={toggle}
+          className="flex shrink-0 items-center justify-center"
         >
-          <ChevronRight
-            className={`size-icon-sm text-muted/50 transition-transform duration-200 group-hover:text-muted ${open ? 'rotate-90' : ''}`}
-          />
+          <Caret open={open} />
         </button>
-        <button
-          type="button"
-          aria-expanded={onOpen ? undefined : open}
-          onClick={() => {
-            if (onOpen) onOpen();
-            else setOpen((value) => !value);
-          }}
-          className="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
-        >
-          <ChangeVerb verb={change.verb} running={running} />
-          <span title={change.path} className="min-w-0 flex-1 truncate text-caption text-muted">
-            {label}
-          </span>
-          <ChangeCount tone="add" value={change.added} />
-          <ChangeCount tone="del" value={change.removed} />
-        </button>
+        <span className="ml-auto" />
+        <ChangeCount tone="add" value={change.added} />
+        <ChangeCount tone="del" value={change.removed} />
       </div>
       <Expand open={open}>
         {open ? <DiffPreview ops={change.ops} className="mt-1.5" /> : null}

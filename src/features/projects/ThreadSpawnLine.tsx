@@ -74,17 +74,6 @@ export function ThreadSpawnLine({
   return (
     <div data-testid="thread-spawn-line">
       <div className="group flex items-center gap-1.5 text-body">
-        <button
-          type="button"
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
-          className="-m-0.5 flex items-center rounded-xs p-0.5"
-          aria-label={words.toggle}
-          aria-expanded={open}
-        >
-          <Caret open={open} />
-        </button>
         <span className={live ? 'shimmer-text font-medium' : 'text-muted'}>
           {starting ? words.starting : words.started}
         </span>
@@ -103,6 +92,17 @@ export function ThreadSpawnLine({
             <ActivityStatusGlyph status={row.status} />
           </>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            setOpen((value) => !value);
+          }}
+          className="-m-0.5 flex items-center rounded-xs p-0.5"
+          aria-label={words.toggle}
+          aria-expanded={open}
+        >
+          <Caret open={open} />
+        </button>
       </div>
       <Expand open={open}>
         <SpawnDetail
