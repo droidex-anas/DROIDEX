@@ -1,20 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 
-// Streamed tokens arrive in uneven bursts; revealing a bounded number of
-// characters per frame turns the bursts into a steady typing cadence. The step
-// scales with the backlog so a huge burst still converges quickly, and the
-// loop only runs while the revealed text is behind the source.
-const MIN_CHARS_PER_FRAME = 3;
+// Streamed tokens arrive in bursts. Revealing a fixed share of the backlog each
+// frame races through every burst and then crawls, so text pulses. Instead the
+// reveal runs at a rate that drains the backlog over TARGET_LAG_MS, eased frame
+// to frame: a steady stream settles at its own arrival rate and reads as one
+// even flow, while a large burst still catches up within a few hundred ms.
+const TARGET_LAG_MS = 160;
+const MIN_CODE_POINTS_PER_MS = 0.04;
+const RATE_EASE_MS = 120;
 const MAX_CODE_POINTS_PER_FRAME = 64;
-const CATCH_UP_FRACTION = 8;
+// A frame gap longer than this (a hidden tab, a long task) is not reading time.
+const MAX_FRAME_MS = 50;
+// A stream that pauses this long ramps up again from rest when it resumes.
+const RESTART_AFTER_MS = 250;
 
-export function nextRevealedText(latest: string, current: string): string {
+export function easedRevealRate(rate: number, backlog: number, elapsedMs: number): number {
+  const target = Math.max(MIN_CODE_POINTS_PER_MS, backlog / TARGET_LAG_MS);
+  return rate + (target - rate) * Math.min(1, elapsedMs / RATE_EASE_MS);
+}
+
+export function nextRevealedText(latest: string, current: string, codePoints: number): string {
   if (!latest.startsWith(current) || current.length >= latest.length) return latest;
-  const backlog = latest.length - current.length;
-  const step = Math.min(
-    MAX_CODE_POINTS_PER_FRAME,
-    Math.max(MIN_CHARS_PER_FRAME, Math.ceil(backlog / CATCH_UP_FRACTION)),
-  );
+  const step = Math.min(MAX_CODE_POINTS_PER_FRAME, codePoints);
   let index = current.length;
   let taken = 0;
   while (index < latest.length && taken < step) {
@@ -32,6 +39,7 @@ export function useSmoothStreamingText(source: string, live: boolean): string {
   const shownRef = useRef(source);
   const sourceRef = useRef(source);
   const frameRef = useRef(0);
+  const pace = useRef({ rate: 0, budget: 0, lastFrameAt: 0 });
 
   useEffect(() => {
     sourceRef.current = source;
@@ -51,7 +59,7 @@ export function useSmoothStreamingText(source: string, live: boolean): string {
       return;
     }
     if (frameRef.current || shownRef.current.length >= source.length) return;
-    const tick = () => {
+    const tick = (now: number) => {
       frameRef.current = 0;
       const latest = sourceRef.current;
       const current = shownRef.current;
@@ -61,10 +69,25 @@ export function useSmoothStreamingText(source: string, live: boolean): string {
         return;
       }
       if (current.length >= latest.length) return;
-      const next = nextRevealedText(latest, current);
-      shownRef.current = next;
-      setShown(next);
-      if (next.length < latest.length) frameRef.current = requestAnimationFrame(tick);
+      const state = pace.current;
+      const sinceLastFrame = now - state.lastFrameAt;
+      if (sinceLastFrame > RESTART_AFTER_MS) {
+        state.rate = 0;
+        state.budget = 0;
+      }
+      const elapsed = Math.min(MAX_FRAME_MS, Math.max(0, sinceLastFrame));
+      state.lastFrameAt = now;
+      state.rate = easedRevealRate(state.rate, latest.length - current.length, elapsed);
+      state.budget += state.rate * elapsed;
+      const take = Math.floor(state.budget);
+      if (take > 0) {
+        state.budget -= take;
+        const next = nextRevealedText(latest, current, take);
+        shownRef.current = next;
+        setShown(next);
+        if (next.length >= latest.length) return;
+      }
+      frameRef.current = requestAnimationFrame(tick);
     };
     frameRef.current = requestAnimationFrame(tick);
   }, [source, live]);
