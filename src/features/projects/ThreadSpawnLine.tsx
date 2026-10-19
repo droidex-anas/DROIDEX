@@ -70,13 +70,22 @@ export function ThreadSpawnLine({
     if (sameProject) dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads', threadId: spawned.id });
     else dispatch({ type: 'SET_ACTIVE_SESSION', id: spawned.id });
   };
+  const toggle = () => {
+    setOpen((value) => !value);
+  };
 
   return (
     <div data-testid="thread-spawn-line">
       <div className="group flex items-center gap-1.5 text-body">
-        <span className={live ? 'shimmer-text font-medium' : 'text-muted'}>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          title={words.toggle}
+          className={live ? 'shimmer-text font-medium' : 'text-muted'}
+        >
           {starting ? words.starting : words.started}
-        </span>
+        </button>
         <button
           type="button"
           disabled={!spawned}
@@ -92,14 +101,13 @@ export function ThreadSpawnLine({
             <ActivityStatusGlyph status={row.status} />
           </>
         )}
+        {/* The verb is the accessible toggle; the chevron repeats it for the pointer. */}
         <button
           type="button"
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={toggle}
           className="-m-0.5 flex items-center rounded-xs p-0.5"
-          aria-label={words.toggle}
-          aria-expanded={open}
         >
           <Caret open={open} />
         </button>

@@ -202,7 +202,9 @@ export function DiffGroup({
         <ChangeCount tone="del" value={removed} />
       </button>
       <Expand open={open}>
-        <div className={`mt-2 space-y-2.5 pl-5${live ? ' tool-rows-live' : ''}`}>
+        {/* Gated on writing, not session liveness: adding the class to a settled
+            group would replay the entrance on every card already shown. */}
+        <div className={`mt-2 space-y-2.5 pl-5${writing ? ' tool-rows-live' : ''}`}>
           {shown.map((c) => (
             <DiffCard
               key={c.event.id}

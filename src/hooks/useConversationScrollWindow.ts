@@ -25,6 +25,7 @@ import {
   shouldReportPinnedViewport,
   deferredViewportRestoreAction,
   isAwayFromLatest,
+  nestedScrollerCanScrollUp,
   nextPinnedState,
   TOP_AUTO_LOAD_PX,
   type ConversationContentResizeBinding,
@@ -116,7 +117,7 @@ export function useConversationScrollWindow({
         distanceFromEnd: element.scrollHeight - element.scrollTop - element.clientHeight,
         viewportHeight: element.clientHeight,
       });
-      setAwayKey(away ? (visibleConversationKey ?? null) : null);
+      setAwayKey(away ? visibleConversationKey : null);
     },
     [visibleConversationKey],
   );
@@ -297,6 +298,7 @@ export function useConversationScrollWindow({
     const readWheel = (event: WheelEvent) => {
       releaseDisclosure();
       if (event.deltaY >= 0 || element.scrollTop <= 0 || !isPinned.current) return;
+      if (nestedScrollerCanScrollUp(event.target, element)) return;
       viewportAnchor.current = captureViewportAnchor(element, true);
       setPinned(false);
     };

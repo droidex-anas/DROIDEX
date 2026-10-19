@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 // frame races through every burst and then crawls, so text pulses. Instead the
 // reveal runs at a rate that drains the backlog over TARGET_LAG_MS, eased frame
 // to frame: a steady stream settles at its own arrival rate and reads as one
-// even flow, while a large burst still catches up within a few hundred ms.
+// even flow, while a large burst catches up as fast as MAX_CODE_POINTS_PER_FRAME
+// allows (about 3,800 code points a second at 60Hz).
 const TARGET_LAG_MS = 160;
 const MIN_CODE_POINTS_PER_MS = 0.04;
 const RATE_EASE_MS = 120;

@@ -72,9 +72,6 @@ function equalOrigin(left: ThreadOrigin | undefined, right: ThreadOrigin | undef
   );
 }
 
-// While a conversation restores we show an animated placeholder instead of a
-// "Restoring…" label, so switching chats feels like content loading in (the way
-// most chat apps do) rather than a blank or busy screen.
 // The loaded feed's two boxes: a padded max-w-4xl frame holding max-w-2xl
 // rows. Placeholders sit in the same boxes so content lands where they were.
 function TranscriptColumn({ children }: { children: ReactNode }) {
@@ -85,6 +82,9 @@ function TranscriptColumn({ children }: { children: ReactNode }) {
   );
 }
 
+// While a conversation restores we show an animated placeholder instead of a
+// "Restoring…" label, so switching chats feels like content loading in (the way
+// most chat apps do) rather than a blank or busy screen.
 function RestoringState() {
   return (
     <TranscriptColumn>

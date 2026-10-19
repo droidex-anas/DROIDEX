@@ -52,10 +52,15 @@ export function ChildSessionLine({
   const muted = running ? 'shimmer-text font-medium' : 'text-muted';
   const latest = childSessionLatest(activity?.latest);
   const navigate = () => onOpen?.(childSessionTargetFromEvent(event));
+  const toggle = () => {
+    setOpen((o) => !o);
+  };
   return (
     <div>
       <div className="group flex items-center gap-1.5 text-body">
-        <span className={muted}>{verb}</span>
+        <button type="button" onClick={toggle} aria-expanded={open} className={muted}>
+          {verb}
+        </button>
         <button
           type="button"
           onClick={navigate}
@@ -66,14 +71,13 @@ export function ChildSessionLine({
           {name}
         </button>
         {tail && <span className={muted}>{tail}</span>}
+        {/* The verb is the accessible toggle; the chevron repeats it for the pointer. */}
         <button
           type="button"
-          onClick={() => {
-            setOpen((o) => !o);
-          }}
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={toggle}
           className="-m-0.5 flex items-center rounded-xs p-0.5"
-          aria-label="Toggle child session activity"
-          aria-expanded={open}
         >
           <Caret open={open} />
         </button>

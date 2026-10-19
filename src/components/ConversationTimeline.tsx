@@ -24,7 +24,9 @@ function railSizeFor(gutterPx: number): RailSize {
 }
 
 // Distance from the scroller's left edge to where transcript content starts:
-// the feed's outer frame plus its own padding.
+// the feed's outer frame plus its own padding. The frame is centred, so its
+// inset changes only with the scroller's width; the frame element itself is
+// replaced on every conversation switch and is read fresh each time.
 function useTranscriptGutter(scrollRef: RefObject<HTMLDivElement | null>): number {
   const [gutter, setGutter] = useState(0);
   useEffect(() => {
@@ -38,7 +40,6 @@ function useTranscriptGutter(scrollRef: RefObject<HTMLDivElement | null>): numbe
     };
     const observer = new ResizeObserver(measure);
     observer.observe(root);
-    if (root.firstElementChild) observer.observe(root.firstElementChild);
     measure();
     return () => {
       observer.disconnect();
