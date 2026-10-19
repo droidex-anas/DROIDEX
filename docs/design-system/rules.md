@@ -181,7 +181,7 @@ panel edge
 | Dialogs | 440 (confirm), 560 (form), 720 (content), `radius-2xl` |
 | Command palette | 576 (`max-w-palette`), `radius-2xl` |
 | Sidebar | 280 (fixed today) |
-| Reading column | 60–80 characters: transcript rows 672 (`max-w-2xl`), markdown text 528 (`max-w-measure`) |
+| Reading column | transcript rows 672 (`max-w-2xl`); replies fill the row, edge to edge with cards and the composer |
 
 ## Colour budget
 

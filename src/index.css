@@ -732,13 +732,7 @@
     margin-top: 0;
   }
 
-  /* Running text keeps a readable measure in a wide column; code, tables,
-     diagrams and apps still take the full width. Wrapping avoids a lone word
-     on a paragraph's last line and balances headings. */
-  :where(.md-shell) > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) {
-    max-width: theme('maxWidth.measure');
-  }
-
+  /* Avoid a lone word on a paragraph's last line, and balance headings. */
   :where(.md-shell) :is(p, li) {
     text-wrap: pretty;
   }

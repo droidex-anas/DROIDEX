@@ -131,8 +131,6 @@ export default {
         'dialog-form': '560px',
         'dialog-content': '720px',
         palette: '576px',
-        // About 78 characters of `prose` (14px Inter): the reading measure.
-        measure: '528px',
       },
       size: sizes,
       minHeight: sizes,
