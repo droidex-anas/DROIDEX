@@ -10,6 +10,43 @@ import { usePopoverPosition } from './ui/usePopoverPosition';
 // Moving from a tick onto its preview card crosses a small gap.
 const PREVIEW_HIDE_DELAY_MS = 100;
 
+// The rail lives in the space left of the transcript text. A roomy gutter gets
+// the full rail; a tight one gets shorter ticks that never reach the text, even
+// magnified; a gutter too narrow for that hides the rail.
+type RailSize = 'roomy' | 'compact' | 'hidden';
+const ROOMY_GUTTER_PX = 64;
+const COMPACT_GUTTER_PX = 20;
+
+function railSizeFor(gutterPx: number): RailSize {
+  if (gutterPx >= ROOMY_GUTTER_PX) return 'roomy';
+  if (gutterPx >= COMPACT_GUTTER_PX) return 'compact';
+  return 'hidden';
+}
+
+// Distance from the scroller's left edge to where transcript content starts:
+// the feed's outer frame plus its own padding.
+function useTranscriptGutter(scrollRef: RefObject<HTMLDivElement | null>): number {
+  const [gutter, setGutter] = useState(0);
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => {
+      const frame = root.firstElementChild;
+      if (!(frame instanceof HTMLElement)) return;
+      const inset = frame.getBoundingClientRect().left - root.getBoundingClientRect().left;
+      setGutter(Math.round(inset + parseFloat(getComputedStyle(frame).paddingLeft)));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    if (root.firstElementChild) observer.observe(root.firstElementChild);
+    measure();
+    return () => {
+      observer.disconnect();
+    };
+  }, [scrollRef]);
+  return gutter;
+}
+
 /**
  * A quiet navigation rail in the chat's left gutter: one short tick per user
  * prompt. The tick list is derived from transcript data (so it always matches
@@ -31,6 +68,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   const [previewId, setPreviewId] = useState<string | null>(null);
   // The focused tick, which holds the rail's tab stop while focus is inside it.
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const railSize = railSizeFor(useTranscriptGutter(scrollRef));
   const railRef = useRef<HTMLDivElement | null>(null);
   const previewAnchorRef = useRef<HTMLElement | null>(null);
   const hideTimerRef = useRef<number | undefined>(undefined);
@@ -124,7 +162,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     });
   }, [isPreviewOpen]);
 
-  if (anchors.length < 2) return null;
+  if (anchors.length < 2 || railSize === 'hidden') return null;
 
   const jump = (id: string) => {
     jumpTargetRef.current = id;
@@ -177,7 +215,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   };
 
   return (
-    <div className="pointer-events-none absolute inset-y-24 left-1 z-10 hidden items-center lg:flex">
+    <div className="pointer-events-none absolute inset-y-24 left-1 z-10 flex items-center">
       <div
         ref={railRef}
         role="navigation"
@@ -214,12 +252,15 @@ export const ConversationTimeline = memo(function ConversationTimeline({
                 }
               }}
               onBlur={hidePreviewSoon}
-              className="flex h-2.5 w-8 shrink-0 cursor-pointer items-center rounded-xs pl-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring"
+              className={cn(
+                'flex h-2.5 shrink-0 cursor-pointer items-center rounded-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring',
+                railSize === 'roomy' ? 'w-8 pl-2' : 'w-5 pl-1',
+              )}
             >
               <span
                 className={cn(
                   'h-0.5 rounded-full transition-all duration-150 ease-smooth-out motion-reduce:transition-none',
-                  tickTone(distance, isActive),
+                  tickTone(distance, isActive, railSize),
                 )}
               />
             </button>
@@ -246,15 +287,26 @@ export const ConversationTimeline = memo(function ConversationTimeline({
 });
 
 // Dock-style magnification: the previewed tick grows longest and brightest and
-// its neighbours less, falling off over three ticks; at rest only the current
-// prompt stands out.
-function tickTone(distanceFromPreview: number, isActive: boolean): string {
-  if (distanceFromPreview === 0) return 'w-6 bg-primary';
-  if (distanceFromPreview === 1) return 'w-4 bg-secondary';
-  if (distanceFromPreview === 2) return 'w-3 bg-muted';
-  if (distanceFromPreview === 3) return 'w-2 bg-muted/70';
-  if (isActive) return 'w-3 bg-secondary';
-  return 'w-1.5 bg-muted/40';
+// its neighbours less, falling off over three ticks. At rest the ticks stay
+// short and only the current prompt stands out a little.
+const TICK_WIDTHS: Record<Exclude<RailSize, 'hidden'>, string[]> = {
+  // previewed, its neighbours by distance 1-3, the current prompt, any other
+  roomy: ['w-6', 'w-4', 'w-3', 'w-2', 'w-2.5', 'w-1'],
+  compact: ['w-3', 'w-2.5', 'w-2', 'w-1.5', 'w-2', 'w-1'],
+};
+
+function tickTone(
+  distanceFromPreview: number,
+  isActive: boolean,
+  size: Exclude<RailSize, 'hidden'>,
+): string {
+  const [previewed, near, nearer, far, active, rest] = TICK_WIDTHS[size];
+  if (distanceFromPreview === 0) return `${previewed} bg-primary`;
+  if (distanceFromPreview === 1) return `${near} bg-secondary`;
+  if (distanceFromPreview === 2) return `${nearer} bg-muted`;
+  if (distanceFromPreview === 3) return `${far} bg-muted/70`;
+  if (isActive) return `${active} bg-secondary`;
+  return `${rest} bg-muted/40`;
 }
 
 // Scroll only the rail: scrollIntoView could also move ancestor scrollers,
