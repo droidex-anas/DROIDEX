@@ -96,7 +96,7 @@ Motion explains change. It shows where something came from, where it went, and t
 - **Hover intent.** Tooltips wait 500ms the first time, then show instantly while moving between items, and hide after 100ms. Submenus open after 100ms and stay open while the pointer heads toward them.
 - **Optimistic UI.** Rename, pin, archive and settle update instantly and roll back with a quiet message if they fail. Never put a spinner on something that almost always works.
 - **Loading.** Under 300ms, show nothing. Between 300ms and 2s, show a skeleton in the shape of what's coming (shimmering `elevated` blocks). Over 2s, add words saying what's happening. Use spinners only inside buttons.
-- **Streaming text.** Grow the message in place without shifting the layout above it. Keep the scroll pinned to the bottom only while the user is already there.
+- **Streaming text.** Grow the message in place without shifting the layout above it, revealing text at an eased, steady rate rather than in network-sized bursts. Keep the scroll pinned to the bottom only while the user is already there: any upward scroll releases it, and a "Jump to latest" pill appears while new output arrives below.
 - **Snap points.** Resizable splits (the utility pane, the review panel) snap to 25 / 50 / 75% within 12px of each point, and the handle eases into place on release with a short spring. Double-click the handle to reset it.
 - **Nothing jumps.** Reserve space for counts, badges and images. Use tabular figures for anything that ticks.
 - **Scroll.** Fade the edges of scrollers (8–12px masks) instead of drawing lines. Hide scrollbars until scrolling, and keep scroll positions when switching back to a session.

@@ -157,6 +157,7 @@ panel edge
   - show on row hover *and* on `:focus-within`;
   - fade in over 120ms;
   - are never the only way to do the action (also offer it in the context menu or as a shortcut).
+- **Disclosure chevrons trail the label.** A collapsible transcript row puts its chevron right after the label text, hidden until hover or focus, and keeps it visible and rotated while the row is open. The whole row is the toggle, so the chevron is a cue, not the target.
 - **Press, then act.** Buttons act on release (`click`). Menus also support press, drag and release, as on macOS. A drag only starts after 4px of movement, so a slightly shaky click never becomes a drag.
 - **One action per click.** Disable send, create and merge while they're pending, so a double-click can't fire twice.
 
@@ -179,7 +180,7 @@ panel edge
 | Dialogs | 440 (confirm), 560 (form), 720 (content), `radius-2xl` |
 | Command palette | 576 (`max-w-palette`), `radius-2xl` |
 | Sidebar | 280 (fixed today) |
-| Reading column | 60–80 characters |
+| Reading column | 60–80 characters: transcript rows 672 (`max-w-2xl`), markdown text 528 (`max-w-measure`) |
 
 ## Colour budget
 
