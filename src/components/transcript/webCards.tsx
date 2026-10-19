@@ -83,8 +83,6 @@ export function fetchSizeBadge(chars: number, truncatedChars: number | null): st
 function WebToolRunningRow({ label, detail }: { label: string; detail?: string }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5 text-body">
-      {/* Caret-width spacer: the settled row gains a caret, never a new indent. */}
-      <span className="w-icon-sm shrink-0" aria-hidden="true" />
       <span className="shimmer-text shrink-0 font-medium">{label}</span>
       {detail ? <span className="min-w-0 truncate text-muted">{detail}</span> : null}
     </div>
@@ -165,9 +163,9 @@ export function WebSearchCard({
         className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={expanded}
       >
-        <Caret open={expanded} />
         <span className="shrink-0 text-secondary">{isX ? 'Searched X' : 'Searched web'}</span>
         {query ? <span className="min-w-0 truncate text-muted">{query}</span> : null}
+        <Caret open={expanded} />
         {trailing}
       </button>
       <Expand open={expanded}>
@@ -324,9 +322,9 @@ export function WebFetchCard({
         className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={expanded}
       >
-        <Caret open={expanded} />
         <span className="shrink-0 text-secondary">Fetched</span>
         <span className="min-w-0 truncate text-muted">{url.length > 0 ? url : displayTitle}</span>
+        <Caret open={expanded} />
         {trailing}
       </button>
       <Expand open={expanded}>

@@ -5,11 +5,11 @@
 
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { TranscriptEvent } from '../types/bridge';
-import type { FileChange } from '../lib/diff';
 import type { ToolActivityDensity, ToolActivitySettings } from '../lib/toolActivity';
 import { GroupLabel, SettingRow } from './settingsKit';
 import { Switch } from './Switch';
 import { DiffGroup, ToolGroupItem } from './transcript/groups';
+import type { FeedChange } from './chatFeed';
 
 const DENSITY_STOPS: { value: ToolActivityDensity; label: string; hint: string }[] = [
   { value: 'compact', label: 'Compact', hint: 'One line per run; expand it for the tools.' },
@@ -66,7 +66,7 @@ const PREVIEW_TOOL_EVENTS: TranscriptEvent[] = [
   },
 ];
 
-const PREVIEW_DIFF: { event: TranscriptEvent; change: FileChange }[] = [
+const PREVIEW_DIFF: FeedChange[] = [
   {
     event: { id: 'preview-diff', ...PREVIEW_BASE, kind: 'tool_call', toolName: 'Edit' },
     change: {

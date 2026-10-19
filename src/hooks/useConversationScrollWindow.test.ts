@@ -14,6 +14,8 @@ import {
   disclosureAnchorDelta,
   touchDisclosureAnchor,
   didCommitRequestedHistoryPrepend,
+  isAwayFromLatest,
+  nextPinnedState,
   deferredViewportRestoreAction,
   shouldBindConversationContentResize,
   shouldCompensateConversationContentResize,
@@ -315,4 +317,21 @@ test('deferred content-resize restore skips when a newer owner took the generati
   assert.equal(deferredViewportRestoreAction(4, 3, true), 'skip');
   assert.equal(deferredViewportRestoreAction(3, 3, true), 'retry');
   assert.equal(deferredViewportRestoreAction(3, 3, false), 'release');
+});
+
+test('the feed follows the tail until the reader scrolls up, and rejoins at the end', () => {
+  const at = (scrollTop: number, distanceFromEnd: number, wasPinned: boolean) =>
+    nextPinnedState({ wasPinned, previousScrollTop: 500, scrollTop, distanceFromEnd });
+  assert.equal(at(500, 240, true), true, 'output grew under a pinned reader');
+  assert.equal(at(480, 240, true), false, 'the reader scrolled up');
+  assert.equal(at(520, 200, false), false, 'scrolling down short of the end stays put');
+  assert.equal(at(740, 4, false), true, 'reaching the end rejoins the tail');
+});
+
+test('the way back to the tail is offered only a full screen above it', () => {
+  const away = (pinned: boolean, distanceFromEnd: number) =>
+    isAwayFromLatest({ pinned, distanceFromEnd, viewportHeight: 700 });
+  assert.equal(away(false, 300), false, 'a nudge up while reading the latest reply');
+  assert.equal(away(false, 700), true, 'a screen above the tail');
+  assert.equal(away(true, 900), false, 'output landed before the follow write');
 });

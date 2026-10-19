@@ -18,6 +18,7 @@ import { LiveProcessesContext } from './transcript/liveProcessesContext';
 import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
 import { PendingSteers } from './transcript/PendingSteers';
+import { JumpToLatest } from './transcript/JumpToLatest';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
 import { chatDisplayTitle } from '../lib/chatMetadata';
@@ -71,14 +72,24 @@ function equalOrigin(left: ThreadOrigin | undefined, right: ThreadOrigin | undef
   );
 }
 
+// The loaded feed's two boxes: a padded max-w-4xl frame holding max-w-2xl
+// rows. Placeholders sit in the same boxes so content lands where they were.
+function TranscriptColumn({ children }: { children: ReactNode }) {
+  return (
+    <div className="mx-auto min-w-0 max-w-4xl px-6 py-6">
+      <div className="mx-auto min-w-0 max-w-2xl">{children}</div>
+    </div>
+  );
+}
+
 // While a conversation restores we show an animated placeholder instead of a
 // "Restoring…" label, so switching chats feels like content loading in (the way
 // most chat apps do) rather than a blank or busy screen.
 function RestoringState() {
   return (
-    <div className="mx-auto min-w-0 max-w-2xl px-6 py-6">
+    <TranscriptColumn>
       <TranscriptSkeleton />
-    </div>
+    </TranscriptColumn>
   );
 }
 
@@ -580,23 +591,24 @@ export default function ChatView({
         : false),
     restoreStatus: restoreStatusForConversationTimeline(restore?.status, !isEmbedded()),
   });
-  const { onScroll, requestOlderHistory, restoredScrollOffset } = useConversationScrollWindow({
-    scrollRef,
-    visibleConversationKey,
-    isViewingChildSession: viewingChildSession,
-    activeAppSessionId,
-    historyAppSessionId,
-    historyChildSessionId,
-    olderCursor,
-    isLoadingOlder: loadingOlder,
-    transcriptLength: transcript.length,
-    transcriptTailLength: tailLen,
-    retainedTranscriptLength: transcript.length,
-    isConversationLive: live,
-    isAutoPagingOlderHistory,
-    dispatch,
-    viewportLayoutRef,
-  });
+  const { onScroll, jumpToLatest, isAwayFromLatest, requestOlderHistory, restoredScrollOffset } =
+    useConversationScrollWindow({
+      scrollRef,
+      visibleConversationKey,
+      isViewingChildSession: viewingChildSession,
+      activeAppSessionId,
+      historyAppSessionId,
+      historyChildSessionId,
+      olderCursor,
+      isLoadingOlder: loadingOlder,
+      transcriptLength: transcript.length,
+      transcriptTailLength: tailLen,
+      retainedTranscriptLength: transcript.length,
+      isConversationLive: live,
+      isAutoPagingOlderHistory,
+      dispatch,
+      viewportLayoutRef,
+    });
 
   // Old/large chats restore only a recent window, which can hold too few final
   // responses for the rail to be useful. Page older history in (via the same
@@ -784,14 +796,15 @@ export default function ChatView({
     conversationContent = <RestoringState />;
   } else if (startingCompose) {
     conversationContent = (
-      <div className="mx-auto min-w-0 max-w-2xl px-6 py-6">
-        <div className="prompt-enter">
+      <TranscriptColumn>
+        {/* The feed pads a prompt row by 8px and spaces rows 16px apart. */}
+        <div className="prompt-enter pt-2">
           <UserBubble event={startingCompose} />
         </div>
-        <div className="mt-5">
+        <div className="mt-6">
           <ChatSkeleton />
         </div>
-      </div>
+      </TranscriptColumn>
     );
   } else {
     const draft = state.draftChat;
@@ -897,6 +910,11 @@ export default function ChatView({
               {conversationContent}
             </AppBlockRepairSessionContext.Provider>
           </div>
+          <JumpToLatest
+            visible={isAwayFromLatest}
+            onJump={jumpToLatest}
+            {...(rightInset ? { rightInsetPx: 312 } : {})}
+          />
           <AnimatePresence>
             {transcript.length > 0 &&
               isConversationOpeningSettling({

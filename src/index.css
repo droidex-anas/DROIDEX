@@ -74,6 +74,7 @@
     --text: #ededed;
     --text-secondary: #cfcfcf;
     --text-muted: #bbbbbb;
+    --text-quiet: #9d9d9d;
     --accent: #f2f2f2;
     --focus-ring: rgba(242, 242, 242, 0.4);
     --link: #7cb2ff;
@@ -518,6 +519,27 @@
     animation: feed-row-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   }
 
+  /* A digit of a growing line count, or a live verb settling ("Editing" to
+     "Edit"): a short cross-fade with a slight lift and a 2px blur. */
+  @keyframes text-swap-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.25em);
+      filter: blur(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+
+  .count-digit-enter,
+  .text-swap-enter {
+    display: inline-block;
+    animation: text-swap-enter 0.18s ease-in-out backwards;
+  }
+
   /* A prompt the user just sent rises a little out of the composer beneath it
      and settles: short travel, expo ease, no scaling, so the send reads as a
      gesture without the row visibly resizing. */
@@ -599,6 +621,8 @@
   @media (prefers-reduced-motion: reduce) {
     .feed-row-enter,
     .tool-rows-live > *,
+    .count-digit-enter,
+    .text-swap-enter,
     .prompt-enter,
     .bubble-enter .thread-bubble,
     .cue-enter,
@@ -693,7 +717,7 @@
      after a heading tucks under it at the heading's bottom margin; a `space-y`
      utility would override both. */
   .md-shell {
-    --md-block-gap: theme('spacing[2.5]');
+    --md-block-gap: theme('spacing.3');
   }
 
   .md-shell-spec {
@@ -706,6 +730,15 @@
 
   :where(.md-shell) > :is(h1, h2, h3, h4, h5, h6) + * {
     margin-top: 0;
+  }
+
+  /* Avoid a lone word on a paragraph's last line, and balance headings. */
+  :where(.md-shell) :is(p, li) {
+    text-wrap: pretty;
+  }
+
+  :where(.md-shell) :is(h1, h2, h3, h4, h5, h6) {
+    text-wrap: balance;
   }
 
   /* Inline code in prose. A selection highlights glyphs, never an inline box's

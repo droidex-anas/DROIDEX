@@ -39,11 +39,19 @@ export function httpHref(url: string): string | undefined {
   return /^https?:\/\//i.test(url) ? url : undefined;
 }
 
-/* ── Subtle expand affordance ── */
+/* ── Disclosure chevron. It trails the row's label and shows while the row is
+   hovered, focused or open; its box is always laid out, so revealing it never
+   moves the row. The label itself is the toggle, so a hidden chevron hides no
+   action. ── */
 export function Caret({ open }: { open: boolean }) {
   return (
     <ChevronRight
-      className={`size-icon-sm shrink-0 text-muted/50 transition-transform duration-200 group-hover:text-muted ${open ? 'rotate-90' : ''}`}
+      aria-hidden="true"
+      className={`size-icon-sm shrink-0 text-muted transition duration-150 ease-out motion-reduce:transition-none ${
+        open
+          ? 'rotate-90 opacity-100'
+          : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+      }`}
     />
   );
 }

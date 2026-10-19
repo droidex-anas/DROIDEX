@@ -56,6 +56,7 @@ export default {
         primary: v('--text'),
         secondary: v('--text-secondary'),
         muted: v('--text-muted'),
+        quiet: v('--text-quiet'),
         accent: v('--accent'),
         link: v('--link'),
         skill: v('--skill'),

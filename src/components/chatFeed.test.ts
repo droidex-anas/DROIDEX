@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { correlateResults, splitAutomationProposals, UserBubble } from './chat';
-import { buildFeed, collectTurnFiles, isResultFor, type FeedItem } from './chatFeed';
+import {
+  buildFeed,
+  collectTurnFiles,
+  isResultFor,
+  sameFeedEvents,
+  type FeedItem,
+} from './chatFeed';
 import { conversationAnchors, groupTurns } from './chatFeedTurns';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
 import {
@@ -788,6 +794,15 @@ test('#39 snapshots of one edit fold to one diff with latest stats; distinct edi
   assert.equal(group.changes.length, 2);
   const added = group.changes.reduce((s, c) => s + c.change.added, 0);
   assert.equal(added, 5);
+});
+
+test('an edit stays pending until its result lands, and the result changes the row', () => {
+  const edit = editFile('src/x.ts', 1, 'e1');
+  const writing = rowOfType(buildFeed([edit]), 'diff');
+  assert.equal(writing?.pending, true);
+  const written = rowOfType(buildFeed([edit, result('e1', 'ok')]), 'diff');
+  assert.equal(written?.pending, undefined);
+  assert.ok(writing && written && !sameFeedEvents(writing, written));
 });
 
 // ── #27: per-turn changes summary after a completed turn that edited files ──

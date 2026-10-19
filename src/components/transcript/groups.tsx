@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import type { TranscriptEvent } from '../../types/bridge';
 import type { ToolActivityDensity } from '../../lib/toolActivity';
 import {
@@ -12,9 +13,10 @@ import {
 import { pathFileName } from '../../lib/pathDisplay';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { formatDuration } from '../../lib/tools';
-import type { FeedItem } from '../chatFeed';
+import type { FeedChange, FeedItem } from '../chatFeed';
 import { DiffCard } from '../DiffView';
 import { Caret, Expand } from './primitives';
+import { ChangeCount } from './ChangeCount';
 import { Button } from '../ui/Button';
 import { hasPendingCall, renderToolEvents, summarizeTools } from './rows';
 
@@ -62,7 +64,6 @@ export function ToolGroupItem({
         }}
         className="group flex items-center gap-1.5 text-left"
       >
-        <Caret open={open} />
         {inFlight ? (
           <span className="shimmer-text text-body-strong">{summary}</span>
         ) : (
@@ -70,6 +71,7 @@ export function ToolGroupItem({
             {summary}
           </span>
         )}
+        <Caret open={open} />
       </button>
       <Expand open={open}>
         <div className={`mt-2 pl-5 ${rows}`}>
@@ -93,19 +95,31 @@ export function WorkedGroup({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div>
+    <div
+      // eslint-disable-next-line design-policy/design-tokens -- rules.md lines that carry meaning: marks where the turn's work ends and its answer begins
+      className="border-b border-divider pb-1.5"
+    >
       <button
         type="button"
         aria-expanded={open}
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex min-w-0 items-center gap-1.5 text-left"
+        className="flex h-control-sm min-w-0 items-center gap-1 text-left text-body-lg text-quiet transition-colors duration-150 hover:text-secondary focus-visible:text-secondary"
       >
-        <Caret open={open} />
-        <span className="shrink-0 text-body text-secondary">
-          {item.durationMs >= 1000 ? `Worked for ${formatDuration(item.durationMs)}` : 'Worked'}
+        <span className="shrink-0">
+          Worked
+          {item.durationMs >= 1000 && (
+            <span className="tabular-nums"> for {formatDuration(item.durationMs)}</span>
+          )}
         </span>
+        {/* Unlike row carets, always shown: it is the only cue that the turn's steps are folded here. */}
+        <ChevronRight
+          aria-hidden="true"
+          className={`size-icon-sm shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none ${
+            open ? 'rotate-90' : ''
+          }`}
+        />
       </button>
       <Expand open={open}>
         <div className="mt-3 space-y-2.5 pl-5">{children}</div>
@@ -123,12 +137,15 @@ export function DiffGroup({
   onOpenDiff,
   onOpenReviewFile,
   inlineDiffs = true,
+  live = false,
 }: {
-  changes: { event: TranscriptEvent; change: FileChange }[];
+  changes: FeedChange[];
   cwd?: string;
   onOpenDiff?: (c: FileChange) => void;
   onOpenReviewFile?: OpenReviewFileHandler;
   inlineDiffs?: boolean;
+  // The turn is still streaming: edits without a result are being written.
+  live?: boolean;
 }) {
   const [override, setOverride] = useState<boolean | null>(null);
   const open = override ?? inlineDiffs;
@@ -137,10 +154,12 @@ export function DiffGroup({
   const removed = changes.reduce((s, c) => s + c.change.removed, 0);
   const files = new Set(changes.map((c) => c.change.path));
   const edits = `${String(changes.length)} ${changes.length === 1 ? 'edit' : 'edits'}`;
+  const writing = live && changes.some((c) => c.pending);
+  const verb = writing ? 'Editing' : 'Edited';
   const label =
     files.size <= 1
-      ? `Edited ${pathFileName(changes[0].change.path)} · ${edits}`
-      : `Edited ${String(files.size)} files · ${edits}`;
+      ? `${verb} ${pathFileName(changes[0].change.path)} · ${edits}`
+      : `${verb} ${String(files.size)} files · ${edits}`;
   // Mount bounded chunks so neither opening nor disclosing a genuinely huge
   // edit run creates one long renderer commit. No diff content is discarded.
   const shown = changes.slice(0, disclosure.mountedCount);
@@ -171,29 +190,26 @@ export function DiffGroup({
         }}
         className="group flex w-full min-w-0 items-center gap-1.5 text-left"
       >
-        <Caret open={open} />
-        <span className="min-w-0 truncate text-body-strong text-muted group-hover:text-secondary">
+        <span
+          className={`min-w-0 truncate text-body-strong ${
+            writing ? 'shimmer-text' : 'text-muted group-hover:text-secondary'
+          }`}
+        >
           {label}
         </span>
-        <span
-          className="shrink-0 text-caption tabular-nums"
-          style={{ color: 'var(--diff-add-fg)' }}
-        >
-          +{added}
-        </span>
-        <span
-          className="shrink-0 text-caption tabular-nums"
-          style={{ color: 'var(--diff-del-fg)' }}
-        >
-          −{removed}
-        </span>
+        <Caret open={open} />
+        <ChangeCount tone="add" value={added} />
+        <ChangeCount tone="del" value={removed} />
       </button>
       <Expand open={open}>
-        <div className="mt-2 space-y-2.5 pl-5">
+        {/* Gated on writing, not session liveness: adding the class to a settled
+            group would replay the entrance on every card already shown. */}
+        <div className={`mt-2 space-y-2.5 pl-5${writing ? ' tool-rows-live' : ''}`}>
           {shown.map((c) => (
             <DiffCard
               key={c.event.id}
               change={c.change}
+              running={live && c.pending === true}
               cwd={cwd}
               onOpen={
                 onOpenReviewFile

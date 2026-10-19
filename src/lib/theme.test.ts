@@ -128,6 +128,7 @@ describe('deriveThemeTokens', () => {
     const texts = [
       '--text-secondary',
       '--text-muted',
+      '--text-quiet',
       '--success',
       '--warning',
       '--danger',
@@ -142,8 +143,9 @@ describe('deriveThemeTokens', () => {
       const onActive = (token: `--${string}`) => contrastRatio(tokens[token], tokens['--active']);
       assert.ok(
         onActive('--text') >= onActive('--text-secondary') &&
-          onActive('--text-secondary') > onActive('--text-muted'),
-        `${name} text tones should step down text > secondary > muted`,
+          onActive('--text-secondary') > onActive('--text-muted') &&
+          onActive('--text-muted') >= onActive('--text-quiet'),
+        `${name} text tones should step down text > secondary > muted >= quiet`,
       );
     }
   });
