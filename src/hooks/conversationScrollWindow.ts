@@ -58,13 +58,31 @@ export function rememberScrollSnapshot(
   }
 }
 
+// Close enough to the end to count as reading the tail; absorbs sub-pixel
+// scroll offsets and a trackpad's last few pixels of momentum.
+const TAIL_SLACK_PX = 8;
+
+// Reaching the end rejoins the tail and moving up leaves it. Distance alone
+// cannot decide: output landing before the follow write also fires scroll
+// events with the reader far from the end.
+export function nextPinnedState(options: {
+  wasPinned: boolean;
+  previousScrollTop: number;
+  scrollTop: number;
+  distanceFromEnd: number;
+}): boolean {
+  if (options.distanceFromEnd <= TAIL_SLACK_PX) return true;
+  if (options.scrollTop < options.previousScrollTop) return false;
+  return options.wasPinned;
+}
+
 export function restoreConversationScrollSnapshot(
   element: HTMLDivElement,
   snapshot: ScrollSnapshot | undefined,
   layout?: ConversationViewportLayout | null,
 ): { pinned: boolean; anchor: ViewportAnchor | null } {
   const pinned = snapshot?.pinned ?? true;
-  element.scrollTop = snapshot?.top ?? element.scrollHeight;
+  element.scrollTop = pinned || !snapshot ? element.scrollHeight : snapshot.top;
   if (pinned) return { pinned, anchor: null };
   const anchor = snapshot?.anchor
     ? restoreViewportAnchor(element, snapshot.anchor, true, layout).anchor

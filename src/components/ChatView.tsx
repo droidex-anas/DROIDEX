@@ -18,6 +18,7 @@ import { LiveProcessesContext } from './transcript/liveProcessesContext';
 import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
 import { PendingSteers } from './transcript/PendingSteers';
+import { JumpToLatest } from './transcript/JumpToLatest';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
 import { chatDisplayTitle } from '../lib/chatMetadata';
@@ -580,23 +581,24 @@ export default function ChatView({
         : false),
     restoreStatus: restoreStatusForConversationTimeline(restore?.status, !isEmbedded()),
   });
-  const { onScroll, requestOlderHistory, restoredScrollOffset } = useConversationScrollWindow({
-    scrollRef,
-    visibleConversationKey,
-    isViewingChildSession: viewingChildSession,
-    activeAppSessionId,
-    historyAppSessionId,
-    historyChildSessionId,
-    olderCursor,
-    isLoadingOlder: loadingOlder,
-    transcriptLength: transcript.length,
-    transcriptTailLength: tailLen,
-    retainedTranscriptLength: transcript.length,
-    isConversationLive: live,
-    isAutoPagingOlderHistory,
-    dispatch,
-    viewportLayoutRef,
-  });
+  const { onScroll, jumpToLatest, hasOutputBelow, requestOlderHistory, restoredScrollOffset } =
+    useConversationScrollWindow({
+      scrollRef,
+      visibleConversationKey,
+      isViewingChildSession: viewingChildSession,
+      activeAppSessionId,
+      historyAppSessionId,
+      historyChildSessionId,
+      olderCursor,
+      isLoadingOlder: loadingOlder,
+      transcriptLength: transcript.length,
+      transcriptTailLength: tailLen,
+      retainedTranscriptLength: transcript.length,
+      isConversationLive: live,
+      isAutoPagingOlderHistory,
+      dispatch,
+      viewportLayoutRef,
+    });
 
   // Old/large chats restore only a recent window, which can hold too few final
   // responses for the rail to be useful. Page older history in (via the same
@@ -897,6 +899,11 @@ export default function ChatView({
               {conversationContent}
             </AppBlockRepairSessionContext.Provider>
           </div>
+          <JumpToLatest
+            visible={hasOutputBelow}
+            onJump={jumpToLatest}
+            {...(rightInset ? { rightInsetPx: 312 } : {})}
+          />
           <AnimatePresence>
             {transcript.length > 0 &&
               isConversationOpeningSettling({
