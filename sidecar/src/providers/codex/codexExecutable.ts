@@ -11,8 +11,18 @@ const CLI_CANDIDATES = [
   '/usr/local/bin/codex',
 ];
 
+// The ChatGPT desktop app ships its own Codex CLI and keeps it current. It is
+// the last resort, so a CLI the user installed always wins over it.
+const CHATGPT_BUNDLED_CLIS = ['/Applications', join(homedir(), 'Applications')].map((folder) =>
+  join(folder, 'ChatGPT.app', 'Contents', 'Resources', 'codex-cli', 'bin', 'codex'),
+);
+
 export function resolveCodexPath(): string | undefined {
   const override = process.env.CODEX_PATH;
   if (override && isExecutable(override)) return override;
-  return CLI_CANDIDATES.find((candidate) => isExecutable(candidate)) ?? resolveOnPathSync('codex');
+  return (
+    CLI_CANDIDATES.find((candidate) => isExecutable(candidate)) ??
+    resolveOnPathSync('codex') ??
+    CHATGPT_BUNDLED_CLIS.find((candidate) => isExecutable(candidate))
+  );
 }

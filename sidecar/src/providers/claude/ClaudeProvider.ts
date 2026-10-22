@@ -194,13 +194,6 @@ export class ClaudeProvider implements Provider {
     try {
       const init = await probe.initializationResult();
       const account = accountLabel(init.account);
-      if (!account)
-        return {
-          provider: 'claude',
-          readiness: 'unauthenticated',
-          message: 'Run `claude` in a terminal and sign in, then refresh.',
-          models: [],
-        };
       const [catalog, commands] = await Promise.all([
         probe.supportedModels(),
         probe.supportedCommands(),
@@ -212,7 +205,7 @@ export class ClaudeProvider implements Provider {
       return {
         provider: 'claude',
         readiness: 'ready',
-        accountLabel: account,
+        ...(account ? { accountLabel: account } : {}),
         ...(defaultModel ? { defaultModelId: defaultModel.modelId } : {}),
         ...(defaultModel?.contextWindowTokens !== undefined
           ? { defaultContextWindowTokens: defaultModel.contextWindowTokens }
@@ -262,9 +255,10 @@ export class ClaudeProvider implements Provider {
   }
 }
 
-// An account the CLI can actually generate with: a signed-in subscription, or a
-// configured key. The CLI reports 'none' for a source it does not have, so a
-// blank or 'none' value is no account at all and the user still has to log in.
+// The claude.ai sign-in or configured key the CLI reports. The CLI reports
+// 'none' for a source it does not have, so a blank or 'none' value is no
+// sign-in. That does not block a session: the CLI may reach its models through
+// a gateway its own settings configure, and it reports its own auth failures.
 function accountLabel(account: {
   email?: string;
   organization?: string;

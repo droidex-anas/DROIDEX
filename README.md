@@ -61,11 +61,12 @@ leaving the conversation.
 | Agent | Setup |
 | --- | --- |
 | Factory Droid | DROIDEX can install it for you during onboarding |
-| Claude Code | Uses the Claude Code CLI already installed and signed in on your Mac |
-| Codex | Uses the Codex CLI already installed and signed in on your Mac |
+| Claude Code | Uses the Claude Code CLI already installed on your Mac, with its own sign-in or key |
+| Codex | Uses the Codex CLI already installed on your Mac, or the one inside the ChatGPT app |
 
-If an agent is missing or signed out, DROIDEX tells you in the agent picker
-instead of failing mid-task.
+If an agent is missing, DROIDEX tells you in the agent picker instead of failing
+mid-task. Each CLI handles its own sign-in; **Settings → Setup & updates** shows
+whether it is signed in.
 
 ### Use subscriptions with Droid
 

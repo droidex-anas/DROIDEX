@@ -39,7 +39,6 @@ const PROBE_TIMEOUT_MS = 25_000;
 // The probe's catalog has no reader waiting on it, only a process to release.
 const CATALOG_TIMEOUT_MS = 60_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
-const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
 const PROBE_CANCELLED = 'Codex was not checked.';
 
 interface InitializeResponse {
@@ -281,9 +280,9 @@ async function readiness(client: AppServerClient): Promise<ProviderStatus> {
       `Codex ${version} is installed; this build needs ${MINIMUM_VERSION} or newer.`,
       version,
     );
+  // A CLI with no ChatGPT sign-in can still reach a provider its own config
+  // names, and it reports its own auth failures, so sign-in never gates a chat.
   const account = await client.request<AccountResponse>('account/read', {});
-  if (!account.account && account.requiresOpenaiAuth)
-    return unavailable('unauthenticated', LOGIN_HINT);
   const label = accountLabel(account.account);
   const configured = await configuredModel(client);
   const models = await listModels(client, configured);
@@ -315,7 +314,6 @@ type CodexAccount = { type: string; email?: string | null; planType?: string } |
 
 interface AccountResponse {
   account: CodexAccount;
-  requiresOpenaiAuth: boolean;
 }
 
 // Who the CLI is signed in as, for the picker's secondary line.

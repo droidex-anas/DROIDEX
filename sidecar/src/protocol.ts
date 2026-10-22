@@ -391,6 +391,8 @@ export interface ProviderStatus {
   provider: ProviderKind;
   readiness: ProviderReadiness;
   version?: string;
+  // Who the harness CLI is signed in as. Absent when it reports no sign-in,
+  // which does not block a chat: the CLI may reach its models another way.
   accountLabel?: string;
   message?: string;
   // The model a new chat on this provider starts on when it pins none: what the
@@ -408,8 +410,8 @@ export interface ProviderStatus {
 // The harnesses whose CLI DROIDEX runs but does not ship: Claude Code and Codex.
 export type HarnessCliProvider = Exclude<ProviderKind, 'droid'>;
 // Where a harness CLI was installed from, read off its resolved binary. It
-// decides which updater owns the binary.
-export type HarnessInstallSource = 'homebrew' | 'npm' | 'native';
+// decides which updater owns the binary; the ChatGPT app updates its own copy.
+export type HarnessInstallSource = 'homebrew' | 'npm' | 'native' | 'chatgpt';
 
 export type HarnessCliState =
   | { provider: HarnessCliProvider; installed: false }
