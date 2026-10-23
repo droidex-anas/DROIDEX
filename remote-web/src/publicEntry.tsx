@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PublicProfile } from './PublicProfile';
 import { applySystemTheme, lightScheme } from './systemTheme';
-import './styles.css';
+import '../../src/index.css';
 
 export function startPublicProfile(container: HTMLElement, username: string): void {
   applySystemTheme();

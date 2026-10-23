@@ -1,8 +1,7 @@
 const container = document.getElementById('root');
 if (!container) throw new Error('DROIDEX Remote is missing its root element.');
 
-// Each route loads only its own styles: the public profile's stylesheet and the
-// app's Tailwind base would restyle each other's elements.
+// Each route loads only its own code, so a profile visitor never downloads the app.
 const path = window.location.pathname.split('/').filter(Boolean);
 if (path[0] === 'public') {
   const username = path.length === 2 ? (path[1] ?? '') : '';

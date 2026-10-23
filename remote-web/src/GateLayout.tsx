@@ -12,20 +12,37 @@ const JOURNEY = ['Username', 'Code', 'Approval'] as const;
 /** Where a browser is on its way in; past the last step means connected. */
 export type GateStep = 0 | 1 | 2 | 3;
 
+/** The brand lockup at the top of every Remote and public profile screen. */
+export function GateHeader({ label, children }: { label: string; children?: ReactNode }) {
+  return (
+    <header className="remote-gate-top flex shrink-0 items-center justify-between gap-4 px-6 pb-2">
+      <p className="flex items-center gap-2">
+        <BrandMark size={13} className="text-primary" />
+        <span className="text-label text-muted">{label}</span>
+      </p>
+      {children}
+    </header>
+  );
+}
+
 /**
  * The full-screen frame for every Remote screen shown before, or instead of,
  * the app. The picture and the steps stay put while the words change.
  */
 export function GateLayout({
+  label = 'Remote',
   handle,
   scene,
   step,
+  footer,
   children,
 }: {
+  label?: string;
   handle?: string;
   scene: RemoteArtScene;
   /** Left out on screens that sit outside the journey, such as offline. */
   step?: GateStep;
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -37,17 +54,13 @@ export function GateLayout({
         transition={{ duration: 0.22, ease: EASE_OUT }}
         className="remote-gate fixed inset-0 z-tooltip flex flex-col overflow-y-auto bg-bg text-primary"
       >
-        <header className="remote-gate-top flex shrink-0 items-center justify-between gap-4 px-6 pb-2">
-          <p className="flex items-center gap-2">
-            <BrandMark size={13} className="text-primary" />
-            <span className="text-label text-muted">Remote</span>
-          </p>
+        <GateHeader label={label}>
           {handle && (
             <p className="truncate text-label text-muted" title="Your laptop">
               @{handle}
             </p>
           )}
-        </header>
+        </GateHeader>
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-8 px-6 py-10">
           <RemoteArt scene={scene} className="mx-auto max-w-64" />
           {step !== undefined && (
@@ -56,8 +69,12 @@ export function GateLayout({
           {children}
         </div>
         <footer className="remote-gate-bottom flex shrink-0 items-center justify-center gap-1.5 px-6 text-caption text-muted">
-          <Lock className="size-icon-sm" aria-hidden="true" />
-          End-to-end encrypted to your laptop
+          {footer ?? (
+            <>
+              <Lock className="size-icon-sm" aria-hidden="true" />
+              End-to-end encrypted to your laptop
+            </>
+          )}
         </footer>
       </motion.main>
     </MotionConfig>
