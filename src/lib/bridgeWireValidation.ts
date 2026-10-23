@@ -602,7 +602,10 @@ function isHarnessCliState(value: unknown): boolean {
   return (
     value.installed === true &&
     typeof value.path === 'string' &&
-    (value.source === 'homebrew' || value.source === 'npm' || value.source === 'native') &&
+    (value.source === 'homebrew' ||
+      value.source === 'npm' ||
+      value.source === 'native' ||
+      value.source === 'chatgpt') &&
     isOptionalString(value.version) &&
     typeof value.updating === 'boolean' &&
     isOptionalString(value.updateError)

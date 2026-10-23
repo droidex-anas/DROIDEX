@@ -27,8 +27,8 @@ test('locateInstall picks the updater that owns the resolved binary', () => {
     '/Users/me/.nvm/versions/node/v22.0.0/lib/node_modules/@anthropic-ai/claude-code/cli.js',
   );
   assert.equal(npm.source, 'npm');
-  assert.deepEqual(npm.update.args, ['install', '--global', '@anthropic-ai/claude-code@latest']);
-  assert.ok(npm.update.env?.PATH?.startsWith('/Users/me/.nvm/versions/node/v22.0.0/bin'));
+  assert.deepEqual(npm.update?.args, ['install', '--global', '@anthropic-ai/claude-code@latest']);
+  assert.ok(npm.update?.env?.PATH?.startsWith('/Users/me/.nvm/versions/node/v22.0.0/bin'));
 
   const native = locateInstall(
     '/Users/me/.local/bin/claude',
@@ -36,4 +36,11 @@ test('locateInstall picks the updater that owns the resolved binary', () => {
   );
   assert.equal(native.source, 'native');
   assert.deepEqual(native.update, { command: '/Users/me/.local/bin/claude', args: ['update'] });
+
+  const bundled = locateInstall(
+    '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex',
+    '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex',
+  );
+  assert.equal(bundled.source, 'chatgpt');
+  assert.equal(bundled.update, null);
 });
