@@ -1,5 +1,6 @@
 import WebSocket, { type RawData } from 'ws';
 import {
+  isRemoteDesktopMethod,
   REMOTE_DESKTOP_EVENTS,
   toWire,
   type RemoteDesktopEvent,
@@ -125,7 +126,16 @@ export class PeerSession {
     if (!this.closed) this.options.send(message);
   }
 
-  private call(id: number, method: RemoteDesktopMethod, args: unknown[]): void {
+  private call(id: number, method: string, args: unknown[]): void {
+    if (!isRemoteDesktopMethod(method)) {
+      this.send({
+        type: 'result',
+        id,
+        ok: false,
+        error: 'Update DROIDEX on your laptop to use this',
+      });
+      return;
+    }
     if (this.calls >= MAX_CALLS) {
       this.send({ type: 'result', id, ok: false, error: 'Too many requests are still running' });
       return;

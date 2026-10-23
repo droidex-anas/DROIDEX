@@ -77,6 +77,10 @@ export const REMOTE_DESKTOP_EVENTS = [
 ] as const;
 export type RemoteDesktopEvent = (typeof REMOTE_DESKTOP_EVENTS)[number];
 
+// The web client deploys at once while laptops update later; both sides must
+// speak the same tunnel protocol, so a browser stops at a mismatch.
+export const REMOTE_PROTOCOL_VERSION = 1;
+
 export interface RemoteAuth {
   type: 'auth';
   publicKey: JsonWebKey;
@@ -89,7 +93,8 @@ export interface RemoteAuth {
 export type RemoteRequest =
   | RemoteAuth
   | { type: 'ping' }
-  | { type: 'call'; id: number; method: RemoteDesktopMethod; args: unknown[] }
+  // An unknown method gets a failed result, so a newer browser can ask an older laptop.
+  | { type: 'call'; id: number; method: string; args: unknown[] }
   // Validated by the push backend, which owns the accepted endpoints.
   | { type: 'push.subscribe'; id: number; subscription: unknown }
   | { type: 'push.unsubscribe'; id: number }
@@ -104,7 +109,7 @@ export type RemoteRequest =
 
 /** Laptop to browser, inside the tunnel. */
 export type RemoteMessage =
-  | { type: 'authorized'; expiresAt: number; pushPublicKey: string | null }
+  | { type: 'authorized'; protocol: number; expiresAt: number; pushPublicKey: string | null }
   | { type: 'pairing'; deviceId: string }
   | { type: 'locked' }
   | { type: 'denied' }
@@ -147,7 +152,8 @@ export function remoteRequest(value: unknown): RemoteRequest {
       return { type: 'push.subscribe', id: requestId(value.id), subscription: value.subscription };
     case 'call':
       if (
-        isRemoteDesktopMethod(value.method) &&
+        typeof value.method === 'string' &&
+        value.method.length <= 128 &&
         Array.isArray(value.args) &&
         value.args.length <= MAX_CALL_ARGS
       )
@@ -186,12 +192,15 @@ export function remoteMessage(value: unknown): RemoteMessage {
   switch (value.type) {
     case 'authorized':
       if (
+        Number.isSafeInteger(value.protocol) &&
+        typeof value.protocol === 'number' &&
         Number.isSafeInteger(value.expiresAt) &&
         typeof value.expiresAt === 'number' &&
         (value.pushPublicKey === null || typeof value.pushPublicKey === 'string')
       )
         return {
           type: 'authorized',
+          protocol: value.protocol,
           expiresAt: value.expiresAt,
           pushPublicKey: value.pushPublicKey,
         };
@@ -259,7 +268,7 @@ function fromWire(value: unknown): unknown {
   return result;
 }
 
-function isRemoteDesktopMethod(value: unknown): value is RemoteDesktopMethod {
+export function isRemoteDesktopMethod(value: unknown): value is RemoteDesktopMethod {
   return REMOTE_DESKTOP_METHODS.some((method) => method === value);
 }
 

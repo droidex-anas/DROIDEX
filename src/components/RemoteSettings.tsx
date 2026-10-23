@@ -54,7 +54,7 @@ export function RemoteSettings({ claimUsername = false }: { claimUsername?: bool
         title="Remote"
         sub="Use DROIDEX on this laptop from your phone, tablet or another computer."
       />
-      {state.devices.length === 0 ? (
+      {state.devices.length === 0 && state.temporaryDevices.length === 0 ? (
         <RemoteOnboarding
           state={state}
           busy={busy}
@@ -120,8 +120,22 @@ function RemoteManagement({
           <DeviceRow
             key={device.id}
             device={device}
+            description={`${lastSeenLabel(device.lastSeenAt)} · ${expiryLabel(device.expiresAt)}`}
+            action="Revoke"
             busy={busy}
-            revoke={() => {
+            remove={() => {
+              void run(() => api.revokeRemoteDevice(device.id));
+            }}
+          />
+        ))}
+        {state.temporaryDevices.map((device) => (
+          <DeviceRow
+            key={device.id}
+            device={device}
+            description="Connected now · This connection only"
+            action="Disconnect"
+            busy={busy}
+            remove={() => {
               void run(() => api.revokeRemoteDevice(device.id));
             }}
           />
@@ -190,20 +204,26 @@ function lastSeenLabel(lastSeenAt: number) {
 
 function DeviceRow({
   device,
+  description,
+  action,
   busy,
-  revoke,
+  remove,
 }: {
   device: RemoteDevice;
+  description: string;
+  action: 'Revoke' | 'Disconnect';
   busy: boolean;
-  revoke: () => void;
+  remove: () => void;
 }) {
   return (
-    <SettingRow
-      label={device.name}
-      description={`${lastSeenLabel(device.lastSeenAt)} · ${expiryLabel(device.expiresAt)}`}
-    >
-      <Button variant="ghost" disabled={busy} aria-label={`Revoke ${device.name}`} onClick={revoke}>
-        Revoke
+    <SettingRow label={device.name} description={description}>
+      <Button
+        variant="ghost"
+        disabled={busy}
+        aria-label={`${action} ${device.name}`}
+        onClick={remove}
+      >
+        {action}
       </Button>
     </SettingRow>
   );

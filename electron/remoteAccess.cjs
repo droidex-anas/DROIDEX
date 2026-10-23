@@ -97,6 +97,9 @@ function createRemoteAccess(options) {
     notifyDevices() {
       if (enabled) void host().then((remoteHost) => remoteHost.notifyDevices());
     },
+    reconnect() {
+      if (enabled) void host().then((remoteHost) => remoteHost.reconnect());
+    },
     async resume() {
       try {
         await fs.access(filename);

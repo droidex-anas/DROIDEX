@@ -3,7 +3,7 @@ import { isRemoteClient } from '../../lib/desktop';
 import { dismissSidebarCard, loadSidebarCardSeen } from '../../lib/sidebarCards';
 
 /** The Remote launch card's id among the sidebar's one-time announcements. */
-export const REMOTE_LAUNCH_CARD_ID = 'remote-launch';
+const REMOTE_LAUNCH_CARD_ID = 'remote-launch';
 
 // The Remote launch card shows once the user has no other announcement up
 // (`held`) and has not claimed a username yet. A claimed username, the call to

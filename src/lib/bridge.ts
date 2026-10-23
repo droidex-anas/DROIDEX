@@ -21,6 +21,8 @@ type RuntimeReplacedListener = (
   resentRequestIds: ReadonlySet<string>,
 ) => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
+
+const UNSUPPORTED_PROTOCOL_CLOSE_CODE = 1002;
 type WireValidation = typeof bridgeWireValidation;
 
 interface TurnBaselineAdopter {
@@ -129,10 +131,22 @@ export class Bridge {
       // a later one.
       this.sentRequestIds = null;
     };
-    ws.onclose = () => {
+    ws.onclose = (event?: CloseEvent) => {
       if (this.ws !== ws) return;
       this.ws = null;
       setTransportHealth('disconnected');
+      // The sidecar speaks another bridge protocol, which only an update fixes.
+      if (event?.code === UNSUPPORTED_PROTOCOL_CLOSE_CODE) {
+        this.publishEvents([
+          {
+            type: 'connection',
+            status: 'error',
+            message:
+              'This page and the agent runtime are different DROIDEX versions. Update DROIDEX on your laptop, then reload.',
+          },
+        ]);
+        return;
+      }
       this.scheduleReconnect();
     };
     ws.onerror = () => {

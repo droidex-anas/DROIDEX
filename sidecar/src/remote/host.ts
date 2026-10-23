@@ -15,6 +15,7 @@ import {
   type SecureChannel,
 } from '../../../packages/remote/src/index.js';
 import {
+  REMOTE_PROTOCOL_VERSION,
   remoteRequest,
   type RemoteMessage,
   type RemoteRequest,
@@ -34,8 +35,9 @@ interface Peer {
   channel?: SecureChannel;
   tunnel?: Tunnel;
   session?: PeerSession;
-  deviceId?: string;
-  expiresAt: number;
+  device?: RemoteDevice;
+  // Set once the laptop has cut this browser off; it is only told why.
+  dismissed: boolean;
   deadline: number;
   queued: number;
   queue: Promise<void>;
@@ -49,6 +51,11 @@ interface Pending {
 
 // A pasted image travels as a data URL inside one desktop call.
 const MAX_BROWSER_PACKET_CHARS = 32 * 1024 * 1024;
+const MAX_AUTHORIZED_PEERS = 8;
+// Anyone can open a socket, so browsers not yet authorized share a small pool
+// where a newcomer evicts the oldest instead of locking the owner out.
+const MAX_WAITING_PEERS = 16;
+const DISMISS_FLUSH_MS = 2_000;
 
 export async function createRemoteHost(options: {
   load: () => Promise<string | null>;
@@ -82,16 +89,18 @@ export async function createRemoteHost(options: {
         changed();
       },
       open: async (id, isCurrent) => {
-        if (!identity || peers.size >= 8) {
+        if (!identity) {
           relay.send({ type: 'disconnect-peer', peerId: id });
           return;
         }
+        const waiting = [...peers.values()].filter((peer) => !peer.device && !isPending(peer));
+        if (waiting[0] && waiting.length >= MAX_WAITING_PEERS) drop(waiting[0]);
         const handshake = await createHostHello(state.settings.profile.username, identity);
         if (!state.settings.enabled || !isCurrent()) return;
         const peer: Peer = {
           id,
           handshake,
-          expiresAt: 0,
+          dismissed: false,
           deadline: Date.now() + 120_000,
           queue: Promise.resolve(),
           queued: 0,
@@ -141,12 +150,20 @@ export async function createRemoteHost(options: {
       status,
       ...(error ? { error } : {}),
       devices: state.devices.filter((device) => device.expiresAt > Date.now()),
+      temporaryDevices: temporaryDevices(),
       pending: [...pending.values()].map((item) => item.view),
       authenticatorReady: state.authenticatorReady,
       ...(pin && state.settings.profile.username
         ? { pairingUrl: `${clientUrl}/${state.settings.profile.username}#key=${pin}` }
         : {}),
     };
+  }
+  function temporaryDevices(): RemoteDevice[] {
+    const connected = new Map<string, RemoteDevice>();
+    for (const { device, dismissed } of peers.values())
+      if (device && !dismissed && !state.devices.some((item) => item.id === device.id))
+        connected.set(device.id, device);
+    return [...connected.values()];
   }
   function changed(): void {
     options.changed(snapshot());
@@ -165,6 +182,9 @@ export async function createRemoteHost(options: {
   function active(peer: Peer): boolean {
     return state.settings.enabled && peers.get(peer.id) === peer;
   }
+  function isPending(peer: Peer): boolean {
+    return [...pending.values()].some((item) => item.peer === peer);
+  }
   function forward(peer: Peer, payload: unknown): void {
     if (active(peer)) relay.send({ type: 'forward', peerId: peer.id, payload });
   }
@@ -182,10 +202,21 @@ export async function createRemoteHost(options: {
     for (const [id, item] of pending) if (item.peer === peer) pending.delete(id);
     changed();
   }
-  // Disconnects after the browser has been told why.
+  // Cuts the browser off at once, then disconnects it once it has been told
+  // why, or after a short wait if it stops acknowledging.
   async function dismiss(peer: Peer, message: RemoteMessage): Promise<void> {
+    if (peer.dismissed) return;
+    peer.dismissed = true;
+    peer.session?.close();
     send(peer, message);
-    await peer.tunnel?.flush();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      peer.tunnel?.flush(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, DISMISS_FLUSH_MS);
+      }),
+    ]);
+    clearTimeout(timer);
     if (peers.get(peer.id) === peer) drop(peer);
   }
   function stop(): void {
@@ -221,7 +252,8 @@ export async function createRemoteHost(options: {
     if (active(peer)) await peer.tunnel?.receive(frame);
   }
   function dispatch(peer: Peer, request: RemoteRequest): void {
-    if (!peer.deviceId) {
+    if (peer.dismissed) return;
+    if (!peer.device) {
       if (request.type !== 'auth') throw new Error('Authenticate before sending requests');
       const run = authQueue.then(() => authenticate(peer, request));
       authQueue = run.catch(() => {
@@ -229,7 +261,7 @@ export async function createRemoteHost(options: {
       });
       return;
     }
-    if (peer.expiresAt <= Date.now()) {
+    if (peer.device.expiresAt <= Date.now()) {
       void dismiss(peer, { type: 'locked' });
       return;
     }
@@ -251,7 +283,7 @@ export async function createRemoteHost(options: {
     peer: Peer,
     request: Extract<RemoteRequest, { type: 'push.subscribe' | 'push.unsubscribe' }>,
   ): Promise<void> {
-    const deviceId = peer.deviceId;
+    const deviceId = peer.device?.id;
     try {
       if (!deviceId || !state.devices.some((device) => device.id === deviceId))
         throw new Error('Notifications need a trusted device');
@@ -266,7 +298,7 @@ export async function createRemoteHost(options: {
     }
   }
   async function authenticate(peer: Peer, value: unknown): Promise<void> {
-    if (!peer.channel) return;
+    if (!peer.channel || peer.device || isPending(peer)) return;
     const result = await authenticateDevice(state, peer.channel, value, () => active(peer));
     if (!active(peer)) return;
     await persist();
@@ -311,9 +343,13 @@ export async function createRemoteHost(options: {
   }
   function authorize(peer: Peer, device: RemoteDevice): void {
     const tunnel = peer.tunnel;
-    if (!tunnel) return;
-    peer.deviceId = device.id;
-    peer.expiresAt = device.expiresAt;
+    if (!tunnel || peer.session) return;
+    const authorized = [...peers.values()].filter((item) => item.device).length;
+    if (authorized >= MAX_AUTHORIZED_PEERS) {
+      drop(peer);
+      return;
+    }
+    peer.device = device;
     relay.send({ type: 'authorize-peer', peerId: peer.id });
     peer.session = new PeerSession({
       peerId: peer.id,
@@ -327,6 +363,7 @@ export async function createRemoteHost(options: {
     const remembered = state.devices.some((item) => item.id === device.id);
     send(peer, {
       type: 'authorized',
+      protocol: REMOTE_PROTOCOL_VERSION,
       expiresAt: device.expiresAt,
       pushPublicKey: remembered ? (state.pushIdentity?.publicKey ?? null) : null,
     });
@@ -346,7 +383,7 @@ export async function createRemoteHost(options: {
         drop(item.peer);
       }
     for (const peer of peers.values())
-      if ((peer.deviceId ? peer.expiresAt : peer.deadline) <= Date.now()) drop(peer);
+      if ((peer.device ? peer.device.expiresAt : peer.deadline) <= Date.now()) drop(peer);
   }, 10_000);
   sweep.unref();
 
@@ -431,12 +468,13 @@ export async function createRemoteHost(options: {
     },
     confirm(code: unknown) {
       return mutate(async () => {
-        if (
-          typeof code !== 'string' ||
-          !state.secret ||
-          (await verifyTotp(state.secret, code)) === null
-        )
-          throw new Error('Enter the current six-digit authenticator code');
+        const step =
+          typeof code === 'string' && state.secret
+            ? await verifyTotp(state.secret, code, Date.now(), state.lastStep)
+            : null;
+        if (step === null) throw new Error('Enter the current six-digit authenticator code');
+        // The setup code must not also unlock a pairing.
+        state.lastStep = step;
         state.authenticatorReady = true;
         await persist();
         changed();
@@ -476,7 +514,7 @@ export async function createRemoteHost(options: {
         state.devices = state.devices.filter((device) => device.id !== id);
         Reflect.deleteProperty(state.subscriptions, id);
         for (const peer of peers.values())
-          if (peer.deviceId === id) void dismiss(peer, { type: 'removed' });
+          if (peer.device?.id === id) void dismiss(peer, { type: 'removed' });
         await persist();
         changed();
         return snapshot();
@@ -496,6 +534,9 @@ export async function createRemoteHost(options: {
         await persist();
         return snapshot();
       });
+    },
+    reconnect() {
+      relay.reconnect();
     },
     resume() {
       if (state.settings.enabled) {

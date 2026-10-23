@@ -146,7 +146,9 @@ function StatusScreen({
           // A browser trusted before keeps its expiry; a new one has none.
           expired={(connection.device?.expiresAt ?? 0) > 0}
           authenticate={(code) => connection.authenticate(code)}
-        />
+        >
+          <ForgetBrowserButton controls={controls} />
+        </UnlockScreen>
       );
     case 'pairing':
       return (
@@ -176,6 +178,7 @@ function StatusScreen({
             <WaitingLine text="Trying again…" />
             <Button onClick={retry}>Retry now</Button>
           </div>
+          <ForgetBrowserButton controls={controls} />
         </GateScreen>
       );
     case 'denied':
@@ -188,9 +191,7 @@ function StatusScreen({
             <Button variant="primary" size="lg" onClick={retry}>
               Ask again
             </Button>
-            <Button variant="ghost" size="lg" onClick={() => void controls.forget()}>
-              Forget this browser
-            </Button>
+            <ForgetBrowserButton controls={controls} />
           </div>
         </GateScreen>
       );
@@ -200,20 +201,57 @@ function StatusScreen({
           title="This browser was removed"
           line="Your laptop removed access for this browser. Unlock again to reconnect."
         >
-          <Button variant="primary" size="lg" className="w-full" onClick={retry}>
-            Unlock again
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button variant="primary" size="lg" onClick={retry}>
+              Unlock again
+            </Button>
+            <ForgetBrowserButton controls={controls} />
+          </div>
         </GateScreen>
       );
     case 'error':
       return (
         <GateScreen title="Couldn’t connect" line={<span role="alert">{status.message}</span>}>
-          <Button variant="primary" size="lg" className="w-full" onClick={retry}>
-            Try again
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button variant="primary" size="lg" onClick={retry}>
+              Try again
+            </Button>
+            <ForgetBrowserButton controls={controls} />
+          </div>
         </GateScreen>
       );
   }
+}
+
+// Every gate screen offers a way out, so a browser stuck before the app opens can start over.
+function ForgetBrowserButton({ controls }: { controls: RemoteBrowserControls }) {
+  const [forgetting, setForgetting] = useState(false);
+  const [error, setError] = useState('');
+  return (
+    <div className="flex flex-col gap-1">
+      <Button
+        variant="ghost"
+        size="lg"
+        loading={forgetting}
+        disabled={forgetting}
+        onClick={() => {
+          setForgetting(true);
+          setError('');
+          controls.forget().catch((reason: unknown) => {
+            setForgetting(false);
+            setError(reason instanceof Error ? reason.message : 'Unable to forget this browser.');
+          });
+        }}
+      >
+        Forget this browser
+      </Button>
+      {error && (
+        <p role="alert" className="text-caption text-danger">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function WaitingLine({ text }: { text: string }) {

@@ -29,6 +29,8 @@ export interface RemoteState extends RemoteSettings {
   status: 'off' | 'connecting' | 'connected' | 'error';
   error?: string;
   devices: RemoteDevice[];
+  /** Browsers approved for their current connection only, while they stay connected. */
+  temporaryDevices: RemoteDevice[];
   pending: RemotePending[];
   pairingUrl?: string;
   authenticatorReady: boolean;

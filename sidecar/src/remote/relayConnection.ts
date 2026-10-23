@@ -36,6 +36,11 @@ export async function claimHandle(
     );
 }
 
+// The relay answers a raw 'ping' itself; two missed answers mean the socket
+// died without a close, as it does when the laptop sleeps or changes network.
+const HEARTBEAT_MS = 30_000;
+const SILENCE_LIMIT_MS = 65_000;
+
 export class RelayConnection {
   private socket: WebSocket | null = null;
   private running = false;
@@ -67,6 +72,12 @@ export class RelayConnection {
     socket?.close();
     this.handlers.disconnected();
   }
+  /** Replaces the socket at once, for when the network may have changed under it. */
+  reconnect(): void {
+    if (!this.running) return;
+    this.stop();
+    this.start();
+  }
   send(value: unknown): void {
     const socket = this.socket;
     if (socket?.readyState !== WebSocket.OPEN) return;
@@ -88,14 +99,20 @@ export class RelayConnection {
       url.pathname = `/v1/handles/${handle}/socket`;
       const socket = new WebSocket(url, { maxPayload: 65_536, handshakeTimeout: 8000 });
       this.socket = socket;
+      let ready = false;
+      let lastReceivedAt = Date.now();
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
       const readyTimeout = setTimeout(() => {
-        socket.close(1008, 'host authentication timeout');
+        socket.terminate();
       }, 10_000);
       readyTimeout.unref();
       let queue = Promise.resolve();
       let queued = 0;
       socket.on('message', (raw) => {
         if (socket !== this.socket) return;
+        lastReceivedAt = Date.now();
+        const text = rawText(raw);
+        if (text === 'pong') return;
         if (++queued > 32) {
           socket.close(1008, 'message limit');
           return;
@@ -103,7 +120,7 @@ export class RelayConnection {
         queue = queue
           .then(async () => {
             if (socket !== this.socket) return;
-            const value: unknown = JSON.parse(rawText(raw));
+            const value: unknown = JSON.parse(text);
             if (!isRecord(value)) throw new Error('Invalid relay frame');
             if (value.type === 'forward' && typeof value.deliveryId === 'number')
               socket.send(JSON.stringify({ type: 'received', deliveryId: value.deliveryId }));
@@ -116,8 +133,14 @@ export class RelayConnection {
                 this.send({ type: 'host-auth', publicKey: identity.publicKey, signature });
             } else if (value.type === 'host-ready') {
               clearTimeout(readyTimeout);
+              ready = true;
               this.backoff = 1000;
               this.handlers.status('connected');
+              heartbeat = setInterval(() => {
+                if (Date.now() - lastReceivedAt > SILENCE_LIMIT_MS) socket.terminate();
+                else socket.send('ping');
+              }, HEARTBEAT_MS);
+              heartbeat.unref();
             } else if (value.type === 'peer-open' && typeof value.peerId === 'string')
               await this.handlers.open(value.peerId, () => socket === this.socket);
             else if (value.type === 'peer-close' && typeof value.peerId === 'string')
@@ -135,11 +158,22 @@ export class RelayConnection {
       socket.on('error', () => {
         socket.close();
       });
-      socket.on('close', () => {
+      socket.on('close', (code) => {
         clearTimeout(readyTimeout);
+        clearInterval(heartbeat);
         if (socket !== this.socket) return;
         this.socket = null;
         this.handlers.disconnected();
+        // The relay refuses a laptop whose key does not own the username;
+        // retrying cannot change that, so wait for the user.
+        if (!ready && code === 1008) {
+          this.running = false;
+          this.handlers.status(
+            'error',
+            'The relay did not accept this laptop as the owner of this username',
+          );
+          return;
+        }
         this.handlers.status('connecting');
         this.schedule();
       });

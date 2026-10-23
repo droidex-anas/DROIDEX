@@ -9,6 +9,7 @@ import {
   type SecureChannel,
 } from '../../packages/remote/src/index';
 import {
+  REMOTE_PROTOCOL_VERSION,
   remoteMessage,
   toWire,
   type RemoteDesktopEvent,
@@ -16,6 +17,7 @@ import {
   type RemoteMessage,
   type RemoteRequest,
 } from '../../packages/remote/src/application';
+import { currentDeviceName } from './deviceName';
 import { LAST_HANDLE_KEY, prepareDevice, writeDevice, type BrowserDevice } from './deviceStore';
 import { RemoteBridgeSocket, RemoteTerminalChannel } from './remoteChannels';
 
@@ -103,14 +105,11 @@ export class RemoteConnection {
     if (!link?.channel || !link.tunnel || !this.device)
       throw new Error('Wait for your laptop to connect, then retry.');
     if (code) this.setStatus({ kind: 'pairing' });
-    let deviceName = 'Web browser';
-    if (/iPhone|iPad/.test(navigator.userAgent)) deviceName = 'Safari on iPhone / iPad';
-    else if (navigator.userAgent.includes('Android')) deviceName = 'Android browser';
     link.tunnel.send({
       type: 'auth',
       publicKey: this.device.identity.publicKey,
       signature: await signIdentity(this.device.identity.privateKey, link.channel.challenge),
-      deviceName,
+      deviceName: await currentDeviceName(),
       ...(code ? { code } : {}),
     } satisfies RemoteRequest);
   }
@@ -236,21 +235,20 @@ export class RemoteConnection {
         incoming = incoming
           .then(() => this.receive(link, data))
           .catch((error: unknown) => {
-            if (this.link !== link) return;
-            this.setStatus({
-              kind: 'error',
-              message: error instanceof Error ? error.message : 'The secure connection failed.',
-            });
-            socket.close();
+            this.fail(link, error);
           });
       };
+      // The laptop's last word (denied, removed, locked) arrives just before
+      // the relay closes the socket, so it is read before the teardown.
       socket.onclose = () => {
-        if (this.link !== link) return;
-        this.disconnect('Your laptop disconnected.');
-        if (this.disposed || this.waitsForUser()) return;
-        if (this.status.kind !== 'error') this.setStatus({ kind: 'offline' });
-        const delay = Math.min(30_000, 1_000 * 2 ** Math.min(this.attempts++, 5));
-        this.later(() => void this.connect(), delay);
+        void incoming.then(() => {
+          if (this.link !== link) return;
+          this.disconnect('Your laptop disconnected.');
+          if (this.disposed || this.waitsForUser()) return;
+          this.setStatus({ kind: 'offline' });
+          const delay = Math.min(30_000, 1_000 * 2 ** Math.min(this.attempts++, 5));
+          this.later(() => void this.connect(), delay);
+        });
       };
       socket.onerror = () => {
         socket.close();
@@ -301,7 +299,7 @@ export class RemoteConnection {
           link.socket.send(JSON.stringify({ type: 'forward', payload }));
       },
       deliver: (value) => {
-        this.handleMessage(remoteMessage(value));
+        this.handleMessage(link, remoteMessage(value));
       },
       fail: () => {
         link.socket.close();
@@ -313,22 +311,25 @@ export class RemoteConnection {
     else this.setStatus({ kind: 'code', feedback: '' });
   }
 
-  private handleMessage(message: RemoteMessage): void {
+  private handleMessage(link: Link, message: RemoteMessage): void {
+    const fail = (error: unknown) => {
+      this.fail(link, error);
+    };
     switch (message.type) {
       case 'authorized':
-        void this.authorized(message.expiresAt, message.pushPublicKey);
+        this.authorized(link, message).catch(fail);
         return;
       case 'pairing':
         this.setStatus({ kind: 'pairing' });
         return;
       case 'locked':
-        void this.locked();
+        this.locked().catch(fail);
         return;
       case 'denied':
         this.setStatus({ kind: 'denied' });
         return;
       case 'removed':
-        void this.removed();
+        this.removed().catch(fail);
         return;
       case 'pong':
         return;
@@ -359,11 +360,19 @@ export class RemoteConnection {
     }
   }
 
-  private async authorized(expiresAt: number, pushPublicKey: string | null): Promise<void> {
+  private async authorized(
+    link: Link,
+    message: Extract<RemoteMessage, { type: 'authorized' }>,
+  ): Promise<void> {
+    if (message.protocol < REMOTE_PROTOCOL_VERSION)
+      throw new Error('Update DROIDEX on your laptop to use it from this browser.');
+    if (message.protocol > REMOTE_PROTOCOL_VERSION)
+      throw new Error('DROIDEX on your laptop is newer than this page. Reload to update it.');
     if (!this.device) return;
     this.attempts = 0;
-    this.device = { ...this.device, expiresAt };
+    this.device = { ...this.device, expiresAt: message.expiresAt };
     await writeDevice(this.device);
+    if (this.link !== link) return;
     try {
       localStorage.setItem(LAST_HANDLE_KEY, this.handle);
     } catch {
@@ -374,7 +383,7 @@ export class RemoteConnection {
       if (Date.now() - this.lastReceivedAt > SILENCE_LIMIT_MS) this.link?.socket.close();
       else this.send({ type: 'ping' });
     }, HEARTBEAT_MS);
-    this.setStatus({ kind: 'ready', pushPublicKey });
+    this.setStatus({ kind: 'ready', pushPublicKey: message.pushPublicKey });
   }
 
   private async locked(): Promise<void> {
@@ -397,9 +406,22 @@ export class RemoteConnection {
     await writeDevice(this.device);
   }
 
-  /** A declined or removed browser stays put until the user acts. */
+  /** A declined, removed or failed browser stays put until the user acts. */
   private waitsForUser(): boolean {
-    return this.status.kind === 'denied' || this.status.kind === 'removed';
+    return (
+      this.status.kind === 'denied' ||
+      this.status.kind === 'removed' ||
+      this.status.kind === 'error'
+    );
+  }
+
+  private fail(link: Link, error: unknown): void {
+    if (this.link !== link) return;
+    this.setStatus({
+      kind: 'error',
+      message: error instanceof Error ? error.message : 'The secure connection failed.',
+    });
+    link.socket.close();
   }
 
   private later(callback: () => void, delayMs: number): void {

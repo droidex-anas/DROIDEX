@@ -58,6 +58,9 @@ const encode = (message: unknown) => JSON.stringify(message);
 const encoder = new TextEncoder();
 const bytes = (message: string) => encoder.encode(message).byteLength;
 const MAX_PROFILE_MUTATION_BYTES = MAX_PROFILE_PAYLOAD_LENGTH * 2 + 4096;
+// Anyone can open a socket, so sockets that are neither the laptop nor an
+// authorized browser share a small pool where a newcomer evicts the oldest.
+const MAX_WAITING_SOCKETS = 16;
 
 function isPeerAttachment(value: unknown): value is Peer {
   return (
@@ -138,7 +141,7 @@ export class RelayRoom {
       request.method === 'GET' &&
       request.headers.get('Upgrade')?.toLowerCase() === 'websocket'
     ) {
-      if (this.peers.size >= 33) return Response.json({ status: 'locked' }, { status: 429 });
+      this.evictOldestWaiting();
       const pair = new WebSocketPair();
       const now = Date.now();
       const peer: Peer = {
@@ -413,6 +416,18 @@ export class RelayRoom {
       if (deadline <= Date.now()) this.close(socket, 1008, 'Pairing expired');
       else await this.scheduleExpiry(deadline);
     }
+  }
+
+  private evictOldestWaiting(): void {
+    let oldest: [RelaySocket, Peer] | undefined;
+    let waiting = 0;
+    for (const entry of this.peers) {
+      if (entry[1].host || entry[1].authorized) continue;
+      waiting++;
+      if (!oldest || entry[1].openedAt < oldest[1].openedAt) oldest = entry;
+    }
+    if (oldest && waiting >= MAX_WAITING_SOCKETS)
+      this.close(oldest[0], 1013, 'Too many connections');
   }
 
   private async scheduleExpiry(deadline: number): Promise<void> {

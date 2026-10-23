@@ -286,6 +286,8 @@ app.whenReady().then(async () => {
     .catch(() =>
       console.error('[remote] Could not resume. Open Remote settings to review configuration.'),
     );
+  // The relay socket rarely survives sleep, and it can look open long after.
+  powerMonitor.on('resume', () => remoteAccess.reconnect());
 });
 
 app.on('window-all-closed', () => {

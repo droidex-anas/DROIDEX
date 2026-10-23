@@ -1,5 +1,5 @@
 import { useState, type SyntheticEvent } from 'react';
-import { ArrowRight } from '@droidex/icons';
+import { ArrowRight, ShieldCheck } from '@droidex/icons';
 import { HANDLE_PATTERN } from '../../packages/remote/src/index';
 import { Button } from '../../src/components/ui/Button';
 import { Field, Input } from '../../src/components/ui/Field';
@@ -61,6 +61,19 @@ export function Welcome({ handle, error }: { handle: string; error: string }) {
             </div>
           </Field>
         </form>
+        <div className="flex gap-3 rounded-lg bg-surface p-4">
+          <ShieldCheck className="mt-0.5 size-icon-md shrink-0 text-secondary" aria-hidden="true" />
+          <div className="flex flex-col gap-1">
+            <p className="text-body-strong text-primary">Private by design</p>
+            <p className="text-body text-secondary">
+              Your laptop approves every device, and its pairing code proves this page is talking to
+              your laptop.
+            </p>
+          </div>
+        </div>
+        <p className="text-caption text-muted">
+          No account. No cloud agents. Keep DROIDEX open on your laptop.
+        </p>
       </GateScreen>
     </GateLayout>
   );

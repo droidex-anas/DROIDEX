@@ -40,6 +40,7 @@ export async function authenticateDevice(
   const device = state.devices.find((item) => item.id === id && item.expiresAt > Date.now());
   if (device) {
     device.lastSeenAt = Date.now();
+    device.name = value.deviceName.trim() || device.name;
     return { kind: 'trusted', device };
   }
   if (

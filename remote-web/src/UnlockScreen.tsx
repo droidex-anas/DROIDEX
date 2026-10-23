@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useState, type ReactNode, type SyntheticEvent } from 'react';
 import { Button } from '../../src/components/ui/Button';
 import { CodeField } from './CodeField';
 import { GateScreen } from './GateLayout';
@@ -9,11 +9,14 @@ export function UnlockScreen({
   status,
   expired,
   authenticate,
+  children,
 }: {
   status: Extract<ConnectionStatus, { kind: 'code' }>;
   /** This browser was trusted before and its trust ran out. */
   expired: boolean;
   authenticate: (code: string) => Promise<void>;
+  /** Shown under the form, such as a way to forget this browser. */
+  children?: ReactNode;
 }) {
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -81,6 +84,7 @@ export function UnlockScreen({
         </Button>
         <p className="text-caption text-muted">Next, approve this browser on your laptop.</p>
       </form>
+      {children}
     </GateScreen>
   );
 }
