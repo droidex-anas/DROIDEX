@@ -82,16 +82,16 @@ export async function ingestDroidSettingsFile(
     const observation = await readStableObservation(metadata, maxFileBytes);
     if (observation === 'oversized') return { kind: 'oversized' };
     if (observation === null) return { kind: 'retry' };
-    const replaced =
-      previous !== null &&
-      (previous.fileIdentity !== observation.fileIdentity ||
-        decreased(observation.rawTotals, previous.rawBaselines));
-    const generation = replaced ? previous.generation + 1 : (previous?.generation ?? 0);
-    const counts = replaced ? observation.totals : delta(observation.totals, previous?.totals);
-    const rawBaselines = replaced
+    const countersReset =
+      previous !== null && decreased(observation.rawTotals, previous.rawBaselines);
+    const generation = countersReset ? previous.generation + 1 : (previous?.generation ?? 0);
+    const counts = countersReset ? observation.totals : delta(observation.totals, previous?.totals);
+    const rawBaselines = countersReset
       ? observation.rawTotals
       : mergeKnown(previous?.rawBaselines, observation.rawTotals);
-    const totals = replaced ? observation.totals : mergeKnown(previous?.totals, observation.totals);
+    const totals = countersReset
+      ? observation.totals
+      : mergeKnown(previous?.totals, observation.totals);
     const event = hasUsage(counts) ? droidEvent(observation, counts, generation) : null;
     const committed = store.ingestUsageSource({
       expectedCursor: cursor,

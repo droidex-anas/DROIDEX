@@ -136,26 +136,10 @@ function usageBreakdowns(db: DatabaseSync): Pick<UsageSnapshot, 'harnesses' | 'm
     COALESCE(sessions.sessions, 0) AS sessions
     FROM usage JOIN harness ON harness.id = usage.harness_id
     LEFT JOIN sessions USING (harness_id)
-    ORDER BY sessions DESC, tokens DESC, id LIMIT 31`,
+    ORDER BY sessions DESC, tokens DESC, id LIMIT 32`,
     )
     .all()
     .map(breakdown);
-  const appSessions = scalar(db, 'SELECT COUNT(*) AS value FROM droidex_session');
-  if (appSessions > 0)
-    harnesses.push({
-      id: 'droidex',
-      name: 'DROIDEX',
-      sessions: appSessions,
-      turns: null,
-      events: 0,
-      tokens: 0,
-      tokensComplete: true,
-      costMicrousd: null,
-      costComplete: true,
-    });
-  harnesses.sort(
-    (a, b) => b.sessions - a.sessions || b.tokens - a.tokens || a.id.localeCompare(b.id),
-  );
   const models = db
     .prepare(
       `WITH usage AS (

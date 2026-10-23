@@ -190,6 +190,39 @@ test('reserves forward budget and rotates persistently unfinished rows', async (
   assert.match(store.onlyCursor().state, /"unfinished":\[3,4,1,2\]/);
 });
 
+test('evicts the oldest unfinished rows and continues ingesting completed messages', async (t) => {
+  const root = await temporaryRoot(t);
+  const path = join(root, 'opencode.db');
+  const writer = createDatabase(path, 'message');
+  for (let row = 1; row <= 1_025; row += 1) {
+    insertMessage(
+      writer,
+      'message',
+      `unfinished-${String(row)}`,
+      JSON.stringify({ role: 'assistant', time: { created: row } }),
+      row,
+    );
+  }
+  insertMessage(writer, 'message', 'completed', openCodeMessage(), 2_000);
+  const store = new MemoryStore();
+  const ingest = new OpenCodeIngest({ store, roots: [root] });
+  for (let pass = 0; pass < 300; pass += 1) {
+    if (!(await ingest.reconcile()).backlog) break;
+  }
+  assert.equal(store.events.has('opencode:completed'), true);
+  const state = JSON.parse(store.onlyCursor().state);
+  assert.equal(state.tables.message.unfinished.length, 1_024);
+  assert.equal(state.tables.message.unfinished.includes(1), false);
+  writer
+    .prepare('UPDATE message SET data = ? WHERE id = ?')
+    .run(openCodeMessage(), 'unfinished-1025');
+  writer.close();
+  for (let pass = 0; pass < 300 && !store.events.has('opencode:unfinished-1025'); pass += 1) {
+    await ingest.reconcile();
+  }
+  assert.equal(store.events.has('opencode:unfinished-1025'), true);
+});
+
 test('bounds each pass by serialized row bytes', async (t) => {
   const root = await temporaryRoot(t);
   const path = join(root, 'opencode.db');

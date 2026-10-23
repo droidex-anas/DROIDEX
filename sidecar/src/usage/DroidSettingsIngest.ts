@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { watch, type FSWatcher } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import {
   readDroidSettingsDirectoryPage,
@@ -16,8 +16,7 @@ const ADAPTER_VERSION = 1;
 const DEFAULT_MAX_FILES = 4_096;
 const DEFAULT_MAX_FILE_BYTES = 1_048_576;
 const MAX_ROOTS = 32;
-const MAX_DISCOVERY_DIRECTORIES = 1_024;
-const MAX_DISCOVERY_STATE_BYTES = 64 * 1_024;
+const MAX_WATCHERS = 1_024;
 const MAX_DIRECTORIES_PER_RECONCILE = 32;
 const MAX_DIRTY_FILES = 4_096;
 const SETTINGS_SUFFIX = '.settings.json';
@@ -45,9 +44,9 @@ export interface DroidSettingsReconcileResult {
 
 interface DiscoveryState {
   initialComplete: boolean;
-  directories: string[];
-  directoryIndex: number;
+  directory: string;
   afterFile: string | null;
+  afterDirectory: string | null;
 }
 
 interface DirtyFile {
@@ -151,49 +150,41 @@ export class DroidSettingsIngest {
     const startupSweep = this.startupRoots.has(configuredRoot);
     const resetStartup = this.startupResetRoots.delete(configuredRoot);
     const state = resetStartup ? initialDiscoveryState(restored.initialComplete) : restored;
-    const directories = [...state.directories];
-    let directoryIndex = state.directoryIndex;
-    let afterFile = state.afterFile;
     let remaining = budget;
     let remainingDirectories = MAX_DIRECTORIES_PER_RECONCILE;
-    let more = directoryIndex < directories.length;
+    let more = true;
     let foundNew = false;
 
     while (more && remaining > 0 && remainingDirectories > 0) {
-      const relativeDirectory = directories[directoryIndex];
+      const relativeDirectory = state.directory;
       remainingDirectories -= 1;
       let page: Awaited<ReturnType<typeof readDroidSettingsDirectoryPage>>;
       try {
         page = await readDroidSettingsDirectoryPage(
           root,
           relativeDirectory,
-          afterFile,
-          remaining,
-          MAX_DISCOVERY_DIRECTORIES,
+          state.afterFile,
+          state.afterDirectory === null ? remaining : 0,
+          state.afterDirectory,
         );
       } catch (error) {
         if (!isUnavailable(error) || relativeDirectory === '') throw error;
         result.unavailableSources += 1;
-        directoryIndex += 1;
-        afterFile = null;
-        more = directoryIndex < directories.length;
+        more = advanceDirectory(state, null);
         continue;
       }
       if (!page) {
         result.unavailableSources += 1;
-        directoryIndex += 1;
-        afterFile = null;
-        more = directoryIndex < directories.length;
+        more = advanceDirectory(state, null);
         continue;
       }
-      appendDirectories(directories, relativeDirectory, page.directories);
       await this.ensureWatcher(root, relativeDirectory);
       for (const name of page.files) {
         const path = join(root, relativeDirectory, name);
         const queued = this.dirtyFiles.get(path);
         if (queued?.retry) {
           remaining -= 1;
-          afterFile = name;
+          state.afterFile = name;
           continue;
         }
         if (queued) this.dirtyFiles.delete(path);
@@ -201,7 +192,7 @@ export class DroidSettingsIngest {
         if (processed.kind === 'retry') {
           this.queueRetry(root, path, 0);
           remaining -= 1;
-          afterFile = name;
+          state.afterFile = name;
           continue;
         }
         remaining -= 1;
@@ -216,17 +207,13 @@ export class DroidSettingsIngest {
             foundNew = true;
           }
         }
-        afterFile = name;
+        state.afterFile = name;
       }
       if (page.moreFiles) break;
-      directoryIndex += 1;
-      afterFile = null;
-      more = directoryIndex < directories.length;
+      more = advanceDirectory(state, page.nextDirectory);
     }
 
-    const nextState: DiscoveryState = more
-      ? { ...state, directories, directoryIndex, afterFile }
-      : initialDiscoveryState(true);
+    const nextState = more ? state : initialDiscoveryState(true);
     commitDiscovery(this.options.store, root, discoveryCursor, nextState);
     if (!more) {
       this.startupRoots.delete(configuredRoot);
@@ -272,6 +259,13 @@ export class DroidSettingsIngest {
     }
     if (!directory) return;
     if (this.watchers.has(directory)) return;
+    if (this.watchers.size >= MAX_WATCHERS) {
+      const oldest = this.watchers.keys().next().value;
+      if (oldest !== undefined) {
+        this.watchers.get(oldest)?.close();
+        this.watchers.delete(oldest);
+      }
+    }
     try {
       const watcher = watch(directory, (_event, filename) => {
         if (!filename) return;
@@ -290,7 +284,7 @@ export class DroidSettingsIngest {
       });
       watcher.on('error', () => {
         watcher.close();
-        this.watchers.delete(directory);
+        if (this.watchers.get(directory) === watcher) this.watchers.delete(directory);
       });
       watcher.unref();
       this.watchers.set(directory, watcher);
@@ -348,25 +342,22 @@ function restoreDiscovery(cursor: OpaqueUsageCursor | null, root: string): Disco
     throw cursorError(root);
   }
   const value = parseObject(cursor.state);
-  const directories = Array.isArray(value?.directories) ? value.directories : null;
-  const directoryIndex = value?.directoryIndex;
+  const directory = value?.directory;
   const afterFile = nullableBoundedText(value?.afterFile, 255);
+  const afterDirectory = nullableBoundedText(value?.afterDirectory, 255);
   if (
     typeof value?.initialComplete !== 'boolean' ||
-    !directories ||
-    !validDirectories(directories) ||
-    !Number.isSafeInteger(directoryIndex) ||
-    Number(directoryIndex) < 0 ||
-    Number(directoryIndex) >= directories.length ||
-    afterFile === undefined
+    !validDirectory(directory) ||
+    afterFile === undefined ||
+    afterDirectory === undefined
   ) {
     throw cursorError(root);
   }
   return {
     initialComplete: value.initialComplete,
-    directories,
-    directoryIndex: Number(directoryIndex),
+    directory,
     afterFile,
+    afterDirectory,
   };
 }
 
@@ -376,7 +367,7 @@ function commitDiscovery(
   cursor: OpaqueUsageCursor | null,
   state: DiscoveryState,
 ): void {
-  const serialized = serializeDiscovery(state);
+  const serialized = JSON.stringify(state);
   if (cursor?.state === serialized) return;
   store.ingestUsageSource({
     expectedCursor: cursor,
@@ -392,47 +383,35 @@ function commitDiscovery(
   });
 }
 
-function appendDirectories(directories: string[], parent: string, names: readonly string[]): void {
-  const known = new Set(directories);
-  const discovered = names
-    .map((name) => (parent ? join(parent, name) : name))
-    .filter((path) => !known.has(path))
-    .sort();
-  if (directories.length + discovered.length > MAX_DISCOVERY_DIRECTORIES) {
-    throw new Error('Droid settings directory count exceeds the discovery limit.');
+function advanceDirectory(state: DiscoveryState, child: string | null): boolean {
+  state.afterFile = null;
+  if (child !== null) {
+    state.directory = join(state.directory, child);
+    state.afterDirectory = null;
+    return true;
   }
-  directories.push(...discovered);
+  if (state.directory === '') return false;
+  // Parent files were already scanned; resume its next child without retaining an ancestor set.
+  state.afterDirectory = basename(state.directory);
+  const parent = dirname(state.directory);
+  state.directory = parent === '.' ? '' : parent;
+  return true;
 }
 
 function initialDiscoveryState(initialComplete: boolean): DiscoveryState {
-  return { initialComplete, directories: [''], directoryIndex: 0, afterFile: null };
+  return { initialComplete, directory: '', afterFile: null, afterDirectory: null };
 }
 
-function validDirectories(value: unknown[]): value is string[] {
+function validDirectory(directory: unknown): directory is string {
   return (
-    value.length > 0 &&
-    value.length <= MAX_DISCOVERY_DIRECTORIES &&
-    value[0] === '' &&
-    new Set(value).size === value.length &&
-    value.every(
-      (directory) =>
-        typeof directory === 'string' &&
-        directory.length <= 1_024 &&
-        (directory === '' ||
-          (!isAbsolute(directory) &&
-            directory !== '..' &&
-            !directory.startsWith(`..${sep}`) &&
-            normalize(directory) === directory)),
-    )
+    typeof directory === 'string' &&
+    directory.length <= 4_096 &&
+    (directory === '' ||
+      (!isAbsolute(directory) &&
+        directory !== '..' &&
+        !directory.startsWith(`..${sep}`) &&
+        normalize(directory) === directory))
   );
-}
-
-function serializeDiscovery(state: DiscoveryState): string {
-  const serialized = JSON.stringify(state);
-  if (Buffer.byteLength(serialized) > MAX_DISCOVERY_STATE_BYTES) {
-    throw new Error('Droid settings discovery cursor exceeds 64 KiB.');
-  }
-  return serialized;
 }
 
 function insideRoot(root: string, candidate: string): boolean {

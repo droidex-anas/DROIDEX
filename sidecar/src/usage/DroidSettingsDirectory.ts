@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 const SETTINGS_SUFFIX = '.settings.json';
 
 export interface DroidSettingsDirectoryPage {
-  directories: string[];
+  nextDirectory: string | null;
   files: string[];
   moreFiles: boolean;
 }
@@ -15,24 +15,27 @@ export async function readDroidSettingsDirectoryPage(
   relativeDirectory: string,
   afterFile: string | null,
   fileLimit: number,
-  directoryLimit: number,
+  afterDirectory: string | null,
 ): Promise<DroidSettingsDirectoryPage | null> {
   const directoryPath = await safeDirectory(root, relativeDirectory);
   if (!directoryPath) return null;
   const files: string[] = [];
-  const directories: string[] = [];
+  let nextDirectory: string | null = null;
   let moreFiles = false;
   const directory = await opendir(directoryPath);
   try {
     for await (const entry of directory) {
       if (entry.isDirectory() && !entry.isSymbolicLink()) {
-        if (directories.length === directoryLimit) {
-          throw new Error('Droid settings directory count exceeds the discovery limit.');
+        if (
+          (afterDirectory === null || entry.name > afterDirectory) &&
+          (nextDirectory === null || entry.name < nextDirectory)
+        ) {
+          nextDirectory = entry.name;
         }
-        directories.push(entry.name);
         continue;
       }
       if (
+        fileLimit === 0 ||
         !entry.isFile() ||
         entry.isSymbolicLink() ||
         !entry.name.endsWith(SETTINGS_SUFFIX) ||
@@ -53,9 +56,8 @@ export async function readDroidSettingsDirectoryPage(
   } finally {
     await directory.close().catch(() => undefined);
   }
-  directories.sort();
   files.sort();
-  return { directories, files, moreFiles };
+  return { nextDirectory, files, moreFiles };
 }
 
 export async function safeDroidSettingsDirectory(

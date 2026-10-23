@@ -56,6 +56,7 @@ test('one bounded usage breakdown supplies the transport and privacy-safe public
     reset: false,
     events,
   });
+  database.recordDroidexSessions(Array.from({ length: 10 }, (_, index) => `app-${String(index)}`));
   const raw = {
     ...database.snapshot(),
     sync: { status: 'ready', sources: { jsonl: 'ready', openCode: 'ready', droid: 'ready' } },
@@ -66,6 +67,8 @@ test('one bounded usage breakdown supplies the transport and privacy-safe public
   assert.equal(JSON.stringify(snapshot).includes('private'), false);
   assert.equal(snapshot.models.length, 6, 'local model breakdown is not a top-five ranking');
   assert.equal(snapshot.mostUsedHarness, 'opencode');
+  assert.equal(snapshot.sessions, 10);
+  assert.equal(snapshot.harnesses.length, 1);
   assert.deepEqual(snapshot.harnesses[0], {
     id: 'opencode',
     name: 'OpenCode',

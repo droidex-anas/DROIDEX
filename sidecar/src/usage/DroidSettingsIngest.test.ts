@@ -91,6 +91,61 @@ test('drains initial discovery, persists deltas, and rotates known files without
   assert.equal(fixture.database.snapshot().lifetimeTokens, 37);
 });
 
+test('counts only the delta when an atomic save replaces the inode with higher totals', async (t) => {
+  const fixture = await ledgerFixture(t);
+  const source = join(fixture.root, 'session.settings.json');
+  await writeSettings(source, usage(10, 4, 1, 2, 1));
+  const ingest = new DroidSettingsIngest({ store: fixture.database, roots: [fixture.root] });
+  t.after(() => ingest.close());
+  await ingest.reconcile();
+
+  const replacement = join(fixture.root, 'replacement.tmp');
+  await writeSettings(replacement, usage(12, 6, 2, 3, 2));
+  await rename(replacement, source);
+  assert.equal((await ingest.reconcile()).insertedEvents, 1);
+  assert.equal(fixture.database.snapshot().lifetimeTokens, 25);
+  assert.equal((await ingest.reconcile()).insertedEvents, 0);
+});
+
+test('finishes discovery beyond the directory-count and cursor-size limits', async (t) => {
+  const fixture = await ledgerFixture(t);
+  for (let start = 0; start < 1_100; start += 100) {
+    await Promise.all(
+      Array.from({ length: 100 }, (_, offset) => {
+        const index = start + offset;
+        return mkdir(
+          join(
+            fixture.root,
+            `bucket-${String(Math.floor(index / 25))}`,
+            `${String(index).padStart(4, '0')}-${'x'.repeat(90)}`,
+          ),
+          { recursive: true },
+        );
+      }),
+    );
+  }
+  const last = join(fixture.root, 'bucket-43', `1099-${'x'.repeat(90)}`, 'last.settings.json');
+  await writeSettings(last, usage(1, 1, 0, 0, 0));
+  const ingest = new DroidSettingsIngest({ store: fixture.database, roots: [fixture.root] });
+  t.after(() => ingest.close());
+  let backlog = true;
+  for (let pass = 0; pass < 200 && backlog; pass += 1) {
+    backlog = (await ingest.reconcile()).backlog;
+  }
+  assert.equal(backlog, false);
+  assert.equal(fixture.database.snapshot().lifetimeTokens, 2);
+  ingest.close();
+
+  const restarted = new DroidSettingsIngest({ store: fixture.database, roots: [fixture.root] });
+  t.after(() => restarted.close());
+  backlog = true;
+  for (let pass = 0; pass < 200 && backlog; pass += 1) {
+    backlog = (await restarted.reconcile()).backlog;
+  }
+  assert.equal(backlog, false);
+  assert.equal(fixture.database.snapshot().lifetimeTokens, 2);
+});
+
 test('preserves known baselines across gaps and detects raw counter decreases', async (t) => {
   const fixture = await ledgerFixture(t);
   const source = join(fixture.root, 'session.settings.json');
@@ -210,12 +265,12 @@ test('watcher prioritizes exact changed paths and same basenames remain separate
   const first = join(firstDirectory, 'shared.settings.json');
   await writeSettings(first, usage(1, 1, 0, 0, 0));
   await writeSettings(join(secondDirectory, 'shared.settings.json'), usage(1, 1, 0, 0, 0));
-  let notifyDirty: () => void = () => undefined;
+  const changes = changeLatch();
   const ingest = new DroidSettingsIngest({
     store: fixture.database,
     roots: [fixture.root],
     maxFilesPerReconcile: 2,
-    onDirty: () => notifyDirty(),
+    onDirty: changes.notify,
   });
   t.after(() => ingest.close());
   await drainBacklog(ingest);
@@ -223,12 +278,7 @@ test('watcher prioritizes exact changed paths and same basenames remain separate
   assert.equal(snapshot.sessions, 0);
   assert.equal(snapshot.harnesses[0]?.sessions, 2);
 
-  const dirty = new Promise<void>((resolve) => {
-    notifyDirty = resolve;
-  });
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  await writeSettings(first, usage(2, 1, 0, 0, 0));
-  await withTimeout(dirty);
+  await changes.run(() => writeSettings(first, usage(2, 1, 0, 0, 0)));
   assert.equal((await ingest.reconcile()).insertedEvents, 1);
   assert.equal(fixture.database.snapshot().lifetimeTokens, 5);
 });
@@ -282,7 +332,7 @@ test('streams past large unrelated directories without an entry-count stall', as
     '',
     null,
     1,
-    1_024,
+    null,
   );
   assert.deepEqual(page?.files, ['z.settings.json']);
   assert.equal(page?.moreFiles, false);
@@ -327,17 +377,25 @@ async function writeSettings(path: string, value: object): Promise<void> {
   await writeFile(path, JSON.stringify(value));
 }
 
+// On macOS, libuv restarts its shared FSEvents stream whenever a directory watcher is added and
+// drops events in that window, so an idempotent change is repeated until the watcher sees one.
 function changeLatch() {
   let notify: () => void = () => undefined;
   return {
     notify: () => notify(),
     run: async (change: () => Promise<void>) => {
-      const observed = new Promise<void>((resolve) => {
-        notify = resolve;
-      });
-      await change();
-      await withTimeout(observed);
-      notify = () => undefined;
+      try {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          const observed = new Promise<void>((resolve) => {
+            notify = resolve;
+          });
+          await change();
+          if (await settlesWithin(observed, 1_000)) return;
+        }
+        throw new Error('Droid settings watcher did not wake.');
+      } finally {
+        notify = () => undefined;
+      }
     },
   };
 }
@@ -349,15 +407,18 @@ async function drainBacklog(ingest: DroidSettingsIngest): Promise<void> {
   throw new Error('Droid settings discovery did not drain.');
 }
 
-async function withTimeout(value: Promise<void>): Promise<void> {
+async function settlesWithin(value: Promise<void>, timeoutMs: number): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
       value,
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Droid settings watcher did not wake.')), 2_000);
+        timer = setTimeout(() => reject(new Error('timed out')), timeoutMs);
       }),
     ]);
+    return true;
+  } catch {
+    return false;
   } finally {
     if (timer) clearTimeout(timer);
   }

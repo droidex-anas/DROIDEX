@@ -325,8 +325,8 @@ test('DROIDEX app sessions are idempotent, append-only, and separate from usage 
   const snapshot = database.snapshot();
   assert.equal(snapshot.sessions, 2);
   assert.equal(snapshot.harnesses.find((row) => row.id === 'codex')?.sessions, 1);
-  assert.equal(snapshot.mostUsedHarness, 'droidex');
-  assert.equal(snapshot.harnesses[0]?.sessions, 2);
+  assert.equal(snapshot.mostUsedHarness, 'codex');
+  assert.equal(snapshot.harnesses[0]?.sessions, 1);
   database.rebuildDaily();
   assert.equal(database.snapshot().sessions, 2);
 

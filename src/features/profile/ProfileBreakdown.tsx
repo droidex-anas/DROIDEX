@@ -6,12 +6,27 @@ import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+// narrowSymbol keeps "$" in locales such as en-IN that would otherwise write "US$".
 const compactUsd = new Intl.NumberFormat(undefined, {
   style: 'currency',
   currency: 'USD',
+  currencyDisplay: 'narrowSymbol',
   notation: 'compact',
   maximumFractionDigits: 1,
 });
+const usd = new Intl.NumberFormat(undefined, {
+  style: 'currency',
+  currency: 'USD',
+  currencyDisplay: 'narrowSymbol',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+// Under $1,000 a cost keeps its cents; "$14.9" reads like a typo, "$8.5K" does not.
+function price(micros: number): string {
+  const dollars = micros / 1_000_000;
+  return dollars < 1_000 ? usd.format(dollars) : compactUsd.format(dollars);
+}
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 function tokenCount(row: UsageBreakdown): string | null {
@@ -64,7 +79,7 @@ function BreakdownRow({
         <Measure value={row.sessions.toLocaleString()} complete />
         <Measure value={tokenCount(row)} complete={row.tokensComplete} />
         <Measure
-          value={row.costMicrousd === null ? null : compactUsd.format(row.costMicrousd / 1_000_000)}
+          value={row.costMicrousd === null ? null : price(row.costMicrousd)}
           complete={row.costComplete}
         />
       </div>

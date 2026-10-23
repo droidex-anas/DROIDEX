@@ -6,7 +6,7 @@ export function profileSeed(profile: { username: string; displayName: string }):
 
 // Styled inline (not Tailwind) so the public web profile can render it too.
 // Pixels pop in on a diagonal when the seed changes; keyframes live in
-// src/index.css and remote-web/src/profile.css as `profile-pixel-in`.
+// src/index.css as `profile-pixel-in`.
 export function ProfileAvatar({ seed, size }: { seed: string; size: number }) {
   const { grid, color } = pixelCreature(seed);
   const padding = size * 0.2;

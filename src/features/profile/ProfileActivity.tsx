@@ -190,14 +190,15 @@ export function ProfileActivity({
                       setSelected(cell.key);
                     }}
                     className={`aspect-square rounded-xs transition-transform duration-150 ${
-                      cell.future ? 'invisible' : 'motion-safe:hover:scale-110'
+                      cell.future ? 'invisible' : 'motion-safe:hover:scale-125'
                     } ${isSelected ? 'relative z-10 scale-125 shadow-lg' : ''}`}
                     style={{
                       background: heatFill(level, color, 'var(--elevated)'),
                       ...(reduceMotion
                         ? {}
                         : {
-                            animation: 'profile-cell-in 0.35s cubic-bezier(0.16,1,0.3,1) both',
+                            // `backwards`: a held end frame would pin `transform` over the selected scale.
+                            animation: 'profile-cell-in 0.35s cubic-bezier(0.16,1,0.3,1) backwards',
                             animationDelay: `${String(Math.min(Math.floor(index / 7) * 8, 420))}ms`,
                           }),
                     }}

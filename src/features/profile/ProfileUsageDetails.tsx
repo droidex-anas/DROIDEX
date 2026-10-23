@@ -18,72 +18,102 @@ const TOKEN_ROWS: { key: TokenKey; label: string }[] = [
   { key: 'reasoningTokens', label: 'Reasoning' },
 ];
 
-const COST_ROWS: { key: CostKey; label: string; hint: string }[] = [
+const COST_ROWS: { key: CostKey; label: string; hint: string; missing: string }[] = [
   {
     key: 'providerCostMicrousd',
     label: 'Reported cost',
     hint: 'What providers reported for pay-per-use chats.',
+    missing: 'unreported',
   },
   {
     key: 'estimatedCostMicrousd',
     label: 'API-equivalent estimate',
     hint: 'What subscription usage would cost at public API prices. Not money you spent.',
+    missing: 'not priced',
   },
 ];
 
 const exact = new Intl.NumberFormat();
+// narrowSymbol keeps "$" in locales such as en-IN that would otherwise write "US$".
 const usd = new Intl.NumberFormat(undefined, {
   style: 'currency',
   currency: 'USD',
+  currencyDisplay: 'narrowSymbol',
+  minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
-function Value({
-  value,
-  partial,
-  format,
+function plural(count: number, word: string): string {
+  return `${exact.format(count)} ${count === 1 ? word : `${word}s`}`;
+}
+
+function TokenRow({
+  label,
+  usage,
+  field,
 }: {
-  value: number | null;
-  partial: boolean;
-  format: (value: number) => string;
+  label: string;
+  usage: ProfileUsageSnapshot;
+  field: TokenKey;
 }) {
-  if (value === null) return <span className="text-muted">Unknown</span>;
+  const value = usage.totals[field];
+  const gap = fieldGap(usage, field);
   return (
-    <span className="tabular-nums text-primary">
-      {partial && <span className="text-muted">≥ </span>}
-      {format(value)}
-    </span>
+    <li className="flex items-baseline justify-between gap-4 py-2">
+      <p className="min-w-0 text-body text-secondary">{label}</p>
+      <div className="shrink-0 text-right text-body">
+        {value === null ? (
+          <span className="text-muted">Unknown</span>
+        ) : (
+          <span className="tabular-nums text-primary">
+            {gap.isMaterial && <span className="text-muted">≥ </span>}
+            {exact.format(value)}
+          </span>
+        )}
+        {value !== null && gap.missingEvents > 0 && (
+          <p className="mt-0.5 text-caption text-muted">
+            {plural(gap.missingEvents, 'event')} unreported
+          </p>
+        )}
+      </div>
+    </li>
   );
 }
 
-function Row({
+// A price reads badly behind "≥", so a partial cost says "at least" in words.
+function CostRow({
   label,
   hint,
-  value,
+  missing,
   usage,
   field,
-  format,
 }: {
   label: string;
-  hint?: string;
-  value: number | null;
+  hint: string;
+  missing: string;
   usage: ProfileUsageSnapshot;
-  field: TokenKey | CostKey;
-  format: (value: number) => string;
+  field: CostKey;
 }) {
+  const micros = usage.totals[field];
   const gap = fieldGap(usage, field);
   return (
     <li className="flex items-baseline justify-between gap-4 py-2">
       <div className="min-w-0">
         <p className="text-body text-secondary">{label}</p>
-        {hint && <p className="mt-0.5 text-caption text-muted">{hint}</p>}
+        <p className="mt-0.5 text-caption text-muted">{hint}</p>
       </div>
-      <div className="shrink-0 text-right text-body">
-        <Value value={value} partial={gap.isMaterial} format={format} />
-        {value !== null && gap.missingEvents > 0 && (
+      <div className="shrink-0 text-right">
+        {micros === null ? (
+          <span className="text-body text-muted">Unknown</span>
+        ) : (
+          <p className="text-body-strong tabular-nums text-primary">
+            {gap.isMaterial && <span className="text-caption text-muted">at least </span>}
+            {usd.format(micros / 1_000_000)}
+          </p>
+        )}
+        {micros !== null && gap.missingEvents > 0 && (
           <p className="mt-0.5 text-caption text-muted">
-            {exact.format(gap.missingEvents)} {gap.missingEvents === 1 ? 'event' : 'events'}{' '}
-            unreported
+            {plural(gap.missingEvents, 'event')} {missing}
           </p>
         )}
       </div>
@@ -117,14 +147,7 @@ export function ProfileUsageDetails({ usage }: { usage: ProfileUsageSnapshot }) 
         </div>
         <ul>
           {TOKEN_ROWS.map((row) => (
-            <Row
-              key={row.key}
-              label={row.label}
-              value={totals[row.key]}
-              usage={usage}
-              field={row.key}
-              format={(value) => exact.format(value)}
-            />
+            <TokenRow key={row.key} label={row.label} usage={usage} field={row.key} />
           ))}
         </ul>
       </section>
@@ -132,14 +155,13 @@ export function ProfileUsageDetails({ usage }: { usage: ProfileUsageSnapshot }) 
         <h3 className="mb-2 text-body-strong text-primary">Cost</h3>
         <ul>
           {COST_ROWS.map((row) => (
-            <Row
+            <CostRow
               key={row.key}
               label={row.label}
               hint={row.hint}
-              value={totals[row.key]}
+              missing={row.missing}
               usage={usage}
               field={row.key}
-              format={(value) => usd.format(value / 1_000_000)}
             />
           ))}
         </ul>

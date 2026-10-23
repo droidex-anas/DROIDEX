@@ -211,7 +211,8 @@ export class OpenCodeIngest {
         const parsed = parseRow(row, source.sourceId);
         if (parsed.kind === 'unfinished') {
           if (state.unfinished.length >= MAX_UNFINISHED_ROWS) {
-            throw new Error(`OpenCode unfinished row limit exceeded in ${table.name}.`);
+            const oldest = Math.min(...state.unfinished);
+            state.unfinished.splice(state.unfinished.indexOf(oldest), 1);
           }
           state.unfinished.push(row.rowId);
         } else if (parsed.kind === 'event') events.push(parsed.event);

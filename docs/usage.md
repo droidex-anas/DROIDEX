@@ -26,20 +26,24 @@ bridge.
 Each supported harness adapter discovers only its documented local data root.
 Claude Code and Codex JSONL sources are read from the last committed complete
 newline. Their cursor stores the canonical source path, file identity, size,
-modification time, a SHA-512 guard over the bytes before the offset, and the
-parser version and reducer state. The guard detects tail rewrites without
-retaining prompt bytes; file identity, size and modification metadata cover
+modification time, a SHA-512 guard over up to 64 bytes immediately before the
+offset, and the parser version and reducer state. The guard detects tail rewrites
+without retaining prompt bytes; file identity, size and modification metadata cover
 rotation, truncation and same-size replacement.
 
 Factory Droid is read from the mutable `~/.factory/sessions/**/*.settings.json`
 metadata files. The adapter uses each file's own `tokenUsage`, never
 `inclusiveTokenUsage`, so parent sessions do not count child-agent usage twice.
-It persists the last cumulative totals and emits only monotonic deltas. A file
-replacement or decrease in any raw counter starts a new generation. Last-known
-baselines survive temporarily absent counters, so a known value cannot be
-counted twice when it reappears. Recursive discovery streams lexicographic,
+It persists the last cumulative totals and emits only monotonic deltas. A
+decrease in any raw counter starts a new generation. Atomic file replacement
+triggers a reread and preserves the generation while counters remain monotonic.
+Last-known baselines survive temporarily absent counters, so a known value cannot
+be counted twice when it reappears. Recursive discovery streams lexicographic,
 resumable filename pages without retaining or capping unrelated directory
-entries. Every process drains one complete startup sweep before Droid is marked
+entries. A depth-first cursor stores only the current directory and filename
+markers, so directory count cannot exhaust discovery state. Directory watchers
+are capped at 1,024, evicting the oldest; the sweep still visits every directory.
+Every process drains one complete startup sweep before Droid is marked
 ready. An exact-path watcher prioritizes changed settings, while the rotating
 bounded sweep recovers missed events. A size, modification-time, and
 file-identity match skips unchanged content; a periodic audit still verifies
@@ -48,12 +52,19 @@ never unrelated settings values. A file that changes while being read gets one
 immediate retry, then exponential backoff capped at 60 seconds; discovery still
 advances past it so one active session cannot starve the others.
 
+Forked Droid sessions can inherit their parent's cumulative `tokenUsage`.
+Settings do not provide a fork-time counter baseline, so inherited usage may
+remain counted in both sessions; equal counters alone are not a safe dedupe key.
+
 OpenCode is read directly from its own SQLite database in read-only,
 `query_only` mode. The adapter captures a row-ID high-water mark, reads bounded
 pages, and commits a per-table row cursor after every page. Assistant rows are
 ingested only after OpenCode marks them complete. A bounded set of unfinished
 row IDs is persisted with the cursor and revisited because OpenCode updates
-those rows in place as a turn finishes. A live write therefore lands in the
+those rows in place as a turn finishes. Above 1,024 unfinished rows per table,
+the oldest row ID is evicted so abandoned turns cannot block new usage. An
+evicted row that later finishes is not revisited until the ledger is rebuilt.
+A live write within the retained set therefore lands in the
 current bounded pass or a later one without holding a snapshot transaction
 open or recording partial token counts. Each pass reads at most 8 MiB by
 default, closes every statement snapshot after its bounded page, and rotates
@@ -94,9 +105,11 @@ unknown category as zero.
 
 ## Storage model
 
-`usage_event` is append-only and protected against update and delete. It holds
-UTC timestamps, harness/model/session identifiers, normalized token buckets,
-and optional provider-reported cost metadata. It contains no display text from
+`usage_event` protects event identity and forbids deletion. Token and cost
+columns may be updated for Claude Code events because its streaming records
+finalize usage for the same message in place; other harness events cannot be
+updated. It holds UTC timestamps, harness/model/session identifiers, normalized
+token buckets, and optional provider-reported cost metadata. It contains no display text from
 the source transcript.
 
 `droidex_session` is a second append-only source-of-truth table containing one
@@ -193,9 +206,10 @@ downloaded cards or screenshots. Rich per-user social previews still require a
 separate dynamic image or metadata endpoint; they must consume only this same
 verified public allowlist.
 
-Trusted Remote devices request the same bounded aggregate snapshot over their
-existing end-to-end encrypted channel. Usage is sent only on request, never on
-the frequent live-task snapshot path.
+`getProfileUsage` is laptop-only and reads the authenticated local bridge.
+Trusted Remote devices cannot request this private aggregate over the encrypted
+Remote channel. Public profile viewers receive only the explicitly published
+allowlist described above.
 
 ## Recovery
 
@@ -208,4 +222,5 @@ timestamped backup before creating an empty ledger.
 Parser-version changes cannot silently reinterpret existing canonical events.
 If an adapter change needs historical replacement rather than deduped replay,
 ship an explicit rebuild operation from retained source logs or change the
-event model to record supersession. Do not update old events in place.
+event model to record supersession. Apart from Claude Code's usage finalization
+described above, do not update historical events in place.
