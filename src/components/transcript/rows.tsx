@@ -2,35 +2,27 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 import type { TranscriptEvent } from '../../types/bridge';
 import {
-  describeToolCall,
   toolMeta,
   safeJson,
   stripAnsi,
   formatDuration,
   parseTodos,
+  isListingTool,
   isWebSearchTool,
   isWebFetchTool,
   toolArgString,
-  type ToolCallLabel,
   type TodoStatus,
 } from '../../lib/tools';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { classifyEvent } from '../../lib/transcript';
 import { compactPath } from '../../lib/pathDisplay';
 import { StreamingCaret } from '../StreamingCaret';
-import {
-  Caret,
-  ErrorTag,
-  InterruptedTag,
-  Expand,
-  firstLine,
-  linkify,
-  useElapsed,
-} from './primitives';
-import { CommandCard, CommandLine, ToolCallCard } from './commandCard';
-import { LinkBadge } from './LinkBadge';
+import { Caret, ErrorTag, Expand, firstLine, linkify, useElapsed } from './primitives';
+import { CommandCard, CommandLine } from './commandCard';
 import { TranscriptImage } from '../media/TranscriptImage';
-import { useToolSourceMark } from './toolSourceMark';
+import { ToolLine } from './toolLine';
+import { ToolFilesCard, type ExplorationCall } from './toolFilesCard';
+import { SkillCard } from './skillCard';
 import { WebFetchCard, WebSearchCard } from './webCards';
 
 /* ── Thinking / Thought ── */
@@ -145,10 +137,6 @@ function countToolCall(counts: ActivityCounts, e: TranscriptEvent): void {
   else counts.step++;
 }
 
-function isListingTool(name: string | undefined): boolean {
-  return /(^|[^a-z])(ls|list|dir)([^a-z]|$)/i.test(name ?? '');
-}
-
 function formatCounts(counts: ActivityCounts, live: boolean): string {
   const parts: string[] = [];
   const add = (n: number, s: string, p: string) => {
@@ -243,139 +231,6 @@ export function ErrorLine({ text, attempts }: { text: string; attempts?: number 
   );
 }
 
-// The row's object: a path opens in Review when the transcript can, anything
-// else is plain text. Paths compact to their tail with the directory dimmed so
-// the file name carries the line.
-function ToolTarget({
-  call,
-  onOpenReviewFile,
-}: {
-  call: ToolCallLabel;
-  onOpenReviewFile?: OpenReviewFileHandler;
-}) {
-  if (call.objectKind === 'none') return null;
-  if (call.objectKind !== 'path') {
-    return <span className="min-w-0 truncate text-muted">{call.object}</span>;
-  }
-  const shown = compactPath(call.object);
-  const slash = shown.lastIndexOf('/');
-  const dir = slash >= 0 ? shown.slice(0, slash + 1) : '';
-  const name = slash >= 0 ? shown.slice(slash + 1) : shown;
-  const parts = (
-    <>
-      {dir && <span className="text-muted/50">{dir}</span>}
-      <span className="text-muted transition-colors group-hover/path:text-primary">{name}</span>
-    </>
-  );
-  if (!onOpenReviewFile) return <span className="min-w-0 truncate">{parts}</span>;
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpenReviewFile(call.object);
-      }}
-      title={`Open ${call.object} in Review`}
-      className="group/path min-w-0 truncate text-left"
-    >
-      {parts}
-    </button>
-  );
-}
-
-// One tool call as a sentence: "Read src/app.tsx", "Searched src", or a
-// readable tool name. In flight the verb shimmers in its live form; a body
-// (captured output or the error) sits behind the caret.
-function ToolLine({
-  event,
-  output,
-  images,
-  error = false,
-  interrupted = false,
-  running = false,
-  forceOpen = false,
-  onOpenReviewFile,
-}: {
-  event: TranscriptEvent;
-  output?: string;
-  images?: string[];
-  error?: boolean;
-  interrupted?: boolean;
-  running?: boolean;
-  forceOpen?: boolean;
-  onOpenReviewFile?: OpenReviewFileHandler;
-}) {
-  const call = describeToolCall(event.toolName, event.toolArgs);
-  // A call made with no arguments shows none, not an empty "{}".
-  const argsText = safeJson(event.toolArgs);
-  const args = argsText === '{}' ? '' : argsText;
-  const out = output ? stripAnsi(output).trimEnd() : '';
-  const [open, setOpen] = useState(false);
-  const expanded = open || forceOpen;
-  // Only a row with output, text or pictures, can be collapsed again; detailed
-  // density still opens every call to its arguments, result or not.
-  const collapsible = out.length > 0 || Boolean(images?.length);
-  const hasBody = collapsible || (forceOpen && args.length > 0);
-  // An MCP tool wears its server's mark instead of spelling its source.
-  const mark = useToolSourceMark(call.source);
-  const verb = (
-    <span className="flex shrink-0 items-center">
-      {mark && <LinkBadge link={mark} />}
-      {running ? (
-        <span className="shimmer-text font-medium">{call.liveVerb}</span>
-      ) : (
-        <span className="text-secondary">{call.verb}</span>
-      )}
-    </span>
-  );
-  const toggle = () => {
-    setOpen((o) => !o);
-  };
-  return (
-    <div>
-      <div className="group flex min-w-0 items-center gap-1.5 text-body">
-        {collapsible ? (
-          <button
-            type="button"
-            onClick={toggle}
-            aria-expanded={expanded}
-            className="flex shrink-0 items-center text-left"
-          >
-            {verb}
-          </button>
-        ) : (
-          verb
-        )}
-        <ToolTarget call={call} onOpenReviewFile={onOpenReviewFile} />
-        {call.source && !mark && <span className="shrink-0 text-muted/60">· {call.source}</span>}
-        {collapsible && (
-          // The verb is the accessible toggle; the chevron repeats it for the pointer.
-          <button type="button" tabIndex={-1} aria-hidden="true" onClick={toggle}>
-            <Caret open={expanded} />
-          </button>
-        )}
-        {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
-      </div>
-      {hasBody && (
-        <Expand open={expanded}>
-          <div className="mt-1.5 pl-5">
-            <ToolCallCard
-              heading={
-                args ? (
-                  <pre className="whitespace-pre-wrap break-words text-primary">{args}</pre>
-                ) : null
-              }
-              output={out}
-              images={images}
-              error={error}
-            />
-          </div>
-        </Expand>
-      )}
-    </div>
-  );
-}
-
 // Same ring language as the composer's plan strip: filled when done, a ring
 // otherwise, with the running step's ring in the text colour.
 function TodoMark({ status }: { status: TodoStatus }) {
@@ -465,9 +320,41 @@ export function correlateResults(events: TranscriptEvent[]): {
   return { resultByCall, consumed };
 }
 
+// The maximal run of consecutive read/search calls starting at `start`, in
+// which every member renders as file chips. Correlated results interleave with
+// the calls (a replayed transcript batches several calls before their
+// results), so consumed results are stepped over; anything else — another
+// tool, a plan update, an unconsumed result — ends the run.
+function gatherExplorationRun(
+  events: TranscriptEvent[],
+  start: number,
+  resultByCall: Map<TranscriptEvent, TranscriptEvent>,
+  consumed: Set<TranscriptEvent>,
+): { run: ExplorationCall[]; end: number } {
+  const run: ExplorationCall[] = [
+    { event: events[start], result: resultByCall.get(events[start]) },
+  ];
+  let end = start + 1;
+  while (end < events.length) {
+    const next = events[end];
+    if (next.kind === 'tool_result' && consumed.has(next)) {
+      end++;
+      continue;
+    }
+    if (next.kind !== 'tool_call' || classifyEvent(next) === 'plan_update') break;
+    const { cat } = toolMeta(next.toolName, next.toolArgs);
+    if (cat !== 'read' && cat !== 'search') break;
+    run.push({ event: next, result: resultByCall.get(next) });
+    end++;
+  }
+  return { run, end };
+}
+
 // Render one tool group's calls as readable rows. `detailed` shows bodies
 // inline (the detailed density); otherwise rows are lines that expand to their
-// bodies on click.
+// bodies on click. Reads and searches are the exception: they render
+// visual-only rows (file chips, no raw body), and a consecutive burst of them
+// merges into a single row.
 export function renderToolEvents(
   events: TranscriptEvent[],
   live = false,
@@ -476,7 +363,8 @@ export function renderToolEvents(
 ): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   const { resultByCall, consumed } = correlateResults(events);
-  for (const e of events) {
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
     if (e.kind === 'tool_call') {
       if (classifyEvent(e) === 'plan_update') {
         nodes.push(<TodoChecklist key={e.id} event={e} />);
@@ -520,6 +408,20 @@ export function renderToolEvents(
             forceOpen={detailed}
           />,
         );
+      } else if (cat === 'skill') {
+        // A skill invocation reads as the skill, not as its raw payload.
+        nodes.push(
+          <SkillCard
+            key={e.id}
+            event={e}
+            output={result?.text}
+            images={result?.images}
+            error={isError}
+            interrupted={interrupted}
+            running={running}
+            forceOpen={detailed}
+          />,
+        );
       } else if (cat === 'exec') {
         const command =
           toolArgString(e.toolArgs, 'command') ??
@@ -552,6 +454,18 @@ export function renderToolEvents(
             />
           ),
         );
+      } else if (cat === 'search' || cat === 'read') {
+        // A burst of consecutive reads/searches is one exploration gesture and
+        // renders as a single row with every file pooled into one chip rail.
+        // Keyed by the run's first call, so a live row growing into a burst
+        // keeps its chips instead of remounting.
+        const { run, end } = gatherExplorationRun(events, i, resultByCall, consumed);
+        nodes.push(
+          <ToolFilesCard key={e.id} calls={run} live={live} onOpenReviewFile={onOpenReviewFile} />,
+        );
+        // The run's results are consumed, so the tail skip renders nothing for
+        // them; landing the loop past them keeps the walk linear.
+        i = end - 1;
       } else {
         nodes.push(
           <ToolLine
