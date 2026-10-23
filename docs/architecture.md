@@ -384,7 +384,8 @@ The browser starts from the window's stored projects, theme and agent settings
 (`renderer-storage-read`), so the laptop window must be open. Projects and chat
 organization stay one list: each copy saves locally and relays the value
 through `shared-storage-write`, which Electron forwards to the window and every
-other browser (`useSharedStorage`). Browser identities are non-extractable keys
+other browser (`useSharedStorage`). A browser re-reads these keys whenever it
+reconnects and drops a save made from its stale copy. Browser identities are non-extractable keys
 in IndexedDB. Generic Web Push is sent directly by the laptop using locally
 generated VAPID keys. There is no cloud agent job, offline message store or
 provider credential in the client.

@@ -52,6 +52,7 @@ interface Pending {
 // A pasted image travels as a data URL inside one desktop call.
 const MAX_BROWSER_PACKET_CHARS = 32 * 1024 * 1024;
 const MAX_AUTHORIZED_PEERS = 8;
+const MAX_PENDING_AUTHS = 8;
 // Anyone can open a socket, so browsers not yet authorized share a small pool
 // where a newcomer evicts the oldest instead of locking the owner out.
 const MAX_WAITING_PEERS = 16;
@@ -73,6 +74,7 @@ export async function createRemoteHost(options: {
   let error: string | undefined;
   let mutations = Promise.resolve();
   let authQueue = Promise.resolve();
+  const authenticating = new Set<Peer>();
   const peers = new Map<string, Peer>();
   const pending = new Map<string, Pending>();
   // One relay socket carries every browser, so they share its send rate.
@@ -252,13 +254,23 @@ export async function createRemoteHost(options: {
     if (active(peer)) await peer.tunnel?.receive(frame);
   }
   function dispatch(peer: Peer, request: RemoteRequest): void {
-    if (peer.dismissed) return;
+    if (!active(peer) || peer.dismissed) return;
     if (!peer.device) {
       if (request.type !== 'auth') throw new Error('Authenticate before sending requests');
-      const run = authQueue.then(() => authenticate(peer, request));
-      authQueue = run.catch(() => {
+      if (authenticating.has(peer)) return;
+      if (authenticating.size >= MAX_PENDING_AUTHS) {
         drop(peer);
-      });
+        return;
+      }
+      authenticating.add(peer);
+      authQueue = authQueue
+        .then(() => authenticate(peer, request))
+        .catch(() => {
+          drop(peer);
+        })
+        .finally(() => {
+          authenticating.delete(peer);
+        });
       return;
     }
     if (peer.device.expiresAt <= Date.now()) {
@@ -298,7 +310,7 @@ export async function createRemoteHost(options: {
     }
   }
   async function authenticate(peer: Peer, value: unknown): Promise<void> {
-    if (!peer.channel || peer.device || isPending(peer)) return;
+    if (!active(peer) || !peer.channel || peer.device || isPending(peer)) return;
     const result = await authenticateDevice(state, peer.channel, value, () => active(peer));
     if (!active(peer)) return;
     await persist();
@@ -432,7 +444,7 @@ export async function createRemoteHost(options: {
         const publicationLocationChanged =
           next.profile.username !== state.settings.profile.username ||
           next.relayUrl !== state.settings.relayUrl;
-        if (identity && publicationLocationChanged) {
+        if (state.usernameClaimed && identity && publicationLocationChanged) {
           const currentUsername = state.settings.profile.username;
           if (!currentUsername || !state.settings.relayUrl) {
             throw new Error('Restore your Remote address before changing username or relay');
@@ -444,6 +456,7 @@ export async function createRemoteHost(options: {
         const reconnect =
           next.enabled !== state.settings.enabled || next.relayUrl !== state.settings.relayUrl;
         if (reconnect) stop();
+        if (publicationLocationChanged) state.usernameClaimed = false;
         state.settings = next;
         await persist();
         if (next.enabled) {

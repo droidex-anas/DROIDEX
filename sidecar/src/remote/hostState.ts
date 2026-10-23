@@ -39,6 +39,7 @@ const storageSchema = z
   .object({
     settings: settingsSchema,
     privateKey: privateKeySchema.optional(),
+    usernameClaimed: z.boolean().default(false),
     pushIdentity: z.object({ privateKey: privateKeySchema, publicKey: z.string() }).optional(),
     subscriptions: z.record(subscriptionSchema),
     secret: z
@@ -122,6 +123,7 @@ export async function loadHostState(
         workspace: '',
       },
       authenticatorReady: false,
+      usernameClaimed: false,
       lastStep: -1,
       failures: 0,
       lockedUntil: 0,

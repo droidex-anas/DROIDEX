@@ -9,6 +9,8 @@ import type {
   DirectoryListing,
   DroidexApi,
   RemoteBrowserControls,
+  SharedStorageChange,
+  SharedStorageKey,
 } from '../../src/lib/desktop';
 import { forgetDevice } from './deviceStore';
 import { pickRemoteDirectory } from './FolderPicker';
@@ -23,6 +25,7 @@ const noSubscription = () => () => undefined;
 
 // The renderer's keys (laptop projects, chat titles, transcripts) and this client's last handle.
 const BROWSER_STORAGE_KEY = /^droid(ex)?[-.]/;
+const SHARED_STORAGE_KEYS: SharedStorageKey[] = ['droid-workspaces', 'droid-chat-metadata'];
 
 export function createRemoteBrowserControls(connection: RemoteConnection): RemoteBrowserControls {
   return {
@@ -141,7 +144,52 @@ export function createRemoteDesktopApi(
   };
   // The forwarded methods return whatever the laptop's handlers return, which
   // is exactly what the desktop window receives over IPC.
-  return { ...forwarded, ...local } as DroidexApi;
+  return { ...forwarded, ...local, ...createSharedStorage(connection) } as DroidexApi;
+}
+
+// Laptop changes broadcast while this browser was offline never arrive, so the
+// laptop's copy is read again on subscribing and on every reconnect. A save waits
+// for that read and is dropped when it came from the stale copy, since it holds
+// the whole value and would overwrite the laptop's newer one.
+function createSharedStorage(
+  connection: RemoteConnection,
+): Pick<DroidexApi, 'writeSharedStorage' | 'onSharedStorage'> {
+  let receive: ((change: SharedStorageChange) => void) | null = null;
+  let synced = Promise.resolve(true);
+  const sync = () => {
+    synced = connection.call('readRendererStorage', [SHARED_STORAGE_KEYS]).then(
+      (values) => {
+        for (const key of SHARED_STORAGE_KEYS) {
+          const value = (values as Partial<Record<SharedStorageKey, string | null>>)[key];
+          if (typeof value === 'string') receive?.({ key, value });
+        }
+        return true;
+      },
+      () => false,
+    );
+  };
+  return {
+    onSharedStorage: (handler) => {
+      receive = handler;
+      sync();
+      const stopListening = connection.listen('onSharedStorage', (payload) => {
+        handler(payload as SharedStorageChange);
+      });
+      const stopWatching = connection.onStatus((status) => {
+        if (status.kind === 'ready') sync();
+      });
+      return () => {
+        receive = null;
+        stopListening();
+        stopWatching();
+      };
+    },
+    writeSharedStorage: async (key, value) => {
+      if (!(await synced)) sync();
+      if (!(await synced) || localStorage.getItem(key) !== value) return;
+      await connection.call('writeSharedStorage', [key, value]);
+    },
+  };
 }
 
 function powerTier(): DesktopPowerTierSnapshot {

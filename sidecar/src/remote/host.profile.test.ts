@@ -8,6 +8,7 @@ import {
   type PublicProfileSnapshot,
 } from '../../../packages/remote/src/index.js';
 import { createRemoteHost } from './host.js';
+import { loadHostState } from './hostState.js';
 
 test('a published profile blocks relay and username changes through the host boundary', async (t) => {
   const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
@@ -44,6 +45,7 @@ test('a published profile blocks relay and username changes through the host bou
     return Response.json({ payload, publicKey: ownerKey, signature });
   });
   const stored = JSON.stringify({
+    usernameClaimed: true,
     settings: {
       profile: { displayName: 'Anas', username: 'anas' },
       enabled: false,
@@ -99,4 +101,76 @@ test('a published profile blocks relay and username changes through the host bou
   } finally {
     await host.close();
   }
+});
+
+test('a failed username claim can be changed after restart even when another owner has published', async (t) => {
+  const other = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ]);
+  const payload = encodeProfilePayload({
+    version: 3,
+    displayName: 'Other owner',
+    username: 'taken-name',
+    generatedAt: Date.now(),
+    generatedDay: '2026-10-23',
+    trackingDay: '2026-10-23',
+    lifetimeTokens: 0,
+    tokensReported: false,
+    tokensComplete: false,
+    peakDayTokens: 0,
+    sessions: 0,
+    currentStreak: 0,
+    longestStreak: 0,
+    days: [],
+    harnesses: [],
+    models: [],
+  });
+  const published = {
+    payload,
+    publicKey: await crypto.subtle.exportKey('jwk', other.publicKey),
+    signature: await signIdentity(other.privateKey, profileShareProof('taken-name', payload)),
+  };
+  let claimAvailable = false;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith('/challenge')) return Response.json({ challenge: 'test-challenge' });
+    if (path.endsWith('/claim')) return new Response(null, { status: claimAvailable ? 200 : 403 });
+    if (path.endsWith('/profile')) return Response.json(published);
+    throw new Error('Unexpected relay request');
+  });
+  let stored: string | null = null;
+  const options = {
+    load: async () => stored,
+    save: async (value: string) => {
+      stored = value;
+    },
+    bridgeInfo: async () => ({ port: 1, token: 'unused' }),
+    desktop: {
+      open() {},
+      close() {},
+      call() {},
+      listen: () => () => {},
+      openTerminal: () => ({ post() {}, close() {} }),
+    },
+    changed() {},
+    keepAwake() {},
+    defaults: { relayUrl: 'wss://relay.test', clientUrl: 'https://client.test' },
+  };
+  let host = await createRemoteHost(options);
+  t.after(() => host.close());
+  await host.configure({ profile: { displayName: 'New owner', username: 'taken-name' } });
+  await assert.rejects(host.setup(), /username is unavailable/);
+  // The pre-release state without an ownership flag must also remain editable.
+  assert.ok(stored);
+  const previous: Record<string, unknown> = JSON.parse(stored);
+  delete previous.usernameClaimed;
+  stored = JSON.stringify(previous);
+  await host.close();
+  host = await createRemoteHost(options);
+  assert.equal((await loadHostState(options.load, options.defaults)).usernameClaimed, false);
+  await host.configure({ profile: { displayName: 'New owner', username: 'available-name' } });
+  claimAvailable = true;
+  await host.setup();
+  assert.equal((await loadHostState(options.load, options.defaults)).usernameClaimed, true);
 });

@@ -45,13 +45,17 @@ const MAX_CALLS = 64;
 const PAUSE_ABOVE_QUEUED_CHARS = 8 * 1024 * 1024;
 const BRIDGE_PARAMS = ['bridgeProtocol', 'pageId', 'resumeGeneration', 'resumeSeq'];
 
+interface BridgeSocket {
+  socket: WebSocket | null;
+}
+
 /**
  * Everything one authorized browser has open on the laptop: its bridge
  * sockets to the local sidecar, its terminals, its desktop event listeners,
  * and its in-flight desktop calls. Closing the session releases all of them.
  */
 export class PeerSession {
-  private readonly sockets = new Map<number, WebSocket>();
+  private readonly sockets = new Map<number, BridgeSocket>();
   private readonly terminals = new Map<string, RemoteTerminal>();
   private readonly unlisten: (() => void)[] = [];
   private calls = 0;
@@ -86,13 +90,19 @@ export class PeerSession {
         void this.openBridge(request.socketId, request.params);
         return;
       case 'bridge.send': {
-        const socket = this.sockets.get(request.socketId);
+        const socket = this.sockets.get(request.socketId)?.socket;
         if (socket?.readyState === WebSocket.OPEN) socket.send(request.data);
         return;
       }
-      case 'bridge.close':
-        this.sockets.get(request.socketId)?.close();
+      case 'bridge.close': {
+        const bridge = this.sockets.get(request.socketId);
+        if (bridge?.socket) bridge.socket.close();
+        else if (bridge) {
+          this.sockets.delete(request.socketId);
+          this.send({ type: 'bridge.closed', socketId: request.socketId, code: 1000, reason: '' });
+        }
         return;
+      }
       case 'terminal.open':
         this.openTerminal(request.terminalId);
         return;
@@ -108,14 +118,14 @@ export class PeerSession {
 
   /** The tunnel has caught up; read the local bridge again. */
   resume(): void {
-    for (const socket of this.sockets.values()) socket.resume();
+    for (const { socket } of this.sockets.values()) socket?.resume();
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
     for (const stop of this.unlisten) stop();
-    for (const socket of this.sockets.values()) socket.terminate();
+    for (const { socket } of this.sockets.values()) socket?.terminate();
     for (const terminal of this.terminals.values()) terminal.close();
     this.sockets.clear();
     this.terminals.clear();
@@ -159,38 +169,41 @@ export class PeerSession {
       this.send({ type: 'bridge.closed', socketId, code: 1013, reason: 'Too many connections' });
       return;
     }
-    let info: { port: number; token: string };
+    // The reservation also identifies this open if its ID is canceled and reused.
+    const bridge: BridgeSocket = { socket: null };
+    this.sockets.set(socketId, bridge);
     try {
-      info = await this.options.bridgeInfo();
+      const info = await this.options.bridgeInfo();
+      if (this.sockets.get(socketId) !== bridge) return;
+      const url = new URL(`ws://127.0.0.1:${String(info.port)}`);
+      if (info.token) url.searchParams.set('token', info.token);
+      const requested = new URLSearchParams(params);
+      for (const key of BRIDGE_PARAMS) {
+        const value = requested.get(key);
+        if (value !== null) url.searchParams.set(key, value);
+      }
+      const socket = new WebSocket(url, { handshakeTimeout: 8000 });
+      bridge.socket = socket;
+      socket.on('open', () => {
+        this.send({ type: 'bridge.opened', socketId });
+      });
+      socket.on('message', (raw: RawData) => {
+        this.send({ type: 'bridge.message', socketId, data: rawText(raw) });
+        if (this.options.queuedChars() > PAUSE_ABOVE_QUEUED_CHARS) socket.pause();
+      });
+      socket.on('error', () => {
+        socket.terminate();
+      });
+      socket.on('close', (code: number, reason: Buffer) => {
+        if (this.sockets.get(socketId) !== bridge) return;
+        this.sockets.delete(socketId);
+        this.send({ type: 'bridge.closed', socketId, code, reason: reason.toString('utf8') });
+      });
     } catch {
-      this.send({ type: 'bridge.closed', socketId, code: 1011, reason: 'Agent runtime offline' });
-      return;
-    }
-    if (this.closed) return;
-    const url = new URL(`ws://127.0.0.1:${String(info.port)}`);
-    if (info.token) url.searchParams.set('token', info.token);
-    const requested = new URLSearchParams(params);
-    for (const key of BRIDGE_PARAMS) {
-      const value = requested.get(key);
-      if (value !== null) url.searchParams.set(key, value);
-    }
-    const socket = new WebSocket(url, { handshakeTimeout: 8000 });
-    this.sockets.set(socketId, socket);
-    socket.on('open', () => {
-      this.send({ type: 'bridge.opened', socketId });
-    });
-    socket.on('message', (raw: RawData) => {
-      this.send({ type: 'bridge.message', socketId, data: rawText(raw) });
-      if (this.options.queuedChars() > PAUSE_ABOVE_QUEUED_CHARS) socket.pause();
-    });
-    socket.on('error', () => {
-      socket.terminate();
-    });
-    socket.on('close', (code: number, reason: Buffer) => {
-      if (this.sockets.get(socketId) !== socket) return;
+      if (this.sockets.get(socketId) !== bridge) return;
       this.sockets.delete(socketId);
-      this.send({ type: 'bridge.closed', socketId, code, reason: reason.toString('utf8') });
-    });
+      this.send({ type: 'bridge.closed', socketId, code: 1011, reason: 'Agent runtime offline' });
+    }
   }
 
   private openTerminal(terminalId: string): void {

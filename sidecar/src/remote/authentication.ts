@@ -84,6 +84,7 @@ export async function setupAuthenticator(state: Stored, save: () => Promise<void
   await save();
   const identity = await importIdentity(state.privateKey);
   await claimHandle(state.settings.relayUrl, state.settings.profile.username, identity);
+  state.usernameClaimed = true;
   if (!state.pushIdentity) {
     const generated = await createPushIdentity();
     state.pushIdentity = {
