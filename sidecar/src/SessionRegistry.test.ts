@@ -221,6 +221,7 @@ test('updateSummary persists canonical state before one publication and protects
       providerSessionId: 'provider-current',
       compactedFromProviderSessionIds: ['provider-old'],
       missionId: 'mission-stable',
+      droidProfile: 'alt',
     }),
   );
   await registry.register(session);
@@ -232,6 +233,7 @@ test('updateSummary persists canonical state before one publication and protects
     providerSessionId: 'changed-provider',
     compactedFromProviderSessionIds: ['changed-alias'],
     missionId: 'changed-mission',
+    droidProfile: undefined,
     title: 'Updated title',
     updatedAt: 999,
   };
@@ -241,6 +243,7 @@ test('updateSummary persists canonical state before one publication and protects
   assert.equal(updated?.providerSessionId, 'provider-current');
   assert.deepEqual(updated?.compactedFromProviderSessionIds, ['provider-old']);
   assert.equal(updated?.missionId, 'mission-stable');
+  assert.equal(updated?.droidProfile, 'alt');
   assert.equal(updated?.title, 'Updated title');
   assert.equal(updated?.updatedAt, 42);
   assert.deepEqual(history.trace, ['persist', 'publish']);

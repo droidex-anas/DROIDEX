@@ -408,6 +408,8 @@ function isSessionSummary(value: unknown): boolean {
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
+    (value.droidProfile === undefined ||
+      (value.provider === 'droid' && value.droidProfile === 'alt')) &&
     isOptionalBoolean(value.fastMode) &&
     isOptionalContextWindow(value.contextWindowTokens) &&
     (value.pendingSteers === undefined ||

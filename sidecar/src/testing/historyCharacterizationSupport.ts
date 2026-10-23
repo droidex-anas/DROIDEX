@@ -41,6 +41,7 @@ type SessionHistoryDependencies = SessionManagerDependencies['history'];
 type PersistedSummaryPatch = Pick<
   Protocol.SessionSummary,
   | 'appSessionId'
+  | 'droidProfile'
   | 'providerSessionId'
   | 'compactedFromProviderSessionIds'
   | 'sessionPurpose'
@@ -266,6 +267,7 @@ export function writeProviderConversation(
 function materializePersistedSummaryPatch(summary: Protocol.SessionSummary): PersistedSummaryPatch {
   return {
     appSessionId: summary.appSessionId,
+    ...(summary.droidProfile ? { droidProfile: summary.droidProfile } : {}),
     providerSessionId: summary.providerSessionId ?? summary.appSessionId,
     compactedFromProviderSessionIds: [...(summary.compactedFromProviderSessionIds ?? [])],
     sessionPurpose: summary.sessionPurpose,

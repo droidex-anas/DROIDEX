@@ -55,6 +55,9 @@ export function ThreadSpawnLine({
   // when the conversation does rather than shimmer for good.
   const starting = result === undefined && sessionLive;
   const live = row?.live === true || starting;
+  const isAlt =
+    (row?.droidProfile ?? spawned?.droidProfile) === 'alt' ||
+    (starting && stringArg(call, 'profile') === 'alt');
   // A fork copies a lead's transcript but not its place in the project, so its
   // Threads panel has nothing to show; from there a thread opens on its own.
   const sameProject = useStoreSelector((state) => {
@@ -95,6 +98,11 @@ export function ThreadSpawnLine({
         >
           {title}
         </button>
+        {isAlt && (
+          <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
+            <span className="sr-only">Factory account: </span>Alt
+          </span>
+        )}
         {row && !live && (
           <>
             <span className="min-w-0 truncate text-caption text-muted">{row.detail}</span>

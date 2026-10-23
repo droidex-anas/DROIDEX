@@ -232,6 +232,9 @@ export async function installChildRuntime(input: {
     const load = host.d.runtime.loadSession(providerSessionId, {
       ...droidInteractionHandlers(ref, host.d.interactions.interactionsFor(ref)),
       cwd: parent.lease.summary.cwd,
+      ...(parent.lease.summary.droidProfile
+        ? { droidProfile: parent.lease.summary.droidProfile }
+        : {}),
       mcpServers: parent.lease.mcpConfigs,
     });
     const result = await awaitOpenStep(attempt, load, (late) => late.close().catch(ignoreError));

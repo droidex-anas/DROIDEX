@@ -25,6 +25,7 @@ export interface ThreadRow {
   /** 0 for a thread of the main chat, 1 for a thread that thread started. */
   depth: number;
   provider?: ProviderKind;
+  droidProfile?: 'alt';
   modelId?: string;
 }
 
@@ -159,6 +160,7 @@ function threadRow(
     updatedAt: session?.updatedAt ?? 0,
     depth,
     ...(session?.provider ? { provider: session.provider } : {}),
+    ...((session?.droidProfile ?? thread.droidProfile) === 'alt' ? { droidProfile: 'alt' } : {}),
     ...(session?.modelId ? { modelId: session.modelId } : {}),
   };
 }

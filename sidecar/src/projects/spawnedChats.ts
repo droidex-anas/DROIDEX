@@ -15,6 +15,7 @@ const WORKING_CHATS_LIMIT = 8;
 /** What a spawn with reportBack false tells the chat that made it. */
 export interface StartedChat {
   appSessionId: string;
+  droidProfile?: 'alt';
   title: string;
   cwd?: string;
   branch?: string;
@@ -104,6 +105,7 @@ export class SpawnedChats {
         throw new Error('The selected harness did not start this chat and reported no reason.');
       return {
         appSessionId: session.appSessionId,
+        ...(session.droidProfile ? { droidProfile: session.droidProfile } : {}),
         title: input.title,
         ...(workspace ? { cwd: workspace.cwd, branch: workspace.branch } : {}),
       };

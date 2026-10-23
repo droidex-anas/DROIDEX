@@ -19,7 +19,8 @@ type IdentityField =
   | 'providerSessionId'
   | 'compactedFromProviderSessionIds'
   | 'missionId'
-  | 'provider';
+  | 'provider'
+  | 'droidProfile';
 
 export type SessionSummaryPatch = Omit<Partial<SessionSummary>, IdentityField>;
 
@@ -468,6 +469,7 @@ function withoutIdentityFields(patch: Partial<SessionSummary>): SessionSummaryPa
   delete safePatch.compactedFromProviderSessionIds;
   delete safePatch.missionId;
   delete safePatch.provider;
+  delete safePatch.droidProfile;
   return safePatch;
 }
 

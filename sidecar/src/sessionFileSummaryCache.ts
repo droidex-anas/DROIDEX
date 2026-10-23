@@ -103,6 +103,7 @@ function hasOptionalSummaryFields(summary: Record<string, unknown>): boolean {
     optionalRecordKeyOf(summary, 'validatorReasoningEffort', SESSION_FILE_REASONING_EFFORTS) &&
     optionalRecordOneOf(summary, 'contextAccuracy', ['exact', 'estimated']) &&
     optionalRecordOneOf(summary, 'workspaceKind', ['folder', 'none']) &&
+    optionalRecordOneOf(summary, 'droidProfile', ['alt']) &&
     optionalFiniteNumber(summary, [
       'queuedSends',
       'contextRemainingTokens',

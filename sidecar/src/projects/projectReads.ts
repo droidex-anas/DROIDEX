@@ -21,6 +21,7 @@ import { LEDGER_LIMITS } from './store.js';
 
 /** What a chat reads back about a thread it owns. */
 export interface ThreadReadout {
+  droidProfile?: 'alt';
   threadId: string;
   title: string;
   state: ThreadState;
@@ -86,9 +87,13 @@ export class ProjectReads {
       runtimeLoad: this.sessions.runtimeLoad(),
       threads: project.threads.map((thread) => {
         const status = this.threadStatus(project, thread);
+        const droidProfile =
+          thread.queuedSpawn?.input.droidProfile ??
+          this.sessions.get(thread.appSessionId)?.droidProfile;
         return {
           appSessionId: thread.appSessionId,
           title: thread.title || 'Untitled thread',
+          ...(droidProfile ? { droidProfile } : {}),
           waiting: thread.waiting,
           ...(thread.unread ? { unread: true as const } : {}),
           state: status.state,
@@ -175,6 +180,7 @@ export class ProjectReads {
       ...(thread.ask ? { questionId: thread.ask.requestId, question: thread.ask.questions } : {}),
       ...(selection
         ? {
+            ...(selection.droidProfile ? { droidProfile: selection.droidProfile } : {}),
             cwd: selection.cwd,
             modelId: selection.modelId,
             reasoningEffort: selection.reasoningEffort,

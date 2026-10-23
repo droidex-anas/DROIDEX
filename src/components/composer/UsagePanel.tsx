@@ -21,12 +21,14 @@ import { ACTION_CLASS, ManageUsageButton } from './UsageLimitTab';
 // much is used, when it resets and how it is pacing, in the limit tab's slot.
 export function UsagePanel({
   provider,
-  usage,
+  droidProfile,
+  usage: providerUsage,
   reachable,
   now,
   onClose,
 }: {
   provider: ProviderKind;
+  droidProfile?: 'alt';
   usage: ProviderUsage | undefined;
   // Whether the agent runtime can be asked; without it /usage shows only what
   // the app already knows.
@@ -39,6 +41,9 @@ export function UsagePanel({
     provider: ProviderKind;
     usage: ProviderUsage | undefined;
   }>();
+  const isAlt = droidProfile === 'alt';
+  const name = isAlt ? 'Alt account' : PROVIDER_LABELS[provider];
+  const usage = isAlt ? undefined : providerUsage;
   const refreshing = refreshedFrom?.provider === provider && refreshedFrom.usage === usage;
   const extra = usage?.extra && extraLabel(usage.extra);
   // The oldest window's time, so the line never claims one a read did not refresh.
@@ -50,7 +55,7 @@ export function UsagePanel({
     <ComposerTab>
       <div
         role="region"
-        aria-label={`${PROVIDER_LABELS[provider]} usage`}
+        aria-label={`${name} usage`}
         className="flex min-w-0 flex-col gap-1 text-caption"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-4">
@@ -58,9 +63,7 @@ export function UsagePanel({
             <span className="shrink-0 text-muted">
               <Gauge className="h-3.5 w-3.5" strokeWidth={2} />
             </span>
-            <span className="truncate font-medium text-primary">
-              {PROVIDER_LABELS[provider]} usage
-            </span>
+            <span className="truncate font-medium text-primary">{name} usage</span>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 tabular-nums">
             {updatedAt !== undefined && (
@@ -72,16 +75,18 @@ export function UsagePanel({
                 <span className="pl-1 text-muted">·</span>
               </>
             )}
-            <button
-              type="button"
-              disabled={refreshing}
-              onClick={() => {
-                if (refreshUsage(provider, true, true)) setRefreshedFrom({ provider, usage });
-              }}
-              className={`${ACTION_CLASS} text-secondary disabled:opacity-60`}
-            >
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
+            {!isAlt && (
+              <button
+                type="button"
+                disabled={refreshing}
+                onClick={() => {
+                  if (refreshUsage(provider, true, true)) setRefreshedFrom({ provider, usage });
+                }}
+                className={`${ACTION_CLASS} text-secondary disabled:opacity-60`}
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </button>
+            )}
             <button
               type="button"
               aria-label="Close usage"
@@ -92,7 +97,11 @@ export function UsagePanel({
             </button>
           </div>
         </div>
-        <UsageBody provider={provider} usage={usage} reachable={reachable} now={now} />
+        {isAlt ? (
+          <Note>Alt account usage is not available here. Run /limits in droid-alt.</Note>
+        ) : (
+          <UsageBody provider={provider} usage={usage} reachable={reachable} now={now} />
+        )}
         {extra && <div className="px-1.5 pb-0.5 text-muted">{extra}</div>}
       </div>
     </ComposerTab>

@@ -38,6 +38,8 @@ function collectEnvVars() {
     for (const match of text.matchAll(bracketAccess)) names.add(match[1]);
   }
 
+  // This opt-in is documented only with the private local experiment.
+  names.delete('DROIDEX_ALT_HOME');
   return [...names].sort();
 }
 

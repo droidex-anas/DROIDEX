@@ -2,6 +2,8 @@ import {
   deliverScheduledMessage,
   type ScheduledTurnDelivery,
 } from './sessionAutomationDelivery.js';
+import { readFactoryDefaults } from './history.js';
+import { droidHome } from './droidProfiles.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { type McpServerConfig, type SdkMcpServer } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
@@ -341,12 +343,18 @@ export class SessionLifecycle {
       // Resolved here so an unroutable provider fails before any resource starts.
       const kind = requireProviderKind(command.provider);
       requireDroidReasoningSupported(kind, command);
+      if (command.droidProfile !== undefined) {
+        if (kind !== 'droid') throw new Error('A Factory account profile requires Droid.');
+        droidHome(command.droidProfile);
+      }
       if (kind === 'droid' && command.fastMode !== undefined)
         throw new Error('Droid does not support fast mode.');
       if (command.contextWindowTokens !== undefined && kind !== 'claude')
         throw new Error('Context window selection is only supported for Claude Code chats.');
       const provider = d.provider(kind);
-      const defaults = await d.getFactoryDefaults();
+      const defaults = command.droidProfile
+        ? readFactoryDefaults(droidHome(command.droidProfile))
+        : await d.getFactoryDefaults();
       const interactionMode = createInteractionModeForCommand(command, defaults);
       const defaultsMode = createDefaultsModeForCommand(command, interactionMode);
       const primary = createModelDefaultsForProvider(kind, defaultsMode, command, defaults);
@@ -371,6 +379,7 @@ export class SessionLifecycle {
       pendingMcpServers = mcp.servers;
       const providerSession = await provider.create({
         appSessionId: requestedAppSessionId,
+        ...(command.droidProfile ? { droidProfile: command.droidProfile } : {}),
         cwd: runtimeCwd,
         interactionMode,
         autonomy,
@@ -567,6 +576,7 @@ export class SessionLifecycle {
       const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
         ...resumeHandle(historical),
+        ...(historical?.droidProfile ? { droidProfile: historical.droidProfile } : {}),
         interactions: d.interactionsFor(ref),
         ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),
         cwd: runtimeCwd,
@@ -657,7 +667,9 @@ export class SessionLifecycle {
   ): Promise<SessionSummary> {
     if (!session) return buildResumedProviderSummary(input.historical, input.appSessionId);
     const d = this.dependencies;
-    const defaults = await d.getFactoryDefaults();
+    const defaults = input.historical?.droidProfile
+      ? readFactoryDefaults(droidHome(input.historical.droidProfile))
+      : await d.getFactoryDefaults();
     const resumed = buildResumedSession({
       init: session.initResult,
       historical: input.historical,
@@ -672,6 +684,7 @@ export class SessionLifecycle {
     const limit = await d.compaction.resolveLimit({
       modelId: projectedModel,
       exposed: resumed.exposedCompaction,
+      defaults,
     });
     input.requireCurrent();
     if (

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DroidRuntime, createInitializeSessionParams } from './DroidRuntime.js';
@@ -122,6 +122,85 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
   }
 });
 `;
+
+test('isolates concurrent Alt launches and resumes without charging the Main API key', async (t) => {
+  if (process.platform === 'win32') return t.skip('the fake daemon is a shebang script');
+  const dir = mkdtempSync(join(tmpdir(), 'droid-runtime-profiles-'));
+  const altHome = join(dir, 'alt');
+  mkdirSync(join(altHome, '.factory'), { recursive: true });
+  writeFileSync(join(altHome, '.factory', 'auth.v2.key'), 'test-login-marker');
+  const daemon = join(dir, 'droid');
+  writeFileSync(
+    daemon,
+    `#!${process.execPath}\n
+const fs = require('node:fs');
+require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
+  const request = JSON.parse(line);
+  const launch = request.method === 'droid.initialize_session' || request.method === 'droid.load_session';
+  if (launch) fs.appendFileSync('launches.jsonl', JSON.stringify({
+    home: process.env.HOME, method: request.method,
+    hasMainKey: process.env.FACTORY_API_KEY === 'test-main-key',
+    leakedOptIn: process.env.DROIDEX_ALT_HOME !== undefined,
+  }) + '\\n');
+  const result = launch ? {
+    sessionId: request.params.sessionId ?? 'profile-' + process.pid,
+    session: {}, settings: { modelId: 'test-model', reasoningEffort: 'medium' },
+  } : {};
+  process.stdout.write(JSON.stringify({ jsonrpc: request.jsonrpc,
+    factoryApiVersion: request.factoryApiVersion, type: 'response', id: request.id, result }) + '\\n');
+});
+`,
+  );
+  chmodSync(daemon, 0o755);
+  const previous = {
+    DROID_PATH: process.env.DROID_PATH,
+    DROIDEX_ALT_HOME: process.env.DROIDEX_ALT_HOME,
+    FACTORY_API_KEY: process.env.FACTORY_API_KEY,
+  };
+  process.env.DROID_PATH = daemon;
+  process.env.DROIDEX_ALT_HOME = altHome;
+  process.env.FACTORY_API_KEY = 'test-inherited-key';
+  const mainHome = process.env.HOME;
+  const runtime = new DroidRuntime();
+  runtime.connect('test-main-key');
+  const sessions: Awaited<ReturnType<DroidRuntime['createSession']>>[] = [];
+  try {
+    const [main, alt] = await Promise.all([
+      runtime.createSession({ cwd: dir, interactionMode: 'auto' }),
+      runtime.createSession({ cwd: dir, interactionMode: 'auto', droidProfile: 'alt' }),
+    ]);
+    sessions.push(main, alt);
+    assert.equal(runtime.factoryApiKey(main), 'test-main-key');
+    assert.equal(runtime.factoryApiKey(alt), undefined);
+    sessions.push(await runtime.loadSession(alt.sessionId, { cwd: dir, droidProfile: 'alt' }));
+    const launches = readFileSync(join(dir, 'launches.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      launches.filter((launch) => launch.home === altHome),
+      [
+        {
+          home: altHome,
+          method: 'droid.initialize_session',
+          hasMainKey: false,
+          leakedOptIn: false,
+        },
+        { home: altHome, method: 'droid.load_session', hasMainKey: false, leakedOptIn: false },
+      ],
+    );
+    assert.equal(launches.find((launch) => launch.home === mainHome)?.hasMainKey, true);
+    assert.equal(process.env.HOME, mainHome);
+    assert.equal(process.env.FACTORY_API_KEY, 'test-inherited-key');
+  } finally {
+    await Promise.all(sessions.map((session) => session.close()));
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('Droid steer preserves delivery, tail completion, and interrupt ordering', async (t) => {
   if (process.platform === 'win32') return t.skip('the fake daemon is a shebang script');
