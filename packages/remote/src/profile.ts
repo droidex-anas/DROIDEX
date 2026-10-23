@@ -1,4 +1,5 @@
 import { decodeBase64, encodeBase64, profileShareProof, publicKey, verifyIdentity } from './crypto';
+import type { UsageBreakdown, UsageDay } from './usage';
 
 const RESERVED_HANDLE_PATTERN = [
   'api',
@@ -36,10 +37,7 @@ export interface ProfileIdentity {
   username: string;
 }
 
-export interface PublicProfileRanking {
-  name: string;
-  sessions: number;
-}
+export type PublicProfileRanking = Pick<UsageBreakdown, 'name' | 'sessions'>;
 
 export interface PublicProfileSnapshot extends ProfileIdentity {
   version: 3;
@@ -53,7 +51,7 @@ export interface PublicProfileSnapshot extends ProfileIdentity {
   currentStreak: number;
   longestStreak: number;
   trackingDay: string;
-  days: { date: string; tokens: number; complete: boolean }[];
+  days: Pick<UsageDay, 'date' | 'tokens' | 'tokensComplete'>[];
   harnesses: PublicProfileRanking[];
   models: PublicProfileRanking[];
 }
@@ -77,7 +75,7 @@ interface ProfileWire {
   a: string;
   t: string;
   s: [number, boolean, boolean, number, number, number, number];
-  d: [date: string, tokens: number, complete: boolean][];
+  d: [date: string, tokens: number, tokensComplete: boolean][];
   h: RankingWire[];
   m: RankingWire[];
 }
@@ -232,8 +230,8 @@ function activityDays(value: unknown): PublicProfileSnapshot['days'] | null {
   for (const item of value) {
     if (!record(item) || !calendarDay(item.date) || item.date <= previous) return null;
     const tokens = count(item.tokens);
-    if (tokens === null || typeof item.complete !== 'boolean') return null;
-    result.push({ date: item.date, tokens, complete: item.complete });
+    if (tokens === null || typeof item.tokensComplete !== 'boolean') return null;
+    result.push({ date: item.date, tokens, tokensComplete: item.tokensComplete });
     previous = item.date;
   }
   return result;
@@ -269,7 +267,7 @@ function toWire(profile: PublicProfileSnapshot): ProfileWire {
       profile.currentStreak,
       profile.longestStreak,
     ],
-    d: profile.days.map(({ date, tokens, complete }) => [date, tokens, complete]),
+    d: profile.days.map(({ date, tokens, tokensComplete }) => [date, tokens, tokensComplete]),
     h: profile.harnesses.map(ranking),
     m: profile.models.map(ranking),
   };
@@ -293,7 +291,7 @@ function fromWire(value: unknown): PublicProfileSnapshot | null {
     sessions: value.s[4],
     currentStreak: value.s[5],
     longestStreak: value.s[6],
-    days: value.d.map((row) => ({ date: row[0], tokens: row[1], complete: row[2] })),
+    days: value.d.map((row) => ({ date: row[0], tokens: row[1], tokensComplete: row[2] })),
     harnesses: value.h.map((row) => ({ name: row[0], sessions: row[1] })),
     models: value.m.map((row) => ({ name: row[0], sessions: row[1] })),
   });

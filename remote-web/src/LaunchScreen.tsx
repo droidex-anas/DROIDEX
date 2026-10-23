@@ -17,17 +17,17 @@ export function LaunchScreen({ message }: { message: string }) {
         exit={{ opacity: 0 }}
         transition={{ duration: 0.22, ease: EASE_OUT }}
         aria-busy
-        className="fixed inset-0 z-[1300] flex flex-col items-center justify-center gap-5 bg-droid-bg text-droid-text"
+        className="fixed inset-0 z-tooltip flex flex-col items-center justify-center gap-5 bg-bg text-primary"
       >
-        <BrandMark size={26} className="text-droid-text" />
+        <BrandMark size={26} className="text-primary" />
         <motion.p
           role="status"
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.9, duration: 0.3, ease: EASE_OUT }}
-          className="flex items-center gap-2 text-[13px] text-droid-text-muted"
+          className="flex items-center gap-2 text-body text-muted"
         >
-          <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
+          <Spinner className="size-icon-sm motion-safe:animate-spin-slow" aria-hidden="true" />
           {message}
         </motion.p>
       </motion.main>

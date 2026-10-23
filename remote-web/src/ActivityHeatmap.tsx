@@ -53,13 +53,13 @@ export function ActivityHeatmap({
   const [focus, setFocus] = useState<CalendarDay | null>(null);
   const peak = Math.max(1, ...cells.map((cell) => cell.tokens));
   const yearTotal = cells.reduce((sum, cell) => sum + cell.tokens, 0);
-  const yearComplete = cells.every((cell) => cell.complete);
+  const yearComplete = cells.every((cell) => cell.tokensComplete);
   const activeDays = cells.filter((cell) => !cell.future && recordedDays.has(cell.key)).length;
   const months = cells.filter((cell, index) => index % 7 === 0 && cell.date.getDate() <= 7);
   let focusText = `Tracked since ${formatDay(dateFromDayKey(trackingDay))}`;
   if (focus) {
     focusText = tokensReported
-      ? `${formatDay(focus.date)} · ${minimum(focus.complete)}${compact.format(focus.tokens)} tokens`
+      ? `${formatDay(focus.date)} · ${minimum(focus.tokensComplete)}${compact.format(focus.tokens)} tokens`
       : `${formatDay(focus.date)} · ${unavailableDay(recordedDays.has(focus.key))}`;
   }
   return (
@@ -105,7 +105,7 @@ export function ActivityHeatmap({
                 className={cell.future ? 'future' : ''}
                 title={
                   tokensReported
-                    ? `${formatDay(cell.date)}: ${minimum(cell.complete)}${integer.format(cell.tokens)} tokens`
+                    ? `${formatDay(cell.date)}: ${minimum(cell.tokensComplete)}${integer.format(cell.tokens)} tokens`
                     : `${formatDay(cell.date)}: ${unavailableDay(recordedDays.has(cell.key))}`
                 }
                 onMouseEnter={() => {
@@ -115,7 +115,7 @@ export function ActivityHeatmap({
                   background: heatFill(
                     cellLevel(tokensReported, recordedDays.has(cell.key), cell.tokens, peak),
                     color,
-                    'var(--droid-elevated)',
+                    'var(--elevated)',
                   ),
                   animationDelay: `${String(Math.min(Math.floor(index / 7) * 8, 420))}ms`,
                 }}
@@ -131,16 +131,13 @@ export function ActivityHeatmap({
             <>
               Less
               {[0, 1, 2, 3, 4].map((level) => (
-                <i
-                  key={level}
-                  style={{ background: heatFill(level, color, 'var(--droid-elevated)') }}
-                />
+                <i key={level} style={{ background: heatFill(level, color, 'var(--elevated)') }} />
               ))}
               More
             </>
           ) : (
             <>
-              <i style={{ background: heatFill(2, color, 'var(--droid-elevated)') }} />
+              <i style={{ background: heatFill(2, color, 'var(--elevated)') }} />
               Indexed activity
             </>
           )}

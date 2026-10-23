@@ -67,9 +67,10 @@ function validSnapshot(value) {
     Array.isArray(value.days) &&
     value.days.length <= 366 &&
     Array.isArray(value.harnesses) &&
-    value.harnesses.length <= 5 &&
+    value.harnesses.length <= 32 &&
     Array.isArray(value.models) &&
-    value.models.length <= 5 &&
+    value.models.length <= 256 &&
+    (value.mostUsedHarness === null || typeof value.mostUsedHarness === 'string') &&
     value.totals &&
     typeof value.totals === 'object' &&
     count(value.totals.events) &&

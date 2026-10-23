@@ -1,15 +1,17 @@
-import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronRight, ShieldCheck, Smartphone } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { useRef, useState } from 'react';
+import { ShieldCheck } from '@droidex/icons';
 import type { RemoteDevice, RemoteState, TrustDays } from '../../packages/remote/src/desktop';
 import { useRemoteAccess } from '../features/remote/useRemoteAccess';
-import { ghostButton, secondaryButton } from './buttonStyles';
 import { RemoteOnboarding } from './RemoteOnboarding';
 import { RemotePairingCode } from './RemotePairing';
-import { Dropdown, SettingRow } from './settingsKit';
+import { Dropdown, GroupLabel, SectionTitle, SettingRow } from './settingsKit';
 import { Switch } from './Switch';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
+import { cn } from './ui/cn';
+import { Dialog, DialogActions, DialogTitle } from './ui/Dialog';
 
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 const DAY_MS = 86_400_000;
 const TRUST_OPTIONS: { value: TrustDays; label: string }[] = [
   { value: 0, label: 'Ask every time' },
@@ -18,139 +20,153 @@ const TRUST_OPTIONS: { value: TrustDays; label: string }[] = [
   { value: 30, label: '30 days' },
 ];
 
-const STATUS_TONE: Record<RemoteState['status'], { dot: string; label: string }> = {
-  connected: { dot: 'bg-droid-green', label: 'Connected' },
-  connecting: { dot: 'bg-droid-text-muted motion-safe:animate-pulse', label: 'Connecting' },
-  error: { dot: 'bg-droid-red', label: 'Can’t reach relay' },
-  off: { dot: 'bg-droid-text-muted/40', label: 'Off' },
+type Run = (action: () => Promise<RemoteState>) => Promise<boolean>;
+
+const STATUS_BADGE: Record<
+  RemoteState['status'],
+  { tone: 'success' | 'neutral' | 'danger'; label: string }
+> = {
+  connected: { tone: 'success', label: 'Live' },
+  connecting: { tone: 'neutral', label: 'Connecting' },
+  error: { tone: 'danger', label: 'Can’t reach relay' },
+  off: { tone: 'neutral', label: 'Off' },
 };
 
 function connectionDetail(state: RemoteState) {
-  if (state.status === 'connected') return 'Ready for your paired devices, end-to-end encrypted.';
+  if (state.status === 'connected')
+    return `Paired devices reach @${state.profile.username}, end-to-end encrypted.`;
   if (state.status === 'connecting') return 'Reaching the relay…';
   if (state.status === 'error') return state.error ?? 'Retrying the relay connection.';
-  return state.authenticatorReady
-    ? 'Paired devices cannot reach this laptop.'
-    : 'Finish setup below to reach this laptop from another device.';
+  return 'Paired devices can’t reach this laptop.';
 }
 
-export function RemoteSettings() {
+export function RemoteSettings({ claimUsername = false }: { claimUsername?: boolean }) {
   const { state, error, busy, run, setError } = useRemoteAccess();
   if (!state)
     return (
-      <p className="text-[13px] text-droid-text-muted" role={error ? 'alert' : 'status'}>
+      <p className="text-body text-muted" role={error ? 'alert' : 'status'}>
         {error || 'Loading Remote…'}
       </p>
     );
-  const api = window.droidControl;
-  if (!api) return null;
-  const paired = state.devices.length > 0;
-  const tone = STATUS_TONE[state.status];
   return (
-    <div className="mx-auto max-w-xl space-y-3 pb-10">
-      <section className="rounded-2xl bg-droid-surface p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="text-[16px] font-semibold tracking-tight text-droid-text">Remote</h2>
-            <p className="mt-0.5 text-[12px] text-droid-text-muted">
-              Use DROIDEX on this laptop from your phone, tablet or another computer.
-            </p>
-          </div>
-          {state.authenticatorReady && (
-            <Switch
-              label="Remote access"
-              checked={state.enabled}
-              disabled={busy}
-              onChange={(enabled) => {
-                void run(() => api.configureRemote({ enabled }));
-              }}
-            />
-          )}
-        </div>
-        <div className="mt-4 flex items-center gap-2.5 rounded-xl bg-droid-elevated/60 px-3 py-2.5">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden />
-          <p className="min-w-0 text-[12px] leading-[18px]">
-            <span className="font-medium text-droid-text">{tone.label}</span>
-            <span className="text-droid-text-muted"> · {connectionDetail(state)}</span>
-          </p>
-        </div>
-      </section>
+    <div className="mx-auto max-w-2xl pb-10">
+      <SectionTitle
+        title="Remote"
+        sub="Use DROIDEX on this laptop from your phone, tablet or another computer."
+      />
+      {state.devices.length === 0 ? (
+        <RemoteOnboarding
+          state={state}
+          busy={busy}
+          error={error}
+          run={run}
+          setError={setError}
+          startAtUsername={claimUsername}
+        />
+      ) : (
+        <RemoteManagement state={state} busy={busy} error={error} run={run} setError={setError} />
+      )}
+    </div>
+  );
+}
 
+function RemoteManagement({
+  state,
+  busy,
+  error,
+  run,
+  setError,
+}: {
+  state: RemoteState;
+  busy: boolean;
+  error: string;
+  run: Run;
+  setError: (message: string) => void;
+}) {
+  const api = window.droidex;
+  if (!api) return null;
+  const badge = STATUS_BADGE[state.status];
+  return (
+    <>
+      <div className="mb-8 rounded-xl bg-surface shadow-lg">
+        <SettingRow
+          label={
+            <span className="flex items-center gap-2">
+              Remote access
+              <Badge tone={badge.tone}>{badge.label}</Badge>
+            </span>
+          }
+          description={connectionDetail(state)}
+        >
+          <Switch
+            label="Remote access"
+            checked={state.enabled}
+            disabled={busy}
+            onChange={(enabled) => {
+              void run(() => api.configureRemote({ enabled }));
+            }}
+          />
+        </SettingRow>
+      </div>
       {error && (
-        <p role="alert" className="px-1 text-[12px] leading-5 text-droid-red">
+        <p role="alert" className="-mt-6 mb-8 px-4 text-body text-danger">
           {error}
         </p>
       )}
 
-      {!paired && (
-        <section className="rounded-2xl bg-droid-surface p-5">
-          <RemoteOnboarding state={state} busy={busy} run={run} setError={setError} />
-        </section>
-      )}
+      <GroupLabel>Trusted devices</GroupLabel>
+      <div className="mb-8 rounded-xl bg-surface shadow-lg">
+        {state.devices.map((device) => (
+          <DeviceRow
+            key={device.id}
+            device={device}
+            busy={busy}
+            revoke={() => {
+              void run(() => api.revokeRemoteDevice(device.id));
+            }}
+          />
+        ))}
+        <AddDevice pairingUrl={state.enabled ? state.pairingUrl : undefined} setError={setError} />
+      </div>
 
-      {paired && (
-        <TrustedDevices
-          devices={state.devices}
-          busy={busy}
-          revoke={(id) => {
-            void run(() => api.revokeRemoteDevice(id));
-          }}
-          pairing={
-            <RemotePairingCode
-              key={state.pairingUrl}
-              url={state.enabled ? state.pairingUrl : undefined}
-              setError={setError}
-            />
-          }
-        />
-      )}
-
-      {state.authenticatorReady && (
-        <section className="rounded-2xl bg-droid-surface px-1 py-2">
-          <SettingRow
-            label="Trust new devices for"
-            description="Existing devices keep their expiry."
-          >
-            <Dropdown
-              ariaLabel="Device trust duration"
-              value={String(state.trustDays)}
-              options={TRUST_OPTIONS.map((option) => ({
-                value: String(option.value),
-                label: option.label,
-              }))}
-              onChange={(value) => {
-                const choice = TRUST_OPTIONS.find((option) => String(option.value) === value);
-                if (choice) void run(() => api.configureRemote({ trustDays: choice.value }));
-              }}
-            />
-          </SettingRow>
-          <SettingRow
+      <GroupLabel>Security</GroupLabel>
+      <div className="mb-8 rounded-xl bg-surface shadow-lg">
+        <SettingRow label="Trust new devices for" description="Existing devices keep their expiry.">
+          <Dropdown
+            ariaLabel="Device trust duration"
+            value={String(state.trustDays)}
+            options={TRUST_OPTIONS.map((option) => ({
+              value: String(option.value),
+              label: option.label,
+            }))}
+            onChange={(value) => {
+              const choice = TRUST_OPTIONS.find((option) => String(option.value) === value);
+              if (choice) void run(() => api.configureRemote({ trustDays: choice.value }));
+            }}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Keep laptop awake"
+          description="While Remote is on. Closing the lid may still sleep it."
+        >
+          <Switch
             label="Keep laptop awake"
-            description="While Remote is on. Closing the lid may still sleep it."
-          >
-            <Switch
-              label="Keep laptop awake"
-              checked={state.keepAwake}
-              disabled={busy}
-              onChange={(keepAwake) => {
-                void run(() => api.configureRemote({ keepAwake }));
-              }}
-            />
-          </SettingRow>
-        </section>
-      )}
+            checked={state.keepAwake}
+            disabled={busy}
+            onChange={(keepAwake) => {
+              void run(() => api.configureRemote({ keepAwake }));
+            }}
+          />
+        </SettingRow>
+        <ResetPairing busy={busy} reset={() => run(() => api.resetRemotePairing())} />
+      </div>
 
-      {state.authenticatorReady && (
-        <>
-          <p className="flex gap-2 px-1 pt-1 text-[11px] leading-[18px] text-droid-text-muted">
-            <ShieldCheck size={13} className="mt-0.5 shrink-0" />
-            New devices need this laptop’s approval. A paired browser runs the full app, so pair
-            only devices you trust. The laptop must be on, awake and running DROIDEX.
-          </p>
-          <ResetPairing busy={busy} reset={() => run(() => api.resetRemotePairing())} />
-        </>
-      )}
-    </div>
+      <p className="flex gap-2 px-4 text-caption text-muted">
+        <ShieldCheck className="mt-0.5 size-icon-sm shrink-0" aria-hidden="true" />
+        New devices need this laptop’s approval. A paired browser runs the full app, so pair only
+        devices you trust. The laptop must be on, awake and running DROIDEX.
+      </p>
+    </>
   );
 }
 
@@ -172,141 +188,131 @@ function lastSeenLabel(lastSeenAt: number) {
   })}`;
 }
 
-function TrustedDevices({
-  devices,
+function DeviceRow({
+  device,
   busy,
   revoke,
-  pairing,
 }: {
-  devices: RemoteDevice[];
+  device: RemoteDevice;
   busy: boolean;
-  revoke: (id: string) => void;
-  pairing: ReactNode;
+  revoke: () => void;
 }) {
-  const [adding, setAdding] = useState(false);
   return (
-    <section className="rounded-2xl bg-droid-surface p-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-[13px] font-medium text-droid-text">Trusted devices</h3>
-        <button
-          className={ghostButton}
-          aria-expanded={adding}
+    <SettingRow
+      label={device.name}
+      description={`${lastSeenLabel(device.lastSeenAt)} · ${expiryLabel(device.expiresAt)}`}
+    >
+      <Button variant="ghost" disabled={busy} aria-label={`Revoke ${device.name}`} onClick={revoke}>
+        Revoke
+      </Button>
+    </SettingRow>
+  );
+}
+
+function AddDevice({
+  pairingUrl,
+  setError,
+}: {
+  pairingUrl: string | undefined;
+  setError: (message: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const showing = open && pairingUrl !== undefined;
+  return (
+    <>
+      <SettingRow
+        label="Add a device"
+        description={
+          pairingUrl
+            ? 'Show a pairing code for your phone or another computer.'
+            : 'Turn Remote on to pair another device.'
+        }
+      >
+        <Button
+          disabled={!pairingUrl}
+          aria-expanded={showing}
+          aria-controls="remote-add-device"
           onClick={() => {
-            setAdding(!adding);
+            setOpen(!open);
           }}
         >
-          {adding ? 'Done' : 'Add a device'}
-        </button>
+          {showing ? 'Done' : 'Show code'}
+        </Button>
+      </SettingRow>
+      <div id="remote-add-device" className="expand-rows" data-open={showing || undefined}>
+        <div
+          inert={!showing}
+          className={cn(
+            'min-h-0 overflow-hidden transition-opacity duration-150 ease-out',
+            !showing && 'opacity-0',
+          )}
+        >
+          <div className="px-4 pb-4 pt-1">
+            {pairingUrl && (
+              <RemotePairingCode key={pairingUrl} url={pairingUrl} setError={setError} />
+            )}
+          </div>
+        </div>
       </div>
-      <AnimatePresence initial={false}>
-        {adding && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.28, ease: EASE }}
-            className="overflow-hidden"
-          >
-            <div className="mb-4 rounded-xl bg-droid-elevated/50 p-4">{pairing}</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <ul className="space-y-1.5">
-        {devices.map((device) => (
-          <li
-            key={device.id}
-            className="flex items-center gap-3 rounded-xl bg-droid-elevated/50 px-3 py-2.5"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-droid-surface text-droid-text-secondary">
-              <Smartphone size={15} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] text-droid-text">{device.name}</p>
-              <p className="text-[11px] text-droid-text-muted">
-                {lastSeenLabel(device.lastSeenAt)} · {expiryLabel(device.expiresAt)}
-              </p>
-            </div>
-            <button
-              className={ghostButton}
-              disabled={busy}
-              onClick={() => {
-                revoke(device.id);
-              }}
-            >
-              Revoke
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+    </>
   );
 }
 
 function ResetPairing({ busy, reset }: { busy: boolean; reset: () => Promise<boolean> }) {
-  const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const close = () => {
+    setConfirming(false);
+  };
   return (
-    <div className="px-1">
-      <button
-        aria-expanded={open}
-        onClick={() => {
-          setOpen(!open);
-          setConfirming(false);
-        }}
-        className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-1 text-[12px] text-droid-text-muted transition-colors hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/40"
+    <>
+      <SettingRow
+        label="Reset pairing"
+        description="Revokes every device and replaces the authenticator."
       >
-        <ChevronRight
-          size={13}
-          className={`transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
-        />
-        Reset pairing
-      </button>
-      {open && (
-        <div className="mt-2 rounded-xl bg-droid-surface p-4">
-          <p className="text-[12px] leading-[18px] text-droid-text-muted">
-            Turns Remote off, revokes every device and replaces the authenticator. Your laptop
-            identity and shared profile links keep working.
-          </p>
-          <div className="mt-3 flex gap-2">
-            {confirming ? (
-              <>
-                <button
-                  className={`${secondaryButton} text-droid-red`}
-                  disabled={busy}
-                  onClick={() => {
-                    void reset().then((saved) => {
-                      if (saved) {
-                        setConfirming(false);
-                        setOpen(false);
-                      }
-                    });
-                  }}
-                >
-                  Reset all devices
-                </button>
-                <button
-                  className={ghostButton}
-                  disabled={busy}
-                  onClick={() => {
-                    setConfirming(false);
-                  }}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                className={secondaryButton}
+        <Button
+          variant="danger"
+          onClick={() => {
+            setConfirming(true);
+          }}
+        >
+          Reset…
+        </Button>
+      </SettingRow>
+      <AnimatePresence>
+        {confirming && (
+          <Dialog
+            role="alertdialog"
+            onClose={close}
+            dismissible={!busy}
+            initialFocusRef={cancelRef}
+            aria-describedby="remote-reset-description"
+          >
+            <DialogTitle>Reset Remote pairing?</DialogTitle>
+            <p id="remote-reset-description" className="mt-3 text-body text-secondary">
+              Remote turns off, every device is revoked and you link a new authenticator. Your
+              username and shared profile links keep working.
+            </p>
+            <DialogActions>
+              <Button ref={cancelRef} variant="ghost" disabled={busy} onClick={close}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={busy}
+                disabled={busy}
                 onClick={() => {
-                  setConfirming(true);
+                  void reset().then((saved) => {
+                    if (saved) close();
+                  });
                 }}
               >
-                Reset…
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+                Reset all devices
+              </Button>
+            </DialogActions>
+          </Dialog>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

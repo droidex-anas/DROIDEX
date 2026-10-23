@@ -89,6 +89,29 @@ test('usage worker ingests structured harness sources into the shared snapshot',
       'Droid',
       'OpenCode',
     ]);
+    const writer = new DatabaseSync(join(openCodeRoot, 'opencode.db'));
+    try {
+      writer.exec('PRAGMA journal_mode = WAL');
+      writer.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run(
+        'message-2',
+        'session-1',
+        JSON.stringify({
+          role: 'assistant',
+          time: { created: 200, completed: 201 },
+          model: { id: 'gpt-6.1-sol' },
+          tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+        }),
+        200,
+      );
+      // Snapshot reads do not trigger ingest; the database/WAL watcher must wake it.
+      const updated = await matchingSnapshot(client, (value) => value.totals.events === 3);
+      assert.equal(updated.lifetimeTokens, 198);
+      assert.equal(updated.harnesses.find((row) => row.id === 'opencode')?.sessions, 1);
+      await client.reconcile();
+      assert.equal((await client.snapshot()).totals.events, 3);
+    } finally {
+      writer.close();
+    }
   } finally {
     await client.close();
     await rm(directory, { recursive: true, force: true });

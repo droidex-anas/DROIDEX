@@ -7,7 +7,7 @@ export function useRemoteAccess() {
   const [busy, setBusy] = useState(false);
   const revision = useRef(0);
   useEffect(() => {
-    const api = window.droidControl;
+    const api = window.droidex;
     if (!api) {
       setError('Open the desktop app to set up Remote.');
       return;

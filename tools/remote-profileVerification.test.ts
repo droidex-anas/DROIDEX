@@ -25,7 +25,7 @@ const profile = {
   currentStreak: 1,
   longestStreak: 2,
   trackingDay: '1970-01-01',
-  days: [{ date: '2026-10-14', tokens: 200, complete: true }],
+  days: [{ date: '2026-10-14', tokens: 200, tokensComplete: true }],
   harnesses: [{ name: 'Codex', sessions: 3 }],
   models: [{ name: 'gpt-6', sessions: 3 }],
 } satisfies PublicProfileSnapshot;

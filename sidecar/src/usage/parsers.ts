@@ -48,12 +48,19 @@ export function parseClaudeUsageRecord(
   const message = object(record.message);
   const usage = object(message?.usage);
   const tsMs = timestamp(record.timestamp ?? message?.timestamp);
-  if (!message || !usage || tsMs === null) return { events: [], state };
+  if (!message || !usage || tsMs === null || message.model === '<synthetic>')
+    return { events: [], state };
 
   const rawInput = count(usage.input_tokens ?? usage.inputTokens);
-  const cacheReadTokens = count(usage.cache_read_input_tokens ?? usage.cacheReadInputTokens);
+  const cacheReadTokens = count(usage.cache_read_input_tokens ?? usage.cacheReadInputTokens ?? 0);
+  const cacheCreation = object(usage.cache_creation);
+  const cacheWrite1hTokens = count(cacheCreation?.ephemeral_1h_input_tokens ?? 0);
   const cacheWriteTokens = count(
-    usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens,
+    usage.cache_creation_input_tokens ??
+      usage.cacheCreationInputTokens ??
+      (cacheCreation
+        ? completeSum(count(cacheCreation.ephemeral_5m_input_tokens ?? 0), cacheWrite1hTokens)
+        : 0),
   );
   const outputDetails = object(usage.output_tokens_details ?? usage.outputTokensDetails);
   const counts: UsageTokenCounts = {
@@ -87,7 +94,12 @@ export function parseClaudeUsageRecord(
           counts,
           cost: providerCostMicrousd,
         });
-  if (signature === state.lastSignature) return { events: [], state };
+  const snapshotSignature = hashParts(
+    signature,
+    JSON.stringify(counts),
+    String(cacheWrite1hTokens),
+  );
+  if (snapshotSignature === state.lastSignature) return { events: [], state };
 
   const event = usageEvent({
     dedupeKey: `claude-code:${signature}`,
@@ -99,11 +111,15 @@ export function parseClaudeUsageRecord(
     sessionStartedAtMs: timestamp(record.sessionStartedAt ?? record.session_started_at),
     tsMs,
     model,
-    serviceTier: text(usage.service_tier ?? usage.serviceTier, MAX_ID_LENGTH),
+    serviceTier:
+      usage.speed === 'fast'
+        ? 'fast'
+        : text(usage.service_tier ?? usage.serviceTier, MAX_ID_LENGTH),
     counts,
     providerCostMicrousd,
+    ...(cacheWrite1hTokens !== 0 ? { cacheWrite1hTokens } : {}),
   });
-  return { events: [event], state: { ...state, lastSignature: signature } };
+  return { events: [event], state: { ...state, lastSignature: snapshotSignature } };
 }
 
 export function parseCodexUsageRecord(
@@ -119,6 +135,7 @@ export function parseCodexUsageRecord(
 
   const recordType = text(record.type, 64);
   if (recordType === 'session_meta') {
+    if (state.sessionMetaSeen) return { events: [], state };
     const sessionKey = text(
       payload.id ?? payload.thread_id ?? payload.threadId ?? payload.session_id,
       MAX_ID_LENGTH,
@@ -126,13 +143,25 @@ export function parseCodexUsageRecord(
     if (!sessionKey) return { events: [], state };
     return {
       events: [],
-      state: setSession(state, sessionKey, {
-        sessionId: sessionKey,
-        project: text(payload.cwd ?? payload.project, MAX_TEXT_LENGTH),
-        sessionStartedAtMs: timestamp(payload.timestamp ?? record.timestamp),
-        model: text(payload.model, 160),
-        serviceTier: text(payload.service_tier ?? payload.serviceTier, MAX_ID_LENGTH),
-      }),
+      state: setSession(
+        {
+          ...state,
+          sessionMetaSeen: true,
+          // Explicit fork headers can precede the replay burst; subagents write copies immediately.
+          forkCopyWindowMs: typeof payload.forked_from_id === 'string' ? 1_000 : 100,
+          forkCopyAnchorMs: isForkedSession(payload)
+            ? timestamp(record.timestamp ?? payload.timestamp)
+            : null,
+        },
+        sessionKey,
+        {
+          sessionId: sessionKey,
+          project: text(payload.cwd ?? payload.project, MAX_TEXT_LENGTH),
+          sessionStartedAtMs: timestamp(payload.timestamp ?? record.timestamp),
+          model: text(payload.model, 160),
+          serviceTier: text(payload.service_tier ?? payload.serviceTier, MAX_ID_LENGTH),
+        },
+      ),
     };
   }
 
@@ -146,6 +175,17 @@ export function parseCodexUsageRecord(
         sessionStartedAtMs: null,
         model: text(payload.model, 160),
         serviceTier: text(payload.service_tier ?? payload.serviceTier, MAX_ID_LENGTH),
+      }),
+    };
+  }
+
+  if (recordType === 'event_msg' && payload.type === 'thread_settings_applied') {
+    const settings = object(payload.thread_settings);
+    if (!settings || !Object.hasOwn(settings, 'service_tier')) return { events: [], state };
+    return {
+      events: [],
+      state: setSession(state, sessionKey, {
+        serviceTier: text(settings.service_tier, MAX_ID_LENGTH) ?? 'default',
       }),
     };
   }
@@ -167,7 +207,9 @@ export function parseCodexUsageRecord(
 
   const previous = state.sessions[sessionKey] ?? emptySession();
   const active = state.activeSessionKey ? state.sessions[state.activeSessionKey] : undefined;
-  const total = totalObject ? codexCounts(totalObject) : null;
+  // Response records use process totals; notifications use persisted session totals.
+  // Keep the notification baseline independent and match their shared per-call usage.
+  const total = !isUsageRecord && totalObject ? codexCounts(totalObject) : null;
   const nextTotal = mergeKnownCounts(previous.total, total);
   const counts = codexUsageCounts(usage, total, previous.total);
   const metadata = metadataFrom(withMetadataFallback(previous, active), payload, info);
@@ -190,6 +232,24 @@ export function parseCodexUsageRecord(
     total: nextTotal,
     lastSignature: signature,
   });
+  const nextSession = nextState.sessions[sessionKey];
+  if (!Object.hasOwn(nextState.sessions, sessionKey)) return { events: [], state };
+  nextSession.pendingProviderUsage = isUsageRecord ? counts : null;
+  if (!isUsageRecord && sameKnownCounts(counts, previous.pendingProviderUsage)) {
+    return { events: [], state: nextState };
+  }
+  // Codex rewrites inherited history to the fork instant in one dense burst.
+  // Like T3 Code, skip that burst but retain its cumulative baseline.
+  if (state.forkCopyAnchorMs !== null && tsMs !== null) {
+    const gapMs = tsMs - state.forkCopyAnchorMs;
+    if (gapMs < state.forkCopyWindowMs) {
+      return {
+        events: [],
+        state: { ...nextState, forkCopyAnchorMs: Math.max(state.forkCopyAnchorMs, tsMs) },
+      };
+    }
+    nextState.forkCopyAnchorMs = null;
+  }
   if (
     !counts ||
     tsMs === null ||
@@ -212,7 +272,7 @@ export function parseCodexUsageRecord(
         tsMs,
         model: metadata.model,
         serviceTier: metadata.serviceTier,
-        counts,
+        counts: { ...counts, cacheWriteTokens: counts.cacheWriteTokens ?? 0 },
         providerCostMicrousd,
       }),
     ],
@@ -304,7 +364,7 @@ function cumulativeDelta(
     const before = previous[key];
     if (next === null) delta[key] = null;
     else if (before === null) delta[key] = next;
-    else delta[key] = next < before ? next : next - before;
+    else delta[key] = Math.max(0, next - before);
   }
   return COUNT_KEYS.every((key) => delta[key] === null || delta[key] === 0) ? null : delta;
 }
@@ -336,6 +396,7 @@ function sameKnownCounts(
 function emptySession(): UsageReducerSession {
   return {
     total: null,
+    pendingProviderUsage: null,
     lastSignature: null,
     sessionId: null,
     project: null,
@@ -412,6 +473,11 @@ function isReplay(value: JsonObject): boolean {
     value.isFork === true ||
     value.is_fork === true
   );
+}
+
+function isForkedSession(payload: JsonObject): boolean {
+  const spawn = object(object(object(payload.source)?.subagent)?.thread_spawn);
+  return typeof payload.forked_from_id === 'string' || typeof spawn?.parent_thread_id === 'string';
 }
 
 interface CodexSignatureInput {

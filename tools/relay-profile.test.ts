@@ -93,7 +93,7 @@ const profile = (tokens: number): PublicProfileSnapshot => ({
   currentStreak: 1,
   longestStreak: 1,
   trackingDay: '2023-11-14',
-  days: [{ date: '2026-10-15', tokens, complete: true }],
+  days: [{ date: '2026-10-15', tokens, tokensComplete: true }],
   harnesses: [{ name: 'Codex', sessions: 1 }],
   models: [{ name: 'gpt-6', sessions: 1 }],
 });

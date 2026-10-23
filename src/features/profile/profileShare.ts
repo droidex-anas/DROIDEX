@@ -45,9 +45,9 @@ export function createPublicProfileSnapshot(
     sessions: usage.sessions,
     currentStreak: usage.currentStreak,
     longestStreak: usage.longestStreak,
-    days: usage.days.map(({ date, tokens, complete }) => ({ date, tokens, complete })),
-    harnesses: usage.harnesses.map(({ name, sessions }) => ({ name, sessions })),
-    models: usage.models.map(({ name, sessions }) => ({ name, sessions })),
+    days: usage.days.map(({ date, tokens, tokensComplete }) => ({ date, tokens, tokensComplete })),
+    harnesses: usage.harnesses.slice(0, 5).map(({ name, sessions }) => ({ name, sessions })),
+    models: usage.models.slice(0, 5).map(({ name, sessions }) => ({ name, sessions })),
   });
   if (!value) throw new Error('Complete your name and username before sharing your profile.');
   return value;

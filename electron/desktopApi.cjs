@@ -1,4 +1,4 @@
-// The desktop API the renderer sees as `window.droidControl`, written once
+// The desktop API the renderer sees as `window.droidex`, written once
 // over two transports: the preload's IPC and a paired Remote browser.
 function createDesktopApi({ invoke, on }) {
   return {

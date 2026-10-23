@@ -805,7 +805,7 @@ function LaptopOnlySection({ title }: { title: string }) {
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title={title} />
-      <p className="text-[13px] text-droid-text-secondary">
+      <p className="text-body text-secondary">
         Open DROIDEX on your laptop to change {title} settings.
       </p>
     </div>
@@ -882,7 +882,8 @@ export default function SettingsPanel() {
       mcpCwd: activeSession?.cwd ?? state.workspaceCwds[0],
     };
   }, shallowEqual);
-  const [active, setActive] = useState('General');
+  const request = useStoreSelector((state) => state.settingsRequest);
+  const [active, setActive] = useState<string>(request?.tab ?? 'General');
   const [query, setQuery] = useState('');
 
   useEffect(() => {
@@ -918,7 +919,11 @@ export default function SettingsPanel() {
       content = <ProfileSection />;
       break;
     case 'Remote':
-      content = remote ? <RemoteBrowserSettings /> : <RemoteSettings />;
+      content = remote ? (
+        <RemoteBrowserSettings />
+      ) : (
+        <RemoteSettings claimUsername={request?.step === 'claim-username'} />
+      );
       break;
     case 'Appearance':
       content = <AppearanceSection />;
@@ -1051,8 +1056,7 @@ export default function SettingsPanel() {
 
 function ProfileSection() {
   const { state, error } = useRemoteAccess();
-  if (!state)
-    return <p className="text-[13px] text-droid-text-muted">{error || 'Loading profile…'}</p>;
+  if (!state) return <p className="text-body text-muted">{error || 'Loading profile…'}</p>;
   return (
     <ProfileSettings
       publishingReady={Boolean(state.pairingUrl)}
@@ -1060,7 +1064,7 @@ function ProfileSection() {
       profile={state.profile}
       webClientUrl={state.clientUrl.trim() || 'https://droidex.vercel.app'}
       onProfileChange={(profile) => {
-        const api = window.droidControl;
+        const api = window.droidex;
         if (!api) return Promise.reject(new Error('Open the desktop app to edit your profile.'));
         return api.configureRemote({ profile });
       }}

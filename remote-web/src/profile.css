@@ -13,7 +13,7 @@
 .profile-get {
   font-size: 13px;
   font-weight: 500;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   text-decoration: none;
   padding: 8px 12px;
   border-radius: 10px;
@@ -22,8 +22,8 @@
     color 150ms;
 }
 .profile-get:hover {
-  background: var(--droid-elevated);
-  color: var(--droid-text);
+  background: var(--elevated);
+  color: var(--text);
 }
 .profile-cover {
   overflow: hidden;
@@ -45,7 +45,7 @@
   margin-top: -64px;
   padding: 6px;
   border-radius: 50px;
-  background: var(--droid-bg);
+  background: var(--bg);
   width: max-content;
 }
 .profile-avatar svg {
@@ -60,7 +60,7 @@
 }
 .profile-handle {
   font-size: 16px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 .profile-verified {
@@ -70,7 +70,7 @@
   margin-left: 8px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--droid-green);
+  color: var(--success);
   vertical-align: 1px;
 }
 .profile-streak {
@@ -107,7 +107,7 @@
 .profile-since {
   margin-top: 14px;
   font-size: 12px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 
 .profile-main {
@@ -124,7 +124,7 @@
 }
 .profile-stats div {
   padding: 14px 16px;
-  background: var(--droid-surface);
+  background: var(--surface);
   border-radius: 14px;
 }
 .profile-stats dd {
@@ -136,7 +136,7 @@
 }
 .profile-stats dt {
   margin-top: 2px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -166,7 +166,7 @@
 }
 .ranking-label strong {
   font-weight: 500;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 .ranking-label span {
@@ -177,19 +177,19 @@
   height: 6px;
   margin-top: 7px;
   border-radius: 6px;
-  background: var(--droid-elevated);
+  background: var(--elevated);
   overflow: hidden;
 }
 .ranking-track > span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--profile-color) 50%, var(--droid-elevated));
+  background: color-mix(in srgb, var(--profile-color) 50%, var(--elevated));
   transform-origin: left;
   animation: profile-bar-grow 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .ranking-track > span.lead {
-  background: color-mix(in srgb, var(--profile-color) 85%, var(--droid-elevated));
+  background: color-mix(in srgb, var(--profile-color) 85%, var(--elevated));
 }
 
 .profile-note {
@@ -199,7 +199,7 @@
   margin: 28px 4px 0;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 .profile-note svg {
   flex-shrink: 0;
@@ -317,7 +317,7 @@
   letter-spacing: -0.4px;
 }
 .profile-state p {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.55;
 }
@@ -331,8 +331,8 @@
   width: 64px;
   height: 64px;
   border-radius: 20px;
-  background: var(--droid-surface);
-  color: var(--droid-text-secondary);
+  background: var(--surface);
+  color: var(--text-secondary);
   animation: profile-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .profile-state-symbol.busy {
@@ -343,9 +343,9 @@
 @keyframes profile-state-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--droid-surface) 100%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--surface) 100%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--droid-surface) 0%, transparent);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--surface) 0%, transparent);
   }
 }

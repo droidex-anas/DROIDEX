@@ -8,6 +8,7 @@ import {
   heatLevel,
 } from './activityCalendar';
 import type { ProfileUsageSnapshot } from './profileShare';
+import { tokenGap } from './usageGap';
 
 type Period = 'Daily' | 'Weekly' | 'Cumulative';
 const PERIODS: Period[] = ['Daily', 'Weekly', 'Cumulative'];
@@ -35,6 +36,7 @@ export function ProfileActivity({
 }) {
   const [period, setPeriod] = useState<Period>('Daily');
   const [selected, setSelected] = useState('');
+  const [hovered, setHovered] = useState('');
   const reduceMotion = useReducedMotion();
   const recordedDays = useMemo(() => new Set(usage.days.map((day) => day.date)), [usage.days]);
   const endDay = dayKeyInTimeZone(Date.now(), usage.timeZone);
@@ -44,7 +46,7 @@ export function ProfileActivity({
     let cumulativeComplete = true;
     return days.map((day, index) => {
       cumulative += day.tokens;
-      cumulativeComplete &&= day.complete;
+      cumulativeComplete &&= day.tokensComplete;
       const week = days.slice(index - (index % 7), index - (index % 7) + 7);
       const totals: Record<Period, number> = {
         Daily: day.tokens,
@@ -52,8 +54,8 @@ export function ProfileActivity({
         Cumulative: cumulative,
       };
       const exact: Record<Period, boolean> = {
-        Daily: day.complete,
-        Weekly: week.every((cell) => cell.complete),
+        Daily: day.tokensComplete,
+        Weekly: week.every((cell) => cell.tokensComplete),
         Cumulative: cumulativeComplete,
       };
       return { ...day, totals, exact, recorded: recordedDays.has(day.key) };
@@ -62,7 +64,8 @@ export function ProfileActivity({
   const peak = Math.max(1, ...cells.map((cell) => cell.totals[period]));
   const last = cells[cells.length - 1];
   const minimum = (isExact: boolean) => (isExact ? '' : '≥ ');
-  const focus = cells.find((cell) => cell.key === selected);
+  // Hover previews a day in the readout; a click or keyboard focus selects it.
+  const focus = cells.find((cell) => cell.key === (hovered || selected));
   const months = cells.filter((cell, index) => index % 7 === 0 && cell.date.getDate() <= 7);
   const indexedDays = cells.filter((cell) => !cell.future && cell.recorded).length;
   const isEmpty = tokensReported && last.totals.Cumulative === 0;
@@ -70,7 +73,8 @@ export function ProfileActivity({
   if (!tokensReported) {
     summary = `Token counts unavailable · ${indexedDays.toLocaleString()} indexed ${indexedDays === 1 ? 'day' : 'days'} in the last year`;
   } else if (!isEmpty) {
-    summary = `${minimum(last.exact.Cumulative)}${compact.format(last.totals.Cumulative)} tokens in the last year · peak day ${minimum(usage.totals.tokensComplete)}${compact.format(usage.peakDayTokens)}`;
+    const headlineExact = !tokenGap(usage).isMaterial;
+    summary = `${minimum(headlineExact)}${compact.format(last.totals.Cumulative)} tokens in the last year · peak day ${minimum(headlineExact)}${compact.format(usage.peakDayTokens)}`;
   }
   let focusSummary = `Tracking since ${dateFromDayKey(
     dayKeyInTimeZone(usage.trackingSince, usage.timeZone),
@@ -89,15 +93,15 @@ export function ProfileActivity({
   }
 
   return (
-    <section aria-label="Token activity" className="rounded-2xl bg-droid-surface p-5">
+    <section aria-label="Token activity" className="rounded-xl bg-surface p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-[13px] font-medium text-droid-text">Activity</h3>
-          <p className="mt-0.5 text-[12px] text-droid-text-muted">{summary}</p>
+          <h3 className="text-body-strong text-primary">Activity</h3>
+          <p className="mt-0.5 text-caption text-muted">{summary}</p>
         </div>
         {tokensReported && (
           <div
-            className="flex gap-0.5 rounded-lg bg-droid-elevated/70 p-0.5"
+            className="flex gap-0.5 rounded-md bg-elevated/70 p-0.5"
             aria-label="Activity period"
           >
             {PERIODS.map((option) => {
@@ -109,16 +113,14 @@ export function ProfileActivity({
                   onClick={() => {
                     setPeriod(option);
                   }}
-                  className={`relative h-7 rounded-md px-3 text-[12px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/40 ${
-                    active
-                      ? 'text-droid-text'
-                      : 'text-droid-text-muted hover:text-droid-text-secondary'
+                  className={`relative h-7 rounded-sm px-3 text-label transition-colors duration-150 ${
+                    active ? 'text-primary' : 'text-muted hover:text-secondary'
                   }`}
                 >
                   {active && (
                     <motion.span
                       layoutId="profile-activity-period"
-                      className="absolute inset-0 rounded-md bg-droid-active"
+                      className="absolute inset-0 rounded-sm bg-active"
                       transition={{ type: 'spring', stiffness: 520, damping: 38 }}
                     />
                   )}
@@ -132,7 +134,7 @@ export function ProfileActivity({
 
       <div className="mt-5 overflow-x-auto pb-1">
         <div className="flex gap-2" style={{ minWidth: 660 }}>
-          <div className="mt-5 grid shrink-0 grid-rows-7 gap-[3px] text-[10px] leading-none text-droid-text-muted">
+          <div className="mt-5 grid shrink-0 grid-rows-7 gap-0.5 text-caption text-muted">
             {DAY_LABELS.map((label, index) => (
               <span key={index} className="flex items-center">
                 {label}
@@ -140,7 +142,7 @@ export function ProfileActivity({
             ))}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="relative mb-1.5 h-3.5 text-[10px] text-droid-text-muted">
+            <div className="relative mb-1.5 h-3.5 text-caption text-muted">
               {months.map((cell) => (
                 <span
                   key={cell.key}
@@ -151,7 +153,12 @@ export function ProfileActivity({
                 </span>
               ))}
             </div>
-            <div className="grid grid-flow-col grid-rows-7 gap-[3px]">
+            <div
+              className="grid grid-flow-col grid-rows-7 gap-0.5"
+              onMouseLeave={() => {
+                setHovered('');
+              }}
+            >
               {cells.map((cell, index) => {
                 const tokens = cell.totals[period];
                 const date = cell.date.toLocaleDateString(undefined, {
@@ -171,21 +178,22 @@ export function ProfileActivity({
                     key={cell.key}
                     disabled={cell.future}
                     aria-label={label}
+                    aria-pressed={isSelected}
                     title={label}
                     onFocus={() => {
                       setSelected(cell.key);
                     }}
                     onMouseEnter={() => {
-                      setSelected(cell.key);
+                      setHovered(cell.key);
                     }}
                     onClick={() => {
                       setSelected(cell.key);
                     }}
-                    className={`aspect-square rounded-[3px] transition-transform duration-150 focus-visible:outline-none ${
-                      cell.future ? 'invisible' : 'motion-safe:hover:scale-125'
-                    } ${isSelected ? 'relative z-10 ring-2 ring-droid-text/25' : ''}`}
+                    className={`aspect-square rounded-xs transition-transform duration-150 ${
+                      cell.future ? 'invisible' : 'motion-safe:hover:scale-110'
+                    } ${isSelected ? 'relative z-10 scale-125 shadow-lg' : ''}`}
                     style={{
-                      background: heatFill(level, color, 'var(--droid-elevated)'),
+                      background: heatFill(level, color, 'var(--elevated)'),
                       ...(reduceMotion
                         ? {}
                         : {
@@ -201,7 +209,7 @@ export function ProfileActivity({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-droid-text-muted">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-caption text-muted">
         <p aria-live="polite" className="tabular-nums">
           {focusSummary}
         </p>
@@ -212,8 +220,8 @@ export function ProfileActivity({
               {[0, 1, 2, 3, 4].map((level) => (
                 <span
                   key={level}
-                  className="mx-px h-2.5 w-2.5 rounded-[3px]"
-                  style={{ background: heatFill(level, color, 'var(--droid-elevated)') }}
+                  className="mx-px size-2.5 rounded-xs"
+                  style={{ background: heatFill(level, color, 'var(--elevated)') }}
                 />
               ))}
               More
@@ -221,8 +229,8 @@ export function ProfileActivity({
           ) : (
             <>
               <span
-                className="mx-px h-2.5 w-2.5 rounded-[3px]"
-                style={{ background: heatFill(2, color, 'var(--droid-elevated)') }}
+                className="mx-px size-2.5 rounded-xs"
+                style={{ background: heatFill(2, color, 'var(--elevated)') }}
               />
               Indexed activity
             </>

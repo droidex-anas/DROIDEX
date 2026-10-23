@@ -21,7 +21,7 @@ const LAPTOP_STORAGE_KEYS = [
   'droid-compaction-token-limit-per-model-configured',
 ];
 
-/** The DROIDEX renderer, started from the laptop's stored state. Call once window.droidControl is set. */
+/** The DROIDEX renderer, started from the laptop's stored state. Call once window.droidex is set. */
 export async function loadLaptopRenderer(connection: RemoteConnection): Promise<ComponentType> {
   const values = (await connection.call('readRendererStorage', [LAPTOP_STORAGE_KEYS])) as Record<
     string,

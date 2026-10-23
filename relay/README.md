@@ -57,8 +57,9 @@ the owner public key already belongs to the handle record. Public reads do not
 connect to the laptop.
 
 `GET /v1/handles/:handle/socket` upgrades every valid handle to the same
-WebSocket greeting: `{type:"relay-ready", peerId, challenge}`. There is no
-username existence lookup. The laptop sends `{type:"host-auth", publicKey,
+WebSocket greeting: `{type:"relay-ready", peerId, challenge, laptopOnline}`.
+There is no username existence lookup. `laptopOnline` reveals nothing the
+laptop's handshake would not; it lets a browser show the offline state at once. The laptop sends `{type:"host-auth", publicKey,
 signature}` signed over `hostProof(handle, challenge)` within 30 seconds.
 Only a verified owner becomes the host. It receives `host-ready`, then
 `peer-open` and `peer-close` messages for browsers.

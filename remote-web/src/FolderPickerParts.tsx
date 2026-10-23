@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { ChevronRight, Folder, FolderOpen, House } from 'lucide-react';
-import { ghostButton } from '../../src/components/buttonStyles';
+import { ChevronRight, Folder, FolderOpen } from '@droidex/icons';
+import { House } from 'lucide-react';
+import { Button } from '../../src/components/ui/Button';
 import { baseName, type Crumb, type ListingProblem } from './folderPaths';
 
 export const FOLDER_LIST_ID = 'folder-picker-list';
@@ -8,8 +9,6 @@ export const FOLDER_LIST_ID = 'folder-picker-list';
 export function folderOptionId(index: number): string {
   return `${FOLDER_LIST_ID}-${String(index)}`;
 }
-
-const hiddenScrollbar = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
 
 /** The current folder's path; going to an ancestor highlights the folder you came from. */
 export function Breadcrumbs({
@@ -30,7 +29,7 @@ export function Breadcrumbs({
     <nav
       ref={scroller}
       aria-label="Folder path"
-      className={`flex min-w-0 flex-1 items-center overflow-x-auto ${hiddenScrollbar}`}
+      className="no-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto"
     >
       {crumbs.length === 0 && <span className="skeleton-block h-4 w-40" />}
       {crumbs.map((crumb, index) => {
@@ -38,7 +37,7 @@ export function Breadcrumbs({
         return (
           <span key={crumb.path} className="flex shrink-0 items-center">
             {index > 0 && (
-              <ChevronRight size={13} aria-hidden className="text-droid-text-muted/70" />
+              <ChevronRight className="size-icon-sm text-muted/70" aria-hidden="true" />
             )}
             <button
               type="button"
@@ -46,11 +45,11 @@ export function Breadcrumbs({
               onClick={() => {
                 if (!current) open(crumb.path, crumbs[index + 1]?.label ?? null);
               }}
-              className={`flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors duration-150 hover:bg-droid-elevated focus-visible:bg-droid-elevated focus-visible:outline-none ${
-                current ? 'font-medium text-droid-text' : 'text-droid-text-secondary'
+              className={`flex h-control-sm items-center gap-1.5 rounded-sm px-1.5 transition-colors duration-150 hover:bg-elevated ${
+                current ? 'text-body-strong text-primary' : 'text-body text-secondary'
               }`}
             >
-              {crumb.isHome && <House size={13} aria-hidden />}
+              {crumb.isHome && <House className="size-icon-sm" aria-hidden="true" />}
               {crumb.label}
             </button>
           </span>
@@ -75,18 +74,18 @@ export function Places({
   return (
     <nav
       aria-label="Places"
-      className={`flex shrink-0 gap-1.5 overflow-x-auto px-5 pb-2 sm:w-48 sm:flex-col sm:gap-0.5 sm:overflow-y-auto sm:px-3 sm:pb-3 ${hiddenScrollbar}`}
+      className="no-scrollbar flex shrink-0 gap-1.5 overflow-x-auto px-5 pb-2 sm:w-48 sm:flex-col sm:gap-0.5 sm:overflow-y-auto sm:px-3 sm:pb-3"
     >
       <PlaceButton
         label="Home"
         title={home ?? 'Home'}
-        icon={<House size={14} aria-hidden />}
+        icon={<House className="size-icon-sm" aria-hidden="true" />}
         current={currentPath !== null && currentPath === home}
         onClick={() => {
           open(home ?? '~');
         }}
       />
-      <p className="hidden px-2.5 pb-1 pt-3 text-[11px] font-medium text-droid-text-muted sm:block">
+      <p className="hidden px-2.5 pb-1 pt-3 text-caption font-medium text-muted sm:block">
         Workspaces
       </p>
       {workspaces.map((path) => (
@@ -94,7 +93,7 @@ export function Places({
           key={path}
           label={baseName(path)}
           title={path}
-          icon={<Folder size={14} aria-hidden />}
+          icon={<Folder className="size-icon-sm" aria-hidden="true" />}
           current={currentPath === path}
           onClick={() => {
             open(path);
@@ -124,14 +123,14 @@ function PlaceButton({
       title={title}
       aria-current={current ? 'location' : undefined}
       onClick={onClick}
-      className={`flex h-8 shrink-0 items-center gap-2 rounded-full px-3 text-[12px] transition-colors duration-150 focus-visible:outline-none sm:w-full sm:rounded-lg sm:px-2.5 ${
+      className={`flex h-control-md shrink-0 items-center gap-2 rounded-full px-3 transition-colors duration-150 sm:w-full sm:rounded-md sm:px-2.5 ${
         current
-          ? 'bg-droid-active font-medium text-droid-text'
-          : 'bg-droid-elevated text-droid-text-secondary hover:bg-droid-active hover:text-droid-text focus-visible:bg-droid-active sm:bg-transparent sm:hover:bg-droid-elevated sm:focus-visible:bg-droid-elevated'
+          ? 'bg-active text-body-strong text-primary'
+          : 'bg-elevated text-body text-secondary hover:bg-active hover:text-primary sm:bg-transparent sm:hover:bg-elevated'
       }`}
     >
-      <span className="text-droid-text-muted">{icon}</span>
-      <span className="max-w-[160px] truncate">{label}</span>
+      <span className="text-muted">{icon}</span>
+      <span className="max-w-40 truncate">{label}</span>
     </button>
   );
 }
@@ -161,24 +160,22 @@ export function FolderRows({
   if (problem)
     return (
       <div role="alert" className="flex flex-col items-start gap-1 px-3 py-6">
-        <p className="text-[13px] font-medium text-droid-text">{problem.title}</p>
-        <p className="max-w-[420px] text-[12px] leading-5 text-droid-text-secondary">
-          {problem.detail}
-        </p>
-        <button type="button" className={`${ghostButton} -ml-3 mt-2`} onClick={recover}>
+        <p className="text-body-strong text-primary">{problem.title}</p>
+        <p className="max-w-md text-body text-secondary">{problem.detail}</p>
+        <Button type="button" variant="ghost" className="-ml-3 mt-2" onClick={recover}>
           {recoverLabel}
-        </button>
+        </Button>
       </div>
     );
   if (!ready) return <SkeletonRows />;
   if (rows.length === 0)
     return (
       <div className="flex flex-col items-center gap-1 px-6 py-12 text-center">
-        <FolderOpen size={22} strokeWidth={1.5} className="mb-2 text-droid-text-muted" />
-        <p className="text-[13px] text-droid-text">
+        <FolderOpen className="mb-2 size-icon-lg text-muted" aria-hidden="true" />
+        <p className="text-body text-primary">
           {filter ? `No folders match “${filter.trim()}”` : 'No folders inside'}
         </p>
-        <p className="text-[12px] text-droid-text-muted">
+        <p className="text-caption text-muted">
           {filter ? 'Check the spelling or clear the filter.' : 'You can still use this folder.'}
         </p>
       </div>
@@ -199,16 +196,15 @@ export function FolderRows({
       onClick={() => {
         openFolder(name);
       }}
-      className={`flex h-9 cursor-default items-center gap-2.5 rounded-lg px-3 text-[13px] text-droid-text [contain-intrinsic-size:auto_36px] [content-visibility:auto] ${
-        index === active ? 'bg-droid-active' : ''
+      className={`folder-picker-row flex h-9 cursor-default items-center gap-2.5 rounded-md px-3 text-body text-primary ${
+        index === active ? 'bg-active' : ''
       }`}
     >
-      <Folder size={15} aria-hidden className="shrink-0 text-droid-text-muted" />
+      <Folder className="size-icon-md shrink-0 text-muted" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{name}</span>
       <ChevronRight
-        size={14}
-        aria-hidden
-        className={`shrink-0 text-droid-text-muted ${index === active ? 'opacity-100' : 'opacity-0'}`}
+        aria-hidden="true"
+        className={`size-icon-sm shrink-0 text-muted ${index === active ? 'opacity-100' : 'opacity-0'}`}
       />
     </div>
   ));
@@ -232,7 +228,7 @@ function SkeletonRows() {
 export function KeyHint({ keys, label }: { keys: string; label: string }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="rounded bg-droid-elevated px-1 py-px font-sans text-[10px] text-droid-text-secondary">
+      <kbd className="rounded-xs bg-elevated px-1 py-px font-sans text-caption text-secondary">
         {keys}
       </kbd>
       {label}

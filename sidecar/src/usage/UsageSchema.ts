@@ -9,10 +9,13 @@ export const SUM_COLUMNS = [
   'reasoning_tokens',
   'provider_cost_microusd',
   'estimated_cost_microusd',
+  'cost_microusd',
 ] as const;
 
-const SCHEMA_VERSION = 3;
-const UPDATE_TRIGGER = `CREATE TRIGGER usage_event_no_update BEFORE UPDATE ON usage_event BEGIN
+const SCHEMA_VERSION = 4;
+const UPDATE_TRIGGER = `CREATE TRIGGER usage_event_no_update BEFORE UPDATE ON usage_event
+  WHEN OLD.harness_id <> 'claude-code' OR
+    ${['id', 'dedupe_key', 'harness_id', 'source_id', 'session_id', 'project', 'session_started_at', 'ts', 'provider', 'model', 'service_tier'].map((column) => `NEW.${column} IS NOT OLD.${column}`).join(' OR ')} BEGIN
   SELECT RAISE(ABORT, 'usage_event is append-only'); END`;
 const DELETE_TRIGGER = `CREATE TRIGGER usage_event_no_delete BEFORE DELETE ON usage_event BEGIN
   SELECT RAISE(ABORT, 'usage_event is append-only'); END`;
@@ -100,7 +103,9 @@ function usageTableSql(): Record<string, string> {
     harness: 'CREATE TABLE harness (id TEXT PRIMARY KEY, display_name TEXT NOT NULL)',
     usage_session: `CREATE TABLE usage_session (
       harness_id TEXT NOT NULL REFERENCES harness(id), id TEXT NOT NULL,
-      project TEXT, started_at INTEGER, PRIMARY KEY (harness_id, id)
+      project TEXT, started_at INTEGER, ended_at INTEGER,
+      turn_count INTEGER CHECK (turn_count IS NULL OR turn_count >= 0),
+      PRIMARY KEY (harness_id, id)
     )`,
     usage_session_model: `CREATE TABLE usage_session_model (
       harness_id TEXT NOT NULL, session_id TEXT NOT NULL, model_key TEXT NOT NULL, model TEXT,
@@ -112,7 +117,8 @@ function usageTableSql(): Record<string, string> {
       id INTEGER PRIMARY KEY, dedupe_key TEXT NOT NULL, harness_id TEXT NOT NULL REFERENCES harness(id),
       source_id TEXT NOT NULL, session_id TEXT, project TEXT, session_started_at INTEGER,
       ts INTEGER NOT NULL CHECK (ts >= 0),
-      model TEXT, service_tier TEXT, ${nullableIntegers}, pricing_version TEXT,
+      provider TEXT, model TEXT, service_tier TEXT, ${nullableIntegers}, pricing_version TEXT,
+      cache_write_1h_tokens INTEGER CHECK (cache_write_1h_tokens IS NULL OR cache_write_1h_tokens >= 0),
       UNIQUE (harness_id, dedupe_key),
       FOREIGN KEY (harness_id, session_id) REFERENCES usage_session(harness_id, id)
     )`,

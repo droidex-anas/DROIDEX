@@ -366,7 +366,7 @@ Only the laptop verifies authenticator codes and admits devices.
 
 A paired browser runs the same renderer as the Electron window; only its
 transport differs. The Remote web client (`remote-web/`) pairs the browser,
-then installs `window.droidControl` from `remoteDesktopApi.ts` before it imports
+then installs `window.droidex` from `remoteDesktopApi.ts` before it imports
 `src/App`. Inside the encrypted channel, `packages/remote/src/tunnel.ts` chunks
 and compresses messages, and each authorized browser gets a `PeerSession` in
 the Remote host that owns three things: bridge sockets it opens to the local
@@ -391,7 +391,7 @@ provider credential in the client.
 
 The sidecar's dedicated usage worker incrementally ingests Claude Code and Codex
 JSONL, Factory Droid's mutable settings metadata, and OpenCode's read-only
-SQLite usage rows into the profile-scoped, append-only `usage.sqlite` ledger.
+SQLite usage rows into the profile-scoped `usage.sqlite` ledger.
 Normalized events and their cursors commit together; harness-specific dedupe
 keys make replay and rotation idempotent. Each adapter has an independent
 indexing state, so a failed source cannot poison the database or stop other
@@ -401,6 +401,51 @@ categories remain nullable, daily activity and session/model sets are
 rebuildable caches, and the renderer reads only bounded aggregates through an
 authenticated localhost endpoint. This work stays off both the renderer and
 Remote host event loops.
+
+#### How usage counting works
+
+The usage worker starts with the sidecar, independently of opening Profile.
+Claude/Codex JSONL, Droid settings and OpenCode database/WAL changes wake
+incremental ingest; each source also reconciles every minute. Persisted cursors
+and request identities make scans, file rotation and restarts idempotent.
+Claude uses message ID plus request ID and retains the largest streamed usage
+snapshot. Codex uses per-request usage or consecutive cumulative differences,
+matches response records to their notifications, and skips the dense inherited
+history burst at the start of a fork while retaining its counter baseline.
+Droid settings supply cumulative session counters, so their deltas are stored;
+they cannot supply a reliable request count. OpenCode uses message identities.
+
+Schema v4 stores counts and identifiers in `usage_event`, including provider,
+model, session, workspace, timestamp, cache subsets, reported/estimated cost and
+the applied price version. Only a richer Claude snapshot may update an existing
+request; identities remain immutable. `usage_session` stores observed first/last
+usage timestamps and request counts (unknown for Droid), and
+`usage_session_model` records its models. `usage_daily` is a rebuildable aggregate
+cache. Unsupported schemas fail with backup/remove/restart recovery instructions;
+there is no automatic migration or deletion of a user's ledger.
+
+Estimates use versioned, dated official Anthropic/OpenAI list prices, including
+cache reads, 5-minute/1-hour Claude writes, supported service tiers and context
+thresholds. An aggregate Claude cache write without a TTL breakdown uses the
+default 5-minute rate. Unknown/custom model IDs stay unpriced rather than being
+matched to a similar model. Reported cost takes precedence over an estimate in
+the usage breakdown. Missing core token counters and unpriced requests have
+explicit coverage flags; optional, omitted cache fields do not make a known
+token total uncertain. Days use the machine's IANA timezone, which is included
+in every snapshot. Prompt text and raw log contents are never stored. Nothing
+leaves the machine except the already-published public profile aggregates;
+the authenticated laptop/Remote snapshot also contains only aggregates. Future
+opt-in aggregation can reuse these summaries without paths or session IDs.
+
+Snapshots expose one set of top-level `harnesses` and `models` breakdowns with
+session/request counts, token and cost sums, and independent completeness flags.
+`mostUsedHarness` identifies the first harness, ordered by sessions then tokens.
+Top-level `days` uses the same `tokensComplete`, `costMicrousd`, and `costComplete`
+fields. The strict transport allowlist bounds rows to 32 harnesses, 256 models,
+and 366 days; the authenticated response also has a 256 KiB byte limit.
+Public profiles select only day/date token counts and `tokensComplete`, plus the
+top five harness/model names and session counts. Identifiers, costs, paths, and
+session IDs are excluded from that published subset.
 
 The same ledger has an append-only, ID-only `droidex_session` table for the
 profile headline session count. The sidecar seeds durable top-level

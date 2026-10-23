@@ -26,7 +26,7 @@ test('a commit saves only the persisted fields it changed', () => {
 test('a changed project list is relayed to other copies, but one they sent is not echoed back', () => {
   const storage = new Map<string, string>();
   const relayed: string[] = [];
-  const droidControl = {
+  const droidex = {
     writeSharedStorage: async (_key: string, value: string) => {
       relayed.push(value);
     },
@@ -35,7 +35,7 @@ test('a changed project list is relayed to other copies, but one they sent is no
     withLocalStorageMap(storage, () => {
       Object.defineProperty(globalThis, 'window', {
         configurable: true,
-        value: { droidControl, localStorage: globalThis.localStorage },
+        value: { droidex, localStorage: globalThis.localStorage },
       });
       const added = reducer(initialState, { type: 'ADD_WORKSPACE', cwd: '/repo/app' });
       persistStoreChanges(initialState, added);

@@ -1,9 +1,22 @@
-export interface RemoteUsageRanking {
+export interface UsageBreakdown {
+  id: string;
   name: string;
   sessions: number;
+  turns: number | null;
   events: number;
   tokens: number;
-  complete: boolean;
+  tokensComplete: boolean;
+  costMicrousd: number | null;
+  costComplete: boolean;
+}
+
+export interface UsageDay {
+  date: string;
+  events: number;
+  tokens: number;
+  tokensComplete: boolean;
+  costMicrousd: number | null;
+  costComplete: boolean;
 }
 
 export type UsageSyncState = 'indexing' | 'ready' | 'error';
@@ -25,9 +38,10 @@ export interface RemoteUsageSnapshot {
   currentStreak: number;
   longestStreak: number;
   trackingSince: number;
-  days: { date: string; tokens: number; events: number; complete: boolean }[];
-  harnesses: RemoteUsageRanking[];
-  models: RemoteUsageRanking[];
+  days: UsageDay[];
+  harnesses: UsageBreakdown[];
+  models: UsageBreakdown[];
+  mostUsedHarness: string | null;
   totals: {
     events: number;
     inputTokens: number | null;
@@ -52,22 +66,12 @@ export function hasReportedTokens(usage: Pick<RemoteUsageSnapshot, 'totals'>): b
   return usage.totals.inputTokens !== null || usage.totals.outputTokens !== null;
 }
 
-export function usageFieldCoverage(
-  usage: Pick<RemoteUsageSnapshot, 'coverage'>,
-  field: UsageTotalField,
-): { partial: boolean; percent: number } {
-  const coverage = Object.hasOwn(usage.coverage, field) ? usage.coverage[field] : undefined;
-  if (!coverage || coverage.events === 0) return { partial: false, percent: 100 };
-  return {
-    partial: coverage.known < coverage.events,
-    percent: Math.round((coverage.known / coverage.events) * 100),
-  };
-}
-
 /** Copies only fields that may leave the laptop as an aggregate usage snapshot. */
 export function remoteUsageSnapshot(value: unknown): RemoteUsageSnapshot {
   if (!record(value)) throw new Error('Invalid usage snapshot');
   const sync = usageSync(value.sync);
+  const mostUsedHarness =
+    value.mostUsedHarness === null ? null : boundedText(value.mostUsedHarness, 160);
   const lifetimeTokens = integer(value.lifetimeTokens);
   const peakDayTokens = integer(value.peakDayTokens);
   const sessions = integer(value.sessions);
@@ -75,13 +79,14 @@ export function remoteUsageSnapshot(value: unknown): RemoteUsageSnapshot {
   const longestStreak = integer(value.longestStreak);
   const trackingSince = integer(value.trackingSince);
   const days = activityDays(value.days);
-  const harnesses = rankings(value.harnesses);
-  const models = rankings(value.models);
+  const harnesses = breakdowns(value.harnesses, 32);
+  const models = breakdowns(value.models, 256);
   const totals = usageTotals(value.totals);
   const coverage = usageCoverage(value.coverage);
   const timeZone = boundedText(value.timeZone, 80);
   if (
     !sync ||
+    (value.mostUsedHarness !== null && !mostUsedHarness) ||
     lifetimeTokens === null ||
     peakDayTokens === null ||
     sessions === null ||
@@ -97,7 +102,11 @@ export function remoteUsageSnapshot(value: unknown): RemoteUsageSnapshot {
   ) {
     throw new Error('Invalid usage snapshot');
   }
+  if (mostUsedHarness !== (harnesses[0]?.id ?? null)) {
+    throw new Error('Invalid usage snapshot');
+  }
   return {
+    mostUsedHarness,
     sync,
     lifetimeTokens,
     peakDayTokens,
@@ -112,6 +121,75 @@ export function remoteUsageSnapshot(value: unknown): RemoteUsageSnapshot {
     coverage,
     timeZone,
   };
+}
+
+function activityDays(value: unknown): UsageDay[] | null {
+  if (!Array.isArray(value) || value.length > 366) return null;
+  const days: UsageDay[] = [];
+  let previous = '';
+  for (const day of value) {
+    if (!record(day) || !calendarDay(day.date) || day.date <= previous) return null;
+    const events = integer(day.events);
+    const tokens = integer(day.tokens);
+    const costMicrousd = nullableInteger(day.costMicrousd);
+    if (
+      events === null ||
+      tokens === null ||
+      costMicrousd === undefined ||
+      typeof day.tokensComplete !== 'boolean' ||
+      typeof day.costComplete !== 'boolean'
+    )
+      return null;
+    days.push({
+      date: day.date,
+      events,
+      tokens,
+      costMicrousd,
+      tokensComplete: day.tokensComplete,
+      costComplete: day.costComplete,
+    });
+    previous = day.date;
+  }
+  return days;
+}
+
+function breakdowns(value: unknown, limit: number): UsageBreakdown[] | null {
+  if (!Array.isArray(value) || value.length > limit) return null;
+  const result: UsageBreakdown[] = [];
+  for (const row of value) {
+    if (!record(row)) return null;
+    const id = boundedText(row.id, 160);
+    const name = boundedText(row.name, 160);
+    const sessions = integer(row.sessions);
+    const turns = nullableInteger(row.turns);
+    const events = integer(row.events);
+    const tokens = integer(row.tokens);
+    const costMicrousd = nullableInteger(row.costMicrousd);
+    if (
+      !id ||
+      !name ||
+      sessions === null ||
+      turns === undefined ||
+      events === null ||
+      tokens === null ||
+      costMicrousd === undefined ||
+      typeof row.tokensComplete !== 'boolean' ||
+      typeof row.costComplete !== 'boolean'
+    )
+      return null;
+    result.push({
+      id,
+      name,
+      sessions,
+      turns,
+      events,
+      tokens,
+      costMicrousd,
+      tokensComplete: row.tokensComplete,
+      costComplete: row.costComplete,
+    });
+  }
+  return result;
 }
 
 function usageSync(value: unknown): RemoteUsageSync | null {
@@ -131,50 +209,10 @@ function syncState(value: unknown): value is UsageSyncState {
   return value === 'indexing' || value === 'ready' || value === 'error';
 }
 
-function activityDays(value: unknown): RemoteUsageSnapshot['days'] | null {
-  if (!Array.isArray(value) || value.length > 366) return null;
-  const days: RemoteUsageSnapshot['days'] = [];
-  let previous = '';
-  for (const item of value) {
-    if (!record(item) || !calendarDay(item.date) || item.date <= previous) {
-      return null;
-    }
-    const tokens = integer(item.tokens);
-    const events = integer(item.events);
-    if (tokens === null || events === null || typeof item.complete !== 'boolean') return null;
-    days.push({ date: item.date, tokens, events, complete: item.complete });
-    previous = item.date;
-  }
-  return days;
-}
-
 function calendarDay(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
-
-function rankings(value: unknown): RemoteUsageRanking[] | null {
-  if (!Array.isArray(value) || value.length > 5) return null;
-  const rows: RemoteUsageRanking[] = [];
-  for (const item of value) {
-    if (!record(item)) return null;
-    const name = boundedText(item.name, 160);
-    const sessions = integer(item.sessions);
-    const events = integer(item.events);
-    const tokens = integer(item.tokens);
-    if (
-      !name ||
-      sessions === null ||
-      events === null ||
-      tokens === null ||
-      typeof item.complete !== 'boolean'
-    ) {
-      return null;
-    }
-    rows.push({ name, sessions, events, tokens, complete: item.complete });
-  }
-  return rows;
 }
 
 function usageTotals(value: unknown): RemoteUsageSnapshot['totals'] | null {

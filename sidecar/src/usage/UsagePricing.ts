@@ -19,27 +19,45 @@ export interface UsagePriceResult {
 }
 
 export type UsagePricingInput = UsageTokenCounts &
-  Pick<UsageEvent, 'model' | 'serviceTier' | 'tsMs'>;
+  Pick<UsageEvent, 'model' | 'serviceTier' | 'tsMs' | 'cacheWrite1hTokens'>;
 
 const MICROTOKENS_PER_MTOK = 1_000_000n;
 const MAX_SAFE_INTEGER = BigInt(Number.MAX_SAFE_INTEGER);
 const OPENAI_SHORT_CONTEXT_LIMIT = 272_000;
 
-// Standard, global API list prices checked 2026-10-14. The exact model IDs,
+// Standard, global API list prices checked 2026-10-23. The exact model IDs,
 // rates, and effective dates come from the providers' pricing and release notes:
 // https://platform.claude.com/docs/en/about-claude/pricing
 // https://platform.claude.com/docs/en/release-notes/overview
 // https://developers.openai.com/api/docs/pricing
 // https://developers.openai.com/api/docs/changelog
 const OFFICIAL_PRICES: readonly ModelPrice[] = [
+  anthropic('claude-opus-4-6', '2026-02-05', 5, 25, 0.5),
+  anthropic('claude-opus-4-7', '2026-04-16', 5, 25, 0.5),
+  anthropic('claude-opus-4-8', '2026-05-28', 5, 25, 0.5),
+  anthropic('claude-sonnet-4-6', '2026-02-17', 3, 15, 0.3),
+  anthropic('claude-sonnet-4-5-20250929', '2025-09-29', 3, 15, 0.3, 200_000),
+  anthropic('claude-opus-4-5-20251101', '2025-11-01', 5, 25, 0.5),
   anthropic('claude-haiku-4-5-20251001', '2025-10-01', 1, 5, 0.1),
   anthropic('claude-sonnet-5', '2026-06-30', 2, 10, 0.2),
   anthropic('claude-opus-5', '2026-07-24', 5, 25, 0.5),
+  anthropic('claude-fable-5', '2026-06-30', 10, 50, 1),
   anthropic('claude-fable-5-1', '2026-09-01', 10, 50, 0.25),
   anthropic('claude-opus-5-5', '2026-09-23', 4, 20, 0.2),
   anthropic('claude-sonnet-5-5', '2026-09-28', 2, 10, 0.2),
   anthropic('claude-sonnet-5-5', '2026-10-07', 2, 10, 0.1),
   anthropic('claude-haiku-5-5', '2026-10-07', 0.1, 0.5, 0.01, 100_000),
+  openai('gpt-5.1-codex-mini', '2025-11-13', 0.25, 2, 0.025, 0, null),
+  openai('gpt-5.2', '2025-12-11', 1.75, 14, 0.175, 0, null),
+  openai('gpt-5.2-codex', '2025-12-18', 1.75, 14, 0.175, 0, null),
+  openai('gpt-5.3-codex', '2026-02-05', 1.75, 14, 0.175, 0, null),
+  openai('gpt-5.3-codex-spark', '2026-02-12', 1.75, 14, 0.175, 0, null),
+  openai('gpt-5.4', '2026-03-05', 2.5, 15, 0.25, 0),
+  openai('gpt-5.4-mini', '2026-03-17', 0.75, 4.5, 0.075, 0, null),
+  openai('gpt-5.5', '2026-04-23', 5, 30, 0.5, 0),
+  openai('gpt-5.6-sol', '2026-07-09', 5, 30, 0.5, 6.25),
+  openai('gpt-5.6-terra', '2026-07-09', 2.5, 15, 0.25, 3.125),
+  openai('gpt-5.6-luna', '2026-07-09', 1, 6, 0.1, 1.25),
   openai('gpt-5.6-terra', '2026-07-30', 2, 12, 0.2, 2.5),
   openai('gpt-5.6-luna', '2026-07-30', 0.2, 1.2, 0.02, 0.25),
   openai('gpt-5.6-sol', '2026-08-21', 4, 20, 0.4, 5),
@@ -62,33 +80,55 @@ export class UsagePricer {
   }
 
   price(event: UsagePricingInput): UsagePriceResult {
-    if (!event.model || !isStandardTier(event.serviceTier)) return unknownPrice();
+    if (!event.model) return unknownPrice();
+    const tierMultiplier = serviceTierMultiplier(event);
+    if (tierMultiplier === null) return unknownPrice();
     const row = this.findPrice.get(event.model, event.tsMs);
     if (!row) return unknownPrice();
     const price = priceFromRow(row);
-    if (
+    const longContext =
       price.maxStandardInputTokens !== null &&
       event.inputTokens !== null &&
-      event.inputTokens > price.maxStandardInputTokens
-    ) {
-      return unknownPrice();
+      event.inputTokens > price.maxStandardInputTokens;
+    const haikuLong = longContext && event.model === 'claude-haiku-5-5';
+    let inputMultiplier = tierMultiplier;
+    let outputMultiplier = tierMultiplier;
+    if (longContext) {
+      inputMultiplier *= haikuLong ? 5 : 2;
+      outputMultiplier *= haikuLong ? 5 : 1.5;
     }
-    const estimatedCostMicrousd = calculateEstimatedCost(event, price);
+    const estimatedCostMicrousd = calculateEstimatedCost(event, {
+      inputMicrousdPerMtok: scale(price.inputMicrousdPerMtok, inputMultiplier),
+      outputMicrousdPerMtok: scale(price.outputMicrousdPerMtok, outputMultiplier),
+      cacheWriteMicrousdPerMtok: scale(price.cacheWriteMicrousdPerMtok, inputMultiplier),
+      cacheReadMicrousdPerMtok: scale(price.cacheReadMicrousdPerMtok, inputMultiplier),
+      cacheWrite1hMicrousdPerMtok:
+        event.model.startsWith('claude-') && price.inputMicrousdPerMtok !== null
+          ? price.inputMicrousdPerMtok * 2 * inputMultiplier
+          : null,
+    });
     return estimatedCostMicrousd === null
       ? unknownPrice()
-      : { estimatedCostMicrousd, pricingVersion: price.pricingVersion };
+      : {
+          estimatedCostMicrousd,
+          pricingVersion: [
+            price.pricingVersion,
+            ...(tierMultiplier !== 1 ? [event.serviceTier] : []),
+            ...(longContext ? ['long'] : []),
+          ].join(':'),
+        };
   }
 }
 
 export function calculateEstimatedCost(
-  counts: UsageTokenCounts,
+  counts: UsageTokenCounts & Pick<UsageEvent, 'cacheWrite1hTokens'>,
   price: Pick<
     ModelPrice,
     | 'inputMicrousdPerMtok'
     | 'outputMicrousdPerMtok'
     | 'cacheWriteMicrousdPerMtok'
     | 'cacheReadMicrousdPerMtok'
-  >,
+  > & { cacheWrite1hMicrousdPerMtok?: number | null },
 ): number | null {
   const { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens } = counts;
   if (
@@ -100,11 +140,13 @@ export function calculateEstimatedCost(
     return null;
   }
   const uncachedInputTokens = inputTokens - cacheWriteTokens - cacheReadTokens;
-  if (uncachedInputTokens < 0) return null;
+  const oneHourWrites = counts.cacheWrite1hTokens ?? 0;
+  if (uncachedInputTokens < 0 || oneHourWrites > cacheWriteTokens) return null;
   const components = [
     [uncachedInputTokens, price.inputMicrousdPerMtok],
     [outputTokens, price.outputMicrousdPerMtok],
-    [cacheWriteTokens, price.cacheWriteMicrousdPerMtok],
+    [cacheWriteTokens - oneHourWrites, price.cacheWriteMicrousdPerMtok],
+    [oneHourWrites, price.cacheWrite1hMicrousdPerMtok ?? null],
     [cacheReadTokens, price.cacheReadMicrousdPerMtok],
   ] as const;
   let numerator = 0n;
@@ -131,9 +173,8 @@ function anthropic(
     pricingVersion: `anthropic-${effectiveDate}-standard`,
     inputMicrousdPerMtok: microusd(inputUsdPerMtok),
     outputMicrousdPerMtok: microusd(outputUsdPerMtok),
-    // Claude reports aggregate cache writes, while 5-minute and 1-hour writes
-    // have different rates. Keep estimates unknown whenever a write occurred.
-    cacheWriteMicrousdPerMtok: null,
+    // The default cache TTL is five minutes; reported one-hour writes are priced separately.
+    cacheWriteMicrousdPerMtok: microusd(inputUsdPerMtok * 1.25),
     cacheReadMicrousdPerMtok: microusd(cacheReadUsdPerMtok),
     maxStandardInputTokens,
   };
@@ -146,6 +187,7 @@ function openai(
   outputUsdPerMtok: number,
   cacheReadUsdPerMtok: number,
   cacheWriteUsdPerMtok: number,
+  maxStandardInputTokens: number | null = OPENAI_SHORT_CONTEXT_LIMIT,
 ): ModelPrice {
   return {
     model,
@@ -155,7 +197,7 @@ function openai(
     outputMicrousdPerMtok: microusd(outputUsdPerMtok),
     cacheWriteMicrousdPerMtok: microusd(cacheWriteUsdPerMtok),
     cacheReadMicrousdPerMtok: microusd(cacheReadUsdPerMtok),
-    maxStandardInputTokens: OPENAI_SHORT_CONTEXT_LIMIT,
+    maxStandardInputTokens,
   };
 }
 
@@ -226,8 +268,19 @@ function utcDate(date: string): number {
   return Date.parse(`${date}T00:00:00.000Z`);
 }
 
-function isStandardTier(tier: string | null): boolean {
-  return tier === null || tier === 'auto' || tier === 'default' || tier === 'standard';
+function serviceTierMultiplier(event: UsagePricingInput): number | null {
+  const tier = event.serviceTier;
+  if (tier === null || tier === 'auto' || tier === 'default' || tier === 'standard') return 1;
+  if (tier === 'batch') return 0.5;
+  if (tier === 'flex' && event.model?.startsWith('gpt-')) return 0.5;
+  if (tier !== 'fast' && tier !== 'priority') return null;
+  if (event.model?.startsWith('gpt-') && event.tsMs >= utcDate('2026-07-30')) return 2;
+  if (['claude-opus-5-5', 'claude-opus-5', 'claude-opus-4-8'].includes(event.model ?? '')) return 2;
+  return null;
+}
+
+function scale(rate: number | null, multiplier: number): number | null {
+  return rate === null ? null : Math.round(rate * multiplier);
 }
 
 function unknownPrice(): UsagePriceResult {

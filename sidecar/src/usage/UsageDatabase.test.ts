@@ -252,9 +252,30 @@ test('rollups preserve unknown counts and rebuild days for an explicit timezone'
   assert.equal(local.longestStreak, 3);
   assert.equal(local.peakDayTokens, 150);
   assert.deepEqual(local.days, [
-    { date: '2026-01-01', tokens: 150, events: 1, complete: true },
-    { date: '2026-01-02', tokens: 0, events: 1, complete: false },
-    { date: '2026-01-03', tokens: 0, events: 1, complete: true },
+    {
+      date: '2026-01-01',
+      tokens: 150,
+      events: 1,
+      tokensComplete: true,
+      costMicrousd: 123,
+      costComplete: true,
+    },
+    {
+      date: '2026-01-02',
+      tokens: 0,
+      events: 1,
+      tokensComplete: false,
+      costMicrousd: null,
+      costComplete: false,
+    },
+    {
+      date: '2026-01-03',
+      tokens: 0,
+      events: 1,
+      tokensComplete: true,
+      costMicrousd: null,
+      costComplete: false,
+    },
   ]);
   assert.equal(local.totals.cacheWriteTokens, 0);
   assert.equal(local.totals.cacheReadTokens, 40);
@@ -269,8 +290,22 @@ test('rollups preserve unknown counts and rebuild days for an explicit timezone'
   const utc = database.snapshot();
   assert.equal(utc.timeZone, 'UTC');
   assert.deepEqual(utc.days, [
-    { date: '2026-01-02', tokens: 150, events: 2, complete: false },
-    { date: '2026-01-03', tokens: 0, events: 1, complete: true },
+    {
+      date: '2026-01-02',
+      tokens: 150,
+      events: 2,
+      tokensComplete: false,
+      costMicrousd: 123,
+      costComplete: false,
+    },
+    {
+      date: '2026-01-03',
+      tokens: 0,
+      events: 1,
+      tokensComplete: true,
+      costMicrousd: null,
+      costComplete: false,
+    },
   ]);
   assert.equal(utc.totals.events, 3);
 });
@@ -289,7 +324,9 @@ test('DROIDEX app sessions are idempotent, append-only, and separate from usage 
   ingest(database, null, cursor, [usageEvent(cursor.sourceId)]);
   const snapshot = database.snapshot();
   assert.equal(snapshot.sessions, 2);
-  assert.equal(snapshot.harnesses[0]?.sessions, 1);
+  assert.equal(snapshot.harnesses.find((row) => row.id === 'codex')?.sessions, 1);
+  assert.equal(snapshot.mostUsedHarness, 'droidex');
+  assert.equal(snapshot.harnesses[0]?.sessions, 2);
   database.rebuildDaily();
   assert.equal(database.snapshot().sessions, 2);
 
@@ -466,13 +503,29 @@ test('system-timezone ledgers rebuild when the machine timezone changes', (t) =>
   const cursor = nextCursor(sourcePath);
   ingest(database, null, cursor, [usageEvent(cursor.sourceId)]);
   assert.deepEqual(database.snapshot().days, [
-    { date: '2026-01-01', tokens: 150, events: 1, complete: true },
+    {
+      date: '2026-01-01',
+      tokens: 150,
+      events: 1,
+      tokensComplete: true,
+      costMicrousd: null,
+      costComplete: false,
+    },
   ]);
 
   process.env.TZ = 'UTC';
   const utc = database.snapshot();
   assert.equal(utc.timeZone, 'UTC');
-  assert.deepEqual(utc.days, [{ date: '2026-01-02', tokens: 150, events: 1, complete: true }]);
+  assert.deepEqual(utc.days, [
+    {
+      date: '2026-01-02',
+      tokens: 150,
+      events: 1,
+      tokensComplete: true,
+      costMicrousd: null,
+      costComplete: false,
+    },
+  ]);
 });
 
 test('schema rejects mutation and version drift, and snapshots omit local identities', (t) => {
@@ -499,7 +552,7 @@ test('schema rejects mutation and version drift, and snapshots omit local identi
   }
 
   const raw = new DatabaseSync(databasePath);
-  assert.equal(raw.prepare('PRAGMA user_version').get()?.user_version, 3);
+  assert.equal(raw.prepare('PRAGMA user_version').get()?.user_version, 4);
   assert.equal(raw.prepare('PRAGMA journal_mode').get()?.journal_mode, 'wal');
   assert.throws(() => raw.prepare("UPDATE usage_event SET model = 'other'").run(), /append-only/);
   assert.throws(() => raw.prepare('DELETE FROM usage_event').run(), /append-only/);
@@ -509,16 +562,16 @@ test('schema rejects mutation and version drift, and snapshots omit local identi
   database.close();
   assert.throws(
     () => new UsageDatabase({ databasePath, timeZone: 'UTC' }),
-    /incomplete schema.*version 3.*remove it.*rebuild usage/i,
+    /incomplete schema.*version 4.*remove it.*rebuild usage/i,
   );
 
   const futurePath = `${databasePath}.future`;
   const future = new DatabaseSync(futurePath);
-  future.exec('PRAGMA user_version = 4');
+  future.exec('PRAGMA user_version = 5');
   future.close();
   assert.throws(
     () => new UsageDatabase({ databasePath: futurePath, timeZone: 'UTC' }),
-    /unsupported.*schema.*version 4.*remove it.*rebuild usage/i,
+    /unsupported.*schema.*version 5.*remove it.*rebuild usage/i,
   );
 });
 
@@ -531,6 +584,6 @@ test('schema rejects altered core tables even when every object still exists', (
 
   assert.throws(
     () => new UsageDatabase({ databasePath, timeZone: 'UTC' }),
-    /unsupported or incomplete schema.*version 3/i,
+    /unsupported or incomplete schema.*version 4/i,
   );
 });

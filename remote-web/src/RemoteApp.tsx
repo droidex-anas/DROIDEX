@@ -7,17 +7,29 @@ import {
   type ComponentType,
 } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Laptop, ShieldX, TriangleAlert, Unplug, WifiOff } from 'lucide-react';
 import { Spinner } from '@droidex/icons';
-import { ghostButton, primaryButton, secondaryButton } from '../../src/components/buttonStyles';
+import type { RemoteArtScene } from '../../src/features/remote/RemoteArt';
+import { Button } from '../../src/components/ui/Button';
 import type { RemoteBrowserControls } from '../../src/lib/desktop';
-import { GateLayout, GateScreen, JourneySteps, largeButton } from './GateLayout';
+import { GateLayout, GateScreen, type GateStep } from './GateLayout';
 import { LaunchScreen } from './LaunchScreen';
 import { loadLaptopRenderer } from './laptopRenderer';
 import { ReconnectPill } from './ReconnectPill';
 import type { ConnectionStatus, RemoteConnection } from './remoteConnection';
 import { applyLaptopTheme } from './systemTheme';
 import { UnlockScreen } from './UnlockScreen';
+
+type GateStatus = Exclude<ConnectionStatus, { kind: 'connecting' }>;
+
+const GATE: Record<GateStatus['kind'], { scene: RemoteArtScene; step?: GateStep }> = {
+  code: { scene: 'key', step: 1 },
+  pairing: { scene: 'waiting', step: 2 },
+  ready: { scene: 'live', step: 3 },
+  denied: { scene: 'denied' },
+  removed: { scene: 'denied' },
+  offline: { scene: 'offline' },
+  error: { scene: 'offline' },
+};
 
 /** The laptop's DROIDEX once this browser is unlocked, and the screens that get it there. */
 export function RemoteApp({
@@ -33,6 +45,9 @@ export function RemoteApp({
   );
   const [Renderer, setRenderer] = useState<ComponentType | null>(null);
   const [loadError, setLoadError] = useState('');
+  // A browser approved just now sees the journey finish; a trusted one goes straight in.
+  const [approvedHere, setApprovedHere] = useState(false);
+  if (status.kind === 'pairing' && !approvedHere) setApprovedHere(true);
   const loading = useRef(false);
 
   useLayoutEffect(() => {
@@ -59,23 +74,24 @@ export function RemoteApp({
   let overlay;
   if (loadError)
     overlay = (
-      <GateLayout key="gate" handle={connection.handle}>
-        <GateScreen icon={<Unplug size={24} strokeWidth={1.5} />} title="DROIDEX couldn’t open">
-          <p>{loadError}</p>
-          <button
-            className={`${primaryButton} ${largeButton} w-full`}
+      <GateLayout key="gate" handle={connection.handle} scene="offline">
+        <GateScreen title="DROIDEX couldn’t open" line={loadError}>
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full"
             onClick={() => {
               window.location.reload();
             }}
           >
             Reload
-          </button>
+          </Button>
         </GateScreen>
       </GateLayout>
     );
   // Until the laptop answers, a trusted browser cannot tell whether it needs a
   // code, so it shows the launch screen instead of flashing a gate.
-  else if (status.kind === 'connecting' || status.kind === 'ready')
+  else if (status.kind === 'connecting' || (status.kind === 'ready' && !approvedHere))
     overlay = (
       <LaunchScreen
         key="launch"
@@ -84,7 +100,7 @@ export function RemoteApp({
     );
   else
     overlay = (
-      <GateLayout key="gate" handle={connection.handle}>
+      <GateLayout key="gate" handle={connection.handle} {...GATE[status.kind]}>
         <AnimatePresence mode="wait" initial={false}>
           <StatusScreen
             key={status.kind}
@@ -115,7 +131,7 @@ function StatusScreen({
   connection,
   controls,
 }: {
-  status: Exclude<ConnectionStatus, { kind: 'connecting' | 'ready' }>;
+  status: GateStatus;
   connection: RemoteConnection;
   controls: RemoteBrowserControls;
 }) {
@@ -123,76 +139,88 @@ function StatusScreen({
     connection.retry();
   };
   switch (status.kind) {
-    case 'offline':
-      return (
-        <GateScreen icon={<WifiOff size={24} strokeWidth={1.5} />} title="Can’t reach your laptop">
-          <p>
-            Make sure it’s awake, online, and running DROIDEX with Remote turned on. This page
-            reconnects by itself.
-          </p>
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-droid-elevated/60 px-3.5 py-3">
-            <p className="flex items-center gap-2 text-[13px]">
-              <Spinner className="h-3.5 w-3.5 text-droid-text-muted motion-safe:animate-spin-slow" />
-              Trying again…
-            </p>
-            <button className={secondaryButton} onClick={retry}>
-              Retry now
-            </button>
-          </div>
-        </GateScreen>
-      );
     case 'code':
-      return <UnlockScreen connection={connection} status={status} />;
+      return (
+        <UnlockScreen
+          status={status}
+          // A browser trusted before keeps its expiry; a new one has none.
+          expired={(connection.device?.expiresAt ?? 0) > 0}
+          authenticate={(code) => connection.authenticate(code)}
+        />
+      );
     case 'pairing':
       return (
         <GateScreen
-          progress={<JourneySteps current="Approve" />}
-          icon={
-            <span className="relative">
-              <Laptop size={24} strokeWidth={1.5} />
-              <span className="absolute -right-1.5 -top-1 h-2.5 w-2.5 rounded-full bg-droid-green motion-safe:animate-pulse" />
-            </span>
-          }
           title="Approve on your laptop"
+          line="DROIDEX on your laptop is asking whether to trust this browser. Choose Approve there to continue."
         >
-          <p>
-            DROIDEX on your laptop is asking whether to trust this browser. Choose{' '}
-            <strong className="font-medium text-droid-text">Approve</strong> there to continue.
-          </p>
-          <p role="status" className="flex items-center gap-2 text-[13px] text-droid-text-muted">
-            <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
-            Waiting for your laptop. Keep this page open.
-          </p>
+          <WaitingLine text="Waiting for your laptop. Keep this page open." />
+        </GateScreen>
+      );
+    case 'ready':
+      return (
+        <GateScreen
+          title="You’re connected"
+          line={`This browser now runs DROIDEX from @${connection.handle}.`}
+        >
+          <WaitingLine text="Opening DROIDEX…" />
+        </GateScreen>
+      );
+    case 'offline':
+      return (
+        <GateScreen
+          title="Can’t reach your laptop"
+          line="Make sure it’s awake, online and running DROIDEX with Remote on. This page reconnects by itself."
+        >
+          <div className="flex items-center justify-between gap-3">
+            <WaitingLine text="Trying again…" />
+            <Button onClick={retry}>Retry now</Button>
+          </div>
         </GateScreen>
       );
     case 'denied':
       return (
         <GateScreen
-          icon={<ShieldX size={24} strokeWidth={1.5} />}
           title="Your laptop declined this browser"
+          line="If that was a mistake, ask again and choose Approve on your laptop."
         >
-          <p>If that was a mistake, request access again and approve it on your laptop.</p>
-          <div className="grid gap-2">
-            <button className={`${primaryButton} ${largeButton}`} onClick={retry}>
-              Request again
-            </button>
-            <button
-              className={`${ghostButton} ${largeButton}`}
-              onClick={() => void controls.forget()}
-            >
+          <div className="flex flex-col gap-2">
+            <Button variant="primary" size="lg" onClick={retry}>
+              Ask again
+            </Button>
+            <Button variant="ghost" size="lg" onClick={() => void controls.forget()}>
               Forget this browser
-            </button>
+            </Button>
           </div>
+        </GateScreen>
+      );
+    case 'removed':
+      return (
+        <GateScreen
+          title="This browser was removed"
+          line="Your laptop removed access for this browser. Unlock again to reconnect."
+        >
+          <Button variant="primary" size="lg" className="w-full" onClick={retry}>
+            Unlock again
+          </Button>
         </GateScreen>
       );
     case 'error':
       return (
-        <GateScreen icon={<TriangleAlert size={24} strokeWidth={1.5} />} title="Couldn’t connect">
-          <p role="alert">{status.message}</p>
-          <button className={`${primaryButton} ${largeButton} w-full`} onClick={retry}>
+        <GateScreen title="Couldn’t connect" line={<span role="alert">{status.message}</span>}>
+          <Button variant="primary" size="lg" className="w-full" onClick={retry}>
             Try again
-          </button>
+          </Button>
         </GateScreen>
       );
   }
+}
+
+function WaitingLine({ text }: { text: string }) {
+  return (
+    <p role="status" className="flex items-center gap-2 text-body text-muted">
+      <Spinner className="size-icon-sm motion-safe:animate-spin-slow" aria-hidden="true" />
+      {text}
+    </p>
+  );
 }

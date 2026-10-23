@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { ShieldCheck } from '@droidex/icons';
 import { remoteBrowser, type RemoteNotificationState } from '../lib/desktop';
-import { ghostButton, secondaryButton } from './buttonStyles';
 import { SettingRow } from './settingsKit';
 import { Switch } from './Switch';
+import { Button } from './ui/Button';
+import { Dialog, DialogActions, DialogTitle } from './ui/Dialog';
 
 const NOTIFICATION_HINT: Record<RemoteNotificationState, string> = {
   on: 'Your laptop pings this browser when an agent needs you.',
@@ -32,6 +34,7 @@ export function RemoteBrowserSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmingForget, setConfirmingForget] = useState(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!controls) return;
@@ -61,23 +64,26 @@ export function RemoteBrowserSettings() {
       setBusy(false);
     }
   };
+  const closeForget = () => {
+    setConfirmingForget(false);
+  };
   return (
     <div className="mx-auto max-w-xl space-y-3 pb-10">
-      <section className="rounded-2xl bg-droid-surface p-5">
-        <h2 className="text-[16px] font-semibold tracking-tight text-droid-text">Remote</h2>
-        <p className="mt-0.5 text-[12px] text-droid-text-muted">
+      <section className="rounded-xl bg-surface p-5">
+        <h2 className="text-subheading text-primary">Remote</h2>
+        <p className="mt-0.5 text-body text-muted">
           This browser runs DROIDEX from your laptop (@{controls.handle}).
         </p>
-        <div className="mt-4 flex items-center gap-2.5 rounded-xl bg-droid-elevated/60 px-3 py-2.5">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-droid-green" aria-hidden />
-          <p className="min-w-0 text-[12px] leading-[18px]">
-            <span className="font-medium text-droid-text">Paired</span>
-            <span className="text-droid-text-muted"> · {trustLabel(controls.trustedUntil())}</span>
+        <div className="mt-4 flex items-center gap-2.5 rounded-lg bg-elevated px-3 py-2.5">
+          <span className="size-2 shrink-0 rounded-full bg-success" aria-hidden />
+          <p className="min-w-0 text-body">
+            <span className="font-medium text-primary">Paired</span>
+            <span className="text-muted"> · {trustLabel(controls.trustedUntil())}</span>
           </p>
         </div>
       </section>
 
-      <section className="rounded-2xl bg-droid-surface px-1 py-2">
+      <section className="rounded-xl bg-surface px-1 py-2">
         <SettingRow
           label="Notifications"
           description={notifications ? NOTIFICATION_HINT[notifications] : 'Checking…'}
@@ -99,49 +105,64 @@ export function RemoteBrowserSettings() {
           label="Forget this browser"
           description="Removes this browser’s key. Pair it again from your laptop to come back."
         >
-          {confirmingForget ? (
-            <div className="flex gap-2">
-              <button
-                className={`${secondaryButton} text-droid-red`}
-                disabled={busy}
-                onClick={() => void run(() => controls.forget())}
-              >
-                Forget
-              </button>
-              <button
-                className={ghostButton}
-                disabled={busy}
-                onClick={() => {
-                  setConfirmingForget(false);
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              className={secondaryButton}
-              onClick={() => {
-                setConfirmingForget(true);
-              }}
-            >
-              Forget…
-            </button>
-          )}
+          <Button
+            variant="danger"
+            onClick={() => {
+              setConfirmingForget(true);
+            }}
+          >
+            Forget…
+          </Button>
         </SettingRow>
       </section>
 
-      {error && (
-        <p role="alert" className="px-1 text-[12px] leading-5 text-droid-red">
+      {error && !confirmingForget && (
+        <p role="alert" className="px-1 text-label text-danger">
           {error}
         </p>
       )}
 
-      <p className="flex gap-2 px-1 pt-1 text-[11px] leading-[18px] text-droid-text-muted">
-        <ShieldCheck size={13} className="mt-0.5 shrink-0" />
+      <p className="flex gap-2 px-1 pt-1 text-caption text-muted">
+        <ShieldCheck className="mt-0.5 size-icon-sm shrink-0" aria-hidden="true" />
         Everything between this browser and your laptop is end-to-end encrypted. Manage paired
         devices in Settings → Remote on the laptop.
       </p>
+
+      <AnimatePresence>
+        {confirmingForget && (
+          <Dialog
+            role="alertdialog"
+            onClose={closeForget}
+            dismissible={!busy}
+            initialFocusRef={cancelRef}
+            aria-describedby="remote-forget-description"
+          >
+            <DialogTitle>Forget this browser?</DialogTitle>
+            <p id="remote-forget-description" className="mt-3 text-body text-secondary">
+              This browser’s key is deleted and the connection closes. To come back, pair it again
+              from Settings → Remote on your laptop.
+            </p>
+            {error && (
+              <p role="alert" className="mt-3 text-label text-danger">
+                {error}
+              </p>
+            )}
+            <DialogActions>
+              <Button ref={cancelRef} variant="ghost" disabled={busy} onClick={closeForget}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={busy}
+                disabled={busy}
+                onClick={() => void run(() => controls.forget())}
+              >
+                Forget browser
+              </Button>
+            </DialogActions>
+          </Dialog>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

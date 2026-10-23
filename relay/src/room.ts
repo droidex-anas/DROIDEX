@@ -158,7 +158,16 @@ export class RelayRoom {
       this.peers.set(pair[1], peer);
       pair[1].serializeAttachment(peer);
       await this.scheduleExpiry(now + 120_000);
-      pair[1].send(encode({ type: 'relay-ready', peerId: peer.id, challenge: peer.challenge }));
+      // Presence is already observable through the laptop's handshake; saying it
+      // up front lets a browser show "offline" without waiting for a timeout.
+      pair[1].send(
+        encode({
+          type: 'relay-ready',
+          peerId: peer.id,
+          challenge: peer.challenge,
+          laptopOnline: this.host() !== undefined,
+        }),
+      );
       this.host()?.send(encode({ type: 'peer-open', peerId: peer.id }));
       const response: ResponseInit & { webSocket: RelaySocket } = {
         status: 101,

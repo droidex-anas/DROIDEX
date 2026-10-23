@@ -35,6 +35,7 @@ export interface UsageIngestOptions {
   database: Pick<UsageDatabase, 'cursor' | 'ingest'>;
   roots?: readonly UsageSourceRoot[];
   onError?: (error: Error) => void;
+  onReconciled?: () => void;
 }
 class UsageIngestResetRequiredError extends Error {
   constructor(readonly sourceId: string) {
@@ -100,7 +101,10 @@ export class UsageIngest {
   private beginReconcile(): Promise<UsageReconcileResult> {
     if (this.closed) throw new Error('Usage ingest is closed.');
     if (this.inFlight) return this.inFlight;
-    const operation = this.runReconcile();
+    const operation = this.runReconcile().then((result) => {
+      this.options.onReconciled?.();
+      return result;
+    });
     this.inFlight = operation;
     void operation
       .finally(() => {

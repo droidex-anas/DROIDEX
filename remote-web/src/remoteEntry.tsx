@@ -40,7 +40,7 @@ export async function startRemote(container: HTMLElement, requested: string): Pr
 
   const connection = new RemoteConnection(handle, pin);
   const controls = createRemoteBrowserControls(connection);
-  window.droidControl = createRemoteDesktopApi(connection, controls);
+  window.droidex = createRemoteDesktopApi(connection, controls);
   serveLocalImages(connection);
   root.render(
     <StrictMode>

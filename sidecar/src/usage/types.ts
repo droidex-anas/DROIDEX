@@ -1,5 +1,5 @@
-export const CLAUDE_USAGE_PARSER_VERSION = 3;
-export const CODEX_USAGE_PARSER_VERSION = 3;
+export const CLAUDE_USAGE_PARSER_VERSION = 4;
+export const CODEX_USAGE_PARSER_VERSION = 4;
 
 export type UsageParserName = 'claude-code' | 'codex';
 
@@ -17,6 +17,9 @@ export interface UsageTokenCounts {
 }
 
 export interface UsageEvent extends UsageTokenCounts {
+  provider?: string | null;
+  /** Subset of cache writes; absent breakdowns use the standard 5-minute estimate. */
+  cacheWrite1hTokens?: number | null;
   dedupeKey: string;
   harnessId: string;
   harnessDisplayName: string;
@@ -41,6 +44,7 @@ export interface UsageSourcePosition {
 
 export interface UsageReducerSession {
   total: UsageTokenCounts | null;
+  pendingProviderUsage: UsageTokenCounts | null;
   lastSignature: string | null;
   sessionId: string | null;
   project: string | null;
@@ -59,6 +63,9 @@ export interface CodexUsageParserState {
   parserName: 'codex';
   parserVersion: typeof CODEX_USAGE_PARSER_VERSION;
   activeSessionKey: string | null;
+  sessionMetaSeen: boolean;
+  forkCopyAnchorMs: number | null;
+  forkCopyWindowMs: 100 | 1_000;
   sessions: Record<string, UsageReducerSession>;
 }
 
@@ -103,6 +110,9 @@ export function createCodexUsageParserState(): CodexUsageParserState {
     parserName: 'codex',
     parserVersion: CODEX_USAGE_PARSER_VERSION,
     activeSessionKey: null,
+    sessionMetaSeen: false,
+    forkCopyAnchorMs: null,
+    forkCopyWindowMs: 1_000,
     sessions: {},
   };
 }
@@ -134,9 +144,13 @@ export function restoreUsageParserState(
   }
   const activeSessionKey = stateString(record.activeSessionKey, MAX_STATE_STRING_LENGTH);
   const storedSessions = stateObject(record.sessions);
+  const forkCopyAnchorMs = stateCount(record.forkCopyAnchorMs);
   if (
     record.parserVersion !== CODEX_USAGE_PARSER_VERSION ||
     activeSessionKey === undefined ||
+    typeof record.sessionMetaSeen !== 'boolean' ||
+    forkCopyAnchorMs === undefined ||
+    (record.forkCopyWindowMs !== 100 && record.forkCopyWindowMs !== 1_000) ||
     !storedSessions ||
     Object.keys(storedSessions).length > MAX_STATE_SESSIONS
   ) {
@@ -155,13 +169,22 @@ export function restoreUsageParserState(
     });
   }
   if (activeSessionKey !== null && !Object.hasOwn(sessions, activeSessionKey)) return null;
-  return { ...createCodexUsageParserState(), activeSessionKey, sessions };
+  return {
+    ...createCodexUsageParserState(),
+    activeSessionKey,
+    sessions,
+    sessionMetaSeen: record.sessionMetaSeen,
+    forkCopyAnchorMs,
+    forkCopyWindowMs: record.forkCopyWindowMs,
+  };
 }
 
 function restoredSession(value: unknown): UsageReducerSession | null {
   const record = stateObject(value);
   if (!record) return null;
   const total = record.total === null ? null : restoredCounts(record.total);
+  const pendingProviderUsage =
+    record.pendingProviderUsage === null ? null : restoredCounts(record.pendingProviderUsage);
   const lastSignature = stateString(record.lastSignature, 64);
   const sessionId = stateString(record.sessionId, MAX_STATE_STRING_LENGTH);
   const project = stateString(record.project, MAX_STATE_STRING_LENGTH);
@@ -170,6 +193,7 @@ function restoredSession(value: unknown): UsageReducerSession | null {
   const sessionStartedAtMs = stateCount(record.sessionStartedAtMs);
   if (
     (record.total !== null && !total) ||
+    (record.pendingProviderUsage !== null && !pendingProviderUsage) ||
     lastSignature === undefined ||
     sessionId === undefined ||
     project === undefined ||
@@ -179,7 +203,16 @@ function restoredSession(value: unknown): UsageReducerSession | null {
   ) {
     return null;
   }
-  return { total, lastSignature, sessionId, project, sessionStartedAtMs, model, serviceTier };
+  return {
+    total,
+    pendingProviderUsage,
+    lastSignature,
+    sessionId,
+    project,
+    sessionStartedAtMs,
+    model,
+    serviceTier,
+  };
 }
 
 function restoredCounts(value: unknown): UsageTokenCounts | null {

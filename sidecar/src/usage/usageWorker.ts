@@ -1,7 +1,12 @@
 import { parentPort, workerData } from 'node:worker_threads';
+import { watch, type FSWatcher } from 'node:fs';
 
 import { DroidSettingsIngest, type DroidSettingsReconcileResult } from './DroidSettingsIngest.js';
-import { OpenCodeIngest, type OpenCodeReconcileResult } from './OpenCodeIngest.js';
+import {
+  OpenCodeIngest,
+  openCodeDataRoots,
+  type OpenCodeReconcileResult,
+} from './OpenCodeIngest.js';
 import { UsageDatabase } from './UsageDatabase.js';
 import { UsageIngest, type UsageReconcileResult, type UsageSourceRoot } from './UsageIngest.js';
 import {
@@ -17,6 +22,7 @@ import {
 const RETRY_DELAY_MS = 60_000;
 const data = validWorkerData(workerData);
 if (!parentPort || !data) throw new Error('Usage worker requires a parent port and database path.');
+const openCodeRoots = data.openCodeRoots ?? openCodeDataRoots();
 
 const database = new UsageDatabase({
   databasePath: data.databasePath,
@@ -34,6 +40,9 @@ let jsonlRetryTimer: NodeJS.Timeout | null = null;
 let openCodeBackground: Promise<void> | null = null;
 let openCodeInFlight: Promise<OpenCodeReconcileResult> | null = null;
 let openCodeTimer: NodeJS.Timeout | null = null;
+let openCodeWakeTimer: NodeJS.Timeout | null = null;
+let openCodeWakeGeneration = 0;
+const openCodeWatchers = new Map<string, FSWatcher>();
 let droidBackground: Promise<void> | null = null;
 let droidInFlight: Promise<DroidSettingsReconcileResult> | null = null;
 let droidTimer: NodeJS.Timeout | null = null;
@@ -45,6 +54,9 @@ const ingest = new UsageIngest({
   onError: () => {
     sourceFailed('jsonl');
     scheduleJsonlRetry();
+  },
+  onReconciled: () => {
+    if (jsonlReady && !closed) sourceState.jsonl = 'ready';
   },
 });
 const openCode = new OpenCodeIngest({
@@ -168,6 +180,8 @@ function scheduleJsonlRetry(): void {
 
 function startOpenCodeDrain(): void {
   if (closed || openCodeBackground) return;
+  if (openCodeWakeTimer) clearTimeout(openCodeWakeTimer);
+  openCodeWakeTimer = null;
   clearOpenCodeTimer();
   const operation = drainOpenCode().finally(() => {
     if (openCodeBackground === operation) openCodeBackground = null;
@@ -176,15 +190,19 @@ function startOpenCodeDrain(): void {
 }
 
 async function drainOpenCode(): Promise<void> {
+  ensureOpenCodeWatchers();
   try {
     let result: OpenCodeReconcileResult;
+    let more: boolean;
     do {
+      const wakeAtStart = openCodeWakeGeneration;
       result = await openCodePass();
-      if (result.backlog && !closed) {
+      more = result.backlog || wakeAtStart !== openCodeWakeGeneration;
+      if (more && !closed) {
         sourceState.openCode = 'indexing';
         await yieldToEventLoop();
       }
-    } while (result.backlog && !closed);
+    } while (more && !closed);
     if (!closed) {
       sourceState.openCode = 'ready';
       scheduleOpenCode(RETRY_DELAY_MS);
@@ -192,6 +210,33 @@ async function drainOpenCode(): Promise<void> {
   } catch {
     sourceFailed('openCode');
     scheduleOpenCode(RETRY_DELAY_MS);
+  }
+}
+
+function ensureOpenCodeWatchers(): void {
+  for (const root of openCodeRoots) {
+    if (openCodeWatchers.has(root)) continue;
+    try {
+      const watcher = watch(root, (_event, filename) => {
+        if (filename && !/\.db(?:-wal|-shm)?$/.test(filename)) return;
+        openCodeWakeGeneration += 1;
+        if (openCodeBackground || openCodeWakeTimer) return;
+        clearOpenCodeTimer();
+        openCodeWakeTimer = setTimeout(() => {
+          openCodeWakeTimer = null;
+          startOpenCodeDrain();
+        }, 250);
+        openCodeWakeTimer.unref();
+      });
+      watcher.unref();
+      watcher.on('error', () => {
+        watcher.close();
+        openCodeWatchers.delete(root);
+      });
+      openCodeWatchers.set(root, watcher);
+    } catch {
+      // Scheduled discovery also retries roots that do not exist at startup.
+    }
   }
 }
 
@@ -337,7 +382,11 @@ async function close(): Promise<void> {
   closed = true;
   clearJsonlTimer();
   clearOpenCodeTimer();
+  if (openCodeWakeTimer) clearTimeout(openCodeWakeTimer);
+  openCodeWakeTimer = null;
   clearDroidTimer();
+  for (const watcher of openCodeWatchers.values()) watcher.close();
+  openCodeWatchers.clear();
   await Promise.allSettled([
     ingest.close(),
     jsonlBackground,

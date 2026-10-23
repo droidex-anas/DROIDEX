@@ -7,7 +7,7 @@ import {
 import type {
   DesktopPowerTierSnapshot,
   DirectoryListing,
-  DroidControlApi,
+  DroidexApi,
   RemoteBrowserControls,
 } from '../../src/lib/desktop';
 import { forgetDevice } from './deviceStore';
@@ -15,7 +15,7 @@ import { pickRemoteDirectory } from './FolderPicker';
 import type { RemoteConnection } from './remoteConnection';
 import { pushState, setPush } from './remotePush';
 
-type LocalApi = Omit<DroidControlApi, RemoteDesktopMethod | RemoteDesktopEvent>;
+type LocalApi = Omit<DroidexApi, RemoteDesktopMethod | RemoteDesktopEvent>;
 
 const laptopOnly = (feature: string) => () =>
   Promise.reject(new Error(`${feature} is only available on your laptop.`));
@@ -49,7 +49,7 @@ export function createRemoteBrowserControls(connection: RemoteConnection): Remot
 export function createRemoteDesktopApi(
   connection: RemoteConnection,
   controls: RemoteBrowserControls,
-): DroidControlApi {
+): DroidexApi {
   const forwarded: Record<string, unknown> = {};
   for (const method of REMOTE_DESKTOP_METHODS)
     forwarded[method] = (...args: unknown[]) => connection.call(method, args);
@@ -141,7 +141,7 @@ export function createRemoteDesktopApi(
   };
   // The forwarded methods return whatever the laptop's handlers return, which
   // is exactly what the desktop window receives over IPC.
-  return { ...forwarded, ...local } as DroidControlApi;
+  return { ...forwarded, ...local } as DroidexApi;
 }
 
 function powerTier(): DesktopPowerTierSnapshot {

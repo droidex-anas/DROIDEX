@@ -34,6 +34,7 @@ export type ConnectionStatus =
   | { kind: 'pairing' }
   | { kind: 'ready'; pushPublicKey: string | null }
   | { kind: 'denied' }
+  | { kind: 'removed' }
   | { kind: 'error'; message: string };
 
 interface PendingCall {
@@ -182,7 +183,7 @@ export class RemoteConnection {
 
   private readonly resume = () => {
     if (document.visibilityState !== 'visible' || this.disposed) return;
-    if (this.status.kind === 'denied') return;
+    if (this.waitsForUser()) return;
     if (this.link?.socket.readyState === WebSocket.OPEN) return;
     this.retry();
   };
@@ -246,8 +247,7 @@ export class RemoteConnection {
       socket.onclose = () => {
         if (this.link !== link) return;
         this.disconnect('Your laptop disconnected.');
-        // A declined browser waits for the user to ask again.
-        if (this.disposed || this.status.kind === 'denied') return;
+        if (this.disposed || this.waitsForUser()) return;
         if (this.status.kind !== 'error') this.setStatus({ kind: 'offline' });
         const delay = Math.min(30_000, 1_000 * 2 ** Math.min(this.attempts++, 5));
         this.later(() => void this.connect(), delay);
@@ -267,7 +267,11 @@ export class RemoteConnection {
   private async receive(link: Link, data: string): Promise<void> {
     const message: unknown = JSON.parse(data);
     if (!isRecord(message)) throw new Error('Invalid relay message.');
-    if (message.type === 'relay-ready') return;
+    if (message.type === 'relay-ready') {
+      // The socket stays open: the laptop's handshake arrives when it reconnects.
+      if (message.laptopOnline === false) this.setStatus({ kind: 'offline' });
+      return;
+    }
     if (message.type === 'locked') {
       this.setStatus({ kind: 'error', message: 'Unable to connect. Wait a moment and retry.' });
       return;
@@ -322,6 +326,9 @@ export class RemoteConnection {
         return;
       case 'denied':
         this.setStatus({ kind: 'denied' });
+        return;
+      case 'removed':
+        void this.removed();
         return;
       case 'pong':
         return;
@@ -379,6 +386,20 @@ export class RemoteConnection {
       kind: 'code',
       feedback: 'Unable to unlock. Check your code or wait before trying again.',
     });
+  }
+
+  /** The laptop forgot this browser, so its stored trust must not unlock it again. */
+  private async removed(): Promise<void> {
+    this.disconnectChannels('This browser was removed.');
+    this.setStatus({ kind: 'removed' });
+    if (!this.device) return;
+    this.device = { ...this.device, expiresAt: 0 };
+    await writeDevice(this.device);
+  }
+
+  /** A declined or removed browser stays put until the user acts. */
+  private waitsForUser(): boolean {
+    return this.status.kind === 'denied' || this.status.kind === 'removed';
   }
 
   private later(callback: () => void, delayMs: number): void {

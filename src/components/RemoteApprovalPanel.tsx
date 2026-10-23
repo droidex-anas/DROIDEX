@@ -1,65 +1,79 @@
-import { MonitorSmartphone } from 'lucide-react';
+import { Monitor } from '@droidex/icons';
 import { useRemoteAccess } from '../features/remote/useRemoteAccess';
-import { ghostButton, primaryButton } from './buttonStyles';
+import { Button } from './ui/Button';
+
+// The toast stack (.toast-stack in index.css) rests on the panel's top edge.
+function publishApprovalPanelOffset(panel: HTMLDivElement) {
+  const root = document.documentElement;
+  const observer = new ResizeObserver(() => {
+    const style = getComputedStyle(panel);
+    const offsetPx = parseFloat(style.bottom) + parseFloat(style.height);
+    root.style.setProperty('--approval-panel-offset', `${String(offsetPx)}px`);
+  });
+  observer.observe(panel);
+  return () => {
+    observer.disconnect();
+    root.style.removeProperty('--approval-panel-offset');
+  };
+}
 
 export function RemoteApprovalPanel() {
   const { state, error, busy, run } = useRemoteAccess();
   const request = state?.pending[0];
-  if (!request || !window.droidControl) return null;
-  const api = window.droidControl;
+  if (!request || !window.droidex) return null;
+  const api = window.droidex;
   return (
     <div
       key={request.id}
-      // Above the toasts in the same corner: a toast must never cover Approve or Deny.
-      className="droid-rise fixed bottom-4 right-4 z-[1310] w-[min(380px,calc(100vw-32px))] rounded-2xl bg-droid-raised p-5 shadow-droid"
+      ref={publishApprovalPanelOffset}
+      // Toasts move up above this panel; z-tooltip keeps Approve and Deny on top while they do.
+      className="droid-rise fixed bottom-4 right-4 z-tooltip w-96 rounded-xl bg-raised p-5 shadow-lg"
       role="dialog"
       aria-label={request.title}
       aria-describedby="remote-request-detail"
     >
-      <div className="flex gap-3.5">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-droid-elevated text-droid-text-secondary">
-          <MonitorSmartphone size={18} strokeWidth={1.6} />
+      <div className="flex gap-3">
+        <span className="grid size-control-lg shrink-0 place-items-center rounded-md bg-elevated text-secondary">
+          <Monitor className="size-icon-lg" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] text-droid-text-muted">DROIDEX Remote · New device</p>
-          <h2 className="mt-0.5 text-[14px] font-semibold text-droid-text">{request.title}</h2>
+          <p className="text-caption text-muted">Remote · New device</p>
+          <h2 className="mt-0.5 text-subheading text-primary">{request.title}</h2>
           <p
             id="remote-request-detail"
-            className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words text-[12px] text-droid-text-secondary"
+            className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words text-body text-secondary"
           >
             {request.detail}
           </p>
         </div>
       </div>
-      <p className="mt-3 text-[11px] leading-[17px] text-droid-text-muted">
+      <p className="mt-3 text-caption text-muted">
         It gets full use of DROIDEX on this laptop. Approve only a device you just unlocked
         yourself.
       </p>
       {error && (
-        <p role="alert" className="mt-2 text-[12px] text-droid-red">
+        <p role="alert" className="mt-2 text-body text-danger">
           {error}
         </p>
       )}
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-4 flex items-center justify-end gap-2">
         {state.pending.length > 1 && (
-          <p className="mr-auto self-center text-[11px] text-droid-text-muted">
-            {state.pending.length - 1} more waiting
-          </p>
+          <p className="mr-auto text-caption text-muted">{state.pending.length - 1} more waiting</p>
         )}
-        <button
+        <Button
+          variant="ghost"
           disabled={busy}
-          className={ghostButton}
           onClick={() => void run(() => api.decideRemoteRequest(request.id, false))}
         >
           Deny
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="primary"
           disabled={busy}
-          className={primaryButton}
           onClick={() => void run(() => api.decideRemoteRequest(request.id, true))}
         >
           Approve
-        </button>
+        </Button>
       </div>
     </div>
   );

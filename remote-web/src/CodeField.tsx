@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
+import { cn } from '../../src/components/ui/cn';
 
 const CODE_LENGTH = 6;
 
@@ -40,7 +41,8 @@ export function CodeField({
         inputMode="numeric"
         autoComplete="one-time-code"
         pattern="[0-9]*"
-        className="absolute inset-0 h-full w-full cursor-text rounded-xl text-[16px] opacity-0"
+        // The cells draw focus, so the invisible input draws none.
+        className="absolute inset-0 size-full cursor-text opacity-0 focus-visible:outline-none"
         onFocus={() => {
           setFocused(true);
         }}
@@ -53,20 +55,23 @@ export function CodeField({
           if (digits.length === CODE_LENGTH) onComplete(digits);
         }}
       />
-      <div aria-hidden className="pointer-events-none grid grid-cols-6 gap-2">
+      <div aria-hidden="true" className="pointer-events-none grid grid-cols-6 gap-2">
         {Array.from({ length: CODE_LENGTH }, (_, index) => {
           const digit = value[index] ?? '';
           const active = focused && !busy && index === activeIndex;
           return (
             <span
               key={index}
-              className={`relative grid h-14 place-items-center rounded-xl font-mono text-[22px] tabular-nums text-droid-text transition-[background-color,box-shadow] duration-150 ${
-                active ? 'bg-droid-active ring-2 ring-droid-accent/15' : 'bg-droid-field'
-              } ${busy ? 'opacity-60' : ''}`}
+              className={cn(
+                'grid h-14 place-items-center rounded-lg font-mono text-title tabular-nums text-primary transition duration-150 ease-out',
+                active ? 'bg-active ring-1.5 ring-focus-ring' : 'bg-field',
+                invalid && !active && 'bg-danger-soft',
+                busy && 'opacity-60',
+              )}
             >
               {digit}
               {active && !digit && (
-                <span className="h-6 w-[1.5px] rounded-full bg-droid-text motion-safe:animate-pulse" />
+                <span className="h-6 w-0.5 rounded-full bg-text motion-safe:animate-pulse" />
               )}
             </span>
           );

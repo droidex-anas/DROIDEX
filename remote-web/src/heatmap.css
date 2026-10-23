@@ -32,7 +32,7 @@
   height: 14px;
   margin-bottom: 6px;
   font-size: 10px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 .heatmap-months span {
   position: absolute;
@@ -63,7 +63,7 @@
   flex-wrap: wrap;
   margin-top: 10px;
   font-size: 11px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 .heatmap-legend {

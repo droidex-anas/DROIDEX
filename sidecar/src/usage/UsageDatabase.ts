@@ -21,6 +21,7 @@ import {
 } from './UsageSnapshot.js';
 import type { UsageEvent, UsageIngestCursor, UsageTokenCounts } from './types.js';
 import { UsagePricer } from './UsagePricing.js';
+import { ClaudeUsageUpdates } from './ClaudeUsageUpdates.js';
 import {
   assertCursorAdvance,
   assertExpectedCursor,
@@ -49,6 +50,7 @@ type RollupEvent = UsageTokenCounts &
     | 'serviceTier'
     | 'providerCostMicrousd'
     | 'estimatedCostMicrousd'
+    | 'cacheWrite1hTokens'
   >;
 
 export interface UsageDatabaseOptions {
@@ -70,6 +72,7 @@ export class UsageDatabase {
   private readonly upsertHarnessStatement: StatementSync;
   private readonly upsertSessionStatement: StatementSync;
   private readonly upsertSessionModelStatement: StatementSync;
+  private readonly updateSessionUsageStatement: StatementSync;
   private readonly updateRollupStateStatement: StatementSync;
   private readonly writeRollupStateStatement: StatementSync;
   private readonly updateCursorStatement: StatementSync;
@@ -77,6 +80,7 @@ export class UsageDatabase {
   private readonly updateSourceCursorStatement: StatementSync;
   private readonly insertSourceCursorStatement: StatementSync;
   private readonly pricer: UsagePricer;
+  private readonly claudeUpdates: ClaudeUsageUpdates;
   private closed = false;
 
   constructor(options: UsageDatabaseOptions) {
@@ -101,8 +105,9 @@ export class UsageDatabase {
           dedupe_key, harness_id, source_id, session_id, project, session_started_at,
           ts, model, service_tier,
           input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-          reasoning_tokens, provider_cost_microusd, estimated_cost_microusd, pricing_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          reasoning_tokens, provider_cost_microusd, estimated_cost_microusd, pricing_version,
+          cache_write_1h_tokens, provider, cost_microusd
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(harness_id, dedupe_key) DO NOTHING
       `);
       this.insertDroidexSessionStatement = this.db.prepare(
@@ -123,6 +128,13 @@ export class UsageDatabase {
       this.upsertSessionModelStatement = this.db.prepare(`
         INSERT OR IGNORE INTO usage_session_model
           (harness_id, session_id, model_key, model) VALUES (?, ?, ?, ?)
+      `);
+      this.updateSessionUsageStatement = this.db.prepare(`
+        UPDATE usage_session SET
+          started_at = CASE WHEN started_at IS NULL THEN ? ELSE MIN(started_at, ?) END,
+          ended_at = CASE WHEN ended_at IS NULL THEN ? ELSE MAX(ended_at, ?) END,
+          turn_count = CASE WHEN harness_id = 'droid' THEN NULL ELSE COALESCE(turn_count, 0) + 1 END
+        WHERE harness_id = ? AND id = ?
       `);
       this.updateRollupStateStatement = this.db.prepare(`
         UPDATE rollup_state SET event_count = event_count + ?,
@@ -166,6 +178,7 @@ export class UsageDatabase {
         ) VALUES (?, ?, ?, ?, ?, ?)
       `);
       this.pricer = new UsagePricer(this.db);
+      this.claudeUpdates = new ClaudeUsageUpdates(this.db);
       this.ensureRollup();
       secureDatabaseFiles(options.databasePath);
     } catch (error) {
@@ -342,12 +355,27 @@ export class UsageDatabase {
         pricedEvent.providerCostMicrousd,
         pricedEvent.estimatedCostMicrousd,
         pricedEvent.pricingVersion,
+        pricedEvent.cacheWrite1hTokens ?? null,
+        pricedEvent.provider ?? providerForHarness(pricedEvent.harnessId),
+        pricedEvent.providerCostMicrousd ?? pricedEvent.estimatedCostMicrousd,
       ).changes;
-      if (Number(inserted) === 0) continue;
+      if (Number(inserted) === 0) {
+        this.claudeUpdates.replace(pricedEvent, this.timeZone);
+        continue;
+      }
       count += 1;
       firstEventAt = firstEventAt === null ? event.tsMs : Math.min(firstEventAt, event.tsMs);
       this.addDaily(pricedEvent);
       this.upsertSessionModel(pricedEvent);
+      if (pricedEvent.sessionId)
+        this.updateSessionUsageStatement.run(
+          pricedEvent.tsMs,
+          pricedEvent.tsMs,
+          pricedEvent.tsMs,
+          pricedEvent.tsMs,
+          pricedEvent.harnessId,
+          pricedEvent.sessionId,
+        );
     }
     return { count, firstEventAt };
   }
@@ -539,6 +567,7 @@ function eventFromRow(row: Record<string, unknown>): RollupEvent {
     reasoningTokens: nullableRowNumber(row, 'reasoning_tokens'),
     providerCostMicrousd: nullableRowNumber(row, 'provider_cost_microusd'),
     estimatedCostMicrousd: nullableRowNumber(row, 'estimated_cost_microusd'),
+    cacheWrite1hTokens: nullableRowNumber(row, 'cache_write_1h_tokens'),
   };
 }
 
@@ -551,8 +580,16 @@ function eventColumn(event: RollupEvent, column: (typeof SUM_COLUMNS)[number]): 
     reasoning_tokens: event.reasoningTokens,
     provider_cost_microusd: event.providerCostMicrousd,
     estimated_cost_microusd: event.estimatedCostMicrousd,
+    cost_microusd: event.providerCostMicrousd ?? event.estimatedCostMicrousd,
   };
   return fields[column];
+}
+
+function providerForHarness(harnessId: string): string | null {
+  if (harnessId === 'claude-code') return 'anthropic';
+  if (harnessId === 'codex') return 'openai';
+  if (harnessId === 'droid') return 'factory';
+  return null;
 }
 
 function scalarNumber(db: DatabaseSync, sql: string): number {

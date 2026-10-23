@@ -1,6 +1,7 @@
 import { Info } from 'lucide-react';
-import { usageFieldCoverage, type UsageTotalField } from '../../../packages/remote/src/usage';
+import type { UsageTotalField } from '../../../packages/remote/src/usage';
 import type { ProfileUsageSnapshot } from './profileShare';
+import { fieldGap, MATERIAL_GAP_SHARE, tokenGap } from './usageGap';
 
 type Totals = ProfileUsageSnapshot['totals'];
 type TokenKey = Extract<
@@ -46,10 +47,10 @@ function Value({
   partial: boolean;
   format: (value: number) => string;
 }) {
-  if (value === null) return <span className="text-droid-text-muted">Unknown</span>;
+  if (value === null) return <span className="text-muted">Unknown</span>;
   return (
-    <span className="tabular-nums text-droid-text">
-      {partial && <span className="text-droid-text-muted">≥ </span>}
+    <span className="tabular-nums text-primary">
+      {partial && <span className="text-muted">≥ </span>}
       {format(value)}
     </span>
   );
@@ -70,18 +71,19 @@ function Row({
   field: TokenKey | CostKey;
   format: (value: number) => string;
 }) {
-  const coverage = usageFieldCoverage(usage, field);
+  const gap = fieldGap(usage, field);
   return (
     <li className="flex items-baseline justify-between gap-4 py-2">
       <div className="min-w-0">
-        <p className="text-[12px] text-droid-text-secondary">{label}</p>
-        {hint && <p className="mt-0.5 text-[11px] leading-4 text-droid-text-muted">{hint}</p>}
+        <p className="text-body text-secondary">{label}</p>
+        {hint && <p className="mt-0.5 text-caption text-muted">{hint}</p>}
       </div>
-      <div className="shrink-0 text-right text-[12px]">
-        <Value value={value} partial={coverage.partial} format={format} />
-        {value !== null && coverage.partial && (
-          <p className="mt-0.5 text-[10px] text-droid-text-muted">
-            {coverage.percent}% of events reported
+      <div className="shrink-0 text-right text-body">
+        <Value value={value} partial={gap.isMaterial} format={format} />
+        {value !== null && gap.missingEvents > 0 && (
+          <p className="mt-0.5 text-caption text-muted">
+            {exact.format(gap.missingEvents)} {gap.missingEvents === 1 ? 'event' : 'events'}{' '}
+            unreported
           </p>
         )}
       </div>
@@ -89,14 +91,27 @@ function Row({
   );
 }
 
+function tokenGapNote(usage: ProfileUsageSnapshot): string | null {
+  const gap = tokenGap(usage);
+  if (gap.missingEvents === 0) return null;
+  if (gap.isMaterial) {
+    return 'Some providers did not report every token, so totals marked ≥ are measured minimums.';
+  }
+  const partial = usage.harnesses.filter((harness) => !harness.tokensComplete);
+  const source = partial.length === 1 ? `${partial[0].name} ` : '';
+  const entries = gap.missingEvents === 1 ? 'entry' : 'entries';
+  return `${exact.format(gap.missingEvents)} ${source}${entries} had no token counts. That is under ${String(MATERIAL_GAP_SHARE * 100)}% of events, so totals show as measured.`;
+}
+
 export function ProfileUsageDetails({ usage }: { usage: ProfileUsageSnapshot }) {
   const totals: Totals = usage.totals;
+  const note = tokenGapNote(usage);
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <section className="rounded-2xl bg-droid-surface p-5">
+      <section className="rounded-xl bg-surface p-5">
         <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h3 className="text-[13px] font-medium text-droid-text">Tokens</h3>
-          <span className="text-[11px] text-droid-text-muted">
+          <h3 className="text-body-strong text-primary">Tokens</h3>
+          <span className="text-caption text-muted">
             {exact.format(totals.events)} {totals.events === 1 ? 'event' : 'events'}
           </span>
         </div>
@@ -113,8 +128,8 @@ export function ProfileUsageDetails({ usage }: { usage: ProfileUsageSnapshot }) 
           ))}
         </ul>
       </section>
-      <section className="flex flex-col rounded-2xl bg-droid-surface p-5">
-        <h3 className="mb-2 text-[13px] font-medium text-droid-text">Cost</h3>
+      <section className="flex flex-col rounded-xl bg-surface p-5">
+        <h3 className="mb-2 text-body-strong text-primary">Cost</h3>
         <ul>
           {COST_ROWS.map((row) => (
             <Row
@@ -128,10 +143,10 @@ export function ProfileUsageDetails({ usage }: { usage: ProfileUsageSnapshot }) 
             />
           ))}
         </ul>
-        {!totals.tokensComplete && (
-          <p className="mt-auto flex gap-1.5 pt-3 text-[11px] leading-[18px] text-droid-text-muted">
-            <Info size={12} className="mt-[3px] shrink-0" />
-            Some providers did not report every token, so totals marked ≥ are measured minimums.
+        {note && (
+          <p className="mt-auto flex gap-1.5 pt-3 text-caption text-muted">
+            <Info className="mt-px size-icon-sm shrink-0" aria-hidden="true" />
+            {note}
           </p>
         )}
       </section>

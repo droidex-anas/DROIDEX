@@ -31,7 +31,7 @@ export function ProfileBanner({
       style={{
         height,
         overflow: 'hidden',
-        background: `radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, ${color} 30%, var(--droid-surface)) 0%, color-mix(in srgb, ${color} 10%, var(--droid-surface)) 55%, var(--droid-surface) 100%)`,
+        background: `radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, ${color} 30%, var(--surface)) 0%, color-mix(in srgb, ${color} 10%, var(--surface)) 55%, var(--surface) 100%)`,
       }}
     >
       <svg

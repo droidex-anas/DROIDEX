@@ -389,6 +389,8 @@ function parseRow(row: OpenCodeRow, sourceId: string): ParsedRow {
       dedupeKey: `opencode:${identity.length <= 900 ? identity : hash(identity)}`,
       harnessId: 'opencode',
       harnessDisplayName: 'OpenCode',
+      provider:
+        modelText(field(modelReference, 'providerID')) ?? modelText(field(message, 'providerID')),
       sourceId,
       sessionId,
       project: null,

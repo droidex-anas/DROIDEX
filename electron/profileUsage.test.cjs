@@ -16,6 +16,7 @@ const snapshot = {
   days: [],
   harnesses: [],
   models: [],
+  mostUsedHarness: null,
   totals: {
     events: 0,
     inputTokens: null,

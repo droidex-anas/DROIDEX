@@ -108,6 +108,7 @@ export type RemoteMessage =
   | { type: 'pairing'; deviceId: string }
   | { type: 'locked' }
   | { type: 'denied' }
+  | { type: 'removed' }
   | { type: 'pong' }
   | { type: 'result'; id: number; ok: true; value: unknown }
   | { type: 'result'; id: number; ok: false; error: string }
@@ -200,6 +201,7 @@ export function remoteMessage(value: unknown): RemoteMessage {
       break;
     case 'locked':
     case 'denied':
+    case 'removed':
     case 'pong':
       return { type: value.type };
     case 'result':

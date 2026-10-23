@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
-import { ArrowUp, Search, X } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
-import { ghostButton, primaryButton } from '../../src/components/buttonStyles';
+import { ArrowUp, Search, Spinner, X } from '@droidex/icons';
+import { Button } from '../../src/components/ui/Button';
 import { loadWorkspaceCwds } from '../../src/hooks/persistedUiPreferences';
 import type { DirectoryListing } from '../../src/lib/desktop';
 import { wrapTabFocus } from '../../src/lib/focusTrap';
@@ -161,6 +160,10 @@ function FolderPicker({
     if (listing && !loading && !error) onDone(listing.path);
   };
   const canGoBack = problem !== null && !problem.retryable && listing !== null;
+  // A phone sheet stretches its two actions across the footer at the larger size.
+  const footerActions = layout.sheet
+    ? ({ size: 'lg', cancel: 'flex-1', choose: 'flex-1' } as const)
+    : ({ size: 'md', cancel: 'ml-auto', choose: undefined } as const);
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     // The app behind this dialog has its own shortcuts; none of these keys are for it.
@@ -204,7 +207,7 @@ function FolderPicker({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.16 }}
-      className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-6"
+      className="fixed inset-0 z-dialog flex items-end justify-center bg-bg/60 sm:items-center sm:p-6"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onDone(null);
       }}
@@ -221,36 +224,32 @@ function FolderPicker({
         animate={layout.sheet ? { y: 0 } : { y: 0, scale: 1, opacity: 1 }}
         exit={layout.sheet ? { y: '100%' } : { y: 4, scale: 0.99, opacity: 0 }}
         transition={{ duration: layout.sheet ? 0.28 : 0.18, ease: EASE_OUT }}
-        className={`flex w-full flex-col overflow-hidden bg-droid-raised text-droid-text shadow-droid outline-none ${
+        className={`flex w-full flex-col overflow-hidden bg-raised text-primary shadow-lg outline-none ${
           layout.sheet
-            ? 'h-[min(88dvh,720px)] rounded-t-2xl pb-[env(safe-area-inset-bottom)]'
-            : `h-[min(600px,calc(100dvh-48px))] rounded-2xl ${hasPlaces ? 'max-w-[720px]' : 'max-w-[560px]'}`
+            ? 'folder-picker-sheet rounded-t-xl'
+            : `folder-picker-dialog rounded-xl ${hasPlaces ? 'max-w-dialog-content' : 'max-w-dialog-form'}`
         }`}
       >
         {layout.sheet && (
           <span
-            aria-hidden
-            className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-droid-active"
+            aria-hidden="true"
+            className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-active"
           />
         )}
         <header className="shrink-0 px-5 pb-3 pt-4 sm:px-6 sm:pt-5">
-          <h2
-            id="folder-picker-title"
-            className="text-[15px] font-semibold tracking-[-0.015em] text-droid-text"
-          >
+          <h2 id="folder-picker-title" className="text-subheading text-primary">
             Choose a folder on your laptop
           </h2>
           <div className="mt-3 flex items-center gap-1.5">
-            <button
+            <Button
               type="button"
-              className={`${ghostButton} !w-8 shrink-0 !px-0`}
+              variant="ghost"
+              icon={ArrowUp}
               disabled={!listing?.parent}
               aria-label="Parent folder"
               title={`Parent folder (${modifierLabel}↑)`}
               onClick={openParent}
-            >
-              <ArrowUp size={15} />
-            </button>
+            />
             <Breadcrumbs crumbs={listing ? breadcrumb(listing.path, home) : []} open={open} />
             {loading && listing && (
               <motion.span
@@ -258,15 +257,17 @@ function FolderPicker({
                 animate={{ opacity: 1, transition: { delay: 0.15 } }}
                 className="shrink-0"
               >
-                <Spinner className="h-3.5 w-3.5 text-droid-text-muted motion-safe:animate-spin-slow" />
+                <Spinner
+                  className="size-icon-sm text-muted motion-safe:animate-spin-slow"
+                  aria-hidden="true"
+                />
               </motion.span>
             )}
           </div>
-          <label className="relative mt-3 block">
+          <label className="folder-picker-filter relative mt-3 block">
             <Search
-              size={14}
-              aria-hidden
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-droid-text-muted"
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 size-icon-sm -translate-y-1/2 text-muted"
             />
             <input
               ref={filterRef}
@@ -281,24 +282,26 @@ function FolderPicker({
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              className="h-9 w-full rounded-lg bg-droid-elevated pl-8 pr-8 text-[16px] text-droid-text transition-colors duration-150 placeholder:text-droid-text-muted focus:outline-none focus-visible:bg-droid-active sm:text-[13px]"
+              className="h-control-lg w-full rounded-md bg-elevated pl-8 pr-8 text-body text-primary transition-colors duration-150 placeholder:text-muted"
               onChange={(event) => {
                 setFilter(event.target.value);
                 setActiveIndex(0);
               }}
             />
             {filter && (
-              <button
-                type="button"
-                aria-label="Clear filter"
-                className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text"
-                onClick={() => {
-                  setFilter('');
-                  filterRef.current?.focus();
-                }}
-              >
-                <X size={13} />
-              </button>
+              <span className="absolute right-1 top-1/2 flex -translate-y-1/2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  icon={X}
+                  aria-label="Clear filter"
+                  onClick={() => {
+                    setFilter('');
+                    filterRef.current?.focus();
+                  }}
+                />
+              </span>
             )}
           </label>
         </header>
@@ -339,32 +342,36 @@ function FolderPicker({
           </div>
         </div>
 
-        <footer className="flex shrink-0 items-center gap-2 bg-droid-bg/30 px-5 py-3.5 sm:px-6">
+        <footer className="flex shrink-0 items-center gap-2 bg-bg/30 px-5 py-3.5 sm:px-6">
           {!layout.touch && (
-            <p className="mr-auto hidden items-center gap-3 text-[11px] text-droid-text-muted md:flex">
+            <p className="mr-auto hidden items-center gap-3 text-caption text-muted md:flex">
               <KeyHint keys="↑↓" label="Move" />
               <KeyHint keys="↵" label="Open" />
               <KeyHint keys="⌫" label="Back" />
               <KeyHint keys={`${modifierLabel}↵`} label="Choose" />
             </p>
           )}
-          <button
+          <Button
             type="button"
-            className={`${ghostButton} ${layout.sheet ? '!h-11 flex-1 !text-[14px]' : 'ml-auto'}`}
+            variant="ghost"
+            size={footerActions.size}
+            className={footerActions.cancel}
             onClick={() => {
               onDone(null);
             }}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className={`${primaryButton} ${layout.sheet ? '!h-11 flex-1 !text-[14px]' : ''}`}
+            variant="primary"
+            size={footerActions.size}
+            className={footerActions.choose}
             disabled={!listing || loading || error !== ''}
             onClick={choose}
           >
             Use this folder
-          </button>
+          </Button>
         </footer>
       </motion.div>
     </motion.div>

@@ -1,6 +1,11 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 import { SUM_COLUMNS } from './UsageSchema.js';
+import type {
+  RemoteUsageSnapshot,
+  UsageBreakdown,
+  UsageDay,
+} from '../../../packages/remote/src/usage.js';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const COVERAGE_NAMES = {
@@ -11,40 +16,10 @@ const COVERAGE_NAMES = {
   reasoning_tokens: 'reasoningTokens',
   provider_cost_microusd: 'providerCostMicrousd',
   estimated_cost_microusd: 'estimatedCostMicrousd',
+  cost_microusd: 'costMicrousd',
 } as const;
 
-interface RankedUsage {
-  name: string;
-  sessions: number;
-  events: number;
-  tokens: number;
-  complete: boolean;
-}
-
-export interface UsageSnapshot {
-  lifetimeTokens: number;
-  peakDayTokens: number;
-  sessions: number;
-  currentStreak: number;
-  longestStreak: number;
-  trackingSince: number;
-  days: { date: string; tokens: number; events: number; complete: boolean }[];
-  harnesses: RankedUsage[];
-  models: RankedUsage[];
-  totals: {
-    events: number;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    cacheWriteTokens: number | null;
-    cacheReadTokens: number | null;
-    reasoningTokens: number | null;
-    providerCostMicrousd: number | null;
-    estimatedCostMicrousd: number | null;
-    tokensComplete: boolean;
-  };
-  coverage: Record<string, { known: number; events: number }>;
-  timeZone: string;
-}
+export type UsageSnapshot = Omit<RemoteUsageSnapshot, 'sync'>;
 
 export function createUsageSnapshot(
   db: DatabaseSync,
@@ -69,7 +44,7 @@ export function createUsageSnapshot(
       rowNumber(totalsRow, 'input_tokens_known') === events &&
       rowNumber(totalsRow, 'output_tokens_known') === events,
   };
-  const days = dailyRows(db);
+  const { harnesses, models, days } = usageBreakdowns(db);
   const streaks = calculateStreaks(
     days.map((day) => day.date),
     dayKey(now, timeZone),
@@ -78,6 +53,7 @@ export function createUsageSnapshot(
     nullableNumber(db.prepare('SELECT first_event_at AS value FROM rollup_state').get(), 'value') ??
     now;
   return {
+    mostUsedHarness: harnesses[0]?.id ?? null,
     lifetimeTokens: (inputTokens ?? 0) + (outputTokens ?? 0),
     peakDayTokens: days.reduce((peak, day) => Math.max(peak, day.tokens), 0),
     sessions: scalar(db, 'SELECT COUNT(*) AS value FROM droidex_session'),
@@ -85,8 +61,8 @@ export function createUsageSnapshot(
     longestStreak: streaks.longest,
     trackingSince,
     days: days.slice(-366),
-    harnesses: rankings(db, 'harness'),
-    models: rankings(db, 'model'),
+    harnesses,
+    models,
     totals,
     coverage: Object.fromEntries(
       SUM_COLUMNS.map((column) => [
@@ -139,86 +115,87 @@ export function dayKey(timestamp: number, timeZone: string): string {
   return `${year}-${month}-${day}`;
 }
 
-function dailyRows(
-  db: DatabaseSync,
-): { date: string; tokens: number; events: number; complete: boolean }[] {
-  return db
+const TOTALS_SQL = `SUM(event_count) AS events,
+  SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) AS tokens,
+  SUM(input_tokens_known_events) = SUM(event_count) AND
+    SUM(output_tokens_known_events) = SUM(event_count) AS tokens_complete,
+  SUM(cost_microusd) AS cost,
+  SUM(cost_microusd_known_events) = SUM(event_count) AS cost_complete,
+  CASE WHEN SUM(CASE WHEN harness_id = 'droid' THEN event_count ELSE 0 END) > 0
+    THEN NULL ELSE SUM(event_count) END AS turns`;
+
+function usageBreakdowns(db: DatabaseSync): Pick<UsageSnapshot, 'harnesses' | 'models' | 'days'> {
+  const harnesses = db
     .prepare(
-      `
-      SELECT day, SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) AS tokens,
-        SUM(event_count) AS events, SUM(input_tokens_known_events) AS input_known,
-        SUM(output_tokens_known_events) AS output_known
-      FROM usage_daily GROUP BY day ORDER BY day
-    `,
+      `WITH usage AS (
+    SELECT harness_id, ${TOTALS_SQL} FROM usage_daily GROUP BY harness_id
+  ), sessions AS (
+    SELECT harness_id, COUNT(*) AS sessions FROM usage_session
+    WHERE ended_at IS NOT NULL GROUP BY harness_id
+  ) SELECT usage.harness_id AS id, harness.display_name AS name, usage.*,
+    COALESCE(sessions.sessions, 0) AS sessions
+    FROM usage JOIN harness ON harness.id = usage.harness_id
+    LEFT JOIN sessions USING (harness_id)
+    ORDER BY sessions DESC, tokens DESC, id LIMIT 31`,
     )
     .all()
-    .map((row) => {
-      const events = rowNumber(row, 'events');
-      return {
+    .map(breakdown);
+  const appSessions = scalar(db, 'SELECT COUNT(*) AS value FROM droidex_session');
+  if (appSessions > 0)
+    harnesses.push({
+      id: 'droidex',
+      name: 'DROIDEX',
+      sessions: appSessions,
+      turns: null,
+      events: 0,
+      tokens: 0,
+      tokensComplete: true,
+      costMicrousd: null,
+      costComplete: true,
+    });
+  harnesses.sort(
+    (a, b) => b.sessions - a.sessions || b.tokens - a.tokens || a.id.localeCompare(b.id),
+  );
+  const models = db
+    .prepare(
+      `WITH usage AS (
+    SELECT model, ${TOTALS_SQL} FROM usage_daily WHERE model IS NOT NULL GROUP BY model
+  ), sessions AS (
+    SELECT model, COUNT(*) AS sessions FROM usage_session_model WHERE model IS NOT NULL GROUP BY model
+  ) SELECT usage.model AS id, usage.model AS name, usage.*, COALESCE(sessions.sessions, 0) AS sessions
+    FROM usage LEFT JOIN sessions USING (model)
+    ORDER BY sessions DESC, tokens DESC, id LIMIT 256`,
+    )
+    .all()
+    .map(breakdown);
+  const days = db
+    .prepare(`SELECT day, ${TOTALS_SQL} FROM usage_daily GROUP BY day ORDER BY day`)
+    .all()
+    .map(
+      (row): UsageDay => ({
         date: rowString(row, 'day'),
+        events: rowNumber(row, 'events'),
         tokens: rowNumber(row, 'tokens'),
-        events,
-        complete:
-          rowNumber(row, 'input_known') === events && rowNumber(row, 'output_known') === events,
-      };
-    });
+        tokensComplete: row.tokens_complete === 1,
+        costMicrousd: nullableNumber(row, 'cost'),
+        costComplete: row.cost_complete === 1,
+      }),
+    );
+  return { harnesses, models, days };
 }
 
-function rankings(db: DatabaseSync, kind: 'harness' | 'model'): RankedUsage[] {
-  const sql = kind === 'harness' ? harnessRankingsSql() : modelRankingsSql();
-  return db
-    .prepare(sql)
-    .all()
-    .map((row) => {
-      const events = rowNumber(row, 'events');
-      return {
-        name: rowString(row, 'name'),
-        sessions: rowNumber(row, 'sessions'),
-        events,
-        tokens: rowNumber(row, 'tokens'),
-        complete:
-          rowNumber(row, 'input_known') === events && rowNumber(row, 'output_known') === events,
-      };
-    });
-}
-
-function harnessRankingsSql(): string {
-  return `
-    WITH usage AS (
-      SELECT harness_id, SUM(event_count) AS events,
-        SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) AS tokens,
-        SUM(input_tokens_known_events) AS input_known,
-        SUM(output_tokens_known_events) AS output_known
-      FROM usage_daily GROUP BY harness_id
-    ), sessions AS (
-      SELECT harness_id, COUNT(DISTINCT session_id) AS sessions
-      FROM usage_session_model GROUP BY harness_id
-    )
-    SELECT h.display_name AS name, usage.events, COALESCE(sessions.sessions, 0) AS sessions,
-      usage.tokens, usage.input_known, usage.output_known
-    FROM usage JOIN harness h ON h.id = usage.harness_id
-    LEFT JOIN sessions ON sessions.harness_id = usage.harness_id
-    ORDER BY sessions DESC, events DESC, name LIMIT 5
-  `;
-}
-
-function modelRankingsSql(): string {
-  return `
-    WITH usage AS (
-      SELECT model, SUM(event_count) AS events,
-        SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) AS tokens,
-        SUM(input_tokens_known_events) AS input_known,
-        SUM(output_tokens_known_events) AS output_known
-      FROM usage_daily WHERE model IS NOT NULL GROUP BY model
-    ), sessions AS (
-      SELECT model, COUNT(*) AS sessions
-      FROM usage_session_model WHERE model IS NOT NULL GROUP BY model
-    )
-    SELECT usage.model AS name, usage.events, COALESCE(sessions.sessions, 0) AS sessions,
-      usage.tokens, usage.input_known, usage.output_known
-    FROM usage LEFT JOIN sessions ON sessions.model = usage.model
-    ORDER BY sessions DESC, events DESC, name LIMIT 5
-  `;
+function breakdown(row: Record<string, unknown>): UsageBreakdown {
+  return {
+    id: rowString(row, 'id'),
+    name: rowString(row, 'name'),
+    sessions: rowNumber(row, 'sessions'),
+    turns: nullableNumber(row, 'turns'),
+    events: rowNumber(row, 'events'),
+    tokens: rowNumber(row, 'tokens'),
+    tokensComplete: row.tokens_complete === 1,
+    costMicrousd: nullableNumber(row, 'cost'),
+    costComplete: row.cost_complete === 1,
+  };
 }
 
 function calculateStreaks(days: string[], today: string): { current: number; longest: number } {

@@ -1,17 +1,17 @@
 // The day shape shared by the local usage snapshot and the public profile.
-// `complete: false` means some events that day had no token counts, so the
+// `tokensComplete: false` means some events that day had no token counts, so the
 // total is a measured minimum.
 export interface ActivityDay {
   date: string;
   tokens: number;
-  complete: boolean;
+  tokensComplete: boolean;
 }
 
 export interface CalendarDay {
   key: string;
   date: Date;
   tokens: number;
-  complete: boolean;
+  tokensComplete: boolean;
   future: boolean;
 }
 
@@ -64,7 +64,7 @@ export function activityCalendar(
       key,
       date,
       tokens: day?.tokens ?? 0,
-      complete: day?.complete ?? true,
+      tokensComplete: day?.tokensComplete ?? true,
       future: key > endKey,
     });
   }

@@ -134,7 +134,7 @@ test('Codex preserves model state, uses per-call usage, and derives cumulative r
   assert.deepEqual(pickCounts(perCall.events[0]), {
     inputTokens: 300,
     outputTokens: 50,
-    cacheWriteTokens: null,
+    cacheWriteTokens: 0,
     cacheReadTokens: 120,
     reasoningTokens: 20,
   });
@@ -155,7 +155,7 @@ test('Codex preserves model state, uses per-call usage, and derives cumulative r
       inputTokens: 50,
       outputTokens: 15,
       cacheReadTokens: 30,
-      cacheWriteTokens: null,
+      cacheWriteTokens: 0,
       reasoningTokens: 5,
     }),
   );
@@ -167,13 +167,7 @@ test('Codex preserves model state, uses per-call usage, and derives cumulative r
     delta.state,
     position,
   );
-  assert.deepEqual(pickCounts(reset.events[0]), {
-    inputTokens: 10,
-    outputTokens: 4,
-    cacheWriteTokens: null,
-    cacheReadTokens: 2,
-    reasoningTokens: 1,
-  });
+  assert.deepEqual(reset.events, []);
   assert.deepEqual(restoreUsageParserState('codex', JSON.stringify(reset.state)), reset.state);
 });
 
@@ -286,7 +280,7 @@ test('Codex preserves per-field cumulative baselines across unknown gaps and res
   );
   assert.deepEqual(pickCounts(resumed.events[0]), {
     inputTokens: 20,
-    outputTokens: 10,
+    outputTokens: 0,
     cacheWriteTokens: 2,
     cacheReadTokens: 5,
     reasoningTokens: 2,
@@ -296,6 +290,202 @@ test('Codex preserves per-field cumulative baselines across unknown gaps and res
 function tokenCountRow(timestamp: string, info: Record<string, unknown>) {
   return { type: 'event_msg', timestamp, payload: { type: 'token_count', info } };
 }
+
+test('Codex fork copies establish a baseline without billing the parent history again', () => {
+  let state = parseCodexUsageRecord(
+    {
+      type: 'session_meta',
+      timestamp: '2026-10-14T10:00:00Z',
+      payload: { id: 'child', forked_from_id: 'parent' },
+    },
+    createCodexUsageParserState(),
+    position,
+  ).state;
+  state = parseCodexUsageRecord(
+    {
+      type: 'session_meta',
+      timestamp: '2026-10-14T10:00:00.010Z',
+      payload: { id: 'parent' },
+    },
+    state,
+    position,
+  ).state;
+  const copied = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T10:00:00.257Z', {
+      last_token_usage: codexCounts(100, 10, 80, 2),
+      total_token_usage: codexCounts(1000, 100, 800, 20),
+    }),
+    state,
+    position,
+  );
+  assert.deepEqual(copied.events, []);
+  state = restoreUsageParserState('codex', JSON.stringify(copied.state)) as typeof state;
+  const own = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T10:00:05Z', {
+      total_token_usage: codexCounts(1100, 110, 880, 22),
+    }),
+    state,
+    position,
+  );
+  assert.equal(own.events[0]?.sessionId, 'child');
+  assert.equal(own.events[0]?.inputTokens, 100);
+  assert.equal(own.events[0]?.outputTokens, 10);
+});
+
+test('Claude omitted cache fields mean no cache activity, not unknown total input', () => {
+  const parsed = parseClaudeUsageRecord(
+    {
+      type: 'assistant',
+      timestamp: '2026-10-14T10:00:00Z',
+      message: {
+        id: 'no-cache',
+        model: 'claude-opus-5-5',
+        usage: { input_tokens: 100, output_tokens: 10 },
+      },
+    },
+    createClaudeUsageParserState(),
+    position,
+  );
+  assert.equal(parsed.events[0]?.inputTokens, 100);
+  assert.equal(parsed.events[0]?.cacheWriteTokens, 0);
+  assert.equal(parsed.events[0]?.cacheReadTokens, 0);
+});
+
+test('Codex response and notification share one bill even when process and session totals differ', () => {
+  const response = parseCodexUsageRecord(
+    {
+      type: 'token_usage_record',
+      timestamp: '2026-10-14T11:00:00Z',
+      payload: {
+        response_id: 'response',
+        usage: codexCounts(100, 10, 80, 2),
+        thread_token_usage: codexCounts(100, 10, 80, 2),
+      },
+    },
+    createCodexUsageParserState(),
+    position,
+  );
+  const notification = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:01Z', {
+      last_token_usage: codexCounts(100, 10, 80, 2),
+      total_token_usage: codexCounts(1000, 100, 800, 20),
+    }),
+    response.state,
+    position,
+  );
+  assert.equal(response.events.length, 1);
+  assert.equal(notification.events.length, 0);
+  const next = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:05Z', {
+      last_token_usage: codexCounts(100, 10, 80, 2),
+      total_token_usage: codexCounts(1100, 110, 880, 22),
+    }),
+    notification.state,
+    position,
+  );
+  assert.equal(next.events[0]?.inputTokens, 100);
+});
+
+test('Codex carries requested service tiers and treats omitted cache writes as zero', () => {
+  const state = parseCodexUsageRecord(
+    {
+      type: 'event_msg',
+      payload: { type: 'thread_settings_applied', thread_settings: { service_tier: 'priority' } },
+    },
+    createCodexUsageParserState(),
+    position,
+  ).state;
+  const event = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:00Z', {
+      last_token_usage: codexCounts(100, 10, 80, 2),
+    }),
+    state,
+    position,
+  ).events[0];
+  assert.equal(event?.serviceTier, 'priority');
+  assert.equal(event?.cacheWriteTokens, 0);
+});
+
+test('Codex cumulative context resets establish a new baseline without inventing a request', () => {
+  const first = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:00Z', {
+      total_token_usage: codexCounts(1000, 100, 800, 20),
+    }),
+    createCodexUsageParserState(),
+    position,
+  );
+  const reset = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:01Z', {
+      total_token_usage: codexCounts(100, 10, 80, 2),
+    }),
+    first.state,
+    position,
+  );
+  assert.deepEqual(reset.events, []);
+  const next = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:05Z', {
+      total_token_usage: codexCounts(120, 12, 90, 3),
+    }),
+    reset.state,
+    position,
+  );
+  assert.equal(next.events[0]?.inputTokens, 20);
+  assert.equal(next.events[0]?.outputTokens, 2);
+});
+
+test('Codex fork history retaining original parent timestamps is not new usage', () => {
+  const state = parseCodexUsageRecord(
+    {
+      type: 'session_meta',
+      timestamp: '2026-10-14T11:00:00Z',
+      payload: { id: 'child-original-timestamps', forked_from_id: 'parent' },
+    },
+    createCodexUsageParserState(),
+    position,
+  ).state;
+  const copied = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T10:00:00Z', {
+      last_token_usage: codexCounts(100, 10, 80, 2),
+      total_token_usage: codexCounts(1000, 100, 800, 20),
+    }),
+    state,
+    position,
+  );
+  assert.deepEqual(copied.events, []);
+  const own = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:05Z', {
+      total_token_usage: codexCounts(1100, 110, 880, 22),
+    }),
+    copied.state,
+    position,
+  );
+  assert.equal(own.events[0]?.inputTokens, 100);
+});
+
+test('Codex counts a fast first fork request that finishes after the replay write burst', () => {
+  const state = parseCodexUsageRecord(
+    {
+      type: 'session_meta',
+      timestamp: '2026-10-14T11:00:00Z',
+      payload: {
+        id: 'fast-child',
+        source: { subagent: { thread_spawn: { parent_thread_id: 'parent' } } },
+      },
+    },
+    createCodexUsageParserState(),
+    position,
+  ).state;
+  const first = parseCodexUsageRecord(
+    tokenCountRow('2026-10-14T11:00:00.943Z', {
+      last_token_usage: codexCounts(14_704, 581, 3456, 400),
+      total_token_usage: codexCounts(14_704, 581, 3456, 400),
+    }),
+    state,
+    position,
+  );
+  assert.equal(first.events[0]?.inputTokens, 14_704);
+  assert.equal(first.events[0]?.outputTokens, 581);
+});
 
 function codexCounts(
   input: number,

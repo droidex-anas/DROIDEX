@@ -3,8 +3,8 @@
 }
 body {
   margin: 0;
-  background: var(--droid-bg);
-  color: var(--droid-text);
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--ui-font-family);
   font-size: 15px;
   line-height: 1.5;
@@ -23,8 +23,8 @@ button,
   gap: 8px;
   min-height: 44px;
   padding: 9px 14px;
-  color: var(--droid-text);
-  background: var(--droid-elevated);
+  color: var(--text);
+  background: var(--elevated);
   border: 0;
   border-radius: 12px;
   cursor: pointer;
@@ -32,7 +32,7 @@ button,
   transition: background 150ms;
 }
 button:hover {
-  background: var(--droid-active);
+  background: var(--active);
 }
 button:disabled,
 input:disabled,
@@ -46,7 +46,7 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--droid-accent) 22%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--accent) 22%, transparent);
   outline-offset: 3px;
 }
 input,
@@ -54,8 +54,8 @@ textarea,
 select {
   border: 0;
   border-radius: 12px;
-  background: var(--droid-elevated);
-  color: var(--droid-text);
+  background: var(--elevated);
+  color: var(--text);
   padding: 12px 14px;
   min-height: 44px;
 }
@@ -64,7 +64,7 @@ textarea {
 }
 input::placeholder,
 textarea::placeholder {
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 h1,
 h2,
@@ -84,41 +84,41 @@ h2 {
   letter-spacing: -0.15px;
 }
 .primary {
-  background: var(--droid-accent);
-  color: var(--droid-bg);
+  background: var(--accent);
+  color: var(--bg);
   font-weight: 550;
 }
 .primary:hover {
-  background: color-mix(in srgb, var(--droid-accent) 88%, var(--droid-bg));
+  background: color-mix(in srgb, var(--accent) 88%, var(--bg));
 }
 .muted,
 .fine-print {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 .fine-print {
   font-size: 12px;
   line-height: 1.7;
 }
 .error {
-  color: var(--droid-red);
+  color: var(--danger);
   font-size: 13px;
 }
 .notice {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   font-size: 13px;
-  background: var(--droid-surface);
+  background: var(--surface);
   border-radius: 12px;
   padding: 12px 14px;
 }
 .surface {
-  background: var(--droid-surface);
+  background: var(--surface);
   border-radius: 18px;
 }
 .brand {
   display: inline-flex;
   gap: 9px;
   align-items: center;
-  color: var(--droid-text);
+  color: var(--text);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.25px;
@@ -145,7 +145,7 @@ h2 {
   padding: max(20px, env(safe-area-inset-top)) 20px 16px;
 }
 .handle {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -157,9 +157,9 @@ h2 {
   gap: 10px;
   min-height: 46px;
   padding: 8px 20px;
-  background: var(--droid-surface);
+  background: var(--surface);
   font-size: 12px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 .connection > .icon-button {
   margin-left: auto;
@@ -170,17 +170,17 @@ h2 {
   height: 6px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--droid-text-muted);
+  background: var(--text-muted);
 }
 .online .status-dot,
 .running .status-dot {
-  background: var(--droid-green);
+  background: var(--success);
 }
 .waiting .status-dot {
-  background: var(--droid-orange);
+  background: var(--warning);
 }
 .failed .status-dot {
-  background: var(--droid-red);
+  background: var(--danger);
 }
 .unlock {
   display: flex;
@@ -199,7 +199,7 @@ h2 {
   align-self: flex-start;
   background: transparent;
   padding-left: 0;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   font-size: 12px;
 }
 .code-input {
@@ -226,7 +226,7 @@ h2 {
   margin-bottom: 26px;
 }
 .page-heading p {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   font-size: 13px;
 }
 .session-list {
@@ -246,7 +246,7 @@ h2 {
 }
 .session-row {
   padding: 17px 14px;
-  background: var(--droid-surface);
+  background: var(--surface);
   border-radius: 14px;
   text-align: left;
   width: 100%;
@@ -274,7 +274,7 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   white-space: nowrap;
   font-size: 11px;
   text-transform: capitalize;
@@ -304,11 +304,11 @@ h2 {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 .approval-detail {
   font-size: 13px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 180px;
@@ -330,14 +330,14 @@ h2 {
   transform: translateX(-50%);
   width: 100%;
   max-width: 680px;
-  background: var(--droid-bg);
+  background: var(--bg);
   padding: 10px 14px max(8px, env(safe-area-inset-bottom));
 }
 .composer {
   border-radius: 20px;
   padding: 9px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
 }
 .composer textarea {
   width: 100%;
@@ -363,12 +363,12 @@ h2 {
   gap: 7px;
   padding: 0 8px;
   font-size: 12px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   min-height: 44px;
 }
 .steer-option input {
   min-height: auto;
-  accent-color: var(--droid-accent);
+  accent-color: var(--accent);
   width: 16px;
   height: 16px;
 }
@@ -382,19 +382,19 @@ h2 {
 .bottom-nav button {
   flex: 1;
   background: transparent;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   font-size: 12px;
   padding: 7px 8px;
 }
 .bottom-nav .selected,
 .segmented .selected {
-  color: var(--droid-text);
-  background: var(--droid-elevated);
+  color: var(--text);
+  background: var(--elevated);
   font-weight: 550;
 }
 .badge {
   font-size: 10px;
-  background: var(--droid-active);
+  background: var(--active);
   border-radius: 6px;
   min-width: 18px;
   padding: 1px 4px;
@@ -434,7 +434,7 @@ h2 {
 .stream p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   line-height: 1.75;
   font-size: 14px;
 }
@@ -446,7 +446,7 @@ h2 {
 .notification-hint {
   padding: 12px 20px 0;
   font-size: 12px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 .notification-settings button {
   font-size: 12px;

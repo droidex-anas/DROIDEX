@@ -7,7 +7,7 @@ export * from './usage';
 export const MAX_RELAY_FRAME_BYTES = 65_536;
 
 export type RelayMessage =
-  | { type: 'relay-ready'; peerId: string; challenge: string }
+  | { type: 'relay-ready'; peerId: string; challenge: string; laptopOnline: boolean }
   | { type: 'host-auth'; publicKey: JsonWebKey; signature: string }
   | { type: 'host-ready' }
   | { type: 'authorize-peer'; peerId: string }

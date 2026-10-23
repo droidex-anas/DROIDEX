@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, Copy, ImageDown, RefreshCw, Send, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Check, Copy, RefreshCw, Send, ShieldCheck, Trash, X } from '@droidex/icons';
+import { ImageDown } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { downloadProfileCard, profileCardBlob } from '../features/profile/profileCard';
 import type { PublicProfileSnapshot } from '../features/profile/profileShare';
-import { ghostButton, primaryButton, secondaryButton } from './buttonStyles';
+import { Button } from './ui/Button';
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -19,7 +20,7 @@ function IconSwap({
   swappedIcon: ReactNode;
 }) {
   return (
-    <span className="relative inline-flex h-3.5 w-3.5 items-center justify-center">
+    <span className="relative inline-flex size-icon-md shrink-0 items-center justify-center">
       <AnimatePresence initial={false}>
         <motion.span
           key={swapped ? 'on' : 'off'}
@@ -123,13 +124,13 @@ export function ProfileSharePanel({
   return (
     <motion.section
       aria-label={published ? 'Published profile' : 'Publish your profile'}
-      className="relative mt-3 grid gap-5 rounded-2xl bg-droid-surface p-4 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
+      className="profile-share-panel relative mt-3 grid gap-5 rounded-xl bg-surface p-4"
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
       transition={{ duration: 0.22, ease: EASE }}
     >
-      <div className="relative aspect-[1200/630] overflow-hidden rounded-xl bg-droid-elevated">
+      <div className="profile-card-preview relative overflow-hidden rounded-lg bg-elevated">
         <AnimatePresence>
           {preview && (
             <motion.img
@@ -148,85 +149,82 @@ export function ProfileSharePanel({
       <div className="flex min-w-0 flex-col">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="text-[13px] font-medium text-droid-text">
+            <h3 className="text-body-strong text-primary">
               {published ? 'Your profile is public' : 'Publish your profile'}
             </h3>
-            <p className="mt-1 text-[11px] leading-[18px] text-droid-text-muted">
+            <p className="mt-1 text-caption text-muted">
               {published
                 ? 'Update it when you want to publish your latest local totals.'
                 : 'Preview the aggregate usage that will appear on your public page.'}
             </p>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            icon={X}
             aria-label="Close sharing"
-            className={`${ghostButton} -mr-1 -mt-1 w-8 px-0`}
+            className="-mr-1 -mt-1"
             disabled={busy}
             onClick={onClose}
-          >
-            <X size={14} />
-          </button>
+          />
         </div>
 
         <div className="mt-4 space-y-2">
           {published ? (
             <>
               <div className="flex gap-2">
-                <button className={`${primaryButton} flex-1`} onClick={copy}>
-                  <IconSwap
-                    swapped={copied}
-                    icon={<Copy size={13} />}
-                    swappedIcon={<Check size={13} />}
-                  />
-                  {copied ? 'Copied' : 'Copy link'}
-                </button>
-                <button
-                  className={secondaryButton}
-                  disabled={savingImage}
-                  onClick={() => void download()}
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={copy}
+                  icon={
+                    <IconSwap
+                      swapped={copied}
+                      icon={<Copy className="size-icon-md" aria-hidden="true" />}
+                      swappedIcon={<Check className="size-icon-md" aria-hidden="true" />}
+                    />
+                  }
                 >
-                  <ImageDown size={13} />
+                  {copied ? 'Copied' : 'Copy link'}
+                </Button>
+                <Button icon={ImageDown} disabled={savingImage} onClick={() => void download()}>
                   {savingImage ? 'Rendering…' : 'Save image'}
-                </button>
+                </Button>
               </div>
               <div className="flex gap-2">
-                <button
-                  className={`${secondaryButton} flex-1`}
+                <Button
+                  className="flex-1"
                   disabled={busy || updateBlocked !== ''}
                   title={updateBlocked || undefined}
                   onClick={onUpdate}
+                  icon={
+                    <RefreshCw
+                      className={`size-icon-md shrink-0 ${mutation === 'update' ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
+                  }
                 >
-                  <RefreshCw size={13} className={mutation === 'update' ? 'animate-spin' : ''} />
                   {mutation === 'update' ? 'Updating…' : 'Update profile'}
-                </button>
-                <button
-                  className={`${ghostButton} text-droid-red hover:text-droid-red`}
-                  disabled={busy}
-                  onClick={onUnpublish}
-                >
-                  <Trash2 size={13} />
+                </Button>
+                <Button variant="danger" icon={Trash} disabled={busy} onClick={onUnpublish}>
                   {mutation === 'unpublish' ? 'Unpublishing…' : 'Unpublish'}
-                </button>
+                </Button>
               </div>
             </>
           ) : (
             <div className="flex gap-2">
-              <button
-                className={`${primaryButton} flex-1`}
+              <Button
+                variant="primary"
+                icon={Send}
+                className="flex-1"
                 disabled={busy || updateBlocked !== ''}
                 title={updateBlocked || undefined}
                 onClick={onPublish}
               >
-                <Send size={13} />
                 {mutation === 'publish' ? 'Publishing…' : 'Publish profile'}
-              </button>
-              <button
-                className={secondaryButton}
-                disabled={savingImage}
-                onClick={() => void download()}
-              >
-                <ImageDown size={13} />
+              </Button>
+              <Button icon={ImageDown} disabled={savingImage} onClick={() => void download()}>
                 {savingImage ? 'Rendering…' : 'Save image'}
-              </button>
+              </Button>
             </div>
           )}
           <input
@@ -236,18 +234,18 @@ export function ProfileSharePanel({
             onFocus={(event) => {
               event.target.select();
             }}
-            className="h-8 w-full truncate rounded-lg bg-droid-elevated px-2.5 text-[12px] text-droid-text-secondary focus:outline-none focus-visible:bg-droid-active"
+            className="h-control-md w-full truncate rounded-md bg-elevated px-2.5 text-body text-secondary"
           />
         </div>
 
-        <p className="mt-auto flex gap-1.5 pt-4 text-[11px] leading-[18px] text-droid-text-muted">
-          <ShieldCheck size={13} className="mt-0.5 shrink-0" />
+        <p className="mt-auto flex gap-1.5 pt-4 text-caption text-muted">
+          <ShieldCheck className="mt-px size-icon-sm shrink-0" aria-hidden="true" />
           {published
             ? 'Public: display name, username, aggregate token activity, DROIDEX session count, streaks and harness/model names. Never prompts, responses, chats, files, paths, costs or device data. Public until you unpublish; downloads and screenshots cannot be recalled.'
             : 'Publishes your display name, username, aggregate token activity, DROIDEX session count, streaks and harness/model names—never prompts, responses, chats, files, paths, costs or device data. The page stays public until you unpublish it.'}
         </p>
         {(mutationError || localError) && (
-          <p role="alert" className="mt-2 text-[11px] leading-5 text-droid-red">
+          <p role="alert" className="mt-2 text-caption text-danger">
             {mutationError || localError}
           </p>
         )}

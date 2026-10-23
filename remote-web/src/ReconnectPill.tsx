@@ -1,6 +1,6 @@
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
-import { WifiOff } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { CircleAlert, Spinner } from '@droidex/icons';
+import { Button } from '../../src/components/ui/Button';
 import { EASE_OUT } from './GateLayout';
 
 // Brief drops (a phone waking, a network hop) recover before this, so they never show.
@@ -28,24 +28,20 @@ export function ReconnectPill({
               transition: { delay: SHOW_AFTER_S, duration: 0.24, ease: EASE_OUT },
             }}
             exit={{ opacity: 0, y: -8, transition: { duration: 0.16 } }}
-            className="fixed inset-x-0 top-[max(12px,env(safe-area-inset-top))] z-[1300] mx-auto flex w-fit items-center gap-2 whitespace-nowrap rounded-full bg-droid-raised py-1.5 pl-3.5 pr-1.5 text-[12px] text-droid-text-secondary shadow-droid-sm"
+            className="remote-gate-top fixed inset-x-0 z-tooltip mx-auto flex h-control-lg w-fit items-center gap-2 whitespace-nowrap rounded-full bg-raised pl-3.5 pr-1 text-label text-secondary shadow-sm"
           >
             {status === 'offline' ? (
-              <WifiOff size={13} className="text-droid-text-muted" aria-hidden />
+              <CircleAlert className="size-icon-sm text-muted" aria-hidden="true" />
             ) : (
-              <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />
+              <Spinner className="size-icon-sm motion-safe:animate-spin-slow" aria-hidden="true" />
             )}
-            <span className="pr-2">
+            <span className="pr-2.5">
               {status === 'offline' ? 'Laptop unreachable. Retrying…' : 'Reconnecting…'}
             </span>
             {status === 'offline' && (
-              <button
-                type="button"
-                onClick={retry}
-                className="rounded-full bg-droid-elevated px-2.5 py-0.5 font-medium text-droid-text transition-colors hover:bg-droid-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/30"
-              >
+              <Button size="sm" shape="round" onClick={retry}>
                 Retry
-              </button>
+              </Button>
             )}
           </motion.div>
         )}

@@ -475,7 +475,8 @@ export async function createRemoteHost(options: {
         if (typeof id !== 'string') throw new Error('Invalid device');
         state.devices = state.devices.filter((device) => device.id !== id);
         Reflect.deleteProperty(state.subscriptions, id);
-        for (const peer of peers.values()) if (peer.deviceId === id) drop(peer);
+        for (const peer of peers.values())
+          if (peer.deviceId === id) void dismiss(peer, { type: 'removed' });
         await persist();
         changed();
         return snapshot();

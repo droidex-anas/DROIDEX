@@ -180,6 +180,11 @@
     outline: 1.5px solid var(--focus-ring);
   }
 
+  /* An input with leading text (ui/Field) rings its whole filled box. */
+  .field-affix:has(input:focus-visible) {
+    outline: 1.5px solid var(--focus-ring);
+  }
+
   /* Anything clickable shows a pointer so it reads as clickable; a disabled
      control shows not-allowed instead. `:where` keeps this at zero
      specificity so the disabled rule and cursor utilities win. */
@@ -557,6 +562,19 @@
 
   .droid-rise {
     animation: droid-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* The toast stack clears the status bar, or a pending Remote approval panel
+     by the same gap it keeps from the window's right edge. */
+  .toast-stack {
+    bottom: max(theme('spacing.11'), calc(var(--approval-panel-offset, 0px) + theme('spacing.4')));
+    transition: bottom 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toast-stack {
+      transition: none;
+    }
   }
 
   /* One-shot entrance motion for newly appended chat rows. Keeping this in CSS
@@ -1172,6 +1190,71 @@
   @media (prefers-reduced-motion: reduce) {
     .expand-rows {
       transition: none;
+    }
+  }
+
+  /* Remote art: dashes travelling along the encrypted link while it carries. */
+  .remote-link-flow {
+    stroke-dasharray: 2 6;
+    animation: remote-link-flow 1.6s linear infinite;
+  }
+  @keyframes remote-link-flow {
+    to {
+      stroke-dashoffset: -32;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .remote-link-flow {
+      animation: none;
+    }
+  }
+
+  /* Remote's full-screen gate clears the phone's notch and home indicator. */
+  .remote-gate-top {
+    padding-top: max(1.5rem, env(safe-area-inset-top));
+  }
+  .remote-gate-bottom {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+  /* Phones zoom into any field under 16px when it takes focus. */
+  @media (pointer: coarse) {
+    .remote-gate input {
+      font-size: 16px;
+    }
+  }
+
+  /* Remote's folder picker: a phone sheet clears the home indicator, and its
+     filter stays at 16px there so the phone doesn't zoom in on focus. */
+  .folder-picker-sheet {
+    height: min(88dvh, 720px);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .folder-picker-dialog {
+    height: min(600px, calc(100dvh - 48px));
+  }
+  @media (max-width: 639px) {
+    .folder-picker-filter input {
+      font-size: 16px;
+    }
+  }
+  /* Long listings skip layout for rows out of view. */
+  .folder-picker-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 36px;
+  }
+
+  /* The profile share panel: a card preview at the share image's ratio beside its actions. */
+  .profile-card-preview {
+    aspect-ratio: 1200 / 630;
+  }
+  @media (min-width: 640px) {
+    .profile-share-panel {
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .profile-indeterminate {
+      animation: profile-indeterminate 1.6s ease-in-out infinite;
     }
   }
 

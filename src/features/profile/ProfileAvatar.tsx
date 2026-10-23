@@ -24,7 +24,7 @@ export function ProfileAvatar({ seed, size }: { seed: string; size: number }) {
         width={size}
         height={size}
         rx={size * 0.26}
-        style={{ fill: `color-mix(in srgb, ${color} 16%, var(--droid-elevated))` }}
+        style={{ fill: `color-mix(in srgb, ${color} 16%, var(--elevated))` }}
       />
       {grid.map((row, r) =>
         row.map((on, c) =>

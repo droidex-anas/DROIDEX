@@ -194,6 +194,7 @@ function validateEvent(event: UsageEvent): void {
   optionalText(event.model, 'model', 160);
   optionalText(event.serviceTier, 'service tier');
   optionalText(event.pricingVersion, 'pricing version');
+  optionalText(event.provider ?? null, 'provider');
   for (const value of [
     event.inputTokens,
     event.outputTokens,
@@ -202,6 +203,7 @@ function validateEvent(event: UsageEvent): void {
     event.reasoningTokens,
     event.providerCostMicrousd,
     event.estimatedCostMicrousd,
+    event.cacheWrite1hTokens ?? null,
   ]) {
     optionalInteger(value, 'usage count');
   }

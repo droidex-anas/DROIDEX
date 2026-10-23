@@ -1,14 +1,13 @@
-import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { HANDLE_PATTERN } from '../../packages/remote/src';
 import type { RemoteSettings } from '../../packages/remote/src/desktop';
-import { ghostButton, primaryButton } from './buttonStyles';
-
-const field =
-  'mt-1.5 block h-9 w-full rounded-lg bg-droid-elevated px-3 text-[13px] text-droid-text transition-colors placeholder:text-droid-text-muted focus:outline-none focus-visible:bg-droid-active disabled:opacity-50';
+import { Button } from './ui/Button';
+import { cn } from './ui/cn';
+import { Field, Input } from './ui/Field';
+import { RowCaret } from './ui/Row';
 
 // Normal users only choose a name and username. Relay and web client
-// addresses belong to self-hosters and stay behind the Advanced disclosure.
+// addresses belong to self-hosters and stay behind the disclosure.
 export function RemoteAddressForm({
   settings,
   busy,
@@ -24,11 +23,11 @@ export function RemoteAddressForm({
   const [username, setUsername] = useState(settings.profile.username);
   const [relay, setRelay] = useState(settings.relayUrl);
   const [client, setClient] = useState(settings.clientUrl);
-  const [advanced, setAdvanced] = useState(false);
+  const [selfHosting, setSelfHosting] = useState(false);
   const usernameValid = HANDLE_PATTERN.test(username);
   return (
     <form
-      className="space-y-3"
+      className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
         void save({
@@ -38,119 +37,116 @@ export function RemoteAddressForm({
         });
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-[12px] text-droid-text-secondary">
-          Name
-          <input
-            autoFocus
-            required
-            className={field}
-            value={name}
-            maxLength={80}
-            placeholder="Ada Lovelace"
-            onChange={(event) => {
-              setName(event.target.value);
-            }}
-            autoComplete="name"
-          />
-        </label>
-        <label className="block text-[12px] text-droid-text-secondary">
-          Username
-          <span className="relative block">
-            <span className="pointer-events-none absolute left-3 top-1/2 mt-[3px] -translate-y-1/2 text-[13px] text-droid-text-muted">
-              @
-            </span>
-            <input
-              required
-              pattern={HANDLE_PATTERN.source.replace('-]', '\\-]')}
-              minLength={3}
-              maxLength={30}
-              className={`${field} pl-7`}
-              value={username}
-              placeholder="ada"
-              onChange={(event) => {
-                setUsername(event.target.value.toLowerCase());
-              }}
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </span>
-        </label>
-      </div>
-      <p className="text-[11px] leading-[18px] text-droid-text-muted">
-        {username && !usernameValid
-          ? 'Use 3–30 lowercase letters, numbers or hyphens, starting with a letter.'
-          : 'Your username is public. It’s part of your Remote address and your profile page.'}
-      </p>
+      <Field label="Name">
+        <Input
+          autoFocus
+          required
+          value={name}
+          maxLength={80}
+          placeholder="Ada Lovelace"
+          autoComplete="name"
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
+        />
+      </Field>
+      <Field
+        label="Username"
+        hint="Public: it’s your Remote address and your profile page."
+        error={
+          username && !usernameValid
+            ? 'Use 3–30 lowercase letters, numbers or hyphens, starting with a letter.'
+            : undefined
+        }
+      >
+        <Input
+          leading="@"
+          required
+          pattern={HANDLE_PATTERN.source.replace('-]', '\\-]')}
+          minLength={3}
+          maxLength={30}
+          value={username}
+          placeholder="ada"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          onChange={(event) => {
+            setUsername(event.target.value.toLowerCase());
+          }}
+        />
+      </Field>
 
       <div>
-        <button
-          type="button"
-          aria-expanded={advanced}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2.5"
+          aria-expanded={selfHosting}
+          aria-controls="remote-self-host"
           onClick={() => {
-            setAdvanced(!advanced);
+            setSelfHosting(!selfHosting);
           }}
-          className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-1 text-[12px] text-droid-text-muted transition-colors hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/40"
         >
-          <ChevronRight
-            size={13}
-            className={`transition-transform duration-200 ${advanced ? 'rotate-90' : ''}`}
-          />
-          Advanced
-        </button>
-        {advanced && (
-          <div className="mt-2 space-y-3 rounded-xl bg-droid-elevated/50 p-4">
-            <div>
-              <p className="text-[12px] font-medium text-droid-text">Self-host Remote</p>
-              <p className="mt-0.5 text-[11px] leading-[18px] text-droid-text-muted">
+          <span className="flex items-center gap-1">
+            Self-host Remote
+            <RowCaret open={selfHosting} />
+          </span>
+        </Button>
+        <div id="remote-self-host" className="expand-rows" data-open={selfHosting || undefined}>
+          <div
+            inert={!selfHosting}
+            className={cn(
+              'min-h-0 overflow-hidden transition-opacity duration-150 ease-out',
+              !selfHosting && 'opacity-0',
+            )}
+          >
+            <div className="flex flex-col gap-4 pt-3">
+              <p className="text-caption text-muted">
                 Point DROIDEX at your own relay and web client. The Remote guide in the repository
                 explains how to deploy both.
               </p>
+              <Field label="Relay address">
+                <Input
+                  value={relay}
+                  placeholder="wss://your-relay.workers.dev"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  onChange={(event) => {
+                    setRelay(event.target.value);
+                  }}
+                />
+              </Field>
+              <Field label="Web client address">
+                <Input
+                  value={client}
+                  placeholder="https://droidex.vercel.app"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  onChange={(event) => {
+                    setClient(event.target.value);
+                  }}
+                />
+              </Field>
             </div>
-            <label className="block text-[12px] text-droid-text-secondary">
-              Relay address
-              <input
-                className={`${field} bg-droid-surface`}
-                value={relay}
-                onChange={(event) => {
-                  setRelay(event.target.value);
-                }}
-                placeholder="wss://your-relay.workers.dev"
-                autoCapitalize="none"
-                spellCheck={false}
-              />
-            </label>
-            <label className="block text-[12px] text-droid-text-secondary">
-              Web client address
-              <input
-                className={`${field} bg-droid-surface`}
-                value={client}
-                onChange={(event) => {
-                  setClient(event.target.value);
-                }}
-                placeholder="https://droidex.vercel.app"
-                autoCapitalize="none"
-                spellCheck={false}
-              />
-            </label>
           </div>
-        )}
+        </div>
       </div>
 
-      <div className="flex justify-end gap-2 pt-1">
+      <div className="flex justify-end gap-2">
         {cancel && (
-          <button type="button" disabled={busy} onClick={cancel} className={ghostButton}>
+          <Button variant="ghost" size="lg" disabled={busy} onClick={cancel}>
             Cancel
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          size="lg"
+          loading={busy}
           disabled={busy || !name.trim() || !usernameValid}
-          className={primaryButton}
         >
-          {busy ? 'Saving…' : 'Continue'}
-        </button>
+          {usernameValid ? `Claim @${username}` : 'Claim username'}
+        </Button>
       </div>
     </form>
   );

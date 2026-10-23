@@ -23,9 +23,43 @@ const usage: ProfileUsageSnapshot = {
   currentStreak: 1,
   longestStreak: 2,
   trackingSince: 1,
-  days: [{ date: '2026-10-14', tokens: 200, events: 1, complete: true }],
-  harnesses: [{ name: 'Codex', sessions: 3, events: 3, tokens: 1200, complete: true }],
-  models: [{ name: 'gpt-6', sessions: 3, events: 3, tokens: 1200, complete: true }],
+  days: [
+    {
+      date: '2026-10-14',
+      tokens: 200,
+      events: 1,
+      tokensComplete: true,
+      costMicrousd: 500,
+      costComplete: true,
+    },
+  ],
+  harnesses: [
+    {
+      id: 'codex',
+      name: 'Codex',
+      sessions: 3,
+      turns: 3,
+      events: 3,
+      tokens: 1200,
+      tokensComplete: true,
+      costMicrousd: 500,
+      costComplete: true,
+    },
+  ],
+  models: [
+    {
+      id: 'gpt-6',
+      name: 'gpt-6',
+      sessions: 3,
+      turns: 3,
+      events: 3,
+      tokens: 1200,
+      tokensComplete: true,
+      costMicrousd: 500,
+      costComplete: true,
+    },
+  ],
+  mostUsedHarness: 'codex',
   totals: {
     events: 3,
     inputTokens: 800,
@@ -99,7 +133,7 @@ test('published bundles reject malformed data, wrong usernames and altered paylo
   assert.throws(() =>
     encodeProfilePayload({
       ...profile,
-      days: [{ date: '2026-02-31', tokens: 1, complete: true }],
+      days: [{ date: '2026-02-31', tokens: 1, tokensComplete: true }],
     } as PublicProfileSnapshot),
   );
 
@@ -159,13 +193,13 @@ test('sharing preserves token availability and incomplete coverage', () => {
     {
       ...usage,
       totals: { ...usage.totals, tokensComplete: false },
-      days: [{ ...usage.days[0], complete: false }],
+      days: [{ ...usage.days[0], tokensComplete: false }],
     },
     2,
   );
   assert.equal(partial.tokensReported, true);
   assert.equal(partial.tokensComplete, false);
-  assert.equal(partial.days[0]?.complete, false);
+  assert.equal(partial.days[0]?.tokensComplete, false);
   assert.equal(partial.lifetimeTokens, usage.lifetimeTokens);
 
   const unreported = createPublicProfileSnapshot(
@@ -208,7 +242,7 @@ test('a full year of public activity stays inside the bounded published payload'
   const days = Array.from({ length: 366 }, (_, index) => ({
     date: new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10),
     tokens: 1_000_000 + index,
-    complete: true,
+    tokensComplete: true,
   }));
   const snapshot = { ...profile, days };
   const payload = encodeProfilePayload(snapshot);

@@ -245,6 +245,50 @@ test('revisits a large deferred file before startup reports readiness', async (t
   assert.equal(harness.database.snapshot().totals.events, 2_067);
 });
 
+test('Claude keeps final usage once across streamed blocks, fork copies and restarts', async (t) => {
+  const harness = await createHarness(t);
+  const path = join(harness.sourceRoot, 'stream.jsonl');
+  const first = JSON.parse(claudeLine('stream'));
+  first.message.model = 'claude-opus-5-5';
+  first.message.usage.output_tokens = 1;
+  await writeFile(path, `${JSON.stringify(first)}\n`);
+  await harness.ingest.reconcile();
+  const final = structuredClone(first);
+  final.message.usage.output_tokens = 40;
+  await appendFile(path, `${JSON.stringify(final)}\n`);
+  await harness.ingest.reconcile();
+  await writeFile(
+    join(harness.sourceRoot, 'fork.jsonl'),
+    `${JSON.stringify({ ...final, sessionId: 'copied-session' })}\n`,
+  );
+  await harness.ingest.reconcile();
+  await harness.ingest.close();
+  harness.database.close();
+  harness.database = openDatabase(harness.databasePath);
+  harness.ingest = createIngest(harness.database, harness.sourceRoot);
+  await harness.ingest.start();
+  const snapshot = harness.database.snapshot();
+  assert.equal(snapshot.totals.events, 1);
+  assert.equal(snapshot.lifetimeTokens, 165);
+  assert.equal(snapshot.totals.estimatedCostMicrousd, 1229);
+  assert.deepEqual(snapshot.harnesses[0], {
+    id: 'claude-code',
+    name: 'Claude Code',
+    sessions: 1,
+    turns: 1,
+    events: 1,
+    tokens: 165,
+    tokensComplete: true,
+    costMicrousd: 1229,
+    costComplete: true,
+  });
+  assert.equal(snapshot.mostUsedHarness, 'claude-code');
+  assert.equal(snapshot.models[0]?.costMicrousd, 1229);
+  assert.equal(snapshot.days[0]?.costMicrousd, 1229);
+  harness.database.rebuildDaily();
+  assert.deepEqual(harness.database.snapshot().totals, snapshot.totals);
+});
+
 async function createHarness(t: TestContext): Promise<Harness> {
   const directory = await mkdtemp(join(tmpdir(), 'droidex-usage-ingest-'));
   const sourceRoot = join(directory, 'source');

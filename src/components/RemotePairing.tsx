@@ -1,13 +1,14 @@
-import { Check, Copy, KeyRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Check, Copy, KeyRound } from '@droidex/icons';
 import type { RemoteSetup, RemoteState } from '../../packages/remote/src/desktop';
-import { ghostButton, primaryButton, secondaryButton } from './buttonStyles';
+import { Button } from './ui/Button';
+import { Field, Input } from './ui/Field';
 
 function useRemoteQr(value: string, setError: (message: string) => void) {
   const [qr, setQr] = useState({ value: '', image: '' });
   useEffect(() => {
     if (!value) return;
-    const api = window.droidControl;
+    const api = window.droidex;
     if (!api) return;
     let active = true;
     void api
@@ -26,20 +27,17 @@ function useRemoteQr(value: string, setError: (message: string) => void) {
   return qr.value === value ? qr.image : '';
 }
 
-function QrTile({ image, alt }: { image: string; alt: string }) {
-  return (
-    <div className="relative flex h-44 w-44 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-droid-sm">
-      {image ? (
-        <img src={image} alt={alt} className="droid-rise h-40 w-40" />
-      ) : (
-        <div
-          role="status"
-          aria-label="Preparing code"
-          className="h-36 w-36 animate-pulse rounded-lg bg-black/5"
-        />
-      )}
-    </div>
-  );
+// The code image carries its own white quiet zone, so it scans in either theme.
+function QrCode({ image, alt }: { image: string; alt: string }) {
+  if (!image)
+    return (
+      <div
+        role="status"
+        aria-label="Preparing code"
+        className="size-40 shrink-0 animate-pulse rounded-lg bg-elevated"
+      />
+    );
+  return <img src={image} alt={alt} className="droid-rise size-40 shrink-0 rounded-lg" />;
 }
 
 export function RemoteAuthenticatorSetup({
@@ -56,7 +54,7 @@ export function RemoteAuthenticatorSetup({
   const [starting, setStarting] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const qr = useRemoteQr(setup?.uri ?? '', setError);
-  const api = window.droidControl;
+  const api = window.droidex;
   if (!api) return null;
   const begin = async () => {
     setStarting(true);
@@ -71,27 +69,25 @@ export function RemoteAuthenticatorSetup({
   };
   if (!setup) {
     return (
-      <div className="space-y-3">
-        <p className="text-[12px] leading-[18px] text-droid-text-muted">
-          Each new device needs a code from your authenticator app, then your approval here. Any
-          authenticator works, such as 1Password, Google Authenticator or Authy.
-        </p>
-        <button
-          className={primaryButton}
+      <div>
+        <Button
+          variant="primary"
+          size="lg"
+          icon={KeyRound}
+          loading={starting}
           disabled={busy || starting}
           onClick={() => {
             void begin();
           }}
         >
-          <KeyRound size={13} />
-          {starting ? 'Preparing…' : 'Set up authenticator'}
-        </button>
+          Show setup code
+        </Button>
       </div>
     );
   }
   return (
     <form
-      className="flex flex-col gap-5 sm:flex-row"
+      className="flex flex-col gap-6 sm:flex-row"
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -100,47 +96,55 @@ export function RemoteAuthenticatorSetup({
         });
       }}
     >
-      <QrTile image={qr} alt="Scan with your authenticator app" />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <ol className="space-y-1 text-[12px] leading-[18px] text-droid-text-secondary">
-          <li>1. Scan the code with your authenticator app.</li>
-          <li>2. Enter the 6-digit code it shows.</li>
-        </ol>
-        <button
-          type="button"
-          className="mt-1 self-start text-[11px] text-droid-text-muted underline decoration-droid-text-muted/40 underline-offset-2 hover:text-droid-text"
-          onClick={() => {
-            setShowKey(!showKey);
-          }}
-        >
-          {showKey ? 'Hide setup key' : 'Can’t scan? Enter the key instead'}
-        </button>
-        {showKey && (
-          <code className="mt-2 block select-all break-all rounded-lg bg-droid-elevated px-3 py-2 text-[11px] text-droid-text-secondary">
-            {setup.secret}
-          </code>
-        )}
-        <label className="mt-4 block text-[12px] text-droid-text-secondary">
-          Authenticator code
-          <input
+      <QrCode image={qr} alt="Setup code for your authenticator app" />
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
+        <div className="flex flex-col items-start gap-1">
+          <p className="text-body text-secondary">
+            Scan it with 1Password, Google Authenticator or any authenticator app.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2.5"
+            aria-expanded={showKey}
+            onClick={() => {
+              setShowKey(!showKey);
+            }}
+          >
+            {showKey ? 'Hide setup key' : 'Can’t scan? Show the key'}
+          </Button>
+          {showKey && (
+            <code className="block select-all break-all rounded-md bg-elevated px-3 py-2 font-mono text-code-sm text-secondary">
+              {setup.secret}
+            </code>
+          )}
+        </div>
+        <Field label="Code from the app">
+          <Input
             required
             autoFocus
             pattern="[0-9]{6}"
             placeholder="000000"
-            className="mt-1.5 block h-11 w-full max-w-[220px] rounded-lg bg-droid-elevated px-3 font-mono text-[18px] tabular-nums tracking-[0.4em] text-droid-text placeholder:text-droid-text-muted/40 focus:outline-none focus-visible:bg-droid-active"
+            className="max-w-48 font-mono tabular-nums tracking-widest"
             value={code}
-            onChange={(event) => {
-              setCode(event.target.value.replace(/\D/g, '').slice(0, 6));
-            }}
             inputMode="numeric"
             autoComplete="one-time-code"
             maxLength={6}
+            onChange={(event) => {
+              setCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+            }}
           />
-        </label>
-        <div className="mt-4">
-          <button type="submit" className={primaryButton} disabled={busy || code.length !== 6}>
-            {busy ? 'Verifying…' : 'Verify and turn on Remote'}
-          </button>
+        </Field>
+        <div>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            loading={busy}
+            disabled={busy || code.length !== 6}
+          >
+            Verify and go live
+          </Button>
         </div>
       </div>
     </form>
@@ -151,10 +155,10 @@ export function RemotePairingCode({
   url,
   setError,
 }: {
-  url: string | undefined;
+  url: string;
   setError: (message: string) => void;
 }) {
-  const qr = useRemoteQr(url ?? '', setError);
+  const qr = useRemoteQr(url, setError);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -165,43 +169,31 @@ export function RemotePairingCode({
       clearTimeout(timer);
     };
   }, [copied]);
-  if (!url) {
-    return (
-      <p className="text-[12px] leading-[18px] text-droid-text-muted">
-        Turn Remote on to show a pairing code.
-      </p>
-    );
-  }
   return (
-    <div className="flex flex-col gap-5 sm:flex-row">
-      <QrTile image={qr} alt="Scan with your other device’s camera to open this laptop" />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <ol className="space-y-1 text-[12px] leading-[18px] text-droid-text-secondary">
-          <li>1. Scan with your phone or tablet camera, or copy the link to another computer.</li>
-          <li>2. Enter the current code from your authenticator there.</li>
-          <li>3. Approve the device here.</li>
-        </ol>
-        <p className="mt-3 text-[11px] leading-[18px] text-droid-text-muted">
+    <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+      <QrCode image={qr} alt="Pairing code: scan it with your other device’s camera" />
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-3">
+        <p className="text-body text-secondary">
+          Scan it with your phone or tablet camera, or copy the link to another computer.
+        </p>
+        <p className="text-caption text-muted">
           The link carries this laptop’s key. Share it only with your own devices.
         </p>
-        <div className="mt-auto pt-4">
-          <button
-            className={copied ? secondaryButton : ghostButton}
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(url)
-                .then(() => {
-                  setCopied(true);
-                })
-                .catch(() => {
-                  setError('Could not copy the pairing link. Scan the code instead.');
-                });
-            }}
-          >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? 'Copied' : 'Copy pairing link'}
-          </button>
-        </div>
+        <Button
+          icon={copied ? Check : Copy}
+          onClick={() => {
+            void navigator.clipboard
+              .writeText(url)
+              .then(() => {
+                setCopied(true);
+              })
+              .catch(() => {
+                setError('Could not copy the pairing link. Scan the code instead.');
+              });
+          }}
+        >
+          {copied ? 'Copied' : 'Copy pairing link'}
+        </Button>
       </div>
     </div>
   );
