@@ -24,33 +24,34 @@ const PREVIEW_BASE = {
   ts: 0,
 };
 
-const PREVIEW_TOOL_EVENTS: TranscriptEvent[] = [
+const previewRead = (id: string, path: string): TranscriptEvent[] => [
   {
-    id: 'preview-read-call',
+    id: `${id}-call`,
     ...PREVIEW_BASE,
     kind: 'tool_call',
     toolName: 'Read',
-    toolArgs: { file_path: 'src/app.tsx' },
+    toolArgs: { file_path: path },
+    toolUseId: id,
   },
   {
-    id: 'preview-read-result',
+    id: `${id}-result`,
     ...PREVIEW_BASE,
     kind: 'tool_result',
-    text: 'export function App() { … }',
+    toolUseId: id,
+    text: `// ${path}`,
   },
-  {
-    id: 'preview-grep-call',
-    ...PREVIEW_BASE,
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'density' },
-  },
-  {
-    id: 'preview-grep-result',
-    ...PREVIEW_BASE,
-    kind: 'tool_result',
-    text: 'src/lib/toolActivity.ts:7',
-  },
+];
+
+const PREVIEW_TOOL_EVENTS: TranscriptEvent[] = [
+  // A burst of reads merges into a single "Read 6 files" row whose chip rail
+  // folds past the first four.
+  ...previewRead('preview-burst-1', 'src/main.tsx'),
+  ...previewRead('preview-burst-2', 'src/lib/store.ts'),
+  ...previewRead('preview-burst-3', 'src/lib/themeTokens.ts'),
+  ...previewRead('preview-burst-4', 'src/components/chat.tsx'),
+  ...previewRead('preview-burst-5', 'src/components/transcript/rows.tsx'),
+  ...previewRead('preview-burst-6', 'src/lib/tools.tsx'),
+  // A command between the burst and the search keeps them as separate rows.
   {
     id: 'preview-exec-call',
     ...PREVIEW_BASE,
@@ -63,6 +64,40 @@ const PREVIEW_TOOL_EVENTS: TranscriptEvent[] = [
     ...PREVIEW_BASE,
     kind: 'tool_result',
     text: '✓ 42 tests passed in 3.2s',
+  },
+  {
+    id: 'preview-grep-call',
+    ...PREVIEW_BASE,
+    kind: 'tool_call',
+    toolName: 'Grep',
+    toolArgs: { pattern: 'density' },
+  },
+  {
+    id: 'preview-grep-result',
+    ...PREVIEW_BASE,
+    kind: 'tool_result',
+    text: [
+      'src/lib/toolActivity.ts:7:  density,',
+      'src/components/ToolActivitySettings.tsx:40:  density,',
+      'src/components/transcript/rows.tsx:12:  density,',
+      'src/components/transcript/groups.tsx:31:  density,',
+      'src/components/transcript/toolFilesCard.tsx:58:  density,',
+      'src/lib/themeTokens.ts:103:  density,',
+      'src/hooks/useStore.tsx:912:  density,',
+    ].join('\n'),
+  },
+  {
+    id: 'preview-skill-call',
+    ...PREVIEW_BASE,
+    kind: 'tool_call',
+    toolName: 'Skill',
+    toolArgs: { skill: 'review', args: 'src/auth' },
+  },
+  {
+    id: 'preview-skill-result',
+    ...PREVIEW_BASE,
+    kind: 'tool_result',
+    text: 'Reviewed the changes in src/auth and reported findings.',
   },
 ];
 
