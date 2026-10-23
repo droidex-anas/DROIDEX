@@ -42,6 +42,7 @@ import { sessionResumeId } from '../features/providers/providerIdentity';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { SidebarFooter } from './SidebarFooter';
 import { SidebarNavigation } from './SidebarNavigation';
+import { useRemoteLaunchCard } from '../features/remote/useRemoteLaunchCard';
 
 export default function Sidebar({
   workspaceScopes,
@@ -153,6 +154,8 @@ export default function Sidebar({
     setWelcomeVisible(false);
     dismissSidebarCard(SIDEBAR_WELCOME_CARD_ID);
   };
+  // Remote's launch card follows the welcome card into the same slot.
+  const remoteLaunch = useRemoteLaunchCard(welcomeVisible);
 
   const compareRows = useCallback(
     (a: SessionSummary, b: SessionSummary) =>
@@ -358,7 +361,7 @@ export default function Sidebar({
             />
           </Tooltip>
         </div>
-        <SidebarNavigation announcementShown={welcomeVisible} />
+        <SidebarNavigation announcementShown={welcomeVisible || remoteLaunch.visible} />
       </div>
 
       <SidebarCustomize
@@ -424,6 +427,8 @@ export default function Sidebar({
           welcomeVisible={welcomeVisible}
           onStartChat={newChat}
           onDismissWelcome={dismissWelcome}
+          remoteLaunchVisible={remoteLaunch.visible}
+          onRetireRemoteLaunch={remoteLaunch.retire}
         />
       </div>
 

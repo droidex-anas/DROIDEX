@@ -44,8 +44,9 @@ function resumeAll(toasts: ToastItem[]) {
   for (const t of toasts) resumeToast(t.id);
 }
 
-// Bottom-right, above the status bar, newest closest to the corner. Hovering
-// or focusing the stack, or leaving the window, pauses every countdown. Each
+// Bottom-right, above the status bar or a pending Remote approval (.toast-stack),
+// newest closest to the corner. Hovering or focusing the stack, or leaving the
+// window, pauses every countdown. Each
 // toast is its own live region: role="status" on the container would imply
 // aria-atomic and re-announce the whole stack whenever one arrives.
 export default function Toaster() {
@@ -103,7 +104,7 @@ export default function Toaster() {
     <section
       ref={regionRef}
       aria-label="Notifications"
-      className="pointer-events-none fixed bottom-11 right-4 z-toast flex flex-col items-end gap-2"
+      className="toast-stack pointer-events-none fixed right-4 z-toast flex flex-col items-end gap-2"
       onMouseEnter={() => {
         pauseAll(toasts);
       }}

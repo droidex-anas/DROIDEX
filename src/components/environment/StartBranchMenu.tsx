@@ -6,6 +6,7 @@ import { Input } from '../ui/Field';
 import { Popover } from '../ui/Popover';
 import { Menu } from '../ui/Menu';
 import { checkoutGitBranch, createGitBranch, stripRemotePrefix } from '../../lib/git';
+import { searchItems } from '../../lib/searchMatch';
 import { useGitFetchOnOpen } from '../../hooks/useGitFetchOnOpen';
 import { useBusyAction } from '../../hooks/useBusyAction';
 import { toast } from '../../lib/toast';
@@ -65,18 +66,16 @@ export function StartBranchMenu({
   };
 
   const { locals, remotes } = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const locals = (branches?.local ?? [])
-      .filter((b) => !q || b.name.toLowerCase().includes(q))
-      .sort((a, b) => {
-        if (a.name === selected) return -1;
-        if (b.name === selected) return 1;
-        return b.committerDate - a.committerDate;
-      });
+    const recentFirst = [...(branches?.local ?? [])].sort((a, b) => {
+      if (a.name === selected) return -1;
+      if (b.name === selected) return 1;
+      return b.committerDate - a.committerDate;
+    });
+    const locals = searchItems(query, recentFirst, (b) => [b.name]);
     // Keep remote entries visible even when a local branch shares the short
     // name — the user may want to create a worktree from a different remote's
     // version (e.g. upstream/foo vs origin/foo).
-    const remotes = (branches?.remote ?? []).filter((r) => !q || r.name.toLowerCase().includes(q));
+    const remotes = searchItems(query, branches?.remote ?? [], (r) => [r.name]);
     return { locals, remotes };
   }, [branches, query, selected]);
 

@@ -66,7 +66,11 @@
     "docs:check": "node tools/generate-docs.mjs --check && node tools/check-agents-md.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "remote:dev": "vite --config remote-web/vite.config.ts",
+    "remote:typecheck": "tsc -p remote-web/tsconfig.json",
+    "remote:build": "npm run remote:typecheck && vite build --config remote-web/vite.config.ts",
+    "relay:typecheck": "tsc -p relay/tsconfig.json --noEmit"
   },
   "dependencies": {
     "@sentry/core": "^10.67.0",

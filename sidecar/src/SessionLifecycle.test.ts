@@ -242,7 +242,8 @@ function createHarness(
       delivery?.accepted();
     },
     context: {
-      preserveUsage: () => undefined,
+      preserveUsage: (appSessionId, offset) =>
+        record('provider', 'context.preserveUsage', appSessionId, offset),
       refresh: (target) => {
         record('provider', 'context.refresh', target.sourceSessionId);
         return Promise.resolve();
@@ -2154,6 +2155,21 @@ test('closing a pending fork refuses its first open but permits a later resume',
   await harness.lifecycle.closeAll();
   queueLoad(harness, 'provider-copy');
   assert.equal(await harness.lifecycle.resume('provider-copy'), true);
+});
+
+test('a cold Claude resume seeds historical billing usage once before new turns', async (context) => {
+  const h = createHarness([
+    summary('claude-chat', 'claude-provider', { provider: 'claude', tokensIn: 100, tokensOut: 40 }),
+  ]);
+  context.after(() => h.lifecycle.closeAll());
+  const provider = queueLoad(h, 'claude-provider');
+  h.setProvider(claudeResumeProvider(h, provider));
+  assert.equal(await h.lifecycle.resume('claude-chat'), true);
+  assert.equal(await h.lifecycle.resume('claude-chat'), true);
+  assert.deepEqual(
+    h.calls.filter((call) => call.method === 'context.preserveUsage').map((call) => call.args),
+    [['claude-chat', { tokensIn: 100, tokensOut: 40 }]],
+  );
 });
 
 test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {

@@ -160,9 +160,16 @@ import { join } from 'node:path';
 // header, sidebar and composer render tooltips and popovers at first frame, so
 // it cannot load lazily. ui/design-system at 350127115 measures 1_457_791, with
 // the primitives 1_482_569, leaving ~3.4KB.
+//
+// initialCssBytes raised from 106_000 to 110_000 for Profile and Remote setup.
+// Their JavaScript stays in the lazy Settings chunk, while Tailwind collects
+// their layout, state and heatmap utilities into the entry stylesheet. The
+// production build measures 108_631 bytes, leaving ~1.3KB of headroom. The
+// Remote browser build compiles its own stylesheet (remote-web/vite.config.ts),
+// so its pairing screens do not count here.
 const BUDGETS = {
   initialRendererJsBytes: 1_486_000,
-  initialCssBytes: 106_000,
+  initialCssBytes: 110_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

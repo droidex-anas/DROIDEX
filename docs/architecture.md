@@ -355,9 +355,119 @@ and warned, not failed, on shared runners. Bundle bytes stay gated by
 `npm run quality:bundle-budgets`. Release numbers live in
 `docs/performance-budgets.md`.
 
+## Remote and local profile
+
+Electron owns the opt-in remote host, OS-keychain-encrypted identity/TOTP/device
+state and keep-awake lease. Its separate `sidecar/dist/remoteHost.mjs` bundle
+connects outbound to the hibernating Cloudflare relay and to the existing local
+bridge. The relay stores public name ownership and forwards bounded opaque
+frames; pinned, signed P-256 handshakes derive separate AES-GCM direction keys.
+Only the laptop verifies authenticator codes and admits devices.
+
+A paired browser runs the same renderer as the Electron window; only its
+transport differs. The Remote web client (`remote-web/`) pairs the browser,
+then installs `window.droidex` from `remoteDesktopApi.ts` before it imports
+`src/App`. Inside the encrypted channel, `packages/remote/src/tunnel.ts` chunks
+and compresses messages, and each authorized browser gets a `PeerSession` in
+the Remote host that owns three things: bridge sockets it opens to the local
+sidecar exactly as the window does, terminal ports, and desktop API calls.
+Desktop calls reach Electron's own handlers through `electron/remoteDesktop.cjs`,
+which binds `electron/desktopApi.cjs` (the method table the preload also
+exposes) to a per-browser sender. `REMOTE_DESKTOP_METHODS` in
+`packages/remote/src/application.ts` lists what a browser may call; methods that
+drive the laptop's own window (native dialogs and browser panes, updates,
+relaunch, Remote pairing) are left out. A trusted browser can therefore do
+what the window can: start and steer agents at any autonomy, answer permission
+requests, run terminals and use Git.
+
+The browser starts from the window's stored projects, theme and agent settings
+(`renderer-storage-read`), so the laptop window must be open. Projects and chat
+organization stay one list: each copy saves locally and relays the value
+through `shared-storage-write`, which Electron forwards to the window and every
+other browser (`useSharedStorage`). A browser re-reads these keys whenever it
+reconnects and drops a save made from its stale copy. Browser identities are non-extractable keys
+in IndexedDB. Generic Web Push is sent directly by the laptop using locally
+generated VAPID keys. There is no cloud agent job, offline message store or
+provider credential in the client.
+
+The sidecar's dedicated usage worker incrementally ingests Claude Code and Codex
+JSONL, Factory Droid's mutable settings metadata, and OpenCode's read-only
+SQLite usage rows into the profile-scoped `usage.sqlite` ledger.
+Normalized events and their cursors commit together; harness-specific dedupe
+keys make replay and rotation idempotent. Each adapter has an independent
+indexing state, so a failed source cannot poison the database or stop other
+sources. Snapshots remain responsive while indexing and are explicitly labeled;
+the renderer does not publish partial totals as a finished profile. Token
+categories remain nullable, daily activity and session/model sets are
+rebuildable caches, and the renderer reads only bounded aggregates through an
+authenticated localhost endpoint. This work stays off both the renderer and
+Remote host event loops.
+
+#### How usage counting works
+
+The usage worker starts with the sidecar, independently of opening Profile.
+Claude/Codex JSONL, Droid settings and OpenCode database/WAL changes wake
+incremental ingest; each source also reconciles every minute. Persisted cursors
+and request identities make scans, file rotation and restarts idempotent.
+Claude uses message ID plus request ID and retains the largest streamed usage
+snapshot. Codex uses per-request usage or consecutive cumulative differences,
+matches response records to their notifications, and skips the dense inherited
+history burst at the start of a fork while retaining its counter baseline.
+Droid settings supply cumulative session counters, so their deltas are stored;
+they cannot supply a reliable request count. OpenCode uses message identities.
+
+Schema v4 stores counts and identifiers in `usage_event`, including provider,
+model, session, workspace, timestamp, cache subsets, reported/estimated cost and
+the applied price version. Only a richer Claude snapshot may update an existing
+request; identities remain immutable. `usage_session` stores observed first/last
+usage timestamps and request counts (unknown for Droid), and
+`usage_session_model` records its models. `usage_daily` is a rebuildable aggregate
+cache. Unsupported schemas fail with backup/remove/restart recovery instructions;
+there is no automatic migration or deletion of a user's ledger.
+
+Estimates use versioned, dated official Anthropic/OpenAI list prices, including
+cache reads, 5-minute/1-hour Claude writes, supported service tiers and context
+thresholds. An aggregate Claude cache write without a TTL breakdown uses the
+default 5-minute rate. Unknown/custom model IDs stay unpriced rather than being
+matched to a similar model. Reported cost takes precedence over an estimate in
+the usage breakdown. Missing core token counters and unpriced requests have
+explicit coverage flags; optional, omitted cache fields do not make a known
+token total uncertain. Days use the machine's IANA timezone, which is included
+in every snapshot. Prompt text and raw log contents are never stored. Nothing
+leaves the machine except the already-published public profile aggregates;
+the authenticated laptop/Remote snapshot also contains only aggregates. Future
+opt-in aggregation can reuse these summaries without paths or session IDs.
+
+Snapshots expose one set of top-level `harnesses` and `models` breakdowns with
+session/request counts, token and cost sums, and independent completeness flags.
+`mostUsedHarness` identifies the first harness, ordered by sessions then tokens.
+Top-level `days` uses the same `tokensComplete`, `costMicrousd`, and `costComplete`
+fields. The strict transport allowlist bounds rows to 32 harnesses, 256 models,
+and 366 days; the authenticated response also has a 256 KiB byte limit.
+Public profiles select only day/date token counts and `tokensComplete`, plus the
+top five harness/model names and session counts. Identifiers, costs, paths, and
+session IDs are excluded from that published subset.
+
+The same ledger has an append-only, ID-only `droidex_session` table for the
+profile headline session count. The sidecar seeds durable top-level
+`app_sessions` from canonical history at startup and records every successful
+create or resume idempotently. Profile reads wait for that worker write tail.
+Child sessions and session metadata never enter the table; harness and model
+rankings continue to count only usage-bearing provider sessions.
+
+Opt-in public profiles use the stable `/public/<username>` route. The laptop
+signs a strictly allowlisted aggregate with its P-256 username-owner key and
+explicitly publishes the bounded payload and signature to the handle's Durable
+Object. The viewer fetches that public bundle, verifies the owner signature, and
+never contacts the laptop. Update and exact-current revoke remain owner-signed;
+private usage events and Remote credentials stay local. The short route trusts
+the relay's username-to-key registry for public-profile authenticity; paired
+Remote sessions independently pin the laptop key. See [Local usage ledger](usage.md)
+and [Remote and Profile](remote.md).
+
 ## Build path
 
-`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus `sidecar/dist/historyPersistenceWorker.mjs`; Electron uses the former unless `SIDECAR_ENTRY` is set and packages both from `sidecar/dist`.
+`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs`, `sidecar/dist/historyPersistenceWorker.mjs`, `sidecar/dist/usageWorker.mjs`, and the Remote host bundle; Electron uses the main sidecar unless `SIDECAR_ENTRY` is set and packages the bundles from `sidecar/dist`.
 
 ## Update path
 

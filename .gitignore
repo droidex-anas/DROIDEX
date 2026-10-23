@@ -32,3 +32,7 @@ docs/superpowers/
 
 # Dated output of agent security scans (regenerated per scan)
 /security-findings.json
+
+remote-web/dist/
+relay/.wrangler/
+.vercel/

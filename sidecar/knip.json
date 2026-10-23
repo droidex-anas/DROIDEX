@@ -2,6 +2,8 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/index.ts",
+    "src/remote/host.ts",
+    "src/usage/usageWorker.ts",
     "src/testing/isolatedTestEnv.ts",
     "src/**/*.test.ts",
     "regression/**/*.test.ts"

@@ -67,30 +67,68 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   variant?: InputVariant;
   /** Outside a Field; inside one, the Field's error decides. */
   invalid?: boolean;
+  /** Fixed text before the value, such as the `@` of a username. */
+  leading?: string;
+}
+
+function inputFill(invalid: boolean, variant: InputVariant) {
+  if (invalid) return 'bg-danger-soft ring-1.5 ring-danger';
+  return variant === 'embedded' ? '' : 'bg-field';
 }
 
 // The single-line text field: filled, never outlined. Outside a Field, give
 // it an aria-label.
-export function Input({ ref, variant = 'default', invalid, className, ...rest }: InputProps) {
+export function Input({
+  ref,
+  variant = 'default',
+  invalid,
+  leading,
+  className,
+  ...rest
+}: InputProps) {
   const field = useContext(FieldContext);
   const isInvalid = field?.invalid ?? invalid ?? false;
-  let fill = 'bg-field enabled:hover:bg-active';
-  if (isInvalid) fill = 'bg-danger-soft ring-1.5 ring-danger';
-  else if (variant === 'embedded') fill = '';
-  return (
+  const fill = inputFill(isInvalid, variant);
+  const hovers = fill === 'bg-field';
+  const input = (
     <input
       ref={ref}
       id={field?.inputId}
       aria-describedby={field?.describedBy}
       aria-invalid={isInvalid || undefined}
       {...rest}
+      className={
+        leading === undefined
+          ? cn(
+              'w-full min-w-0 text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
+              VARIANT[variant],
+              fill,
+              hovers && 'enabled:hover:bg-active',
+              className,
+            )
+          : 'h-full w-full min-w-0 bg-transparent text-primary placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed'
+      }
+    />
+  );
+  if (leading === undefined) return input;
+  // The leading text sits in the same line box as the value, so both share
+  // one baseline at every size. The label wrapper lets a click on it focus
+  // the input; index.css draws the focus ring on the wrapper.
+  return (
+    <label
       className={cn(
-        'w-full min-w-0 text-primary transition-colors duration-150 ease-out placeholder:text-muted',
-        'disabled:cursor-not-allowed disabled:opacity-40',
+        'field-affix flex cursor-text items-center transition-colors duration-150 ease-out',
         VARIANT[variant],
         fill,
+        hovers && !rest.disabled && 'hover:bg-active',
+        rest.disabled && 'cursor-not-allowed opacity-40',
         className,
       )}
-    />
+    >
+      <span aria-hidden="true" className="shrink-0 select-none text-muted">
+        {leading}
+      </span>
+      {input}
+    </label>
   );
 }

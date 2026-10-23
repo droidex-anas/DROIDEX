@@ -12,7 +12,7 @@ class FakeWebSocket {
   readyState = 0;
   sent: string[] = [];
   onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event?: { code: number }) => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   onerror: (() => void) | null = null;
   closeArgs: [number | undefined, string | undefined] | null = null;
@@ -40,6 +40,11 @@ class FakeWebSocket {
     this.closeArgs = [code, reason];
     this.readyState = 3;
     this.onclose?.();
+  }
+
+  closedByServer(code: number): void {
+    this.readyState = 3;
+    this.onclose?.({ code });
   }
 }
 
@@ -591,6 +596,17 @@ test('snapshot storage failures reach clients without an earlier error event', a
   if (searchUnavailable.type === 'error') {
     assert.ok(searchUnavailable.message.includes(repairInstructions));
   }
+});
+
+test('bridge stops reconnecting and reports why when the sidecar refuses its protocol', async () => {
+  const { socket, seen, reconnect } = await startBridge();
+
+  socket.closedByServer(1002);
+
+  assert.equal(await reconnect(), socket);
+  const last = seen.at(-1);
+  assert.ok(last?.type === 'connection' && last.status === 'error');
+  assert.match(last.message ?? '', /Update DROIDEX on your laptop/);
 });
 
 function required<T>(value: T | undefined): T {

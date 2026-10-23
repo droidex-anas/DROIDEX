@@ -617,6 +617,11 @@ export class SessionLifecycle {
       this.subscribeAutomaticCompaction(liveSession);
       this.subscribeBackgroundEvents(liveSession);
       await d.registry.register(liveSession, requireCurrentResume);
+      if (kind === 'claude')
+        d.context.preserveUsage(appSessionId, {
+          tokensIn: projectedSummary.tokensIn,
+          tokensOut: projectedSummary.tokensOut,
+        });
       this.subscribeCatalog(liveSession);
       this.observeProviderClosure(liveSession);
       // Registered first, so the failed-open path that unregisters also releases it.

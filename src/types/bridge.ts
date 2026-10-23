@@ -1120,8 +1120,7 @@ export type ServerEvent =
   | { type: 'event.appended'; event: TranscriptEvent }
   | { type: 'approval.requested'; request: PermissionRequest }
   | { type: 'question.requested'; question: SessionQuestion }
-  // An approval or question the session will never get an answer for, because
-  // the turn that raised it ended first.
+  // Removes a settled or abandoned approval, or an abandoned question.
   | { type: 'interaction.cancelled'; appSessionId: string; requestId: string }
   // A question another chat answered, so the window stops asking it.
   | { type: 'question.answered'; appSessionId: string; requestId: string }

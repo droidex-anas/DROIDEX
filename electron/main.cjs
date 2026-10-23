@@ -6,9 +6,11 @@ const {
   Notification,
   dialog,
   ipcMain,
+  MessageChannelMain,
   nativeImage,
   nativeTheme,
   powerMonitor,
+  powerSaveBlocker,
   protocol,
   safeStorage,
   session,
@@ -48,6 +50,10 @@ const { createAppUpdater } = require('./appUpdater.cjs');
 const Sentry = require('@sentry/electron/main');
 const { createDiagnostics } = require('./diagnostics.cjs');
 const { createUsageAnalytics } = require('./usageAnalytics.cjs');
+const { createRemoteAccess } = require('./remoteAccess.cjs');
+const { createDesktopIpc } = require('./desktopIpc.cjs');
+const { createRemoteDesktop, isRemoteSender } = require('./remoteDesktop.cjs');
+const { createProfileUsage } = require('./profileUsage.cjs');
 const {
   preferenceFilePath: hardwareAccelerationPreferenceFilePath,
   readHardwareAccelerationPreferenceSync,
@@ -73,6 +79,12 @@ const terminalManager = createTerminalManager({
   },
 });
 const terminalSubscriptions = createTerminalSubscriptionRegistry(terminalManager);
+const desktopIpc = createDesktopIpc({ ipcMain, assertRenderer: assertMainRenderer });
+const remoteDesktop = createRemoteDesktop({
+  desktopIpc,
+  MessageChannelMain,
+  subscribeTerminal: (sender, id, port) => terminalSubscriptions.subscribe(sender, id, port),
+});
 const performanceMetrics = createPerformanceMetricsCollector({
   countPtys: () => terminalManager.count(),
   listWebContents: () => webContents.getAllWebContents(),
@@ -109,6 +121,7 @@ sidecarSupervisor.subscribe((status) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('sidecar-status', status);
   }
+  remoteDesktop.broadcast('sidecar-status', status);
 });
 const appUpdater = createAppUpdater({
   app,
@@ -211,6 +224,23 @@ if (
   app.disableHardwareAcceleration();
 }
 // Before diagnostics writes into userData, or a new install looks like an old one.
+const remoteAccess = createRemoteAccess({
+  app,
+  safeStorage,
+  powerSaveBlocker,
+  hostModule: path.join(
+    app.isPackaged ? process.resourcesPath : appRoot(),
+    'sidecar/dist/remoteHost.mjs',
+  ),
+  bridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
+  desktop: remoteDesktop,
+  changed: (state) => {
+    if (state.pending.length && !isWindowUsable(mainWindow)) createMainWindow();
+    if (isWindowUsable(mainWindow)) mainWindow.webContents.send('remote-state-changed', state);
+  },
+});
+const profileUsage = createProfileUsage({ bridgeInfo: () => sidecarSupervisor.getBridgeInfo() });
+
 usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
 app.whenReady().then(async () => {
@@ -224,6 +254,8 @@ app.whenReady().then(async () => {
     shell,
     logError: (message) => console.error('[menu] %s', message),
   });
+  remoteAccess.registerIpc(desktopIpc);
+  profileUsage.registerIpc(desktopIpc);
   registerIpc();
   registerLocalImageProtocol();
   registerMediaPermissions();
@@ -249,14 +281,22 @@ app.whenReady().then(async () => {
     if (appIconMode === 'system') applyAppIcon();
   });
   void sidecarSupervisor.start().catch((error) => console.error(error));
+  void remoteAccess
+    .resume()
+    .catch(() =>
+      console.error('[remote] Could not resume. Open Remote settings to review configuration.'),
+    );
+  // The relay socket rarely survives sleep, and it can look open long after.
+  powerMonitor.on('resume', () => remoteAccess.reconnect());
 });
 
 app.on('window-all-closed', () => {
-  sidecarSupervisor.stop();
+  if (!remoteAccess.isEnabled()) sidecarSupervisor.stop();
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
+  void remoteAccess.close().catch(() => console.error('[remote] Could not flush local state'));
   sidecarSupervisor.stop();
   githubVcs.cancelSetup();
   closeAllDesktopNotifications();
@@ -269,6 +309,11 @@ app.on('activate', () => {
   if (!mainWindow) createMainWindow();
   else focusMainWindow();
   void sidecarSupervisor.start().catch((error) => console.error(error));
+  void remoteAccess
+    .resume()
+    .catch(() =>
+      console.error('[remote] Could not resume. Open Remote settings to review configuration.'),
+    );
   deliverPendingNotificationOpen();
 });
 
@@ -460,45 +505,49 @@ function registerFaviconProtocol() {
 }
 
 function registerIpc() {
-  ipcMain.handle('bridge-info', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('bridge-info', () => {
     return sidecarSupervisor.getBridgeInfo();
   });
-  ipcMain.handle('sidecar-status', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('sidecar-status', () => {
     return sidecarSupervisor.snapshot();
   });
-  ipcMain.handle('pick-directory', async (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('pick-directory', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     const selected = result.canceled ? null : (result.filePaths[0] ?? null);
     if (selected) await filesRootAccess.authorize(selected);
     return selected;
   });
-  ipcMain.handle('pick-files', async (event) => {
-    assertMainRenderer(event);
+  // A Remote browser has no folder dialog for the laptop; it browses with this.
+  desktopIpc.handle('list-directories', async ({ path: dir }) => {
+    const root = await files.canonicalDirectory(expandHome(dir || '~'));
+    const entries = await fsp.readdir(root, { withFileTypes: true });
+    const directories = entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 2000);
+    const parent = path.dirname(root);
+    return { path: root, parent: parent === root ? null : parent, directories };
+  });
+  desktopIpc.handle('pick-files', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : result.filePaths;
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.
   const attachmentsDir = path.join(os.tmpdir(), 'droidex-attachments');
-  ipcMain.handle('save-image', (event, { dataUrl }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('save-image', ({ dataUrl }) => {
     return attachments.save(attachmentsDir, dataUrl);
   });
   // Pasted non-image files (PDF, doc, video, ...) land in the same temp store
   // and likewise travel to Droid as @-mentioned paths.
-  ipcMain.handle('save-attachment', (event, { name, dataUrl }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('save-attachment', ({ name, dataUrl }) => {
     return attachments.saveFile(attachmentsDir, { name, dataUrl });
   });
-  ipcMain.handle('discard-image', (event, { path: target }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('discard-image', ({ path: target }) => {
     return attachments.discard(attachmentsDir, target);
   });
-  ipcMain.handle('save-image-as', async (event, { url, name }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('save-image-as', async ({ url, name }) => {
     // Node's fetch decodes data: URLs; only the session's fetch reaches droidex-img.
     const signal = AbortSignal.timeout(30_000);
     const response =
@@ -515,8 +564,7 @@ function registerIpc() {
   // OS finish/status banners. silent=false plays the system notification sound.
   // Foreground suppress is owned by the renderer; click opens the finished
   // session via the pending-open queue.
-  ipcMain.handle('notify', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('notify', (payload = {}, sender) => {
     const title =
       typeof payload.title === 'string' && payload.title.trim()
         ? payload.title.trim().slice(0, 120)
@@ -527,6 +575,8 @@ function registerIpc() {
       typeof payload.appSessionId === 'string' && payload.appSessionId.trim()
         ? payload.appSessionId.trim().slice(0, 200)
         : null;
+    // Whatever needs the user at the laptop also needs them on a paired phone.
+    if (!isRemoteSender(sender)) remoteAccess.notifyDevices();
     // Dock icon is applied on launch / icon settings; reuse that path for the banner.
     const iconPath = path.join(__dirname, 'assets', resolveAppIconFile(appIconMode));
     return showDesktopNotification(Notification, {
@@ -539,8 +589,7 @@ function registerIpc() {
     });
   });
   // Renderer acks after applying SET_ACTIVE_SESSION so we stop re-delivering.
-  ipcMain.handle('notification-activate-ack', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('notification-activate-ack', (payload = {}) => {
     const appSessionId =
       typeof payload.appSessionId === 'string' ? payload.appSessionId.trim() : '';
     if (
@@ -552,228 +601,214 @@ function registerIpc() {
     return { ok: true };
   });
   // Pull path: renderer asks on focus/visibility in case the push event was lost.
-  ipcMain.handle('notification-take-pending', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('notification-take-pending', () => {
     return takePendingNotificationOpen();
   });
-  ipcMain.handle('get-api-key', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('get-api-key', () => {
     return getApiKey();
   });
-  ipcMain.handle('set-api-key', (event, { key }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('set-api-key', ({ key }) => {
     return setApiKey(key);
   });
-  ipcMain.handle('list-files', (event, { dir }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('list-files', ({ dir }) => {
     return listFiles(dir);
   });
-  ipcMain.handle('get-performance-metrics', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('get-performance-metrics', () => {
     return performanceMetrics.collect();
   });
-  ipcMain.handle('system-idle-time', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('system-idle-time', () => {
     return powerMonitor.getSystemIdleTime();
   });
-  ipcMain.handle('power-tier', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('power-tier', () => {
     return powerTier.snapshot();
   });
-  ipcMain.handle('read-file', (event, { path: filePath }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('read-file', ({ path: filePath }) => {
     return readFile(filePath);
   });
-  ipcMain.handle('repo-status', (event, { dir }) => {
-    assertMainRenderer(event);
+  // A Remote browser cannot load droidex-img URLs, so it asks for the bytes.
+  // The tunnel is far slower than the protocol handler, hence the lower cap.
+  desktopIpc.handle('local-image-read', ({ url }) => {
+    const filePath = localImages.localImageRequestPath(url);
+    return localImages.readLocalImage(filePath, { maxBytes: 8 * 1024 * 1024 });
+  });
+  // Projects and appearance live in the window's localStorage; a Remote
+  // browser starts from the laptop's copy instead of an empty app.
+  desktopIpc.handle('renderer-storage-read', ({ keys } = {}) => {
+    if (
+      !Array.isArray(keys) ||
+      keys.length > 16 ||
+      !keys.every((key) => typeof key === 'string' && /^droid-[a-z0-9-]{1,60}$/.test(key))
+    )
+      throw new Error('Invalid storage keys');
+    if (!isWindowUsable(mainWindow)) throw new Error('Open the DROIDEX window on your laptop');
+    return mainWindow.webContents.executeJavaScript(
+      `Object.fromEntries(${JSON.stringify(keys)}.map((key) => [key, localStorage.getItem(key)]))`,
+    );
+  });
+  // Projects and chat organization are one list: a change in the window or in
+  // any Remote browser reaches every other copy of the app.
+  const SHARED_STORAGE_KEYS = new Set(['droid-workspaces', 'droid-chat-metadata']);
+  desktopIpc.handle('shared-storage-write', ({ key, value } = {}, sender) => {
+    if (!SHARED_STORAGE_KEYS.has(key) || typeof value !== 'string' || value.length > 2_000_000)
+      throw new Error('Invalid shared storage value');
+    const change = { key, value };
+    if (isWindowUsable(mainWindow) && mainWindow.webContents !== sender) {
+      mainWindow.webContents.send('shared-storage-changed', change);
+    }
+    remoteDesktop.broadcast('shared-storage-changed', change, sender);
+  });
+  desktopIpc.handle('repo-status', ({ dir }) => {
     return gitVcs.repoStatus(dir);
   });
-  ipcMain.handle('list-editors', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('list-editors', () => {
     return editorApps.listEditors();
   });
-  ipcMain.handle('editor-icon', (event, { editor }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('editor-icon', ({ editor }) => {
     return editorApps.editorIcon(editor);
   });
-  ipcMain.handle('open-project', (event, { dir, editor, target }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('open-project', ({ dir, editor, target }) => {
     return openProject(dir, editor, target);
   });
 
-  ipcMain.handle('git-environment', (event, { dir }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-environment', ({ dir }) => {
     return gitVcs.environment(dir);
   });
-  ipcMain.handle('git-branches', (event, { dir }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-branches', ({ dir }) => {
     return gitVcs.branches(dir);
   });
-  ipcMain.handle('git-worktrees', (event, { dir }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-worktrees', ({ dir }) => {
     return gitVcs.worktrees(dir);
   });
-  ipcMain.handle('git-diff-stat', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-diff-stat', ({ dir, options }) => {
     return gitVcs.diffStat(dir, options);
   });
-  ipcMain.handle('git-diff-files', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-diff-files', ({ dir, options }) => {
     return gitVcs.diffFiles(dir, options);
   });
-  ipcMain.handle('git-file-diff', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-file-diff', ({ dir, options }) => {
     return gitVcs.fileDiff(dir, options);
   });
-  ipcMain.handle('git-mark-turn-start', (event, { dir, ownerId }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-mark-turn-start', ({ dir, ownerId }) => {
     return gitVcs.markTurnStart(dir, ownerId);
   });
-  ipcMain.handle('git-adopt-turn-baseline', (event, { dir, clientRef, appSessionId }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-adopt-turn-baseline', ({ dir, clientRef, appSessionId }) => {
     return gitVcs.adoptTurnBaseline(dir, clientRef, appSessionId);
   });
-  ipcMain.handle('git-create-branch', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-create-branch', ({ dir, options }) => {
     return gitVcs.createBranch(dir, options);
   });
-  ipcMain.handle('git-checkout', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-checkout', ({ dir, options }) => {
     return gitVcs.checkout(dir, options);
   });
-  ipcMain.handle('git-create-worktree', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-create-worktree', ({ dir, options }) => {
     return gitVcs.createWorktree(dir, options);
   });
-  ipcMain.handle('git-remove-worktree', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-remove-worktree', ({ dir, options }) => {
     return gitVcs.removeWorktree(dir, options);
   });
-  ipcMain.handle('git-commit', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-commit', ({ dir, options }) => {
     return gitVcs.commit(dir, options);
   });
-  ipcMain.handle('git-push', (event, { dir, options }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-push', ({ dir, options }) => {
     return gitVcs.push(dir, options);
   });
-  ipcMain.handle('git-fetch', (event, { dir }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('git-fetch', ({ dir }) => {
     return gitVcs.fetchRemotes(dir);
   });
 
-  ipcMain.handle('github-available', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-available', () => {
     return githubVcs.available();
   });
-  ipcMain.handle('github-install', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-install', () => {
     return githubVcs.install();
   });
-  ipcMain.handle('github-authenticate', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-authenticate', (_payload, sender) => {
     return githubVcs.authenticate({
       onDeviceCode: (code) => {
-        if (!event.sender.isDestroyed()) event.sender.send('github-auth-code', { code });
+        if (!sender.isDestroyed()) sender.send('github-auth-code', { code });
       },
     });
   });
-  ipcMain.handle('github-cancel-setup', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-cancel-setup', () => {
     githubVcs.cancelSetup();
     return { ok: true };
   });
-  ipcMain.handle('github-detect-pr', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-detect-pr', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, pr: null };
     return githubVcs.detectPr(requestDir, options);
   });
-  ipcMain.handle('github-list-prs', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-list-prs', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid', viewerLogin: null, prs: [] };
     return githubVcs.listPrs(requestDir, options);
   });
-  ipcMain.handle('github-view-pr', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-view-pr', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid', pr: null };
     return githubVcs.viewPr(requestDir, options);
   });
-  ipcMain.handle('github-pr-diff', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-pr-diff', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid', diff: '' };
     return githubVcs.prDiff(requestDir, options);
   });
-  ipcMain.handle('github-pr-checks', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-pr-checks', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid', checks: [] };
     return githubVcs.prChecks(requestDir, options);
   });
-  ipcMain.handle('github-pr-comments', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-pr-comments', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid', comments: [] };
     return githubPrConversation.prComments(requestDir, options);
   });
-  ipcMain.handle('github-create-pr', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-create-pr', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid' };
     return githubVcs.createPr(requestDir, options);
   });
-  ipcMain.handle('github-post-comment', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-post-comment', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid' };
     return githubVcs.postComment(requestDir, options);
   });
-  ipcMain.handle('github-merge-pr', (event, payload = {}) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('github-merge-pr', (payload = {}) => {
     const { dir, options } = payload || {};
     const requestDir = prWorkspaceRequestDir(dir);
     if (!requestDir) return { ok: false, reason: 'invalid' };
     return githubVcs.mergePr(requestDir, options);
   });
 
-  ipcMain.handle('onboarding-get', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('onboarding-get', () => {
     return getOnboarding();
   });
-  ipcMain.handle('onboarding-set', (event, { patch }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('onboarding-set', ({ patch }) => {
     return setOnboarding(patch);
   });
-  ipcMain.handle('app-version', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('app-version', () => {
     return app.getVersion();
   });
-  ipcMain.handle('app-check-update', (event, options) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('app-check-update', (options) => {
     return appUpdater.check(options);
   });
-  ipcMain.handle('app-download-update', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('app-download-update', () => {
     return appUpdater.downloadAndInstall();
   });
-  ipcMain.handle('feedback-report', async (event, report) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('feedback-report', async (report, sender) => {
     let screenshotPng = null;
-    if (report?.attachments?.screenshot && event.sender && !event.sender.isDestroyed()) {
+    if (report?.attachments?.screenshot && sender && !sender.isDestroyed()) {
       try {
         const image = await Promise.race([
-          event.sender.capturePage(),
+          sender.capturePage(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 3_000)),
         ]);
         if (!image.isEmpty()) {
@@ -788,60 +823,48 @@ function registerIpc() {
     }
     return diagnostics.reportFeedback(report, { screenshotPng });
   });
-  ipcMain.handle('diagnostics-preference-get', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('diagnostics-preference-get', () => {
     return diagnostics.automaticDiagnosticsPreference();
   });
-  ipcMain.handle('diagnostics-preference-set', async (event, { enabled }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('diagnostics-preference-set', async ({ enabled }) => {
     return diagnostics.setAutomaticDiagnosticsEnabled(enabled);
   });
-  ipcMain.handle('usage-analytics-bootstrap', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('usage-analytics-bootstrap', () => {
     return usageAnalytics.bootstrap();
   });
-  ipcMain.handle('usage-analytics-first-launch-reported', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('usage-analytics-first-launch-reported', () => {
     return usageAnalytics.markFirstLaunchReported();
   });
-  ipcMain.handle('usage-analytics-preference-get', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('usage-analytics-preference-get', () => {
     return usageAnalytics.preference();
   });
-  ipcMain.handle('usage-analytics-preference-set', async (event, { enabled }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('usage-analytics-preference-set', async ({ enabled }) => {
     return usageAnalytics.setEnabled(enabled);
   });
-  ipcMain.handle('hardware-acceleration-preference-get', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('hardware-acceleration-preference-get', () => {
     return loadHardwareAccelerationPreference({
       filePath: hardwareAccelerationPreferencePath,
       fs: fsp,
     });
   });
-  ipcMain.handle('hardware-acceleration-preference-set', async (event, { enabled }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('hardware-acceleration-preference-set', async ({ enabled }) => {
     return saveHardwareAccelerationPreference({
       filePath: hardwareAccelerationPreferencePath,
       enabled,
       fs: fsp,
     });
   });
-  ipcMain.handle('app-relaunch', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('app-relaunch', () => {
     relaunchApp();
   });
-  ipcMain.handle('app-set-icon', (event, payload) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('app-set-icon', (payload) => {
     return setAppIcon(payload?.mode);
   });
-  ipcMain.handle('open-external', (event, { url }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('open-external', ({ url }) => {
     return openExternal(url);
   });
 
-  ipcMain.handle('terminal-create', (event, args) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('terminal-create', (args) => {
     return terminalManager.create({
       appSessionId: args?.appSessionId,
       cwd: args?.cwd,
@@ -849,21 +872,17 @@ function registerIpc() {
       rows: args?.rows,
     });
   });
-  ipcMain.handle('terminal-resize', (event, { id, cols, rows }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('terminal-resize', ({ id, cols, rows }) => {
     terminalManager.resize(id, cols, rows);
   });
-  ipcMain.handle('terminal-kill', (event, { id }) => {
-    assertMainRenderer(event);
-    terminalSubscriptions.unsubscribe(event.sender, id);
+  desktopIpc.handle('terminal-kill', ({ id }, sender) => {
+    terminalSubscriptions.unsubscribe(sender, id);
     terminalManager.kill(id);
   });
-  ipcMain.handle('terminal-has-children', (event, { id }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('terminal-has-children', ({ id }) => {
     return terminalManager.hasChildren(id);
   });
-  ipcMain.handle('terminal-list', (event, filter) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('terminal-list', (filter) => {
     return terminalManager.list({ appSessionId: filter?.appSessionId });
   });
   ipcMain.on('terminal-subscribe', (event, payload) => {
@@ -894,14 +913,15 @@ function registerIpc() {
       }
     }
   });
-  ipcMain.handle('terminal-unsubscribe', (event, { id }) => {
-    assertMainRenderer(event);
-    terminalSubscriptions.unsubscribe(event.sender, id);
+  desktopIpc.handle('terminal-unsubscribe', ({ id }, sender) => {
+    terminalSubscriptions.unsubscribe(sender, id);
   });
-  ipcMain.handle('files-authorize-root', async (event, { root }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('files-authorize-root', async ({ root }, sender) => {
     const authorized = await filesRootAccess.tokenFor(root);
     if (authorized) return authorized;
+    // A paired browser already has a shell on this account, and nobody may be at
+    // the laptop to answer a dialog.
+    if (isRemoteSender(sender)) return filesRootAccess.authorize(root);
     const expectedRoot = await files.canonicalDirectory(root);
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Allow Files access to this workspace',
@@ -918,25 +938,20 @@ function registerIpc() {
     }
     return filesRootAccess.authorize(selectedRoot);
   });
-  ipcMain.handle('files-list', (event, { accessToken, relative }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('files-list', ({ accessToken, relative }) => {
     return files.listDirectory(filesRootAccess.resolve(accessToken), relative);
   });
-  ipcMain.handle('files-preview', (event, { accessToken, relative }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('files-preview', ({ accessToken, relative }) => {
     return files.readPreview(filesRootAccess.resolve(accessToken), relative);
   });
-  ipcMain.handle('files-open', (event, { accessToken, relative }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('files-open', ({ accessToken, relative }) => {
     return files.openDefault(filesRootAccess.resolve(accessToken), relative, shell);
   });
-  ipcMain.handle('files-reveal', (event, { accessToken, relative }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('files-reveal', ({ accessToken, relative }) => {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
-  ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl, savedMode }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-reserve', ({ browserSessionId, savedUrl, savedMode }) => {
     return nativeBrowserManager.reserve(
       browserSessionId,
       mainWindow.webContents,
@@ -944,36 +959,28 @@ function registerIpc() {
       savedMode,
     );
   });
-  ipcMain.handle('native-browser-release', (event, { browserSessionId }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-release', ({ browserSessionId }) => {
     return nativeBrowserManager.release(browserSessionId);
   });
-  ipcMain.handle('native-browser-working-sessions', (event) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-working-sessions', () => {
     return nativeBrowserRequests.workingSessions();
   });
-  ipcMain.handle('native-browser-shown', (event, { browserSessionId, shown }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-shown', ({ browserSessionId, shown }) => {
     return nativeBrowserManager.setShown(browserSessionId, shown);
   });
-  ipcMain.handle('native-browser-watch', (event, { browserSessionId, watching }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-watch', ({ browserSessionId, watching }) => {
     return nativeBrowserManager.watch(browserSessionId, watching);
   });
-  ipcMain.handle('native-browser-go-back', (event, { browserSessionId }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-go-back', ({ browserSessionId }) => {
     return nativeBrowserManager.goBack(browserSessionId);
   });
-  ipcMain.handle('native-browser-go-forward', (event, { browserSessionId }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-go-forward', ({ browserSessionId }) => {
     return nativeBrowserManager.goForward(browserSessionId);
   });
-  ipcMain.handle('native-browser-set-design-state', (event, { browserSessionId, state }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-set-design-state', ({ browserSessionId, state }) => {
     return nativeBrowserManager.setDesignState(browserSessionId, state);
   });
-  ipcMain.handle('native-browser-set-shortcuts', (event, { chords }) => {
-    assertMainRenderer(event);
+  desktopIpc.handle('native-browser-set-shortcuts', ({ chords }) => {
     nativeBrowserShortcuts.setChords(chords);
   });
 

@@ -1,4 +1,4 @@
-import { getBridgeInfo } from './desktop';
+import { getBridgeInfo, openBridgeSocket, type BridgeSocket } from './desktop';
 import { noteBridgeEventReceived } from './rendererPerf';
 import { setTransportHealth } from './runtimeHealth';
 import type * as bridgeWireValidation from './bridgeWireValidation';
@@ -21,6 +21,8 @@ type RuntimeReplacedListener = (
   resentRequestIds: ReadonlySet<string>,
 ) => void;
 type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
+
+const UNSUPPORTED_PROTOCOL_CLOSE_CODE = 1002;
 type WireValidation = typeof bridgeWireValidation;
 
 interface TurnBaselineAdopter {
@@ -33,7 +35,7 @@ function canAdoptTurnBaseline(api: object): api is TurnBaselineAdopter {
 
 export class Bridge {
   private readonly pageId = crypto.randomUUID();
-  private ws: WebSocket | null = null;
+  private ws: BridgeSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly batchListeners = new Set<BatchListener>();
   private readonly runtimeReplacedListeners = new Set<RuntimeReplacedListener>();
@@ -86,9 +88,9 @@ export class Bridge {
   }
 
   private open(wireValidation: WireValidation): void {
-    let ws: WebSocket;
+    let ws: BridgeSocket;
     try {
-      ws = new WebSocket(this.connectionUrl());
+      ws = openBridgeSocket(this.connectionUrl());
     } catch {
       this.scheduleReconnect();
       return;
@@ -129,10 +131,22 @@ export class Bridge {
       // a later one.
       this.sentRequestIds = null;
     };
-    ws.onclose = () => {
+    ws.onclose = (event?: CloseEvent) => {
       if (this.ws !== ws) return;
       this.ws = null;
       setTransportHealth('disconnected');
+      // The sidecar speaks another bridge protocol, which only an update fixes.
+      if (event?.code === UNSUPPORTED_PROTOCOL_CLOSE_CODE) {
+        this.publishEvents([
+          {
+            type: 'connection',
+            status: 'error',
+            message:
+              'This page and the agent runtime are different DROIDEX versions. Update DROIDEX on your laptop, then reload.',
+          },
+        ]);
+        return;
+      }
       this.scheduleReconnect();
     };
     ws.onerror = () => {
@@ -196,7 +210,7 @@ export class Bridge {
     this.publishEvents(eventsFromSnapshot(message), true);
   }
 
-  private handleMalformedBatch(ws: WebSocket): void {
+  private handleMalformedBatch(ws: BridgeSocket): void {
     this.lastGeneration = null;
     this.lastSeq = 0;
     this.publishEvents([
@@ -258,7 +272,7 @@ export class Bridge {
     else this.queue.push(command);
   }
 
-  private sendOpen(ws: WebSocket, command: ClientCommand): void {
+  private sendOpen(ws: BridgeSocket, command: ClientCommand): void {
     if ('requestId' in command && typeof command.requestId === 'string')
       this.sentRequestIds?.add(command.requestId);
     ws.send(JSON.stringify(command));

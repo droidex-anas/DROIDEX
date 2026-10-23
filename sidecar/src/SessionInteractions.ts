@@ -199,6 +199,7 @@ export class SessionInteractions {
       // object, so identity alone tells us this answer no longer applies.
       if (this.dependencies.getLiveSession(appSessionId) !== liveSession) return;
       pending.resolve(result);
+      this.dependencies.emit({ type: 'interaction.cancelled', appSessionId, requestId });
       if (!this.hasPending(liveSession.summary.appSessionId))
         this.dependencies.onSessionAvailable?.(liveSession.summary.appSessionId);
     };

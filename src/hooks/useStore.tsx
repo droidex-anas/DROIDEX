@@ -367,6 +367,8 @@ export interface AppState {
   prBacklogIds: string[];
   specMode: boolean;
   settingsOpen: boolean;
+  /** Where Settings opens when something outside it asks for a specific place. */
+  settingsRequest: SettingsRequest | null;
   commandPaletteOpen: boolean;
   theme: ThemeConfig;
   // User-saved theme presets (built-ins live in lib/theme). Persisted to
@@ -539,6 +541,7 @@ export type Action =
   // A blank RENAME_CHAT title clears the override back to the generated title.
   | { type: 'LINK_CHATS_PR'; appSessionIds: readonly string[]; cwd: string; pr: ChatPullRequest }
   | { type: 'RENAME_CHAT'; appSessionId: string; title: string }
+  | { type: 'SET_CHAT_METADATA'; chatMetadata: ChatMetadataMap }
   | { type: 'PIN_CHAT'; appSessionId: string }
   | { type: 'UNPIN_CHAT'; appSessionId: string }
   | { type: 'ARCHIVE_CHAT'; appSessionId: string }
@@ -706,6 +709,7 @@ export type Action =
       interactionMode: SessionSummary['interactionMode'];
     }
   | { type: 'TOGGLE_SETTINGS' }
+  | { type: 'OPEN_SETTINGS'; request: SettingsRequest }
   | { type: 'TOGGLE_MISSION_CONTROL' }
   | { type: 'OPEN_PROJECTS' }
   | { type: 'CLOSE_PROJECTS' }
@@ -822,6 +826,12 @@ const restoredTabStrip = loadTabStrip();
 const restoresNewChat =
   (persistedUiState.mainView ?? 'session') === 'session' && !persistedUiState.activeAppSessionId;
 
+/** A Settings destination: the Remote tab, opened at the username step. */
+export interface SettingsRequest {
+  tab: 'Remote';
+  step: 'claim-username';
+}
+
 export interface AutomationEditorRequest {
   automationId: string;
   requestId: number;
@@ -889,6 +899,7 @@ export const initialState: AppState = {
   prBacklogIds: persistedUiState.prBacklogIds ?? [],
   specMode: persistedUiState.specMode ?? false,
   settingsOpen: false,
+  settingsRequest: null,
   commandPaletteOpen: false,
   theme: loadTheme(initialCustomThemes),
   customThemes: initialCustomThemes,
@@ -1523,6 +1534,9 @@ function reduceAction(state: AppState, action: Action): AppState {
       const chatMetadata = renameChat(state.chatMetadata, action.appSessionId, action.title);
       return chatMetadata ? { ...state, chatMetadata } : state;
     }
+
+    case 'SET_CHAT_METADATA':
+      return { ...state, chatMetadata: action.chatMetadata };
 
     case 'PIN_CHAT': {
       const chatMetadata = pinChat(state.chatMetadata, action.appSessionId, Date.now());
@@ -2240,7 +2254,10 @@ function reduceAction(state: AppState, action: Action): AppState {
     }
 
     case 'TOGGLE_SETTINGS':
-      return { ...state, settingsOpen: !state.settingsOpen };
+      return { ...state, settingsOpen: !state.settingsOpen, settingsRequest: null };
+
+    case 'OPEN_SETTINGS':
+      return { ...state, settingsOpen: true, settingsRequest: action.request };
 
     case 'TOGGLE_MISSION_CONTROL':
       return { ...state, missionControlMode: !state.missionControlMode };

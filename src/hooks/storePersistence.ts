@@ -1,7 +1,8 @@
 import { saveDraftProvider } from '../features/providers/providerDraft';
 import { saveTabStrip } from '../features/tabs/tabStorage';
 import { saveDefaultAutonomy } from '../lib/autonomy';
-import { saveChatMetadata } from '../lib/chatMetadata';
+import { CHAT_METADATA_STORAGE_KEY, saveChatMetadata } from '../lib/chatMetadata';
+import { writeSharedStorage, type SharedStorageKey } from '../lib/desktop';
 import { isEmbedded } from '../lib/embed';
 import { saveSessionNotes } from '../lib/sessionNotes';
 import { saveToolActivity } from '../lib/toolActivity';
@@ -23,6 +24,7 @@ import {
   saveShortcutBindings,
   saveSideChatPlacement,
   saveWorkspaceCwds,
+  WORKSPACES_STORAGE_KEY,
   type PersistedUiStateSource,
 } from './persistedUiPreferences';
 import type { AppState } from './useStore';
@@ -47,10 +49,10 @@ const UI_STATE_FIELDS = [
 // Each persisted field and its saver, compared by reference after a commit.
 const FIELD_SAVERS = [
   saver('theme', persistTheme),
-  saver('chatMetadata', saveChatMetadata),
+  saver('chatMetadata', sharedSave(CHAT_METADATA_STORAGE_KEY, saveChatMetadata)),
   saver('sessionLastSeen', saveSessionLastSeen),
   saver('sessionNotes', saveSessionNotes),
-  saver('workspaceCwds', saveWorkspaceCwds),
+  saver('workspaceCwds', sharedSave(WORKSPACES_STORAGE_KEY, saveWorkspaceCwds)),
   saver('reviewScope', saveReviewScope),
   saver('diffView', saveDiffView),
   saver('modelSelectorStyle', saveModelSelectorStyle),
@@ -74,6 +76,26 @@ function saver<Field extends keyof AppState>(field: Field, save: (value: AppStat
   return (previous: AppState, next: AppState) => {
     if (next[field] !== previous[field]) save(next[field]);
   };
+}
+
+// Relays a shared value to the other copies of the app (the laptop window and
+// paired Remote browsers) when saving changed it. A value received from another
+// copy is stored before it is dispatched, so it does not echo back.
+function sharedSave<Value>(key: SharedStorageKey, save: (value: Value) => void) {
+  return (value: Value) => {
+    const before = storedValue(key);
+    save(value);
+    const after = storedValue(key);
+    if (after !== null && after !== before) writeSharedStorage(key, after);
+  };
+}
+
+function storedValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
 // The active tab saves the live page, so navigating saves the strip too. An

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Settings } from '@droidex/icons';
 import { useStoreDispatch } from '../hooks/useStore';
@@ -6,6 +6,12 @@ import { bindLazySurfaceIntent } from '../lib/chunkPreloader';
 import { Row } from './ui/Row';
 import { SidebarAppUpdateButton } from './SidebarAppUpdateButton';
 import { SidebarWelcomeCard } from './SidebarWelcomeCard';
+
+// The card's isometric art is sizeable and most launches never show it.
+const RemoteLaunchCard = lazy(async () => {
+  const module = await import('../features/remote/RemoteLaunchCard');
+  return { default: module.RemoteLaunchCard };
+});
 
 // The footer floats over the bottom of the session list so rows can pass
 // underneath it. It publishes its height to the list as
@@ -54,12 +60,16 @@ export function SidebarFooter({
   welcomeVisible,
   onStartChat,
   onDismissWelcome,
+  remoteLaunchVisible,
+  onRetireRemoteLaunch,
 }: {
   scrollRef: RefObject<HTMLElement | null>;
   contentRef: RefObject<HTMLElement | null>;
   welcomeVisible: boolean;
   onStartChat: () => void;
   onDismissWelcome: () => void;
+  remoteLaunchVisible: boolean;
+  onRetireRemoteLaunch: () => void;
 }) {
   const dispatch = useStoreDispatch();
   const footerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +88,20 @@ export function SidebarFooter({
             }}
             onDismiss={onDismissWelcome}
           />
+        )}
+        {remoteLaunchVisible && (
+          <Suspense key="remote-launch" fallback={null}>
+            <RemoteLaunchCard
+              onClaim={() => {
+                onRetireRemoteLaunch();
+                dispatch({
+                  type: 'OPEN_SETTINGS',
+                  request: { tab: 'Remote', step: 'claim-username' },
+                });
+              }}
+              onDismiss={onRetireRemoteLaunch}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
       <div className="flex items-center gap-1">
