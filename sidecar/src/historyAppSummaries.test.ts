@@ -87,3 +87,38 @@ test('chat preferences survive canonical history writes and explicit-off overwri
     index.close();
   }
 });
+
+test('profile bindings survive restart and provider replacement and cannot switch accounts', () => {
+  const stored = summary('alt-bound-chat', join(home, 'workspace-alt'));
+  const first = new HistoryIndex();
+  persistTestSummaries([{ ...stored, providerSessionId: 'alt-original', droidProfile: 'alt' }]);
+  first.close();
+
+  const reopened = new HistoryIndex();
+  try {
+    assert.equal(
+      reopened.summaryPatchesAndHidden().patches.get('alt-bound-chat')?.droidProfile,
+      'alt',
+    );
+    persistTestSummaries([
+      {
+        ...stored,
+        providerSessionId: 'alt-compacted',
+        compactedFromProviderSessionIds: ['alt-original'],
+        droidProfile: 'alt',
+      },
+    ]);
+    const { patches } = reopened.summaryPatchesAndHidden();
+    assert.equal(patches.get('alt-compacted')?.droidProfile, 'alt');
+    assert.equal(patches.get('alt-bound-chat')?.providerSessionId, 'alt-compacted');
+    assert.throws(() => persistTestSummaries([stored]), /Droid profile.*cannot change/);
+    const main = summary('main-bound-chat', join(home, 'workspace-main'));
+    persistTestSummaries([main]);
+    assert.throws(
+      () => persistTestSummaries([{ ...main, droidProfile: 'alt' }]),
+      /Droid profile.*cannot change/,
+    );
+  } finally {
+    reopened.close();
+  }
+});

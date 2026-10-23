@@ -469,6 +469,10 @@ function assertValidChatPreferences(command: object): void {
   const settingsCommand =
     'type' in command &&
     (command.type === 'session.create' || command.type === 'session.updateSettings');
+  if ('droidProfile' in command) {
+    if (!('type' in command) || command.type !== 'session.create' || command.droidProfile !== 'alt')
+      throw new Error('A Droid profile can only be selected when creating a session.');
+  }
   if ('fastMode' in command) {
     if (typeof command.fastMode !== 'boolean') throw new Error('fastMode must be a boolean.');
     if (!settingsCommand) throw new Error('Fast mode only applies to top-level session settings.');

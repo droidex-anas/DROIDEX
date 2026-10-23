@@ -160,6 +160,7 @@ export class SessionCompactionExecution {
       ...droidInteractionHandlers(ref, this.dependencies.interactionsFor(ref)),
       cwd: liveSession.summary.cwd,
       mcpServers: liveSession.mcpConfigs,
+      droidProfile: liveSession.summary.droidProfile,
     });
     const replacementPid = this.dependencies.runtime.processIdOf(replacement);
     const rawOldPid = oldSession.process?.pid;
@@ -179,6 +180,7 @@ export class SessionCompactionExecution {
         replacement,
         this.dependencies.runtime,
         liveSession.summary.autonomy,
+        liveSession.summary.droidProfile,
       );
       const autonomy = liveSession.summary.autonomy;
       await provider.setAutonomy(autonomy);
@@ -277,7 +279,9 @@ export class SessionCompactionExecution {
     const oldProviderSessionId = historical?.providerSessionId ?? requestedAppSessionId;
     let session: FactorySession | undefined;
     try {
-      session = await this.dependencies.runtime.loadSession(oldProviderSessionId);
+      session = await this.dependencies.runtime.loadSession(oldProviderSessionId, {
+        droidProfile: historical?.droidProfile,
+      });
       const result: unknown = await session.compactSession(
         customInstructions ? { customInstructions } : {},
       );

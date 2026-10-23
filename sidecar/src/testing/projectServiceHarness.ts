@@ -55,9 +55,19 @@ export function waitForThreadStarts(port: ProjectPort, count: number): Promise<v
 }
 
 export function summary(id: string, selection: ThreadInput = input): SessionSummary {
-  const { provider, title, prompt, cwd = '', modelId, reasoningEffort, autonomy } = selection;
+  const {
+    provider,
+    title,
+    prompt,
+    cwd = '',
+    modelId,
+    reasoningEffort,
+    autonomy,
+    droidProfile,
+  } = selection;
   return sessionSummary({
     appSessionId: id,
+    ...(droidProfile ? { droidProfile } : {}),
     provider,
     role: 'user',
     title,

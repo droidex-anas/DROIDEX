@@ -13,6 +13,7 @@ export function isThreadSpawnCall(event: { kind?: string; toolName?: string }): 
 export interface SpawnedChat {
   id: string;
   title: string;
+  droidProfile?: 'alt';
   /** A thread of the chat that started it, or an ordinary sidebar chat. */
   reportBack: boolean;
 }
@@ -21,10 +22,21 @@ export interface SpawnedChat {
 export function spawnedThread(value: string | undefined): SpawnedChat | null {
   const result = value ? parseToolResultObject(value) : null;
   if (result?.ok !== true || typeof result.title !== 'string') return null;
+  if (result.droidProfile !== undefined && result.droidProfile !== 'alt') return null;
   if (result.reportBack === true && typeof result.threadId === 'string')
-    return { id: result.threadId, title: result.title, reportBack: true };
+    return {
+      id: result.threadId,
+      title: result.title,
+      reportBack: true,
+      ...(result.droidProfile === 'alt' ? { droidProfile: result.droidProfile } : {}),
+    };
   if (result.reportBack === false && typeof result.sessionId === 'string')
-    return { id: result.sessionId, title: result.title, reportBack: false };
+    return {
+      id: result.sessionId,
+      title: result.title,
+      reportBack: false,
+      ...(result.droidProfile === 'alt' ? { droidProfile: result.droidProfile } : {}),
+    };
   return null;
 }
 

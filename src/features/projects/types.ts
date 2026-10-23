@@ -35,6 +35,7 @@ export interface ProjectThread {
   appSessionId: string;
   ownerAppSessionId?: string;
   title: string;
+  droidProfile?: 'alt';
   waiting: boolean;
   unread?: true;
   state:

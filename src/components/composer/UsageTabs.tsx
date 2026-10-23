@@ -29,21 +29,23 @@ export function UsageTabs({
   panelOpen: boolean;
   onClosePanel: () => void;
   // The top-level chat in the composer, and the limit it is held on.
-  chat: { usageLimit: UsageLimit | undefined } | undefined;
+  chat: { usageLimit: UsageLimit | undefined; droidProfile?: 'alt' } | undefined;
   onSwitchModel: () => void;
 }) {
-  const warns = chat !== undefined && provider !== 'droid';
+  const isAlt = chat?.droidProfile === 'alt';
+  const warns = !isAlt && chat !== undefined && provider !== 'droid';
   let watch: UsageWatch | null = null;
-  if (panelOpen) watch = 'panel';
+  if (panelOpen && !isAlt) watch = 'panel';
   else if (warns) watch = 'chat';
   // The socket's own state too: a reconnect must refresh even where the
   // runtime never reported itself down.
   const socketUp = useRuntimeHealth().transport === 'connected';
   const reachable = connected && socketUp;
-  const usage = useProviderUsage(provider, watch, reachable);
+  const providerUsage = useProviderUsage(provider, watch, reachable);
+  const usage = isAlt ? undefined : providerUsage;
   const now = Date.now();
   const warning = warns && usage ? paceWarning(usage.meters, now) : undefined;
-  useTicking(panelOpen || warning !== undefined);
+  useTicking(!isAlt && (panelOpen || warning !== undefined));
 
   let tab: ReactNode = null;
   if (panelOpen)
@@ -51,6 +53,7 @@ export function UsageTabs({
       <Suspense key="usage-panel" fallback={null}>
         <UsagePanel
           provider={provider}
+          droidProfile={chat?.droidProfile}
           usage={usage}
           reachable={reachable}
           now={now}
@@ -74,7 +77,10 @@ export function UsageTabs({
   return (
     <>
       <span className="sr-only" role="status" aria-live="polite">
-        {panelOpen && panelAnnouncement(provider, usage, reachable)}
+        {panelOpen &&
+          (isAlt
+            ? 'Alt account usage is open above the composer.'
+            : panelAnnouncement(provider, usage, reachable))}
       </span>
       <AnimatePresence initial={false} mode="wait">
         {tab}

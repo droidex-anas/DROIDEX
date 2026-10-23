@@ -21,6 +21,7 @@ import type { ProviderModelSettings, ProviderSession, SteerOutcome } from '../se
 import { UsageLimitError } from '../usageLimit.js';
 import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
 import { factoryRefusalLimit, readFactoryUsage } from './factoryUsage.js';
+import { requireAltDroidModel } from './droidModels.js';
 
 type DroidProcessRuntime = Pick<
   FactoryRuntime,
@@ -70,6 +71,7 @@ export class DroidProviderSession implements ProviderSession {
     readonly droid: FactorySession,
     private readonly runtime: DroidProcessRuntime,
     autonomy: Autonomy = 'off',
+    private readonly droidProfile?: 'alt',
   ) {
     this.nativeAutonomy = droid.initResult.settings.autonomyLevel;
     this.permissions = new SessionAutonomy(autonomy, {
@@ -185,7 +187,7 @@ export class DroidProviderSession implements ProviderSession {
   // when the spent window resets and whether the other pool has room; without
   // a key, or when that read fails, the refusal stands as Droid worded it.
   private async usageLimitError(message: string): Promise<UsageLimitError> {
-    const apiKey = this.runtime.factoryApiKey();
+    const apiKey = this.runtime.factoryApiKey(this.droid);
     if (!apiKey) return new UsageLimitError(message);
     try {
       const { meters } = await readFactoryUsage(
@@ -225,6 +227,7 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
+    if (this.droidProfile === 'alt' && modelId) requireAltDroidModel(this.droid, modelId);
     // Spec-mode turns run on specModeModelId, so it stays in lockstep with the
     // chat's single visible model.
     // Every Droid model publishes its levels, so a cleared effort never

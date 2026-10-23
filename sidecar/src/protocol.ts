@@ -187,6 +187,7 @@ export interface ModelSwitch {
 }
 
 export interface SessionSummary {
+  droidProfile?: 'alt';
   appSessionId: string;
   providerSessionId?: string;
   compactedFromProviderSessionIds?: string[];
@@ -866,6 +867,7 @@ export type ClientCommand =
   | { type: 'settings.defaults' }
   | {
       type: 'session.create';
+      droidProfile?: 'alt';
       clientRef: string;
       cwd?: string;
       title: string;
