@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
+import { File } from 'lucide-react';
 import type { TranscriptEvent } from '../../types/bridge';
 import {
   describeToolCall,
@@ -11,9 +12,14 @@ import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { pathFileName } from '../../lib/pathDisplay';
 import { namesAFileName } from '../../lib/prosePaths';
 import { searchResultFiles } from '../../lib/searchResultFiles';
-import { FileTypeIcon } from '../FileTypeIcon';
 import { Expand } from './primitives';
 import { ToolLine } from './toolLine';
+
+// The brand icons are ~30KB of SVG paths; the transcript paints at first frame,
+// so a chip shows a plain file glyph until they load.
+const FileTypeIcon = lazy(() =>
+  import('../FileTypeIcon').then((module) => ({ default: module.FileTypeIcon })),
+);
 
 // One row of chips before the rail folds the rest behind a count.
 const CHIPS_SHOWN_INITIALLY = 4;
@@ -40,7 +46,9 @@ function ToolFileChip({
   const name = pathFileName(path);
   const body = (
     <>
-      <FileTypeIcon filename={name} className="size-icon-sm" />
+      <Suspense fallback={<File className="size-icon-sm shrink-0 text-muted" aria-hidden />}>
+        <FileTypeIcon filename={name} className="size-icon-sm" />
+      </Suspense>
       <span className={`max-w-40 truncate${reading ? ' shimmer-text' : ''}`}>{name}</span>
     </>
   );
