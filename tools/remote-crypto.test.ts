@@ -71,7 +71,9 @@ test('encrypted sessions reject reflection, replay, tampering and frames from ol
     browser.channel.encrypt({ type: 'list' }),
   ]);
   await assert.rejects(browser.channel.decrypt(messages[0]));
-  const tampered = { ...messages[0], ciphertext: `${messages[0].ciphertext.slice(0, -2)}AA` };
+  const { ciphertext } = messages[0];
+  const flipped = ciphertext.startsWith('A') ? 'B' : 'A';
+  const tampered = { ...messages[0], ciphertext: `${flipped}${ciphertext.slice(1)}` };
   await assert.rejects(laptop.decrypt(tampered));
   assert.deepEqual(await laptop.decrypt(messages[0]), { type: 'authenticate', code: '123456' });
   await assert.rejects(laptop.decrypt(messages[0]), /replayed/);

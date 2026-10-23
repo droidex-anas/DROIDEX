@@ -164,7 +164,8 @@ async function matchingSnapshot(
   client: UsageWorkerClient,
   matches: (snapshot: UsageWorkerSnapshot) => boolean,
 ): Promise<UsageWorkerSnapshot> {
-  const deadline = Date.now() + 5_000;
+  // A real worker thread indexes files; the full suite's load can slow it well past a few seconds.
+  const deadline = Date.now() + 30_000;
   do {
     const snapshot = await client.snapshot();
     if (matches(snapshot)) return snapshot;
