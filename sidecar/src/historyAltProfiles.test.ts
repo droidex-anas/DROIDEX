@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -131,6 +131,39 @@ test('watcher events on an Alt copy neither replace nor remove the Main chat', (
   } finally {
     canonical.close();
     db.close();
+    delete process.env.DROIDEX_ALT_HOME;
+  }
+});
+
+test('a scanned Alt transcript keys freshness on its own settings file', () => {
+  writeSession(altHome, 'settings-transcript', 'Alt conversation');
+  const altSettings = join(altHome, '.factory', 'sessions', 'settings-transcript.settings.json');
+  const orphanMainSettings = join(
+    home,
+    '.factory',
+    'sessions',
+    'settings-transcript.settings.json',
+  );
+  writeFileSync(altSettings, '{}');
+  writeFileSync(orphanMainSettings, '{}');
+  utimesSync(altSettings, 2_000, 2_000);
+  utimesSync(orphanMainSettings, 1_000, 1_000);
+  process.env.DROIDEX_ALT_HOME = altHome;
+  const db = new DatabaseSync(':memory:');
+  const canonical = new DatabaseSync(join(droidexHistoryDir(), SESSION_INDEX_FILENAME), {
+    readOnly: true,
+  });
+  try {
+    const cache = createHistorySessionFileCache(db, canonical);
+    cache.reconcileChanges();
+    const entry = cache
+      .snapshot()
+      .entries.find((row) => row.providerSessionId === 'settings-transcript');
+    assert.equal(entry?.settingsMtimeMs, 2_000_000);
+  } finally {
+    canonical.close();
+    db.close();
+    rmSync(orphanMainSettings);
     delete process.env.DROIDEX_ALT_HOME;
   }
 });

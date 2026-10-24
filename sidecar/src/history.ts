@@ -1488,9 +1488,7 @@ function scanSessionFileTree(): SessionFileScan {
           settingsMtimeMs: null,
         });
       } else if (name.endsWith('.settings.json')) {
-        const id = name.slice(0, -'.settings.json'.length);
-        if (isAlt && settingsMtimes.has(id)) continue;
-        settingsMtimes.set(id, stat.mtimeMs);
+        settingsMtimes.set(path, stat.mtimeMs);
       }
     }
   };
@@ -1499,8 +1497,9 @@ function scanSessionFileTree(): SessionFileScan {
   const altHome = altDroidHome();
   const altRoot = altHome ? join(altHome, '.factory', 'sessions') : undefined;
   if (altRoot && existsSync(altRoot)) walk(altRoot, 0, true);
-  for (const [id, file] of files) {
-    file.settingsMtimeMs = settingsMtimes.get(id) ?? null;
+  for (const file of files.values()) {
+    file.settingsMtimeMs =
+      settingsMtimes.get(file.path.replace(/\.jsonl$/, '.settings.json')) ?? null;
   }
   return { files, isComplete };
 }
