@@ -289,20 +289,13 @@ export class SessionFileCache {
     return candidates;
   }
 
-  // Undefined for another login's copy of a cached chat: a file never moves a
-  // chat to another Droid login, which canonical history also refuses.
+  // Undefined when the file may not replace the cached one; see acceptsFile.
   private summarizeEntry(
     providerSessionId: string,
     file: SessionFileStat,
   ): SessionFileCacheEntry | undefined {
     const parsed = this.summarizeFile(providerSessionId, file);
-    const cachedSummary = this.files.get(providerSessionId)?.summary;
-    if (
-      parsed.summary &&
-      cachedSummary &&
-      parsed.summary.droidProfile !== cachedSummary.droidProfile
-    )
-      return undefined;
+    if (!this.acceptsFile(providerSessionId, file, parsed)) return undefined;
     // A restored header is not a new admission decision for an owned chat.
     const retained =
       parsed.summary === null && this.retainsSummary(providerSessionId)
@@ -315,6 +308,21 @@ export class SessionFileCache {
       summary: parsed.summary ?? retained?.summary ?? null,
       ...(launchSettings ? { launchSettings } : {}),
     };
+  }
+
+  // Another copy of a cached chat (an Alt copy, or one in a second cwd folder)
+  // takes over only once the cached file is gone, and only as a full summary;
+  // until then search skips the chat. No file moves a chat to another Droid
+  // login, which canonical history also refuses.
+  private acceptsFile(id: string, file: SessionFileStat, parsed: SessionFileSummary): boolean {
+    const cached = this.files.get(id);
+    if (!cached) return true;
+    if (cached.path !== file.path) {
+      if (this.statFile(cached.path)) return false;
+      this.unavailableFiles.add(id);
+      if (!parsed.summary) return false;
+    }
+    return !parsed.summary || parsed.summary.droidProfile === cached.summary?.droidProfile;
   }
 
   // Reconcile exactly the session files a watcher event reported, so live
@@ -455,11 +463,7 @@ export class SessionFileCache {
       this.db.exec(ADVANCE_REVISION);
       this.db.exec('COMMIT');
     } catch (error) {
-      try {
-        this.db.exec('ROLLBACK');
-      } catch {
-        // Preserve the original SQLite failure.
-      }
+      rollback(this.db);
       throw error;
     }
     this.revisionValue += 1;

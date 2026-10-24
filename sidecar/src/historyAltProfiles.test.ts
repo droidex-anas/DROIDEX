@@ -149,16 +149,13 @@ test('a signed-in ~/.droid-alt-home enables Alt history without DROIDEX_ALT_HOME
   }
 });
 
+function stat(path: string, mtimeMs = 1): SessionFileStat {
+  return { path, birthtimeMs: 1, mtimeMs, sizeBytes: 10, settingsMtimeMs: null };
+}
+
 test('a session file never moves a cached chat to another Droid login', (t) => {
   const db = new DatabaseSync(':memory:');
   t.after(() => db.close());
-  const stat = (path: string, mtimeMs = 1): SessionFileStat => ({
-    path,
-    birthtimeMs: 1,
-    mtimeMs,
-    sizeBytes: 10,
-    settingsMtimeMs: null,
-  });
   let scan = new Map([['main-chat', stat('/main/main-chat.jsonl')]]);
   let isComplete = true;
   let altLoggedIn = true;
@@ -191,4 +188,44 @@ test('a session file never moves a cached chat to another Droid login', (t) => {
   altLoggedIn = false;
   cache.reconcilePathChanges([{ providerSessionId: 'alt-chat', path: '/alt/alt-chat.jsonl' }]);
   assert.equal(cached('alt-chat')?.summary?.droidProfile, 'alt');
+});
+
+test('an Alt copy neither clears a cached chat nor keeps its deleted transcript searchable', (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const mainPath = '/main/chat.jsonl';
+  const altPath = '/alt/chat.jsonl';
+  let mainExists = true;
+  let altHasSummary = false;
+  let scan = new Map([['chat', stat(mainPath)]]);
+  const cache = new SessionFileCache(
+    db,
+    () => ({ files: scan, isComplete: true }),
+    (id, file) => {
+      if (file.path === mainPath) return { summary: sessionSummary({ appSessionId: id }) };
+      return {
+        summary: altHasSummary ? sessionSummary({ appSessionId: id, droidProfile: 'alt' }) : null,
+      };
+    },
+    (path) => (path === mainPath && !mainExists ? null : stat(path, 2)),
+  );
+  const isSearchable = () =>
+    cache.searchableEntries().some((entry) => entry.providerSessionId === 'chat');
+  cache.reconcileChanges();
+
+  // Alt's copy has only its header so far.
+  cache.reconcilePathChanges([{ providerSessionId: 'chat', path: altPath }]);
+  assert.equal(cache.pathIndex().get('chat'), mainPath);
+  assert.ok(isSearchable());
+
+  // Main's transcript is deleted; the scan now finds only Alt's full copy.
+  mainExists = false;
+  altHasSummary = true;
+  scan = new Map([['chat', stat(altPath)]]);
+  cache.reconcileChanges();
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === 'chat')?.droidProfile,
+    undefined,
+  );
+  assert.equal(isSearchable(), false);
 });
