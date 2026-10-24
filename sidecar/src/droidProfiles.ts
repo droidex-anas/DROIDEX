@@ -4,19 +4,29 @@ import { isAbsolute, join } from 'node:path';
 import { hasCliLogin } from './Environment.js';
 
 export const DROID_PROFILE_SCOPE_PREFIX = 'session.droid-profile:';
+const DEFAULT_ALT_HOME_NAME = '.droid-alt-home';
 
+// Main's history scan and tools read this, so an unusable value disables Alt
+// instead of failing Main. Alt execution reports it through droidHome. An app
+// opened from the Dock inherits no shell variables, so a signed-in droid-alt
+// home enables Alt without DROIDEX_ALT_HOME.
 export function altDroidHome(): string | undefined {
-  const home = process.env.DROIDEX_ALT_HOME;
-  if (!home) return undefined;
-  if (!isAbsolute(home)) throw new Error('DROIDEX_ALT_HOME must be an absolute path.');
-  return home;
+  const configured = process.env.DROIDEX_ALT_HOME;
+  if (configured) return isAbsolute(configured) ? configured : undefined;
+  const detected = join(homedir(), DEFAULT_ALT_HOME_NAME);
+  return hasCliLogin(join(detected, '.factory')) ? detected : undefined;
 }
 
 export function droidHome(profile?: 'alt'): string {
   if (profile === undefined) return homedir();
+  const configured = process.env.DROIDEX_ALT_HOME;
+  if (configured && !isAbsolute(configured))
+    throw new Error('DROIDEX_ALT_HOME must be an absolute path.');
   const home = altDroidHome();
   if (!home)
-    throw new Error('Alt threads are disabled. Set DROIDEX_ALT_HOME locally to enable them.');
+    throw new Error(
+      `Alt threads are disabled. Sign in with droid-alt (~/${DEFAULT_ALT_HOME_NAME}) or set DROIDEX_ALT_HOME.`,
+    );
   const factory = join(home, '.factory');
   const mainFactory = join(homedir(), '.factory');
   if (!existsSync(home) || !hasCliLogin(factory))
@@ -25,7 +35,7 @@ export function droidHome(profile?: 'alt'): string {
     realpathSync(home) === realpathSync(homedir()) ||
     (existsSync(mainFactory) && realpathSync(factory) === realpathSync(mainFactory))
   )
-    throw new Error('DROIDEX_ALT_HOME must use a separate Factory login directory.');
+    throw new Error('The Alt home must use a separate Factory login directory.');
   for (const marker of ['auth.v2.key', 'auth.v2.loginkeychain']) {
     const alt = join(factory, marker);
     const main = join(mainFactory, marker);

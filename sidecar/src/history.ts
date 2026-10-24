@@ -1450,16 +1450,12 @@ function shouldIncludeCwd(
 // Enumeration, replay and search share these roots, including the optional
 // Alt login and transcripts DROIDEX writes for other providers.
 function scanSessionFileTree(): SessionFileScan {
-  const altHome = altDroidHome();
-  const roots = [
-    join(homedir(), '.factory', 'sessions'),
-    providerSessionsDir(),
-    ...(altHome ? [join(altHome, '.factory', 'sessions')] : []),
-  ];
   const files = new Map<string, SessionFileStat>();
   const settingsMtimes = new Map<string, number>();
   let isComplete = true;
-  const walk = (dir: string, depth: number) => {
+  // Alt is a private extra login, so it never replaces or breaks a Main chat:
+  // its root is walked last and a file whose identity Main already has is skipped.
+  const walk = (dir: string, depth: number, isAlt: boolean) => {
     if (depth > 4) return;
     // A directory can be removed between the root check and this readdir
     // (a parallel Droid CLI run compacting/deleting sessions). Skip a
@@ -1480,10 +1476,10 @@ function scanSessionFileTree(): SessionFileScan {
       } catch {
         continue;
       }
-      if (stat.isDirectory()) walk(path, depth + 1);
+      if (stat.isDirectory()) walk(path, depth + 1, isAlt);
       else if (name.endsWith('.jsonl')) {
         const id = name.slice(0, -'.jsonl'.length);
-        if (files.has(id)) throw new Error(`Duplicate provider session identity: ${id}`);
+        if (isAlt && files.has(id)) continue;
         files.set(id, {
           path,
           birthtimeMs: stat.birthtimeMs,
@@ -1492,11 +1488,17 @@ function scanSessionFileTree(): SessionFileScan {
           settingsMtimeMs: null,
         });
       } else if (name.endsWith('.settings.json')) {
-        settingsMtimes.set(name.slice(0, -'.settings.json'.length), stat.mtimeMs);
+        const id = name.slice(0, -'.settings.json'.length);
+        if (isAlt && settingsMtimes.has(id)) continue;
+        settingsMtimes.set(id, stat.mtimeMs);
       }
     }
   };
-  for (const root of roots) if (existsSync(root)) walk(root, 0);
+  for (const root of [join(homedir(), '.factory', 'sessions'), providerSessionsDir()])
+    if (existsSync(root)) walk(root, 0, false);
+  const altHome = altDroidHome();
+  const altRoot = altHome ? join(altHome, '.factory', 'sessions') : undefined;
+  if (altRoot && existsSync(altRoot)) walk(altRoot, 0, true);
   for (const [id, file] of files) {
     file.settingsMtimeMs = settingsMtimes.get(id) ?? null;
   }

@@ -310,6 +310,11 @@ export class SessionFileCache {
   // that breaks mid-reconcile is retried on the next event. Returns the
   // number of cache entries written or removed.
   reconcilePathChanges(changes: SessionFileChange[]): SessionFileReconciliation {
+    // Another file for a cached identity (an Alt copy of a Main chat, or a copy
+    // in a second cwd folder) goes through the full scan, which decides which
+    // file wins, so the copy can neither replace nor remove the cached chat.
+    if (changes.some(({ providerSessionId, path }) => this.isOtherFile(providerSessionId, path)))
+      return this.reconcileChanges();
     const previousRevision = this.revisionValue;
     const upserts: SessionFileCacheEntry[] = [];
     const removedProviderSessionIds: string[] = [];
@@ -338,6 +343,11 @@ export class SessionFileCache {
       }
     }
     return this.persistReconciliation(previousRevision, upserts, removedProviderSessionIds);
+  }
+
+  private isOtherFile(providerSessionId: string, path: string): boolean {
+    const cached = this.files.get(providerSessionId);
+    return cached !== undefined && cached.path !== path;
   }
 
   private persistReconciliation(

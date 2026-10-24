@@ -6,8 +6,10 @@ Factory's own desktop app and ordinary CLI login remain independent of it.
 
 ## Enable locally
 
-First sign in through an existing isolated `droid-alt` setup. Then start DROIDEX
-with the absolute home directory that setup uses:
+Sign in through your isolated `droid-alt` command. When
+`~/.droid-alt-home/.factory` holds that login, DROIDEX enables Alt by itself,
+including when it is opened from the Dock. For another directory, start
+DROIDEX with its absolute path, which takes precedence:
 
 ```bash
 DROIDEX_ALT_HOME="$HOME/.droid-alt-home" npm run electron
@@ -83,7 +85,13 @@ Usage limits still fail on the affected thread and report to its owner. Alt's
 `/usage` panel deliberately shows no numeric quota: use `/limits` in `droid-alt`
 to inspect that subscription. Main's meters are never presented as Alt's.
 
-Removing `DROIDEX_ALT_HOME` hides the Alt choice and disables Alt execution.
+Alt never breaks Main. An Alt transcript whose ID matches a Main chat is
+ignored, including when the file watcher reports a change to it. A relative
+`DROIDEX_ALT_HOME` disables Alt instead of failing Main history: `thread_spawn`
+stops offering Alt, and reopening an Alt thread fails with the reason.
+
+Without a signed-in `~/.droid-alt-home` or a `DROIDEX_ALT_HOME`, the Alt choice
+is hidden and Alt execution is disabled.
 Saved Alt bindings remain in canonical history; reopening one fails with local
 activation instructions rather than opening it under Main. There is no quota
 rotation, cross-account provider-session migration or silent Main fallback.
