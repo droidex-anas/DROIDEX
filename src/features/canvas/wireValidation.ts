@@ -164,6 +164,7 @@ function isReply(value: unknown): boolean {
         record(value.preview) &&
         id(value.preview.canvasId) &&
         text(value.preview.name) &&
+        count(value.preview.sequence) &&
         list(value.preview.attachedAppSessionIds, isAppSessionId) &&
         list(value.preview.activeTurnAppSessionIds, isAppSessionId) &&
         list(value.preview.buildingDesignIds, id)

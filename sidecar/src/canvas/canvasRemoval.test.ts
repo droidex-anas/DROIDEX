@@ -44,24 +44,40 @@ test('deleting a canvas discloses, then ends, its chats, turns and builds', asyn
   await writeFrame(canvas, canvasId, designId);
   const running = await canvas.fleet.compile(0);
 
+  const { sequence } = canvas.workspace.snapshot(canvasId);
   await canvas.handle({ type: 'canvas.removalPreview', requestId: 'req-preview', canvasId });
   assert.deepEqual(okReply(canvas, 'req-preview'), {
     kind: 'removalPreview',
     preview: {
       canvasId,
       name: 'Canvas 1',
+      sequence,
       attachedAppSessionIds: [APP, 'app-2'],
       activeTurnAppSessionIds: ['agent-1'],
       buildingDesignIds: [designId],
     },
   });
 
-  await canvas.handle({ type: 'canvas.removeCanvas', requestId: 'req-remove', canvasId });
+  // A chat attached after the preview was never disclosed, so that preview no longer deletes.
+  const removal = {
+    type: 'canvas.removeCanvas',
+    canvasId,
+    expectedSequence: sequence,
+    expectedAttachedAppSessionIds: [APP, 'app-2'],
+  } as const;
+  await canvas.workspace.attach('agent-1', canvasId);
+  await canvas.handle({ ...removal, requestId: 'req-stale' });
+  assert.equal(errorOf(canvas, 'req-stale').code, 'revision_conflict');
+  assert.deepEqual(await storedCanvases(canvas.root), [canvasId]);
+
+  const disclosed = { ...removal, expectedAttachedAppSessionIds: ['agent-1', APP, 'app-2'] };
+  await canvas.handle({ ...disclosed, requestId: 'req-remove' });
   assert.deepEqual(okReply(canvas, 'req-remove'), { kind: 'ok' });
   assert.ok(running.signal.aborted);
   assert.equal(canvas.scopes.isScopeActive('turn-1'), false);
   assert.equal(canvas.workspace.attachedCanvasId(APP), null);
   assert.equal(canvas.workspace.attachedCanvasId('app-2'), null);
+  assert.equal(canvas.workspace.attachedCanvasId('agent-1'), null);
   // The open pane hears its frames go, and every page's list drops the canvas.
   assert.ok(
     canvas.events.some(
@@ -75,7 +91,7 @@ test('deleting a canvas discloses, then ends, its chats, turns and builds', asyn
   assert.deepEqual(summaries?.type === 'canvas.summaries' && summaries.summaries, []);
   assert.deepEqual(await storedCanvases(canvas.root), []);
 
-  await canvas.handle({ type: 'canvas.removeCanvas', requestId: 'req-again', canvasId });
+  await canvas.handle({ ...disclosed, requestId: 'req-again' });
   assert.deepEqual(okReply(canvas, 'req-again'), { kind: 'ok' });
   await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-rewatch', canvasId }, PAGE);
   assert.equal(errorOf(canvas, 'req-rewatch').code, 'invalid_input');
@@ -92,8 +108,9 @@ test('an export already reading a canvas completes as its snapshot when the canv
   const destination = join(dirname(canvas.root), 'export');
   await mkdir(destination);
 
+  const { sequence } = canvas.workspace.snapshot(canvasId);
   const exporting = exportCanvasSource(canvasId, { designId, revisionId }, destination);
-  await canvas.workspace.removeCanvas(canvasId);
+  await canvas.workspace.removeCanvas(canvasId, sequence, [APP]);
   assert.ok((await exporting).filesWritten > 0);
   assert.equal(await readFile(join(destination, 'src', 'main.tsx'), 'utf8'), HEY);
   assert.deepEqual(await storedCanvases(canvas.root), []);

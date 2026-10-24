@@ -22,6 +22,8 @@ import type { CanvasRemovalPreview } from './protocol.js';
 // Not an identifier, so a directory on its way out is never loaded as a canvas.
 const REMOVED_PREFIX = '.removed-';
 const REMOVE_RECOVERY = 'That canvas could not be deleted. Try again.';
+const CHANGED_SINCE_PREVIEW =
+  'That canvas changed after deleting it was reviewed. Review it again.';
 
 /** What deleting this canvas would end, for the renderer to disclose first. */
 export function canvasRemovalPreview(
@@ -36,6 +38,7 @@ export function canvasRemovalPreview(
   return {
     canvasId,
     name: summary.name,
+    sequence: snapshot.sequence,
     attachedAppSessionIds: summary.attachedAppSessionIds,
     activeTurnAppSessionIds: [...new Set(turns)],
     buildingDesignIds: snapshot.frames
@@ -79,8 +82,16 @@ export class CanvasRemoval {
   ) {}
 
   /** Retry-safe: a canvas that is already gone is simply gone. */
-  async remove(canvasId: string): Promise<void> {
-    await this.commits.admit(() => this.commits.publish(() => this.unlink(canvasId)));
+  async remove(
+    canvasId: string,
+    expectedSequence: number,
+    expectedAttachedAppSessionIds: readonly string[],
+  ): Promise<void> {
+    await this.commits.admit(() =>
+      this.commits.publish(() =>
+        this.unlink(canvasId, expectedSequence, expectedAttachedAppSessionIds),
+      ),
+    );
     if (!this.unretired.has(canvasId)) return;
     // Mutations admitted before the head left may still be staging into its
     // directory, and an export may still be reading it; both finish first.
@@ -91,12 +102,22 @@ export class CanvasRemoval {
   }
 
   /** Detaches every chat durably, then stops serving and building the canvas. */
-  private async unlink(canvasId: string) {
+  private async unlink(
+    canvasId: string,
+    expectedSequence: number,
+    expectedAttachedAppSessionIds: readonly string[],
+  ) {
     const live = this.heads.find(canvasId);
     if (!live) {
       if (this.heads.isDamaged(canvasId)) throw canvasError('storage_failed', UNREADABLE_CANVAS);
       return { value: undefined };
     }
+    // Attaching a chat does not move the sequence, so the chats are compared too.
+    if (
+      live.sequence !== expectedSequence ||
+      !sameMembers(live.attachedAppSessionIds, expectedAttachedAppSessionIds)
+    )
+      throw canvasError('revision_conflict', CHANGED_SINCE_PREVIEW);
     const next = structuredClone(live);
     next.attachedAppSessionIds = [];
     next.removing = true;
@@ -152,6 +173,11 @@ async function syncDirectory(path: string): Promise<void> {
   } finally {
     await directory.close();
   }
+}
+
+function sameMembers(left: readonly string[], right: readonly string[]): boolean {
+  const members = new Set(left);
+  return members.size === new Set(right).size && right.every((entry) => members.has(entry));
 }
 
 function isCode(error: unknown, code: string): boolean {

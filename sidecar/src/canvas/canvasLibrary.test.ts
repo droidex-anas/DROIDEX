@@ -163,7 +163,13 @@ test('an item outlives its source canvas, answering retries and inserting elsewh
   const { canvas, canvasId, revision } = await heroCanvas(t, profile);
   const fields = { mutationId: 'save-once', canvasId, revision, name: 'Hero' };
   await save(canvas, 'req-first', fields);
-  await canvas.handle({ type: 'canvas.removeCanvas', requestId: 'req-remove', canvasId });
+  await canvas.handle({
+    type: 'canvas.removeCanvas',
+    requestId: 'req-remove',
+    canvasId,
+    expectedSequence: canvas.workspace.snapshot(canvasId).sequence,
+    expectedAttachedAppSessionIds: [APP],
+  });
   assert.equal(okReply(canvas, 'req-remove').kind, 'ok');
 
   await save(canvas, 'req-retry', fields);

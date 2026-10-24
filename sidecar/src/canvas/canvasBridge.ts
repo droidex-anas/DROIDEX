@@ -214,7 +214,11 @@ class CanvasDispatch {
       case 'canvas.removeCanvas':
         // A user's deletion ends agent turns on the canvas before its source goes.
         this.scopes.revokeTurns(command.canvasId);
-        await workspace.removeCanvas(command.canvasId);
+        await workspace.removeCanvas(
+          command.canvasId,
+          command.expectedSequence,
+          command.expectedAttachedAppSessionIds,
+        );
         this.watches.forgetCanvas(command.canvasId);
         return { kind: 'ok' };
       case 'canvas.saveLibraryItem':

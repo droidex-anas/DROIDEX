@@ -249,6 +249,8 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.removeCanvas'),
       ...request,
       canvasId: canvasIdentifierSchema,
+      expectedSequence: z.number().int().nonnegative(),
+      expectedAttachedAppSessionIds: z.array(session.appSessionId),
     })
     .strict(),
   z

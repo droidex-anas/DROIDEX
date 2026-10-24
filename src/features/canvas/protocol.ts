@@ -38,6 +38,8 @@ export type DesignSystemProvenance =
 export interface CanvasRemovalPreview {
   canvasId: string;
   name: string;
+  /** The canvas's commit sequence, which removeCanvas carries back unchanged. */
+  sequence: number;
   /** Chats attached to the canvas; deletion leaves each without one. */
   attachedAppSessionIds: string[];
   /** Chats with an agent turn working on the canvas now; deletion ends that turn's Canvas access. */
@@ -539,9 +541,17 @@ export type CanvasCommand =
     }
   | { type: 'canvas.listLibraryItems'; requestId: string; query: string }
   // Explicit whole-canvas deletion from the canvas picker, never an agent tool.
-  // The preview names what deleting would end; a retried removal answers ok.
+  // The preview names what deleting would end, and removal carries back its
+  // sequence and chats so a canvas that changed since is not deleted unseen.
+  // A retried removal answers ok.
   | { type: 'canvas.removalPreview'; requestId: string; canvasId: string }
-  | { type: 'canvas.removeCanvas'; requestId: string; canvasId: string }
+  | {
+      type: 'canvas.removeCanvas';
+      requestId: string;
+      canvasId: string;
+      expectedSequence: number;
+      expectedAttachedAppSessionIds: string[];
+    }
   // A page's answer to an agent's inspect screenshot; only a page that was
   // watching the canvas when it was asked is counted.
   | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };

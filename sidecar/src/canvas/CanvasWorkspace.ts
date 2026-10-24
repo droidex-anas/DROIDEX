@@ -275,8 +275,12 @@ export class CanvasWorkspace {
   }
 
   /** Explicit user deletion only; chat deletion and pane close never reach this. */
-  removeCanvas(canvasId: string): Promise<void> {
-    return this.removal.remove(canvasId);
+  removeCanvas(
+    canvasId: string,
+    expectedSequence: number,
+    expectedAttachedAppSessionIds: readonly string[],
+  ): Promise<void> {
+    return this.removal.remove(canvasId, expectedSequence, expectedAttachedAppSessionIds);
   }
 
   /** A committed revision's source and owned images, for a copy that outlives this canvas. */
