@@ -10,8 +10,10 @@ import {
 import {
   CANVAS_PNG,
   deferred,
-  observedFileSystem,
   holdManifestWrite,
+  noteDraft,
+  observedFileSystem,
+  userScopeFor,
 } from '../testing/canvasStorageSupport.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
@@ -595,15 +597,7 @@ for (const name of [
         scopeId,
         mutationId: 'published-annotate',
         expectedAnnotationsVersion: 0,
-        upserts: [
-          {
-            id: 'ann_note',
-            kind: 'note',
-            color: 'yellow',
-            rect: { x: 0, y: -200, width: 200, height: 120 },
-            text: 'Here',
-          },
-        ],
+        upserts: [noteDraft('ann_note', 0, -200, 'Here')],
         deletes: [],
       },
       canvas_theme: {
@@ -811,32 +805,15 @@ test('a read shows the user’s note by its frame, and canvas_annotate keeps it 
   });
   assert.ok(created.created);
   const { canvasId } = created.created;
-  // A pane annotate runs under a request scope the bridge registers, as here.
-  const userScope = {
-    origin: 'user',
-    scopeId: 'user:1',
-    appSessionId: 'chat-one',
-    canvasId,
-    allowedDesignIds: 'canvas',
-  } as const;
-  h.scopes.register(userScope);
-  await h.workspace.annotations.annotate(
-    userScope,
-    {
-      mutationId: 'user-note',
-      expectedAnnotationsVersion: 0,
-      upserts: [
-        {
-          id: 'ann_user',
-          kind: 'note',
-          color: 'yellow',
-          rect: { x: 0, y: 560, width: 200, height: 120 },
-          text: 'Taller',
-        },
-      ],
-      deletes: [],
-    },
-  );
+  // A pane annotate runs under the request scope the bridge registers, as here.
+  const pane = userScopeFor(canvasId, 'chat-one');
+  h.scopes.register(pane);
+  await h.workspace.annotations.annotate(pane, {
+    mutationId: 'user-note',
+    expectedAnnotationsVersion: 0,
+    upserts: [noteDraft('ann_user', 0, 560, 'Taller')],
+    deletes: [],
+  });
   const read = await h.call('canvas_read', { scopeId });
   assert.equal(read.annotationsVersion, 1);
   assert.deepEqual(
