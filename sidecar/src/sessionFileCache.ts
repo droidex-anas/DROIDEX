@@ -277,7 +277,9 @@ export class SessionFileCache {
       const cached = this.files.get(id);
       if (cached && !this.unavailableFiles.has(id) && matchesFreshnessKey(cached, file)) continue;
       try {
-        candidates.push(this.summarizeEntry(id, file));
+        const entry = this.summarizeEntry(id, file);
+        if (!entry) continue;
+        candidates.push(entry);
         this.unavailableFiles.delete(id);
       } catch {
         // The file was deleted or rotated between the scan and the read;
@@ -287,8 +289,20 @@ export class SessionFileCache {
     return candidates;
   }
 
-  private summarizeEntry(providerSessionId: string, file: SessionFileStat): SessionFileCacheEntry {
+  // Undefined for another login's copy of a cached chat: a file never moves a
+  // chat to another Droid login, which canonical history also refuses.
+  private summarizeEntry(
+    providerSessionId: string,
+    file: SessionFileStat,
+  ): SessionFileCacheEntry | undefined {
     const parsed = this.summarizeFile(providerSessionId, file);
+    const cachedSummary = this.files.get(providerSessionId)?.summary;
+    if (
+      parsed.summary &&
+      cachedSummary &&
+      parsed.summary.droidProfile !== cachedSummary.droidProfile
+    )
+      return undefined;
     // A restored header is not a new admission decision for an owned chat.
     const retained =
       parsed.summary === null && this.retainsSummary(providerSessionId)
@@ -310,24 +324,20 @@ export class SessionFileCache {
   // that breaks mid-reconcile is retried on the next event. Returns the
   // number of cache entries written or removed.
   reconcilePathChanges(changes: SessionFileChange[]): SessionFileReconciliation {
-    // Another file for a cached identity (an Alt copy of a Main chat, or a copy
-    // in a second cwd folder) goes through the full scan, which decides which
-    // file wins, so the copy can neither replace nor remove the cached chat.
-    if (changes.some(({ providerSessionId, path }) => this.isOtherFile(providerSessionId, path)))
-      return this.reconcileChanges();
     const previousRevision = this.revisionValue;
     const upserts: SessionFileCacheEntry[] = [];
     const removedProviderSessionIds: string[] = [];
     for (const { providerSessionId, path } of changes) {
       const file = this.statFile(path);
+      const cached = this.files.get(providerSessionId);
       if (!file) {
-        if (this.files.has(providerSessionId)) this.unavailableFiles.add(providerSessionId);
-        if (this.files.has(providerSessionId) && !this.retainsSummary(providerSessionId)) {
+        // Deleting another copy of a chat, such as an Alt copy, keeps the chat.
+        if (cached?.path !== path) continue;
+        this.unavailableFiles.add(providerSessionId);
+        if (!this.retainsSummary(providerSessionId))
           removedProviderSessionIds.push(providerSessionId);
-        }
         continue;
       }
-      const cached = this.files.get(providerSessionId);
       if (
         cached &&
         !this.unavailableFiles.has(providerSessionId) &&
@@ -335,7 +345,9 @@ export class SessionFileCache {
       )
         continue;
       try {
-        upserts.push(this.summarizeEntry(providerSessionId, file));
+        const entry = this.summarizeEntry(providerSessionId, file);
+        if (!entry) continue;
+        upserts.push(entry);
         this.unavailableFiles.delete(providerSessionId);
       } catch {
         // The file was deleted or rotated between the stat and the read;
@@ -343,11 +355,6 @@ export class SessionFileCache {
       }
     }
     return this.persistReconciliation(previousRevision, upserts, removedProviderSessionIds);
-  }
-
-  private isOtherFile(providerSessionId: string, path: string): boolean {
-    const cached = this.files.get(providerSessionId);
-    return cached !== undefined && cached.path !== path;
   }
 
   private persistReconciliation(

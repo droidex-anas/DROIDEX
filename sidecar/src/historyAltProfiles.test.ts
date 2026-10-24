@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { SessionFileCache, type SessionFileStat } from './sessionFileCache.js';
 import { reconciledHistorySessions } from './testing/historyCharacterizationSupport.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
+import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 const originalHome = process.env.HOME;
 const originalAltHome = process.env.DROIDEX_ALT_HOME;
@@ -145,4 +147,48 @@ test('a signed-in ~/.droid-alt-home enables Alt history without DROIDEX_ALT_HOME
   } finally {
     rmSync(detectedHome, { recursive: true, force: true });
   }
+});
+
+test('a session file never moves a cached chat to another Droid login', (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const stat = (path: string, mtimeMs = 1): SessionFileStat => ({
+    path,
+    birthtimeMs: 1,
+    mtimeMs,
+    sizeBytes: 10,
+    settingsMtimeMs: null,
+  });
+  let scan = new Map([['main-chat', stat('/main/main-chat.jsonl')]]);
+  let isComplete = true;
+  let altLoggedIn = true;
+  const cache = new SessionFileCache(
+    db,
+    () => ({ files: scan, isComplete }),
+    (id, file) => ({
+      summary: sessionSummary({
+        appSessionId: id,
+        ...(altLoggedIn && file.path.startsWith('/alt/') ? { droidProfile: 'alt' } : {}),
+      }),
+    }),
+    (path) => stat(path, 2),
+  );
+  const cached = (id: string) =>
+    cache.snapshot().entries.find((entry) => entry.providerSessionId === id);
+  cache.reconcileChanges();
+
+  // Main's folder is unreadable, so only Alt's copy of the Main chat is seen.
+  scan = new Map([
+    ['main-chat', stat('/alt/main-chat.jsonl')],
+    ['alt-chat', stat('/alt/alt-chat.jsonl')],
+  ]);
+  isComplete = false;
+  cache.reconcileChanges();
+  assert.equal(cached('main-chat')?.path, '/main/main-chat.jsonl');
+  assert.equal(cached('main-chat')?.summary?.droidProfile, undefined);
+
+  // The Alt login is gone when the Alt chat's transcript changes.
+  altLoggedIn = false;
+  cache.reconcilePathChanges([{ providerSessionId: 'alt-chat', path: '/alt/alt-chat.jsonl' }]);
+  assert.equal(cached('alt-chat')?.summary?.droidProfile, 'alt');
 });
