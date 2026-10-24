@@ -18,6 +18,7 @@ import type {
   RenameFrameInput,
   RestoreRevisionInput,
   RevisionPage,
+  RevisionRef,
   SourceFiles,
   UndoRemovalInput,
   WriteFilesInput,
@@ -227,6 +228,29 @@ export type RevisionSummary =
   // Its saved metadata cannot be read; the commit stays listed so paging continues.
   | (RevisionCommit & { state: 'damaged' });
 
+/** What deleting a canvas would end, which the renderer discloses before the user confirms. */
+export interface CanvasRemovalPreview {
+  canvasId: string;
+  name: string;
+  /** The canvas's commit sequence, which removeCanvas carries back unchanged. */
+  sequence: number;
+  /** Chats attached to the canvas; deletion leaves each without one. */
+  attachedAppSessionIds: string[];
+  /** Chats with an agent turn working on the canvas now; deletion ends that turn's Canvas access. */
+  activeTurnAppSessionIds: string[];
+  /** Frames whose queued or running build deletion cancels. */
+  buildingDesignIds: string[];
+}
+
+/** A frame saved to the local library; its source canvas and revision are provenance only. */
+export interface LibraryItem {
+  itemId: string;
+  name: string;
+  sourceCanvasId: string;
+  source: RevisionRef;
+  designSystem: DesignSystemRef;
+}
+
 /** One kit version as the Manage dialog shows it: its tokens, without source files. */
 export interface DesignSystemDetail {
   id: string;
@@ -425,6 +449,29 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
+  // The local library (spec §7). A new item is named by its mutationId, so a
+  // retried save finds the copy it already made.
+  | {
+      type: 'canvas.saveLibraryItem';
+      requestId: string;
+      mutationId: string;
+      canvasId: string;
+      revision: RevisionRef;
+      name: string;
+    }
+  | { type: 'canvas.listLibraryItems'; requestId: string; query: string }
+  // Explicit whole-canvas deletion from the canvas picker, never an agent tool.
+  // The preview names what deleting would end, and removal carries back its
+  // sequence and chats so a canvas that changed since is not deleted unseen.
+  // A retried removal answers ok.
+  | { type: 'canvas.removalPreview'; requestId: string; canvasId: string }
+  | {
+      type: 'canvas.removeCanvas';
+      requestId: string;
+      canvasId: string;
+      expectedSequence: number;
+      expectedAttachedAppSessionIds: string[];
+    }
   // A page's answer to an agent's inspect screenshot; only a page that was
   // watching the canvas when it was asked is counted.
   | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };
@@ -469,7 +516,10 @@ export type CanvasReply =
   | { kind: 'designSystem'; system: DesignSystemDetail }
   // Import diagnostics name what could not become a token; unmapped tokens are
   // read from the saved kit instead.
-  | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] };
+  | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
+  | { kind: 'libraryItem'; item: LibraryItem }
+  | { kind: 'libraryItems'; items: LibraryItem[] }
+  | { kind: 'removalPreview'; preview: CanvasRemovalPreview };
 
 export type CanvasEvent =
   | { type: 'canvas.result'; requestId: string; ok: true; reply: CanvasReply }

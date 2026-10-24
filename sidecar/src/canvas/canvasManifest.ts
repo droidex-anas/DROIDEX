@@ -20,10 +20,10 @@ import type {
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
+  canvasSeedSchema,
   designSystemAdherenceSchema,
   designSystemRefSchema,
   frameRectSchema,
-  revisionSeedSchema,
 } from './schema.js';
 
 const CANVAS_MANIFEST_VERSION = 1;
@@ -56,7 +56,7 @@ const persistedDesignSchema = z
     lastWorkingRevisionId: canvasIdentifierSchema.nullable(),
     designSystem: designSystemRefSchema,
     // Provenance only: this design owns its source copy independently.
-    seed: revisionSeedSchema.optional(),
+    seed: canvasSeedSchema.optional(),
   })
   .strict();
 
@@ -187,6 +187,7 @@ export const canvasManifestSchema = z
       .object({ mutationId: canvasIdentifierSchema, appSessionId: appSessionIdSchema })
       .strict()
       .nullable(),
+    removing: z.literal(true).optional(),
     // Supported case: canvases created in development before this setting existed.
     // Remove the default with the next CANVAS_MANIFEST_VERSION bump.
     designSystemAdherence: designSystemAdherenceSchema.default('guide'),

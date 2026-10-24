@@ -7,6 +7,7 @@ import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import type { CanvasCommand } from './protocol.js';
 import {
   arrangeFramesInputSchema,
+  CANVAS_LIMITS,
   canvasIdentifierSchema,
   canvasNameSchema,
   createFramesInputSchema,
@@ -17,6 +18,7 @@ import {
   renameFrameInputSchema,
   restoreRevisionInputSchema,
   revisionPageSchema,
+  revisionRefSchema,
   undoRemovalInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
@@ -216,6 +218,39 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       mutationId: canvasIdentifierSchema,
       ...kitName,
       source: designSystemSourceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.saveLibraryItem'),
+      ...request,
+      mutationId: canvasIdentifierSchema,
+      canvasId: canvasIdentifierSchema,
+      revision: revisionRefSchema,
+      name: canvasNameSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.listLibraryItems'),
+      ...request,
+      query: z.string().max(CANVAS_LIMITS.maxFrameNameLength),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.removalPreview'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.removeCanvas'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      expectedSequence: z.number().int().nonnegative(),
+      expectedAttachedAppSessionIds: z.array(session.appSessionId),
     })
     .strict(),
   z

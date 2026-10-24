@@ -28,13 +28,14 @@ export interface StagedFrame {
 
 export async function stageFrames(
   files: CanvasFiles,
+  root: string,
   canvasId: string,
   input: CreateFramesInput,
 ): Promise<StagedFrame[]> {
   const staged: StagedFrame[] = [];
   for (const frame of input.frames) {
     const designId = randomUUID();
-    const revisionId = await stageSeed(files, canvasId, designId, frame);
+    const revisionId = await stageSeed(files, root, canvasId, designId, frame);
     staged.push({ designId, revisionId, frame });
   }
   return staged;
@@ -134,7 +135,7 @@ export function placeFrames(
       revisionId,
       lastWorkingRevisionId: null,
       designSystem: frame.designSystem,
-      ...(frame.seed?.kind === 'revision' ? { seed: structuredClone(frame.seed) } : {}),
+      ...(frame.seed ? { seed: structuredClone(frame.seed) } : {}),
     });
     x += frame.width + FRAME_GAP_PX;
   }

@@ -10,8 +10,9 @@ const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const frame = { name: 'Copy', width: 720, height: 720, designSystem };
 const revision = { designId: 'dsg_hey', revisionId: 'rev_01' };
 
-async function withRevision(t: TestContext): Promise<CanvasFiles> {
-  const files = new CanvasFiles(await canvasRoot(t));
+async function withRevision(t: TestContext): Promise<{ files: CanvasFiles; root: string }> {
+  const root = await canvasRoot(t);
+  const files = new CanvasFiles(root);
   await files.createRoot();
   await files.publishRevision(
     'cv_01',
@@ -24,17 +25,18 @@ async function withRevision(t: TestContext): Promise<CanvasFiles> {
     },
     new Map([['main.tsx', 'export default () => null;\n']]),
   );
-  return files;
+  return { files, root };
 }
 
 function create(frames: CreateFramesInput['frames']): CreateFramesInput {
   return { mutationId: 'create-copy', frames };
 }
 
-test('a seed is copied from this canvas only, and a library seed is refused', async (t) => {
-  const files = await withRevision(t);
+test('a seed is copied from this canvas only, and a missing library item is refused', async (t) => {
+  const { files, root } = await withRevision(t);
   const [staged] = await stageFrames(
     files,
+    root,
     'cv_01',
     create([{ ...frame, seed: { kind: 'revision', canvasId: 'cv_01', revision } }]),
   );
@@ -44,6 +46,7 @@ test('a seed is copied from this canvas only, and a library seed is refused', as
   await assert.rejects(
     stageFrames(
       files,
+      root,
       'cv_01',
       create([{ ...frame, seed: { kind: 'revision', canvasId: 'cv_other', revision } }]),
     ),
@@ -52,9 +55,10 @@ test('a seed is copied from this canvas only, and a library seed is refused', as
   await assert.rejects(
     stageFrames(
       files,
+      root,
       'cv_01',
       create([{ ...frame, seed: { kind: 'library', itemId: 'item_01' } }]),
     ),
-    { code: 'invalid_input' },
+    { code: 'not_found' },
   );
 });

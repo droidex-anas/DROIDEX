@@ -88,6 +88,11 @@ export class CanvasCommits {
     if (this.closing) throw canvasError('storage_failed', CLOSING);
   }
 
+  /** Resolves once every mutation admitted so far has settled, without closing. */
+  async settled(): Promise<void> {
+    await Promise.all([...this.admitted]);
+  }
+
   /** Resolves once every admitted mutation has settled, staging included. */
   async drain(): Promise<void> {
     this.closing = true;

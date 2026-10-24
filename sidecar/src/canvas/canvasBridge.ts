@@ -18,6 +18,8 @@ import {
   type DesignSystemCommand,
 } from './designSystemCommands.js';
 import { editCanvasElement } from './canvasElementEdit.js';
+import { answerLibraryCommand, isLibraryCommand } from './canvasLibrary.js';
+import { answerRemovalCommand, isRemovalCommand } from './canvasRemoval.js';
 import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
@@ -141,6 +143,9 @@ class CanvasDispatch {
       | DesignSystemCommand
     >,
   ): Promise<CanvasReply> {
+    if (isRemovalCommand(command))
+      return answerRemovalCommand(workspace, this.scopes, this.watches, command);
+    if (isLibraryCommand(command)) return answerLibraryCommand(workspace, command);
     switch (command.type) {
       case 'canvas.list':
         return { kind: 'summaries', summaries: workspace.listCanvases() };
@@ -325,6 +330,7 @@ const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
   'canvas.remove',
   'canvas.undoRemoval',
   'canvas.renameFrame',
+  'canvas.removeCanvas',
 ]);
 
 export function createCanvasCommandHandler(
