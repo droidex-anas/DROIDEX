@@ -187,6 +187,7 @@ export const canvasManifestSchema = z
       .object({ mutationId: canvasIdentifierSchema, appSessionId: appSessionIdSchema })
       .strict()
       .nullable(),
+    removing: z.literal(true).optional(),
     // Supported case: canvases created in development before this setting existed.
     // Remove the default with the next CANVAS_MANIFEST_VERSION bump.
     designSystemAdherence: designSystemAdherenceSchema.default('guide'),

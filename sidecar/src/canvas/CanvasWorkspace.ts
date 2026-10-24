@@ -104,7 +104,7 @@ export class CanvasWorkspace {
     try {
       const files = new CanvasFiles(writerLease.directory, deps.fs);
       const heads = await CanvasHeads.load(files);
-      await discardRemovedCanvases(writerLease.directory);
+      await discardRemovedCanvases(writerLease.directory, heads.removingIds());
       const workspace = new CanvasWorkspace(files, heads, builds, writerLease, deps);
       await builds.load(workspace, files, heads.all());
       return workspace;

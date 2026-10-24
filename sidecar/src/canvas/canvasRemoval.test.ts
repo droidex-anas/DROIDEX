@@ -17,6 +17,7 @@ import {
 } from '../testing/canvasBridgeSupport.js';
 import { canvasRoot, quietBuilds, reopenWorkspace } from '../testing/canvasStorageSupport.js';
 import { exportCanvasSource } from './canvasExport.js';
+import { CanvasFiles } from './canvasFiles.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from './CanvasWorkspace.js';
 
 /** What a canvas root holds besides the writer lease. */
@@ -96,6 +97,29 @@ test('an export already reading a canvas completes as its snapshot when the canv
   assert.ok((await exporting).filesWritten > 0);
   assert.equal(await readFile(join(destination, 'src', 'main.tsx'), 'utf8'), HEY);
   assert.deepEqual(await storedCanvases(canvas.root), []);
+});
+
+test('a deletion that ended between detaching and moving out finishes on the next open', async (t) => {
+  const root = await canvasRoot(t);
+  const deps: CanvasWorkspaceDeps = {
+    isChatKnown: () => true,
+    isScopeActive: () => true,
+    bindScopeCanvas: () => undefined,
+  };
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), deps);
+  const { canvasId } = await workspace.createCanvas(APP, 'create-doomed');
+  await workspace.close();
+  // The head a deletion leaves when the process dies before its rename.
+  const files = new CanvasFiles(root);
+  const load = await files.loadManifest(canvasId);
+  assert.ok(load.state === 'loaded');
+  const detached = { ...load.manifest, attachedAppSessionIds: [], removing: true as const };
+  await files.writeManifest(detached, () => undefined);
+
+  const reopened = await reopenWorkspace(t, root, deps);
+  assert.deepEqual(reopened.listCanvases(), []);
+  assert.equal(reopened.attachedCanvasId(APP), null);
+  assert.deepEqual(await storedCanvases(root), []);
 });
 
 test('closing its pane or losing its chat never deletes a canvas', async (t) => {

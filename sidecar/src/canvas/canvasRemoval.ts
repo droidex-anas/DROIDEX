@@ -1,6 +1,7 @@
 // Explicit whole-canvas deletion (spec §7), which only the user can ask for.
-// First a durable head with no attachments, so a crash never leaves a chat on
-// a canvas whose source is going; then the canvas stops being served and its
+// First a durable head with no attachments, marked removing so a crash before
+// the rename finishes the deletion on the next open instead of reviving the
+// canvas, and so no chat is left on a canvas whose source is going; then the canvas stops being served and its
 // builds stop; once every mutation and export already reading it has settled,
 // its directory leaves the root in one rename and is deleted. Library items
 // own their copies, so nothing saved from this canvas goes with it.
@@ -47,8 +48,12 @@ export function canvasRemovalPreview(
   };
 }
 
-/** Leftovers of a deletion a terminated run did not finish; nothing reads them. */
-export async function discardRemovedCanvases(root: string): Promise<void> {
+/** Finishes the deletions a terminated run left; nothing reads these canvases. */
+export async function discardRemovedCanvases(
+  root: string,
+  removingIds: readonly string[],
+): Promise<void> {
+  for (const canvasId of removingIds) await moveOut(root, canvasId);
   let names: string[];
   try {
     names = await readdir(root);
@@ -94,6 +99,7 @@ export class CanvasRemoval {
     }
     const next = structuredClone(live);
     next.attachedAppSessionIds = [];
+    next.removing = true;
     next.sequence += 1;
     next.updatedAt = Date.now();
     await this.heads.install(next, () => {
@@ -109,21 +115,25 @@ export class CanvasRemoval {
     };
   }
 
-  /** Moves the directory out of the root in one durable rename. */
   private async retire(canvasId: string): Promise<string | null> {
     if (!this.unretired.has(canvasId)) return null;
-    const removed = join(this.root, `${REMOVED_PREFIX}${randomUUID()}`);
-    try {
-      await rename(join(this.root, canvasId), removed);
-      await syncDirectory(this.root);
-    } catch (error) {
-      if (!isCode(error, 'ENOENT')) throw storageFailure(REMOVE_RECOVERY, error);
-      this.unretired.delete(canvasId);
-      return null;
-    }
+    const removed = await moveOut(this.root, canvasId);
     this.unretired.delete(canvasId);
     return removed;
   }
+}
+
+/** Moves a canvas directory out of the root in one durable rename; null if already gone. */
+async function moveOut(root: string, canvasId: string): Promise<string | null> {
+  const removed = join(root, `${REMOVED_PREFIX}${randomUUID()}`);
+  try {
+    await rename(join(root, canvasId), removed);
+    await syncDirectory(root);
+  } catch (error) {
+    if (isCode(error, 'ENOENT')) return null;
+    throw storageFailure(REMOVE_RECOVERY, error);
+  }
+  return removed;
 }
 
 // Already out of the root, so a failure only costs disk until the next open.
