@@ -79,6 +79,19 @@ test('only the reserved server and correlated call are projected', () => {
   );
   assert.equal(read.canvasActivity?.action, 'inspect');
 
+  const annotateName = 'mcp__droidex-canvas__canvas_annotate';
+  const annotate = projector.project(
+    event('tool_call', {
+      toolName: annotateName,
+      toolUseId: 'annotate-1',
+      toolArgs: { source: CANARY },
+    }),
+    canvasToolProvenance(annotateName, 'annotate-1'),
+  );
+  assert.equal(annotate.canvasActivity?.action, 'annotate');
+  assert.equal(annotate.canvasActivity?.message, 'Annotating canvas');
+  assert.ok(!JSON.stringify(annotate).includes(CANARY));
+
   const createName = 'mcp__droidex-canvas__canvas_create';
   projector.project(
     event('tool_call', {
