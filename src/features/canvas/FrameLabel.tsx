@@ -41,6 +41,8 @@ export function FrameLabel({
       role="button"
       tabIndex={tabStop ? 0 : -1}
       aria-pressed={selected}
+      aria-keyshortcuts="ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
+      title="Arrows move between frames; ⌥ and an arrow nudge it, ⇧ for ten"
       className="canvas-frame-label canvas-chrome"
       style={{ cursor: held ? 'grabbing' : 'grab', width: Math.max(0, width) }}
       onFocus={() => {

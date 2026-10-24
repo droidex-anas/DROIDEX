@@ -100,7 +100,18 @@ export function DesignFrame(props: DesignFrameProps) {
         ...(animated ? arrival(motion) : {}),
       }}
     >
-      <FrameLabel {...props} width={screenWidth - (toolsBeside ? tools.width : 0)} />
+      <FrameLabel
+        frame={frame}
+        width={screenWidth - (toolsBeside ? tools.width : 0)}
+        selected={selected}
+        interacted={props.interacted}
+        held={held}
+        tabStop={props.tabStop}
+        onHold={onHold}
+        onPick={onPick}
+        onInteract={onInteract}
+        onFocusLabel={props.onFocusLabel}
+      />
 
       <div
         // The sheet is the design's, never the board's background: in Interact
