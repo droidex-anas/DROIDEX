@@ -273,11 +273,14 @@ export class SessionFileCache {
 
   private collectCandidates(onDisk: Map<string, SessionFileStat>): SessionFileCacheEntry[] {
     const candidates: SessionFileCacheEntry[] = [];
-    for (const [id, file] of onDisk) {
+    for (const [id, scanned] of onDisk) {
+      const file = this.fileToSummarize(id, scanned);
       const cached = this.files.get(id);
       if (cached && !this.unavailableFiles.has(id) && matchesFreshnessKey(cached, file)) continue;
       try {
-        candidates.push(this.summarizeEntry(id, file));
+        const entry = this.summarizeEntry(id, file);
+        if (!entry) continue;
+        candidates.push(entry);
         this.unavailableFiles.delete(id);
       } catch {
         // The file was deleted or rotated between the scan and the read;
@@ -287,8 +290,13 @@ export class SessionFileCache {
     return candidates;
   }
 
-  private summarizeEntry(providerSessionId: string, file: SessionFileStat): SessionFileCacheEntry {
+  // Undefined when the file may not replace the cached one; see acceptsFile.
+  private summarizeEntry(
+    providerSessionId: string,
+    file: SessionFileStat,
+  ): SessionFileCacheEntry | undefined {
     const parsed = this.summarizeFile(providerSessionId, file);
+    if (!this.acceptsFile(providerSessionId, file, parsed)) return undefined;
     // A restored header is not a new admission decision for an owned chat.
     const retained =
       parsed.summary === null && this.retainsSummary(providerSessionId)
@@ -303,6 +311,27 @@ export class SessionFileCache {
     };
   }
 
+  // The cached file wins over another copy of its chat (an Alt copy, or one in
+  // a second cwd folder) while it exists. Once it is gone, search skips the
+  // chat until a copy replaces it.
+  private fileToSummarize(id: string, file: SessionFileStat): SessionFileStat {
+    const cached = this.files.get(id);
+    if (!cached || cached.path === file.path) return file;
+    const cachedFile = this.statFile(cached.path);
+    if (cachedFile) return cachedFile;
+    this.unavailableFiles.add(id);
+    return file;
+  }
+
+  // A copy replaces a missing cached file only as a full summary. No file
+  // moves an admitted chat to another Droid login; canonical history refuses it.
+  private acceptsFile(id: string, file: SessionFileStat, parsed: SessionFileSummary): boolean {
+    const cached = this.files.get(id);
+    if (!cached) return true;
+    if (!parsed.summary) return cached.path === file.path;
+    return !cached.summary || parsed.summary.droidProfile === cached.summary.droidProfile;
+  }
+
   // Reconcile exactly the session files a watcher event reported, so live
   // external changes cost a stat (and at most one re-parse) per changed file
   // instead of a walk of the whole sessions tree. A reported file that no
@@ -314,15 +343,17 @@ export class SessionFileCache {
     const upserts: SessionFileCacheEntry[] = [];
     const removedProviderSessionIds: string[] = [];
     for (const { providerSessionId, path } of changes) {
-      const file = this.statFile(path);
-      if (!file) {
-        if (this.files.has(providerSessionId)) this.unavailableFiles.add(providerSessionId);
-        if (this.files.has(providerSessionId) && !this.retainsSummary(providerSessionId)) {
+      const reported = this.statFile(path);
+      const cached = this.files.get(providerSessionId);
+      if (!reported) {
+        // Deleting another copy of a chat, such as an Alt copy, keeps the chat.
+        if (cached?.path !== path) continue;
+        this.unavailableFiles.add(providerSessionId);
+        if (!this.retainsSummary(providerSessionId))
           removedProviderSessionIds.push(providerSessionId);
-        }
         continue;
       }
-      const cached = this.files.get(providerSessionId);
+      const file = this.fileToSummarize(providerSessionId, reported);
       if (
         cached &&
         !this.unavailableFiles.has(providerSessionId) &&
@@ -330,7 +361,9 @@ export class SessionFileCache {
       )
         continue;
       try {
-        upserts.push(this.summarizeEntry(providerSessionId, file));
+        const entry = this.summarizeEntry(providerSessionId, file);
+        if (!entry) continue;
+        upserts.push(entry);
         this.unavailableFiles.delete(providerSessionId);
       } catch {
         // The file was deleted or rotated between the stat and the read;
@@ -438,11 +471,7 @@ export class SessionFileCache {
       this.db.exec(ADVANCE_REVISION);
       this.db.exec('COMMIT');
     } catch (error) {
-      try {
-        this.db.exec('ROLLBACK');
-      } catch {
-        // Preserve the original SQLite failure.
-      }
+      rollback(this.db);
       throw error;
     }
     this.revisionValue += 1;
