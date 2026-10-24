@@ -93,6 +93,8 @@ test('deleting a canvas discloses, then ends, its chats, turns and builds', asyn
 
   await canvas.handle({ ...disclosed, requestId: 'req-again' });
   assert.deepEqual(okReply(canvas, 'req-again'), { kind: 'ok' });
+  await canvas.handle({ type: 'canvas.removalPreview', requestId: 'req-gone', canvasId });
+  assert.equal(errorOf(canvas, 'req-gone').code, 'not_found');
   await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-rewatch', canvasId }, PAGE);
   assert.equal(errorOf(canvas, 'req-rewatch').code, 'invalid_input');
 });

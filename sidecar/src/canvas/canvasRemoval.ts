@@ -1,10 +1,11 @@
 // Explicit whole-canvas deletion (spec §7), which only the user can ask for.
 // First a durable head with no attachments, marked removing so a crash before
 // the rename finishes the deletion on the next open instead of reviving the
-// canvas, and so no chat is left on a canvas whose source is going; then the canvas stops being served and its
-// builds stop; once every mutation and export already reading it has settled,
-// its directory leaves the root in one rename and is deleted. Library items
-// own their copies, so nothing saved from this canvas goes with it.
+// canvas, and so no chat is left on a canvas whose source is going; then the
+// canvas stops being served and its builds stop; once every mutation and
+// export already reading it has settled, its directory leaves the root in one
+// rename and is deleted. Library items own their copies, so nothing saved from
+// this canvas goes with it.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -16,8 +17,9 @@ import { canvasError, storageFailure } from './canvasError.js';
 import { exportReadsSettled } from './canvasExport.js';
 import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
 import type { CanvasScopes } from './canvasScopes.js';
+import type { CanvasWatches } from './canvasWatches.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
-import type { CanvasRemovalPreview } from './protocol.js';
+import type { CanvasCommand, CanvasRemovalPreview, CanvasReply } from './protocol.js';
 
 // Not an identifier, so a directory on its way out is never loaded as a canvas.
 const REMOVED_PREFIX = '.removed-';
@@ -25,15 +27,46 @@ const REMOVE_RECOVERY = 'That canvas could not be deleted. Try again.';
 const CHANGED_SINCE_PREVIEW =
   'That canvas changed after deleting it was reviewed. Review it again.';
 
+export type RemovalCommand = Extract<
+  CanvasCommand,
+  { type: `canvas.${'removalPreview' | 'removeCanvas'}` }
+>;
+
+export function isRemovalCommand(command: CanvasCommand): command is RemovalCommand {
+  return command.type === 'canvas.removalPreview' || command.type === 'canvas.removeCanvas';
+}
+
+export async function answerRemovalCommand(
+  workspace: CanvasWorkspace,
+  scopes: CanvasScopes,
+  watches: CanvasWatches,
+  command: RemovalCommand,
+): Promise<CanvasReply> {
+  const { canvasId } = command;
+  if (command.type === 'canvas.removalPreview')
+    return { kind: 'removalPreview', preview: removalPreview(workspace, scopes, canvasId) };
+  // A user's deletion ends agent turns on the canvas before its source goes,
+  // and again after, for a turn that began while the removal was queued.
+  scopes.revokeTurns(canvasId);
+  await workspace.removeCanvas(
+    canvasId,
+    command.expectedSequence,
+    command.expectedAttachedAppSessionIds,
+  );
+  scopes.revokeTurns(canvasId);
+  watches.forgetCanvas(canvasId);
+  return { kind: 'ok' };
+}
+
 /** What deleting this canvas would end, for the renderer to disclose first. */
-export function canvasRemovalPreview(
+function removalPreview(
   workspace: CanvasWorkspace,
   scopes: CanvasScopes,
   canvasId: string,
 ): CanvasRemovalPreview {
-  const snapshot = workspace.snapshot(canvasId);
   const summary = workspace.listCanvases().find((entry) => entry.canvasId === canvasId);
   if (!summary) throw canvasError('not_found', 'That canvas is already deleted.');
+  const snapshot = workspace.snapshot(canvasId);
   const turns = scopes.activeTurns(canvasId).map((scope) => scope.appSessionId);
   return {
     canvasId,

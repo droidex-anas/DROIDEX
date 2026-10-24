@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { startBridgeServer } from '../bridgeServer.js';
+import { saveOwnedAsset } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
@@ -17,6 +18,21 @@ import type { DesignSystemRef } from './protocol.js';
 const canvasId = 'export-canvas';
 const ref = { designId: 'hey', revisionId: 'revision-1' };
 const defaultKit = { id: 'droidex', version: 1, mode: 'light' } as const;
+
+/** An owned image as Canvas stores it: the bytes and the record beside them. */
+async function ownImage(root: string, image: Buffer): Promise<string> {
+  const assetId = createHash('sha256').update(image).digest('hex');
+  await mkdir(join(root, 'canvases', canvasId), { recursive: true });
+  const asset = {
+    assetId,
+    mediaType: 'image/png',
+    byteLength: image.length,
+    width: 1,
+    height: 1,
+  } as const;
+  await saveOwnedAsset(join(root, 'canvases'), canvasId, asset, image);
+  return assetId;
+}
 
 async function profile(t: TestContext): Promise<{ root: string; destination: string }> {
   const root = await mkdtemp(join(tmpdir(), 'canvas-export-'));
@@ -84,9 +100,7 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
     '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489',
     'hex',
   );
-  const assetId = createHash('sha256').update(image).digest('hex');
-  await mkdir(join(root, 'canvases', canvasId, 'assets'), { recursive: true });
-  await writeFile(join(root, 'canvases', canvasId, 'assets', assetId), image);
+  const assetId = await ownImage(root, image);
   const source = `export default function Hey(){return <img src="canvas-asset:${assetId}" alt="Hey"/>}`;
   await saveRevision(root, { 'main.tsx': source, 'style.css': 'h1 { color: red; }' }, kit);
 
@@ -269,9 +283,7 @@ test('refuses linked destination paths and escaping revision paths', async (t) =
 test('the exported Hey starter builds and serves outside the checkout without a download', async (t) => {
   const { root, destination } = await profile(t);
   const image = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
-  const assetId = createHash('sha256').update(image).digest('hex');
-  await mkdir(join(root, 'canvases', canvasId, 'assets'), { recursive: true });
-  await writeFile(join(root, 'canvases', canvasId, 'assets', assetId), image);
+  const assetId = await ownImage(root, image);
   const source = `import { Card } from '@droidex/design-system';
 export default function Hey() { return <Card className="dark:bg-black"><img src="canvas-asset:${assetId}" alt="Hey" /></Card>; }`;
   await saveRevision(root, { 'main.tsx': source }, defaultKit);

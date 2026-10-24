@@ -18,8 +18,8 @@ import {
   type DesignSystemCommand,
 } from './designSystemCommands.js';
 import { editCanvasElement } from './canvasElementEdit.js';
-import { answerLibraryCommand } from './canvasLibrary.js';
-import { canvasRemovalPreview } from './canvasRemoval.js';
+import { answerLibraryCommand, isLibraryCommand } from './canvasLibrary.js';
+import { answerRemovalCommand, isRemovalCommand } from './canvasRemoval.js';
 import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
@@ -143,6 +143,9 @@ class CanvasDispatch {
       | DesignSystemCommand
     >,
   ): Promise<CanvasReply> {
+    if (isRemovalCommand(command))
+      return answerRemovalCommand(workspace, this.scopes, this.watches, command);
+    if (isLibraryCommand(command)) return answerLibraryCommand(workspace, command);
     switch (command.type) {
       case 'canvas.list':
         return { kind: 'summaries', summaries: workspace.listCanvases() };
@@ -206,24 +209,6 @@ class CanvasDispatch {
         workspace.snapshot(command.canvasId);
         workspace.previews.record(command.canvasId, command.report);
         return { kind: 'ok' };
-      case 'canvas.removalPreview':
-        return {
-          kind: 'removalPreview',
-          preview: canvasRemovalPreview(workspace, this.scopes, command.canvasId),
-        };
-      case 'canvas.removeCanvas':
-        // A user's deletion ends agent turns on the canvas before its source goes.
-        this.scopes.revokeTurns(command.canvasId);
-        await workspace.removeCanvas(
-          command.canvasId,
-          command.expectedSequence,
-          command.expectedAttachedAppSessionIds,
-        );
-        this.watches.forgetCanvas(command.canvasId);
-        return { kind: 'ok' };
-      case 'canvas.saveLibraryItem':
-      case 'canvas.listLibraryItems':
-        return answerLibraryCommand(workspace, command);
       case 'canvas.readSource': {
         // The source drawer and history read one committed revision; an
         // uncommitted tree on disk is refused, and the head never moves.

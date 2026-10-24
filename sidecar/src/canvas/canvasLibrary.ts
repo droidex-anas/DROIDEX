@@ -65,6 +65,10 @@ export type LibraryCommand = Extract<
   { type: `canvas.${'saveLibraryItem' | 'listLibraryItems'}` }
 >;
 
+export function isLibraryCommand(command: CanvasCommand): command is LibraryCommand {
+  return command.type === 'canvas.saveLibraryItem' || command.type === 'canvas.listLibraryItems';
+}
+
 const savedItemSchema = z
   .object({
     version: z.literal(1),
@@ -84,6 +88,10 @@ const savedItemSchema = z
   .strict();
 
 type SavedItem = z.infer<typeof savedItemSchema>;
+
+// Staging trees of saves still running, which a listing's sweep leaves alone;
+// any other one is what a terminated run left behind.
+const savesStaging = new Set<string>();
 
 export async function answerLibraryCommand(
   workspace: CanvasWorkspace,
@@ -162,6 +170,10 @@ async function listLibraryItems(query: string): Promise<LibraryItem[]> {
   }
   const matched: SavedItem[] = [];
   for (const name of names) {
+    if (name.startsWith(STAGING_PREFIX)) {
+      await discardStaging(join(root, name));
+      continue;
+    }
     if (!canvasIdentifierSchema.safeParse(name).success) continue;
     try {
       const saved = await readSavedItem(name);
@@ -244,6 +256,7 @@ async function readSavedItem(itemId: string): Promise<SavedItem | null> {
 async function publishItem(saved: SavedItem, copy: RevisionCopy): Promise<boolean> {
   const root = canvasLibraryDir();
   const staging = join(root, `${STAGING_PREFIX}${randomUUID()}`);
+  savesStaging.add(staging);
   try {
     await mkdir(root, { recursive: true });
     if ((await lstat(root)).isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
@@ -270,7 +283,15 @@ async function publishItem(saved: SavedItem, copy: RevisionCopy): Promise<boolea
     throw storageFailure(SAVE_RECOVERY, error);
   } finally {
     await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    savesStaging.delete(staging);
   }
+}
+
+async function discardStaging(staging: string): Promise<void> {
+  if (savesStaging.has(staging)) return;
+  await rm(staging, { recursive: true, force: true }).catch((error: unknown) => {
+    console.error('An unfinished library save was not cleaned up yet:', error);
+  });
 }
 
 /** One new file under a fresh staging tree, recording each directory it made. */
