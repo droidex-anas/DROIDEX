@@ -53,8 +53,11 @@ function tunnelPair() {
   };
 }
 
+// Compression runs on the libuv thread pool, so a busy machine can need far
+// more event-loop turns than an idle one; bound the wait by time instead.
 async function settle(until: () => boolean): Promise<void> {
-  for (let turn = 0; turn < 10_000 && !until(); turn++) {
+  const deadline = Date.now() + 10_000;
+  while (!until() && Date.now() < deadline) {
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 }
