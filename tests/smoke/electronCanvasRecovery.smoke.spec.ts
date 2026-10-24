@@ -81,7 +81,13 @@ const frameFor = (build: CanvasBuildState): CanvasFrame => ({
 });
 
 // The projection the board holds, extended the way the client extends it.
-let snapshot: CanvasSnapshot = { canvasId: 'cv_recover', sequence: 1, frames: [] };
+let snapshot: CanvasSnapshot = {
+  canvasId: 'cv_recover',
+  sequence: 1,
+  annotationsVersion: 0,
+  annotations: [],
+  frames: [],
+};
 
 const show = () => {
   const [frame] = snapshot.frames;
