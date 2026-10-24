@@ -109,7 +109,7 @@ export const designSystemSchema = z
   .strict();
 
 export type DesignSystem = z.infer<typeof designSystemSchema>;
-export type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
+type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
 
 const swatchesSchema = z.object({ surface: tokenValueSchema, accent: tokenValueSchema }).strict();
 const summarySchema = z

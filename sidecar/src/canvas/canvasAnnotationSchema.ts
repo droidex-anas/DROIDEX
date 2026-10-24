@@ -18,15 +18,7 @@ export const ANNOTATION_LIMITS = {
 } as const;
 
 /** Token names the board resolves against its theme; a raw colour never crosses the wire. */
-export const ANNOTATION_COLORS = [
-  'ink',
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'blue',
-  'violet',
-] as const;
+const ANNOTATION_COLORS = ['ink', 'red', 'orange', 'yellow', 'green', 'blue', 'violet'] as const;
 
 const COORDINATE_MESSAGE = 'Annotation coordinates must be finite numbers.';
 const DIMENSION_MESSAGE = `Annotation width and height must be above 0 and at most ${String(ANNOTATION_LIMITS.maxDimensionPx)} pixels.`;
@@ -59,7 +51,7 @@ const textSchema = z
   .string()
   .min(1, TEXT_MESSAGE)
   .max(ANNOTATION_LIMITS.maxTextLength, TEXT_MESSAGE)
-  .regex(/^[^\u0000-\u0008\u000B-\u001F\u007F-\u009F]*$/, TEXT_MESSAGE);
+  .refine(isPlainText, TEXT_MESSAGE);
 
 const authorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user') }).strict(),
@@ -100,7 +92,7 @@ function annotationSchemaWith<Stamp extends z.ZodRawShape>(stamp: Stamp) {
 }
 
 /** What a client draws; the sidecar owns who made it and when. */
-export const annotationDraftSchema = annotationSchemaWith({});
+const annotationDraftSchema = annotationSchemaWith({});
 
 export const annotationSchema = annotationSchemaWith({
   author: authorSchema,
@@ -228,4 +220,14 @@ function segmentDistance(
 
 function tenth(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+/** A tab or a line break is the only control character annotation text keeps. */
+function isPlainText(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code === 0x09 || code === 0x0a) continue;
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return false;
+  }
+  return true;
 }

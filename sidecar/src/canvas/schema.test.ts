@@ -687,7 +687,7 @@ test('the mutation fixtures parse, and the parsed values fit the mirror', () => 
   assert.deepEqual(annotate, wire.annotate);
 });
 
-test('annotate names each annotation once and changes at least one', () => {
+test('annotate names each annotation once, changes at least one and refuses a stray control character', () => {
   assert.match(
     rejection(annotateCanvasInputSchema, { ...wire.annotate, deletes: ['ann_arrow'] }),
     /only once/,
@@ -695,6 +695,13 @@ test('annotate names each annotation once and changes at least one', () => {
   assert.match(
     rejection(annotateCanvasInputSchema, { ...wire.annotate, upserts: [], deletes: [] }),
     /at least one annotation/,
+  );
+  assert.match(
+    rejection(annotateCanvasInputSchema, {
+      ...wire.annotate,
+      upserts: [{ ...wire.annotate.upserts[1], text: 'Header\u0007bell' }],
+    }),
+    /without control characters/,
   );
 });
 
