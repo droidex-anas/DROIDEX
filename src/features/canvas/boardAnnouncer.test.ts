@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildAnnouncement, selectionAnnouncement, zoomAnnouncement } from './boardAnnouncer';
+import { NO_SHOWN_REVISIONS } from './previewLabels';
 import type { CanvasBuildState, CanvasFrame } from './protocol';
 
 const READY: CanvasBuildState = {
@@ -28,23 +29,34 @@ function frame(designId: string, build: CanvasBuildState, name = `Design ${desig
 test('a build is said once, when its status moves, and a move or rename says nothing', () => {
   const building = frame('a', { status: 'building', generation: 2 }, 'Pricing');
   const queued = frame('a', { status: 'pending', generation: 2 }, 'Pricing');
+  const say = (previous: CanvasFrame[], next: CanvasFrame[]) =>
+    buildAnnouncement(previous, next, NO_SHOWN_REVISIONS);
 
-  assert.equal(buildAnnouncement([queued], [building]), 'Pricing is building');
-  assert.equal(buildAnnouncement([building], [frame('a', READY, 'Pricing')]), 'Pricing is ready');
+  assert.equal(say([queued], [building]), 'Pricing is building');
+  assert.equal(say([building], [frame('a', READY, 'Pricing')]), 'Pricing is ready');
   assert.equal(
-    buildAnnouncement(
+    say(
       [building],
       [frame('a', { ...READY, status: 'failed', lastWorkingRevisionId: null }, 'Pricing')],
     ),
     'Pricing didn’t build',
   );
-  assert.equal(buildAnnouncement([building], [building]), null);
+  assert.equal(say([building], [building]), null);
   assert.equal(
-    buildAnnouncement([building], [{ ...building, name: 'Renamed', rect: { ...building.rect } }]),
+    say([building], [{ ...building, name: 'Renamed', rect: { ...building.rect } }]),
     null,
   );
   // A frame going back to the queue is not news.
-  assert.equal(buildAnnouncement([frame('a', READY)], [queued]), null);
+  assert.equal(say([frame('a', READY)], [queued]), null);
+
+  // A streaming checkpoint over a design already on show builds quietly and
+  // is said only once it lands.
+  const showing = new Map([['a', 'r1']]);
+  assert.equal(buildAnnouncement([frame('a', READY, 'Pricing')], [building], showing), null);
+  assert.equal(
+    buildAnnouncement([building], [frame('a', READY, 'Pricing')], showing),
+    'Pricing is ready',
+  );
 });
 
 test('many frames changing at once are counted rather than read out', () => {
@@ -54,9 +66,12 @@ test('many frames changing at once are counted rather than read out', () => {
     frame('b', READY),
     frame('c', { ...READY, status: 'failed', lastWorkingRevisionId: null }),
   ];
-  assert.equal(buildAnnouncement(before, after), '3 frames changed: 2 ready, 1 didn’t build');
   assert.equal(
-    buildAnnouncement(before.slice(0, 2), after.slice(0, 2)),
+    buildAnnouncement(before, after, NO_SHOWN_REVISIONS),
+    '3 frames changed: 2 ready, 1 didn’t build',
+  );
+  assert.equal(
+    buildAnnouncement(before.slice(0, 2), after.slice(0, 2), NO_SHOWN_REVISIONS),
     'Design a is ready; Design b is ready',
   );
 });

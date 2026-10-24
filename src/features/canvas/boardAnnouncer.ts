@@ -4,6 +4,7 @@
 // concise status, never animation ticks, so each change is one short line.
 
 import { useEffect, useRef, useState } from 'react';
+import type { ShownRevisions } from './previewLabels';
 import type { CanvasFrame } from './protocol';
 
 /** How long the zoom must stay put before its level is spoken. */
@@ -25,16 +26,20 @@ function spoken(frame: CanvasFrame): Spoken | null {
 
 /**
  * The build news between two snapshots: frames whose status moved to building,
- * ready or failed. Frames that only moved or were renamed say nothing.
+ * ready or failed. Frames that only moved or were renamed say nothing, and a
+ * frame still showing an earlier design builds quietly: an agent's streaming
+ * checkpoints would otherwise say "building" on every write.
  */
 export function buildAnnouncement(
   previous: readonly CanvasFrame[],
   next: readonly CanvasFrame[],
+  shown: ShownRevisions,
 ): string | null {
   const before = new Map(previous.map((frame) => [frame.designId, frame.build.status]));
   const changes = next.flatMap((frame) => {
     const now = spoken(frame);
-    return now && before.get(frame.designId) !== frame.build.status ? [{ frame, now }] : [];
+    if (!now || before.get(frame.designId) === frame.build.status) return [];
+    return now === 'building' && shown.has(frame.designId) ? [] : [{ frame, now }];
   });
   if (changes.length === 0) return null;
   if (changes.length <= NAMED_CHANGES)
@@ -70,23 +75,25 @@ export function zoomAnnouncement(scale: number): string {
 /** The line the board's live region carries, updated as the board changes. */
 export function useBoardAnnouncer({
   frames,
+  shown,
   selectedFrameIds,
   focusedId,
   scale,
 }: {
   frames: readonly CanvasFrame[];
+  shown: ShownRevisions;
   selectedFrameIds: readonly string[];
   focusedId: string | null;
   scale: number;
 }): string {
   const [line, setLine] = useState('');
   const heard = useRef({ frames, selectedFrameIds, scale });
-  // Read when the selection changes, so a rename or a focus move alone says nothing.
-  const now = useRef({ frames, focusedId });
-  now.current = { frames, focusedId };
+  // Read by the effects below, so a rename, a focus move or a newly shown design alone says nothing.
+  const now = useRef({ frames, shown, focusedId });
+  now.current = { frames, shown, focusedId };
 
   useEffect(() => {
-    const said = buildAnnouncement(heard.current.frames, frames);
+    const said = buildAnnouncement(heard.current.frames, frames, now.current.shown);
     heard.current.frames = frames;
     if (said) setLine(said);
   }, [frames]);

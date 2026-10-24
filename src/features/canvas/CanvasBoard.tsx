@@ -189,12 +189,6 @@ export function CanvasBoard({
     if (board.current) board.current.scrollTop = board.current.scrollLeft = 0;
     view.reveal(gestures.rectFor(frame));
   };
-  const announcement = useBoardAnnouncer({
-    frames,
-    selectedFrameIds: interaction.selectedFrameIds,
-    focusedId,
-    scale: view.viewport.scale,
-  });
 
   const [focusRequest, setFocusRequest] = useState<string | null>(null);
   useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame: setFocusRequest, focusLabel }), [
@@ -220,6 +214,13 @@ export function CanvasBoard({
   // only a frame with something to show has a document to run.
   const shown = shownRevisions(retainedShown, frames);
   if (shown !== retainedShown) setRetainedShown(shown);
+  const announcement = useBoardAnnouncer({
+    frames,
+    shown,
+    selectedFrameIds: interaction.selectedFrameIds,
+    focusedId,
+    scale,
+  });
   const slotRequest: PreviewSlotRequest = {
     designIds: frames.filter((frame) => shown.has(frame.designId)).map((frame) => frame.designId),
     visible,
