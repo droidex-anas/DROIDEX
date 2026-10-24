@@ -26,7 +26,7 @@ export interface AgentAnnotation {
   author: 'user' | 'you' | 'another chat';
   color: Annotation['color'];
   rect?: FrameRect;
-  points?: [number, number][];
+  points?: AnnotationPoint[];
   arrowStart?: true;
   arrowEnd?: true;
   text?: string;
@@ -213,8 +213,8 @@ function roundedRect(rect: FrameRect): FrameRect {
   };
 }
 
-function roundedPoint(point: AnnotationPoint): [number, number] {
-  return [Math.round(point.x), Math.round(point.y)];
+function roundedPoint(point: AnnotationPoint): AnnotationPoint {
+  return { x: Math.round(point.x), y: Math.round(point.y) };
 }
 
 function designIdOf(frame: BoardFrame): string {

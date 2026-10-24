@@ -29,8 +29,8 @@ test('an arrow is over the frames it crosses and points at the one its head reac
     author: 'user',
     color: 'red',
     points: [
-      [100, 100],
-      [1001, 100],
+      { x: 100, y: 100 },
+      { x: 1001, y: 100 },
     ],
     arrowEnd: true,
     over: ['dsg_left', 'dsg_right'],
