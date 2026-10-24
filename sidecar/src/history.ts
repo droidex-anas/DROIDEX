@@ -1565,7 +1565,10 @@ function summarizeSessionFile(
   providerSessionId: string,
   file: SessionFileStat,
 ): SessionFileSummary {
-  const { start, hasCompletedConversation } = readSessionFileHead(file.path, file.sizeBytes);
+  const { start, hasPrompt, hasCompletedConversation } = readSessionFileHead(
+    file.path,
+    file.sizeBytes,
+  );
   const settings = readSessionModelSettings(start, file.path);
   // Resuming a session needs its model even when the session never earns a
   // sidebar row, so launch settings are cached independently of admission.
@@ -1573,9 +1576,10 @@ function summarizeSessionFile(
   const cachedLaunch = launch ? { launchSettings: launch } : {};
   if (!start) return { summary: null, ...cachedLaunch };
   const classification = classifyStoredSession(start);
-  // Live sessions are registered separately, so refusing an unfinished
-  // exchange here cannot hide a first turn while it is running.
-  if (!classification || !hasCompletedConversation) return { summary: null, ...cachedLaunch };
+  const provider = providerKind(start.provider) ?? DEFAULT_PROVIDER;
+  // App-owned transcripts persist the prompt and provider binding before a reply.
+  const isDurable = hasCompletedConversation || (provider !== DEFAULT_PROVIDER && hasPrompt);
+  if (!classification || !isDurable) return { summary: null, ...cachedLaunch };
   const title = start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
   const altHome = altDroidHome();
   const droidProfile: SessionSummary['droidProfile'] =
@@ -1588,7 +1592,7 @@ function summarizeSessionFile(
       providerSessionId,
       missionId: classification.missionId,
       // A Droid file carries no binding, so it reads as Droid without migration.
-      provider: providerKind(start.provider) ?? DEFAULT_PROVIDER,
+      provider,
       ...(droidProfile ? { droidProfile } : {}),
       ...(start.resumeId ? { resumeId: start.resumeId } : {}),
       sessionPurpose: classification.sessionPurpose,

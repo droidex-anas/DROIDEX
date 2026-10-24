@@ -80,6 +80,7 @@ export interface SessionRowProps {
 export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowProps): boolean {
   return (
     prev.session.appSessionId === next.session.appSessionId &&
+    prev.session.provider === next.session.provider &&
     prev.title === next.title &&
     prev.session.updatedAt === next.session.updatedAt &&
     prev.active === next.active &&

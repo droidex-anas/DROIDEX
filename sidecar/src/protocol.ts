@@ -276,6 +276,8 @@ export interface TranscriptEvent {
   forkPointId?: string;
   kind: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'status' | 'compaction';
   text?: string;
+  // Native text/thinking items remain one message across interleaved streams and replay.
+  textUpdate?: { messageId: string; kind: 'delta' | 'snapshot' };
   toolName?: string;
   toolArgs?: unknown;
   toolUseId?: string;
@@ -1018,6 +1020,15 @@ export type ClientCommand =
       reasoningEffort?: ReasoningEffort;
     }
   | {
+      type: 'child.watchHistory';
+      requestId: string;
+      target: {
+        parentAppSessionId: string;
+        childSessionId: string;
+        limit?: number;
+      } | null;
+    }
+  | {
       type: 'approval.respond';
       appSessionId: string;
       requestId: string;
@@ -1304,7 +1315,7 @@ export type ServerEvent =
       progress: ProgressEntry[];
       transcripts: TranscriptEvent[];
       childSessions?: ChildSessionSummary[];
-      mode?: 'replace' | 'prepend';
+      mode?: 'replace' | 'prepend' | 'refresh';
       olderCursor?: string;
       // Restore telemetry: how many transcript events this page delivered and
       // whether older history remains to page in. Lets the client show an
@@ -1336,7 +1347,7 @@ export type ServerEvent =
     }
   | { type: 'browser.error'; appSessionId?: string; message: string };
 
-export const BRIDGE_PROTOCOL_VERSION = 9 as const;
+export const BRIDGE_PROTOCOL_VERSION = 10 as const;
 
 export interface SequencedServerEvent {
   seq: number;

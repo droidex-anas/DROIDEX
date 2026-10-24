@@ -234,6 +234,21 @@ test('validates complete automation snapshot records', () => {
   }
 });
 
+test('child history refresh preserves its mode and rejects malformed targeting', () => {
+  const history = {
+    type: 'session.history',
+    appSessionId: 'parent',
+    childSessionId: 'child',
+    mode: 'refresh',
+    progress: [],
+    transcripts: [],
+  };
+  assertAccepted(history);
+  assertRejected({ ...history, mode: 'unknown' });
+  assertRejected({ ...history, childSessionId: 7 });
+  assertRejected({ ...history, childSessionId: undefined });
+});
+
 test('validates automation command results by outcome', () => {
   const result = { type: 'automations.result', requestId: 'request-1' };
   assertAccepted({ ...result, ok: true, runId: 'run-1' });
@@ -343,6 +358,53 @@ test('transient transcript events accept only the literal true or an absent flag
   }
   for (const transient of ['false', false, 1, null]) {
     assertRejected({ type: 'event.appended', event: { ...event, transient } });
+  }
+});
+
+test('native text updates require message identity and explicit delta or snapshot semantics', () => {
+  const event = {
+    id: 'event-1',
+    appSessionId: 'app-1',
+    sourceSessionId: 'child-1',
+    role: 'worker',
+    kind: 'text',
+    ts: 1,
+    text: 'A complete reply',
+  };
+  for (const kind of ['text', 'thinking']) {
+    for (const updateKind of ['delta', 'snapshot']) {
+      assertAccepted({
+        type: 'event.appended',
+        event: { ...event, kind, textUpdate: { messageId: 'native-item-1', kind: updateKind } },
+      });
+    }
+  }
+  for (const textUpdate of [
+    null,
+    'native-item-1',
+    { messageId: '', kind: 'delta' },
+    { messageId: 1, kind: 'delta' },
+    { messageId: 'native-item-1' },
+    { messageId: 'native-item-1', kind: 'append' },
+  ]) {
+    assertRejected({ type: 'event.appended', event: { ...event, textUpdate } });
+  }
+  for (const overrides of [
+    { kind: 'tool_call' },
+    { author: 'user' },
+    { author: 'assistant' },
+    { spoken: true },
+    { spoken: 'yes' },
+    { text: undefined },
+  ]) {
+    assertRejected({
+      type: 'event.appended',
+      event: {
+        ...event,
+        ...overrides,
+        textUpdate: { messageId: 'native-item-1', kind: 'snapshot' },
+      },
+    });
   }
 });
 

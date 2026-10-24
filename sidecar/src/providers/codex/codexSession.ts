@@ -9,6 +9,7 @@ import type { ProviderInteractions } from '../interactions.js';
 import type {
   DelegatedTurnEnd,
   ProviderModelSettings,
+  ProviderChildSession,
   ProviderSession,
   SteerOutcome,
   UsageMetersListener,
@@ -28,6 +29,8 @@ import {
   type CodexTurn,
 } from './codexEvents.js';
 import { CodexToolBridge } from './codexTools.js';
+import { CodexChildThreads } from './codexChildThreads.js';
+import { threadItem } from './codexItems.js';
 import { SessionAutonomy } from '../sessionAutonomy.js';
 import { CodexVoice } from './codexVoice.js';
 import { TurnStream, turnInput, turnStartParams } from './codexTurn.js';
@@ -67,6 +70,7 @@ export class CodexSession implements ProviderSession {
   private closePromise?: Promise<void>;
   private readonly client: AppServerClient;
   private readonly mapper: CodexEventMapper;
+  private readonly childThreads: CodexChildThreads;
   private readonly cwd: string;
   private readonly permissions: SessionAutonomy;
   private settingsChanges: Promise<void> = Promise.resolve();
@@ -99,6 +103,7 @@ export class CodexSession implements ProviderSession {
   private readonly prompts: OpenPrompts;
   private readonly tools: CodexToolBridge;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
+  private readonly heldBackgroundEvents: NormalizedEvent[] = [];
   private readonly delegatedListeners = new Set<
     (running: boolean, end?: DelegatedTurnEnd) => void
   >();
@@ -155,6 +160,12 @@ export class CodexSession implements ProviderSession {
     });
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
+    this.childThreads = new CodexChildThreads(
+      input.appSessionId,
+      input.model,
+      this.usage,
+      () => this.threadId,
+    );
     this.voice = new CodexVoice(
       this.client,
       () => this.threadId,
@@ -246,6 +257,7 @@ export class CodexSession implements ProviderSession {
     this.threadId = response.thread.id;
     this.threadModel = response.model;
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+    this.childThreads.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
     // Never awaited: the limits only add detail to a later refusal.
     void this.usage.read().catch(() => undefined);
@@ -414,6 +426,10 @@ export class CodexSession implements ProviderSession {
       const previous = this.model;
       this.model = model;
       this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+      this.childThreads.setModel({
+        ...this.model,
+        modelId: this.model.modelId ?? this.threadModel,
+      });
       try {
         // Not swallowed: a turn Codex starts for a spoken request runs on what
         // the thread has, so a rejected write means the selection the chat shows
@@ -423,6 +439,10 @@ export class CodexSession implements ProviderSession {
         this.model = previous;
         this.effortCleared = previousEffortCleared;
         this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
+        this.childThreads.setModel({
+          ...this.model,
+          modelId: this.model.modelId ?? this.threadModel,
+        });
         throw error;
       }
     });
@@ -586,6 +606,8 @@ export class CodexSession implements ProviderSession {
   close(): Promise<void> {
     this.permissions.stop();
     this.resolveClosed();
+    this.childThreads.close();
+    this.heldBackgroundEvents.length = 0;
     this.releaseTurnStart();
     this.turn?.discard();
     this.dropSteers();
@@ -597,10 +619,15 @@ export class CodexSession implements ProviderSession {
 
   // Every notification is read through a guard: a payload this build does not
   // recognize must not throw out of the transport's stdout listener, and one
-  // addressed to another thread (a sub-agent Codex spawned for this one) is
-  // not this session's to render or to adopt as its turn.
+  // belonging to a child uses that child's mapper and never adopts the parent turn.
   private onThreadNotification(method: string, handler: (params: unknown) => void): void {
     this.client.onNotification(method, (params) => {
+      if (this.hasClosed) return;
+      const childEvents = this.childThreads.map(method, params);
+      if (childEvents) {
+        this.deliver(childEvents);
+        return;
+      }
       if (this.isForAnotherThread(params)) return;
       handler(params);
     });
@@ -641,17 +668,31 @@ export class CodexSession implements ProviderSession {
 
   onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
     this.backgroundListeners.add(listener);
+    for (const event of this.heldBackgroundEvents.splice(0)) listener(event);
+    this.deliver(this.childThreads.start());
     return () => {
       this.backgroundListeners.delete(listener);
     };
   }
 
+  restoreChildren(children: readonly ProviderChildSession[]): void {
+    if (this.hasClosed) return;
+    if (children.some((child) => child.providerSessionId === this.threadId))
+      throw new Error(
+        'Codex child history lists the parent thread as an agent. Start a new chat to continue.',
+      );
+    this.childThreads.restore(this.client, children, (events) => {
+      this.deliver(events);
+    });
+  }
+
   private deliver(events: NormalizedEvent[]): void {
-    for (const event of events) {
+    for (const event of this.childThreads.observe(events)) {
       // A turn Codex starts by itself — a spoken request delegated from a voice
       // conversation — has no stream waiting on it, so its work reaches the
       // chat the same way a child session's does.
-      if (event.childSession || !this.turn) {
+      if (event.childSession || event.childOwner || !this.turn) {
+        if (this.backgroundListeners.size === 0) this.heldBackgroundEvents.push(event);
         for (const listener of this.backgroundListeners) listener(event);
       } else this.turn.push([event]);
     }
@@ -668,11 +709,22 @@ export class CodexSession implements ProviderSession {
   private registerHandlers(): void {
     this.client.onRequest('item/tool/call', (params) => this.tools.call(params));
     this.client.onNotification('thread/started', (params) => {
-      this.deliver(this.mapper.childThreadStarted(params, this.threadId));
+      if (this.hasClosed) return;
+      this.deliver([
+        ...this.mapper.childThreadStarted(params, this.threadId),
+        ...this.childThreads.started(params),
+      ]);
     });
     for (const method of MAPPED_NOTIFICATIONS) {
       this.onThreadNotification(method, (params) => {
         if (method === 'item/started') this.settleDeliveredSteer(params);
+        // Typed and steered root prompts are already owned by the timeline.
+        if (
+          method === 'item/completed' &&
+          isObject(params) &&
+          threadItem(params).type === 'userMessage'
+        )
+          return;
         this.deliver(this.mapper.map(method, params));
       });
     }
@@ -727,6 +779,8 @@ export class CodexSession implements ProviderSession {
       this.turn?.fail(failure.error);
     });
     this.client.onClose((error, cleanExit) => {
+      this.childThreads.close();
+      this.heldBackgroundEvents.length = 0;
       this.catalog?.close();
       this.releaseTurnStart();
       // Not announced: the close path owns what happens to the queue, and a

@@ -38,6 +38,7 @@ export function sessionOptions(
     // 'project' is what loads the repository's CLAUDE.md.
     settingSources: ['user', 'project', 'local'],
     includePartialMessages: true,
+    forwardSubagentText: true,
     mcpServers: input.mcpServers,
     // The Spec toggle owns plan mode, so the model may not enter it on its own:
     // at high autonomy bypassPermissions skips canUseTool altogether and a

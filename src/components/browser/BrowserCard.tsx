@@ -9,22 +9,18 @@ import type { TranscriptEvent } from '../../types/bridge';
 import { Button } from '../ui/Button';
 import { Menu } from '../ui/Menu';
 import { LinkBadge } from '../transcript/LinkBadge';
-import { BrowserPreview } from './BrowserPreview';
 
 /**
  * The page a turn worked on in the chat's browser, as one card in the
  * transcript. It names the page, opens it in the Browser pane, and while the
  * agent is on the page its second line says what the agent is doing there.
- * The line keeps its place when the work ends, so the transcript does not move.
- * Above them is a small picture of the page, live while the turn runs.
+ * Completed turns keep this page reference just below their final response.
+ * The live page is shown in the floating computer-use preview.
  */
 export function BrowserCard({
-  cardKey,
   events,
   working,
 }: {
-  /** The card's own key in the feed: the picture it last showed is kept by it. */
-  cardKey: string;
   /** The turn's browser calls and their results, in order. */
   events: TranscriptEvent[];
   /** The card's turn is still running. */
@@ -39,16 +35,10 @@ export function BrowserCard({
     const key = active in state.sessions ? state.sessions[active].appSessionId : active;
     return key === appSessionId;
   });
-  const browserSessionId = useStoreSelector((state) =>
-    appSessionId && appSessionId in state.browsers
-      ? state.browsers[appSessionId].browserSessionId
-      : undefined,
-  );
   const { page, link, title, site, doing } = cardText(events, working);
 
   return (
     <div className="my-1.5 w-chat-card max-w-full overflow-hidden rounded-xl bg-surface">
-      <BrowserPreview cardKey={cardKey} browserSessionId={browserSessionId} live={working} />
       <div className="flex items-center gap-1 py-2.5 pl-3.5 pr-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-body-strong text-primary">{title}</div>

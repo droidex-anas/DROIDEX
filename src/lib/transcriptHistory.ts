@@ -1,7 +1,7 @@
 import type { TranscriptEvent } from '../types/bridge';
 import { composePrompt } from './composePrompt';
 import { promptWithSideChatReplies } from './sideChats';
-import { hasAppBlock, hasCompleteAppBlock, hasIncompleteAppBlock } from './appBlocks';
+import { hasCompleteAppBlock, hasIncompleteAppBlock } from './appBlocks';
 
 // A persisted twin is emitted within moments of its live event. Same-content
 // events further apart are independent occurrences and must both survive.
@@ -53,6 +53,13 @@ function replayScope(event: TranscriptEvent): string {
   return `${sessionKey(event)}:${event.author ?? event.role}:${event.kind}`;
 }
 
+function textMessageKey(event: TranscriptEvent): string | undefined {
+  if (!event.textUpdate || event.author || (event.kind !== 'text' && event.kind !== 'thinking')) {
+    return undefined;
+  }
+  return `${sessionKey(event)}:${event.kind}:${event.textUpdate.messageId}`;
+}
+
 function replayTimeDifferenceMs(left: TranscriptEvent, right: TranscriptEvent): number {
   const leftStart = Math.min(left.ts, left.endTs ?? left.ts);
   const leftEnd = Math.max(left.ts, left.endTs ?? left.ts);
@@ -69,16 +76,22 @@ function fullTextSupersedesTruncatedReplay(
 ): boolean {
   if (replayScope(live) !== replayScope(replayed)) return false;
   if (typeof live.text !== 'string' || typeof replayed.text !== 'string') return false;
-  const tail = TRUNCATED_TEXT_TAIL.exec(replayed.text);
+  return (
+    isFullTextForTruncatedReplay(live.text, replayed.text) &&
+    replayTimeDifferenceMs(live, replayed) <= REPLAY_DEDUP_TOLERANCE_MS
+  );
+}
+
+function isFullTextForTruncatedReplay(full: string, replayed: string): boolean {
+  const tail = TRUNCATED_TEXT_TAIL.exec(replayed);
   if (tail?.index === undefined) return false;
   const removedCount = Number(tail[1]);
-  const retainedPrefix = replayed.text.slice(0, tail.index);
+  const retainedPrefix = replayed.slice(0, tail.index);
   return (
     Number.isSafeInteger(removedCount) &&
     removedCount > 0 &&
-    live.text.length === retainedPrefix.length + removedCount &&
-    live.text.startsWith(retainedPrefix) &&
-    replayTimeDifferenceMs(live, replayed) <= REPLAY_DEDUP_TOLERANCE_MS
+    full.length === retainedPrefix.length + removedCount &&
+    full.startsWith(retainedPrefix)
   );
 }
 
@@ -110,11 +123,7 @@ function replayedTextSupersedesLiveGap(live: TranscriptEvent, replayed: Transcri
   if (typeof live.text !== 'string' || typeof replayed.text !== 'string') return false;
   if (
     live.text.length >= replayed.text.length ||
-    replayTimeDifferenceMs(live, replayed) > REPLAY_DEDUP_TOLERANCE_MS ||
-    !hasAppBlock(live.text) ||
-    !hasIncompleteAppBlock(live.text) ||
-    !hasCompleteAppBlock(replayed.text) ||
-    hasIncompleteAppBlock(replayed.text)
+    replayTimeDifferenceMs(live, replayed) > REPLAY_DEDUP_TOLERANCE_MS
   ) {
     return false;
   }
@@ -136,8 +145,18 @@ function replayedTextSupersedesLiveGap(live: TranscriptEvent, replayed: Transcri
 
 function supersededLiveGapIds(existing: TranscriptEvent[], page: TranscriptEvent[]): Set<string> {
   const ids = new Set<string>();
-  for (const replayed of page) {
-    for (const live of existing) {
+  const incomplete = existing.filter(
+    (event) => typeof event.text === 'string' && hasIncompleteAppBlock(event.text),
+  );
+  if (incomplete.length === 0) return ids;
+  const complete = page.filter(
+    (event) =>
+      typeof event.text === 'string' &&
+      hasCompleteAppBlock(event.text) &&
+      !hasIncompleteAppBlock(event.text),
+  );
+  for (const replayed of complete) {
+    for (const live of incomplete) {
       if (replayedTextSupersedesLiveGap(live, replayed)) ids.add(live.id);
     }
   }
@@ -157,7 +176,11 @@ export function reconcilePrependedTranscript(
     echoMatchesPersisted(event, olderUserText);
   const kept = existing.filter((event) => !supersededEcho(event));
   const retainedIds = new Set(kept.map((event) => event.id));
-  const older = olderPage.filter((event) => !retainedIds.has(event.id));
+  const retainedMessages = new Set(kept.map(textMessageKey).filter((key) => key !== undefined));
+  const older = olderPage.filter((event) => {
+    const key = textMessageKey(event);
+    return !retainedIds.has(event.id) && (!key || !retainedMessages.has(key));
+  });
   return older.length > 0 || kept.length !== existing.length ? [...older, ...kept] : existing;
 }
 
@@ -166,16 +189,26 @@ export function reconcileRestoredTranscript(
   page: TranscriptEvent[],
   pageIsComplete: boolean,
 ): TranscriptEvent[] {
+  const liveMessages = new Map<string, TranscriptEvent>();
+  for (const event of existing) {
+    const key = textMessageKey(event);
+    if (key) liveMessages.set(key, event);
+  }
+  const unkeyedExisting = existing.filter((event) => !event.textUpdate);
+  const unkeyedPage = page.filter((event) => !event.textUpdate);
   // Persisted history deliberately caps very large text blocks. When a live
   // event still carries that block in full, keep the lossless event and remove
   // its replay twin instead of rendering both versions as separate answers.
   const liveReplacementByPageId = new Map<string, TranscriptEvent>();
   const matchedLiveIds = new Set<string>();
-  const supersededLiveIds = supersededLiveGapIds(existing, page);
-  for (const replayed of page) {
+  const supersededLiveIds = supersededLiveGapIds(unkeyedExisting, unkeyedPage);
+  const truncatedPage = unkeyedPage.filter(
+    (event) => typeof event.text === 'string' && TRUNCATED_TEXT_TAIL.test(event.text),
+  );
+  for (const replayed of truncatedPage) {
     let closestLive: TranscriptEvent | undefined;
     let closestDifferenceMs = Infinity;
-    for (const live of existing) {
+    for (const live of unkeyedExisting) {
       if (matchedLiveIds.has(live.id) || !fullTextSupersedesTruncatedReplay(live, replayed)) {
         continue;
       }
@@ -188,17 +221,30 @@ export function reconcileRestoredTranscript(
     if (!closestLive) continue;
     liveReplacementByPageId.set(replayed.id, closestLive);
     matchedLiveIds.add(closestLive.id);
-    for (const candidate of existing) {
+    for (const candidate of unkeyedExisting) {
       if (
         candidate.id !== closestLive.id &&
-        isUnpersistedTextPrefix(candidate, closestLive, page)
+        isUnpersistedTextPrefix(candidate, closestLive, unkeyedPage)
       ) {
         supersededLiveIds.add(candidate.id);
       }
     }
   }
-  const authoritativePage = page.map((event) => liveReplacementByPageId.get(event.id) ?? event);
+  const authoritativePage = page.map((event) => {
+    const key = textMessageKey(event);
+    const live = key ? liveMessages.get(key) : undefined;
+    if (
+      live?.text &&
+      event.text &&
+      ((live.text.length > event.text.length && live.text.startsWith(event.text)) ||
+        isFullTextForTruncatedReplay(live.text, event.text))
+    ) {
+      return { ...event, text: live.text, endTs: live.endTs ?? live.ts };
+    }
+    return liveReplacementByPageId.get(event.id) ?? event;
+  });
   const pageIds = new Set(authoritativePage.map((event) => event.id));
+  const pageMessages = new Set(authoritativePage.map(textMessageKey));
   const pageUserText = userPromptTexts(authoritativePage);
   const firstTs = authoritativePage[0]?.ts ?? 0;
   const lastTs = authoritativePage.at(-1)?.ts ?? 0;
@@ -211,12 +257,13 @@ export function reconcileRestoredTranscript(
   // Live primary events carry the provider identity while restored history
   // canonicalizes the source to "primary". Logical child identities already
   // match on both paths and therefore remain isolated from siblings.
-  const contentSignature = (event: TranscriptEvent) =>
-    event.toolUseId
-      ? `tool:${sessionKey(event)}:${event.kind}:${event.toolUseId}`
-      : `${sessionKey(event)}:${event.author ?? event.role}:${event.kind}:${event.text ?? ''}`;
+  const contentSignature = (event: TranscriptEvent) => {
+    if (event.toolUseId) return `tool:${sessionKey(event)}:${event.kind}:${event.toolUseId}`;
+    return `${sessionKey(event)}:${event.author ?? event.role}:${event.kind}:${event.text ?? ''}`;
+  };
   const pageSignatures = new Map<string, number[]>();
   for (const event of authoritativePage) {
+    if (event.textUpdate) continue;
     const signature = contentSignature(event);
     const timestamps = pageSignatures.get(signature);
     if (timestamps) timestamps.push(event.ts);
@@ -225,6 +272,8 @@ export function reconcileRestoredTranscript(
   const isReplayedDuplicate = (event: TranscriptEvent) => {
     // Echo reconciliation intentionally has stricter time-window semantics.
     if (isOptimisticEcho(event)) return false;
+    const messageKey = textMessageKey(event);
+    if (messageKey) return pageMessages.has(messageKey);
     const timestamps = pageSignatures.get(contentSignature(event));
     if (!timestamps || timestamps.length === 0) return false;
     const startTs = Math.min(event.ts, event.endTs ?? event.ts);
@@ -253,11 +302,17 @@ export function reconcileRestoredTranscript(
       !isReplayedDuplicate(event),
   );
   if (page.length === 0) return existing;
-  const merged = [...authoritativePage];
-  for (const event of liveOnly) {
-    const insertionIndex = merged.findIndex((candidate) => candidate.ts > event.ts);
-    if (insertionIndex < 0) merged.push(event);
-    else merged.splice(insertionIndex, 0, event);
+  liveOnly.sort((left, right) => left.ts - right.ts);
+  const merged: TranscriptEvent[] = [];
+  let liveIndex = 0;
+  for (const event of authoritativePage) {
+    while (liveIndex < liveOnly.length && liveOnly[liveIndex].ts < event.ts) {
+      merged.push(liveOnly[liveIndex++]);
+    }
+    merged.push(event);
+  }
+  for (; liveIndex < liveOnly.length; liveIndex++) {
+    merged.push(liveOnly[liveIndex]);
   }
   return merged;
 }
@@ -271,6 +326,25 @@ function reconcileTranscriptPage(
   return mode === 'prepend'
     ? reconcilePrependedTranscript(existing, page)
     : reconcileRestoredTranscript(existing, page, !hasMore);
+}
+
+// A refresh carries only the latest page. One with older history behind it
+// that shares nothing with the loaded events starts after them, leaving a gap.
+export function isDisjointLatestPage(
+  transcript: TranscriptEvent[],
+  sourceSessionId: string,
+  page: TranscriptEvent[],
+  hasMore: boolean,
+): boolean {
+  if (!hasMore || page.length === 0) return false;
+  const pageIds = new Set(page.map((event) => event.id));
+  const pageMessages = new Set(page.map(textMessageKey));
+  pageMessages.delete(undefined);
+  return !transcript.some(
+    (event) =>
+      event.sourceSessionId === sourceSessionId &&
+      (pageIds.has(event.id) || pageMessages.has(textMessageKey(event))),
+  );
 }
 
 export function reconcileTranscriptSourcePage(

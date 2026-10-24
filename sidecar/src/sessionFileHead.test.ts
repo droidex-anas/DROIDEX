@@ -86,6 +86,7 @@ test('an empty file, or a session_start past the first few lines, yields no star
   writeFileSync(empty, '');
   assert.deepEqual(readSessionFileHead(empty, 0), {
     start: undefined,
+    hasPrompt: false,
     hasCompletedConversation: false,
   });
   assert.deepEqual(readSessionStart(empty, 0), {});

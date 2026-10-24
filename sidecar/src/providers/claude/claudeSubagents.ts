@@ -3,6 +3,7 @@ import type { NormalizedEvent } from '../../normalize.js';
 import type { ChildActivity, ChildStatus } from '../../protocol.js';
 import { taskPollTargetId, type ChildSessionSignal } from '../../subagentSignals.js';
 import { trimmedString as str } from '../../values.js';
+import type { ProviderChildSession } from '../session.js';
 
 type SystemMessage = Extract<SDKMessage, { type: 'system' }>;
 type TaskStarted = Extract<SystemMessage, { subtype: 'task_started' }>;
@@ -83,15 +84,48 @@ export const isSpawnToolName = (name: string): boolean =>
 
 export class ClaudeSubagents {
   private readonly children = new Map<string, ChildSessionSignal>();
+  private readonly spawnOwners = new Map<string, Set<string>>();
   private readonly workflows = new Map<string, WorkflowRun>();
+  private readonly workflowSpawns = new Map<string, boolean>();
   private turnSpawnToolUseId?: string;
 
   beginTurn(): void {
     this.turnSpawnToolUseId = undefined;
   }
 
-  noteToolUse(name: string, id: string): void {
-    if (isSpawnToolName(name)) this.turnSpawnToolUseId = id;
+  restore(children: readonly ProviderChildSession[]): void {
+    for (const child of children) {
+      const toolUseId = child.spawnLink?.kind === 'tool-use' ? child.spawnLink.id : undefined;
+      this.update(child.providerSessionId, {
+        modelId: child.modelId,
+        role: child.role,
+        reasoningEffort: child.reasoningEffort,
+        status: child.status,
+        transcriptAvailable: child.transcriptAvailable,
+        toolUseId,
+        group: child.group,
+      });
+      if (toolUseId && child.group && !this.workflowSpawns.has(toolUseId))
+        this.workflowSpawns.set(toolUseId, false);
+    }
+  }
+
+  noteToolUse(name: string, id: string, parentToolUseId: string | null): void {
+    if (name === 'Workflow' && !this.workflowSpawns.has(id)) this.workflowSpawns.set(id, false);
+    if (!parentToolUseId && isSpawnToolName(name)) this.turnSpawnToolUseId = id;
+  }
+
+  dropWorkflowOutput(toolUseId: string | null): boolean {
+    if (!toolUseId) return false;
+    const warned = this.workflowSpawns.get(toolUseId);
+    if (warned === undefined) return false;
+    if (!warned) {
+      this.workflowSpawns.set(toolUseId, true);
+      console.warn(
+        `[claude] Workflow spawn ${toolUseId} cannot identify the agent behind its output; only per-agent progress is available.`,
+      );
+    }
+    return true;
   }
 
   // The agent a call is about, when it is about one. `TaskOutput` and `TaskStop`
@@ -103,12 +137,26 @@ export class ClaudeSubagents {
     return taskId !== undefined && this.children.has(taskId) ? taskId : undefined;
   }
 
-  map(message: SystemMessage, modelId: string | undefined): NormalizedEvent[] {
+  observe(
+    toolUseId: string,
+    patch: Pick<ChildSessionSignal, 'modelId' | 'transcriptAvailable'>,
+  ): NormalizedEvent[] {
+    const owners = this.spawnOwners.get(toolUseId);
+    if (owners?.size !== 1) return [];
+    const taskId = owners.values().next().value;
+    if (!taskId) return [];
+    const known = this.children.get(taskId);
+    // Workflow frames identify the outer spawn, even while only one leaf is known.
+    if (!known || known.group) return [];
+    return writesNothingNew(known, patch) ? [] : this.update(taskId, patch);
+  }
+
+  map(message: SystemMessage): NormalizedEvent[] {
     switch (message.subtype) {
       case 'task_started':
-        return this.started(message, modelId);
+        return this.started(message);
       case 'task_progress':
-        return this.progress(message, modelId);
+        return this.progress(message);
       case 'task_updated':
         return this.updated(message);
       case 'task_notification': {
@@ -134,9 +182,11 @@ export class ClaudeSubagents {
     }
   }
 
-  private started(message: TaskStarted, modelId: string | undefined): NormalizedEvent[] {
+  private started(message: TaskStarted): NormalizedEvent[] {
     if (message.ambient || message.skip_transcript) return [];
     if (message.task_type === 'local_workflow') {
+      if (message.tool_use_id && !this.workflowSpawns.has(message.tool_use_id))
+        this.workflowSpawns.set(message.tool_use_id, false);
       if (message.workflow_name)
         this.workflows.set(message.task_id, {
           name: message.workflow_name,
@@ -152,19 +202,18 @@ export class ClaudeSubagents {
       toolUseId,
       label: message.description,
       ...(message.prompt ? { prompt: message.prompt } : {}),
-      ...(modelId ? { modelId } : {}),
       ...(workflow ? { group: workflow.name } : {}),
       status: 'running',
     });
   }
 
-  private progress(message: TaskProgress, modelId: string | undefined): NormalizedEvent[] {
+  private progress(message: TaskProgress): NormalizedEvent[] {
     const workflow = this.workflows.get(message.task_id);
     if (workflow) return this.workflowAgents(message, workflow);
     const known = this.children.get(message.task_id);
     if (!known && !message.subagent_type) return [];
     return this.update(message.task_id, {
-      ...(!known ? { modelId, label: message.description, status: 'running' } : {}),
+      ...(!known ? { label: message.description, status: 'running' } : {}),
       ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
       // The agent's own running total, which belongs to its row rather than to
       // the parent's session totals.
@@ -242,12 +291,30 @@ export class ClaudeSubagents {
   }
 
   private update(taskId: string, patch: Partial<ChildSessionSignal>): NormalizedEvent[] {
+    const known = this.children.get(taskId);
     const child: ChildSessionSignal = {
-      ...this.children.get(taskId),
+      transcriptAvailable: false,
+      ...known,
       ...patch,
       providerSessionId: taskId,
-      transcriptAvailable: false,
     };
+    if (patch.modelId && patch.modelId !== known?.modelId && !('reasoningEffort' in patch))
+      child.reasoningEffort = undefined;
+    if (known?.toolUseId !== child.toolUseId) {
+      if (known?.toolUseId) {
+        const previous = this.spawnOwners.get(known.toolUseId);
+        previous?.delete(taskId);
+        if (previous?.size === 0) this.spawnOwners.delete(known.toolUseId);
+      }
+      if (child.toolUseId) {
+        let owners = this.spawnOwners.get(child.toolUseId);
+        if (!owners) {
+          owners = new Set();
+          this.spawnOwners.set(child.toolUseId, owners);
+        }
+        owners.add(taskId);
+      }
+    }
     this.children.set(taskId, child);
     return [{ childSession: child }];
   }

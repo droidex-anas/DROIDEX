@@ -25,6 +25,7 @@ import type { SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type {
   DelegatedTurnEnd,
+  ProviderChildSession,
   ProviderModelSettings,
   ProviderSession,
   SteerOutcome,
@@ -205,6 +206,10 @@ export class ClaudeSession implements ProviderSession {
     return () => {
       this.backgroundListeners.delete(listener);
     };
+  }
+
+  restoreChildren(children: readonly ProviderChildSession[]): void {
+    this.mapper.restoreChildren(children);
   }
 
   onDelegatedTurn(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void {
@@ -474,17 +479,17 @@ export class ClaudeSession implements ProviderSession {
     // Mapping stays in wire order, including model and spawn-link observations.
     const events = this.mapper.map(message, this.fastMode);
     const refusal = this.mapper.takeRefusal();
-    if (this.delegatedTurnRunning) {
-      this.forwardDelegated({ message, events, refusal });
-      return;
-    }
-    if (this.discardUntilResult && message.type === 'result') this.discardUntilResult = false;
     const turnEvents: NormalizedEvent[] = [];
     for (const event of events) {
-      if (event.childSession) {
+      if (event.childSession || event.childOwner) {
         for (const listener of this.backgroundListeners) listener(event);
       } else turnEvents.push(event);
     }
+    if (this.delegatedTurnRunning) {
+      this.forwardDelegated({ message, events: turnEvents, refusal });
+      return;
+    }
+    if (this.discardUntilResult && message.type === 'result') this.discardUntilResult = false;
     this.turnQueue?.push({ message, events: turnEvents, refusal });
   }
 

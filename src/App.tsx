@@ -17,6 +17,7 @@ import { isEmbedded } from './lib/embed';
 import { getApiKey, isRemoteClient, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { forwardNativeBrowserShortcuts, hasNativeBrowser } from './lib/nativeBrowser';
 import { BrowserHost } from './components/browser/BrowserHost';
+import { ComputerUsePictureInPicture } from './components/computer-use/ComputerUsePictureInPicture';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import { shouldOpenSelectedChild } from './lib/childSessions';
 import type { ChildAccess } from './hooks/storeChildSession';
@@ -1154,6 +1155,12 @@ export default function App() {
           <LazyRemoteApprovalPanel />
         </Suspense>
       )}
+      {!embedded && (
+        <ComputerUsePictureInPicture
+          hidden={showWizard || state.settingsOpen || fullContentRoute}
+        />
+      )}
+
       <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>
 
       <AnimatePresence>

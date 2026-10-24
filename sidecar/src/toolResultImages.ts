@@ -49,22 +49,23 @@ function textOf(block: unknown): string {
 }
 
 interface ImageBlock {
-  type: 'image' | 'inputImage';
+  type: 'image' | 'inputImage' | 'input_image';
   data?: unknown;
   source?: { data?: unknown };
   imageUrl?: unknown;
+  image_url?: unknown;
 }
 
 function isImage(block: unknown): block is ImageBlock {
   const type = (block as { type?: unknown } | null)?.type;
-  return type === 'image' || type === 'inputImage';
+  return type === 'image' || type === 'inputImage' || type === 'input_image';
 }
 
 // An image block carries its bytes in MCP's shape (`data`), the model API's
-// (`source.data`) or Codex's (`imageUrl`, a data URL).
+// (`source.data`) or Codex's (`imageUrl` / `image_url`, a data URL).
 function base64Of(image: ImageBlock): string | undefined {
-  if (typeof image.imageUrl === 'string')
-    return /^data:[^,]*;base64,(.+)$/s.exec(image.imageUrl)?.[1];
+  const url = image.type === 'input_image' ? image.image_url : image.imageUrl;
+  if (typeof url === 'string') return /^data:[^,]*;base64,(.+)$/s.exec(url)?.[1];
   const data = image.data ?? image.source?.data;
   return typeof data === 'string' ? data : undefined;
 }

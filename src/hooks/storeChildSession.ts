@@ -2,6 +2,7 @@ import type { ChildSessionSummary, ContextStatsSnapshot, TranscriptEvent } from 
 import { releaseSessionChildTranscriptWindow } from '../lib/transcriptStoreMemory';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
+import type { UtilityPanelState } from '../lib/utilityPanel';
 
 /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
 /* eslint-disable @typescript-eslint/no-dynamic-delete -- sparse childAccess parent keys */
@@ -53,6 +54,7 @@ export interface ChildSessionStore {
   agentsWorkingByParent: Partial<Record<string, true>>;
   selectedChild: ChildSelection | null;
   activeAppSessionId: string | null;
+  utilityPanels: Record<string, UtilityPanelState>;
   contextStats: {
     primary: Record<string, ContextStatsSnapshot>;
     child: Record<string, Record<string, ContextStatsSnapshot>>;
@@ -134,6 +136,15 @@ export function releaseInactiveChildTranscript<S extends ChildSessionStore>(
   parentAppSessionId: string,
   childSessionId: string,
 ): S {
+  const panel = state.utilityPanels[parentAppSessionId];
+  const readingInPane =
+    state.activeAppSessionId === parentAppSessionId &&
+    panel?.open &&
+    panel.tabs.some(
+      (tab) =>
+        tab.id === panel.activeTabId && tab.tool === 'agents' && tab.agentId === childSessionId,
+    );
+  if (readingInPane) return state;
   // These keyed renderer maps are intentionally sparse at runtime despite
   // their long-standing Record types.
   const history = state.childHistory[parentAppSessionId]?.[childSessionId];

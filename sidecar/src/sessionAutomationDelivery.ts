@@ -6,7 +6,7 @@ interface DeliveryContext {
   canResume: () => boolean;
   /** Releases an idle runtime that is safe to release; false when none is. */
   makeRoom: (appSessionId: string) => Promise<boolean>;
-  resume: (appSessionId: string) => Promise<boolean>;
+  resume: (appSessionId: string) => Promise<LiveSession | undefined>;
   start: (appSessionId: string, prompt: string, delivery: ScheduledTurnDelivery) => Promise<void>;
 }
 

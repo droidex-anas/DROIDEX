@@ -4,12 +4,12 @@ import { PROVIDER_KINDS } from './providers/providerKind.js';
 import { objectValue, stringValue } from './values.js';
 
 interface PersistedSessionFileSummary {
-  cacheVersion: 2;
+  cacheVersion: typeof SESSION_FILE_SUMMARY_CACHE_VERSION;
   summary: SessionSummary;
 }
 
 // Bump when admission or summary rules change so cached rows are rebuilt.
-const SESSION_FILE_SUMMARY_CACHE_VERSION = 2;
+export const SESSION_FILE_SUMMARY_CACHE_VERSION = 3;
 
 export const SESSION_FILE_REASONING_EFFORTS: Record<ReasoningEffort, true> = {
   off: true,

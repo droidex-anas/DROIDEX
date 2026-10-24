@@ -49,6 +49,7 @@ import {
 } from './ChildSessionState.js';
 import type {
   ChildOperation,
+  ChildFileHistorySource,
   ChildSessionsDependencies,
   ChildSettingsTarget,
 } from './ChildSessionsTypes.js';
@@ -102,12 +103,12 @@ export class ChildSessions {
     });
   }
 
-  attachParent(parentAppSessionId: string): void {
+  attachParent(parentAppSessionId: string) {
     const lease = this.d.registry.getLive(parentAppSessionId);
     if (lease?.summary.appSessionId !== parentAppSessionId)
       throw new Error(`Cannot attach child sessions to missing parent ${parentAppSessionId}.`);
     const current = this.parents.get(parentAppSessionId);
-    if (current?.lease === lease && !current.closing) return;
+    if (current?.lease === lease && !current.closing) return this.providerChildren(current);
     if (current)
       throw new Error(`Child sessions are already attached to a different ${parentAppSessionId}.`);
     const parent: ParentChildSessions = {
@@ -126,6 +127,27 @@ export class ChildSessions {
     for (const record of this.d.history.childSessions(parentAppSessionId))
       addChild(parent, childStateFromRecord(record));
     this.parents.set(parentAppSessionId, parent);
+    this.d.onParentAttached?.(parentAppSessionId);
+    return this.providerChildren(parent);
+  }
+
+  private providerChildren(parent: ParentChildSessions) {
+    return [...parent.children.values()].flatMap((child) =>
+      child.providerSessionId
+        ? [
+            {
+              providerSessionId: child.providerSessionId,
+              role: child.role,
+              status: child.status,
+              modelId: child.modelId,
+              ...(child.reasoningEffort ? { reasoningEffort: child.reasoningEffort } : {}),
+              transcriptAvailable: child.transcriptAvailable,
+              ...(child.spawnLink ? { spawnLink: child.spawnLink } : {}),
+              ...(child.group ? { group: child.group } : {}),
+            },
+          ]
+        : [],
+    );
   }
 
   list(parentAppSessionId: string): ChildSessionSummary[] {
@@ -184,6 +206,16 @@ export class ChildSessions {
     return { childSessionId: child.identity.childSessionId, role: child.role };
   }
 
+  childScopeForProvider(
+    parentAppSessionId: string,
+    providerSessionId: string,
+  ): { childSessionId: string; role: ChildRole } | undefined {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return undefined;
+    const child = findChildByProvider(parent, providerSessionId);
+    return child ? { childSessionId: child.identity.childSessionId, role: child.role } : undefined;
+  }
+
   admitChildObservation(observation: ChildSpawnObservation): ChildIdentity | undefined {
     const parent = this.parents.get(observation.parentAppSessionId);
     if (!parent || !this.isCurrentParent(parent)) return undefined;
@@ -205,12 +237,14 @@ export class ChildSessions {
     for (const child of parent.children.values())
       if (child.retiredProviderSessionIds.has(providerSessionId)) return undefined;
 
-    // State-only children share spawn links; their provider identity stays fixed.
-    const stateOnly = observed.transcriptAvailable === false;
-    const spawnChild = !stateOnly && spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
+    // Harness-owned children may share a spawn; their native identity stays fixed.
+    const providerManaged =
+      parent.lease.summary.provider !== 'droid' || observed.transcriptAvailable === false;
+    const spawnChild =
+      !providerManaged && spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
     const providerChild = findChildByProvider(parent, providerSessionId);
     if (spawnChild && providerChild && spawnChild !== providerChild) return undefined;
-    if (observed.done && providerChild && !stateOnly) {
+    if (observed.done && providerChild && !providerManaged) {
       if (spawnLink && spawnChild !== providerChild) return undefined;
       forgetPendingChildObservation(parent, pending);
       this.complete(
@@ -225,32 +259,29 @@ export class ChildSessions {
     const existingProviderSessionId =
       existingChild?.runtime?.session.sessionId ?? existingChild?.providerSessionId;
     const needsExactSettings =
-      (stateOnly || observed.requiresExactLaunchSettings === true) &&
+      (providerManaged || observed.requiresExactLaunchSettings === true) &&
       (!existingChild || existingProviderSessionId !== providerSessionId);
     if (needsExactSettings && !observed.modelId) {
       const firstProviderObservation = !pending?.providerSessionId;
       const firstTerminalObservation = observed.done === true && pending?.done !== true;
-      if (!stateOnly && (firstProviderObservation || firstTerminalObservation)) {
+      if (!providerManaged && (firstProviderObservation || firstTerminalObservation)) {
         const launchSettings = this.readLaunchSettings(providerSessionId);
         if (launchSettings) {
           observed.modelId = launchSettings.modelId;
           observed.reasoningEffort = launchSettings.reasoningEffort;
         }
       }
-      // State-only feeds cannot use deferred provider-file discovery. Admit them
-      // with parent defaults until explicit launch settings arrive.
-      if (!observed.modelId && !stateOnly) {
+      // Harness-owned feeds do not have Droid launch files to discover.
+      if (!observed.modelId) {
         rememberPendingChildObservation(parent, pending, observed);
         return undefined;
       }
     }
 
-    // Exact settings need a model to be exact about.
-    const exactLaunchSettings = needsExactSettings && observed.modelId !== undefined;
     const child =
       spawnChild ??
       providerChild ??
-      this.createChild(parent, observed.role, spawnLink, observed, exactLaunchSettings);
+      this.createChild(parent, observed.role, spawnLink, observed, needsExactSettings);
     forgetPendingChildObservation(parent, pending);
     // Poll-style observations (TaskOutput) carry their own call's tool_use id,
     // not the spawn's; only a link that matched an observed spawn call (pending)
@@ -263,7 +294,8 @@ export class ChildSessions {
       void this.closeRuntime(parent, child, false);
     }
     const apply = () => {
-      if (!this.isCurrentChild(parent, child) || (!stateOnly && !childAcceptsWork(child))) return;
+      if (!this.isCurrentChild(parent, child) || (!providerManaged && !childAcceptsWork(child)))
+        return;
       if (child.retiredProviderSessionIds.has(providerSessionId)) return;
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
@@ -287,7 +319,11 @@ export class ChildSessions {
       }
       // The parent agent is the sender, so the brief reads as a prompt in the
       // agent's pane rather than as a status line.
-      if (child.prompt && child.prompt !== previousPrompt)
+      if (
+        child.prompt &&
+        child.prompt !== previousPrompt &&
+        parent.lease.summary.provider !== 'codex'
+      )
         this.d.timeline.appendPrompt(
           child.identity.parentAppSessionId,
           child.prompt,
@@ -351,29 +387,7 @@ export class ChildSessions {
     const parent = this.parents.get(command.parentAppSessionId);
     const child = parent?.children.get(command.childSessionId);
     if (parent && this.isCurrentParent(parent) && child) {
-      if (child.mutationTail) {
-        await child.mutationTail;
-        if (!this.isCurrentParent(parent)) return;
-        const current = parent.children.get(command.childSessionId);
-        if (!current) return;
-        this.d.timeline.loadChildHistory({
-          appSessionId: command.parentAppSessionId,
-          childSessionId: command.childSessionId,
-          childProviderSessionIds: childHistoryProviderSessionIds(current),
-          role: current.role,
-          cursor: command.cursor,
-          limit: command.limit,
-        });
-        return;
-      }
-      this.d.timeline.loadChildHistory({
-        appSessionId: command.parentAppSessionId,
-        childSessionId: command.childSessionId,
-        childProviderSessionIds: childHistoryProviderSessionIds(child),
-        role: child.role,
-        cursor: command.cursor,
-        limit: command.limit,
-      });
+      await this.readCurrentHistory(parent, child, command);
       return;
     }
 
@@ -395,6 +409,54 @@ export class ChildSessions {
       role: record.role,
       cursor: command.cursor,
       limit: command.limit,
+    });
+  }
+
+  fileHistorySource(identity: ChildIdentity, limit?: number): ChildFileHistorySource | undefined {
+    const parent = this.parents.get(identity.parentAppSessionId);
+    const child = parent?.children.get(identity.childSessionId);
+    if (!parent || !child || !this.isCurrentParent(parent)) return undefined;
+    if (parent.lease.summary.provider !== 'droid') return undefined;
+    const isCurrent = () => this.isCurrentChild(parent, child);
+    const canRead = () => isCurrent() && !child.runtime && child.transcriptAvailable;
+    return {
+      isCurrent,
+      containsProvider: (providerSessionId) =>
+        canRead() && childHistoryProviderSessionIds(child).includes(providerSessionId),
+      refresh: async (isSelected) => {
+        if (!canRead()) return;
+        await this.readCurrentHistory(
+          parent,
+          child,
+          {
+            type: 'child.loadHistory',
+            ...identity,
+            ...(limit === undefined ? {} : { limit }),
+          },
+          'refresh',
+          () => isSelected() && canRead(),
+        );
+      },
+    };
+  }
+
+  private async readCurrentHistory(
+    parent: ParentChildSessions,
+    child: ChildSessionState,
+    command: ChildLoadHistoryCommand,
+    mode?: 'refresh',
+    isSelected: () => boolean = () => true,
+  ): Promise<void> {
+    if (child.mutationTail) await child.mutationTail;
+    if (!this.isCurrentChild(parent, child) || !isSelected()) return;
+    this.d.timeline.loadChildHistory({
+      appSessionId: command.parentAppSessionId,
+      childSessionId: command.childSessionId,
+      childProviderSessionIds: childHistoryProviderSessionIds(child),
+      role: child.role,
+      cursor: command.cursor,
+      limit: command.limit,
+      ...(mode ? { mode } : {}),
     });
   }
 
@@ -553,6 +615,7 @@ export class ChildSessions {
   }
 
   async closeParent(parentAppSessionId: string): Promise<void> {
+    this.d.onParentClosing?.(parentAppSessionId);
     const parent = this.parents.get(parentAppSessionId);
     if (!parent) return;
     parent.closing = true;
@@ -633,7 +696,11 @@ export class ChildSessions {
       return;
     }
     const parent = this.parents.get(parentAppSessionId);
-    if (!parent || record.status === 'completed' || record.status === 'failed') {
+    if (
+      parent?.lease.summary.provider !== 'droid' ||
+      record.status === 'completed' ||
+      record.status === 'failed'
+    ) {
       openChildHistory(record, operation, requestId, {
         emitError: (identity, op, id, code, message) => {
           this.emitError(identity, op, id, code, message);
@@ -976,19 +1043,16 @@ export class ChildSessions {
     launchSettings: ChildSettings = {},
     exactLaunchSettings = false,
   ): ChildSessionState {
-    // Model and effort travel together: explicit launch settings when supplied,
-    // otherwise the parent's provider-specific defaults.
+    // Model and effort travel together. Droid-managed children may use their
+    // accepted role defaults; native children arrive with their own settings.
     let settings = launchSettings;
     if (!exactLaunchSettings && !launchSettings.modelId) {
       const summary = parent.lease.summary;
-      settings =
-        summary.provider === 'droid'
-          ? this.d.resolveDefaultSettings(
-              summary,
-              parentDroidSession(parent.lease).initResult,
-              role,
-            )
-          : { modelId: summary.modelId, reasoningEffort: summary.reasoningEffort };
+      settings = this.d.resolveDefaultSettings(
+        summary,
+        parentDroidSession(parent.lease).initResult,
+        role,
+      );
     }
     if (!settings.modelId) throw new Error(`No accepted model is available for ${role}.`);
     const child = newChildState({

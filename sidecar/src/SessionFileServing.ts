@@ -20,6 +20,7 @@ interface SessionFileServingDependencies {
   retryPendingLaunchSettings: (providerSessionIds?: string[]) => void;
   listSummaries: (options?: SessionListFilterOptions) => SessionListPage;
   emitList: (page: SessionListPage) => void;
+  onFilesReconciled?: (changes: SessionFileChange[] | null) => void;
 }
 
 const ignoreError = (): undefined => undefined;
@@ -201,6 +202,7 @@ export class SessionFileServing {
     this.dependencies.retryPendingLaunchSettings(
       changes?.map(({ providerSessionId }) => providerSessionId),
     );
+    this.dependencies.onFilesReconciled?.(changes);
     this.emit(this.lastListOptions);
   }
 }

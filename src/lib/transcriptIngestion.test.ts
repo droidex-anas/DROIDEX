@@ -4,6 +4,7 @@ import type { TranscriptEvent } from '../types/bridge';
 import {
   ingestTranscriptEvents,
   firstUserTranscriptEvent,
+  latestTranscriptActivityForSource,
   normalizeTranscriptUpdate,
 } from './transcriptIngestion';
 import { estimateTranscriptCost } from './transcriptWindow';
@@ -202,6 +203,91 @@ test('a prepended history page shifts streamed tool-call merge targets', () => {
     previousLength: 3,
     firstChangedIndex: 1,
   });
+  assert.equal(result.estimatedCost, estimateTranscriptCost(result.events));
+});
+
+test('interleaved native messages keep source, kind, and item boundaries through history prepends', () => {
+  const message = (
+    id: string,
+    sourceSessionId: string,
+    messageId: string,
+    text: string,
+    overrides: Partial<TranscriptEvent> = {},
+  ) =>
+    transcriptEvent(id, {
+      author: undefined,
+      role: 'worker',
+      sourceSessionId,
+      text,
+      textUpdate: { messageId, kind: 'delta' },
+      ...overrides,
+    });
+  const commentary = message('commentary', 'child-a', 'commentary', 'Starting');
+  const final = message('final', 'child-a', 'final', 'Partial');
+  const sibling = message('sibling', 'child-b', 'commentary', 'Sibling');
+  const thought = message('thought', 'child-a', 'commentary', 'Thinking', { kind: 'thinking' });
+  const status = transcriptEvent('status', {
+    author: undefined,
+    sourceSessionId: 'child-a',
+    kind: 'status',
+    text: 'Waiting',
+    ts: 2,
+  });
+  const seeded = ingestTranscriptEvents([], estimateTranscriptCost([]), [
+    commentary,
+    final,
+    sibling,
+    thought,
+    status,
+  ]);
+  const streamed = ingestTranscriptEvents(seeded.events, seeded.estimatedCost, [
+    message('commentary-delta', 'child-a', 'commentary', ' checks'),
+    message('sibling-delta', 'child-b', 'commentary', ' output'),
+    message('thought-delta', 'child-a', 'commentary', ' ahead', { kind: 'thinking' }),
+    message('final-snapshot', 'child-a', 'final', 'Complete answer', {
+      ts: 3,
+      textUpdate: { messageId: 'final', kind: 'snapshot' },
+    }),
+  ]);
+  assert.deepEqual(
+    streamed.events.map((event) => [event.id, event.text]),
+    [
+      ['commentary', 'Starting checks'],
+      ['final', 'Complete answer'],
+      ['sibling', 'Sibling output'],
+      ['thought', 'Thinking ahead'],
+      ['status', 'Waiting'],
+    ],
+  );
+  const reset = ingestTranscriptEvents(streamed.events, streamed.estimatedCost, [
+    message('final', 'child-a', 'final', '', {
+      textUpdate: { messageId: 'final', kind: 'snapshot' },
+    }),
+  ]);
+  assert.equal(reset.events.length, 5);
+  assert.equal(reset.events[1].text, '');
+  const older = transcriptEvent('older', { ts: 0 });
+  const normalized = normalizeTranscriptUpdate(streamed.events, [older, ...streamed.events], {
+    kind: 'prepend',
+    previousLength: 5,
+    firstChangedIndex: 0,
+    insertedCount: 1,
+  });
+  const result = ingestTranscriptEvents(normalized, estimateTranscriptCost(normalized), [
+    message('final-suffix', 'child-a', 'final', '.', { ts: 4 }),
+  ]);
+  assert.equal(result.events.length, 6);
+  assert.equal(result.events[2].text, 'Complete answer.');
+  assert.equal(result.events[1], streamed.events[0]);
+  assert.equal(result.events[3], streamed.events[2]);
+  assert.equal(result.change?.firstChangedIndex, 2);
+  assert.equal(latestTranscriptActivityForSource(result.events, 'child-a'), result.events[2]);
+  const restored = normalizeTranscriptUpdate(result.events, [...result.events], {
+    kind: 'reset',
+    previousLength: result.events.length,
+    firstChangedIndex: 0,
+  });
+  assert.equal(latestTranscriptActivityForSource(restored, 'child-a'), restored[2]);
   assert.equal(result.estimatedCost, estimateTranscriptCost(result.events));
 });
 

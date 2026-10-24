@@ -75,6 +75,12 @@ const server = startBridgeServer({
     await queueUsageSessions([]);
     return await usage.snapshot();
   },
+  onChildHistoryWatch: (owner, command) => {
+    manager.setChildHistoryWatch(owner, command);
+  },
+  onChildHistoryDisconnect: (owner) => {
+    manager.clearChildHistoryWatch(owner);
+  },
 });
 
 const manager = new SessionManager(

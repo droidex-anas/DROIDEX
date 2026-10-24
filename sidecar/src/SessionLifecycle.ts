@@ -248,7 +248,7 @@ export class SessionLifecycle {
     LiveSession,
     Map<string, Pick<SessionPrompt, 'text' | 'mentions'> | 'delivered'>
   >();
-  private readonly resumeOperations = new Map<string, Promise<boolean>>();
+  private readonly resumeOperations = new Map<string, Promise<LiveSession | undefined>>();
   private readonly canceledResumes = new Set<string>();
   // A close after a native copy is announced cancels that fork's first open,
   // but must not prevent a deliberate resume after the attempt ends.
@@ -443,7 +443,6 @@ export class SessionLifecycle {
       const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
-      this.subscribeBackgroundEvents(liveSession);
       await d.registry.register(liveSession, () => {
         this.requireOpenAdmission();
         releaseCreateReservation?.();
@@ -453,7 +452,9 @@ export class SessionLifecycle {
       // Registered first, so the failed-open path that unregisters also releases it.
       d.openProviderTranscript(summary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
-      d.childSessions.attachParent(appSessionId);
+      const children = d.childSessions.attachParent(appSessionId);
+      providerSession.restoreChildren?.(children);
+      this.subscribeBackgroundEvents(liveSession);
       // Commit dependent ownership before the provider can execute its first task.
       if (d.beforeFirstTurn) {
         await d.beforeFirstTurn(summary, command.clientRef);
@@ -488,7 +489,7 @@ export class SessionLifecycle {
     }
   }
 
-  async resume(requestedAppSessionId: string, automatic = false): Promise<boolean> {
+  async resume(requestedAppSessionId: string, automatic = false): Promise<LiveSession | undefined> {
     const d = this.dependencies;
     const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
     const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
@@ -496,13 +497,13 @@ export class SessionLifecycle {
     const closing = liveSession?.providerClosePromise ?? liveSession?.closePromise;
     if (closing) {
       await closing;
-      if (d.isShutdownStarted()) return false;
+      if (d.isShutdownStarted()) return undefined;
     }
-    if (this.isCloseRequested(appSessionId)) return false;
+    if (this.isCloseRequested(appSessionId)) return undefined;
     const pending = this.resumeOperations.get(appSessionId);
     if (pending) return pending;
     if (automatic && !d.registry.getLive(appSessionId) && !this.canStartAutomaticRuntime())
-      return false;
+      return undefined;
 
     const operation = this.resumeOnce(requestedAppSessionId).finally(() => {
       if (this.resumeOperations.get(appSessionId) !== operation) return;
@@ -517,7 +518,7 @@ export class SessionLifecycle {
     return operation;
   }
 
-  private async resumeOnce(requestedAppSessionId: string): Promise<boolean> {
+  private async resumeOnce(requestedAppSessionId: string): Promise<LiveSession | undefined> {
     const d = this.dependencies;
     d.ensureConnected();
     const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
@@ -534,7 +535,7 @@ export class SessionLifecycle {
         session: projectedSummary,
       });
       this.refreshContext(existing);
-      return true;
+      return existing;
     }
 
     const requireCurrentResume = (): void => {
@@ -615,7 +616,6 @@ export class SessionLifecycle {
         liveSession.restartBeforeNextTurn = true;
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
-      this.subscribeBackgroundEvents(liveSession);
       await d.registry.register(liveSession, requireCurrentResume);
       if (kind === 'claude')
         d.context.preserveUsage(appSessionId, {
@@ -627,7 +627,9 @@ export class SessionLifecycle {
       // Registered first, so the failed-open path that unregisters also releases it.
       d.openProviderTranscript(projectedSummary);
       this.trackProviderProcess(appSessionId, providerSession, mcp.configs);
-      d.childSessions.attachParent(appSessionId);
+      const children = d.childSessions.attachParent(appSessionId);
+      providerSession.restoreChildren?.(children);
+      this.subscribeBackgroundEvents(liveSession);
       d.emit({
         type: 'session.created',
         clientRef: `resume:${appSessionId}`,
@@ -648,12 +650,12 @@ export class SessionLifecycle {
         });
       }
       this.refreshContext(liveSession);
-      return true;
+      return liveSession;
     } catch (error) {
       await this.cleanupFailedOpen(pendingMcpServers, pendingSession, pendingLiveSession);
       if (!isOpenAdmissionClosed(error))
         d.emitError({ appSessionId, providerSessionId, message: errMsg(error) });
-      return false;
+      return undefined;
     }
   }
 
@@ -1456,6 +1458,7 @@ export class SessionLifecycle {
         this.dependencies.registry.updateSummary(appSessionId, {
           phase: 'running',
           streaming: true,
+          interruptReason: undefined,
           ...queueSummary(liveSession),
         });
         return;

@@ -178,6 +178,48 @@ test('notification ingress converges on the same transcript gating and side-effe
   assert.equal(harness.sideEffects[0]?.value.childSession?.providerSessionId, 'worker-2');
 });
 
+test('native child rows retain their logical scope after the parent turn settles', () => {
+  const h = createHarness({ childScope: { childSessionId: 'logical-child', role: 'worker' } });
+  h.eventFlow.apply('app-1', 'app-1', 'primary', { done: true });
+  h.eventFlow.apply('app-1', 'app-1', 'primary', {
+    ...childRow('app-1'),
+    childOwner: { kind: 'provider-session', id: 'native-child' },
+  });
+  h.eventFlow.apply('app-1', 'app-1', 'primary', {
+    transcript: { ...childRow('app-1').transcript, text: 'late parent row' },
+  });
+  assert.deepEqual(
+    h.transcripts.map((row) => [row.sourceSessionId, row.role]),
+    [['logical-child', 'worker']],
+  );
+});
+
+test('explicit child generation gates retain the provider identity while rows use the logical identity', () => {
+  const h = createHarness();
+  const append = (text: string) =>
+    h.eventFlow.apply(
+      'parent',
+      'native-child',
+      'worker',
+      {
+        transcript: { ...childRow('parent').transcript, text },
+      },
+      'logical-child',
+    );
+  append('before settlement');
+  h.eventFlow.apply('parent', 'native-child', 'worker', { done: true }, 'logical-child');
+  append('late child tail');
+  h.eventFlow.beginTurn('parent', 'native-child');
+  append('next child turn');
+  assert.deepEqual(
+    h.transcripts.map((event) => [event.sourceSessionId, event.text]),
+    [
+      ['logical-child', 'before settlement'],
+      ['logical-child', 'next child turn'],
+    ],
+  );
+});
+
 test('post-terminal errors plus child, Mission, and token side effects still flow', () => {
   const harness = createHarness();
   harness.eventFlow.applyStreamEvent(

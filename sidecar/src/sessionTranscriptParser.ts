@@ -21,7 +21,8 @@ import { parseStoredNotice } from './sessionNotices.js';
 // page. An App answer is the exception: it is a document that only runs when
 // its `app` fence survives whole, so it carries its own far larger bound. At
 // the shared cap a real /visualize answer (25k-35k chars) replayed with the
-// fence cut mid-script and rendered dead after a restart.
+// fence cut mid-script and rendered dead after a restart. Keyed native
+// messages stay whole under the reader's page byte budget instead.
 const MAX_TEXT_CHARS = 12_000;
 const MAX_APP_ANSWER_CHARS = 256_000;
 
@@ -93,7 +94,9 @@ export function event(
   extra: Partial<TranscriptEvent>,
 ): TranscriptEvent {
   return {
-    id: `${base.sourceProviderSessionId}:${base.messageId}:${String(index)}:${kind}`,
+    id: extra.textUpdate
+      ? `${base.sourceProviderSessionId}:message:${extra.textUpdate.messageId}:${kind}`
+      : `${base.sourceProviderSessionId}:${base.messageId}:${String(index)}:${kind}`,
     appSessionId: base.appSessionId,
     sourceSessionId:
       base.role === 'primary' && base.sourceProviderSessionId !== 'user'
@@ -114,6 +117,32 @@ function assistantBlockEvent(
   fullText: boolean,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
+  if (type === 'text' || type === 'thinking') {
+    const update = objectValue(block.textUpdate);
+    if (block.textUpdate !== undefined) {
+      const messageId = stringValue(update?.messageId);
+      const kind = update?.kind;
+      if (!messageId || (kind !== 'delta' && kind !== 'snapshot'))
+        throw new Error('Invalid native message identity in saved transcript. Start a new chat.');
+      if (
+        typeof block.messageStartLine !== 'number' ||
+        !Number.isSafeInteger(block.messageStartLine) ||
+        block.messageStartLine < 1
+      )
+        throw new Error('Invalid native message anchor in saved transcript. Start a new chat.');
+      const text =
+        type === 'text'
+          ? stringValue(block.text)
+          : (stringValue(block.thinking) ?? stringValue(block.text));
+      return text !== undefined && (text !== '' || kind === 'snapshot')
+        ? event(base, index, type, {
+            text,
+            textUpdate: { messageId, kind },
+            ...(forkPointId ? { forkPointId } : {}),
+          })
+        : null;
+    }
+  }
   if (type === 'thinking') {
     const text = trimText(
       nonEmpty(stringValue(block.thinking), stringValue(block.text)),

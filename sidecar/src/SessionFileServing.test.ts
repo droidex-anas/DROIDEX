@@ -18,6 +18,7 @@ function createServing() {
   const watchers: SessionFileWatcherOptions[] = [];
   const targeted: SessionFileChange[][] = [];
   const emitted: (SessionListFilterOptions | undefined)[] = [];
+  const reconciled: (SessionFileChange[] | null)[] = [];
   const state = {
     fullReconciles: 0,
     shutdown: false,
@@ -60,6 +61,7 @@ function createServing() {
     isLiveSession: () => false,
     isShutdownStarted: () => state.shutdown,
     retryPendingLaunchSettings: () => undefined,
+    onFilesReconciled: (changes) => reconciled.push(changes),
     listSummaries: (options) => {
       listedWith = options;
       return { sessions: [], earlierSessionsByCwd: {} };
@@ -73,7 +75,7 @@ function createServing() {
     watchers[0].onExternalChange(changes);
   };
   const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
-  return { serving, watchers, targeted, emitted, state, fire, settle };
+  return { serving, watchers, targeted, emitted, reconciled, state, fire, settle };
 }
 
 const change = (id: string): SessionFileChange => ({
@@ -156,6 +158,7 @@ test('watcher changes reconcile exactly the reported files, or the whole tree wh
   h.fire([change('external-1'), change('external-2')]);
   await h.settle();
   assert.deepEqual(h.targeted, [[change('external-1'), change('external-2')]]);
+  assert.deepEqual(h.reconciled, [[change('external-1'), change('external-2')]]);
   assert.deepEqual(h.emitted, [filter, filter], 'a change republishes the last requested list');
 
   h.fire(null);
@@ -163,6 +166,7 @@ test('watcher changes reconcile exactly the reported files, or the whole tree wh
   assert.equal(h.state.fullReconciles, 2);
   assert.equal(h.targeted.length, 1);
   assert.equal(h.emitted.length, 3);
+  assert.deepEqual(h.reconciled.at(-1), null);
 });
 
 test('a failed watcher reconcile publishes nothing and makes the next list a full retry', async (t) => {
@@ -174,6 +178,7 @@ test('a failed watcher reconcile publishes nothing and makes the next list a ful
   await h.settle();
 
   assert.equal(h.emitted.length, 1, 'a failed delta never republishes a stale list');
+  assert.deepEqual(h.reconciled, [], 'a failed reconcile never exposes an unpublished file index');
   await h.serving.list({});
   assert.equal(h.state.fullReconciles, 2, 'the next list performs a full retry');
   assert.equal(h.emitted.length, 2);

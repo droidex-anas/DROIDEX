@@ -66,7 +66,7 @@ interface SessionHistoryPage {
   progress: ProgressEntry[];
   transcripts: TranscriptEvent[];
   childSessions?: ChildSessionSummary[];
-  mode: 'replace' | 'prepend';
+  mode: 'replace' | 'prepend' | 'refresh';
   olderCursor?: string;
 }
 
@@ -245,6 +245,7 @@ export class SessionTimeline {
     role,
     cursor,
     limit,
+    mode,
   }: {
     appSessionId: string;
     childSessionId: string;
@@ -252,6 +253,7 @@ export class SessionTimeline {
     role: SessionRole;
     cursor?: string;
     limit?: number;
+    mode?: 'refresh';
   }): void {
     try {
       const currentProviderSessionId = childProviderSessionIds.at(-1) ?? childSessionId;
@@ -277,7 +279,7 @@ export class SessionTimeline {
         childSessionId,
         progress: [],
         transcripts,
-        mode: cursor ? 'prepend' : 'replace',
+        mode: mode ?? (cursor ? 'prepend' : 'replace'),
         ...(window.olderCursor ? { olderCursor: window.olderCursor } : {}),
       });
     } catch (error) {

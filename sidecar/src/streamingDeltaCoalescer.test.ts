@@ -144,6 +144,32 @@ test('endTurn forgets the source so its buffered tail cannot be published twice'
   );
 });
 
+test('native messages preserve boundaries and snapshots replace buffered deltas', () => {
+  const { coalescer, delivered } = createCoalescer({ windowMs: 1_000 });
+  for (const [messageId, kind, text] of [
+    ['commentary', 'delta', 'Starting '],
+    ['commentary', 'delta', 'now.'],
+    ['final', 'delta', 'draft'],
+    ['final', 'snapshot', ''],
+    ['final', 'snapshot', 'Eight checks'],
+    ['final', 'delta', ' passed.'],
+    ['reset', 'delta', 'clear me'],
+    ['reset', 'snapshot', ''],
+  ] as const)
+    coalescer.accept(
+      childDelta(`chunk-${text}`, 'child-a', { text, textUpdate: { messageId, kind } }),
+    );
+  coalescer.flushAll();
+  assert.deepEqual(
+    delivered.map(({ text, textUpdate }) => ({ text, textUpdate })),
+    [
+      { text: 'Starting now.', textUpdate: { messageId: 'commentary', kind: 'delta' } },
+      { text: 'Eight checks passed.', textUpdate: { messageId: 'final', kind: 'snapshot' } },
+      { text: '', textUpdate: { messageId: 'reset', kind: 'snapshot' } },
+    ],
+  );
+});
+
 test('flushAll delivers every source even when one delivery fails', () => {
   const { coalescer, delivered } = createCoalescer({
     windowMs: 1_000,

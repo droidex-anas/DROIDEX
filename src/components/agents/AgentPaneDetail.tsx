@@ -1,34 +1,32 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { ArrowLeft } from '@droidex/icons';
 import type { ModelInfo, ProviderKind, TranscriptEvent } from '../../types/bridge';
 import type { ChildSessionTarget } from '../../lib/childSessions';
 import type { ToolActivitySettings } from '../../lib/toolActivity';
+import type { ChildHistoryState } from '../../hooks/storeChildSession';
 import { buildFeed } from '../chatFeed';
 import { MessageFeed } from '../MessageFeed';
 import { AgentAvatar } from '../AgentAvatar';
 import { Button } from '../ui/Button';
-import { SubagentStreamPreview } from '../SubagentStreamPreview';
 import { AgentPaneExpand } from './AgentPaneExpand';
 import { AgentEffortChip } from './AgentRow';
-import { AgentStatusPill } from './AgentStatusPill';
 import type { AgentRow } from './agentMonitorModel';
 import { useAgentTranscript } from './useAgentTranscript';
+import { useAgentPaneScroll } from './useAgentPaneScroll';
 
 /* One agent in the agents pane: who it is, then its conversation exactly as the
-   chat would show it, because it is the chat's own feed: the message the parent
-   sent, then thinking, tool rows and replies, with the working indicator while
-   the agent runs. Two things differ on purpose. There is no prompt bar, since
-   the parent drives the agent. And finished work stays unfolded: the pane exists
-   to read what the agent did, so it never hides that behind a "Worked for" line.
-
-   The pane is the only place an agent is read; expanding gives it the content
-   row. A harness that streams no child transcript yet shows what it does report
-   and says so, rather than pretending the agent is silent. */
+   chat would show it, because it is the chat's own feed. Two things differ on
+   purpose. There is no prompt bar, since the parent drives the agent. And
+   finished work stays unfolded: the pane exists to read what the agent did, so
+   it never hides that behind a "Worked for" line. */
 
 export function AgentPaneDetail({
   row,
   models,
   transcript,
+  history,
+  onRetryHistory,
+  onLoadEarlier,
   provider,
   live,
   toolActivity,
@@ -41,6 +39,9 @@ export function AgentPaneDetail({
   models: readonly ModelInfo[];
   // The parent transcript: child events are interleaved into it by source.
   transcript: readonly TranscriptEvent[];
+  history?: ChildHistoryState;
+  onRetryHistory: () => void;
+  onLoadEarlier: () => void;
   provider?: ProviderKind;
   live: boolean;
   // The chat's own tool-row settings, so the agent reads the way the chat does.
@@ -53,8 +54,12 @@ export function AgentPaneDetail({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const events = useAgentTranscript(transcript, row.child);
-  // Unfolded on purpose: see the note above.
   const items = useMemo(() => buildFeed(events, { childSessionCards: true }), [events]);
+  const { viewportLayoutRef, anchorHistory } = useAgentPaneScroll(
+    scrollRef,
+    row.child.childSessionId,
+    items,
+  );
   const working = live && !row.queued && row.status === 'running';
 
   const modelName = models.find((entry) => entry.id === row.child.modelId)?.displayName;
@@ -69,11 +74,7 @@ export function AgentPaneDetail({
           aria-label="Back to agents"
           onClick={onBack}
         />
-        <AgentAvatar
-          seed={row.key}
-          size={20}
-          working={live && !row.queued && row.status === 'running'}
-        />
+        <AgentAvatar seed={row.key} size={20} working={working} />
         <span className="min-w-0 flex-1 truncate text-body-lg font-medium text-primary">
           {row.agentName}
         </span>
@@ -95,63 +96,56 @@ export function AgentPaneDetail({
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {/* Expanded, the conversation takes the chat column's own measure. */}
         <div className={`min-w-0 px-4 py-3 ${expanded ? 'mx-auto max-w-4xl px-6 py-6' : ''}`}>
-          {events.length > 0 ? (
+          {history?.olderCursor ? (
+            <div className="flex justify-center pb-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={history.isLoadingOlder}
+                onClick={() => {
+                  anchorHistory();
+                  onLoadEarlier();
+                }}
+              >
+                Show earlier messages
+              </Button>
+            </div>
+          ) : null}
+          {history?.status === 'failed' ? (
+            <div role="alert" className="mb-3 flex flex-col items-start gap-2">
+              <p className="text-body text-secondary">
+                Couldn&apos;t load this agent&apos;s conversation.
+              </p>
+              {history.error ? <p className="text-caption text-muted">{history.error}</p> : null}
+              <Button size="sm" onClick={onRetryHistory}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          {events.length === 0 && history?.status === 'loading' ? (
+            <p role="status" className="py-3 text-center text-body text-muted">
+              Loading conversation…
+            </p>
+          ) : (
             <MessageFeed
               events={events}
               items={items}
               pending={working}
               onOpenChildSession={onOpenNested}
               scrollElementRef={scrollRef}
+              viewportLayoutRef={viewportLayoutRef}
               density={toolActivity.density}
               inlineDiffs={toolActivity.inlineDiffs}
             />
-          ) : (
-            <AgentActivityStandIn row={row} />
           )}
+          {events.length === 0 &&
+          !working &&
+          history?.status !== 'loading' &&
+          history?.status !== 'failed' ? (
+            <p className="py-3 text-center text-body text-muted">No messages yet.</p>
+          ) : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-// No child-scoped transcript has arrived: report the state the harness does
-// give us, and name the gap instead of leaving the pane blank. The preview
-// keeps its fixed height so live tokens never resize the pane under the reader.
-function AgentActivityStandIn({ row }: { row: AgentRow }) {
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const hasPreview = Boolean(row.snapshot.preview) || row.snapshot.live;
-  return (
-    <div className="space-y-2 pt-1">
-      <div className="flex items-center gap-2">
-        <AgentStatusPill status={row.queued ? 'queued' : row.status} />
-        <span className="min-w-0 truncate text-label text-secondary">{row.snapshot.step}</span>
-      </div>
-      {row.child.prompt ? (
-        <p className="whitespace-pre-wrap break-words text-body text-secondary">
-          {row.child.prompt}
-        </p>
-      ) : null}
-      <SubagentStreamPreview
-        snapshot={row.snapshot}
-        expanded={previewOpen}
-        cacheId={`agent-pane:${row.key}`}
-      />
-      {hasPreview ? (
-        <button
-          type="button"
-          onClick={() => {
-            setPreviewOpen((open) => !open);
-          }}
-          aria-expanded={previewOpen}
-          className="text-label text-muted transition-colors hover:text-primary"
-        >
-          {previewOpen ? 'Show less' : 'Show more'}
-        </button>
-      ) : null}
-      <p className="text-caption text-muted">
-        This harness reports the agent&apos;s status and latest step; its own transcript appears
-        here once it streams.
-      </p>
     </div>
   );
 }

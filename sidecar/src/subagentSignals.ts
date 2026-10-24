@@ -5,7 +5,13 @@
 // stream protocol, so they live here — one cohesive responsibility with its own
 // tests — instead of inside the generic event normalizer.
 
-import type { ChildActivity, ChildRole, ChildStatus, ReasoningEffort } from './protocol.js';
+import type {
+  ChildActivity,
+  ChildRole,
+  ChildStatus,
+  ReasoningEffort,
+  StreamFidelity,
+} from './protocol.js';
 import { trimmedString as str } from './values.js';
 
 // What a single event tells us about one child session. Fields are all optional
@@ -29,6 +35,7 @@ export interface ChildSessionSignal {
   tokensUsed?: number;
   // False for state-only feeds with no child-transcript view.
   transcriptAvailable?: boolean;
+  streamFidelity?: StreamFidelity;
 }
 
 export function taskPrompt(input: Record<string, unknown>): string | undefined {

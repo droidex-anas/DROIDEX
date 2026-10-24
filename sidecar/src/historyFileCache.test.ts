@@ -457,11 +457,30 @@ test('a corrupt or superseded cache row is dropped and rebuilt on the next boot'
     JSON.stringify(patchFor('previously-cached-empty', workspace)),
   );
   const rebuilt = new HistoryIndex();
-  t.after(() => rebuilt.close());
-  assert.equal(rebuilt.sessionFileCacheSize, 0);
-  assert.equal(reconcile(rebuilt), 2);
+  try {
+    assert.equal(rebuilt.sessionFileCacheSize, 0);
+    assert.equal(reconcile(rebuilt), 2);
+    assert.deepEqual(
+      rebuilt.listHistoricalSessions().map((row) => row.summary.appSessionId),
+      ['corrupt-row'],
+    );
+  } finally {
+    rebuilt.close();
+  }
+
+  // Rejected admissions are stored as SQL NULL, so the metadata version also
+  // invalidates them when admission changes without a file change.
+  const stale = new DatabaseSync(searchIndexPath());
+  stale.exec(`
+    UPDATE session_file_cache SET summary_json = NULL;
+    UPDATE session_file_cache_metadata SET summary_cache_version = 0;
+  `);
+  stale.close();
+  const readmitted = new HistoryIndex();
+  t.after(() => readmitted.close());
+  assert.equal(reconcile(readmitted), 2);
   assert.deepEqual(
-    rebuilt.listHistoricalSessions().map((row) => row.summary.appSessionId),
+    readmitted.listHistoricalSessions().map((row) => row.summary.appSessionId),
     ['corrupt-row'],
   );
 });

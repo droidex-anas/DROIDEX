@@ -90,6 +90,13 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   });
   const transcript = new ProviderTranscriptFile(summary.appSessionId, () => summary);
   await transcript.appendPrompt('what is here?');
+  const interrupted = reconciledHistorySessions().find(
+    (row) => row.summary.appSessionId === appSessionId,
+  );
+  assert.equal(interrupted?.summary.provider, 'claude');
+  assert.equal(interrupted?.summary.modelId, 'claude-sonnet-4-5[1m]');
+  assert.equal(interrupted?.summary.resumeId, 'thread-abc');
+  assert.equal(interrupted?.summary.title, 'Claude session');
   transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Looking.' }));
   transcript.append(
     transcriptEvent(appSessionId, 'tool_call', {
@@ -280,6 +287,129 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
     canonical.close();
     index.close();
     db.close();
+  }
+});
+
+test('native message chunks replay once with complete item pages and distinct commentary', async () => {
+  const commentary = Array.from(
+    { length: 320 },
+    (_, index) => `${index + 1}. Native output remains complete when the transcript is reopened.`,
+  ).join('\n');
+  for (const role of ['primary', 'worker'] as const) {
+    const appSessionId = `native-message-${role}`;
+    const sourceSessionId = role === 'primary' ? appSessionId : `${appSessionId}-child`;
+    const summary = providerSummary(appSessionId, { provider: 'codex' });
+    let transcript = new ProviderTranscriptFile(appSessionId, () => summary);
+    const chunks = [
+      ['text', 'commentary', 'delta', commentary],
+      ['thinking', 'commentary', 'delta', 'Check '],
+      ['text', 'commentary', 'delta', '\nDone.'],
+      ['thinking', 'commentary', 'delta', 'ordering.'],
+      ['text', 'final', 'delta', 'first '],
+      ['thinking', 'trace', 'delta', 'Checking final.'],
+      ['text', 'final', 'delta', 'draft'],
+      ['text', 'final', 'snapshot', 'Eight checks'],
+      ['text', 'final', 'delta', ' passed.'],
+      ['text', 'next', 'delta', 'Another answer.'],
+      ['text', 'next', 'snapshot', ''],
+    ] as const;
+    let index = 0;
+    for (const [kind, messageId, updateKind, text] of chunks) {
+      await transcript.append(
+        transcriptEvent(appSessionId, kind, {
+          role,
+          sourceSessionId,
+          text,
+          textUpdate: { messageId, kind: updateKind },
+        }),
+      );
+      if (++index === 2) {
+        await transcript.flush();
+        transcript = new ProviderTranscriptFile(appSessionId, () => summary);
+      }
+    }
+    const path = join(providerSessionsDir(), `${sourceSessionId}.jsonl`);
+    if (role === 'worker') {
+      const stored = readFileSync(path, 'utf8').trim().split('\n');
+      assert.equal(
+        stored.length,
+        chunks.length + 1,
+        'each child run is durable before parent settlement',
+      );
+    }
+    await transcript.flush();
+    const reader = new SessionTranscriptReader(appSessionId, sourceSessionId, path, role);
+    const latest = reader.windowBackward(2, 0);
+    assert.ok(latest.older);
+    const earlier = reader.windowBackward(2, 0, latest.older);
+    assert.equal(earlier.older, undefined);
+    const eager = parseFullSessionTranscript(appSessionId, sourceSessionId, path, role);
+    for (const events of [eager, [...earlier.events, ...latest.events]]) {
+      assert.deepEqual(
+        events.map(({ kind, text, textUpdate }) => ({ kind, text, textUpdate })),
+        [
+          {
+            kind: 'text',
+            text: `${commentary}\nDone.`,
+            textUpdate: { messageId: 'commentary', kind: 'snapshot' },
+          },
+          {
+            kind: 'thinking',
+            text: 'Check ordering.',
+            textUpdate: { messageId: 'commentary', kind: 'snapshot' },
+          },
+          {
+            kind: 'text',
+            text: 'Eight checks passed.',
+            textUpdate: { messageId: 'final', kind: 'snapshot' },
+          },
+          {
+            kind: 'thinking',
+            text: 'Checking final.',
+            textUpdate: { messageId: 'trace', kind: 'snapshot' },
+          },
+          {
+            kind: 'text',
+            text: '',
+            textUpdate: { messageId: 'next', kind: 'snapshot' },
+          },
+        ],
+      );
+      assert.equal(new Set(events.map(({ id }) => id)).size, 5);
+    }
+    if (role === 'primary') {
+      const forkId = `${appSessionId}-fork`;
+      const forkSummary = providerSummary(forkId, { provider: 'codex' });
+      await writeForkedTranscript(forkedTranscript(appSessionId, readFileSync(path, 'utf8')), {
+        appSessionId: forkId,
+        title: forkSummary.title,
+      });
+      const fork = new ProviderTranscriptFile(forkId, () => forkSummary);
+      fork.append(
+        transcriptEvent(forkId, 'text', {
+          text: ' Continued.',
+          textUpdate: { messageId: 'final', kind: 'delta' },
+        }),
+      );
+      await fork.flush();
+      const forkPath = join(providerSessionsDir(), `${forkId}.jsonl`);
+      const events = new SessionTranscriptReader(
+        forkId,
+        forkId,
+        forkPath,
+        'primary',
+      ).windowBackward(1, 0).events;
+      assert.equal(
+        events.find((event) => event.textUpdate?.messageId === 'final')?.text,
+        'Eight checks passed. Continued.',
+      );
+      assert.deepEqual(
+        events.map((event) => event.id),
+        parseFullSessionTranscript(forkId, forkId, forkPath, 'primary')
+          .slice(-events.length)
+          .map((event) => event.id),
+      );
+    }
   }
 });
 

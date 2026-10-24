@@ -31,8 +31,11 @@ the agent it started with, so switching projects never switches tools under you.
 
 **Run work in parallel without losing track.** The sidebar sorts conversations
 by what they need from you: waiting for input, still working, ready to review,
-or done. When an agent spins up subagents, you watch them work alongside the
-main conversation.
+or done. When an agent spins up subagents, open an agent in the side pane to
+read its prompts, thinking, tools, and replies alongside the main conversation.
+Claude and Codex agents stream into that same view; Droid Task transcripts
+update from their saved files while the pane is open. Saved messages remain available when
+you reopen the chat.
 
 **See exactly what the agent did.** Tool activity reads like a summary, not a
 wall of logs. Every file the agent changed opens in Review with the diff it
@@ -41,7 +44,11 @@ produced, and one click takes you to the live Git changes.
 **Give your agent a real browser.** DROIDEX includes a built-in browser that
 agents can drive. They can open pages, click, fill forms, scroll, take
 screenshots, and read the console and network, so they can check their own
-work in a running app.
+work in a running app. A floating picture-in-picture view lets you watch the
+agent's browser or Codex computer use while you stay in the chat. Drag its
+header to move it, enlarge it to inspect, or hide it and restore it from the
+small **Show preview** pill. The preview closes when the turn finishes; the
+page chip below the agent's final response reopens the browser.
 
 **Keep terminals and files next to the chat.** Terminals, a file browser, and
 previews live in the same window as the conversation that needs them.

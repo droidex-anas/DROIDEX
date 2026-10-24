@@ -32,6 +32,13 @@ test('every harness shape of an image block is the same picture', () => {
   ]);
   assert.deepEqual(api.images, mcp.images);
   assert.deepEqual(codex, { text: 'Done.', images: mcp.images });
+  assert.deepEqual(
+    toolResultParts([
+      { type: 'input_text', text: 'Done.' },
+      { type: 'input_image', image_url: `data:image/jpeg;base64,${JPEG}` },
+    ]),
+    codex,
+  );
 });
 
 test('text results and unknown content read as before', () => {
@@ -66,6 +73,7 @@ test('an image the app cannot save is one plain line, never its bytes', () => {
   );
   // An image block with nothing in it is still an image, not text.
   assert.deepEqual(toolResultParts([{ type: 'image' }]), unshown);
+  assert.deepEqual(toolResultParts([{ type: 'input_image', file_id: 'opaque-image' }]), unshown);
 });
 
 test('a picture is known by its own bytes', () => {

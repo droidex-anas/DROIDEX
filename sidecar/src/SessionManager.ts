@@ -96,6 +96,7 @@ import {
   type StartedLocalMcpResources,
 } from './SessionLifecycle.js';
 import { ChildSessions } from './ChildSessions.js';
+import { ChildHistoryWatch } from './ChildHistoryWatch.js';
 import type { ChildSettings } from './ChildSessionState.js';
 import { CHILD_RUNTIME_IDLE_RETIREMENT_MS } from './childRuntimeRetirement.js';
 import {
@@ -272,6 +273,7 @@ export class SessionManager {
   private readonly context: SessionContext;
   private readonly compaction: SessionCompaction;
   private readonly childSessions: ChildSessions;
+  private readonly childHistoryWatch: ChildHistoryWatch;
   private readonly missionControlPolicy: MissionControlPolicy;
   private readonly lifecycle: SessionLifecycle;
   private readonly runtimeRetirement: SessionRuntimeRetirement;
@@ -576,8 +578,10 @@ export class SessionManager {
       applySideEffects: (appSessionId, sideEffects) => {
         this.applyEventSideEffects(appSessionId, sideEffects);
       },
-      resolveChildScope: (appSessionId, spawnLink) =>
-        this.childSessions.childScopeForSpawn(appSessionId, spawnLink),
+      resolveChildScope: (appSessionId, owner) =>
+        owner.kind === 'provider-session'
+          ? this.childSessions.childScopeForProvider(appSessionId, owner.id)
+          : this.childSessions.childScopeForSpawn(appSessionId, owner),
       recordUsage: (appSessionId, sourceProviderSessionId, usage) => {
         this.context.recordUsage(appSessionId, sourceProviderSessionId, usage);
       },
@@ -598,6 +602,12 @@ export class SessionManager {
           agentWakePrompt(agents),
           AGENT_WAKE_NOTICE,
         ),
+      onParentClosing: (parentAppSessionId) => {
+        this.childHistoryWatch.parentClosing(parentAppSessionId);
+      },
+      onParentAttached: (parentAppSessionId) => {
+        this.childHistoryWatch.parentAttached(parentAppSessionId);
+      },
       resolveDefaultSettings: (summary, initResult, role) =>
         this.resolveChildDefaultSettings(summary, initResult, role),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
@@ -614,6 +624,18 @@ export class SessionManager {
       childRuntimeIdleMs: limits.childRuntimeIdleMs,
       now: Date.now,
     });
+    this.childHistoryWatch = new ChildHistoryWatch({
+      fileHistorySource: (identity, limit) => this.childSessions.fileHistorySource(identity, limit),
+      whenHistoryReady: () => this.sessionFiles.whenBootReconciled(),
+      reportError: ({ parentAppSessionId, childSessionId }, error) => {
+        this.emit({
+          type: 'session.history.error',
+          appSessionId: parentAppSessionId,
+          childSessionId,
+          message: errMsg(error),
+        });
+      },
+    });
     this.sessionFiles = new SessionFileServing({
       history: this.history,
       startWatcher,
@@ -621,6 +643,9 @@ export class SessionManager {
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       retryPendingLaunchSettings: (providerSessionIds) => {
         this.childSessions.retryPendingLaunchSettings(providerSessionIds);
+      },
+      onFilesReconciled: (changes) => {
+        this.childHistoryWatch.filesReconciled(changes);
       },
       listSummaries: (listOptions) => this.registry.listSummaries(listOptions),
       emitList: ({ sessions, earlierSessionsByCwd }) => {
@@ -812,6 +837,8 @@ export class SessionManager {
     });
     this.adoption = new SessionAdoption({
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
+      historyReady: () => this.sessionFiles.whenBootReconciled(),
+      isShutdownStarted: () => this.shutdownPromise !== undefined,
       registry: this.registry,
       lifecycle: { resume: (id) => this.lifecycle.resume(id, true) },
       liveChildren: () =>
@@ -881,6 +908,18 @@ export class SessionManager {
 
   startSessionFileServing(): void {
     this.sessionFiles.start();
+  }
+
+  setChildHistoryWatch(
+    owner: object,
+    command: Extract<ClientCommand, { type: 'child.watchHistory' }>,
+  ): void {
+    if (this.shutdownPromise) return;
+    this.childHistoryWatch.set(owner, command);
+  }
+
+  clearChildHistoryWatch(owner: object): void {
+    this.childHistoryWatch.clearOwner(owner);
   }
 
   /**
@@ -1207,6 +1246,7 @@ export class SessionManager {
         await this.lifecycle.resume(cmd.appSessionId);
         return;
       case 'session.close':
+        this.childHistoryWatch.clearParent(cmd.appSessionId);
         await this.lifecycle.close(cmd.appSessionId);
         return;
       case 'session.processes.stop':
@@ -2258,6 +2298,7 @@ export class SessionManager {
   }
 
   private async performShutdown(): Promise<void> {
+    this.childHistoryWatch.close();
     this.history.onDurable = undefined;
     this.historyQueries.forget();
     this.sidebarRequests.close();

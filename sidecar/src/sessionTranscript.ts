@@ -16,6 +16,7 @@ import {
 } from './sessionTranscriptParser.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { readSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
+import { storedMessageAnchors } from './providers/ProviderTranscriptAnchors.js';
 
 // Stored-row shapes are owned by the parser module but re-exported here so
 // the history path's import stays stable.
@@ -51,6 +52,12 @@ export interface TranscriptWindowCursor {
 // One shared, lazily-opened file descriptor per backward walk.
 interface LazyFile {
   fd: number | null;
+}
+
+interface ParsedLine {
+  events: TranscriptEvent[];
+  anchors: Map<string, number>;
+  messageSeqs: Map<string, number>;
 }
 
 // Read the bytes an EAGER transcript parse can see: the whole file, or the
@@ -94,18 +101,14 @@ export function parseFullSessionTranscript(
   for (const raw of window.text.split(/\r?\n/)) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
+    let stored: StoredMessageLine | StoredSessionStart;
     try {
-      events.push(
-        ...parseSessionLineEvents(
-          appSessionId,
-          providerSessionId,
-          role,
-          JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart,
-        ),
-      );
+      stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
     } catch {
       /* skip partial/corrupt JSONL rows */
+      continue;
     }
+    events.push(...parseSessionLineEvents(appSessionId, providerSessionId, role, stored));
   }
   const notices = readSessionNotices(appSessionId, providerSessionId, role);
   // Corrections append to JSONL; replay exposes only the latest text per row
@@ -123,9 +126,42 @@ export function parseFullSessionTranscript(
         })
         .reverse()
     : events;
+  const messages = coalesceMessages(uniqueEvents);
   return notices.length
-    ? [...uniqueEvents, ...notices].sort((left, right) => left.ts - right.ts)
-    : uniqueEvents;
+    ? [...messages, ...notices].sort((left, right) => left.ts - right.ts)
+    : messages;
+}
+
+function appendMessageChunk(older: TranscriptEvent, newer: TranscriptEvent): TranscriptEvent {
+  return {
+    ...older,
+    text:
+      newer.textUpdate?.kind === 'snapshot' ? newer.text : (older.text ?? '') + (newer.text ?? ''),
+    endTs: newer.endTs ?? newer.ts,
+    ...(newer.textUpdate?.kind === 'snapshot' ? { textUpdate: newer.textUpdate } : {}),
+  };
+}
+
+function messageSnapshot(event: TranscriptEvent): TranscriptEvent {
+  if (!event.textUpdate) return event;
+  return {
+    ...event,
+    textUpdate: { messageId: event.textUpdate.messageId, kind: 'snapshot' },
+  };
+}
+
+function coalesceMessages(events: TranscriptEvent[]): TranscriptEvent[] {
+  const messages: TranscriptEvent[] = [];
+  const indexes = new Map<string, number>();
+  for (const event of events) {
+    const index = event.textUpdate ? indexes.get(event.id) : undefined;
+    if (index !== undefined) messages[index] = appendMessageChunk(messages[index], event);
+    else {
+      if (event.textUpdate) indexes.set(event.id, messages.length);
+      messages.push(event);
+    }
+  }
+  return messages.map(messageSnapshot);
 }
 
 // Byte offset of every line start in the file, bounded to `size` so bytes
@@ -171,7 +207,7 @@ export class SessionTranscriptReader {
   readonly noticesRevision: string;
   private readonly notices: TranscriptEvent[];
   private readonly lineStarts: number[];
-  private readonly parsedLines = new Map<number, TranscriptEvent[]>();
+  private readonly parsedLines = new Map<number, ParsedLine>();
 
   constructor(
     private readonly appSessionId: string,
@@ -210,9 +246,9 @@ export class SessionTranscriptReader {
     } finally {
       if (file.fd !== null) closeSync(file.fd);
     }
-    collected.reverse();
+    collected.reverse().sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0));
     return {
-      events: collected.map((e) => ({ ...e, seq: seqBase + (e.seq ?? 0) })),
+      events: collected.map((e) => ({ ...messageSnapshot(e), seq: seqBase + (e.seq ?? 0) })),
       ...(older ? { older } : {}),
     };
   }
@@ -225,13 +261,23 @@ export class SessionTranscriptReader {
     from?: TranscriptWindowCursor,
   ): { collected: TranscriptEvent[]; older?: TranscriptWindowCursor } {
     const collected: TranscriptEvent[] = []; // newest first
+    const messageIndexes = new Map<string, number>();
     // This walk starts at the tail, where a spoken row's latest correction lives.
     const seenSpoken = new Set<string>();
     let line = from ? from.line : this.lineStarts.length - 1;
     let skip = from?.skip ?? 0;
     let notice = from ? (from.notice ?? -1) : this.notices.length - 1;
-    while ((line >= 0 || notice >= 0) && collected.length < limit) {
-      const events = line >= 0 ? this.parseLine(file, line) : [];
+    let earliestMessageSeq = Infinity;
+    let expansionStart: number | undefined;
+    while (line >= 0 || notice >= 0) {
+      if (
+        collected.length >= limit &&
+        (earliestMessageSeq === Infinity ||
+          (line > 0 && (line + 2) * LINE_EVENT_STRIDE <= earliestMessageSeq))
+      )
+        break;
+      const parsed = line >= 0 ? this.parseLine(file, line) : undefined;
+      const events = parsed?.events ?? [];
       const candidate = events.at(-skip - 1);
       if (line >= 0 && !candidate) {
         line -= 1;
@@ -239,6 +285,14 @@ export class SessionTranscriptReader {
         continue;
       }
       const nextNotice = notice >= 0 ? this.notices.at(notice) : undefined;
+      if (collected.length >= limit) {
+        if (!candidate || (candidate.seq ?? 0) < earliestMessageSeq) break;
+        expansionStart ??= this.lineStarts[line + 1] ?? this.sizeBytes;
+        if (expansionStart - this.lineStarts[line] > MAX_SESSION_BYTES)
+          throw new Error(
+            'A native message spans more than 5 MB of interleaved history. Start a new chat to continue.',
+          );
+      }
       if (nextNotice && (!candidate || nextNotice.ts >= candidate.ts)) {
         // Notices sit after their preceding provider event, without changing
         // that event's stable line-based ordering or splitting its seq band.
@@ -248,8 +302,23 @@ export class SessionTranscriptReader {
         });
         notice -= 1;
       } else if (candidate) {
+        const messageIndex = candidate.textUpdate ? messageIndexes.get(candidate.id) : undefined;
+        if (candidate.textUpdate) {
+          const anchor = parsed?.anchors.get(`${candidate.kind}:${candidate.textUpdate.messageId}`);
+          if (anchor === undefined)
+            throw new Error('Missing native message anchor in saved transcript. Start a new chat.');
+          const firstSeq = this.parseLine(file, anchor).messageSeqs.get(candidate.id);
+          if (firstSeq === undefined)
+            throw new Error('Invalid native message start in saved transcript. Start a new chat.');
+          earliestMessageSeq = Math.min(earliestMessageSeq, firstSeq);
+        }
         if (!candidate.spoken || !seenSpoken.has(candidate.id)) {
-          collected.push(candidate);
+          if (messageIndex !== undefined)
+            collected[messageIndex] = appendMessageChunk(candidate, collected[messageIndex]);
+          else {
+            if (candidate.textUpdate) messageIndexes.set(candidate.id, collected.length);
+            collected.push(candidate);
+          }
           if (candidate.spoken) seenSpoken.add(candidate.id);
         }
         skip += 1;
@@ -267,15 +336,17 @@ export class SessionTranscriptReader {
     };
   }
 
-  private parseLine(file: LazyFile, index: number): TranscriptEvent[] {
+  private parseLine(file: LazyFile, index: number): ParsedLine {
     const hit = this.parsedLines.get(index);
     if (hit) return hit;
     // A cursor minted against a since-rewritten (compacted) file can address
     // lines past the end; serve nothing for them instead of a wrong page.
-    if (index >= this.lineStarts.length) return [];
+    if (index >= this.lineStarts.length)
+      return { events: [], anchors: new Map(), messageSeqs: new Map() };
     const start = this.lineStarts[index];
     const end = index + 1 < this.lineStarts.length ? this.lineStarts[index + 1] : this.sizeBytes;
     let events: TranscriptEvent[] = [];
+    let stored: StoredMessageLine | StoredSessionStart | undefined;
     if (end > start) {
       file.fd ??= openSync(this.path, 'r');
       const buffer = Buffer.alloc(end - start);
@@ -283,28 +354,34 @@ export class SessionTranscriptReader {
       const raw = buffer.toString('utf8').trim();
       if (raw) {
         try {
-          events = parseSessionLineEvents(
-            this.appSessionId,
-            this.providerSessionId,
-            this.role,
-            JSON.parse(raw) as StoredMessageLine | StoredSessionStart,
-            { fullText: this.fullText },
-          );
+          stored = JSON.parse(raw) as StoredMessageLine | StoredSessionStart;
         } catch {
           /* skip partial/corrupt JSONL rows */
         }
       }
     }
+    const anchors = stored ? storedMessageAnchors(stored, index) : new Map<string, number>();
+    if (stored)
+      events = parseSessionLineEvents(
+        this.appSessionId,
+        this.providerSessionId,
+        this.role,
+        stored,
+        { fullText: this.fullText },
+      );
     const base = (index + 1) * LINE_EVENT_STRIDE;
+    const messageSeqs = new Map<string, number>();
     events.forEach((e, i) => {
       e.seq = base + Math.min(i, LINE_EVENT_STRIDE - 1);
+      if (e.textUpdate && !messageSeqs.has(e.id)) messageSeqs.set(e.id, e.seq);
     });
-    this.parsedLines.set(index, events);
+    const parsed = { events, anchors, messageSeqs };
+    this.parsedLines.set(index, parsed);
     if (this.parsedLines.size > MAX_MEMOIZED_LINES) {
       const oldest = this.parsedLines.keys().next().value;
       if (oldest !== undefined) this.parsedLines.delete(oldest);
     }
-    return events;
+    return parsed;
   }
 }
 

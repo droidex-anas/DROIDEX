@@ -34,6 +34,7 @@ interface TranscriptIndexes {
   // call coalesces into, so interleaved snapshots of parallel calls merge
   // instead of duplicating. Provider ids are only unique within one session.
   toolCallIndexByUseId: ReadonlyMap<string, number>;
+  textIndexByMessageId: ReadonlyMap<string, number>;
 }
 
 interface EventIdIndex {
@@ -62,7 +63,8 @@ export function ingestTranscriptEvents(
   };
 
   for (const event of incoming) {
-    if (hasEventId(eventIds, event.id)) {
+    const textTarget = textMergeTarget(events, indexes, event);
+    if (hasEventId(eventIds, event.id) && !(event.textUpdate?.kind === 'snapshot' && textTarget)) {
       // The sidecar can correct a finished utterance with more text under the
       // same id, including when both versions arrive from durable history.
       const grown = grownSpokenRow(events, event);
@@ -77,27 +79,31 @@ export function ingestTranscriptEvents(
       );
       continue;
     }
-    const last = events.at(-1);
-
-    // Protocol mirror of sidecar/src/streamingDeltaCoalescer.ts
-    // mergeStreamingDelta(). Keep both implementations and their behavior
-    // tests synchronized.
-    const textDelta = getTextDeltaRun(last, event);
-    if (textDelta) {
-      const changedIndex = events.length - 1;
-      const mergedTail = appendTranscriptText(
-        textDelta.previous,
-        textDelta.text,
-        event.endTs ?? event.ts,
-        event.forkPointId,
-      );
-      events = replaceChunkedSequenceAt(events, changedIndex, mergedTail);
-      indexes = replaceIndexedEvent(indexes, textDelta.previous, mergedTail);
-      recordChange(changedIndex);
+    // Unkeyed deltas mirror sidecar mergeStreamingDelta(). Native items keep
+    // their message boundary even when other sources interrupt the stream.
+    if (textTarget) {
+      const merged =
+        event.textUpdate?.kind === 'snapshot'
+          ? {
+              ...textTarget.previous,
+              text: textTarget.text,
+              textUpdate: event.textUpdate,
+              endTs: event.endTs ?? event.ts,
+              ...(event.forkPointId ? { forkPointId: event.forkPointId } : {}),
+            }
+          : appendTranscriptText(
+              textTarget.previous,
+              textTarget.text,
+              event.endTs ?? event.ts,
+              event.forkPointId,
+            );
+      events = replaceChunkedSequenceAt(events, textTarget.index, merged);
+      indexes = replaceIndexedEvent(indexes, textTarget.previous, merged);
+      recordChange(textTarget.index);
       estimatedCost = estimateReplacedTranscriptEventCost(
         estimatedCost,
-        textDelta.previous,
-        mergedTail,
+        textTarget.previous,
+        merged,
       );
       continue;
     }
@@ -215,9 +221,15 @@ export function normalizeTranscriptUpdate(
         insertedIndexes.childSpawns,
         previousRuntime.indexes.childSpawns,
       ),
-      toolCallIndexByUseId: mergeToolCallIndexes(
+      toolCallIndexByUseId: mergePositionIndexes(
         insertedIndexes.toolCallIndexByUseId,
         previousRuntime.indexes.toolCallIndexByUseId,
+        mutation.firstChangedIndex,
+        mutation.insertedCount,
+      ),
+      textIndexByMessageId: mergePositionIndexes(
+        insertedIndexes.textIndexByMessageId,
+        previousRuntime.indexes.textIndexByMessageId,
         mutation.firstChangedIndex,
         mutation.insertedCount,
       ),
@@ -275,18 +287,44 @@ function registerTranscriptRuntime(
 }
 
 function buildIndexes(events: readonly TranscriptEvent[]): TranscriptIndexes {
-  let indexes: TranscriptIndexes = {
-    firstUserEvent: undefined,
-    firstUserIndex: undefined,
-    latestActivityBySource: new Map(),
-    childSpawns: new Map(),
-    toolCallIndexByUseId: new Map(),
-  };
+  let firstUserEvent: TranscriptEvent | undefined;
+  let firstUserIndex: number | undefined;
+  const latestActivityBySource = new Map<string, TranscriptEvent>();
+  const childSpawns = new Map<string, TranscriptEvent>();
+  const toolCallIndexByUseId = new Map<string, number>();
+  const textIndexByMessageId = new Map<string, number>();
   for (let index = 0; index < events.length; index += 1) {
     const event = events.at(index);
-    if (event) indexes = appendIndexes(indexes, event, index);
+    if (!event) continue;
+    if (!firstUserEvent && event.author === 'user') {
+      firstUserEvent = event;
+      firstUserIndex = index;
+    }
+    if (
+      isChildActivityEvent(event) &&
+      isNewerActivity(event, latestActivityBySource.get(event.sourceSessionId))
+    ) {
+      latestActivityBySource.set(event.sourceSessionId, event);
+    }
+    if (isChildSpawnEvent(event)) {
+      const key = childSpawnKey(event);
+      const existing = childSpawns.get(key);
+      childSpawns.set(key, existing ? mergeChildSessionSpawn(existing, event) : event);
+    }
+    if (event.kind === 'tool_call' && event.toolUseId) {
+      toolCallIndexByUseId.set(toolCallIndexKey(event.sourceSessionId, event.toolUseId), index);
+    }
+    const messageKey = textMessageKey(event);
+    if (messageKey) textIndexByMessageId.set(messageKey, index);
   }
-  return indexes;
+  return {
+    firstUserEvent,
+    firstUserIndex,
+    latestActivityBySource,
+    childSpawns,
+    toolCallIndexByUseId,
+    textIndexByMessageId,
+  };
 }
 
 function appendIndexes(
@@ -298,7 +336,10 @@ function appendIndexes(
   const firstUserIndex =
     indexes.firstUserIndex ?? (event.author === 'user' ? eventIndex : undefined);
   let latestActivityBySource = indexes.latestActivityBySource;
-  if (isChildActivityEvent(event)) {
+  if (
+    isChildActivityEvent(event) &&
+    isNewerActivity(event, latestActivityBySource.get(event.sourceSessionId))
+  ) {
     const updated = new Map(latestActivityBySource);
     updated.set(event.sourceSessionId, event);
     latestActivityBySource = updated;
@@ -317,12 +358,20 @@ function appendIndexes(
     updated.set(toolCallIndexKey(event.sourceSessionId, event.toolUseId), eventIndex);
     toolCallIndexByUseId = updated;
   }
+  let textIndexByMessageId = indexes.textIndexByMessageId;
+  const messageKey = textMessageKey(event);
+  if (messageKey) {
+    const updated = new Map(textIndexByMessageId);
+    updated.set(messageKey, eventIndex);
+    textIndexByMessageId = updated;
+  }
   return {
     firstUserEvent,
     firstUserIndex,
     latestActivityBySource,
     childSpawns,
     toolCallIndexByUseId,
+    textIndexByMessageId,
   };
 }
 
@@ -335,7 +384,11 @@ function replaceIndexedEvent(
   next: TranscriptEvent,
 ): TranscriptIndexes {
   let latestActivityBySource = indexes.latestActivityBySource;
-  if (latestActivityBySource.get(previous.sourceSessionId) === previous) {
+  const latestActivity = latestActivityBySource.get(previous.sourceSessionId);
+  if (
+    latestActivity === previous ||
+    (isChildActivityEvent(next) && isNewerActivity(next, latestActivity))
+  ) {
     const updated = new Map(latestActivityBySource);
     if (isChildActivityEvent(next)) updated.set(next.sourceSessionId, next);
     else updated.delete(previous.sourceSessionId);
@@ -362,7 +415,9 @@ function mergeLatestActivityIndexes(
   newer: ReadonlyMap<string, TranscriptEvent>,
 ): ReadonlyMap<string, TranscriptEvent> {
   const merged = new Map(older);
-  for (const [sourceSessionId, event] of newer) merged.set(sourceSessionId, event);
+  for (const [sourceSessionId, event] of newer) {
+    if (isNewerActivity(event, merged.get(sourceSessionId))) merged.set(sourceSessionId, event);
+  }
   return merged;
 }
 
@@ -380,7 +435,7 @@ function mergeChildSpawnIndexes(
 
 // Older pages insert before the retained window, so retained positions shift.
 // On a boundary collision the retained (newer) copy stays the merge target.
-function mergeToolCallIndexes(
+function mergePositionIndexes(
   inserted: ReadonlyMap<string, number>,
   retained: ReadonlyMap<string, number>,
   insertionIndex: number,
@@ -397,6 +452,10 @@ function mergeToolCallIndexes(
 
 function isChildActivityEvent(event: TranscriptEvent): boolean {
   return event.author !== 'user' && !(event.kind === 'tool_result' && !event.isError);
+}
+
+function isNewerActivity(event: TranscriptEvent, previous: TranscriptEvent | undefined): boolean {
+  return previous === undefined || (event.endTs ?? event.ts) >= (previous.endTs ?? previous.ts);
 }
 
 function isChildSpawnEvent(event: TranscriptEvent): boolean {
@@ -479,11 +538,16 @@ function grownSpokenRow(
   return { index, existing, merged: { ...existing, text: event.text } };
 }
 
-function getTextDeltaRun(
-  previous: TranscriptEvent | undefined,
+function textMergeTarget(
+  events: readonly TranscriptEvent[],
+  indexes: TranscriptIndexes,
   next: TranscriptEvent,
-): { previous: TranscriptEvent; text: string } | undefined {
+): { index: number; previous: TranscriptEvent; text: string } | undefined {
+  const messageKey = textMessageKey(next);
+  const index = messageKey ? indexes.textIndexByMessageId.get(messageKey) : events.length - 1;
+  const previous = index === undefined ? undefined : events.at(index);
   if (
+    index !== undefined &&
     previous !== undefined &&
     !next.author &&
     // A spoken line is a whole utterance, not a token fragment. Keep it
@@ -491,16 +555,27 @@ function getTextDeltaRun(
     !previous.spoken &&
     !next.spoken &&
     previous.kind === next.kind &&
-    previous.sourceSessionId === next.sourceSessionId &&
+    (messageKey
+      ? textMessageKey(previous) === messageKey
+      : previous.sourceSessionId === next.sourceSessionId) &&
+    previous.textUpdate?.messageId === next.textUpdate?.messageId &&
     previous.author === next.author &&
     (next.kind === 'text' || next.kind === 'thinking') &&
     typeof next.text === 'string' &&
-    next.text.length > 0 &&
+    (next.text.length > 0 || next.textUpdate?.kind === 'snapshot') &&
     !next.toolName
   ) {
-    return { previous, text: next.text };
+    return { index, previous, text: next.text };
   }
   return undefined;
+}
+
+function textMessageKey(event: TranscriptEvent): string | undefined {
+  if (!event.textUpdate || event.author || (event.kind !== 'text' && event.kind !== 'thinking')) {
+    return undefined;
+  }
+  const source = event.role === 'primary' ? 'primary' : event.sourceSessionId;
+  return `${source}\n${event.kind}\n${event.textUpdate.messageId}`;
 }
 
 // The one earlier snapshot of a streamed call, wherever it landed. The index

@@ -27,6 +27,10 @@ async function bridgeServer(
   onCommand: (command: ClientCommand) => Promise<void> = async () => undefined,
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot,
   getProfileUsage?: () => Promise<unknown> | unknown,
+  childHistory?: Pick<
+    Parameters<typeof startBridgeServer>[0],
+    'onChildHistoryWatch' | 'onChildHistoryDisconnect'
+  >,
 ): Promise<Harness> {
   const token = 'test-token';
   const server = startBridgeServer({
@@ -35,6 +39,7 @@ async function bridgeServer(
     onCommand,
     ...(getSnapshot ? { getSnapshot } : {}),
     ...(getProfileUsage ? { getProfileUsage } : {}),
+    ...childHistory,
   });
   await server.ready;
   t.after(() => server.close());
@@ -218,6 +223,51 @@ test('broadcast after close is dropped instead of throwing', async (t) => {
   const harness = await bridgeServer(t);
   await harness.close();
   assert.doesNotThrow(() => harness.broadcast({ type: 'connection', status: 'connected' }));
+});
+
+test('child history watches validate their target and release the owning connection', async (t) => {
+  const watches: { owner: object; command: ClientCommand }[] = [];
+  const disconnected: object[] = [];
+  const commands: ClientCommand[] = [];
+  const harness = await bridgeServer(
+    t,
+    async (command) => void commands.push(command),
+    undefined,
+    undefined,
+    {
+      onChildHistoryWatch: (owner, command) => watches.push({ owner, command }),
+      onChildHistoryDisconnect: (owner) => disconnected.push(owner),
+    },
+  );
+  const first = await connect(t, harness);
+  const second = await connect(t, harness);
+  const watch = {
+    type: 'child.watchHistory',
+    requestId: 'watch-a',
+    target: { parentAppSessionId: 'parent-a', childSessionId: 'child-a', limit: 240 },
+  };
+  first.socket.send(JSON.stringify(watch));
+  await waitFor(() => watches.length === 1 || commands.length > 0);
+  assert.equal(watches.length, 1);
+  assert.equal(commands.length, 0);
+  assert.deepEqual(watches[0].command, watch);
+  second.socket.send(JSON.stringify({ ...watch, requestId: 'watch-b' }));
+  await waitFor(() => watches.length === 2);
+  assert.notEqual(watches[0].owner, watches[1].owner);
+
+  first.socket.send(JSON.stringify({ ...watch, target: { ...watch.target, limit: -1 } }));
+  await waitFor(() => first.received.length > 0);
+  assert.equal(JSON.parse(first.received.at(-1)!).type, 'error');
+  assert.equal(watches.length, 2);
+  first.socket.send(
+    JSON.stringify({ type: 'child.watchHistory', requestId: 'watch-a', target: null }),
+  );
+  await waitFor(() => watches.length === 3);
+  assert.equal(watches[2].owner, watches[0].owner);
+  await closeSocket(first.socket);
+  await waitFor(() => disconnected.length > 0);
+  assert.deepEqual(disconnected, [watches[0].owner]);
+  assert.equal(second.socket.readyState, WebSocket.OPEN);
 });
 
 test('the socket handshake rejects a wrong token and stale bridge protocols', async (t) => {

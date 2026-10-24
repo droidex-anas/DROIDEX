@@ -166,7 +166,7 @@ function isTextDelta(event: TranscriptEvent): boolean {
   return (
     (event.kind === 'text' || event.kind === 'thinking') &&
     !event.author &&
-    !!event.text &&
+    (!!event.text || event.textUpdate?.kind === 'snapshot') &&
     !event.toolName &&
     !event.toolUseId
   );
@@ -220,11 +220,16 @@ function mergeStreamingDelta(
 ): TranscriptEvent | null {
   if (!sameDeltaRun(previous, next)) return null;
   if (isTextDelta(previous) && isTextDelta(next) && previous.kind === next.kind) {
+    if (previous.textUpdate?.messageId !== next.textUpdate?.messageId) return null;
     // A run can span two Droid messages; the later one is where it ends.
     const forkPointId = next.forkPointId ?? previous.forkPointId;
     return {
       ...previous,
-      text: (previous.text ?? '') + (next.text ?? ''),
+      text:
+        next.textUpdate?.kind === 'snapshot'
+          ? next.text
+          : (previous.text ?? '') + (next.text ?? ''),
+      ...(next.textUpdate?.kind === 'snapshot' ? { textUpdate: next.textUpdate } : {}),
       endTs: next.endTs ?? next.ts,
       ...(forkPointId ? { forkPointId } : {}),
     };

@@ -6,10 +6,9 @@ import {
   type LiveSessionIdentity,
 } from './liveRuntimeJournal.js';
 import type { InterruptedSessionRecord, SessionPhase, SessionSummary } from './protocol.js';
-import { DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { errMsg } from './errors.js';
 import { isProcessAlive } from './processes/isProcessAlive.js';
-import type { SessionLifecycle } from './SessionLifecycle.js';
+import type { RegisteredSession } from './SessionRegistry.js';
 import { adoptedSessionFacts, retirableSessions } from './sessionRuntimeRetirement.js';
 
 // Boot time is derived from uptime, which drifts by a little between reads.
@@ -32,7 +31,9 @@ export interface SessionAdoptionDependencies {
       options: { touchActivity: false },
     ): unknown;
   };
-  lifecycle: Pick<SessionLifecycle, 'resume'>;
+  lifecycle: { resume(id: string): Promise<RegisteredSession | undefined> };
+  historyReady: () => Promise<void>;
+  isShutdownStarted: () => boolean;
   liveChildren: () => readonly LiveChildIdentity[];
   recordedProcesses: () => LiveProcessIdentity[];
   // Kills whatever the previous run left running, matched by start time so a
@@ -114,6 +115,9 @@ export class SessionAdoption {
     // Before anything is resurrected: a session that comes back must not
     // inherit a dev server from the run that died holding the port.
     await d.reapProcesses(identities.processes);
+    if (d.isShutdownStarted()) return { interrupted: [] };
+    await d.historyReady();
+    if (d.isShutdownStarted()) return { interrupted: [] };
     // Retirement owns the idle budget and count cap, so boot never spawns
     // runtimes the first sweep would immediately release.
     const facts = identities.sessions.map((session) =>
@@ -133,6 +137,7 @@ export class SessionAdoption {
       if (retirableSessions(facts, d.now(), d.sessionRuntimeIdleMs).includes(session.appSessionId))
         continue;
       await this.adoptSession(session);
+      if (d.isShutdownStarted()) return { interrupted: [...this.interrupted] };
     }
     for (const child of identities.children) this.markChildInterrupted(child);
     this.persistLiveSet();
@@ -140,28 +145,43 @@ export class SessionAdoption {
   }
 
   private async adoptSession(identity: LiveSessionIdentity): Promise<void> {
+    if (this.dependencies.registry.getLive(identity.appSessionId)) return;
     const historical = this.dependencies.registry.getCanonicalSummary(identity.appSessionId);
     // Settled turns retain their phase; only the journal's streaming flag means unfinished work.
-    const wasActive = identity.streaming;
+    const wasStreaming = identity.streaming;
+    if (!historical) {
+      await this.markSessionInterrupted(
+        identity,
+        undefined,
+        wasStreaming,
+        'Stored session metadata is unavailable. Restore its transcript or start a new chat.',
+      );
+      return;
+    }
     try {
       const resumed = await this.dependencies.lifecycle.resume(identity.appSessionId);
+      if (this.dependencies.isShutdownStarted()) return;
       if (!resumed) {
-        await this.markSessionInterrupted(identity, historical, wasActive, SESSION_UNAVAILABLE);
+        if (this.dependencies.registry.getLive(identity.appSessionId)) return;
+        await this.markSessionInterrupted(identity, historical, wasStreaming, SESSION_UNAVAILABLE);
         return;
       }
-      if (!wasActive) return;
-      const reconnected = this.dependencies.registry.getLive(identity.appSessionId) !== undefined;
+      if (!wasStreaming) return;
+      if (this.dependencies.registry.getLive(identity.appSessionId) !== resumed) return;
       await this.markSessionInterrupted(
         identity,
         historical,
         true,
-        reconnected ? 'Send a message to resume.' : SESSION_UNAVAILABLE,
+        'Send a message to resume.',
+        resumed,
       );
     } catch (error) {
+      if (this.dependencies.isShutdownStarted()) return;
+      if (this.dependencies.registry.getLive(identity.appSessionId)) return;
       await this.markSessionInterrupted(
         identity,
         historical,
-        wasActive,
+        wasStreaming,
         `${SESSION_UNAVAILABLE} (${errMsg(error)})`,
       );
     }
@@ -170,24 +190,34 @@ export class SessionAdoption {
   private async markSessionInterrupted(
     identity: LiveSessionIdentity,
     historical: SessionSummary | undefined,
-    wasActive: boolean,
+    wasStreaming: boolean,
     reason: string,
+    resumed?: RegisteredSession,
   ): Promise<void> {
-    const prefix = wasActive ? TURN_INTERRUPTED : 'The agent runtime restarted.';
+    const prefix = wasStreaming ? TURN_INTERRUPTED : 'The agent runtime restarted.';
     const interruptReason = `${prefix} ${reason}`;
     const { registry } = this.dependencies;
     const live = registry.getLive(identity.appSessionId);
+    if (live !== resumed) return;
     if (live) {
       registry.updateSummary(
         identity.appSessionId,
-        interruption(live.summary, wasActive, interruptReason),
+        interruption(live.summary, wasStreaming, interruptReason),
         { touchActivity: false },
       );
-    } else {
-      const base = historical ?? syntheticSummary(identity);
+    } else if (historical) {
+      const current = registry.getCanonicalSummary(identity.appSessionId);
+      if (
+        !current ||
+        current.providerSessionId !== historical.providerSessionId ||
+        current.provider !== historical.provider ||
+        current.resumeId !== historical.resumeId
+      )
+        return;
       await this.dependencies.persistSummaries([
-        { ...base, ...interruption(base, wasActive, interruptReason) },
+        { ...current, ...interruption(current, wasStreaming, interruptReason) },
       ]);
+      if (this.dependencies.isShutdownStarted()) return;
       // The chat was opened while this was stored, and speaks for itself now.
       if (registry.getLive(identity.appSessionId)) return;
     }
@@ -207,12 +237,12 @@ export class SessionAdoption {
 
 function interruption(
   summary: SessionSummary,
-  wasActive: boolean,
+  wasStreaming: boolean,
   reason: string,
 ): Pick<SessionSummary, 'streaming' | 'phase' | 'interruptReason'> {
   return {
     streaming: false,
-    phase: wasActive ? interruptedPhase(summary.phase) : summary.phase,
+    phase: wasStreaming ? interruptedPhase(summary.phase) : summary.phase,
     interruptReason: reason,
   };
 }
@@ -220,28 +250,4 @@ function interruption(
 function interruptedPhase(phase: SessionPhase): SessionPhase {
   if (phase === 'completed' || phase === 'failed' || phase === 'paused') return phase;
   return 'paused';
-}
-
-function syntheticSummary(identity: LiveSessionIdentity): SessionSummary {
-  const now = Date.now();
-  return {
-    appSessionId: identity.appSessionId,
-    providerSessionId: identity.providerSessionId,
-    provider: DEFAULT_PROVIDER,
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'primary',
-    title: `Session ${identity.providerSessionId.slice(0, 8)}`,
-    goal: '',
-    cwd: '',
-    autonomy: 'off',
-    phase: 'paused',
-    streaming: false,
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: now,
-    updatedAt: now,
-  };
 }

@@ -83,6 +83,8 @@ export interface SessionManagerTestContext {
   readonly home: string;
   readonly mcpServerCloseCalls: number;
   deliverScheduledMessage: SessionManager['deliverScheduledMessage'];
+  setChildHistoryWatch: SessionManager['setChildHistoryWatch'];
+  clearChildHistoryWatch: SessionManager['clearChildHistoryWatch'];
   handle(command: Protocol.ClientCommand): Promise<void>;
   create(
     command: Omit<Extract<Protocol.ClientCommand, { type: 'session.create' }>, 'type'>,
@@ -277,6 +279,8 @@ export function createSessionManagerTestContext(
     },
     handle,
     deliverScheduledMessage: manager.deliverScheduledMessage.bind(manager),
+    setChildHistoryWatch: manager.setChildHistoryWatch.bind(manager),
+    clearChildHistoryWatch: manager.clearChildHistoryWatch.bind(manager),
     create: (command) => handle({ type: 'session.create', ...command }),
     retireIdleSessionRuntimes: () => manager.retireIdleSessionRuntimes(),
     warmSelectedSessionRuntime: () => manager.warmSelectedSessionRuntime(),

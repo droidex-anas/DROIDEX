@@ -17,6 +17,8 @@ export interface FileUpdateChange {
 }
 
 export type ThreadItem =
+  | { type: 'userMessage'; id: string; content: unknown[] }
+  | { type: 'reasoning'; id: string; summary: string[]; content: string[] }
   | { type: 'agentMessage'; id: string; text: string }
   | {
       type: 'commandExecution';
@@ -48,6 +50,13 @@ export type ThreadItem =
       contentItems: { type: string; text?: string; imageUrl?: string }[] | null;
       success: boolean | null;
     }
+  | {
+      type: 'functionCallOutput';
+      id: string;
+      name: string;
+      namespace: string | null;
+      output: string | unknown[];
+    }
   | ({ type: 'imageGeneration'; status: string; revisedPrompt?: string | null } & GeneratedImage)
   | {
       type: 'collabAgentToolCall';
@@ -66,11 +75,14 @@ export type ThreadItem =
   | { type: 'ignored' };
 
 const MAPPED_ITEMS = new Set([
+  'userMessage',
+  'reasoning',
   'agentMessage',
   'commandExecution',
   'fileChange',
   'mcpToolCall',
   'dynamicToolCall',
+  'functionCallOutput',
   'imageGeneration',
   'collabAgentToolCall',
   'subAgentActivity',
@@ -79,6 +91,11 @@ const MAPPED_ITEMS = new Set([
 export function threadItem(params: unknown): ThreadItem {
   const { item } = params as { item?: ThreadItem };
   if (!item || !MAPPED_ITEMS.has(item.type)) return { type: 'ignored' };
+  if (
+    item.type === 'agentMessage' &&
+    (typeof item.id !== 'string' || typeof item.text !== 'string')
+  )
+    return { type: 'ignored' };
   // An image item reaches the filesystem, so its fields are checked before it
   // is admitted rather than trusted the way a text-only item can be.
   if (item.type === 'imageGeneration' && !isGeneratedImage(item)) return { type: 'ignored' };
@@ -88,7 +105,29 @@ export function threadItem(params: unknown): ThreadItem {
     return { type: 'ignored' };
   if (item.type === 'subAgentActivity' && !isSubAgentActivity(item)) return { type: 'ignored' };
   if (item.type === 'dynamicToolCall' && !isDynamicToolCall(item)) return { type: 'ignored' };
+  if (item.type === 'functionCallOutput' && !isFunctionCallOutput(item)) return { type: 'ignored' };
+  if (item.type === 'userMessage' && (typeof item.id !== 'string' || !Array.isArray(item.content)))
+    return { type: 'ignored' };
+  if (
+    item.type === 'reasoning' &&
+    (typeof item.id !== 'string' ||
+      !Array.isArray(item.summary) ||
+      !Array.isArray(item.content) ||
+      ![...item.summary, ...item.content].every((text) => typeof text === 'string'))
+  )
+    return { type: 'ignored' };
   return item;
+}
+
+function isFunctionCallOutput(item: Extract<ThreadItem, { type: 'functionCallOutput' }>): boolean {
+  return (
+    typeof item.id === 'string' &&
+    item.id !== '' &&
+    typeof item.name === 'string' &&
+    item.name !== '' &&
+    (item.namespace === null || typeof item.namespace === 'string') &&
+    (typeof item.output === 'string' || Array.isArray(item.output))
+  );
 }
 
 function isDynamicToolCall(item: Extract<ThreadItem, { type: 'dynamicToolCall' }>): boolean {
@@ -175,6 +214,22 @@ export interface ToolCall {
 // a shell name for commands, an edit name for patches, and Claude's `mcp__`
 // prefix for an MCP tool.
 export function toolCall(item: ThreadItem): ToolCall | undefined {
+  if (item.type === 'functionCallOutput') {
+    let name = item.name;
+    if (item.namespace?.startsWith('mcp__')) {
+      const server = item.namespace.slice('mcp__'.length);
+      name = `mcp__${server.replaceAll('_', '-')}__${item.name}`;
+    } else if (item.namespace) name = `${item.namespace}.${item.name}`;
+    return {
+      id: item.id,
+      name,
+      detail: item.name,
+      // App-server exposes these outputs without their original inputs or status.
+      args: undefined,
+      failed: false,
+      interrupted: false,
+    };
+  }
   const call = describeCall(item);
   // Codex reports a stop as the item's own status, whatever kind of call it
   // is, so one read covers them all.
@@ -251,6 +306,7 @@ export function toolOutput(
   if (item.type === 'mcpToolCall')
     return item.error ? { text: item.error.message } : toolResultParts(item.result?.content ?? []);
   if (item.type === 'dynamicToolCall') return toolResultParts(item.contentItems ?? []);
+  if (item.type === 'functionCallOutput') return toolResultParts(item.output);
   return { text: toolText(item, streamed, appSessionId) };
 }
 
@@ -314,7 +370,14 @@ export function collabChildSignals(
     let status: ChildSessionSignal['status'] = 'running';
     if (item.kind === 'completed') status = 'completed';
     else if (item.kind === 'interrupted') status = 'paused';
-    return [{ providerSessionId: item.agentThreadId, status, transcriptAvailable: false }];
+    return [
+      {
+        providerSessionId: item.agentThreadId,
+        status,
+        transcriptAvailable: true,
+        streamFidelity: 'token',
+      },
+    ];
   }
   if (item.type !== 'collabAgentToolCall') return [];
   const isSpawn = item.tool === 'spawnAgent';
@@ -333,7 +396,8 @@ export function collabChildSignals(
       ...(isSpawn && reasoningEffort ? { reasoningEffort } : {}),
       ...(state?.message ? { activity: { preview: state.message } } : {}),
       ...(status ? { status } : {}),
-      transcriptAvailable: false,
+      transcriptAvailable: true,
+      streamFidelity: 'token',
     };
   });
 }

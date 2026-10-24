@@ -40,6 +40,51 @@ test('a failed MCP server is read once per server, and its startup is not', () =
   );
 });
 
+test('Codex function outputs retain their tool identity and screenshot without inventing a call', () => {
+  const mapper = new CodexEventMapper('app-1');
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9]).toString('base64');
+  const events = mapper.map('item/completed', {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+    item: {
+      type: 'functionCallOutput',
+      id: 'computer-output',
+      name: 'js',
+      namespace: 'mcp__cua_repl',
+      output: [
+        { type: 'input_text', text: 'Screenshot of the viewport.' },
+        { type: 'input_image', image_url: `data:image/jpeg;base64,${jpeg}` },
+      ],
+    },
+  });
+  assert.equal(events.length, 1);
+  const output = events[0].transcript;
+  assert.equal(output?.kind, 'tool_result');
+  assert.equal(output?.appSessionId, 'app-1');
+  assert.equal(output?.toolUseId, 'computer-output');
+  assert.equal(output?.toolName, 'mcp__cua-repl__js');
+  assert.equal(output?.text, 'Screenshot of the viewport.');
+  assert.match(output?.images?.[0] ?? '', /tool-[0-9a-f]{32}\.jpg$/);
+  assert.equal(output?.isError, false);
+  assert.ok(!JSON.stringify(events).includes(jpeg));
+  const wrapper = mapper.map('item/completed', {
+    item: {
+      type: 'functionCallOutput',
+      id: 'wrapper-output',
+      name: 'exec',
+      namespace: 'functions',
+      output: 'wrapper complete',
+    },
+  });
+  assert.equal(wrapper[0]?.transcript?.toolName, 'functions.exec');
+  assert.deepEqual(
+    mapper.map('item/completed', {
+      item: { type: 'functionCallOutput', id: 'bad', name: 'exec', namespace: null, output: {} },
+    }),
+    [],
+  );
+});
+
 // The servers start before the session's first turn, so the row has to survive
 // the wait and reach the transcript that turn opens.
 test('a server that failed before the first turn is still reported in it', async () => {
