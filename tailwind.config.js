@@ -85,8 +85,8 @@ export default {
       },
     },
   },
-  // Nothing uses `container`; the scanner only finds the word in prose and in a
-  // `!container` negation, and each hit emitted six media-query copies.
+  // Nothing uses `container`; the scanner only finds the word in prose and in JS
+  // identifiers such as `!containerRef`, and each hit emitted six media-query copies.
   corePlugins: { container: false },
   plugins: [],
 };

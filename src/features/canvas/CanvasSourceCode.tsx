@@ -1,8 +1,8 @@
 // One file's text, coloured in theme tokens and measured to the pixel. The
 // editor lays a transparent textarea over this so the caret and the selection
 // stay the platform's; the conflict view shows the same thing on its own, with
-// nothing to type into. They share the metrics here because a line that is 19px
-// in one and 19.2px in the other slides the caret off its own highlight.
+// nothing to type into. They share the metrics here because a line that is 20px
+// in one and 20.2px in the other slides the caret off its own highlight.
 
 import { useMemo, type ReactNode } from 'react';
 import { Highlight } from 'prism-react-renderer';

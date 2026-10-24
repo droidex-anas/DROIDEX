@@ -105,7 +105,7 @@ export function HighlightJson({ code }: { code: string }) {
         );
       if (token === 'null')
         return (
-          <span key={i} style={{ color: 'var(--droid-code-comment)' }}>
+          <span key={i} style={{ color: 'var(--droid-code-keyword)' }}>
             {token}
           </span>
         );
@@ -115,7 +115,7 @@ export function HighlightJson({ code }: { code: string }) {
             {token}
           </span>
         );
-      if (/^[{}[\],:!]$/.test(token))
+      if (/^[{}[\],!]$/.test(token))
         return (
           <span key={i} style={{ color: 'var(--droid-code-comment)' }}>
             {token}
