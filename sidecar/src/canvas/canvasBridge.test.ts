@@ -21,6 +21,7 @@ import {
 } from '../testing/canvasBridgeSupport.js';
 import {
   deferred,
+  noteDraft,
   CANVAS_PNG,
   CANVAS_PNG_ASSET_ID,
   canvasRoot,
@@ -428,6 +429,27 @@ test('a rejected argument maps to invalid_source_path under files and invalid_in
   assert.equal(errorOf(canvas, tooLong).code, 'invalid_input');
   await canvas.handle({ type: 'canvas.list', requestId: 'r'.repeat(128) });
   assert.equal(okReply(canvas, 'r'.repeat(128)).kind, 'summaries');
+});
+
+test('an annotate through the bridge saves its text as line feeds', async (t) => {
+  const canvas = await harness(t);
+  const canvasId = await createCanvas(canvas);
+  await canvas.handle({
+    type: 'canvas.annotate',
+    requestId: 'req-note',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-note',
+      expectedAnnotationsVersion: 0,
+      upserts: [noteDraft('ann_note', 0, 0, 'One\r\nTwo\rThree')],
+      deletes: [],
+    },
+  });
+  const reply = okReply(canvas, 'req-note');
+  assert.ok(reply.kind === 'annotated');
+  const [saved] = reply.change.annotations?.upserted ?? [];
+  assert.deepEqual(saved?.kind === 'note' ? saved.text : '', 'One\nTwo\nThree');
 });
 
 test('the bridge creates a seeded adjacent frame and refuses a seed outside its canvas lease', async (t) => {

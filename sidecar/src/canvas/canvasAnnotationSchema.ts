@@ -50,12 +50,14 @@ const rectSchema = z
     height: dimensionSchema,
   })
   .strict();
-// A note keeps its line breaks and tabs; every other control character is refused.
+// A note keeps its line breaks and tabs; every other control character is refused,
+// and whatever line ending arrived is stored as a line feed.
 const textSchema = z
   .string()
   .min(1, TEXT_MESSAGE)
   .max(ANNOTATION_LIMITS.maxTextLength, TEXT_MESSAGE)
-  .refine(isPlainText, TEXT_MESSAGE);
+  .refine(isPlainText, TEXT_MESSAGE)
+  .transform(toLineFeeds);
 
 const authorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user') }).strict(),
@@ -245,12 +247,17 @@ function tenth(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-/** A tab or a line break is the only control character annotation text keeps. */
+/** A tab or a line ending is the only control character annotation text may carry. */
 function isPlainText(value: string): boolean {
   for (const character of value) {
     const code = character.codePointAt(0) ?? 0;
-    if (code === 0x09 || code === 0x0a) continue;
+    if (code === 0x09 || code === 0x0a || code === 0x0d) continue;
     if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return false;
   }
   return true;
+}
+
+/** One line feed per line ending, whatever the drawing client sent. */
+function toLineFeeds(value: string): string {
+  return value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 }
