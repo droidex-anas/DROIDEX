@@ -662,6 +662,10 @@ test('the frames share one tab stop, the keyboard moves between them, and the bo
   const headerB = frame(page, 'B').locator('[data-frame-header]');
   const selection = () => page.evaluate(() => window.boardHarness.interaction().selectedFrameIds);
 
+  // The opening Fit is where the board starts, so its zoom is not said.
+  await page.clock.runFor(600);
+  await expect(status).toHaveText('');
+
   // One stop for the frames: Tab from the board lands on A, the first frame read.
   await page.locator('#outside').focus();
   await page.keyboard.press('Tab');

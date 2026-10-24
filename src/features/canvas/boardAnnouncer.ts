@@ -87,7 +87,9 @@ export function useBoardAnnouncer({
   scale: number;
 }): string {
   const [line, setLine] = useState('');
-  const heard = useRef({ frames, selectedFrameIds, scale });
+  // The board opens at the identity scale and its opening Fit moves it once.
+  // That first settled scale is where the board starts, not news.
+  const heard = useRef({ frames, selectedFrameIds, scale, settled: false });
   // Read by the effects below, so a rename, a focus move or a newly shown design alone says nothing.
   const now = useRef({ frames, shown, focusedId });
   now.current = { frames, shown, focusedId };
@@ -116,7 +118,8 @@ export function useBoardAnnouncer({
     if (scale === heard.current.scale) return undefined;
     const timer = setTimeout(() => {
       heard.current.scale = scale;
-      setLine(zoomAnnouncement(scale));
+      if (heard.current.settled) setLine(zoomAnnouncement(scale));
+      heard.current.settled = true;
     }, ZOOM_SETTLE_MS);
     return () => {
       clearTimeout(timer);
