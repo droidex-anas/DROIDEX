@@ -57,6 +57,30 @@ test('a user sketch saves simplified, a stale version conflicts, and a retry ans
   assert.deepEqual(snapshot.annotations, [saved]);
 });
 
+test('a dense zigzag keeps its turns instead of collapsing to its ends', async (t) => {
+  const { workspace, canvasId } = await canvas(t);
+  // Every one of the 2048 points is a turn between the two rails, which a
+  // tolerance that doubles would step over and leave a straight line.
+  const zigzag = Array.from({ length: 2048 }, (_, index) => ({
+    x: index,
+    y: index % 2 === 0 ? 0 : 100,
+  }));
+  const change = await workspace.annotations.annotate(userScopeFor(canvasId, 'app-1'), {
+    mutationId: 'draw-zigzag',
+    expectedAnnotationsVersion: 0,
+    upserts: [{ id: 'ann_zigzag', kind: 'path', color: 'ink', points: zigzag }],
+    deletes: [],
+  });
+  const [saved] = change.annotations?.upserted ?? [];
+  assert.ok(saved?.kind === 'path');
+  assert.ok(saved.points.length > 2);
+  const xs = saved.points.map((point) => point.x);
+  const ys = saved.points.map((point) => point.y);
+  assert.deepEqual([Math.min(...ys), Math.max(...ys)], [0, 100]);
+  // The kept points span the stroke instead of crowding the end that deviates most.
+  assert.ok(Math.min(...xs) === 0 && Math.max(...xs) > 1500);
+});
+
 test('an agent changes only what its own chat drew', async (t) => {
   const { workspace, canvasId } = await canvas(t);
   const pane = userScopeFor(canvasId, 'app-1');

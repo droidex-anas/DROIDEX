@@ -139,9 +139,6 @@ export interface AnnotationChange {
   removedIds: string[];
 }
 
-/** Within a pixel of the drawn stroke, and never more points than one path may keep. */
-const SAVED_STROKE_TOLERANCE_PX = 1;
-
 /** The annotation a draft saves as, keeping its first author and creation time. */
 export function savedAnnotation(
   draft: AnnotationDraft,
@@ -155,52 +152,74 @@ export function savedAnnotation(
     updatedAt: now,
   };
   if (draft.kind !== 'path') return { ...draft, ...stamp };
-  const points = simplifiedStroke(
-    draft.points,
-    SAVED_STROKE_TOLERANCE_PX,
-    ANNOTATION_LIMITS.maxSavedPathPoints,
-  ).map(({ x, y }) => ({ x: tenth(x), y: tenth(y) }));
+  const points = simplifiedStroke(draft.points, ANNOTATION_LIMITS.maxSavedPathPoints).map(
+    ({ x, y }) => ({ x: tenth(x), y: tenth(y) }),
+  );
   return { ...draft, points, ...stamp };
 }
 
+/** A kept point this close to the line its neighbours draw carries no shape. */
+const STRAIGHT_STROKE_PX = 0.5;
+
 /**
- * Ramer-Douglas-Peucker: keeps the points a stroke cannot lose without moving
- * more than `tolerancePx`, and widens the tolerance until at most `maxPoints`
- * remain. Two points always fit, so the loop ends.
+ * Thins a stroke to `maxPoints` without letting one end of it dominate the
+ * sample: the drawn path is cut into as many equal parts as there are points to
+ * keep, and each part gives up the one point it cannot lose, the point farthest
+ * from the chord across that part. A corner survives wherever it is drawn, while
+ * a straight run costs nothing, and ranking every point of the whole stroke
+ * instead would keep a uniform zigzag only where it happens to deviate most.
  */
 export function simplifiedStroke(
   points: readonly AnnotationPoint[],
-  tolerancePx: number,
   maxPoints: number,
 ): AnnotationPoint[] {
-  let tolerance = tolerancePx;
-  let kept = douglasPeucker(points, tolerance);
-  while (kept.length > maxPoints) {
-    tolerance *= 2;
-    kept = douglasPeucker(points, tolerance);
+  if (points.length <= maxPoints) return [...points];
+  const interiorPoints = points.length - 2;
+  const parts = maxPoints - 2;
+  const sampled: number[] = [0];
+  for (let part = 0; part < parts; part += 1) {
+    const first = 1 + Math.floor((part * interiorPoints) / parts);
+    const last = 1 + Math.floor(((part + 1) * interiorPoints) / parts);
+    sampled.push(mostSignificantPoint(points, first, last));
   }
-  return kept;
+  sampled.push(points.length - 1);
+  return keepBends(points, sampled);
 }
 
-function douglasPeucker(points: readonly AnnotationPoint[], tolerance: number): AnnotationPoint[] {
-  if (points.length <= 2) return [...points];
-  const kept = new Set([0, points.length - 1]);
-  const spans: [number, number][] = [[0, points.length - 1]];
-  for (let span = spans.pop(); span; span = spans.pop()) {
-    const [first, last] = span;
-    let farthest = -1;
-    let farthestDistance = tolerance;
-    for (let index = first + 1; index < last; index += 1) {
-      const distance = segmentDistance(points[index], points[first], points[last]);
-      if (distance <= farthestDistance) continue;
-      farthest = index;
-      farthestDistance = distance;
-    }
-    if (farthest === -1) continue;
-    kept.add(farthest);
-    spans.push([first, farthest], [farthest, last]);
+/** The point of `first` .. `last - 1` farthest from the chord before it to `last`. */
+function mostSignificantPoint(
+  points: readonly AnnotationPoint[],
+  first: number,
+  last: number,
+): number {
+  const start = points[first - 1];
+  const end = points[last];
+  let significant = first;
+  let farthest = -1;
+  for (let index = first; index < last; index += 1) {
+    const distance = segmentDistance(points[index], start, end);
+    if (distance <= farthest) continue;
+    significant = index;
+    farthest = distance;
   }
-  return points.filter((_, index) => kept.has(index));
+  return significant;
+}
+
+/** Drops the sampled points that only repeat the line between their neighbours. */
+function keepBends(
+  points: readonly AnnotationPoint[],
+  sampled: readonly number[],
+): AnnotationPoint[] {
+  const kept = [sampled[0]];
+  for (let position = 1; position < sampled.length - 1; position += 1) {
+    const previous = points[kept[kept.length - 1]];
+    const next = points[sampled[position + 1]];
+    const distance = segmentDistance(points[sampled[position]], previous, next);
+    if (distance <= STRAIGHT_STROKE_PX) continue;
+    kept.push(sampled[position]);
+  }
+  kept.push(sampled[sampled.length - 1]);
+  return kept.map((index) => points[index]);
 }
 
 /** How far `point` lies from the segment between `start` and `end`. */

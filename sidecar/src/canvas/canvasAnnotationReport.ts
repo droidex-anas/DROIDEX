@@ -14,8 +14,7 @@ import type { CanvasFrame, FrameRect } from './protocol.js';
 const NEAR_PX = 240;
 /** An arrow head this close to a frame points at it; farther, it points at empty board. */
 const HEAD_REACH_PX = 48;
-/** A stroke as the model reads it: within a few pixels, in few enough points to scan. */
-const READ_STROKE_TOLERANCE_PX = 4;
+/** A stroke as the model reads it: the most significant points, in whole pixels. */
 const READ_STROKE_POINTS = 32;
 /** A stroke whose ends meet within this share of its size is a closed loop around something. */
 const LOOP_CLOSURE = 0.2;
@@ -85,11 +84,7 @@ function agentShape(
       };
     case 'path':
       return {
-        points: simplifiedStroke(
-          annotation.points,
-          READ_STROKE_TOLERANCE_PX,
-          READ_STROKE_POINTS,
-        ).map(roundedPoint),
+        points: simplifiedStroke(annotation.points, READ_STROKE_POINTS).map(roundedPoint),
       };
   }
 }
