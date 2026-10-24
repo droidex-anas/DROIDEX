@@ -1,8 +1,8 @@
 // One file's text, coloured in theme tokens and measured to the pixel. The
 // editor lays a transparent textarea over this so the caret and the selection
 // stay the platform's; the conflict view shows the same thing on its own, with
-// nothing to type into. They share the metrics here because a line that is 19px
-// in one and 19.2px in the other slides the caret off its own highlight.
+// nothing to type into. They share the metrics here because a line that is 20px
+// in one and 20.2px in the other slides the caret off its own highlight.
 
 import { useMemo, type ReactNode } from 'react';
 import { Highlight } from 'prism-react-renderer';
@@ -10,11 +10,15 @@ import { CODE_THEME, HIGHLIGHT_CHAR_LIMIT } from '../../lib/codeTheme';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 import type { SourceIssue } from './canvasSourceIssues';
 
-export const LINE_HEIGHT = 19;
+export const LINE_HEIGHT = 20;
 const TEXT_METRICS = 'font-mono text-[12px]';
 // Both layers take the same box; only the gutter's own left rail differs.
-const PADDING = 'py-2.5 pr-4';
-const GUTTER_PADDING = 'py-2.5 px-3';
+const PADDING = 'py-3 pr-4';
+const GUTTER_PADDING = 'py-3 px-4';
+
+/** The drawer's focus cue: a faint ring, never the platform's hard outline. */
+export const SOFT_FOCUS =
+  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/30';
 
 /** The one element a file's layers scroll inside, so they scroll together. */
 export function SourceScroller({ children, label }: { children: ReactNode; label?: string }) {
@@ -24,7 +28,7 @@ export function SourceScroller({ children, label }: { children: ReactNode; label
       tabIndex={label ? 0 : undefined}
       role={label ? 'region' : undefined}
       aria-label={label}
-      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-droid-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/15"
+      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-droid-code focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/15"
     >
       <div className="flex min-h-full w-max min-w-full">{children}</div>
     </div>
@@ -53,7 +57,7 @@ export function SourceCode({
     <>
       <div
         aria-hidden
-        className={`sticky left-0 z-10 shrink-0 select-none bg-droid-surface text-right text-droid-text-muted/60 ${TEXT_METRICS} ${GUTTER_PADDING}`}
+        className={`sticky left-0 z-10 shrink-0 select-none bg-droid-code text-right text-droid-text-muted/60 ${TEXT_METRICS} ${GUTTER_PADDING}`}
       >
         {lines.map((_, index) => (
           <div

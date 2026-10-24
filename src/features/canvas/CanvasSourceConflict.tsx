@@ -6,7 +6,7 @@
 // on top of that revision as an ordinary CAS save.
 
 import type { ReactNode } from 'react';
-import { SourceCode, SourceScroller } from './CanvasSourceCode';
+import { SOFT_FOCUS, SourceCode, SourceScroller } from './CanvasSourceCode';
 import type { SourceIssue } from './canvasSourceIssues';
 
 /** Spec §4: a conflict preserves the buffer and never silently overwrites it. */
@@ -24,7 +24,7 @@ export function ConflictBar({
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-elevated px-3 py-2 text-[11px] text-droid-text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-accent/[0.07] px-3 py-2 text-[11px] text-droid-text-secondary"
     >
       <span className="min-w-0 flex-1">
         Updated by agent. Your edits are still here, and so is their version.
@@ -32,7 +32,7 @@ export function ConflictBar({
       <button
         onClick={onCompare}
         aria-pressed={comparing}
-        className={`rounded-lg px-2 py-1 transition-colors hover:bg-droid-accent/10 hover:text-droid-text ${
+        className={`rounded-lg px-2 py-1 transition-colors hover:bg-droid-accent/10 hover:text-droid-text ${SOFT_FOCUS} ${
           comparing ? 'bg-droid-accent/10 text-droid-text' : ''
         }`}
       >
@@ -41,13 +41,13 @@ export function ConflictBar({
       <button
         onClick={onKeepMine}
         title="Reapply your edits on top of their revision"
-        className="rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25"
+        className={`rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25 ${SOFT_FOCUS}`}
       >
         Keep mine
       </button>
       <button
         onClick={onTakeTheirs}
-        className="rounded-lg px-2 py-1 transition-colors hover:bg-droid-accent/10 hover:text-droid-text"
+        className={`rounded-lg px-2 py-1 transition-colors hover:bg-droid-accent/10 hover:text-droid-text ${SOFT_FOCUS}`}
       >
         Take theirs
       </button>
@@ -76,9 +76,9 @@ export function ConflictCompare({
       aria-label={`${path} in ${revisionId}`}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-1"
     >
-      <CompareCaption>Theirs · {revisionId}</CompareCaption>
+      <CompareCaption>Theirs · {revisionId} · read only</CompareCaption>
       {text === null ? (
-        <p className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-surface px-3 text-center text-[12px] text-droid-text-secondary">
+        <p className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-code px-3 text-center text-[12px] text-droid-text-secondary">
           Their revision deleted this file. Keep mine writes it back.
         </p>
       ) : (
