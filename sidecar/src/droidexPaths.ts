@@ -30,6 +30,12 @@ export function canvasDir(): string {
   return join(droidexUserDataDir(), 'canvases');
 }
 
+// Saved library copies, beside the boards rather than inside them: an item
+// owns its source and images and outlives the canvas it came from (spec §7).
+export function canvasLibraryDir(): string {
+  return join(droidexUserDataDir(), 'canvas-library');
+}
+
 // Instance-private state that cannot be shared between two running instances:
 // the history index enforces a single-writer lease, so a dev instance launched
 // with DROIDEX_USER_DATA_DIR needs its own copy beside its profile instead of

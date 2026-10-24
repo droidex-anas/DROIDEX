@@ -88,9 +88,11 @@
   color: var(--droid-selection-label);
 }
 
+/* The keyboard's place on the board: the selection line around the name, which
+   holds 3:1 against every board, where a tint read as nothing on dark ones. */
 .canvas-frame-label:focus-visible .canvas-frame-name {
   box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--droid-selection) 35%, transparent),
+    0 0 0 1.5px var(--droid-selection),
     var(--droid-shadow-sm);
 }
 

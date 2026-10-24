@@ -53,6 +53,11 @@ export class CanvasWatches {
     for (const canvasId of open.keys()) this.cancelUnowned(canvasId);
   }
 
+  /** A deleted canvas has nothing left to watch; its builds already stopped. */
+  forgetCanvas(canvasId: string): void {
+    for (const open of this.byPage.values()) open.delete(canvasId);
+  }
+
   isWatched(canvasId: string): boolean {
     for (const open of this.byPage.values())
       if (open.get(canvasId)?.state === 'watching') return true;

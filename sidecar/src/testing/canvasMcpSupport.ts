@@ -96,6 +96,8 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
   return { scopes, turns, workspace, server, call };
 }
 
+export type Harness = Awaited<ReturnType<typeof harness>>;
+
 /** A harness whose chat is in a turn that opened with canvas_read, as every turn does. */
 export async function openTurn(t: TestContext) {
   const h = await harness(t);

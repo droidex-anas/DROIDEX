@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   harness,
   noRenderer,
+  type Harness,
   openTurn,
   toolContent,
   type Reply,
@@ -15,6 +16,7 @@ import {
   observedFileSystem,
   userScopeFor,
 } from '../testing/canvasStorageSupport.js';
+import { saveLibraryItem } from './canvasLibrary.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
@@ -24,6 +26,15 @@ import {
 } from './designSessionGuidance.js';
 
 const frame = { name: 'Hey', width: 720, height: 520, designSystem: DEFAULT_DESIGN_SYSTEM_REF };
+
+/** One frame made through canvas_create, and where it landed. */
+async function createFrame(call: Harness['call'], scopeId: string | undefined, mutationId: string) {
+  const created = await call('canvas_create', { scopeId, mutationId, frames: [frame] });
+  assert.ok(created.created);
+  const [first] = created.created.frames;
+  assert.ok(first);
+  return { canvasId: created.created.canvasId, designId: first.designId };
+}
 
 test('seven Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
   const h = await harness(t);
@@ -451,14 +462,7 @@ test('provider replacement while a write is staged refuses its old lease and lea
   const h = await harness(t, fs);
   h.turns.beginTurn('chat-one', undefined);
   const scopeId = (await h.call('canvas_read', {})).scopeId;
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'create-one',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const designId = created.created?.frames[0].designId;
-  assert.ok(designId);
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'create-one');
   hold = true;
   const pending = h.call('canvas_write', {
     scopeId,
@@ -473,19 +477,12 @@ test('provider replacement while a write is staged refuses its old lease and lea
   h.turns.beginTurn('chat-one', undefined);
   release.resolve();
   assert.equal((await pending).code, 'scope_expired');
-  assert.equal(h.workspace.snapshot(created.created.canvasId).frames[0].revisionId, null);
+  assert.equal(h.workspace.snapshot(canvasId).frames[0].revisionId, null);
 });
 
 test('Canvas create preserves seeded variant placement and mutation retry identity', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const source = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'create-source',
-    frames: [frame],
-  });
-  assert.ok(source.created);
-  const { canvasId, frames } = source.created;
-  const designId = frames[0].designId;
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'create-source');
   const files = { 'main.tsx': 'export default function Hey(){return <h1>Hey</h1>}' };
   const written = await h.call('canvas_write', {
     scopeId,
@@ -535,6 +532,27 @@ test('Canvas create preserves seeded variant placement and mutation retry identi
     'invalid_input',
   );
   assert.equal(h.workspace.snapshot(canvasId).frames.length, 2);
+
+  // A library item the user named inserts through the same tool and schema.
+  const ref = { designId, revisionId: written.receipt.revisionId };
+  const item = { itemId: 'mcp-hey', name: 'Hey', sourceCanvasId: canvasId, source: ref };
+  await saveLibraryItem(item, () => h.workspace.copyRevision(canvasId, ref));
+  const seeded = (itemId: string) => [{ ...frame, seed: { kind: 'library', itemId } }];
+  const inserted = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'in',
+    frames: seeded('mcp-hey'),
+  });
+  const copy = inserted.created?.frames[0];
+  assert.ok(copy?.revisionId);
+  const copyRef = { designId: copy.designId, revisionId: copy.revisionId };
+  assert.deepEqual({ ...(await h.workspace.readFiles(canvasId, copyRef)) }, files);
+  const refused = await h.call('canvas_create', {
+    scopeId,
+    mutationId: 'x',
+    frames: seeded('../x'),
+  });
+  assert.equal(refused.code, 'invalid_input');
 });
 
 for (const name of [
@@ -549,16 +567,7 @@ for (const name of [
     const h = await harness(t, held.fs);
     h.turns.beginTurn('chat-one', undefined);
     const scopeId = (await h.call('canvas_read', {})).scopeId;
-    const created = await h.call('canvas_create', {
-      scopeId,
-      mutationId: 'initial',
-      frames: [frame],
-    });
-    assert.ok(created.ok && created.created);
-    const first = created.created.frames[0];
-    assert.ok(first);
-    const { canvasId } = created.created;
-    const designId = first.designId;
+    const { canvasId, designId } = await createFrame(h.call, scopeId, 'initial');
     let revisionId: string | null = null;
     if (name === 'canvas_theme') {
       const written = await h.call('canvas_write', {
@@ -633,18 +642,11 @@ for (const name of [
 
 test('a source read loses its captured lease while waiting and cannot borrow a replacement', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'initial',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const first = created.created.frames[0];
-  assert.ok(first);
+  const { designId } = await createFrame(h.call, scopeId, 'initial');
   const written = await h.call('canvas_write', {
     scopeId,
     mutationId: 'source',
-    designId: first.designId,
+    designId,
     expectedRevisionId: null,
     files: { 'main.tsx': 'export default () => <h1>READ_SENTINEL</h1>' },
     deletedPaths: [],
@@ -662,7 +664,7 @@ test('a source read loses its captured lease while waiting and cannot borrow a r
   const reading = h.call('canvas_read', {
     scopeId,
     view: 'design',
-    designId: first.designId,
+    designId,
     revisionId: written.receipt.revisionId,
   });
   await reached.promise;
@@ -677,14 +679,7 @@ test('a source read loses its captured lease while waiting and cannot borrow a r
 
 test('MCP theme apply validates token mapping before publication and preserves retry receipts', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'theme-frame',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const { canvasId, frames } = created.created;
-  const designId = frames[0].designId;
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'theme-frame');
   const write = (mutationId: string, expectedRevisionId: string | null, text: string) =>
     h.call('canvas_write', {
       scopeId,
@@ -739,14 +734,7 @@ test('MCP theme apply validates token mapping before publication and preserves r
 
 test('a delayed theme validation refusal cannot disclose source after its turn is replaced', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'validation-frame',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const { canvasId, frames } = created.created;
-  const designId = frames[0].designId;
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'validation-frame');
   const source = await h.call('canvas_write', {
     scopeId,
     mutationId: 'validation-source',
@@ -798,13 +786,7 @@ test('a delayed theme validation refusal cannot disclose source after its turn i
 
 test('a read shows the user’s note by its frame, and canvas_annotate keeps it read-only', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'initial',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const { canvasId } = created.created;
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'initial');
   // A pane annotate runs under the request scope the bridge registers, as here.
   const pane = userScopeFor(canvasId, 'chat-one');
   h.scopes.register(pane);
@@ -818,7 +800,7 @@ test('a read shows the user’s note by its frame, and canvas_annotate keeps it 
   assert.equal(read.annotationsVersion, 1);
   assert.deepEqual(
     read.annotations?.map(({ author, near }) => ({ author, near })),
-    [{ author: 'user', near: created.created.frames[0]?.designId }],
+    [{ author: 'user', near: designId }],
   );
   const refused = await h.call('canvas_annotate', {
     scopeId,

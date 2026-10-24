@@ -58,6 +58,9 @@ const REPLY_KINDS = new Set([
   'designSystems',
   'designSystem',
   'designSystemSaved',
+  'libraryItem',
+  'libraryItems',
+  'removalPreview',
 ]);
 
 const ADHERENCE_RULES = new Set<unknown>(['off', 'guide', 'strict']);
@@ -73,6 +76,8 @@ const MAX_SOURCE_PATHS = 64;
 const MAX_SOURCE_PATH_LENGTH = 256;
 const MAX_REVISION_PAGE_SIZE = 50;
 const MAX_REVISION_DIFF_BYTES = 256 * 1024;
+// `LIBRARY_LIST_LIMIT` in the sidecar's canvasLibrary.ts.
+const MAX_LIBRARY_ITEMS = 50;
 // A kit's bounds, matching `DESIGN_SYSTEM_LIMITS` in the sidecar's designSystems.ts.
 export const MAX_KIT_NAME_LENGTH = 120;
 const MAX_KIT_TOKENS = 128;
@@ -164,9 +169,36 @@ function isReply(value: unknown): boolean {
         isKitVersion(value.ref) &&
         boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
       );
+    case 'libraryItem':
+      return isLibraryItem(value.item);
+    case 'libraryItems':
+      return boundedList(value.items, MAX_LIBRARY_ITEMS, isLibraryItem);
+    case 'removalPreview':
+      return (
+        record(value.preview) &&
+        id(value.preview.canvasId) &&
+        text(value.preview.name) &&
+        count(value.preview.sequence) &&
+        list(value.preview.attachedAppSessionIds, isAppSessionId) &&
+        list(value.preview.activeTurnAppSessionIds, isAppSessionId) &&
+        list(value.preview.buildingDesignIds, id)
+      );
     default:
       return true;
   }
+}
+
+function isLibraryItem(value: unknown): boolean {
+  return (
+    record(value) &&
+    id(value.itemId) &&
+    text(value.name) &&
+    id(value.sourceCanvasId) &&
+    record(value.source) &&
+    id(value.source.designId) &&
+    id(value.source.revisionId) &&
+    isDesignSystem(value.designSystem)
+  );
 }
 
 function isKitVersion(value: unknown): value is Record<string, unknown> {

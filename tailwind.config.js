@@ -21,6 +21,7 @@ export default {
           field: v('--droid-field'),
           active: v('--droid-active'),
           raised: v('--droid-raised'),
+          code: v('--droid-code-bg'),
           border: v('--droid-border'),
           'border-hover': v('--droid-border-hover'),
           text: v('--droid-text'),
@@ -84,5 +85,8 @@ export default {
       },
     },
   },
+  // Nothing uses `container`; the scanner only finds the word in prose and in JS
+  // identifiers such as `!containerRef`, and each hit emitted six media-query copies.
+  corePlugins: { container: false },
   plugins: [],
 };

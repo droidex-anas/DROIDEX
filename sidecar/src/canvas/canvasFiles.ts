@@ -239,13 +239,13 @@ export class CanvasFiles {
     const target = join(builds, buildOutputSegment(name));
     const temporary = `${target}.${randomUUID()}${TEMPORARY_SUFFIX}`;
     try {
-      const createdCanvas = await this.makeDirectory(canvas);
+      // A build never creates its canvas: one removed while it ran stays gone.
+      await this.refuseLink(canvas);
       const createdBuilds = await this.makeDirectory(builds);
       await this.writeFlushed(temporary, content);
       await this.fs.rename(temporary, target);
       await this.syncDirectory(builds);
       if (createdBuilds) await this.syncDirectory(canvas);
-      if (createdCanvas) await this.syncDirectory(this.root, PROFILE_OWNED);
     } catch (error) {
       await this.discard(temporary);
       throw storageFailure(BUILD_RECOVERY, error);

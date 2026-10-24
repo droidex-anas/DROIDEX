@@ -20,6 +20,8 @@ export class CanvasHeads {
   // The canvas an earlier DROIDEX made for a chat, which this one will not
   // open. Not an attachment: the chat may start a new canvas.
   private readonly outdated = new Map<string, OutdatedCanvas>();
+  // Canvases whose deletion detached them durably but ended before they left the root.
+  private readonly removing: string[] = [];
 
   private constructor(private readonly files: CanvasFiles) {}
 
@@ -46,6 +48,10 @@ export class CanvasHeads {
         canvasHeads.damaged.add(canvasId);
         continue;
       }
+      if (load.manifest.removing) {
+        canvasHeads.removing.push(canvasId);
+        continue;
+      }
       // The attachments are known the moment the manifest validates, and they
       // hold whether or not what follows can serve the head.
       canvasHeads.reserve(load.manifest);
@@ -70,6 +76,11 @@ export class CanvasHeads {
 
   all(): CanvasManifest[] {
     return [...this.heads.values()];
+  }
+
+  /** Canvases a deletion detached and never served again, for it to finish. */
+  removingIds(): string[] {
+    return [...this.removing];
   }
 
   /** Canvases that exist on disk but are not served, for a recovery action. */
@@ -117,6 +128,11 @@ export class CanvasHeads {
       throw error;
     }
     this.publish(manifest);
+  }
+
+  /** Stops serving a canvas whose last installed head holds no attachments. */
+  forget(canvasId: string): void {
+    this.heads.delete(canvasId);
   }
 
   /** Makes a head visible, with exactly the attachments it records. */

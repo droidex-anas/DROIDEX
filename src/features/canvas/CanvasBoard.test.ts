@@ -76,17 +76,29 @@ test('with no drag of its own the board draws each frame at its acknowledged rec
   assert.match(markup, /data-canvas-input-overlay/);
 });
 
-test('every frame is a tab stop that reports whether it is selected', () => {
-  const markup = render(snapshotOf(frame('a', ACKNOWLEDGED), frame('b', ACKNOWLEDGED)), {
-    mode: 'select',
-    selectedFrameIds: ['b'],
-    interactedFrameId: null,
-  });
+test('the frames share one tab stop: the selection, else the first frame a reader meets', () => {
+  const lower = { ...ACKNOWLEDGED, y: 600 };
+  const frames = snapshotOf(frame('a', lower), frame('b', ACKNOWLEDGED));
+  const stops = (markup: string) =>
+    (markup.match(/data-frame-header[^>]*/g) ?? []).map((header) => ({
+      stop: header.includes('tabindex="0"'),
+      pressed: header.includes('aria-pressed="true"'),
+    }));
 
-  const headers = markup.match(/data-frame-header[^>]*/g) ?? [];
-  assert.equal(headers.length, 2);
-  assert.equal(headers.filter((header) => header.includes('aria-pressed="true"')).length, 1);
-  assert.ok(headers.every((header) => header.includes('tabindex="0"')));
+  // b sits above a, so with nothing selected it is read first and holds the stop.
+  assert.deepEqual(stops(render(frames)), [
+    { stop: false, pressed: false },
+    { stop: true, pressed: false },
+  ]);
+  assert.deepEqual(
+    stops(render(frames, { mode: 'select', selectedFrameIds: ['a'], interactedFrameId: null })),
+    [
+      { stop: true, pressed: true },
+      { stop: false, pressed: false },
+    ],
+  );
+  // One polite region speaks for the whole board.
+  assert.equal(render(frames).match(/role="status"/g)?.length, 1);
 });
 
 test('Select installs the transparent input overlay and Interact removes it', () => {

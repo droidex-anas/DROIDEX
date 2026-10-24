@@ -6,6 +6,7 @@ import {
   SKILL_COLORS,
   ULTRA_COLORS,
   UPDATE_COLORS,
+  codeColors,
   contrastRatio,
   CUSTOM_THEME_ID,
   DEFAULT_THEME,
@@ -225,6 +226,42 @@ describe('fixed label colors', () => {
         contrastRatio('#ffffff', blue) >= 4.5,
         `update pill label should reach 4.5:1 on ${blue}`,
       );
+    }
+  });
+});
+
+describe('codeColors', () => {
+  it('keeps every syntax token at WCAG AA on every code ground', () => {
+    // The drawer's code ground, plus the canvas and elevated tones the
+    // transcript's code cards sit between.
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const variant = preset[scheme];
+        const { bg, ...tokens } = codeColors(variant);
+        for (const ground of [bg, variant.bg, elevatedSurfaceColor(variant)]) {
+          for (const [name, color] of Object.entries(tokens)) {
+            assert.ok(
+              contrastRatio(color, ground) >= 4.5,
+              `${preset.id} ${scheme} ${name} ${color} should reach 4.5:1 on ${ground}`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('sets the code ground only a few percent off the drawer around it', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const ratio = contrastRatio(
+          codeColors(preset[scheme]).bg,
+          raisedSurfaceColor(preset[scheme]),
+        );
+        assert.ok(
+          ratio > 1.01 && ratio < 1.25,
+          `${preset.id} ${scheme} code ground at ${String(ratio)}`,
+        );
+      }
     }
   });
 });

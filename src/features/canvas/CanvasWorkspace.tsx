@@ -244,7 +244,13 @@ export function CanvasWorkspace({
         canvasId={watched}
         appSessionId={appSessionId}
         onClose={() => {
+          const opener = openSourceFrame(state)?.designId;
           dispatch({ type: 'close-source' });
+          // The keyboard goes back to the frame whose source was open.
+          if (opener)
+            requestAnimationFrame(() => {
+              boardRef.current?.focusLabel(opener);
+            });
         }}
       />
     </div>

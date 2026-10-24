@@ -11,7 +11,9 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_DIMENSION = 8192;
 const IMAGE_RECOVERY = 'Choose a PNG, JPEG or WebP image under 10 MiB and 8192 pixels per side.';
 const DAMAGED_ASSET = 'A saved Canvas image is damaged. Reopen DROIDEX to recover it.';
-const ownedAssetSchema = z
+const MISSING_ASSET = 'A Canvas image this design uses is missing. Replace it and try again.';
+const ASSET_REFERENCE = /canvas-asset:([0-9a-f]{64})\b/g;
+export const ownedAssetSchema = z
   .object({
     assetId: z.string().regex(/^[0-9a-f]{64}$/),
     mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
@@ -34,6 +36,12 @@ export const canvasImageImportSchema = z
   .strict();
 
 export type CanvasImageImport = z.infer<typeof canvasImageImportSchema>;
+
+/** An owned image's record and the bytes its digest names. */
+export interface OwnedImage {
+  asset: OwnedAsset;
+  bytes: Buffer;
+}
 
 /** The sidecar owns the durable copy; only Electron main may call this route. */
 export async function importCanvasImage(
@@ -84,7 +92,12 @@ export async function importCanvasImage(
 }
 
 /** Content-addressed, immutable storage, with no links below the profile root. */
-async function saveOwnedAsset(root: string, canvasId: string, asset: OwnedAsset, bytes: Buffer) {
+export async function saveOwnedAsset(
+  root: string,
+  canvasId: string,
+  asset: OwnedAsset,
+  bytes: Buffer,
+): Promise<void> {
   const canvas = join(root, canvasId);
   const assets = join(canvas, 'assets');
   const target = join(assets, asset.assetId);
@@ -178,28 +191,58 @@ export async function listCanvasAssets(root: string, canvasId: string): Promise<
     const assets: OwnedAsset[] = [];
     for (const name of names.sort()) {
       if (!/^[0-9a-f]{64}\.json$/.test(name)) continue;
-      const assetId = name.slice(0, 64);
-      const asset = await readAssetMetadata(join(directory, name), assetId);
-      const image = await open(join(directory, assetId), constants.O_RDONLY | constants.O_NOFOLLOW);
-      try {
-        const info = await image.stat();
-        if (!info.isFile() || info.size !== asset.byteLength)
-          throw canvasError('storage_failed', DAMAGED_ASSET);
-        if (
-          createHash('sha256')
-            .update(await image.readFile())
-            .digest('hex') !== assetId
-        )
-          throw canvasError('storage_failed', DAMAGED_ASSET);
-      } finally {
-        await image.close();
-      }
-      assets.push(asset);
+      assets.push((await readImage(directory, name.slice(0, 64))).asset);
     }
     return assets;
   } catch (error) {
     if (error instanceof CanvasCommandError) throw error;
     throw canvasError('storage_failed', DAMAGED_ASSET);
+  }
+}
+
+/** The asset IDs a design's source refers to, each once. */
+export function referencedAssetIds(contents: Iterable<string>): string[] {
+  const assetIds = new Set<string>();
+  for (const content of contents)
+    for (const match of content.matchAll(ASSET_REFERENCE)) assetIds.add(match[1]);
+  return [...assetIds];
+}
+
+/** One image a canvas owns, verified against its record and digest. */
+export async function readOwnedImage(
+  root: string,
+  canvasId: string,
+  assetId: string,
+): Promise<OwnedImage> {
+  const canvas = join(root, canvasId);
+  const directory = join(canvas, 'assets');
+  try {
+    for (const path of [canvas, directory]) {
+      const info = await lstat(path);
+      if (!info.isDirectory() || info.isSymbolicLink())
+        throw canvasError('storage_failed', DAMAGED_ASSET);
+    }
+    return await readImage(directory, assetId);
+  } catch (error) {
+    if (isCode(error, 'ENOENT')) throw canvasError('not_found', MISSING_ASSET);
+    if (error instanceof CanvasCommandError) throw error;
+    throw canvasError('storage_failed', DAMAGED_ASSET);
+  }
+}
+
+async function readImage(directory: string, assetId: string): Promise<OwnedImage> {
+  const asset = await readAssetMetadata(join(directory, `${assetId}.json`), assetId);
+  const image = await open(join(directory, assetId), constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = await image.stat();
+    if (!info.isFile() || info.size !== asset.byteLength)
+      throw canvasError('storage_failed', DAMAGED_ASSET);
+    const bytes = await image.readFile();
+    if (createHash('sha256').update(bytes).digest('hex') !== assetId)
+      throw canvasError('storage_failed', DAMAGED_ASSET);
+    return { asset, bytes };
+  } finally {
+    await image.close();
   }
 }
 
@@ -290,7 +333,7 @@ export function resolveCanvasAssetReferences(
   canvasId: string,
   secret: string,
 ): string {
-  return html.replace(/canvas-asset:([0-9a-f]{64})\b/g, (_reference, assetId: string) => {
+  return html.replace(ASSET_REFERENCE, (_reference, assetId: string) => {
     const signature = createHmac('sha256', secret).update(`${canvasId}\0${assetId}`).digest('hex');
     return `droidex-canvas-preview://preview/asset/${canvasId}/${assetId}?sig=${signature}`;
   });

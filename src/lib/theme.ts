@@ -408,6 +408,30 @@ export const SELECTION_COLORS = {
   light: { line: '#1a64dc', label: '#1a64dc', text: '#ffffff' },
 } as const;
 
+// Code reads in one small, muted palette wherever it is shown: the Canvas
+// source drawer, the files preview and transcript JSON. Four hues and a grey;
+// each hue keeps AA for 12px code on the code ground and on the transcript's
+// code cards in every built-in preset.
+const SYNTAX_COLORS = {
+  dark: { keyword: '#b9a3dc', string: '#9dbf8e', number: '#d6ac78', function: '#8eb3dc' },
+  light: { keyword: '#7b4799', string: '#356842', number: '#895117', function: '#305f95' },
+} as const;
+
+// The ground source sits on, a few percent off the raised drawer that holds it
+// rather than a block of its own. Comments are as quiet as AA allows on the
+// harder of that ground and the transcript's elevated code cards.
+export function codeColors(theme: Pick<ThemeColors, 'bg' | 'surface' | 'fg'>) {
+  const bgIsDark = colorLuminance(theme.bg) < 0.4;
+  const bg = mixHex(raisedSurfaceColor(theme), theme.bg, bgIsDark ? 0.35 : 0.5);
+  const elevated = elevatedSurfaceColor(theme);
+  const ground = contrastRatio(theme.fg, bg) < contrastRatio(theme.fg, elevated) ? bg : elevated;
+  return {
+    bg,
+    comment: mixToContrast(theme.fg, ground, 4.5),
+    ...SYNTAX_COLORS[bgIsDark ? 'dark' : 'light'],
+  };
+}
+
 // One rung of the tint ramp (hover, selection, user bubbles, code blocks),
 // `amount` steps away from the canvas.
 //
@@ -505,6 +529,9 @@ export function applyTheme(theme: ThemeSettings) {
   root.style.setProperty('--droid-selection', selection.line);
   root.style.setProperty('--droid-selection-label', selection.label);
   root.style.setProperty('--droid-selection-text', selection.text);
+  for (const [name, color] of Object.entries(codeColors(theme))) {
+    root.style.setProperty(`--droid-code-${name}`, color);
+  }
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
   // Light themes lead with a faint 1px ring: a white card on near-white paper
