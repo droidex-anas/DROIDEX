@@ -190,14 +190,18 @@ test('a session file never moves a cached chat to another Droid login', (t) => {
   assert.equal(cached('alt-chat')?.summary?.droidProfile, 'alt');
 });
 
-test('an Alt copy neither clears a cached chat nor keeps its deleted transcript searchable', (t) => {
+test('Alt files never clear a cached chat, and search follows whether its file exists', (t) => {
   const db = new DatabaseSync(':memory:');
   t.after(() => db.close());
   const mainPath = '/main/chat.jsonl';
   const altPath = '/alt/chat.jsonl';
   let mainExists = true;
   let altHasSummary = false;
-  let scan = new Map([['chat', stat(mainPath)]]);
+  const altOnlyPath = '/alt/alt-only.jsonl';
+  let scan = new Map([
+    ['chat', stat(mainPath)],
+    ['alt-only', stat(altOnlyPath)],
+  ]);
   const cache = new SessionFileCache(
     db,
     () => ({ files: scan, isComplete: true }),
@@ -209,8 +213,8 @@ test('an Alt copy neither clears a cached chat nor keeps its deleted transcript 
     },
     (path) => (path === mainPath && !mainExists ? null : stat(path, 2)),
   );
-  const isSearchable = () =>
-    cache.searchableEntries().some((entry) => entry.providerSessionId === 'chat');
+  const isSearchable = (id = 'chat') =>
+    cache.searchableEntries().some((entry) => entry.providerSessionId === id);
   cache.reconcileChanges();
 
   // Alt's copy has only its header so far.
@@ -221,11 +225,26 @@ test('an Alt copy neither clears a cached chat nor keeps its deleted transcript 
   // Main's transcript is deleted; the scan now finds only Alt's full copy.
   mainExists = false;
   altHasSummary = true;
-  scan = new Map([['chat', stat(altPath)]]);
+  scan = new Map([
+    ['chat', stat(altPath)],
+    ['alt-only', stat(altOnlyPath)],
+  ]);
   cache.reconcileChanges();
   assert.equal(
     cache.summaries().find((row) => row.appSessionId === 'chat')?.droidProfile,
     undefined,
   );
   assert.equal(isSearchable(), false);
+
+  // Main's transcript is restored, the Alt-only chat completes, and the scan
+  // still finds Alt's copy of the Main chat first.
+  mainExists = true;
+  scan = new Map([
+    ['chat', stat(altPath)],
+    ['alt-only', stat(altOnlyPath, 3)],
+  ]);
+  cache.reconcileChanges();
+  assert.equal(cache.pathIndex().get('chat'), mainPath);
+  assert.ok(isSearchable());
+  assert.ok(isSearchable('alt-only'));
 });

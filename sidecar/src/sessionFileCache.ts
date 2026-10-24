@@ -273,7 +273,8 @@ export class SessionFileCache {
 
   private collectCandidates(onDisk: Map<string, SessionFileStat>): SessionFileCacheEntry[] {
     const candidates: SessionFileCacheEntry[] = [];
-    for (const [id, file] of onDisk) {
+    for (const [id, scanned] of onDisk) {
+      const file = this.fileToSummarize(id, scanned);
       const cached = this.files.get(id);
       if (cached && !this.unavailableFiles.has(id) && matchesFreshnessKey(cached, file)) continue;
       try {
@@ -310,19 +311,25 @@ export class SessionFileCache {
     };
   }
 
-  // Another copy of a cached chat (an Alt copy, or one in a second cwd folder)
-  // takes over only once the cached file is gone, and only as a full summary;
-  // until then search skips the chat. No file moves a chat to another Droid
-  // login, which canonical history also refuses.
+  // The cached file wins over another copy of its chat (an Alt copy, or one in
+  // a second cwd folder) while it exists. Once it is gone, search skips the
+  // chat until a copy replaces it.
+  private fileToSummarize(id: string, file: SessionFileStat): SessionFileStat {
+    const cached = this.files.get(id);
+    if (!cached || cached.path === file.path) return file;
+    const cachedFile = this.statFile(cached.path);
+    if (cachedFile) return cachedFile;
+    this.unavailableFiles.add(id);
+    return file;
+  }
+
+  // A copy replaces a missing cached file only as a full summary. No file
+  // moves an admitted chat to another Droid login; canonical history refuses it.
   private acceptsFile(id: string, file: SessionFileStat, parsed: SessionFileSummary): boolean {
     const cached = this.files.get(id);
     if (!cached) return true;
-    if (cached.path !== file.path) {
-      if (this.statFile(cached.path)) return false;
-      this.unavailableFiles.add(id);
-      if (!parsed.summary) return false;
-    }
-    return !parsed.summary || parsed.summary.droidProfile === cached.summary?.droidProfile;
+    if (!parsed.summary) return cached.path === file.path;
+    return !cached.summary || parsed.summary.droidProfile === cached.summary.droidProfile;
   }
 
   // Reconcile exactly the session files a watcher event reported, so live
@@ -336,9 +343,9 @@ export class SessionFileCache {
     const upserts: SessionFileCacheEntry[] = [];
     const removedProviderSessionIds: string[] = [];
     for (const { providerSessionId, path } of changes) {
-      const file = this.statFile(path);
+      const reported = this.statFile(path);
       const cached = this.files.get(providerSessionId);
-      if (!file) {
+      if (!reported) {
         // Deleting another copy of a chat, such as an Alt copy, keeps the chat.
         if (cached?.path !== path) continue;
         this.unavailableFiles.add(providerSessionId);
@@ -346,6 +353,7 @@ export class SessionFileCache {
           removedProviderSessionIds.push(providerSessionId);
         continue;
       }
+      const file = this.fileToSummarize(providerSessionId, reported);
       if (
         cached &&
         !this.unavailableFiles.has(providerSessionId) &&
