@@ -15,12 +15,14 @@ export const ANNOTATION_LIMITS = {
   maxSavedPathPoints: 128,
   maxTextLength: 2000,
   maxDimensionPx: 65_536,
+  /** No board is this wide; the bound is what keeps a saved coordinate JSON-safe. */
+  maxCoordinatePx: 10_000_000,
 } as const;
 
 /** Token names the board resolves against its theme; a raw colour never crosses the wire. */
 const ANNOTATION_COLORS = ['ink', 'red', 'orange', 'yellow', 'green', 'blue', 'violet'] as const;
 
-const COORDINATE_MESSAGE = 'Annotation coordinates must be finite numbers.';
+const COORDINATE_MESSAGE = `Annotation coordinates must be finite numbers within ${String(ANNOTATION_LIMITS.maxCoordinatePx)} board pixels of the origin.`;
 const DIMENSION_MESSAGE = `Annotation width and height must be above 0 and at most ${String(ANNOTATION_LIMITS.maxDimensionPx)} pixels.`;
 const TEXT_MESSAGE = `Annotation text is 1 to ${String(ANNOTATION_LIMITS.maxTextLength)} characters without control characters other than line breaks.`;
 const PATH_MESSAGE = `A freehand path has 2 to ${String(ANNOTATION_LIMITS.maxDrawnPathPoints)} points.`;
@@ -31,7 +33,9 @@ const REPEAT_MESSAGE = 'An annotation can appear only once in an annotate.';
 
 const coordinateSchema = z
   .number({ invalid_type_error: COORDINATE_MESSAGE })
-  .finite(COORDINATE_MESSAGE);
+  .finite(COORDINATE_MESSAGE)
+  .min(-ANNOTATION_LIMITS.maxCoordinatePx, COORDINATE_MESSAGE)
+  .max(ANNOTATION_LIMITS.maxCoordinatePx, COORDINATE_MESSAGE);
 const dimensionSchema = z
   .number({ invalid_type_error: DIMENSION_MESSAGE })
   .finite(DIMENSION_MESSAGE)

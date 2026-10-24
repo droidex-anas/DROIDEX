@@ -34,7 +34,7 @@ export function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-export function finite(value: unknown): boolean {
+function finite(value: unknown): boolean {
   return typeof value === 'number' && Number.isFinite(value);
 }
 

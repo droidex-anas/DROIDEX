@@ -363,6 +363,34 @@ test('a rejected argument maps to invalid_source_path under files and invalid_in
   assert.equal(count.code, 'invalid_input');
   assert.match(count.message, /1 to 4 frames/);
 
+  // A coordinate no board could reach is refused here, before anything tries to
+  // simplify the stroke that carries it.
+  await canvas.handle({
+    type: 'canvas.annotate',
+    requestId: 'req-far',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-far',
+      expectedAnnotationsVersion: 0,
+      upserts: [
+        {
+          id: 'ann_far',
+          kind: 'path',
+          color: 'ink',
+          points: [
+            { x: 0, y: 0 },
+            { x: 1e200, y: 0 },
+          ],
+        },
+      ],
+      deletes: [],
+    },
+  });
+  const far = errorOf(canvas, 'req-far');
+  assert.equal(far.code, 'invalid_input');
+  assert.match(far.message, /board pixels/);
+
   for (const [field, value] of [
     ['placeBeside', { designId: '../outside' }],
     ['seed', { kind: 'revision', canvasId, revision: { designId, revisionId: '../outside' } }],

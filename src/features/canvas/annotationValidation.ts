@@ -1,16 +1,7 @@
 // The renderer's check of the annotation layer a Canvas snapshot or change
 // carries. `wireValidation.ts` owns the rest of the event.
 
-import {
-  boundedList,
-  boundedText,
-  count,
-  finite,
-  id,
-  isAppSessionId,
-  isRect,
-  record,
-} from './wireChecks';
+import { boundedList, boundedText, count, id, isAppSessionId, record } from './wireChecks';
 
 // The annotation layer's bounds, matching `ANNOTATION_LIMITS` in the sidecar's
 // canvasAnnotationSchema.ts.
@@ -19,6 +10,7 @@ const MAX_ANNOTATION_UPSERTS = 64;
 const MAX_ANNOTATION_DELETES = 256;
 const MAX_PATH_POINTS = 2048;
 const MAX_ANNOTATION_TEXT_LENGTH = 2000;
+const MAX_COORDINATE = 10_000_000;
 const ANNOTATION_COLORS = new Set<unknown>([
   'ink',
   'red',
@@ -51,10 +43,10 @@ export function isAnnotation(value: unknown): boolean {
   switch (value.kind) {
     case 'rect':
     case 'ellipse':
-      return isRect(value.rect);
+      return isAnnotationRect(value.rect);
     case 'text':
     case 'note':
-      return isRect(value.rect) && boundedText(value.text, MAX_ANNOTATION_TEXT_LENGTH);
+      return isAnnotationRect(value.rect) && boundedText(value.text, MAX_ANNOTATION_TEXT_LENGTH);
     case 'line':
       return (
         Array.isArray(value.points) &&
@@ -81,5 +73,19 @@ function isAnnotationAuthor(value: unknown): boolean {
 }
 
 function isPoint(value: unknown): boolean {
-  return record(value) && finite(value.x) && finite(value.y);
+  return record(value) && isCoordinate(value.x) && isCoordinate(value.y);
+}
+
+function isAnnotationRect(value: unknown): boolean {
+  return (
+    record(value) &&
+    isCoordinate(value.x) &&
+    isCoordinate(value.y) &&
+    isCoordinate(value.width) &&
+    isCoordinate(value.height)
+  );
+}
+
+function isCoordinate(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_COORDINATE;
 }
