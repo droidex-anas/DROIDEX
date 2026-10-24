@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { utimesSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -104,7 +105,13 @@ test('usage worker ingests structured harness sources into the shared snapshot',
         200,
       );
       // Snapshot reads do not trigger ingest; the database/WAL watcher must wake it.
-      const updated = await matchingSnapshot(client, (value) => value.totals.events === 3);
+      // macOS can drop events while its FSEvents stream starts, so keep touching the WAL.
+      const wal = join(openCodeRoot, 'opencode.db-wal');
+      const updated = await matchingSnapshot(
+        client,
+        (value) => value.totals.events === 3,
+        () => utimesSync(wal, new Date(), new Date()),
+      );
       assert.equal(updated.lifetimeTokens, 198);
       assert.equal(updated.harnesses.find((row) => row.id === 'opencode')?.sessions, 1);
       await client.reconcile();
@@ -163,12 +170,18 @@ async function readySnapshot(client: UsageWorkerClient): Promise<UsageWorkerSnap
 async function matchingSnapshot(
   client: UsageWorkerClient,
   matches: (snapshot: UsageWorkerSnapshot) => boolean,
+  nudge?: () => void,
 ): Promise<UsageWorkerSnapshot> {
   // A real worker thread indexes files; the full suite's load can slow it well past a few seconds.
   const deadline = Date.now() + 30_000;
+  let nudgedAt = Date.now();
   do {
     const snapshot = await client.snapshot();
     if (matches(snapshot)) return snapshot;
+    if (nudge && Date.now() - nudgedAt >= 1_000) {
+      nudge();
+      nudgedAt = Date.now();
+    }
     await new Promise((resolve) => setImmediate(resolve));
   } while (Date.now() < deadline);
   throw new Error('Usage worker did not reach the expected sync state.');
