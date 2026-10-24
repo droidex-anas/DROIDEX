@@ -713,6 +713,29 @@ test('the frames share one tab stop, the keyboard moves between them, and the bo
   await expect(status).toHaveText(/^Zoom \d+%$/);
 });
 
+test('arrowing onto a frame partly off the board brings it wholly into view at the same zoom', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() =>
+    window.boardHarness.publish('b', { x: 1000, y: 50, width: 400, height: 300 }, 4),
+  );
+  const board = await box(page.getByTestId('canvas-board'));
+  const cut = await box(frame(page, 'B'));
+  expect(cut.x).toBeLessThan(board.x + board.width);
+  expect(cut.x + cut.width).toBeGreaterThan(board.x + board.width);
+
+  await frame(page, 'A').locator('[data-frame-header]').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(frame(page, 'B').locator('[data-frame-header]')).toBeFocused();
+  const shown = await box(frame(page, 'B'));
+  expect(shown.x).toBeGreaterThanOrEqual(board.x);
+  expect(shown.y).toBeGreaterThanOrEqual(board.y);
+  expect(shown.x + shown.width).toBeLessThanOrEqual(board.x + board.width);
+  expect(shown.y + shown.height).toBeLessThanOrEqual(board.y + board.height);
+  await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
+});
+
 test('a live guest keeps its element through selection, zoom, arrange, a resized pane and the source drawer', async ({
   page,
 }) => {
