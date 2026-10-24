@@ -90,8 +90,13 @@ function agentShape(
 }
 
 function framesUnder(annotation: Annotation, frames: readonly BoardFrame[]): string[] {
-  if (annotation.kind !== 'line' && annotation.kind !== 'path')
-    return frames.filter((frame) => overlaps(annotation.rect, frame.rect)).map(designIdOf);
+  if (annotation.kind !== 'line' && annotation.kind !== 'path') {
+    const touches =
+      annotation.kind === 'ellipse'
+        ? (frame: BoardFrame) => ellipseTouches(annotation.rect, frame.rect)
+        : (frame: BoardFrame) => overlaps(annotation.rect, frame.rect);
+    return frames.filter(touches).map(designIdOf);
+  }
   const { points } = annotation;
   const loop = annotation.kind === 'path' && isClosedLoop(points);
   return frames
@@ -187,6 +192,22 @@ function segmentTouches(start: AnnotationPoint, end: AnnotationPoint, rect: Fram
 
 function overlaps(left: FrameRect, right: FrameRect): boolean {
   return gapBetween(left, right) === 0;
+}
+
+/**
+ * An ellipse reaches a frame when the frame's point nearest its centre lies
+ * inside it; its bounding box overlapping is not enough.
+ */
+function ellipseTouches(ellipse: FrameRect, frame: FrameRect): boolean {
+  const radiusX = ellipse.width / 2;
+  const radiusY = ellipse.height / 2;
+  const centerX = ellipse.x + radiusX;
+  const centerY = ellipse.y + radiusY;
+  const nearestX = Math.min(Math.max(centerX, frame.x), frame.x + frame.width);
+  const nearestY = Math.min(Math.max(centerY, frame.y), frame.y + frame.height);
+  const dx = (nearestX - centerX) / radiusX;
+  const dy = (nearestY - centerY) / radiusY;
+  return dx * dx + dy * dy <= 1;
 }
 
 /** The distance between two rects' nearest edges, 0 when they touch or overlap. */

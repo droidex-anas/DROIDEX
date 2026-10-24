@@ -1,6 +1,8 @@
-// What a retried mutation answers: the result its first run recorded in the
-// manifest's ledger, never today's state, so a retry after a lost response
-// cannot tell the caller something its original request did not do.
+// What a retried mutation answers: the mutation its first run recorded in the
+// manifest's ledger. A receipt fixes what the original request decided — a
+// created tree, a placement, a written revision — and reads the rest from the
+// head as it stands now, so an entry a later commit removed is simply no longer
+// part of the answer.
 
 import { findMutation, toFrame, type BuildStates, type CanvasManifest } from './canvasManifest.js';
 import type {

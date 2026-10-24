@@ -81,3 +81,22 @@ test('a note beside a frame is near it, and a loop drawn around a frame is over 
   assert.deepEqual(read.over, ['dsg_left']);
   assert.equal(agentAnnotation(loop, frames, 'app-2').author, 'another chat');
 });
+
+test('an ellipse is over only what its own curve reaches, not what its box covers', () => {
+  // A round ellipse in the frame's upper-left corner: its box overlaps the
+  // frame, its curve misses it.
+  const ellipse: Annotation = {
+    id: 'ann_ellipse',
+    kind: 'ellipse',
+    color: 'ink',
+    rect: { x: -220, y: -220, width: 240, height: 240 },
+    ...stamp,
+  };
+  assert.deepEqual(
+    [agentAnnotation(ellipse, frames, 'app-1')].map(({ over, near }) => ({ over, near })),
+    [{ over: undefined, near: 'dsg_left' }],
+  );
+  // A wider one whose curve does reach into the frame is over it.
+  const reaching = { ...ellipse, rect: { x: -220, y: -220, width: 400, height: 400 } };
+  assert.deepEqual(agentAnnotation(reaching, frames, 'app-1').over, ['dsg_left']);
+});
