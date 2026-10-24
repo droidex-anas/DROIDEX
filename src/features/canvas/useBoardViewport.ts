@@ -39,6 +39,8 @@ export interface BoardViewport {
   zoomTo: (scale: number) => void;
   /** Eases to the next zoom stop in `direction`, as + and − ask. */
   stepZoom: (direction: 1 | -1) => void;
+  /** Centers a frame the board does not wholly show, at the current zoom; one in view stays put. */
+  reveal: (rect: FrameRect) => void;
   /** Ends any running focus animation, so a hand gesture is never fought. */
   stopAnimating: () => void;
   /** True while a wheel gesture is still arriving. */
@@ -126,6 +128,24 @@ export function useBoardViewport(
     (scale: number) => {
       const centre = { x: measured.current.x / 2, y: measured.current.y / 2 };
       animateTo(zoomAtPoint(heading.current ?? latest.current.viewport, centre, scale));
+    },
+    [animateTo],
+  );
+
+  const reveal = useCallback(
+    (rect: FrameRect) => {
+      const current = heading.current ?? latest.current.viewport;
+      const size = measured.current;
+      const left = current.x + rect.x * current.scale;
+      const top = current.y + rect.y * current.scale;
+      const right = left + rect.width * current.scale;
+      const bottom = top + rect.height * current.scale;
+      if (left >= 0 && top >= 0 && right <= size.x && bottom <= size.y) return;
+      animateTo({
+        scale: current.scale,
+        x: size.x / 2 - (rect.x + rect.width / 2) * current.scale,
+        y: size.y / 2 - (rect.y + rect.height / 2) * current.scale,
+      });
     },
     [animateTo],
   );
@@ -235,6 +255,7 @@ export function useBoardViewport(
     fitTo,
     zoomTo,
     stepZoom,
+    reveal,
     stopAnimating,
     scrolling,
     markNavigated,

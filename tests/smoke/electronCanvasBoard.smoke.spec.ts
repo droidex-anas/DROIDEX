@@ -96,6 +96,50 @@ async function openCrowdedBoard(page: Page, frames: number) {
   await page.clock.runFor(32);
 }
 
+/**
+ * Stands in for the preview host: every `<webview>` the board makes answers as
+ * guest 41, bound to this canvas, and reports ready once `boardGuestReady` is set.
+ */
+async function stubGuests(page: Page) {
+  await page.addInitScript(() => {
+    window.boardGuestReady = false;
+    Object.defineProperty(window, 'droidControl', {
+      value: {
+        canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
+        canvasPreviewBind: async (guestId: number, canvasId: string) =>
+          guestId === 41 && canvasId === 'cv_board',
+        canvasPreviewCapture: async () => ({
+          ok: false,
+          error: { code: 'capture_unavailable', message: 'No capture in the DOM harness.' },
+        }),
+      },
+    });
+    const create = document.createElement.bind(document);
+    Object.defineProperty(document, 'createElement', {
+      value: (tag: string) => {
+        const guest = create(tag);
+        if (tag !== 'webview') return guest;
+        let identity = {};
+        let sent = false;
+        Object.assign(guest, {
+          getWebContentsId: () => 41,
+          executeJavaScript: async (script: string) => {
+            if (script.startsWith('globalThis.__droidexCanvasPreview.start(')) {
+              identity = JSON.parse(script.slice(script.indexOf('(') + 1, -1));
+              return 'started';
+            }
+            const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];
+            if (events.length > 0) sent = true;
+            return JSON.stringify({ ...identity, events, dropped: 0 });
+          },
+        });
+        queueMicrotask(() => guest.dispatchEvent(new Event('dom-ready')));
+        return guest;
+      },
+    });
+  });
+}
+
 function mountedPreviews(page: Page) {
   return page
     .locator('[data-harness-preview]')
@@ -580,43 +624,7 @@ declare global {
 test('a building slot shimmers its stage and only a ready guest crossfades, with reduced motion immediate', async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    window.boardGuestReady = false;
-    Object.defineProperty(window, 'droidControl', {
-      value: {
-        canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
-        canvasPreviewBind: async (guestId: number, canvasId: string) =>
-          guestId === 41 && canvasId === 'cv_board',
-        canvasPreviewCapture: async () => ({
-          ok: false,
-          error: { code: 'capture_unavailable', message: 'No capture in the DOM harness.' },
-        }),
-      },
-    });
-    const create = document.createElement.bind(document);
-    Object.defineProperty(document, 'createElement', {
-      value: (tag: string) => {
-        const guest = create(tag);
-        if (tag !== 'webview') return guest;
-        let identity = {};
-        let sent = false;
-        Object.assign(guest, {
-          getWebContentsId: () => 41,
-          executeJavaScript: async (script: string) => {
-            if (script.startsWith('globalThis.__droidexCanvasPreview.start(')) {
-              identity = JSON.parse(script.slice(script.indexOf('(') + 1, -1));
-              return 'started';
-            }
-            const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];
-            if (events.length > 0) sent = true;
-            return JSON.stringify({ ...identity, events, dropped: 0 });
-          },
-        });
-        queueMicrotask(() => guest.dispatchEvent(new Event('dom-ready')));
-        return guest;
-      },
-    });
-  });
+  await stubGuests(page);
   for (const motion of ['no-preference', 'reduce'] as const) {
     await openBoard(page, 14, motion);
     await page.goto(`${url}?preview=guest&building=1`);
@@ -642,4 +650,139 @@ test('a building slot shimmers its stage and only a ready guest crossfades, with
     await page.clock.runFor(120);
     await expect(host).toHaveCSS('opacity', '1');
   }
+});
+
+test('the frames share one tab stop, the keyboard moves between them, and the board says what changed', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const board = page.getByTestId('canvas-board');
+  const status = board.getByRole('status');
+  const headerA = frame(page, 'A').locator('[data-frame-header]');
+  const headerB = frame(page, 'B').locator('[data-frame-header]');
+  const selection = () => page.evaluate(() => window.boardHarness.interaction().selectedFrameIds);
+
+  // The opening Fit is where the board starts, so its zoom is not said.
+  await page.clock.runFor(600);
+  await expect(status).toHaveText('');
+
+  // One stop for the frames: Tab from the board lands on A, the first frame read.
+  await page.locator('#outside').focus();
+  await page.keyboard.press('Tab');
+  await expect(board).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(headerA).toBeFocused();
+  expect(await headerB.getAttribute('tabindex')).toBe('-1');
+
+  // Arrows, Home and End move in reading order and select the frame they reach,
+  // which its focused label already says, so the live region stays quiet.
+  await page.keyboard.press('ArrowRight');
+  await expect(headerB).toBeFocused();
+  expect(await selection()).toEqual(['b']);
+  await page.keyboard.press('Home');
+  await expect(headerA).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(headerB).toBeFocused();
+  expect(await headerB.getAttribute('tabindex')).toBe('0');
+  await expect(status).toHaveText('');
+
+  // Enter runs the frame, the first Escape returns to Select on the same label,
+  // and the next one clears the selection and hands the keyboard to the board.
+  await page.keyboard.press('Enter');
+  await expect(board).toHaveAttribute('data-board-mode', 'interact');
+  await headerB.focus();
+  await page.keyboard.press('Escape');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  await expect(headerB).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(board).toBeFocused();
+  await expect(status).toHaveText('Selection cleared');
+
+  // On a label ⌥ and an arrow nudge the selection, one world unit.
+  await headerA.focus();
+  await page.keyboard.press('Enter');
+  expect(await selection()).toEqual(['a']);
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  expect(await page.evaluate(() => window.boardHarness.calls[0].frames[0].rect.x)).toBe(101);
+
+  // A selection made elsewhere is said, and a zoom is said once it settles.
+  await page.evaluate(() => window.boardHarness.select(['a', 'b']));
+  await expect(status).toHaveText('2 frames selected');
+  await board.focus();
+  await page.keyboard.press('-');
+  await page.clock.runFor(200);
+  await expect(status).toHaveText('2 frames selected');
+  await page.clock.runFor(400);
+  await expect(status).toHaveText(/^Zoom \d+%$/);
+});
+
+test('arrowing onto a frame partly off the board brings it wholly into view at the same zoom', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() =>
+    window.boardHarness.publish('b', { x: 1000, y: 50, width: 400, height: 300 }, 4),
+  );
+  const board = await box(page.getByTestId('canvas-board'));
+  const cut = await box(frame(page, 'B'));
+  expect(cut.x).toBeLessThan(board.x + board.width);
+  expect(cut.x + cut.width).toBeGreaterThan(board.x + board.width);
+
+  await frame(page, 'A').locator('[data-frame-header]').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(frame(page, 'B').locator('[data-frame-header]')).toBeFocused();
+  const shown = await box(frame(page, 'B'));
+  expect(shown.x).toBeGreaterThanOrEqual(board.x);
+  expect(shown.y).toBeGreaterThanOrEqual(board.y);
+  expect(shown.x + shown.width).toBeLessThanOrEqual(board.x + board.width);
+  expect(shown.y + shown.height).toBeLessThanOrEqual(board.y + board.height);
+  await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
+});
+
+test('a live guest keeps its element through selection, zoom, arrange, a resized pane and the source drawer', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await openBoard(page);
+  await page.goto(`${url}?preview=guest`);
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  const held = () =>
+    page.evaluate(() => {
+      const kept = Reflect.get(window, '__heldGuests') as Element[] | undefined;
+      const guests = [...document.querySelectorAll('webview')];
+      if (!kept) Object.assign(window, { __heldGuests: guests });
+      return (kept ?? guests).every((guest, index) => guest === guests[index] && guest.isConnected);
+    });
+  expect(await held()).toBe(true);
+
+  const board = page.getByTestId('canvas-board');
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  await board.focus();
+  for (const key of ['-', '+', 'Shift+Digit1']) {
+    await page.keyboard.press(key);
+    await page.clock.runFor(240);
+  }
+  await page.evaluate(() =>
+    window.boardHarness.publish('a', { x: 160, y: 80, width: 400, height: 300 }, 4),
+  );
+  await page.evaluate(() => window.boardHarness.resize(640));
+  await page.clock.runFor(64);
+  await page.evaluate(() => window.boardHarness.resize(1000));
+  await page.clock.runFor(64);
+
+  // The source drawer opens beside the board and, closed, hands focus back to B.
+  await page.getByRole('button', { name: 'Source of Design B', exact: true }).click();
+  await expect(page.locator('[data-harness-source="b"]')).toBeVisible();
+  await page.clock.runFor(64);
+  await page.evaluate(() => window.boardHarness.closeSource());
+  await page.clock.runFor(32);
+  await expect(frame(page, 'B').locator('[data-frame-header]')).toBeFocused();
+
+  expect(await held()).toBe(true);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
 });
