@@ -408,6 +408,45 @@ export const SELECTION_COLORS = {
   light: { line: '#1a64dc', label: '#1a64dc', text: '#ffffff' },
 } as const;
 
+// The seven colours a board annotation can be drawn in, by the token names the
+// canvas stores. Muted, so a sketch never shouts over the designs it marks up,
+// yet each keeps AA for text on the board and its raised chrome in every
+// built-in preset, because a text label is drawn in it.
+const ANNOTATION_STROKES = {
+  dark: {
+    ink: '#d8d4cf',
+    red: '#f49a90',
+    orange: '#e8a46c',
+    yellow: '#d8bd5c',
+    green: '#86c08a',
+    blue: '#92b6f2',
+    violet: '#c8abee',
+  },
+  light: {
+    ink: '#3a3632',
+    red: '#b4362c',
+    orange: '#a34e17',
+    yellow: '#806408',
+    green: '#367339',
+    blue: '#2f62b5',
+    violet: '#7446a8',
+  },
+} as const;
+
+/**
+ * Each annotation colour's stroke and the fill a note of that colour sits on:
+ * the stroke washed into the board, far enough that body text reads on it.
+ */
+export function annotationColors(theme: Pick<ThemeColors, 'bg'>) {
+  const bgIsDark = colorLuminance(theme.bg) < 0.4;
+  return Object.fromEntries(
+    Object.entries(ANNOTATION_STROKES[bgIsDark ? 'dark' : 'light']).map(([name, stroke]) => [
+      name,
+      { stroke, fill: mixHex(stroke, theme.bg, bgIsDark ? 0.78 : 0.75) },
+    ]),
+  );
+}
+
 // Code reads in one small, muted palette wherever it is shown: the Canvas
 // source drawer, the files preview and transcript JSON. Four hues and a grey;
 // each hue keeps AA for 12px code on the code ground and on the transcript's
@@ -531,6 +570,10 @@ export function applyTheme(theme: ThemeSettings) {
   root.style.setProperty('--droid-selection-text', selection.text);
   for (const [name, color] of Object.entries(codeColors(theme))) {
     root.style.setProperty(`--droid-code-${name}`, color);
+  }
+  for (const [name, { stroke, fill }] of Object.entries(annotationColors(theme))) {
+    root.style.setProperty(`--droid-annotation-${name}`, stroke);
+    root.style.setProperty(`--droid-annotation-${name}-fill`, fill);
   }
   // Floating-card shadow: strong and near-black on dark where it separates
   // surfaces, soft and diffuse on light so cards lift without looking dirty.
