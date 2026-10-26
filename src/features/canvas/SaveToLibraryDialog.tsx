@@ -13,9 +13,7 @@ import {
 } from './CanvasDialog';
 import { canvasMessage, CanvasRequestError } from './client';
 import type { RevisionRef } from './protocol';
-
-// The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds an item's name too.
-const MAX_ITEM_NAME_LENGTH = 120;
+import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 export function SaveToLibraryDialog({
   canvasId,
@@ -84,7 +82,7 @@ export function SaveToLibraryDialog({
           ref={nameRef}
           id={nameId}
           value={name}
-          maxLength={MAX_ITEM_NAME_LENGTH}
+          maxLength={MAX_FRAME_NAME_LENGTH}
           disabled={pending}
           onChange={(event) => {
             setName(event.target.value);

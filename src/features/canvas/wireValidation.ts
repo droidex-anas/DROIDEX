@@ -78,6 +78,8 @@ const MAX_REVISION_PAGE_SIZE = 50;
 const MAX_REVISION_DIFF_BYTES = 256 * 1024;
 // `LIBRARY_LIST_LIMIT` in the sidecar's canvasLibrary.ts.
 const MAX_LIBRARY_ITEMS = 50;
+// The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
+export const MAX_FRAME_NAME_LENGTH = 120;
 // A kit's bounds, matching `DESIGN_SYSTEM_LIMITS` in the sidecar's designSystems.ts.
 export const MAX_KIT_NAME_LENGTH = 120;
 const MAX_KIT_TOKENS = 128;
@@ -192,7 +194,7 @@ function isLibraryItem(value: unknown): boolean {
   return (
     record(value) &&
     id(value.itemId) &&
-    text(value.name) &&
+    boundedText(value.name, MAX_FRAME_NAME_LENGTH) &&
     id(value.sourceCanvasId) &&
     record(value.source) &&
     id(value.source.designId) &&

@@ -51,7 +51,14 @@ export function CanvasDialog({
     };
   }, [dialogRef, initialFocus]);
 
-  useEffect(() => (onClose ? pushEscapeLayer(onClose) : undefined), [onClose]);
+  // While work runs, Escape still stops here rather than reaching the pane beneath.
+  useEffect(
+    () =>
+      pushEscapeLayer(() => {
+        onClose?.();
+      }),
+    [onClose],
+  );
 
   return createPortal(
     <div
