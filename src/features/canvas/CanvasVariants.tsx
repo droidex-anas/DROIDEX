@@ -50,8 +50,9 @@ export function CanvasVariants({
   const [direction, setDirection] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // One mutation per choice until the sidecar answers, so confirming again
-  // after a lost reply finds the frames that request reserved.
+  // One mutation per set of frames until the sidecar answers, so confirming
+  // again after a lost reply finds the frames that request reserved. The
+  // direction only shapes the prompt, so editing it keeps the same frames.
   const attempt = useRef<{ key: string; mutationId: string } | null>(null);
   const mounted = useRef(true);
   const kindRef = useRef<HTMLButtonElement>(null);
@@ -68,7 +69,7 @@ export function CanvasVariants({
   const make = async () => {
     if (pending) return;
     const choice: VariantChoice = { kind, count, direction };
-    const key = JSON.stringify(choice);
+    const key = `${kind}:${String(count)}`;
     if (attempt.current?.key !== key) attempt.current = { key, mutationId: crypto.randomUUID() };
     setPending(true);
     setError(null);
