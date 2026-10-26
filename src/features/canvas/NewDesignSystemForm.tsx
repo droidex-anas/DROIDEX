@@ -4,6 +4,7 @@
 
 import { useId, useRef, useState } from 'react';
 import { Upload } from '@droidex/icons';
+import { FIELD_CLASS, PRIMARY_BUTTON_CLASS, QUIET_BUTTON_CLASS } from './CanvasDialog';
 import { canvasMessage, CanvasRequestError } from './client';
 import type { DesignSystemSource } from './protocol';
 import { MAX_KIT_NAME_LENGTH } from './wireValidation';
@@ -27,11 +28,6 @@ const COPY = {
       ':root {\n  --background: #fbf8f3;\n  --foreground: #241f1a;\n  --primary: #8a5a1f;\n  --radius: 10px;\n}\n.dark {\n  --background: #171513;\n  --foreground: #efe9e1;\n}',
   },
 } as const;
-
-const FIELD_CLASS =
-  'w-full rounded-lg bg-droid-accent/[0.07] px-2.5 text-[12px] text-droid-text placeholder:text-droid-text-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15';
-const QUIET_BUTTON_CLASS =
-  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors hover:bg-droid-accent/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15';
 
 export function NewDesignSystemForm({
   kind,
@@ -164,11 +160,7 @@ export function NewDesignSystemForm({
         <button type="button" onClick={onCancel} className={QUIET_BUTTON_CLASS}>
           Cancel
         </button>
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="rounded-lg bg-droid-accent/15 px-3 py-1.5 text-[12px] font-semibold text-droid-text transition-colors hover:bg-droid-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 disabled:cursor-default disabled:opacity-60"
-        >
+        <button type="submit" disabled={!canSubmit} className={PRIMARY_BUTTON_CLASS}>
           {pending ? 'Creating…' : 'Create design system'}
         </button>
       </div>
