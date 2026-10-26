@@ -15,13 +15,13 @@ const DEFAULT_FRAME_PX = 720;
 
 type Listing =
   | { status: 'loading' }
-  | { status: 'listed'; items: LibraryItem[] }
+  /** `query` is the search these items answer, which the box may have moved past. */
+  | { status: 'listed'; items: LibraryItem[]; query: string }
   | { status: 'failed'; message: string };
 
 export function LibraryPicker({ board, onClose }: { board: BoardOnScreen; onClose: () => void }) {
   const [query, setQuery] = useState('');
-  const [retries, setRetries] = useState(0);
-  const listing = useLibraryItems(query, retries);
+  const { listing, retry } = useLibraryItems(query);
   const { canvases } = useCanvases();
   const [adding, setAdding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,22 +105,16 @@ export function LibraryPicker({ board, onClose }: { board: BoardOnScreen; onClos
             <p role="alert" className="text-[12px] text-droid-red">
               {listing.message}
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setRetries((count) => count + 1);
-              }}
-              className={QUIET_BUTTON_CLASS}
-            >
+            <button type="button" onClick={retry} className={QUIET_BUTTON_CLASS}>
               Try again
             </button>
           </div>
         )}
         {listing.status === 'listed' && listing.items.length === 0 && (
           <p className="px-2 py-1 text-[12px] leading-5 text-droid-text-muted">
-            {query.trim() === ''
+            {listing.query === ''
               ? 'Nothing is saved yet. Select a frame and choose Save to library in the canvas menu.'
-              : `No saved frame is named like “${query.trim()}”.`}
+              : `No saved frame is named like “${listing.query}”.`}
           </p>
         )}
         {listing.status === 'listed' && listing.items.length > 0 && (
@@ -154,13 +148,15 @@ export function LibraryPicker({ board, onClose }: { board: BoardOnScreen; onClos
 }
 
 /** The sidecar does the matching; the last answer stays on screen while the next is read. */
-function useLibraryItems(query: string, retries: number): Listing {
+function useLibraryItems(query: string): { listing: Listing; retry: () => void } {
   const [listing, setListing] = useState<Listing>({ status: 'loading' });
+  const [retries, setRetries] = useState(0);
+  const trimmed = query.trim();
   useEffect(() => {
     let active = true;
-    canvasClient.library.list(query.trim()).then(
+    canvasClient.library.list(trimmed).then(
       (items) => {
-        if (active) setListing({ status: 'listed', items });
+        if (active) setListing({ status: 'listed', items, query: trimmed });
       },
       (error: unknown) => {
         if (active) setListing({ status: 'failed', message: canvasMessage(error) });
@@ -169,8 +165,12 @@ function useLibraryItems(query: string, retries: number): Listing {
     return () => {
       active = false;
     };
-  }, [query, retries]);
-  return listing;
+  }, [trimmed, retries]);
+  const retry = () => {
+    setListing({ status: 'loading' });
+    setRetries((count) => count + 1);
+  };
+  return { listing, retry };
 }
 
 function originLabel(item: LibraryItem, canvasId: string, summaries: CanvasSummary[]): string {
