@@ -72,12 +72,13 @@ async function openBoard(
   page: Page,
   font = 14,
   reducedMotion: 'reduce' | 'no-preference' = 'reduce',
+  query = '',
 ) {
   await page.setViewportSize({ width: 1300, height: 1100 });
   await page.emulateMedia({ reducedMotion });
   await page.clock.install({ time: new Date('2026-10-07T12:00:00Z') });
   await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
-  await page.goto(`${url}?font=${font}`);
+  await page.goto(`${url}?font=${font}${query}`);
   await expect(page.getByTestId('canvas-board')).toBeVisible();
   // The opening Fit: 72 px of padding each side in a 1000 px board, about 90%.
   await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
@@ -786,3 +787,118 @@ test('a live guest keeps its element through selection, zoom, arrange, a resized
   expect(await held()).toBe(true);
   await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
 });
+
+test('a drawn shape saves on release, deletes, and is dropped when refused', async ({ page }) => {
+  await openBoard(page);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  const a = await box(frame(page, 'A'));
+  const origin = { x: Math.round(a.x + 20), y: Math.round(a.y + a.height + 60) };
+
+  // R arms the rectangle; a drag below Design A draws it.
+  await page.keyboard.press('r');
+  await expect(page.locator('[data-draw-surface]')).toHaveCount(1);
+  await sweep(page, origin, { x: 90, y: 45 });
+  const calls = () => page.evaluate(() => window.boardHarness.annotateCalls);
+  expect(await calls()).toHaveLength(1);
+  const [drawn] = (await calls())[0].upserts;
+  expect(drawn).toMatchObject({ kind: 'rect', color: 'red' });
+  if (drawn.kind !== 'rect') throw new Error('Expected a rectangle');
+  // 90 by 45 screen pixels at the opening Fit's 90%.
+  expect([drawn.rect.width, drawn.rect.height].map((side) => Math.round(side))).toEqual([100, 50]);
+  // The finished shape is shown before the feed answers, selected, with Select back.
+  await expect(page.locator('[data-draw-surface]')).toHaveCount(0);
+  await expect(page.locator(`[data-annotation-selection="${drawn.id}"]`)).toHaveCount(1);
+  await page.evaluate(() => window.boardHarness.answerAnnotate(0));
+  await expect(page.locator('[data-annotation]')).toHaveCount(1);
+
+  await page.keyboard.press('Backspace');
+  expect((await calls())[1]).toMatchObject({ expectedAnnotationsVersion: 1, deletes: [drawn.id] });
+  await expect(page.locator('[data-annotation]')).toHaveCount(0);
+  await page.evaluate(() => window.boardHarness.answerAnnotate(1));
+
+  // A refused ellipse leaves the board as the feed has it, and says why.
+  await page.keyboard.press('o');
+  await sweep(page, origin, { x: 60, y: 60 });
+  await expect(page.locator('[data-annotation]')).toHaveCount(1);
+  await page.evaluate(() => window.boardHarness.refuseAnnotate(2));
+  await expect(page.locator('[data-annotation]')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveText(/changed elsewhere/);
+});
+
+test('a placed note takes typing, ⌘↵ saves it and Escape leaves a note as it was', async ({
+  page,
+}) => {
+  await openBoard(page, 14, 'reduce', '&marks=1');
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  const a = await box(frame(page, 'A'));
+  await page.keyboard.press('n');
+  await page.mouse.click(Math.round(a.x + 20), Math.round(a.y + a.height + 90));
+  const field = page.getByRole('textbox', { name: 'Annotation text' });
+  await expect(field).toBeFocused();
+  // Nothing is saved until there is text to save.
+  expect(await page.evaluate(() => window.boardHarness.annotateCalls)).toEqual([]);
+  await page.keyboard.type('Check the spacing');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(field).toHaveCount(0);
+  await expect(board).toBeFocused();
+  const [saved] = await page.evaluate(() => window.boardHarness.annotateCalls);
+  expect(saved.upserts).toMatchObject([{ kind: 'note', color: 'red', text: 'Check the spacing' }]);
+
+  await page.locator('[data-annotation="note"] .canvas-annotation-text').dblclick();
+  await expect(field).toBeFocused();
+  await page.keyboard.type(' and more');
+  await page.keyboard.press('Escape');
+  await expect(field).toHaveCount(0);
+  await expect(page.locator('[data-annotation="note"]')).toContainText(/accent here\.$/);
+  expect(await page.evaluate(() => window.boardHarness.annotateCalls.length)).toBe(1);
+});
+
+test('a mark moves, resizes and nudges, each write chained on the last', async ({ page }) => {
+  await openBoard(page, 14, 'reduce', '&marks=1');
+  const a = await box(frame(page, 'A'));
+  const note = page.locator('[data-annotation="note"] .canvas-annotation-text');
+  const start = await box(note);
+  await sweep(page, { x: Math.round(start.x + 40), y: Math.round(start.y + 80) }, { x: 45, y: 27 });
+  const grip = await box(page.locator('[data-annotation-handle="se"]'));
+  await sweep(page, { x: Math.round(grip.x + 4), y: Math.round(grip.y + 4) }, { x: 18, y: 9 });
+  await page.keyboard.press('ArrowRight');
+  const writes = await page.evaluate(() =>
+    window.boardHarness.annotateCalls.map(({ expectedAnnotationsVersion, upserts: [note] }) => [
+      expectedAnnotationsVersion,
+      ...('rect' in note ? Object.values(note.rect) : []),
+    ]),
+  );
+  // At the opening Fit's 90%, the screen moves are 50, 30 and 20, 10 board pixels.
+  expect(writes.map((write) => write.map((value) => Math.round(value)))).toEqual([
+    [5, 700, 110, 260, 150],
+    [6, 700, 110, 280, 160],
+    [7, 701, 110, 280, 160],
+  ]);
+
+  // A freehand stroke is one write on release, and the pen stays armed for the next.
+  await page.keyboard.press('p');
+  const below = { x: Math.round(a.x + 20), y: Math.round(a.y + a.height + 120) };
+  await sweep(page, below, { x: 80, y: 20 }, 4);
+  const stroke = await page.evaluate(() => window.boardHarness.annotateCalls[3].upserts[0]);
+  expect(stroke.kind).toBe('path');
+  if (stroke.kind === 'path') expect(stroke.points.length).toBeGreaterThanOrEqual(4);
+  await expect(page.locator('[data-draw-surface]')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-draw-surface]')).toHaveCount(0);
+});
+
+type Point = { x: number; y: number };
+
+/** Presses at `from` and releases `by` further on, passing through `steps` moves. */
+async function sweep(page: Page, from: Point, by: Point, steps = 1) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let step = 1; step <= steps; step += 1) {
+    await page.mouse.move(from.x + (by.x * step) / steps, from.y + (by.y * step) / steps);
+    await page.clock.runFor(32);
+  }
+  await page.mouse.up();
+  await page.clock.runFor(32);
+}
