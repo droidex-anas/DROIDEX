@@ -232,6 +232,14 @@ export function reduceBoardInteraction(
   }
 }
 
+/** A frame shows its actions while it is the one selection, or Interact drives it. */
+export function showsFrameTools(interaction: BoardInteraction, designId: string): boolean {
+  if (interaction.interactedFrameId === designId) return true;
+  return interaction.mode === 'select' && interaction.selectedFrameIds.length === 1
+    ? interaction.selectedFrameIds[0] === designId
+    : false;
+}
+
 /**
  * The state a new selection leaves, with Interact following a single frame.
  * A selection that did not actually change keeps its identity, so re-picking

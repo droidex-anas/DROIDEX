@@ -92,6 +92,58 @@
   transition-delay: 0ms;
 }
 
+.canvas-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* An armed tool's shape and colour, beside the rail at its top. */
+.canvas-tool-options {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+}
+
+.canvas-tool-options-group {
+  display: flex;
+  gap: 2px;
+}
+
+.canvas-tool-options .canvas-tool {
+  width: 28px;
+  height: 28px;
+}
+
+.canvas-tool-options .canvas-rail-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+}
+
+.canvas-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+/* Takes the board's presses while a drawing tool is armed: above the frames,
+   under the board's own tools. */
+.canvas-draw-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  cursor: crosshair;
+  touch-action: none;
+}
+
 .canvas-zoom {
   left: 12px;
   bottom: 12px;
