@@ -3,7 +3,8 @@ import { SourceMap } from 'node:module';
 import { test } from 'node:test';
 import type { ElementEdit, SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
-import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
+import { applyElementEdit } from './sourceElementEdits.js';
+import { instrumentSource, SourceElementError } from './sourceElements.js';
 
 function reference(element: SourceElement, revisionId = 'r1') {
   return { designId: 'design', revisionId, elementId: element.elementId, instancePath: '0' };

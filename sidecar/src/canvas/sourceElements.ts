@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import ts from 'typescript';
-import type { ElementEdit, SourceElement, SourceFiles } from './protocol.js';
+import type { SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { inlineSourceMap } from './sourceInstrumentationMap.js';
 
@@ -23,41 +23,13 @@ export class SourceElementError extends Error {
   }
 }
 
-type ElementNode = ts.JsxElement | ts.JsxSelfClosingElement;
-interface Site {
+export type ElementNode = ts.JsxElement | ts.JsxSelfClosingElement;
+export interface Site {
   element: SourceElement;
   node: ElementNode;
   source: ts.SourceFile;
 }
-interface SourceReplacement {
-  start: number;
-  end: number;
-  replacement: string;
-}
 const MARKER = 'data-droidex-element';
-const TOKEN_PROPERTIES = new Set([
-  'color',
-  'backgroundColor',
-  'borderColor',
-  'borderRadius',
-  'boxShadow',
-  'fontFamily',
-  'fontSize',
-  'fontWeight',
-  'lineHeight',
-  'letterSpacing',
-  'gap',
-  'padding',
-  'paddingTop',
-  'paddingRight',
-  'paddingBottom',
-  'paddingLeft',
-  'margin',
-  'marginTop',
-  'marginRight',
-  'marginBottom',
-  'marginLeft',
-]);
 
 /** IDs describe a canonical revision, never the derived instrumented text. */
 export function instrumentSource(
@@ -91,121 +63,7 @@ export function instrumentSource(
   return { files: derived, elements: sites.map((site) => site.element) };
 }
 
-/** Returns only changed paths, with their complete contents, for workspace.write. */
-export function applyElementEdit(
-  files: SourceFiles,
-  elements: SourceElement[],
-  edit: ElementEdit,
-): SourceFiles {
-  const selected = elements.filter((element) => element.elementId === edit.element.elementId);
-  if (selected.length !== 1) throw staleReference();
-  const site = sourceSites(files, edit.element.revisionId).find(
-    ({ element }) => element.elementId === edit.element.elementId,
-  );
-  const supplied = selected.at(0);
-  if (!site || !supplied) throw staleReference();
-  if (
-    site.element.file !== supplied.file ||
-    site.element.start !== supplied.start ||
-    site.element.end !== supplied.end ||
-    site.element.tagName !== supplied.tagName ||
-    site.element.editability !== supplied.editability
-  )
-    throw staleReference();
-  if (site.element.editability !== 'literal') throw ambiguous();
-  const { node, source } = site;
-  const opening = ts.isJsxElement(node) ? node.openingElement : node;
-  let changed: SourceReplacement;
-  switch (edit.change.kind) {
-    case 'text':
-      changed = replaceText(node, source, edit.change.value);
-      break;
-    case 'token':
-      changed = replaceToken(opening, source, edit.change);
-      break;
-    case 'image':
-      changed = replaceImage(opening, source, edit.change.assetId);
-      break;
-  }
-  const { start, end, replacement } = changed;
-  return { [source.fileName]: source.text.slice(0, start) + replacement + source.text.slice(end) };
-}
-
-function replaceText(node: ElementNode, source: ts.SourceFile, value: string): SourceReplacement {
-  if (!ts.isJsxElement(node) || node.children.length > 1) throw ambiguous();
-  if (node.children.length === 0)
-    return {
-      start: node.openingElement.end,
-      end: node.openingElement.end,
-      replacement: escapeJsxText(value),
-    };
-  const child = node.children.at(0);
-  if (!child) throw ambiguous();
-  if (ts.isJsxText(child))
-    return { start: child.pos, end: child.end, replacement: escapeJsxText(value) };
-  if (ts.isJsxExpression(child) && child.expression && isLiteral(child.expression))
-    return {
-      start: child.expression.getStart(source),
-      end: child.expression.end,
-      replacement: JSON.stringify(value),
-    };
-  throw ambiguous();
-}
-
-function replaceToken(
-  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
-  source: ts.SourceFile,
-  change: Extract<ElementEdit['change'], { kind: 'token' }>,
-): SourceReplacement {
-  if (!TOKEN_PROPERTIES.has(change.property) || !/^--[a-z0-9]+(-[a-z0-9]+)*$/.test(change.token))
-    throw new SourceElementError(
-      'invalid_edit',
-      'Choose a supported style property and a design-system token.',
-    );
-  const style = attributeValue(attribute(opening, 'style'));
-  if (!style || !ts.isObjectLiteralExpression(style)) throw ambiguous();
-  const properties = style.properties.filter(
-    (property) => property.name && propertyName(property.name) === change.property,
-  );
-  const property = properties.at(0);
-  if (
-    properties.length !== 1 ||
-    !property ||
-    !ts.isPropertyAssignment(property) ||
-    !isLiteral(property.initializer) ||
-    !/^var\(--[a-z0-9]+(-[a-z0-9]+)*\)$/.test(property.initializer.text)
-  )
-    throw ambiguous();
-  return {
-    start: property.initializer.getStart(source),
-    end: property.initializer.end,
-    replacement: JSON.stringify(`var(${change.token})`),
-  };
-}
-
-function replaceImage(
-  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
-  source: ts.SourceFile,
-  assetId: string,
-): SourceReplacement {
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(assetId))
-    throw new SourceElementError('invalid_edit', 'Choose an owned Canvas image.');
-  const src = attributeValue(attribute(opening, 'src'));
-  if (
-    opening.tagName.getText(source) !== 'img' ||
-    !src ||
-    !isLiteral(src) ||
-    !/^canvas-asset:[A-Za-z0-9_-]{1,128}$/.test(src.text)
-  )
-    throw ambiguous();
-  return {
-    start: src.getStart(source),
-    end: src.end,
-    replacement: JSON.stringify(`canvas-asset:${assetId}`),
-  };
-}
-
-function sourceSites(files: SourceFiles, revisionId: string): Site[] {
+export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
   const hash = createHash('sha256').update(
     JSON.stringify([revisionId, Object.entries(files).sort(([a], [b]) => comparePaths(a, b))]),
   );
@@ -435,50 +293,30 @@ function hasComputedStyle(value: ts.Expression | undefined): boolean {
   return false;
 }
 
-function attribute(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement, name: string) {
+export function attribute(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement, name: string) {
   return opening.attributes.properties.find(
     (attr): attr is ts.JsxAttribute => ts.isJsxAttribute(attr) && attr.name.getText() === name,
   );
 }
-function attributeValue(attr: ts.JsxAttribute | undefined): ts.Expression | undefined {
+export function attributeValue(attr: ts.JsxAttribute | undefined): ts.Expression | undefined {
   const value = attr?.initializer;
   if (!value) return undefined;
   return ts.isJsxExpression(value) ? value.expression : value;
 }
-function propertyName(name: ts.PropertyName): string {
+export function propertyName(name: ts.PropertyName): string {
   return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : '';
 }
-function isLiteral(node: ts.Node): node is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral {
+export function isLiteral(
+  node: ts.Node,
+): node is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral {
   return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
 }
-function staleReference(): SourceElementError {
-  return new SourceElementError(
-    'stale_reference',
-    'This selection belongs to different source. Reselect the element in the current revision.',
-  );
-}
-function ambiguous(): SourceElementError {
+export function ambiguous(): SourceElementError {
   return new SourceElementError(
     'ambiguous_element',
     'This source is computed or shared. Ask the agent to edit the selected scope.',
   );
 }
-function escapeJsxText(text: string): string {
-  let escaped = '';
-  for (const char of text) {
-    if (char === '&') escaped += '&amp;';
-    else if (char === '<') escaped += '&lt;';
-    else if (char === '>') escaped += '&gt;';
-    else if (char === '{') escaped += '&#123;';
-    else if (char === '}') escaped += '&#125;';
-    else if (char === '"') escaped += '&quot;';
-    else if (char === "'") escaped += '&#39;';
-    else if (char !== ' ' && /\s/.test(char)) escaped += `&#${String(char.codePointAt(0))};`;
-    else escaped += char;
-  }
-  return escaped;
-}
-
 function comparePaths(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;

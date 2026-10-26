@@ -23,7 +23,8 @@ import { designEntryDiagnostic } from './designEntry.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
-import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
+import { applyElementEdit } from './sourceElementEdits.js';
+import { instrumentSource, SourceElementError } from './sourceElements.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
 import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
 

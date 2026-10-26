@@ -20,7 +20,7 @@ import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import type { CanvasDiagnostic, ElementEdit } from './protocol.js';
-import { applyElementEdit } from './sourceElements.js';
+import { applyElementEdit } from './sourceElementEdits.js';
 import type { SourceFiles } from './schema.js';
 import { compileInput, mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
 
