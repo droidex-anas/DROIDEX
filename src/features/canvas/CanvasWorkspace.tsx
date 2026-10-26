@@ -46,7 +46,8 @@ import {
 } from './canvasState';
 import { CanvasSourceSlot } from './CanvasSourceSlot';
 import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
-import type { ArrangeFramesInput, CanvasSnapshot } from './protocol';
+import { showBoard } from './boardOnScreen';
+import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
 
 const readArtifact = canvas.readArtifact.bind(canvas);
 
@@ -368,6 +369,22 @@ function CanvasBoardMount({
     () => (pinnable ? syncFramePins(appSessionId, snapshot) : undefined),
     [appSessionId, pinnable, snapshot],
   );
+  const { frames } = snapshot;
+  const { selectedFrameIds } = interaction;
+  useEffect(() => {
+    const byId = new Map(frames.map((frame) => [frame.designId, frame]));
+    return showBoard({
+      appSessionId,
+      canvasId,
+      attached: pinnable,
+      selected: selectedFrameIds
+        .map((designId) => byId.get(designId))
+        .filter((frame): frame is CanvasFrame => frame !== undefined),
+      focusFrame: (designId) => {
+        boardRef.current?.focusFrame(designId);
+      },
+    });
+  }, [appSessionId, boardRef, canvasId, frames, pinnable, selectedFrameIds]);
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">
