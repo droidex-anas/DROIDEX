@@ -16,6 +16,7 @@ import {
   type TextDraft,
 } from './annotationGeometry';
 import {
+  AnnotationWriteQueue,
   nextExpectedVersion,
   shownMarks,
   unansweredWrites,
@@ -95,7 +96,7 @@ export function useAnnotationEditor({
   const [seen, setSeen] = useState({ mode, selectedFrameCount });
   const gesture = useRef<Gesture | null>(null);
   const frame = useRef<number | null>(null);
-  const mounted = useRef(false);
+  const writes = useRef<AnnotationWriteQueue | null>(null);
 
   // Interact and a picked frame take the board's attention from the marks.
   if (seen.mode !== mode || seen.selectedFrameCount !== selectedFrameCount) {
@@ -119,25 +120,29 @@ export function useAnnotationEditor({
     });
   }, [annotationsVersion]);
 
-  const write = useCallback(
-    (upserts: AnnotationDraft[], deletes: string[]) => {
-      const { annotationsVersion: version, unanswered: chained } = latest.current;
-      const input: AnnotateCanvasInput = {
-        mutationId: crypto.randomUUID(),
-        expectedAnnotationsVersion: nextExpectedVersion(version, chained),
-        upserts,
-        deletes,
-      };
-      setPending((held) => [...held, input]);
-      setError('');
-      onAnnotate(input).catch((failure: unknown) => {
-        if (!mounted.current) return;
-        setPending((held) => withoutRefused(held, input.mutationId));
-        setError(annotateFailure(failure));
-      });
-    },
-    [onAnnotate],
-  );
+  useEffect(() => {
+    const queue = new AnnotationWriteQueue(onAnnotate, (refused, failure) => {
+      setPending((held) => withoutRefused(held, refused.mutationId));
+      setError(annotateFailure(failure));
+    });
+    writes.current = queue;
+    return () => {
+      queue.close();
+    };
+  }, [onAnnotate]);
+
+  const write = useCallback((upserts: AnnotationDraft[], deletes: string[]) => {
+    const { annotationsVersion: version, unanswered: chained } = latest.current;
+    const input: AnnotateCanvasInput = {
+      mutationId: crypto.randomUUID(),
+      expectedAnnotationsVersion: nextExpectedVersion(version, chained),
+      upserts,
+      deletes,
+    };
+    setPending((held) => [...held, input]);
+    setError('');
+    writes.current?.push(input);
+  }, []);
 
   const toBoard = useCallback(
     (event: { clientX: number; clientY: number }) => {
@@ -175,7 +180,6 @@ export function useAnnotationEditor({
   }, []);
 
   useEffect(() => {
-    mounted.current = true;
     let last: Point | null = null;
     const onMove = (event: PointerEvent) => {
       const active = gesture.current;
@@ -237,7 +241,6 @@ export function useAnnotationEditor({
     window.addEventListener('pointercancel', onUp);
     window.addEventListener('blur', onBlur);
     return () => {
-      mounted.current = false;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);

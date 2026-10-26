@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Annotation, AnnotateCanvasInput } from './annotationProtocol';
 import {
+  AnnotationWriteQueue,
   nextExpectedVersion,
   shownMarks,
   unansweredWrites,
@@ -52,5 +53,46 @@ test('unanswered writes are drawn over the layer in order, keeping authors and s
       ['a', 'red', 'agent'],
       ['c', 'blue', 'user'],
     ],
+  );
+});
+
+test('a write waits for the one before it, and a refusal drops the queue unsent', async () => {
+  const sent: string[] = [];
+  const replies = new Map<string, { resolve: () => void; reject: (error: Error) => void }>();
+  let refused: (input: AnnotateCanvasInput) => void = () => undefined;
+  const queue = new AnnotationWriteQueue(
+    (input) => {
+      sent.push(input.mutationId);
+      return new Promise<void>((resolve, reject) =>
+        replies.set(input.mutationId, { resolve, reject }),
+      );
+    },
+    (input) => refused(input),
+  );
+  const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+  const drawn = { id: 'n', color: 'red', kind: 'rect', rect } as const;
+  const first = write('m1', 4, { upserts: [drawn] });
+  const second = write('m2', 5, { upserts: [{ ...drawn, color: 'blue' }] });
+  const third = write('m3', 6, { deletes: ['b'] });
+
+  queue.push(first);
+  queue.push(second);
+  assert.deepEqual(sent, ['m1']);
+  replies.get('m1')?.resolve();
+  await settle();
+  assert.deepEqual(sent, ['m1', 'm2']);
+
+  // Another writer moved the layer, so m2 is refused while m3 waits behind it.
+  queue.push(third);
+  const refusal = new Promise<AnnotateCanvasInput>((resolve) => (refused = resolve));
+  replies.get('m2')?.reject(new Error('revision_conflict'));
+  const dropped = await refusal;
+  queue.push(write('m4', 5));
+  assert.deepEqual(sent, ['m1', 'm2', 'm4']);
+  // The board shows neither the refused write nor the one queued behind it.
+  const shown = withoutRefused([second, third], dropped.mutationId);
+  assert.deepEqual(
+    shownMarks([saved('b')], shown).map(({ draft }) => draft.id),
+    ['b'],
   );
 });

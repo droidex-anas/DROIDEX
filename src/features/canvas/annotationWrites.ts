@@ -1,7 +1,9 @@
 // The board's optimistic annotation writes. Each finished gesture is one
 // annotate, shown at once and dropped as soon as the layer's version moves past
 // the version it was written against: by then the change feed carries either it
-// or the change that refused it.
+// or the change that refused it. The sidecar takes a write only at its exact
+// expected version and moves the layer on by one, so writes chain and are sent
+// in order.
 
 import type {
   Annotation,
@@ -77,4 +79,50 @@ export function shownMarks(
     ];
   }
   return marks;
+}
+
+/**
+ * Sends the board's writes one at a time. Each expects the version the write
+ * before it produces, so it goes out only once that one is accepted. A refusal
+ * discards every write still waiting, unsent: none of them could land, and the
+ * board has already said they were dropped.
+ */
+export class AnnotationWriteQueue {
+  private readonly waiting: AnnotateCanvasInput[] = [];
+  private sending = false;
+  private closed = false;
+
+  constructor(
+    private readonly send: (input: AnnotateCanvasInput) => Promise<unknown>,
+    private readonly onRefused: (input: AnnotateCanvasInput, failure: unknown) => void,
+  ) {}
+
+  push(input: AnnotateCanvasInput) {
+    if (this.closed) return;
+    this.waiting.push(input);
+    this.sendNext();
+  }
+
+  close() {
+    this.closed = true;
+    this.waiting.length = 0;
+  }
+
+  private sendNext() {
+    if (this.sending || this.closed) return;
+    const input = this.waiting.shift();
+    if (!input) return;
+    this.sending = true;
+    this.send(input).then(
+      () => {
+        this.sending = false;
+        this.sendNext();
+      },
+      (failure: unknown) => {
+        this.sending = false;
+        this.waiting.length = 0;
+        if (!this.closed) this.onRefused(input, failure);
+      },
+    );
+  }
 }

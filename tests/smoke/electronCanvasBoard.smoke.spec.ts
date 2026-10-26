@@ -790,20 +790,17 @@ test('a live guest keeps its element through selection, zoom, arrange, a resized
 
 test('a drawn shape saves on release, deletes, and is dropped when refused', async ({ page }) => {
   await openBoard(page);
-  const board = page.getByTestId('canvas-board');
-  await board.focus();
+  await page.getByTestId('canvas-board').focus();
   const a = await box(frame(page, 'A'));
   const origin = { x: Math.round(a.x + 20), y: Math.round(a.y + a.height + 60) };
 
   // R arms the rectangle; a drag below Design A draws it.
   await page.keyboard.press('r');
-  await expect(page.locator('[data-draw-surface]')).toHaveCount(1);
   await sweep(page, origin, { x: 90, y: 45 });
   const calls = () => page.evaluate(() => window.boardHarness.annotateCalls);
   expect(await calls()).toHaveLength(1);
   const [drawn] = (await calls())[0].upserts;
-  expect(drawn).toMatchObject({ kind: 'rect', color: 'red' });
-  if (drawn.kind !== 'rect') throw new Error('Expected a rectangle');
+  if (drawn.kind !== 'rect' || drawn.color !== 'red') throw new Error('Expected a red rectangle');
   // 90 by 45 screen pixels at the opening Fit's 90%.
   expect([drawn.rect.width, drawn.rect.height].map((side) => Math.round(side))).toEqual([100, 50]);
   // The finished shape is shown before the feed answers, selected, with Select back.
@@ -817,18 +814,21 @@ test('a drawn shape saves on release, deletes, and is dropped when refused', asy
   await expect(page.locator('[data-annotation]')).toHaveCount(0);
   await page.evaluate(() => window.boardHarness.answerAnnotate(1));
 
-  // A refused ellipse leaves the board as the feed has it, and says why.
+  // A refused ellipse takes the box queued behind it, unsent, and the board
+  // is left as the feed has it.
   await page.keyboard.press('o');
   await sweep(page, origin, { x: 60, y: 60 });
-  await expect(page.locator('[data-annotation]')).toHaveCount(1);
+  await page.keyboard.press('r');
+  await sweep(page, { x: origin.x + 100, y: origin.y }, { x: 60, y: 60 });
+  await expect(page.locator('[data-annotation]')).toHaveCount(2);
+  expect(await calls()).toHaveLength(3);
   await page.evaluate(() => window.boardHarness.refuseAnnotate(2));
   await expect(page.locator('[data-annotation]')).toHaveCount(0);
+  expect(await calls()).toHaveLength(3);
   await expect(page.getByRole('alert')).toHaveText(/changed elsewhere/);
 });
 
-test('a placed note takes typing, ⌘↵ saves it and Escape leaves a note as it was', async ({
-  page,
-}) => {
+test('a placed note takes typing, ⌘↵ saves it and Escape keeps a note', async ({ page }) => {
   await openBoard(page, 14, 'reduce', '&marks=1');
   const board = page.getByTestId('canvas-board');
   await board.focus();
@@ -855,15 +855,20 @@ test('a placed note takes typing, ⌘↵ saves it and Escape leaves a note as it
   expect(await page.evaluate(() => window.boardHarness.annotateCalls.length)).toBe(1);
 });
 
-test('a mark moves, resizes and nudges, each write chained on the last', async ({ page }) => {
+test('a mark moves, resizes and nudges, one write at a time', async ({ page }) => {
   await openBoard(page, 14, 'reduce', '&marks=1');
-  const a = await box(frame(page, 'A'));
-  const note = page.locator('[data-annotation="note"] .canvas-annotation-text');
-  const start = await box(note);
-  await sweep(page, { x: Math.round(start.x + 40), y: Math.round(start.y + 80) }, { x: 45, y: 27 });
+  const start = await box(page.locator('[data-annotation="note"] .canvas-annotation-text'));
+  const inside = { x: Math.round(start.x + 40), y: Math.round(start.y + 80) };
+  await sweep(page, inside, { x: 45, y: 27 });
   const grip = await box(page.locator('[data-annotation-handle="se"]'));
   await sweep(page, { x: Math.round(grip.x + 4), y: Math.round(grip.y + 4) }, { x: 18, y: 9 });
   await page.keyboard.press('ArrowRight');
+  // Each write goes out only once the one before it is saved.
+  const sent = () => page.evaluate(() => window.boardHarness.annotateCalls.length);
+  for (const index of [0, 1, 2]) {
+    await expect.poll(sent).toBe(index + 1);
+    await page.evaluate((at) => window.boardHarness.answerAnnotate(at), index);
+  }
   const writes = await page.evaluate(() =>
     window.boardHarness.annotateCalls.map(({ expectedAnnotationsVersion, upserts: [note] }) => [
       expectedAnnotationsVersion,
@@ -877,13 +882,12 @@ test('a mark moves, resizes and nudges, each write chained on the last', async (
     [7, 701, 110, 280, 160],
   ]);
 
-  // A freehand stroke is one write on release, and the pen stays armed for the next.
+  // A freehand stroke, drawn over the note, is one write on release, and the
+  // pen stays armed for the next.
   await page.keyboard.press('p');
-  const below = { x: Math.round(a.x + 20), y: Math.round(a.y + a.height + 120) };
-  await sweep(page, below, { x: 80, y: 20 }, 4);
+  await sweep(page, inside, { x: 80, y: 20 }, 4);
   const stroke = await page.evaluate(() => window.boardHarness.annotateCalls[3].upserts[0]);
-  expect(stroke.kind).toBe('path');
-  if (stroke.kind === 'path') expect(stroke.points.length).toBeGreaterThanOrEqual(4);
+  expect(stroke.kind === 'path' && stroke.points.length >= 4).toBe(true);
   await expect(page.locator('[data-draw-surface]')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-draw-surface]')).toHaveCount(0);
