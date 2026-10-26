@@ -36,7 +36,7 @@ export function CanvasSourceSlot({
           // An explicit Save, sent exactly as the drawer submitted it: the
           // mutation identity belongs to the write, not to this call, so a retry
           // of an uncertain Save reaches the sidecar's ledger as the same write.
-          writeSource={(id, write) => canvas.writeFiles(appSessionId, id, write)}
+          writeSource={(id, write) => canvas.source.write(appSessionId, id, write)}
           onClose={onClose}
         />
       </Suspense>
@@ -45,5 +45,5 @@ export function CanvasSourceSlot({
 }
 
 function readSource(canvasId: string, designId: string, revisionId: string) {
-  return canvas.readSource(canvasId, designId, revisionId);
+  return canvas.source.read(canvasId, designId, revisionId);
 }
