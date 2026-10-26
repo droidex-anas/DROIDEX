@@ -13,8 +13,11 @@ import {
   watchedCanvasId,
   type CanvasPaneState,
   outdatedCanvasMessage,
+  CHANGED_SINCE_REVIEW,
+  reduceCanvasRemoval,
+  REVIEWING_REMOVAL,
 } from './canvasState';
-import type { CanvasFrame, CanvasSnapshot } from './protocol';
+import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from './protocol';
 
 function frame(designId: string, name: string): CanvasFrame {
   return {
@@ -333,4 +336,62 @@ test('nothing points at a frame the canvas has lost', () => {
     { type: 'pick', designId: 'b', additive: true },
   );
   assert.equal(reduceBoardInteraction(two, { type: 'frames', designIds: ['a', 'b', 'c'] }), two);
+});
+
+test('a removal refused as changed is reviewed again, and only a fresh review is confirmed', () => {
+  const preview = (sequence: number): CanvasRemovalPreview => ({
+    canvasId: 'canvas-1',
+    name: 'Landing',
+    sequence,
+    attachedAppSessionIds: ['app-1'],
+    activeTurnAppSessionIds: [],
+    buildingDesignIds: [],
+  });
+  const reviewed = reduceCanvasRemoval(REVIEWING_REMOVAL, {
+    type: 'previewed',
+    preview: preview(4),
+  });
+  const removing = reduceCanvasRemoval(reviewed, { type: 'confirm' });
+  assert.deepEqual(removing, { status: 'removing', preview: preview(4) });
+  // A second confirm while the first is in flight sends nothing new.
+  assert.equal(reduceCanvasRemoval(removing, { type: 'confirm' }), removing);
+
+  const changed = reduceCanvasRemoval(removing, {
+    type: 'remove-failed',
+    changed: true,
+    message: 'That canvas changed after deleting it was reviewed. Review it again.',
+  });
+  assert.deepEqual(changed, { status: 'reviewing', notice: CHANGED_SINCE_REVIEW });
+  assert.equal(reduceCanvasRemoval(changed, { type: 'confirm' }), changed);
+  const fresh = reduceCanvasRemoval(changed, { type: 'previewed', preview: preview(5) });
+  assert.deepEqual(fresh, {
+    status: 'reviewed',
+    preview: preview(5),
+    notice: CHANGED_SINCE_REVIEW,
+  });
+
+  // Any other failure keeps the review, which a retried removal may carry again.
+  const failed = reduceCanvasRemoval(reduceCanvasRemoval(fresh, { type: 'confirm' }), {
+    type: 'remove-failed',
+    changed: false,
+    message: 'That canvas could not be deleted. Try again.',
+  });
+  assert.deepEqual(failed, {
+    status: 'reviewed',
+    preview: preview(5),
+    notice: 'That canvas could not be deleted. Try again.',
+  });
+});
+
+test('a removal preview that fails offers another review, never a deletion', () => {
+  const unavailable = reduceCanvasRemoval(REVIEWING_REMOVAL, {
+    type: 'preview-failed',
+    message: 'That canvas is already deleted.',
+  });
+  assert.deepEqual(unavailable, {
+    status: 'unavailable',
+    message: 'That canvas is already deleted.',
+  });
+  assert.equal(reduceCanvasRemoval(unavailable, { type: 'confirm' }), unavailable);
+  assert.deepEqual(reduceCanvasRemoval(unavailable, { type: 'review-again' }), REVIEWING_REMOVAL);
 });

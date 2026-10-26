@@ -1,7 +1,7 @@
 // The Manage design systems dialog's requests, correlated by the Canvas client
 // like any other. Kits are global, so none of them names a canvas.
 
-import { reply, type ReplyEvent } from './canvasReply';
+import { reply, requestId, type ReplyEvent } from './canvasReply';
 import type {
   CanvasCommand,
   CanvasDiagnostic,
@@ -62,8 +62,4 @@ export class DesignSystemRequests {
     const { ref, diagnostics } = reply(event, 'designSystemSaved');
     return { ref, diagnostics };
   }
-}
-
-function requestId(): string {
-  return crypto.randomUUID();
 }

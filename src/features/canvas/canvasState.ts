@@ -1,4 +1,4 @@
-import type { CanvasFrame, CanvasSnapshot } from './protocol';
+import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from './protocol';
 
 export type CanvasPaneState =
   // Reading which canvas this chat is attached to.
@@ -142,6 +142,53 @@ function keptSourceDesignId(state: CanvasPaneState, snapshot: CanvasSnapshot): s
   const open = state.status === 'ready' ? state.sourceDesignId : null;
   if (open === null) return null;
   return snapshot.frames.some((frame) => frame.designId === open) ? open : null;
+}
+
+/**
+ * Deleting a whole canvas (spec §7): the user reviews what it would end, then
+ * confirms that exact review. A canvas that changed in between is reviewed
+ * again rather than deleted unseen.
+ */
+export type CanvasRemovalState =
+  | { status: 'reviewing'; notice: string | null }
+  | { status: 'reviewed'; preview: CanvasRemovalPreview; notice: string | null }
+  | { status: 'removing'; preview: CanvasRemovalPreview }
+  | { status: 'unavailable'; message: string };
+
+export type CanvasRemovalEvent =
+  | { type: 'previewed'; preview: CanvasRemovalPreview }
+  | { type: 'preview-failed'; message: string }
+  | { type: 'review-again' }
+  | { type: 'confirm' }
+  /** `changed` is the sidecar refusing a review the canvas has moved past. */
+  | { type: 'remove-failed'; changed: boolean; message: string };
+
+export const CHANGED_SINCE_REVIEW = 'This canvas changed; review again.';
+
+export const REVIEWING_REMOVAL: CanvasRemovalState = { status: 'reviewing', notice: null };
+
+export function reduceCanvasRemoval(
+  state: CanvasRemovalState,
+  event: CanvasRemovalEvent,
+): CanvasRemovalState {
+  switch (event.type) {
+    case 'previewed':
+      if (state.status !== 'reviewing') return state;
+      return { status: 'reviewed', preview: event.preview, notice: state.notice };
+    case 'preview-failed':
+      if (state.status !== 'reviewing') return state;
+      return { status: 'unavailable', message: event.message };
+    case 'review-again':
+      return state.status === 'unavailable' ? REVIEWING_REMOVAL : state;
+    case 'confirm':
+      if (state.status !== 'reviewed') return state;
+      return { status: 'removing', preview: state.preview };
+    case 'remove-failed':
+      if (state.status !== 'removing') return state;
+      if (event.changed) return { status: 'reviewing', notice: CHANGED_SINCE_REVIEW };
+      // Removal is retry-safe, so the same review can be confirmed again.
+      return { status: 'reviewed', preview: state.preview, notice: event.message };
+  }
 }
 
 /**

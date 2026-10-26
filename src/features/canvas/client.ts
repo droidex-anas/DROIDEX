@@ -4,8 +4,10 @@
 import type { ClientCommand, ServerEvent } from '../../types/bridge';
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import { applyCanvasChange } from './applyCanvasChange';
-import { reply, wrongReply, type ReplyEvent } from './canvasReply';
+import { reply, requestId, wrongReply, type ReplyEvent } from './canvasReply';
 import { DesignSystemRequests } from './designSystemRequests';
+import { LibraryRequests } from './libraryRequests';
+import { RemovalRequests } from './removalRequests';
 import type {
   ArrangeFramesInput,
   CanvasAttachment,
@@ -90,6 +92,8 @@ export class CanvasClient {
   constructor(private readonly transport: CanvasTransport) {}
 
   readonly designSystems = new DesignSystemRequests((command) => this.request(command));
+  readonly library = new LibraryRequests((command) => this.request(command));
+  readonly removal = new RemovalRequests((command) => this.request(command));
 
   listCanvases(): Promise<CanvasSummary[]> {
     return this.request({ type: 'canvas.list', requestId: requestId() }).then(
@@ -487,10 +491,6 @@ export class CanvasClient {
       void this.load(board, canvasId).catch(reportLostSnapshot);
     }
   }
-}
-
-function requestId(): string {
-  return crypto.randomUUID();
 }
 
 /** A resync this client started for itself has no caller to report to. */

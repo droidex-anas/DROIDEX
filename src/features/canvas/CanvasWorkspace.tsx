@@ -47,7 +47,9 @@ import {
 } from './canvasState';
 import { CanvasSourceSlot } from './CanvasSourceSlot';
 import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
-import type { ArrangeFramesInput, CanvasSnapshot } from './protocol';
+import { showBoard } from './boardOnScreen';
+import { useCloseCanvasTab } from './leaveDeletedCanvas';
+import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
 
 const readArtifact = canvas.readArtifact.bind(canvas);
 
@@ -154,6 +156,19 @@ export function CanvasWorkspace({
     });
   }, [watched]);
 
+  // A deleted canvas's last change only empties its board; the summaries
+  // broadcast after it no longer lists the canvas. The chat is then left
+  // without one, and a tab that only viewed it closes.
+  const closeCanvasTab = useCloseCanvasTab();
+  useEffect(() => {
+    if (watched === null) return undefined;
+    return canvas.subscribeSummaries((summaries) => {
+      if (summaries.some((summary) => summary.canvasId === watched)) return;
+      if (namedCanvasId === undefined) attach(null);
+      else closeCanvasTab(appSessionId);
+    });
+  }, [appSessionId, attach, closeCanvasTab, namedCanvasId, watched]);
+
   // Mode and selection belong to the canvas on screen, so showing another one
   // starts from Select with nothing picked.
   const [interactionCanvasId, setInteractionCanvasId] = useState(watched);
@@ -218,7 +233,7 @@ export function CanvasWorkspace({
           Chat | Canvas control instead (`CanvasHeader`). */}
       {!isExpanded && (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-droid-raised px-1 shadow-droid-sm">
-          {watched !== null && <CanvasMenu canvasId={watched} />}
+          {watched !== null && <CanvasMenu appSessionId={appSessionId} canvasId={watched} />}
           <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
         </div>
       )}
@@ -373,6 +388,22 @@ function CanvasBoardMount({
     () => (pinnable ? syncFramePins(appSessionId, snapshot) : undefined),
     [appSessionId, pinnable, snapshot],
   );
+  const { frames } = snapshot;
+  const { selectedFrameIds } = interaction;
+  useEffect(() => {
+    const byId = new Map(frames.map((frame) => [frame.designId, frame]));
+    return showBoard({
+      appSessionId,
+      canvasId,
+      attached: pinnable,
+      selected: selectedFrameIds
+        .map((designId) => byId.get(designId))
+        .filter((frame): frame is CanvasFrame => frame !== undefined),
+      focusFrame: (designId) => {
+        boardRef.current?.focusFrame(designId);
+      },
+    });
+  }, [appSessionId, boardRef, canvasId, frames, pinnable, selectedFrameIds]);
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">

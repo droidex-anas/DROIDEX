@@ -7,16 +7,18 @@ import { BrandMark } from '../../components/BrandMark';
 import { CanvasMenu } from './CanvasMenu';
 
 export function CanvasHeader({
+  appSessionId,
   canvasId,
   onDock,
 }: {
+  appSessionId: string;
   canvasId: string | null;
   onDock: () => void;
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <BrandMark size={13} className="shrink-0 text-droid-text" />
-      <CanvasMenu canvasId={canvasId} />
+      <CanvasMenu appSessionId={appSessionId} canvasId={canvasId} />
       <div className="flex min-w-0 flex-1 items-center justify-end">
         <div
           role="radiogroup"
