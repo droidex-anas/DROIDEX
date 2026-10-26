@@ -1,5 +1,5 @@
-// What a successful Canvas request is answered with, and its narrowing to the
-// reply kind the request expects.
+// What a successful Canvas request is answered with, its narrowing to the reply
+// kind the request expects, and the ID that correlates the two.
 
 import type { CanvasEvent, CanvasReply } from './protocol';
 
@@ -15,6 +15,11 @@ export function reply<K extends CanvasReply['kind']>(
 ): Extract<CanvasReply, { kind: K }> {
   if (event.type !== 'canvas.result' || event.reply.kind !== kind) throw wrongReply();
   return event.reply as Extract<CanvasReply, { kind: K }>;
+}
+
+/** Correlates one request with its reply; never a mutation ID. */
+export function requestId(): string {
+  return crypto.randomUUID();
 }
 
 export function wrongReply(): Error {

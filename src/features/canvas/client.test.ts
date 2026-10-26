@@ -306,39 +306,83 @@ test('library replies from the sidecar pass the renderer boundary', async (t) =>
     scope,
     writeInput('write-hey', designId, null, { 'main.tsx': 'export default () => null;' }),
   );
-  const answers: Record<string, unknown>[] = [];
+  const transport = fakeCanvasBridge();
+  const client = new CanvasClient(transport.transport);
   const { handle } = createCanvasCommandHandler(
     Promise.resolve(workspace),
     scopes,
     builds,
     { secret: 'test-canvas-secret', list: (id) => listCanvasAssets(root, id) },
     (event) => {
-      answers.push(JSON.parse(JSON.stringify(event)) as Record<string, unknown>);
+      if (!event.type.startsWith('canvas.')) return;
+      const serialized: Record<string, unknown> = JSON.parse(JSON.stringify(event));
+      assert.ok(isCanvasEvent(serialized));
+      transport.deliver(serialized);
     },
     () => () => {},
   );
   const revision = { designId, revisionId };
-  await handle(
-    {
-      type: 'canvas.saveLibraryItem',
-      requestId: 'req-save',
-      mutationId: 'save-hey',
-      canvasId,
-      revision,
-      name: 'Hey',
-    },
-    'page-1',
-  );
-  await handle({ type: 'canvas.listLibraryItems', requestId: 'req-list', query: 'hey' }, 'page-1');
+  const saving = client.library.save('save-hey', canvasId, revision, 'Hey');
+  await handle(transport.last('canvas.saveLibraryItem'), 'page-1');
+  const saved = await saving;
   assert.deepEqual(
-    answers.map((event) => [event.requestId, event.ok, isCanvasEvent(event)]),
-    [
-      ['req-save', true, true],
-      ['req-list', true, true],
-    ],
+    { itemId: saved.itemId, name: saved.name, source: saved.source },
+    { itemId: 'save-hey', name: 'Hey', source: revision },
   );
+  const listing = client.library.list('HE');
+  await handle(transport.last('canvas.listLibraryItems'), 'page-1');
+  assert.deepEqual(await listing, [saved]);
+  const missing = client.library.list('nothing');
+  await handle(transport.last('canvas.listLibraryItems'), 'page-1');
+  assert.deepEqual(await missing, []);
 });
 
+test('deleting a canvas round trips its preview and refuses one the canvas has moved past', async (t) => {
+  const scopes = new CanvasScopes();
+  const builds = quietBuilds();
+  const root = await canvasRoot(t);
+  const workspace = await CanvasWorkspace.open(root, builds, {
+    isChatKnown: () => true,
+    isScopeActive: (id) => scopes.isScopeActive(id),
+    bindScopeCanvas: (id, canvasId) => scopes.bindScopeCanvas(id, canvasId),
+  });
+  t.after(() => workspace.close());
+  const { canvasId } = await workspace.createCanvas('app-1', 'create-doomed');
+  const transport = fakeCanvasBridge();
+  const client = new CanvasClient(transport.transport);
+  const { handle } = createCanvasCommandHandler(
+    Promise.resolve(workspace),
+    scopes,
+    builds,
+    { secret: 'test-canvas-secret', list: (id) => listCanvasAssets(root, id) },
+    (event) => {
+      if (!event.type.startsWith('canvas.')) return;
+      const serialized: Record<string, unknown> = JSON.parse(JSON.stringify(event));
+      assert.ok(isCanvasEvent(serialized));
+      transport.deliver(serialized);
+    },
+    () => () => {},
+  );
+  const reviewing = client.removal.preview(canvasId);
+  await handle(transport.last('canvas.removalPreview'), 'page-1');
+  const reviewed = await reviewing;
+  assert.deepEqual(reviewed.attachedAppSessionIds, ['app-1']);
+
+  // A second chat joining after the review is what the user did not see.
+  await workspace.attach('app-2', canvasId);
+  const stale = assert.rejects(client.removal.remove(reviewed), { code: 'revision_conflict' });
+  await handle(transport.last('canvas.removeCanvas'), 'page-1');
+  await stale;
+  assert.equal(workspace.listCanvases().length, 1);
+
+  const again = client.removal.preview(canvasId);
+  await handle(transport.last('canvas.removalPreview'), 'page-1');
+  const removing = client.removal.remove(await again);
+  await handle(transport.last('canvas.removeCanvas'), 'page-1');
+  await removing;
+  assert.deepEqual(workspace.listCanvases(), []);
+  assert.equal(workspace.attachedCanvasId('app-1'), null);
+});
 test('a change that commits after a snapshot was taken is applied, not dropped', async () => {
   const bridge = fakeCanvasBridge();
   const client = new CanvasClient(bridge.transport);
