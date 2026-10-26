@@ -92,6 +92,22 @@ export function toggleFramePin(appSessionId: string, canvasId: string, frame: Ca
   else if (held.length < MAX_PINNED) publish(appSessionId, [...held, pinOf(canvasId, frame)]);
 }
 
+/**
+ * Adds these frames to the chat's next prompt beside what it already pins, by
+ * the same one-canvas rule as a toggle; at the limit, the oldest pins give way.
+ */
+export function addFramePins(
+  appSessionId: string,
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): void {
+  const held = framePins(appSessionId).filter(
+    (pin) => pin.canvasId === canvasId && !frames.some((frame) => frame.designId === pin.designId),
+  );
+  const added = frames.map((frame) => pinOf(canvasId, frame));
+  publish(appSessionId, [...held, ...added].slice(-MAX_PINNED));
+}
+
 /** Takes these frames off the chat's next prompt, or all of them. */
 export function unpinFrames(
   appSessionId: string,
