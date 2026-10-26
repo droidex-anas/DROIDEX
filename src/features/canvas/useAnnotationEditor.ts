@@ -110,8 +110,16 @@ export function useAnnotationEditor({
   const marks = withEdits(settled, editing?.draft ?? live);
   const selected = marks.find((mark) => mark.draft.id === selectedId) ?? null;
 
-  const latest = useRef({ viewport, marks, annotationsVersion, unanswered, tool, color });
-  latest.current = { viewport, marks, annotationsVersion, unanswered, tool, color };
+  const latest = useRef({
+    viewport,
+    marks,
+    annotationsVersion,
+    unanswered,
+    tool,
+    color,
+    onAnnotate,
+  });
+  latest.current = { viewport, marks, annotationsVersion, unanswered, tool, color, onAnnotate };
 
   useEffect(() => {
     setPending((held) => {
@@ -120,16 +128,22 @@ export function useAnnotationEditor({
     });
   }, [annotationsVersion]);
 
+  // One queue for the board's life, whatever identity onAnnotate has: closing it
+  // drops the writes still waiting. A board shows one canvas for its whole life,
+  // so the latest onAnnotate always targets the canvas the queue chains on.
   useEffect(() => {
-    const queue = new AnnotationWriteQueue(onAnnotate, (refused, failure) => {
-      setPending((held) => withoutRefused(held, refused.mutationId));
-      setError(annotateFailure(failure));
-    });
+    const queue = new AnnotationWriteQueue(
+      (input) => latest.current.onAnnotate(input),
+      (refused, failure) => {
+        setPending((held) => withoutRefused(held, refused.mutationId));
+        setError(annotateFailure(failure));
+      },
+    );
     writes.current = queue;
     return () => {
       queue.close();
     };
-  }, [onAnnotate]);
+  }, []);
 
   const write = useCallback((upserts: AnnotationDraft[], deletes: string[]) => {
     const { annotationsVersion: version, unanswered: chained } = latest.current;
