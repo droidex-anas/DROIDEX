@@ -1,6 +1,6 @@
 // The Canvas wordmark, and the picker it opens: the canvas on screen with what
-// can be done to it (the library and deletion, spec §7), New canvas, the saved
-// ones (spec §4), and Manage design systems (spec §10). The wordmark stays the
+// can be done to it (variants, the library and deletion, spec §4 and §7), New
+// canvas, the saved ones (spec §4), and Manage design systems (spec §10). The wordmark stays the
 // label so the row reads the same before and after the list is read; the
 // canvas's own name heads the popover. Which chats work on that canvas is the
 // chat column header's menu (`AttachedChatsMenu`), beside the transcript they
@@ -20,11 +20,14 @@ import { useCanvases } from './useCanvases';
 import { searchCanvases } from './canvasChats';
 import { useOpenCanvas } from './useOpenCanvas';
 import { useManageDesignSystems } from './useManageDesignSystems';
+import { CanvasVariants } from './CanvasVariants';
+import type { VariantSource } from './variantRequests';
 
 /** What a dialog acts on, fixed when it opens so a selection change cannot retarget it. */
 type MenuDialog =
   | { kind: 'save'; canvasId: string; revision: RevisionRef; frameName: string }
   | { kind: 'insert'; board: BoardOnScreen }
+  | { kind: 'variants'; appSessionId: string; source: VariantSource }
   | { kind: 'delete'; appSessionId: string; canvasId: string };
 
 export function CanvasMenu({
@@ -52,8 +55,6 @@ export function CanvasMenu({
   const { canvases } = useCanvases(open);
   const summaries = canvases.status === 'listed' ? searchCanvases(canvases.summaries, '') : [];
   const canvas = summaries.find((summary) => summary.canvasId === canvasId) ?? null;
-  // Only a built frame has a revision to save, and a save names one frame.
-  const savable = board?.selected.length === 1 ? board.selected[0] : null;
 
   const run = (next: MenuDialog) => {
     close();
@@ -89,36 +90,13 @@ export function CanvasMenu({
       >
         <div role="menu" aria-label="Canvas" className="min-h-0 overflow-y-auto p-1">
           {canvasId !== null && (
-            <>
-              <MenuHeading>{canvas?.name ?? 'This canvas'}</MenuHeading>
-              <MenuRow
-                label="Save to library…"
-                disabled={!savable?.revisionId}
-                onRun={() => {
-                  if (!savable?.revisionId) return;
-                  run({
-                    kind: 'save',
-                    canvasId,
-                    revision: { designId: savable.designId, revisionId: savable.revisionId },
-                    frameName: savable.name,
-                  });
-                }}
-              />
-              {/* Frames land through the chat's attachment, so another chat's canvas takes none. */}
-              <MenuRow
-                label="From library…"
-                disabled={!board?.attached}
-                onRun={() => {
-                  if (board?.attached) run({ kind: 'insert', board });
-                }}
-              />
-              <MenuRow
-                label="Delete canvas…"
-                onRun={() => {
-                  run({ kind: 'delete', appSessionId, canvasId });
-                }}
-              />
-            </>
+            <CanvasActions
+              appSessionId={appSessionId}
+              canvasId={canvasId}
+              name={canvas?.name ?? 'This canvas'}
+              board={board}
+              onRun={run}
+            />
           )}
 
           <MenuHeading>Saved canvases</MenuHeading>
@@ -171,6 +149,73 @@ export function CanvasMenu({
   );
 }
 
+/** What can be done to the canvas on screen, and to the one frame selected on it. */
+function CanvasActions({
+  appSessionId,
+  canvasId,
+  name,
+  board,
+  onRun,
+}: {
+  appSessionId: string;
+  canvasId: string;
+  name: string;
+  board: BoardOnScreen | null;
+  onRun: (dialog: MenuDialog) => void;
+}) {
+  // Only a built frame has a revision to save or vary, and each names one frame.
+  const frame = board?.selected.length === 1 ? board.selected[0] : null;
+  const revision = frame?.revisionId
+    ? { designId: frame.designId, revisionId: frame.revisionId }
+    : null;
+  // Frames land through the chat's attachment, so another chat's canvas takes none.
+  const attached = board?.attached ? board : null;
+  return (
+    <>
+      <MenuHeading>{name}</MenuHeading>
+      <MenuRow
+        label="Save to library…"
+        disabled={!frame || !revision}
+        onRun={() => {
+          if (frame && revision) onRun({ kind: 'save', canvasId, revision, frameName: frame.name });
+        }}
+      />
+      <MenuRow
+        label="From library…"
+        disabled={!attached}
+        onRun={() => {
+          if (attached) onRun({ kind: 'insert', board: attached });
+        }}
+      />
+      <MenuRow
+        label="Make variants…"
+        disabled={!attached || !frame || !revision}
+        onRun={() => {
+          if (!attached || !frame || !revision) return;
+          const { width, height } = frame.rect;
+          onRun({
+            kind: 'variants',
+            appSessionId: attached.appSessionId,
+            source: {
+              canvasId,
+              revision,
+              name: frame.name,
+              width,
+              height,
+              designSystem: frame.designSystem,
+            },
+          });
+        }}
+      />
+      <MenuRow
+        label="Delete canvas…"
+        onRun={() => {
+          onRun({ kind: 'delete', appSessionId, canvasId });
+        }}
+      />
+    </>
+  );
+}
 function OpenDialog({
   dialog,
   onClose,
@@ -192,6 +237,14 @@ function OpenDialog({
       );
     case 'insert':
       return <LibraryPicker board={dialog.board} onClose={onClose} />;
+    case 'variants':
+      return (
+        <CanvasVariants
+          appSessionId={dialog.appSessionId}
+          source={dialog.source}
+          onClose={onClose}
+        />
+      );
     case 'delete':
       return (
         <DeleteCanvasDialog
