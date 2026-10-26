@@ -1,10 +1,10 @@
 // The Canvas wordmark, and the picker it opens: the canvas on screen with what
 // can be done to it (variants, the library and deletion, spec §4 and §7), New
-// canvas, the saved ones (spec §4), and Manage design systems (spec §10). The wordmark stays the
-// label so the row reads the same before and after the list is read; the
-// canvas's own name heads the popover. Which chats work on that canvas is the
-// chat column header's menu (`AttachedChatsMenu`), beside the transcript they
-// write.
+// canvas, the saved ones (spec §4), and Manage design systems (spec §10). The
+// wordmark stays the label so the row reads the same before and after the list
+// is read; the canvas's own name heads the popover. Which chats work on that
+// canvas is the chat column header's menu (`AttachedChatsMenu`), beside the
+// transcript they write.
 
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
@@ -216,6 +216,7 @@ function CanvasActions({
     </>
   );
 }
+
 function OpenDialog({
   dialog,
   onClose,
