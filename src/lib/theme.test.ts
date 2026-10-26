@@ -6,6 +6,7 @@ import {
   SKILL_COLORS,
   ULTRA_COLORS,
   UPDATE_COLORS,
+  annotationColors,
   codeColors,
   contrastRatio,
   CUSTOM_THEME_ID,
@@ -216,6 +217,29 @@ describe('fixed label colors', () => {
         // An outline is not text: WCAG asks 3:1 of it against the board.
         assert.ok(contrastRatio(line, board) >= 3, `${preset.id} ${scheme} selection outline`);
         assert.ok(contrastRatio(text, line) >= 4.5, `${scheme} size badge text`);
+      }
+    }
+  });
+
+  it('keeps every annotation colour readable on the board, and note text on its fill', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const variant = preset[scheme];
+        const colors = Object.entries(annotationColors(variant));
+        assert.equal(colors.length, 7);
+        for (const [name, { stroke, fill }] of colors) {
+          // A text label is drawn in the stroke, so it is held to text contrast.
+          for (const ground of [variant.bg, raisedSurfaceColor(variant)]) {
+            assert.ok(
+              contrastRatio(stroke, ground) >= 4.5,
+              `${preset.id} ${scheme} ${name} stroke should reach 4.5:1 on ${ground}`,
+            );
+          }
+          assert.ok(
+            contrastRatio(variant.fg, fill) >= 4.5,
+            `${preset.id} ${scheme} note text should reach 4.5:1 on its ${name} fill`,
+          );
+        }
       }
     }
   });

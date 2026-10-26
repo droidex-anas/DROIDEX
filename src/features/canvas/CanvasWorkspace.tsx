@@ -17,6 +17,7 @@ import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealt
 import { canvasClient as canvas, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
+import type { AnnotateCanvasInput } from './annotationProtocol';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
 import { DesignPreview } from './DesignPreview';
 import {
@@ -359,6 +360,10 @@ function CanvasBoardMount({
     (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
     [appSessionId, canvasId],
   );
+  const annotate = useCallback(
+    (input: AnnotateCanvasInput) => canvas.annotate(appSessionId, canvasId, input),
+    [appSessionId, canvasId],
+  );
   const pins = useFramePins(appSessionId);
   const pinnedIds = useMemo(
     () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
@@ -379,6 +384,7 @@ function CanvasBoardMount({
           snapshot={snapshot}
           onOpenSource={onOpenSource}
           onArrangeFrames={arrangeFrames}
+          onAnnotate={annotate}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           agentWorking={agentWorking}

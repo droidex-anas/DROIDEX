@@ -372,6 +372,70 @@
   }
 }
 
+/* ── Annotations ────────────────────────────────────────────────────────── */
+
+/* One SVG at the world layer's origin, drawing past its 1px box. It lets the
+   pointer through; only the marks Select can take hold of answer it. */
+.canvas-annotations {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.canvas-annotation-text {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--canvas-chrome-font, var(--ui-font-family, system-ui, sans-serif));
+  line-height: 1.3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A note is a sheet of its own: its colour washed into the board, lifted
+   off it the way a frame is, with body text inside. */
+.canvas-annotation-text[data-kind='note'] {
+  padding: 0.7em;
+  border-radius: calc(4px / var(--board-scale));
+  box-shadow: var(--droid-shadow-sm);
+  color: var(--droid-text);
+}
+
+.canvas-annotation-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  caret-color: var(--droid-selection);
+}
+
+.canvas-annotation-outline {
+  fill: none;
+  stroke: var(--droid-selection);
+  stroke-width: 1.5px;
+  pointer-events: none;
+}
+
+.canvas-annotation-handle {
+  fill: var(--droid-raised);
+  stroke: var(--droid-selection);
+  stroke-width: 1.5px;
+  pointer-events: all;
+}
+
+.canvas-annotation-glyph {
+  fill: var(--droid-raised);
+}
+
 /* The rubber band, in screen space above the world layer. */
 .canvas-band {
   position: absolute;

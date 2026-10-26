@@ -1,5 +1,5 @@
 // The board's own tools, floating on it the way a design tool's do: Select,
-// Interact and Fit in a raised rail at the top left, the zoom readout and its
+// Interact, the annotation tools and Fit in a raised rail at the top left, the zoom readout and its
 // menu at the bottom left, and align and distribute centred at the bottom while
 // a multiple selection gives them work (spec §4). Every control works on the
 // board behind it, and each names its keyboard shortcut.
@@ -107,6 +107,8 @@ export interface BoardControlsProps {
   onZoom: (command: ZoomCommand) => void;
   onAlign: (edge: AlignEdge) => void;
   onDistribute: (axis: DistributeAxis) => void;
+  /** The rail's annotation group, which the board owns. */
+  annotationTools: ReactNode;
 }
 
 export function BoardControls({
@@ -120,6 +122,7 @@ export function BoardControls({
   onZoom,
   onAlign,
   onDistribute,
+  annotationTools,
 }: BoardControlsProps) {
   return (
     <div
@@ -152,6 +155,8 @@ export function BoardControls({
         >
           <Play className="h-4 w-4" aria-hidden />
         </Tool>
+        <span aria-hidden className="canvas-rail-divider" />
+        {annotationTools}
         <span aria-hidden className="canvas-rail-divider" />
         <Tool
           label="Fit"
@@ -288,7 +293,7 @@ function reveal(motion: CanvasMotion): CSSProperties | undefined {
 }
 
 /** One rail tool: its accessible name is the plain label, its tip adds the key. */
-function Tool({
+export function Tool({
   label,
   tip,
   pressed,

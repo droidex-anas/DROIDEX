@@ -12,6 +12,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { CanvasBoard } from './CanvasBoard';
 import { DesignPreview } from './DesignPreview';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
+import type { Annotation } from './annotationProtocol';
 import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
 const ACKNOWLEDGED: FrameRect = { x: 100, y: 50, width: 400, height: 300 };
@@ -37,6 +38,10 @@ function snapshotOf(...frames: CanvasFrame[]): CanvasSnapshot {
   return { canvasId: 'cv_01', sequence: 7, frames, annotationsVersion: 0, annotations: [] };
 }
 
+function annotated(snapshot: CanvasSnapshot, annotations: Annotation[]): CanvasSnapshot {
+  return { ...snapshot, annotationsVersion: annotations.length, annotations };
+}
+
 function render(
   snapshot: CanvasSnapshot,
   interaction: BoardInteraction = SELECT_MODE,
@@ -51,6 +56,7 @@ function render(
       agentWorking,
       onInteractionChange: () => undefined,
       onArrangeFrames: () => Promise.resolve(),
+      onAnnotate: () => Promise.resolve(),
       renderPreview: (frame, revisionId) =>
         createElement(DesignPreview, {
           canvasId: snapshot.canvasId,
@@ -199,4 +205,37 @@ test('a selected frame offers Add to chat only on its chat’s own canvas, and s
     render(snapshot, picked, false, { onToggleChat, pinnedIds: new Set(['a']) }),
     /aria-pressed="true" aria-label="Take Design a out of the chat"[^>]*>.*In chat/,
   );
+});
+
+test('saved marks draw in their theme colour, and an agent’s carry its glyph', () => {
+  const stamp = { createdAt: 1, updatedAt: 1 };
+  const markup = render(
+    annotated(snapshotOf(frame('a', ACKNOWLEDGED)), [
+      {
+        id: 'n1',
+        color: 'yellow',
+        kind: 'note',
+        rect: ACKNOWLEDGED,
+        text: 'Tighten this',
+        author: { kind: 'user' },
+        ...stamp,
+      },
+      {
+        id: 'r1',
+        color: 'red',
+        kind: 'rect',
+        rect: ACKNOWLEDGED,
+        author: { kind: 'agent', chatId: 'chat_1' },
+        ...stamp,
+      },
+    ]),
+  );
+
+  assert.match(markup, /background:var\(--droid-annotation-yellow-fill\)[^>]*>Tighten this/);
+  assert.match(markup, /stroke="var\(--droid-annotation-red\)"/);
+  assert.equal(markup.match(/<title>Drawn by the agent<\/title>/g)?.length, 1);
+  // The rail names its drawing tools; colours wait for a tool or a mark.
+  for (const tool of ['Draw', 'Shapes', 'Text', 'Note'])
+    assert.match(markup, new RegExp(`aria-label="${tool}"`));
+  assert.equal(markup.includes('aria-label="Colour"'), false);
 });

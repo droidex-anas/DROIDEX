@@ -1,8 +1,9 @@
-// What a key means on the board: the zoom and mode shortcuts, which elements
+// What a key means on the board: the zoom, mode and annotation tool shortcuts, which elements
 // keep their own keys, and how focus moves between frames. The board reads
 // these; nothing here touches React state.
 
 import type { KeyboardEvent } from 'react';
+import type { AnnotationTool } from './annotationGeometry';
 import type { ZoomCommand } from './BoardControls';
 import type { PlacedFrame } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
@@ -25,6 +26,22 @@ export function modeShortcut(event: KeyboardEvent): BoardMode | null {
   if (event.key === 'v' || event.key === 'V') return 'select';
   if (event.key === 'i' || event.key === 'I') return 'interact';
   return null;
+}
+
+const ANNOTATION_KEYS = new Map<string, AnnotationTool>([
+  ['p', 'draw'],
+  ['r', 'rect'],
+  ['o', 'ellipse'],
+  ['l', 'line'],
+  ['a', 'arrow'],
+  ['t', 'text'],
+  ['n', 'note'],
+]);
+
+/** A letter per annotation tool, as the rail's tips say. */
+export function annotationShortcut(event: KeyboardEvent): AnnotationTool | null {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+  return ANNOTATION_KEYS.get(event.key.toLowerCase()) ?? null;
 }
 
 /** The frame whose name label this is, or null for anything else. */
