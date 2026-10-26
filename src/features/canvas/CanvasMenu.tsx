@@ -9,10 +9,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { Popover } from '../../components/environment/Popover';
-import { useStoreApi, useStoreDispatch } from '../../hooks/useStore';
-import { utilityPanelForSession } from '../../lib/utilityPanel';
 import { useBoardOnScreen, type BoardOnScreen } from './boardOnScreen';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
+import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import { LibraryPicker } from './LibraryPicker';
 import { MENU_WIDTH_PX, MenuHeading, MenuNote, MenuRow } from './menuRows';
 import type { CanvasRemovalPreview, RevisionRef } from './protocol';
@@ -26,9 +25,16 @@ import { useManageDesignSystems } from './useManageDesignSystems';
 type MenuDialog =
   | { kind: 'save'; canvasId: string; revision: RevisionRef; frameName: string }
   | { kind: 'insert'; board: BoardOnScreen }
-  | { kind: 'delete'; canvasId: string };
+  | { kind: 'delete'; appSessionId: string; canvasId: string };
 
-export function CanvasMenu({ canvasId }: { canvasId: string | null }) {
+export function CanvasMenu({
+  appSessionId,
+  canvasId,
+}: {
+  /** The chat whose pane shows this canvas. */
+  appSessionId: string;
+  canvasId: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState<MenuDialog | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -109,7 +115,7 @@ export function CanvasMenu({ canvasId }: { canvasId: string | null }) {
               <MenuRow
                 label="Delete canvas…"
                 onRun={() => {
-                  run({ kind: 'delete', canvasId });
+                  run({ kind: 'delete', appSessionId, canvasId });
                 }}
               />
             </>
@@ -155,9 +161,9 @@ export function CanvasMenu({ canvasId }: { canvasId: string | null }) {
         <OpenDialog
           dialog={dialog}
           onClose={closeDialog}
-          onDeleted={(removed) => {
+          onDeleted={(deletedFrom, removed) => {
             setDialog(null);
-            leaveDeletedCanvas(removed);
+            leaveDeletedCanvas(deletedFrom, removed);
           }}
         />
       )}
@@ -172,7 +178,7 @@ function OpenDialog({
 }: {
   dialog: MenuDialog;
   onClose: () => void;
-  onDeleted: (removed: CanvasRemovalPreview) => void;
+  onDeleted: (appSessionId: string, removed: CanvasRemovalPreview) => void;
 }) {
   switch (dialog.kind) {
     case 'save':
@@ -188,32 +194,13 @@ function OpenDialog({
       return <LibraryPicker board={dialog.board} onClose={onClose} />;
     case 'delete':
       return (
-        <DeleteCanvasDialog canvasId={dialog.canvasId} onClose={onClose} onDeleted={onDeleted} />
+        <DeleteCanvasDialog
+          canvasId={dialog.canvasId}
+          onClose={onClose}
+          onDeleted={(removed) => {
+            onDeleted(dialog.appSessionId, removed);
+          }}
+        />
       );
   }
-}
-
-/**
- * A deleted canvas leaves its chats unattached and nothing to show, so its pane
- * closes and the window returns to the Design home.
- */
-function useLeaveDeletedCanvas(): (removed: CanvasRemovalPreview) => void {
-  const dispatch = useStoreDispatch();
-  const store = useStoreApi();
-  return useCallback(
-    (removed: CanvasRemovalPreview) => {
-      for (const appSessionId of removed.attachedAppSessionIds)
-        dispatch({ type: 'SET_CANVAS_ATTACHMENT', appSessionId, canvasId: null });
-      const state = store.getState();
-      const appSessionId = state.activeAppSessionId;
-      const pane = utilityPanelForSession(state.utilityPanels, appSessionId);
-      const canvasTab = pane.tabs.find((tab) => tab.tool === 'canvas');
-      if (appSessionId && canvasTab)
-        dispatch({ type: 'CLOSE_UTILITY_TAB', tabId: canvasTab.id, appSessionId });
-      if (state.productMode === 'design')
-        dispatch({ type: 'START_CHAT', cwd: '', executionMode: 'local' });
-      else dispatch({ type: 'SET_PRODUCT_MODE', mode: 'design' });
-    },
-    [dispatch, store],
-  );
 }
