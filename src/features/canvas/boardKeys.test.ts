@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { frameStep, readingOrder } from './boardKeys';
+import { annotationShortcut, frameStep, readingOrder } from './boardKeys';
 
 const at = (designId: string, x: number, y: number, height = 300) => ({
   designId,
@@ -36,4 +36,17 @@ test('the arrows step through that order, Home and End jump to its ends', () => 
   assert.equal(frameStep(key('ArrowRight', { altKey: true }), order, 'a'), null);
   assert.equal(frameStep(key('ArrowRight', { shiftKey: true }), order, 'a'), null);
   assert.equal(frameStep(key('Enter'), order, 'a'), null);
+});
+
+test('each annotation tool has a letter, and a modified letter is not one', () => {
+  const key = (name: string, shiftKey = false) =>
+    ({ key: name, altKey: false, metaKey: false, ctrlKey: false, shiftKey }) as Parameters<
+      typeof annotationShortcut
+    >[0];
+  assert.deepEqual(
+    ['p', 'R', 'o', 'l', 'a', 't', 'n'].map((letter) => annotationShortcut(key(letter))),
+    ['draw', 'rect', 'ellipse', 'line', 'arrow', 'text', 'note'],
+  );
+  assert.equal(annotationShortcut(key('v')), null);
+  assert.equal(annotationShortcut(key('a', true)), null);
 });
