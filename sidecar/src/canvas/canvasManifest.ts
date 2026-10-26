@@ -4,6 +4,7 @@
 
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { ANNOTATION_LIMITS, annotationSchema } from './canvasAnnotationSchema.js';
 import { canvasError } from './canvasError.js';
 import { hasOrderedRevisions, revisionRecordSchema } from './canvasRevisionMetadata.js';
 import type {
@@ -12,10 +13,8 @@ import type {
   CanvasFrame,
   CanvasSnapshot,
   CanvasSummary,
-  CreateFramesResult,
   EditElementInput,
   RestoreRevisionInput,
-  WriteReceipt,
 } from './protocol.js';
 import {
   CANVAS_LIMITS,
@@ -26,7 +25,7 @@ import {
   frameRectSchema,
 } from './schema.js';
 
-const CANVAS_MANIFEST_VERSION = 1;
+const CANVAS_MANIFEST_VERSION = 2;
 
 /**
  * How many retries one canvas answers. A live turn lease keeps its receipts;
@@ -158,6 +157,19 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       design: persistedDesignSchema,
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('annotate'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      sequence: versionSchema,
+      annotationsVersion: versionSchema,
+      // Identities only: a retry answers with those annotations as they are now.
+      upsertedIds: z.array(canvasIdentifierSchema),
+      removedIds: z.array(canvasIdentifierSchema),
+    })
+    .strict(),
 ]);
 
 const tombstoneSchema = z
@@ -188,10 +200,11 @@ export const canvasManifestSchema = z
       .strict()
       .nullable(),
     removing: z.literal(true).optional(),
-    // Supported case: canvases created in development before this setting existed.
-    // Remove the default with the next CANVAS_MANIFEST_VERSION bump.
-    designSystemAdherence: designSystemAdherenceSchema.default('guide'),
+    designSystemAdherence: designSystemAdherenceSchema,
     designs: z.array(persistedDesignSchema),
+    // The marks drawn over the frames, with their own compare-and-swap version.
+    annotationsVersion: versionSchema,
+    annotations: z.array(annotationSchema).max(ANNOTATION_LIMITS.maxAnnotationsPerCanvas),
     tombstones: z.array(tombstoneSchema).max(CANVAS_TOMBSTONE_LIMIT),
     // Canonical commit index, retained independently of the bounded retry ledger.
     revisions: z.array(revisionRecordSchema),
@@ -200,6 +213,9 @@ export const canvasManifestSchema = z
   .strict()
   .refine((manifest) => !hasDuplicate(manifest.designs.map((design) => design.designId)), {
     message: 'A canvas manifest holds each design once.',
+  })
+  .refine((manifest) => !hasDuplicate(manifest.annotations.map((entry) => entry.id)), {
+    message: 'A canvas manifest holds each annotation once.',
   })
   .refine((manifest) => !hasDuplicate(manifest.mutations.map((record) => record.mutationId)), {
     message: 'A canvas manifest holds each mutation ID once.',
@@ -236,6 +252,8 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     creation: null,
     designSystemAdherence: 'guide',
     designs: [],
+    annotationsVersion: 0,
+    annotations: [],
     tombstones: [],
     revisions: [],
     mutations: [],
@@ -269,6 +287,8 @@ export function canvasSnapshot(manifest: CanvasManifest, builds: BuildStates): C
     canvasId: manifest.canvasId,
     sequence: manifest.sequence,
     frames: manifest.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
+    annotationsVersion: manifest.annotationsVersion,
+    annotations: [...manifest.annotations],
   };
 }
 
@@ -296,33 +316,6 @@ export function canvasChange(
   };
 }
 
-export function recordedCreate(
-  manifest: CanvasManifest,
-  mutationId: string,
-  fingerprint: string,
-  builds: BuildStates,
-): CreateFramesResult | null {
-  const record = findMutation(manifest, mutationId, 'create', fingerprint);
-  if (record?.kind !== 'create') return null;
-  return {
-    canvasId: manifest.canvasId,
-    frames: record.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
-  };
-}
-
-/** The original receipt for a source mutation. */
-export function recordedRevision(
-  manifest: CanvasManifest,
-  mutationId: string,
-  kind: 'write' | 'edit' | 'restore',
-  fingerprint: string,
-): WriteReceipt | null {
-  const record = findMutation(manifest, mutationId, kind, fingerprint);
-  if (record?.kind !== 'write' && record?.kind !== 'edit' && record?.kind !== 'restore')
-    return null;
-  return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
-}
-
 export function requireDesign(manifest: CanvasManifest, designId: string): PersistedDesign {
   const design = manifest.designs.find((entry) => entry.designId === designId);
   if (!design)
@@ -336,68 +329,6 @@ export function requireExpectedRevision(design: PersistedDesign, expected: strin
     'revision_conflict',
     'That frame has a newer revision. Read it and apply your change again.',
   );
-}
-
-export function recordedArrange(
-  manifest: CanvasManifest,
-  mutationId: string,
-  fingerprint: string,
-  builds: BuildStates,
-): CanvasChange | null {
-  const record = findMutation(manifest, mutationId, 'arrange', fingerprint);
-  if (record?.kind !== 'arrange') return null;
-  return {
-    canvasId: manifest.canvasId,
-    sequence: record.sequence,
-    // The layout comes from the record, the rest of each frame from the current
-    // head, so a frame later commits removed is simply no longer in the answer.
-    frames: record.placements.flatMap((placement) => {
-      const design = manifest.designs.find((entry) => entry.designId === placement.designId);
-      return design ? [toFrame(manifest.canvasId, { ...design, ...placement }, builds)] : [];
-    }),
-    removedDesignIds: [],
-  };
-}
-
-export function recordedRemove(
-  manifest: CanvasManifest,
-  mutationId: string,
-  fingerprint: string,
-): { undoId: string } | null {
-  const record = findMutation(manifest, mutationId, 'remove', fingerprint);
-  return record?.kind === 'remove' ? { undoId: record.undoId } : null;
-}
-
-export function recordedUndo(
-  manifest: CanvasManifest,
-  mutationId: string,
-  fingerprint: string,
-  builds: BuildStates,
-): CanvasChange | null {
-  const record = findMutation(manifest, mutationId, 'undo', fingerprint);
-  if (record?.kind !== 'undo') return null;
-  return {
-    canvasId: manifest.canvasId,
-    sequence: record.sequence,
-    frames: record.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
-    removedDesignIds: [],
-  };
-}
-
-export function recordedRename(
-  manifest: CanvasManifest,
-  mutationId: string,
-  fingerprint: string,
-  builds: BuildStates,
-): CanvasChange | null {
-  const record = findMutation(manifest, mutationId, 'rename', fingerprint);
-  if (record?.kind !== 'rename') return null;
-  return {
-    canvasId: manifest.canvasId,
-    sequence: record.sequence,
-    frames: [toFrame(manifest.canvasId, record.design, builds)],
-    removedDesignIds: [],
-  };
 }
 
 /** The layout an accepted arrange acknowledged, which is all a retry answers. */
@@ -441,7 +372,7 @@ export function recordMutation(
 // A reused mutation ID is a programming error on the caller's side, not a
 // retry: answering the old result would silently discard the new request, and
 // re-executing it would spend an ID the caller believes it already used.
-function findMutation(
+export function findMutation(
   manifest: CanvasManifest,
   mutationId: string,
   kind: PersistedMutation['kind'],
@@ -477,23 +408,22 @@ function hasDuplicate(values: readonly string[]): boolean {
 }
 
 /**
- * Supported case: a manifest an earlier DROIDEX wrote before revision history,
- * whole and this canvas's own but with no revisions. It is never opened; its name
- * and chats are kept to say why. Remove with the next CANVAS_MANIFEST_VERSION bump.
+ * A manifest an earlier DROIDEX wrote in an older format, whole and this
+ * canvas's own. It is never opened; its name and chats are kept to say why.
  */
 export function outdatedManifest(
   written: unknown,
   canvasId: string,
 ): { name: string; attachedAppSessionIds: string[] } | null {
-  if (typeof written !== 'object' || written === null || 'revisions' in written) return null;
+  if (typeof written !== 'object' || written === null) return null;
   const {
     version,
     canvasId: ownId,
     name,
     attachedAppSessionIds,
   } = written as Record<string, unknown>;
-  if (version !== CANVAS_MANIFEST_VERSION || ownId !== canvasId || typeof name !== 'string')
-    return null;
+  if (typeof version !== 'number' || version >= CANVAS_MANIFEST_VERSION) return null;
+  if (ownId !== canvasId || typeof name !== 'string') return null;
   if (!Array.isArray(attachedAppSessionIds)) return null;
   const chats = attachedAppSessionIds.filter((id): id is string => typeof id === 'string');
   return { name, attachedAppSessionIds: chats };

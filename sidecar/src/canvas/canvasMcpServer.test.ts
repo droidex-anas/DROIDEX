@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   harness,
   noRenderer,
+  type Harness,
   openTurn,
   toolContent,
   type Reply,
@@ -10,8 +11,10 @@ import {
 import {
   CANVAS_PNG,
   deferred,
-  observedFileSystem,
   holdManifestWrite,
+  noteDraft,
+  observedFileSystem,
+  userScopeFor,
 } from '../testing/canvasStorageSupport.js';
 import { saveLibraryItem } from './canvasLibrary.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
@@ -24,7 +27,16 @@ import {
 
 const frame = { name: 'Hey', width: 720, height: 520, designSystem: DEFAULT_DESIGN_SYSTEM_REF };
 
-test('six Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
+/** One frame made through canvas_create, and where it landed. */
+async function createFrame(call: Harness['call'], scopeId: string | undefined, mutationId: string) {
+  const created = await call('canvas_create', { scopeId, mutationId, frames: [frame] });
+  assert.ok(created.created);
+  const [first] = created.created.frames;
+  assert.ok(first);
+  return { canvasId: created.created.canvasId, designId: first.designId };
+}
+
+test('seven Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
   const h = await harness(t);
   assert.equal(h.server.name, CANVAS_MCP_SERVER_NAME);
   assert.deepEqual(
@@ -450,14 +462,7 @@ test('provider replacement while a write is staged refuses its old lease and lea
   const h = await harness(t, fs);
   h.turns.beginTurn('chat-one', undefined);
   const scopeId = (await h.call('canvas_read', {})).scopeId;
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'create-one',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const designId = created.created?.frames[0].designId;
-  assert.ok(designId);
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'create-one');
   hold = true;
   const pending = h.call('canvas_write', {
     scopeId,
@@ -472,19 +477,12 @@ test('provider replacement while a write is staged refuses its old lease and lea
   h.turns.beginTurn('chat-one', undefined);
   release.resolve();
   assert.equal((await pending).code, 'scope_expired');
-  assert.equal(h.workspace.snapshot(created.created.canvasId).frames[0].revisionId, null);
+  assert.equal(h.workspace.snapshot(canvasId).frames[0].revisionId, null);
 });
 
 test('Canvas create preserves seeded variant placement and mutation retry identity', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const source = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'create-source',
-    frames: [frame],
-  });
-  assert.ok(source.created);
-  const { canvasId, frames } = source.created;
-  const designId = frames[0].designId;
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'create-source');
   const files = { 'main.tsx': 'export default function Hey(){return <h1>Hey</h1>}' };
   const written = await h.call('canvas_write', {
     scopeId,
@@ -557,22 +555,19 @@ test('Canvas create preserves seeded variant placement and mutation retry identi
   assert.equal(refused.code, 'invalid_input');
 });
 
-for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_theme'] as const) {
+for (const name of [
+  'canvas_create',
+  'canvas_write',
+  'canvas_arrange',
+  'canvas_annotate',
+  'canvas_theme',
+] as const) {
   test(`a published ${name} keeps its MCP success after turn revocation`, async (t) => {
     const held = holdManifestWrite('published');
     const h = await harness(t, held.fs);
     h.turns.beginTurn('chat-one', undefined);
     const scopeId = (await h.call('canvas_read', {})).scopeId;
-    const created = await h.call('canvas_create', {
-      scopeId,
-      mutationId: 'initial',
-      frames: [frame],
-    });
-    assert.ok(created.ok && created.created);
-    const first = created.created.frames[0];
-    assert.ok(first);
-    const { canvasId } = created.created;
-    const designId = first.designId;
+    const { canvasId, designId } = await createFrame(h.call, scopeId, 'initial');
     let revisionId: string | null = null;
     if (name === 'canvas_theme') {
       const written = await h.call('canvas_write', {
@@ -607,6 +602,13 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_t
           { designId, expectedLayoutVersion: 0, rect: { x: 800, y: 0, width: 720, height: 520 } },
         ],
       },
+      canvas_annotate: {
+        scopeId,
+        mutationId: 'published-annotate',
+        expectedAnnotationsVersion: 0,
+        upserts: [noteDraft('ann_note', 0, -200, 'Here')],
+        deletes: [],
+      },
       canvas_theme: {
         scopeId,
         operation: 'apply',
@@ -633,24 +635,18 @@ for (const name of ['canvas_create', 'canvas_write', 'canvas_arrange', 'canvas_t
       assert.equal(snapshot.frames[0]?.revisionId, result.receipt.revisionId);
     }
     if (name === 'canvas_arrange') assert.equal(snapshot.frames[0]?.rect.x, 800);
+    if (name === 'canvas_annotate') assert.equal(snapshot.annotations.length, 1);
     if (name === 'canvas_theme') assert.equal(snapshot.frames[0]?.designSystem.mode, 'dark');
   });
 }
 
 test('a source read loses its captured lease while waiting and cannot borrow a replacement', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'initial',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const first = created.created.frames[0];
-  assert.ok(first);
+  const { designId } = await createFrame(h.call, scopeId, 'initial');
   const written = await h.call('canvas_write', {
     scopeId,
     mutationId: 'source',
-    designId: first.designId,
+    designId,
     expectedRevisionId: null,
     files: { 'main.tsx': 'export default () => <h1>READ_SENTINEL</h1>' },
     deletedPaths: [],
@@ -668,7 +664,7 @@ test('a source read loses its captured lease while waiting and cannot borrow a r
   const reading = h.call('canvas_read', {
     scopeId,
     view: 'design',
-    designId: first.designId,
+    designId,
     revisionId: written.receipt.revisionId,
   });
   await reached.promise;
@@ -683,14 +679,7 @@ test('a source read loses its captured lease while waiting and cannot borrow a r
 
 test('MCP theme apply validates token mapping before publication and preserves retry receipts', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'theme-frame',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const { canvasId, frames } = created.created;
-  const designId = frames[0].designId;
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'theme-frame');
   const write = (mutationId: string, expectedRevisionId: string | null, text: string) =>
     h.call('canvas_write', {
       scopeId,
@@ -745,14 +734,7 @@ test('MCP theme apply validates token mapping before publication and preserves r
 
 test('a delayed theme validation refusal cannot disclose source after its turn is replaced', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
-  const created = await h.call('canvas_create', {
-    scopeId,
-    mutationId: 'validation-frame',
-    frames: [frame],
-  });
-  assert.ok(created.created);
-  const { canvasId, frames } = created.created;
-  const designId = frames[0].designId;
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'validation-frame');
   const source = await h.call('canvas_write', {
     scopeId,
     mutationId: 'validation-source',
@@ -800,4 +782,33 @@ test('a delayed theme validation refusal cannot disclose source after its turn i
   assert.equal(reply.code, 'invalid_input');
   assert.ok(!JSON.stringify(reply).includes('SOURCE_SENTINEL'));
   assert.deepEqual(h.workspace.snapshot(canvasId), before);
+});
+
+test('a read shows the user’s note by its frame, and canvas_annotate keeps it read-only', async (t) => {
+  const { scopeId, ...h } = await openTurn(t);
+  const { canvasId, designId } = await createFrame(h.call, scopeId, 'initial');
+  // A pane annotate runs under the request scope the bridge registers, as here.
+  const pane = userScopeFor(canvasId, 'chat-one');
+  h.scopes.register(pane);
+  await h.workspace.annotations.annotate(pane, {
+    mutationId: 'user-note',
+    expectedAnnotationsVersion: 0,
+    upserts: [noteDraft('ann_user', 0, 560, 'Taller')],
+    deletes: [],
+  });
+  const read = await h.call('canvas_read', { scopeId });
+  assert.equal(read.annotationsVersion, 1);
+  assert.deepEqual(
+    read.annotations?.map(({ author, near }) => ({ author, near })),
+    [{ author: 'user', near: designId }],
+  );
+  const refused = await h.call('canvas_annotate', {
+    scopeId,
+    mutationId: 'agent-delete',
+    expectedAnnotationsVersion: 1,
+    upserts: [],
+    deletes: ['ann_user'],
+  });
+  assert.equal(refused.code, 'invalid_input');
+  assert.match(refused.message ?? '', /read-only to you: ann_user/);
 });

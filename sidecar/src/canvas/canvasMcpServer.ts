@@ -3,6 +3,8 @@ import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { applyDesignSystem } from './applyDesignSystem.js';
 import { agentFrame, buildReport, renderedPreview, settledFrame } from './canvasAgentReport.js';
+import { agentAnnotation } from './canvasAnnotationReport.js';
+import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
@@ -62,6 +64,9 @@ const writeSchema = z
   .object({ ...writeFilesInputSchema.innerType().shape, ...mutationScopeShape })
   .strict();
 const arrangeSchema = arrangeFramesInputSchema.extend(mutationScopeShape).strict();
+const annotateSchema = z
+  .object({ ...annotateCanvasInputSchema.innerType().shape, ...mutationScopeShape })
+  .strict();
 const inspectSchema = z
   .object({
     ...scopeShape,
@@ -183,7 +188,7 @@ export function createCanvasMcpServer(
   const tools = [
     tool(
       'canvas_read',
-      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Pinned designs are the frames the user picked for this request and the only ones it can change. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work.',
+      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Pinned designs are the frames the user picked for this request and the only ones it can change. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work. The same read lists the board’s annotations, each with its colour, its author, its geometry in whole board pixels — rect {x, y, width, height}, or points [{x, y}] — and the frames it is over, near, or points at with an arrow.',
       readSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
@@ -215,6 +220,10 @@ export function createCanvasMcpServer(
               frames: snapshot.frames
                 .slice(input.offset, input.offset + input.limit)
                 .map((frame) => agentFrame(frame, previews.reportFor(snapshot.canvasId, frame))),
+              annotationsVersion: snapshot.annotationsVersion,
+              annotations: snapshot.annotations.map((annotation) =>
+                agentAnnotation(annotation, snapshot.frames, scope.appSessionId),
+              ),
             };
           }
           if (!input.designId || !input.revisionId)
@@ -359,12 +368,38 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_arrange',
-      'Move or resize existing frames using the scopeId from this turn’s canvas_read and their current layout versions. This changes board layout only.',
+      'Move or resize existing frames using the scopeId from this turn’s canvas_read and their current layout versions: each frame takes the full new rect, so a new width or height resizes it. This changes board layout only.',
       arrangeSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
           const { mutationId, frames } = arrangeSchema.parse(raw);
           return { change: await (await workspace()).arrange(scope, { mutationId, frames }) };
+        }),
+    ),
+    tool(
+      'canvas_annotate',
+      'Draw on the board beside the frames using the scopeId and annotationsVersion from this turn’s canvas_read: rect, ellipse, line (arrowStart/arrowEnd), path, text or note, in board coordinates, with a colour token. Upsert by id to redraw and list ids in deletes to remove, but only annotations whose author is you; the user’s are read-only. A stale annotationsVersion is a revision_conflict: read again and retry. Annotations never change frames or source.',
+      annotateSchema.shape,
+      (raw) =>
+        dispatch(raw, 'mutation', async (scope) => {
+          const { mutationId, expectedAnnotationsVersion, upserts, deletes } =
+            annotateSchema.parse(raw);
+          const input = annotateCanvasInputSchema.parse({
+            mutationId,
+            expectedAnnotationsVersion,
+            upserts,
+            deletes,
+          });
+          const owner = await workspace();
+          const { annotations } = await owner.annotations.annotate(scope, input);
+          const frames = (await board(scope))?.frames ?? [];
+          return {
+            annotationsVersion: annotations.version,
+            annotations: annotations.upserted.map((annotation) =>
+              agentAnnotation(annotation, frames, scope.appSessionId),
+            ),
+            removedIds: annotations.removedIds,
+          };
         }),
     ),
     tool(

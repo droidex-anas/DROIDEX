@@ -69,7 +69,7 @@ test('a manifest round-trips, and a damaged one is reported without being change
   const path = join(root, 'cv_01', 'manifest.json');
   await writeFile(path, '{ not json');
   assert.equal((await files.loadManifest('cv_01')).state, 'damaged');
-  await writeFile(path, JSON.stringify({ ...saved, version: 2 }));
+  await writeFile(path, JSON.stringify({ ...saved, version: 3 }));
   assert.equal((await files.loadManifest('cv_01')).state, 'damaged');
   await writeFile(path, JSON.stringify({ ...saved, canvasId: 'cv_02' }));
   assert.equal((await files.loadManifest('cv_01')).state, 'damaged');

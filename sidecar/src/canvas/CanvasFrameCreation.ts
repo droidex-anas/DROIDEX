@@ -16,11 +16,11 @@ import {
   canvasChange,
   emptyCanvasManifest,
   mutationFingerprint,
-  recordedCreate,
   recordMutation,
   toFrame,
   type CanvasManifest,
 } from './canvasManifest.js';
+import { recordedCreate } from './canvasReceipts.js';
 import type { CanvasScope, CreateFramesInput, CreateFramesResult } from './protocol.js';
 
 const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';

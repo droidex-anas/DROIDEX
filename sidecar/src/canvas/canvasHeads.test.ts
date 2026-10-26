@@ -59,9 +59,10 @@ test('a canvas an earlier DROIDEX made is not opened, but its chats are told its
   t.mock.method(console, 'error', () => undefined);
   const root = await saved(t);
   const files = new CanvasFiles(root);
-  // Before revision history: the same manifest without its revisions.
-  const earlier: Record<string, unknown> = { ...manifest('cv_02', 'app-2') };
-  delete earlier.revisions;
+  // An older format: the same manifest under version 1, before annotations.
+  const earlier: Record<string, unknown> = { ...manifest('cv_02', 'app-2'), version: 1 };
+  delete earlier.annotationsVersion;
+  delete earlier.annotations;
   await files.writeManifest(manifest('cv_02', 'app-2'), keepGoing);
   await files.writeManifest(manifest('cv_03', 'app-3'), keepGoing);
   await writeFile(join(root, 'cv_02', 'manifest.json'), JSON.stringify(earlier));

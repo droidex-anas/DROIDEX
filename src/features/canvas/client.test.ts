@@ -100,7 +100,13 @@ test('a gap requests one fresh snapshot and drops the changes it supersedes', as
   bridge.deliver({
     type: 'canvas.snapshot',
     requestId: bridge.last('canvas.subscribe').requestId,
-    snapshot: { canvasId: CANVAS, sequence: 11, frames: [frame('hey', 'rev_11')] },
+    snapshot: {
+      canvasId: CANVAS,
+      sequence: 11,
+      frames: [frame('hey', 'rev_11')],
+      annotationsVersion: 0,
+      annotations: [],
+    },
   });
   await flush();
   assert.equal(client.snapshotOf(CANVAS)?.sequence, 11);
@@ -344,7 +350,13 @@ test('a change that commits after a snapshot was taken is applied, not dropped',
   bridge.deliver({
     type: 'canvas.snapshot',
     requestId: bridge.last('canvas.subscribe').requestId,
-    snapshot: { canvasId: CANVAS, sequence: 4, frames: [frame('hey')] },
+    snapshot: {
+      canvasId: CANVAS,
+      sequence: 4,
+      frames: [frame('hey')],
+      annotationsVersion: 0,
+      annotations: [],
+    },
   });
   bridge.deliver({ type: 'canvas.change', change: change(5, [frame('cta')]) });
   await flush();
@@ -369,7 +381,13 @@ test('a change queued behind a resync is applied onto the snapshot that answers 
   bridge.deliver({
     type: 'canvas.snapshot',
     requestId: bridge.last('canvas.subscribe').requestId,
-    snapshot: { canvasId: CANVAS, sequence: 9, frames: [frame('hey')] },
+    snapshot: {
+      canvasId: CANVAS,
+      sequence: 9,
+      frames: [frame('hey')],
+      annotationsVersion: 0,
+      annotations: [],
+    },
   });
   await flush();
 
@@ -391,7 +409,13 @@ test('a dropped subscription cannot roll back the board that replaced it', async
   bridge.deliver({
     type: 'canvas.snapshot',
     requestId: current,
-    snapshot: { canvasId: CANVAS, sequence: 9, frames: [frame('hey')] },
+    snapshot: {
+      canvasId: CANVAS,
+      sequence: 9,
+      frames: [frame('hey')],
+      annotationsVersion: 0,
+      annotations: [],
+    },
   });
   await flush();
   bridge.deliver({ type: 'canvas.change', change: change(10) });
@@ -403,7 +427,13 @@ test('a dropped subscription cannot roll back the board that replaced it', async
   bridge.deliver({
     type: 'canvas.snapshot',
     requestId: abandoned,
-    snapshot: { canvasId: CANVAS, sequence: 4, frames: [frame('hey')] },
+    snapshot: {
+      canvasId: CANVAS,
+      sequence: 4,
+      frames: [frame('hey')],
+      annotationsVersion: 0,
+      annotations: [],
+    },
   });
   await flush();
   assert.equal(client.snapshotOf(CANVAS)?.sequence, 11);
@@ -426,7 +456,13 @@ test('a reconnected page watches its boards again and catches them up', async ()
   bridge.deliver({
     type: 'canvas.snapshot',
     requestId: bridge.last('canvas.subscribe').requestId,
-    snapshot: { canvasId: CANVAS, sequence: 12, frames: [frame('hey', 'rev_12')] },
+    snapshot: {
+      canvasId: CANVAS,
+      sequence: 12,
+      frames: [frame('hey', 'rev_12')],
+      annotationsVersion: 0,
+      annotations: [],
+    },
   });
   await flush();
   assert.equal(client.snapshotOf(CANVAS)?.sequence, 12);

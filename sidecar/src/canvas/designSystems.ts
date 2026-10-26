@@ -109,7 +109,7 @@ export const designSystemSchema = z
   .strict();
 
 export type DesignSystem = z.infer<typeof designSystemSchema>;
-export type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
+type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
 
 const swatchesSchema = z.object({ surface: tokenValueSchema, accent: tokenValueSchema }).strict();
 const summarySchema = z
@@ -122,6 +122,23 @@ const summarySchema = z
   })
   .strict();
 export type DesignSystemSummary = z.infer<typeof summarySchema>;
+
+/** One kit version as the Manage dialog shows it: its tokens, without source files. */
+export interface DesignSystemDetail {
+  id: string;
+  version: number;
+  name: string;
+  modes: { light: Record<string, string>; dark: Record<string, string> };
+  /** Tokens the shared primitives do not read, kept under their own names (spec §10). */
+  unmapped: string[];
+  provenance: DesignSystemProvenance | null;
+}
+
+/** A new kit's source from the dialog's New menu. */
+export interface DesignSystemSource {
+  kind: 'designMd' | 'cssOrTailwind';
+  text: string;
+}
 
 const savedSystemSchema = z
   .object({

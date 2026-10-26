@@ -57,7 +57,7 @@ The complete local release includes:
 9. Clean DROIDEX chat, history, search and export: no injected design instructions or raw Canvas scaffolding rendered as conversation content.
 10. Artifacts in every chat: React components, charts, dashboards and small apps created from an ordinary conversation, shown as an inline card and opened on the canvas; the existing /visualize AppBlock is unchanged.
 
-The first end-to-end slice is a milestone, not completion of this specification. Cloud sharing, multiplayer, Figma import/export, freehand drawing, arbitrary npm installation, hosted publishing and a template marketplace are outside this release. Do not show inert menu entries for them. Image export and the local library are included. This replaces no existing feature by implication; remove old code only when it is actually superseded.
+The first end-to-end slice is a milestone, not completion of this specification. Cloud sharing, multiplayer, Figma import/export, arbitrary npm installation, hosted publishing and a template marketplace are outside this release. Do not show inert menu entries for them. Image export and the local library are included. This replaces no existing feature by implication; remove old code only when it is actually superseded.
 
 ## 3. Global constraints
 
@@ -96,7 +96,7 @@ A canvas has its own identity, independent of chat/provider lifecycle. A chat ha
 
 ### Artifacts in ordinary chats
 
-Any chat whose harness has the Canvas tools may create React + Tailwind components, charts, dashboards and small apps on that chat's canvas through the same six tools and compiler; no design mode is required. The one exception is a Codex thread started before Canvas shipped, which cannot gain the tools on resume (§6); its agent produces no artifact, and the empty state and card placeholder direct the user to start a new chat with this canvas. The first artifact in an unattached chat follows the §6 unattached-chat sequence. Support React only, with no HTML/Markdown/SVG artifact kinds. The transcript shows an inline card with a live thumbnail from cached capture or an honest placeholder, title, build status and keyboard-accessible Open. The first artifact in a chat opens the pane docked and focused on its frame; later artifacts only add a card, and Open focuses that frame. A failed call that created nothing shows no card. The existing `/visualize` AppBlock stays exactly as is. Task 6 chooses one bundled React charting library after a recorded size/license review (recharts, MIT, is the default candidate), adds it to the import allowlist and packages it like the kit module without a CDN. Pending bloom and real activity stages are shared frame behavior, identical in ordinary chats.
+Any chat whose harness has the Canvas tools may create React + Tailwind components, charts, dashboards and small apps on that chat's canvas through the same Canvas tools and compiler; no design mode is required. The one exception is a Codex thread started before Canvas shipped, which cannot gain the tools on resume (§6); its agent produces no artifact, and the empty state and card placeholder direct the user to start a new chat with this canvas. The first artifact in an unattached chat follows the §6 unattached-chat sequence. Support React only, with no HTML/Markdown/SVG artifact kinds. The transcript shows an inline card with a live thumbnail from cached capture or an honest placeholder, title, build status and keyboard-accessible Open. The first artifact in a chat opens the pane docked and focused on its frame; later artifacts only add a card, and Open focuses that frame. A failed call that created nothing shows no card. The existing `/visualize` AppBlock stays exactly as is. Task 6 chooses one bundled React charting library after a recorded size/license review (recharts, MIT, is the default candidate), adds it to the import allowlist and packages it like the kit module without a CDN. Pending bloom and real activity stages are shared frame behavior, identical in ordinary chats.
 
 ### Board controls
 
@@ -204,7 +204,7 @@ Delete removes frames from the current board with an undoable tombstone. Undo re
 
 ## 8. Shared harness tooling
 
-Expose exactly six tools from one DROIDEX-owned local MCP server. The server binding supplies the authorized canvas and stable session/turn context. Tool arguments never accept an arbitrary top-level session ID. The renderer uses typed bridge commands that call the same workspace operations.
+Expose exactly seven tools from one DROIDEX-owned local MCP server. The server binding supplies the authorized canvas and stable session/turn context. Tool arguments never accept an arbitrary top-level session ID. The renderer uses typed bridge commands that call the same workspace operations.
 
 | Tool | Input and result | Responsibility |
 | --- | --- | --- |
@@ -213,6 +213,7 @@ Expose exactly six tools from one DROIDEX-owned local MCP server. The server bin
 | `canvas_write` | Mutation ID, design ID, expected revision, complete changed files and explicit deleted paths; returns accepted revision/build state | Canonical source writes; no shell execution or patching half-written strings |
 | `canvas_inspect` | Design/revision and bounded element, diagnostic or screenshot request | Ground edits in rendered evidence; report capture unavailable honestly |
 | `canvas_arrange` | Mutation ID, expected layout versions and explicit positions/sizes for existing frames | Board layout only; no source mutation |
+| `canvas_annotate` | Mutation ID, expected annotations version, annotation upserts (rect, ellipse, line/arrow, freehand path, text, note) and deletes | The board's annotation layer; agents change only their own chat's annotations, and `canvas_read` relates every annotation to the frames it is over, near or points at |
 | `canvas_theme` | Discriminated list/read/save/apply operation; apply names one design and its expected revision | Pin, retrieve, derive and apply an executable local design system |
 
 Use JSON Schema/Zod boundaries with explicit path, size, item-count and enum limits. Every mutation receives a client-generated mutation ID retained across retries. Errors use stable codes (`invalid_input`, `revision_conflict`, `invalid_source_path`, `unsupported_import`, `build_timeout`, `capture_unavailable`, `scope_expired`, `storage_failed`) plus a short recovery message. The dispatch boundary maps a rejected argument to `invalid_source_path` when the failing issue is under `files` or `deletedPaths` and to `invalid_input` otherwise; the message is the first refinement message, never the raw validation error or the payload. Do not expose stack traces, private filesystem paths or provider prompts to previews or chat.

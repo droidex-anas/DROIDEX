@@ -10,6 +10,7 @@ import { basename, join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from '../canvas/CanvasWorkspace.js';
+import type { AnnotationDraft } from '../canvas/canvasAnnotationSchema.js';
 import type { CanvasScope } from '../canvas/protocol.js';
 import { CanvasFiles, nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CompileCancelledError } from '../canvas/compiler.js';
@@ -46,6 +47,28 @@ export function scopeFor(
     canvasId,
     context: { designs: [], elements: [], designSystem },
     allowedDesignIds,
+  };
+}
+
+/** The scope a pane mutation runs under: its chat's attachment is its whole authority. */
+export function userScopeFor(canvasId: string, appSessionId: string): CanvasScope {
+  return {
+    origin: 'user',
+    scopeId: 'user:1',
+    appSessionId,
+    canvasId,
+    allowedDesignIds: 'canvas',
+  };
+}
+
+/** A sticky note in board coordinates, the mark a pane or an agent draws. */
+export function noteDraft(id: string, x: number, y: number, text: string): AnnotationDraft {
+  return {
+    id,
+    kind: 'note',
+    color: 'yellow',
+    rect: { x, y, width: 200, height: 120 },
+    text,
   };
 }
 

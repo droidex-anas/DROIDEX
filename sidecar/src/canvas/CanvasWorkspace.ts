@@ -2,6 +2,7 @@
 // Revision staging precedes serialized manifest publication; its final gate
 // checks lease and job identity. CanvasHeads owns which manifest is current.
 
+import { CanvasAnnotations } from './CanvasAnnotations.js';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { CanvasAttachments } from './canvasAttachments.js';
 import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
@@ -27,7 +28,6 @@ import {
   canvasSnapshot,
   canvasSummary,
   mutationFingerprint,
-  recordedRevision,
   recordMutation,
   requireDesign,
   requireExpectedRevision,
@@ -35,6 +35,7 @@ import {
   type CanvasManifest,
   type SourceRevisionMutation,
 } from './canvasManifest.js';
+import { recordedRevision } from './canvasReceipts.js';
 import type {
   ArrangeFramesInput,
   CanvasChange,
@@ -69,6 +70,7 @@ export class CanvasWorkspace {
   private readonly removal: CanvasRemoval;
   readonly history: CanvasRevisionHistory;
   readonly settings: CanvasSettings;
+  readonly annotations: CanvasAnnotations;
 
   private constructor(
     private readonly files: CanvasFiles,
@@ -92,6 +94,7 @@ export class CanvasWorkspace {
     this.removal = new CanvasRemoval(writerLease.directory, heads, this.commits, builds);
     this.history = new CanvasRevisionHistory(this, heads, files);
     this.settings = new CanvasSettings(heads, this.commits, builds);
+    this.annotations = new CanvasAnnotations(heads, this.leases, this.commits);
   }
 
   /** Claims the physical storage root before loading heads or cleaning staging. */

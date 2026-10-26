@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { Annotation } from './annotationProtocol';
 import { applyCanvasChange } from './applyCanvasChange';
 import type { CanvasFrame, CanvasSnapshot } from './protocol';
 
@@ -22,6 +23,8 @@ const snapshot: CanvasSnapshot = {
   canvasId: 'cv_01',
   sequence: 4,
   frames: [frame('hey'), frame('cards')],
+  annotationsVersion: 2,
+  annotations: [],
 };
 
 test('a change replaces frames in place, drops removals and appends new frames', () => {
@@ -68,4 +71,41 @@ test('a removed frame stays removed even when the change also reports it', () =>
     next.frames.map((entry) => entry.designId),
     ['cards'],
   );
+});
+
+test('an annotate change redraws in place, drops removals, stacks new marks and moves the version', () => {
+  const mark = (id: string, color: 'ink' | 'red'): Annotation => ({
+    id,
+    kind: 'rect',
+    color,
+    rect: { x: 0, y: 0, width: 40, height: 40 },
+    author: { kind: 'user' },
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const drawn = {
+    ...snapshot,
+    annotations: [mark('a', 'ink'), mark('b', 'ink'), mark('c', 'ink')],
+  };
+  const next = applyCanvasChange(drawn, {
+    canvasId: 'cv_01',
+    sequence: 5,
+    frames: [],
+    removedDesignIds: [],
+    annotations: { version: 3, upserted: [mark('d', 'ink'), mark('b', 'red')], removedIds: ['a'] },
+  });
+  assert.equal(next.annotationsVersion, 3);
+  assert.deepEqual(
+    next.annotations.map((entry) => `${entry.id}:${entry.color}`),
+    ['b:red', 'c:ink', 'd:ink'],
+  );
+  // A frame change leaves the layer and its version alone.
+  const moved = applyCanvasChange(next, {
+    canvasId: 'cv_01',
+    sequence: 6,
+    frames: [frame('hey', 'rev_10')],
+    removedDesignIds: [],
+  });
+  assert.equal(moved.annotationsVersion, 3);
+  assert.equal(moved.annotations, next.annotations);
 });

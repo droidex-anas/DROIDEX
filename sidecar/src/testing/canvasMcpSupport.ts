@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
+import type { AgentAnnotation } from '../canvas/canvasAnnotationReport.js';
 import type { CanvasCapture } from '../canvas/canvasCaptures.js';
 import { canvasError } from '../canvas/canvasError.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
@@ -33,6 +34,8 @@ export interface Reply {
   systems?: { id: string; version: number }[];
   designSystem?: { primitives: string[] };
   designSystemAdherence?: string;
+  annotationsVersion?: number;
+  annotations?: AgentAnnotation[];
   build?: {
     status: string;
     diagnostics?: { file?: string; line?: number }[];
@@ -92,6 +95,8 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
   };
   return { scopes, turns, workspace, server, call };
 }
+
+export type Harness = Awaited<ReturnType<typeof harness>>;
 
 /** A harness whose chat is in a turn that opened with canvas_read, as every turn does. */
 export async function openTurn(t: TestContext) {

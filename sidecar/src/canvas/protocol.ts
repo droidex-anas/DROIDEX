@@ -23,7 +23,16 @@ import type {
   UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
-import type { DesignSystemProvenance, DesignSystemSummary } from './designSystems.js';
+import type {
+  AnnotateCanvasInput,
+  Annotation,
+  AnnotationChange,
+} from './canvasAnnotationSchema.js';
+import type {
+  DesignSystemDetail,
+  DesignSystemSource,
+  DesignSystemSummary,
+} from './designSystems.js';
 
 export type {
   ArrangeFramesInput,
@@ -173,6 +182,9 @@ export interface CanvasSnapshot {
   canvasId: string;
   sequence: number;
   frames: CanvasFrame[];
+  /** The CAS token `canvas.annotate` expects, separate from frame layout. */
+  annotationsVersion: number;
+  annotations: Annotation[];
 }
 
 export interface CanvasChange {
@@ -180,7 +192,12 @@ export interface CanvasChange {
   sequence: number;
   frames: CanvasFrame[];
   removedDesignIds: string[];
+  /** Present only on a change that touched the annotation layer. */
+  annotations?: AnnotationChange;
 }
+
+/** What an annotate answers: a change that always carries its annotation delta. */
+export type AnnotatedChange = CanvasChange & { annotations: AnnotationChange };
 
 export interface CanvasSummary {
   canvasId: string;
@@ -249,23 +266,6 @@ export interface LibraryItem {
   sourceCanvasId: string;
   source: RevisionRef;
   designSystem: DesignSystemRef;
-}
-
-/** One kit version as the Manage dialog shows it: its tokens, without source files. */
-export interface DesignSystemDetail {
-  id: string;
-  version: number;
-  name: string;
-  modes: { light: Record<string, string>; dark: Record<string, string> };
-  /** Tokens the shared primitives do not read, kept under their own names (spec §10). */
-  unmapped: string[];
-  provenance: DesignSystemProvenance | null;
-}
-
-/** A new kit's source from the dialog's New menu. */
-export interface DesignSystemSource {
-  kind: 'designMd' | 'cssOrTailwind';
-  text: string;
 }
 
 export interface RevisionDiff {
@@ -430,6 +430,13 @@ export type CanvasCommand =
       canvasId: string;
       input: RenameFrameInput;
     }
+  | {
+      type: 'canvas.annotate';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: AnnotateCanvasInput;
+    }
   // The Manage design systems dialog (spec §10). Kits are global, not a
   // canvas's, and both saves go through the owner canvas_theme saves through.
   // A new kit is named by its mutationId, so a retry finds the version it saved.
@@ -482,7 +489,7 @@ export type CanvasCommand =
  */
 type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
 
-/** A canvas an earlier DROIDEX made, before revision history; it is not opened. */
+/** A canvas an earlier DROIDEX saved in an older format; it is not opened. */
 export interface OutdatedCanvas {
   canvasId: string;
   name: string;
@@ -508,6 +515,7 @@ export type CanvasReply =
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
+  | { kind: 'annotated'; change: CanvasChange }
   | { kind: 'revisions'; revisions: RevisionSummary[] }
   | { kind: 'revisionDiff'; diff: RevisionDiff }
   | { kind: 'artifact'; artifact: PreviewArtifact | null }

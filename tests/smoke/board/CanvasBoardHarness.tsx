@@ -70,6 +70,8 @@ for (let index = 0; index < extra; index += 1) {
 const initial: CanvasSnapshot = {
   canvasId: 'cv_board',
   sequence: 1,
+  annotationsVersion: 0,
+  annotations: [],
   frames: PLACED.map(
     (frame): CanvasFrame => ({
       ...frame,

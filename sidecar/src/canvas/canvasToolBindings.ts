@@ -5,7 +5,14 @@ import { droidexUserDataDir } from '../droidexPaths.js';
 import { objectValue } from '../values.js';
 import { safeFrameName, type CanvasToolBinding } from './canvasToolPresentation.js';
 
-const ACTIONS: CanvasToolBinding['action'][] = ['create', 'write', 'inspect', 'arrange', 'theme'];
+const ACTIONS: CanvasToolBinding['action'][] = [
+  'create',
+  'write',
+  'inspect',
+  'arrange',
+  'annotate',
+  'theme',
+];
 
 function pathFor(appSessionId: string): string {
   return join(

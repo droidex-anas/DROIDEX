@@ -34,7 +34,7 @@ function withBuild(base: CanvasFrame, build: CanvasFrame['build']): CanvasFrame 
 }
 
 function snapshotOf(...frames: CanvasFrame[]): CanvasSnapshot {
-  return { canvasId: 'cv_01', sequence: 7, frames };
+  return { canvasId: 'cv_01', sequence: 7, frames, annotationsVersion: 0, annotations: [] };
 }
 
 function render(

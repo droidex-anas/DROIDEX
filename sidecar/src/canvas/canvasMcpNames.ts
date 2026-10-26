@@ -7,6 +7,7 @@ export const CANVAS_TOOL_NAMES = [
   'canvas_write',
   'canvas_inspect',
   'canvas_arrange',
+  'canvas_annotate',
   'canvas_theme',
 ] as const;
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];

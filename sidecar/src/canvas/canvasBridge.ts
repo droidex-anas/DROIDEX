@@ -313,6 +313,11 @@ class CanvasDispatch {
               command.input.expectedManifestVersion,
             ),
           };
+        case 'canvas.annotate':
+          return {
+            kind: 'annotated',
+            change: await workspace.annotations.annotate(scope, command.input),
+          };
       }
     } finally {
       this.scopes.revoke(scope.scopeId);

@@ -9,6 +9,7 @@ import {
   DESIGN_SYSTEM_LIMITS,
   tokenValueSchema,
   type DesignSystem,
+  type DesignSystemSource,
 } from './designSystems.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { UNIVERSAL_GUIDANCE } from './presets/starter.js';
@@ -21,7 +22,7 @@ import {
   type Declared,
   type Mode,
 } from './designSystemSources.js';
-import type { CanvasDiagnostic, DesignSystemSource } from './protocol.js';
+import type { CanvasDiagnostic } from './protocol.js';
 
 export type ImportDesignSystemResult =
   | { status: 'imported'; system: DesignSystem; diagnostics: CanvasDiagnostic[] }
