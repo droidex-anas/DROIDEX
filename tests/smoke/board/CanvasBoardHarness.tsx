@@ -77,6 +77,8 @@ interface BoardHarness {
   renameCalls: RenameFrameInput[];
   /** Renames the frame the way the sidecar does, and answers. */
   answerRename: (index: number) => void;
+  /** A manifest commit lands on the frame: a build's, or with `name`, a rename from elsewhere. */
+  commitManifest: (designId: string, name?: string) => void;
   restoreCalls: RestoreRevisionInput[];
   /** Refuses one Restore because the frame's head moved. */
   refuseRestore: (index: number) => void;
@@ -461,6 +463,16 @@ function Harness() {
         .map((frame) => ({ ...frame, name, manifestVersion: frame.manifestVersion + 1 }));
       setSnapshot(applyCanvasChange(shown.current, change(renamed, [])));
       renameReplies[index].resolve();
+    },
+    commitManifest: (designId, name) => {
+      const committed = shown.current.frames
+        .filter((frame) => frame.designId === designId)
+        .map((frame) => ({
+          ...frame,
+          name: name ?? frame.name,
+          manifestVersion: frame.manifestVersion + 1,
+        }));
+      setSnapshot(applyCanvasChange(shown.current, change(committed, [])));
     },
     restoreCalls,
     refuseRestore: (index) =>

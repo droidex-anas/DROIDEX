@@ -63,6 +63,38 @@ test('the toolbar renames a frame, restores from its history and opens its sourc
   await expect(page.locator('[data-harness-source="a"]')).toBeVisible();
 });
 
+test('a rename saves over a build that landed meanwhile, but not over another rename', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  const toolbar = page.getByRole('toolbar', { name: 'Design A actions' });
+
+  // A build commit moves the manifest version while the field is open.
+  await toolbar.getByRole('button', { name: 'Rename Design A' }).click();
+  const field = page.getByRole('textbox', { name: 'Name of Design A' });
+  await page.evaluate(() => window.boardHarness.commitManifest('a'));
+  await field.fill('Hero');
+  await page.keyboard.press('Enter');
+  expect(await page.evaluate(() => window.boardHarness.renameCalls)).toEqual([
+    { mutationId: 'rename', designId: 'a', name: 'Hero', expectedManifestVersion: 2 },
+  ]);
+  await page.evaluate(() => window.boardHarness.answerRename(0));
+  await expect(page.getByText('Hero', { exact: true }).locator('..')).toBeFocused();
+
+  // Someone else renames it while the field is open: say so, and write nothing.
+  await page
+    .getByRole('toolbar', { name: 'Hero actions' })
+    .getByRole('button', { name: 'Rename Hero' })
+    .click();
+  await page.evaluate(() => window.boardHarness.commitManifest('a', 'Landing'));
+  await page.getByRole('textbox', { name: 'Name of Hero' }).fill('Mine');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('This frame was renamed to “Landing” meanwhile.')).toBeVisible();
+  await expect(page.getByText('Landing', { exact: true }).locator('..')).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.renameCalls)).toHaveLength(1);
+});
+
 test('the toolbar is one tab stop the arrows walk, and Escape returns to the label', async ({
   page,
 }) => {
