@@ -47,6 +47,7 @@ export const createSession = (input: {
   title: string;
   goal: string;
   mentions?: ProviderMention[];
+  canvasContext?: CanvasTurnContext;
   sessionPurpose: SessionPurpose;
   provider?: ProviderKind;
   interactionMode?: SessionInteractionMode;

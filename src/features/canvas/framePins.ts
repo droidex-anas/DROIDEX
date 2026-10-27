@@ -4,7 +4,8 @@
 // sends and clears them. Neither owns the other, so they live here, by chat.
 
 import { useSyncExternalStore } from 'react';
-import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext } from './protocol';
+import { DEFAULT_DESIGN_SYSTEM } from './designSystemChoices';
+import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
 
 /** The sidecar's limit on the designs one request may pin. */
 const MAX_PINNED = 32;
@@ -165,17 +166,31 @@ function publishChanged(appSessionId: string, held: readonly FramePin[], next: F
     publish(appSessionId, next);
 }
 
+/** What a request on a canvas carries beside its frames. */
+export interface CanvasRequestPins {
+  /** The user's choice for the canvas; null runs under the frames' own kit, else DROIDEX. */
+  designSystem: DesignSystemRef | null;
+  imageAssetIds: readonly string[];
+}
+
 /**
- * The turn context a send carries: the frames' revisions as they are now, in
- * fresh objects, so nothing that changes afterwards can retarget the request.
+ * The turn context a send carries: the frames' revisions and the kit as they
+ * are now, in fresh objects, so nothing that changes afterwards can retarget
+ * the request. A chat on no canvas, with nothing pinned, carries none.
  */
-export function canvasContextOf(pins: readonly FramePin[] = NONE): CanvasTurnContext | undefined {
+export function canvasContextOf(
+  pins: readonly FramePin[] = NONE,
+  onCanvas: CanvasRequestPins | null = null,
+): CanvasTurnContext | undefined {
   const first = pins.at(0);
-  if (!first) return undefined;
+  if (!first && !onCanvas) return undefined;
+  const designSystem = onCanvas?.designSystem ?? first?.designSystem ?? DEFAULT_DESIGN_SYSTEM.ref;
+  const images = onCanvas?.imageAssetIds ?? [];
   return {
     designs: pins.map(({ designId, revisionId }) => ({ designId, revisionId })),
     elements: [],
-    designSystem: { ...first.designSystem },
+    designSystem: { ...designSystem },
+    ...(images.length > 0 ? { images: images.map((assetId) => ({ assetId })) } : {}),
   };
 }
 

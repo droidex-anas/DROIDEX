@@ -383,7 +383,7 @@ export class SessionLifecycle {
       // arrives spoken. Driving an empty prompt would run a turn about nothing.
       const prompt = branch
         ? sessionPrompt(branch.prompt)
-        : sessionPrompt(command.goal, command.mentions);
+        : sessionPrompt(command.goal, command.mentions, undefined, command.canvasContext);
       if (prompt.text.trim() || prompt.mentions?.length) {
         void this.driveInBackground(appSessionId, prompt);
       }

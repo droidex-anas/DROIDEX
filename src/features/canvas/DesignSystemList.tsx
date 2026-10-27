@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus } from '@droidex/icons';
 import { usePopover } from '../../components/environment/usePopover';
 import { paintable } from './designSystemTokenTabs';
-import type { PreviewMode } from './DesignSystemDetail';
+import type { PreviewMode } from './PreviewModeToggle';
 import { sameKit, type KitList } from './designSystemsState';
 import { MenuHeading, MenuNote, MenuRow } from './menuRows';
 import type { DesignSystemSource, DesignSystemSummary, DesignSystemVersionRef } from './protocol';
@@ -148,7 +148,6 @@ function KitRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const { surface, accent } = kit.swatches[mode];
   return (
     <button
       type="button"
@@ -159,6 +158,16 @@ function KitRow({
       }`}
     >
       <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text">{kit.name}</span>
+      <KitSwatches kit={kit} mode={mode} />
+    </button>
+  );
+}
+
+/** A kit's surface and accent in the previewed mode, as its rows show them. */
+export function KitSwatches({ kit, mode }: { kit: DesignSystemSummary; mode: PreviewMode }) {
+  const { surface, accent } = kit.swatches[mode];
+  return (
+    <>
       {[surface, accent].map((color, index) => (
         <span
           key={index}
@@ -167,6 +176,6 @@ function KitRow({
           style={{ background: paintable(color) }}
         />
       ))}
-    </button>
+    </>
   );
 }

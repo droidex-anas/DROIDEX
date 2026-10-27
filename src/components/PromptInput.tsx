@@ -37,7 +37,11 @@ import {
   pathForFile,
   type FeedbackReportRequest,
 } from '../lib/desktop';
-import { pathsInSequence, useImageAttachments } from '../hooks/useImageAttachments';
+import {
+  pathsInSequence,
+  useImageAttachments,
+  type AttachedImage,
+} from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { useVoiceControls } from '../features/voice/VoiceProvider';
 import { canUseVoice } from '../features/voice/voiceAvailability';
@@ -94,6 +98,9 @@ import {
 import { catalogRowKey, composerCatalog, mentionsForRows } from './composer/composerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
 import { useComposerReferences } from './composer/useComposerReferences';
+import { useCanvasImageReferences } from './composer/useCanvasImageReferences';
+import { CanvasImageChip } from './composer/CanvasImageChip';
+import { NEW_CANVAS_KEY, oweCreatedCanvasChoice } from '../features/canvas/designSystemChoices';
 import { createComposerTranscriptSelector } from './composer/composerTranscript';
 import {
   childRuntimeSubmitTarget,
@@ -174,6 +181,11 @@ const ModelSliderPopover = lazy(loadModelSliderPopover);
 const ModelSelectorPopover = lazy(loadModelSelectorPopover);
 const VoiceSendSlot = lazy(() => import('../features/voice/VoiceSendSlot'));
 const VoiceTakeoverPopover = lazy(() => import('../features/voice/VoiceTakeoverPopover'));
+const CanvasDesignSystem = lazy(() =>
+  import('../features/canvas/DesignSystemPicker').then((m) => ({
+    default: m.CanvasDesignSystem,
+  })),
+);
 const VoiceOrbDock = lazy(() =>
   import('../features/voice/VoiceOrbDock').then((m) => ({ default: m.VoiceOrbDock })),
 );
@@ -354,6 +366,7 @@ export default function PromptInput({
   };
   const imageAttachments = useImageAttachments(state.imagePasteQuality);
   const fileAttachments = useFileAttachments();
+  const canvasImages = useCanvasImageReferences(appSessionId);
   const nextIntakeSeqRef = useRef(0);
   const attachedFileSeqRef = useRef(new Map<string, number>());
   const takeIntakeSeq = () => nextIntakeSeqRef.current++;
@@ -368,6 +381,7 @@ export default function PromptInput({
         const seq = takeIntakeSeq();
         if (file.type.startsWith('image/')) {
           imageAttachments.addBlob(file, seq);
+          canvasImages.importFile(file, seq);
           continue;
         }
         const existing = pathForFile(file);
@@ -379,8 +393,12 @@ export default function PromptInput({
         } else fileAttachments.addBlob(file, seq);
       }
     },
-    [imageAttachments.addBlob, fileAttachments.addBlob],
+    [imageAttachments.addBlob, fileAttachments.addBlob, canvasImages.importFile],
   );
+  const removeImage = (image: AttachedImage) => {
+    imageAttachments.remove(image.id);
+    canvasImages.remove([image.sequence]);
+  };
   const fileDrop = useComposerFileDrop(addComposerFiles);
   const [viewerImageId, setViewerImageId] = useState<string | null>(null);
   // A path-only attachment has no staged copy to crop, so it opens the
@@ -431,9 +449,11 @@ export default function PromptInput({
       case 'skill':
         setActiveSkills((prev) => prev.filter((skill) => skill.filePath !== removal.filePath));
         return;
-      case 'pastedImage':
-        imageAttachments.remove(removal.id);
+      case 'pastedImage': {
+        const image = imageAttachments.images.find((staged) => staged.id === removal.id);
+        if (image) removeImage(image);
         return;
+      }
       case 'pastedFile':
         fileAttachments.remove(removal.id);
         return;
@@ -907,6 +927,7 @@ export default function PromptInput({
   // useCallback-stable, so this still fires only on a session switch.
   const clearAndDiscardImages = imageAttachments.clearAndDiscard;
   const clearAndDiscardFiles = fileAttachments.clearAndDiscard;
+  const clearCanvasImages = canvasImages.clear;
   useEffect(() => {
     setHistoryIndex(null);
     clearDraftSelections();
@@ -917,10 +938,12 @@ export default function PromptInput({
     setViewerPath(null);
     clearAndDiscardImages();
     clearAndDiscardFiles();
+    clearCanvasImages();
   }, [
     activeSession?.appSessionId,
     clearAndDiscardImages,
     clearAndDiscardFiles,
+    clearCanvasImages,
     clearDraftSelections,
   ]);
 
@@ -1251,6 +1274,8 @@ export default function PromptInput({
     const readyImagesPromise = imageAttachments.whenReady(intakeCutoff);
     const readyFilesPromise = fileAttachments.whenReady(intakeCutoff);
     const [readyImages, readyFiles] = await Promise.all([readyImagesPromise, readyFilesPromise]);
+    const sentImageSequences = readyImages.map((image) => image.sequence);
+    const imageAssetIds = await canvasImages.assetIdsFor(sentImageSequences);
     if (updateInterruptedSubmit()) return;
     const allFiles = pathsInSequence([
       ...attachedFiles.map((path, index) => ({
@@ -1285,6 +1310,7 @@ export default function PromptInput({
         clearImages: () => {
           imageAttachments.clearReady(intakeCutoff);
           fileAttachments.clearReady(intakeCutoff);
+          canvasImages.remove(sentImageSequences);
           // Image chips always clear on submit, so a viewer open over one of them
           // would be showing an attachment the composer no longer holds.
           setViewerImageId(null);
@@ -1353,6 +1379,7 @@ export default function PromptInput({
         allFiles,
       ),
     );
+    const canvasContext = references.canvasContext(imageAssetIds);
     const registerPending = (ref: string, canvas?: { canvasId: string | null }) => {
       if (turnStartingClientRef.current === ref) {
         turnStartingPendingRegisteredRef.current = true;
@@ -1492,6 +1519,7 @@ export default function PromptInput({
         return;
       }
       try {
+        if (references.canvasKey === NEW_CANVAS_KEY) oweCreatedCanvasChoice(clientRef);
         createSession({
           clientRef,
           cwd: dir,
@@ -1499,6 +1527,7 @@ export default function PromptInput({
           goal: composed,
           canvas: canvasIntentForDraft(state.canvasDraft, displayText, clientRef),
           ...(mentions.length > 0 ? { mentions } : {}),
+          ...(canvasContext ? { canvasContext } : {}),
           sessionPurpose: 'chat',
           provider: draftProvider,
           interactionMode: isSpecMode ? 'spec' : 'auto',
@@ -1531,6 +1560,7 @@ export default function PromptInput({
           ...(mentions.length > 0 ? { mentions } : {}),
           ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
           ...references.queued,
+          ...(canvasContext ? { canvasContext } : {}),
         },
       });
       references.detach();
@@ -1573,7 +1603,7 @@ export default function PromptInput({
             responseFormat,
             mentions,
             steerId,
-            canvasContext: references.canvasContext,
+            canvasContext,
           });
         armTurnStartingTimeout();
       } catch (err) {
@@ -1943,6 +1973,7 @@ export default function PromptInput({
         );
         return;
       }
+      if (references.canvasKey === NEW_CANVAS_KEY) oweCreatedCanvasChoice(clientRef);
       createSession({
         clientRef,
         cwd: preparation.path,
@@ -2124,19 +2155,32 @@ export default function PromptInput({
         >
           {hasAttachmentChips && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
-              {imageAttachments.images.map((img) => (
-                <ImageChip
-                  key={img.id}
-                  src={img.preview}
-                  label={basename(img.path)}
-                  onOpen={() => {
-                    setViewerImageId(img.id);
-                  }}
-                  onRemove={() => {
-                    imageAttachments.remove(img.id);
-                  }}
-                />
-              ))}
+              {imageAttachments.images.map((img) => {
+                const reference = canvasImages.referenceOf(img.sequence);
+                const open = () => {
+                  setViewerImageId(img.id);
+                };
+                const remove = () => {
+                  removeImage(img);
+                };
+                return reference ? (
+                  <CanvasImageChip
+                    key={img.id}
+                    src={img.preview}
+                    reference={reference}
+                    onOpen={open}
+                    onRemove={remove}
+                  />
+                ) : (
+                  <ImageChip
+                    key={img.id}
+                    src={img.preview}
+                    label={basename(img.path)}
+                    onOpen={open}
+                    onRemove={remove}
+                  />
+                );
+              })}
               {fileAttachments.files.map((file) => (
                 <FileChip
                   key={file.id}
@@ -2305,6 +2349,13 @@ export default function PromptInput({
                   dispatch({ type: 'SET_DRAFT_AUTONOMY', autonomy: level });
                 }}
               />
+            )}
+
+            {/* A design draft shows its own above the composer. */}
+            {appSessionId && references.canvasKey && (
+              <Suspense fallback={null}>
+                <CanvasDesignSystem canvasKey={references.canvasKey} />
+              </Suspense>
             )}
 
             {/* Trailing cluster. It wraps to its own row as one unit on

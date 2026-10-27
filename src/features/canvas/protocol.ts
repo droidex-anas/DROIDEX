@@ -130,6 +130,8 @@ export interface CanvasTurnContext {
   designs: DesignRef[];
   elements: ElementRef[];
   designSystem: DesignSystemRef;
+  /** Owned images attached as references; absent when there are none. */
+  images?: { assetId: string }[];
 }
 
 /**

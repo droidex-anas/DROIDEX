@@ -18,6 +18,8 @@ export const CANVAS_LIMITS = {
   /** Spec §4: the design and element chips one request pins. */
   maxPinnedDesigns: 32,
   maxPinnedElements: 32,
+  /** Reference images the user attached to one request. */
+  maxPinnedImages: 8,
   /** Characters, so never tighter than the 512 bytes a preview clamps a path to. */
   maxInstancePathLength: 512,
   maxRevisionPageSize: 50,
@@ -37,6 +39,7 @@ const DIMENSION_MESSAGE = `Frame width and height must be between 1 and ${String
 const INSTANCE_PATH_MESSAGE = `An element instance path is 1 to ${String(CANVAS_LIMITS.maxInstancePathLength)} characters without control characters.`;
 const PINNED_DESIGN_MESSAGE = `One request pins at most ${String(CANVAS_LIMITS.maxPinnedDesigns)} designs.`;
 const PINNED_ELEMENT_MESSAGE = `One request pins at most ${String(CANVAS_LIMITS.maxPinnedElements)} elements.`;
+const PINNED_IMAGE_MESSAGE = `One request pins at most ${String(CANVAS_LIMITS.maxPinnedImages)} reference images.`;
 const SOURCE_PATH_MESSAGE =
   'A source path must be relative, use forward slashes, and stay inside the design.';
 const RESERVED_PATH_MESSAGE =
@@ -138,6 +141,12 @@ export const canvasTurnContextSchema = z
       .array(elementRefSchema)
       .max(CANVAS_LIMITS.maxPinnedElements, PINNED_ELEMENT_MESSAGE),
     designSystem: designSystemRefSchema,
+    // Owned Canvas images the user attached; the model sees their pixels as
+    // ordinary message attachments and places them in source by asset ID.
+    images: z
+      .array(z.object({ assetId: z.string().regex(/^[0-9a-f]{64}$/) }).strict())
+      .max(CANVAS_LIMITS.maxPinnedImages, PINNED_IMAGE_MESSAGE)
+      .optional(),
   })
   .strict();
 

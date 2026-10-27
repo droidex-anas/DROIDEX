@@ -1,10 +1,12 @@
 // What the next prompt carries beside its words: answers picked in a side chat
 // and frames added from the chat's canvas. Both sit as chips on the draft's
 // first line, go with the prompt however it is sent, and come back when a
-// queued prompt is edited. A prompt to a child carries neither.
+// queued prompt is edited. A prompt on a canvas also carries the design system
+// chosen for it. A prompt to a child carries none of these.
 
 import { Frame } from 'lucide-react';
 import { MessageThread } from '@droidex/icons';
+import { NEW_CANVAS_KEY, useDesignSystemChoice } from '../../features/canvas/designSystemChoices';
 import {
   canvasContextOf,
   promptWithFramePins,
@@ -13,7 +15,7 @@ import {
   useFramePins,
   type FramePin,
 } from '../../features/canvas/framePins';
-import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
 import type { QueuedPrompt } from '../../lib/promptQueue';
 import { promptWithSideChatReplies, sideChatPanel } from '../../lib/sideChats';
 import type { DraftSelection } from './DraftSelections';
@@ -21,11 +23,24 @@ import type { DraftSelection } from './DraftSelections';
 const NO_REPLIES: string[] = [];
 const NO_PINS: readonly FramePin[] = [];
 
+/**
+ * The canvas a composer's prompt works on: a chat's attached canvas, or the one
+ * a design draft chose, or the one its first prompt makes. Null off a canvas.
+ */
+export function composerCanvasKey(state: AppState, appSessionId: string | null): string | null {
+  if (appSessionId) return state.canvasAttachments[appSessionId] ?? null;
+  return state.canvasDraft ? (state.canvasDraft.canvasId ?? NEW_CANVAS_KEY) : null;
+}
+
 export function useComposerReferences(appSessionId: string | null, toChild: boolean) {
   const dispatch = useStoreDispatch();
   const attachedReplies = useStoreSelector((state) =>
     appSessionId ? sideChatPanel(state.sideChats, appSessionId).attachedReplies : undefined,
   );
+  const canvasKey = useStoreSelector((state) =>
+    toChild ? null : composerCanvasKey(state, appSessionId),
+  );
+  const designSystem = useDesignSystemChoice(canvasKey);
   const pinned = useFramePins(appSessionId);
   const sideChatReplies = toChild ? NO_REPLIES : (attachedReplies ?? NO_REPLIES);
   const framePins = toChild ? NO_PINS : pinned;
@@ -64,12 +79,19 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   return {
     chips,
     sideChatReplies,
+    /** The canvas whose design-system choice this prompt runs under, or null off a canvas. */
+    canvasKey,
     /** The fields a queued prompt keeps them in. */
     queued: {
       ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
       ...(framePins.length > 0 ? { framePins } : {}),
     } satisfies Partial<QueuedPrompt>,
-    canvasContext: canvasContextOf(framePins),
+    /** The turn context this prompt is pinned to, with the canvas images it imported. */
+    canvasContext: (imageAssetIds: readonly string[]) =>
+      canvasContextOf(
+        framePins,
+        canvasKey === null ? null : { designSystem: designSystem?.ref ?? null, imageAssetIds },
+      ),
     /** The text the agent receives: the user's words, then what goes with them. */
     compose: (prompt: string) =>
       promptWithFramePins(promptWithSideChatReplies(prompt, sideChatReplies), framePins),

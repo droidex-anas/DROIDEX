@@ -12,6 +12,8 @@ import { Search } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { formatRelativeTime } from '../../lib/time';
 import { searchCanvases } from './canvasChats';
+import { NEW_CANVAS_KEY } from './designSystemChoices';
+import { CanvasDesignSystem } from './DesignSystemPicker';
 import { useCanvases } from './useCanvases';
 import { useOpenCanvas } from './useOpenCanvas';
 import type { CanvasSummary } from './protocol';
@@ -50,6 +52,7 @@ function NewCanvasHome() {
 
   return (
     <DesignDraftShell
+      canvasKey={NEW_CANVAS_KEY}
       title="What should we design?"
       hint="Every prompt here starts a new canvas and a chat attached to it."
     >
@@ -116,6 +119,7 @@ function CanvasChatDraft({ canvasId }: { canvasId: string }) {
       : null;
   return (
     <DesignDraftShell
+      canvasKey={canvasId}
       title={canvas ? `New chat on ${canvas.name}` : 'New chat on this canvas'}
       hint="This prompt starts a fresh chat on the canvas you opened; its designs stay as they are."
     />
@@ -124,10 +128,13 @@ function CanvasChatDraft({ canvasId }: { canvasId: string }) {
 
 /** The centred composer both design drafts are sent from. */
 function DesignDraftShell({
+  canvasKey,
   title,
   hint,
   children,
 }: {
+  /** Whose design-system choice the draft's prompt runs under. */
+  canvasKey: string;
   title: string;
   hint: string;
   children?: ReactNode;
@@ -146,7 +153,9 @@ function DesignDraftShell({
         </div>
 
         <div className="droid-rise mt-7" style={{ animationDelay: '90ms' }}>
-          <DesignSystemChip />
+          <div className="mb-2 flex px-3">
+            <CanvasDesignSystem canvasKey={canvasKey} />
+          </div>
           <PromptInput appSessionId={null} compact />
           <ul className="mt-2 flex flex-wrap gap-1.5 px-3">
             {EXAMPLES.map((example) => (
@@ -167,21 +176,6 @@ function DesignDraftShell({
 
         {children}
       </div>
-    </div>
-  );
-}
-
-/**
- * Where the design-system picker lands (Task 7b). Until it ships this states
- * the kit every request is pinned to rather than offering a control that
- * cannot change it.
- */
-function DesignSystemChip() {
-  return (
-    <div className="mb-2 flex px-3">
-      <span className="rounded-full bg-droid-elevated/60 px-2.5 py-1 text-[11px] text-droid-text-muted">
-        Design system · DROIDEX
-      </span>
     </div>
   );
 }
