@@ -125,6 +125,7 @@ test('leaves an unreadable script for the SDK to refuse', () => {
     assert.throws(() => RequestPermissionRequestSchema.parse(message));
   }
 });
+
 test('leaves non-permission messages untouched', () => {
   const message = {
     jsonrpc: '2.0',
