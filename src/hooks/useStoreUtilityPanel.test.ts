@@ -63,6 +63,16 @@ test('utility tools are session scoped and opening one hides Context', () => {
   assert.equal(state.utilityPanels['session-a'].tabs[0].tool, 'browser');
 });
 
+test('opening a tool for a background chat leaves the active chat Context open', () => {
+  const state = reducer(activeState('session-a'), {
+    type: 'OPEN_UTILITY_TOOL',
+    tool: 'files',
+    appSessionId: 'session-b',
+  });
+  assert.equal(state.rightPanelOpen, true);
+  assert.equal(state.utilityPanels['session-b'].open, true);
+});
+
 test('opening Context collapses the active session utility pane without closing tabs', () => {
   let state = reducer(activeState('session-a'), {
     type: 'OPEN_UTILITY_TOOL',
