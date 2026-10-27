@@ -4,11 +4,12 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { canvasClient as canvas } from './canvasClient';
 import { CanvasVariants } from './CanvasVariants';
-import { REVISION_PAGE_SIZE, type HistoryClient } from './frameHistory';
+import type { HistoryClient } from './frameHistory';
 import type { FrameActions } from './FrameToolbar';
 import type { RevisionRef } from './protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
 import { variantSource, type VariantSource } from './variantRequests';
+import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 /** What a dialog acts on, fixed when it opens so a later build cannot retarget it. */
 type FrameDialog =
@@ -29,7 +30,7 @@ export function useFrameActions(
   const history = useMemo(
     (): HistoryClient => ({
       listRevisions: (designId) =>
-        canvas.revisions.list(canvasId, designId, { limit: REVISION_PAGE_SIZE }),
+        canvas.revisions.list(canvasId, designId, { limit: MAX_REVISION_PAGE_SIZE }),
       restoreRevision: (input) => canvas.revisions.restore(appSessionId, canvasId, input),
     }),
     [appSessionId, canvasId],

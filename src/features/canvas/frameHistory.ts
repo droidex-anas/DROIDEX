@@ -5,12 +5,10 @@
 
 import { CanvasRequestError, canvasMessage } from './client';
 import type { RestoreRevisionInput, RevisionSummary } from './protocol';
-
-/** One read asks for the sidecar's whole page. */
-export const REVISION_PAGE_SIZE = 50;
+import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 export interface HistoryClient {
-  /** The newest `REVISION_PAGE_SIZE` revisions of a design on this canvas. */
+  /** The newest `MAX_REVISION_PAGE_SIZE` revisions of a design on this canvas. */
   listRevisions: (designId: string) => Promise<RevisionSummary[]>;
   restoreRevision: (input: RestoreRevisionInput) => Promise<unknown>;
 }
@@ -142,7 +140,7 @@ export class FrameHistory {
     let list: RevisionList;
     try {
       const revisions = await this.client.listRevisions(target.designId);
-      list = { status: 'listed', revisions, complete: revisions.length < REVISION_PAGE_SIZE };
+      list = { status: 'listed', revisions, complete: revisions.length < MAX_REVISION_PAGE_SIZE };
     } catch (error) {
       list = { status: 'failed', message: canvasMessage(error) };
     }

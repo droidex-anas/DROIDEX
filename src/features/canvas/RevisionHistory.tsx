@@ -3,14 +3,10 @@
 
 import { useRef } from 'react';
 import { formatRelativeTime } from '../../lib/time';
-import {
-  REVISION_PAGE_SIZE,
-  revisionNumber,
-  type FrameHistory,
-  type HistoryState,
-} from './frameHistory';
+import { revisionNumber, type FrameHistory, type HistoryState } from './frameHistory';
 import { MenuHeading, MenuNote, MenuRow } from './menuRows';
 import type { RevisionSummary } from './protocol';
+import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 const ACTION_CLASS =
   'shrink-0 cursor-pointer rounded-md px-1.5 py-0.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated/50 focus-visible:bg-droid-elevated/50 focus-visible:outline-none';
@@ -68,7 +64,7 @@ export function RevisionHistory({
           />
         ))}
       {list.status === 'listed' && !list.complete && (
-        <MenuNote>{`The newest ${String(REVISION_PAGE_SIZE)} revisions.`}</MenuNote>
+        <MenuNote>{`The newest ${String(MAX_REVISION_PAGE_SIZE)} revisions.`}</MenuNote>
       )}
     </div>
   );
