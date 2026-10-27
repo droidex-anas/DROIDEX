@@ -252,10 +252,13 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
       { name: 'droidex_canvas', deferred: true },
     ],
   );
+  assert.equal(fresh.canvasTools, 'at_start');
   const resumed = new CodexSession(input);
   await resumed.open('thread-one');
   const resume = sent.find((entry) => entry.method === 'thread/resume');
   assert.equal('dynamicTools' in (resume?.params as object), false);
+  // Only the stored summary knows what the resumed thread started with.
+  assert.equal(resumed.canvasTools, undefined);
   await fresh.close();
   await resumed.close();
 });

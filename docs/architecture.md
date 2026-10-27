@@ -452,7 +452,10 @@ create and inspect return the same compact frames, without element maps.
 mutations, including retry receipts and attachment bootstrap; the design-system
 store owns immutable kit versions. Droid and Claude use
 the per-chat loopback endpoint; Codex declares the same tools through dynamic
-tools on thread start. Claude's session-local `PreToolUse` hook pins both
+tools on thread start. A Codex summary's `canvasTools` records whether its thread
+started with them; a thread started without them never gains them on resume, so
+its pane and unwritten artifact cards offer a new chat on the canvas instead.
+Claude's session-local `PreToolUse` hook pins both
 `canvas_read` and `canvas_inspect` tool-use IDs to their original leases. Child
 runtimes do not inherit the parent's Canvas endpoint without an assigned child
 scope.

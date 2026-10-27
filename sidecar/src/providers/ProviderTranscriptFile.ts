@@ -358,6 +358,7 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     interactionMode: summary.interactionMode,
     permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
     ...(summary.resumeId ? { resumeId: summary.resumeId } : {}),
+    ...(summary.canvasTools ? { canvasTools: summary.canvasTools } : {}),
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),
     ...(summary.fastMode !== undefined ? { fastMode: summary.fastMode } : {}),

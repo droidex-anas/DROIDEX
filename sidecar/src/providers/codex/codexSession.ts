@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { NormalizedEvent } from '../../normalize.js';
 import type { SdkMcpServer } from '@factory/droid-sdk';
-import type { Autonomy, SessionPurpose } from '../../protocol.js';
+import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpNames.js';
+import type { Autonomy, SessionPurpose, SessionSummary } from '../../protocol.js';
 import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type { ProviderModelSettings, ProviderSession } from '../session.js';
@@ -61,11 +62,13 @@ export class CodexSession implements ProviderSession {
   private readonly mapper: CodexEventMapper;
   private readonly cwd: string;
   private readonly isDesignSession: boolean;
+  private readonly declaresCanvasTools: boolean;
   private autonomy: Autonomy;
   private turnAutonomy?: Autonomy;
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
+  private startedCanvasTools?: SessionSummary['canvasTools'];
   private turnId?: string;
   private turn?: TurnStream;
   // Stop pressed before `turn/start` answered: there is a turn to end but no id
@@ -102,6 +105,9 @@ export class CodexSession implements ProviderSession {
     this.client = input.client;
     this.cwd = input.cwd;
     this.isDesignSession = input.sessionPurpose === 'design';
+    this.declaresCanvasTools = (input.inAppMcpServers ?? []).some(
+      (server) => server.name === CANVAS_MCP_SERVER_NAME,
+    );
     this.autonomy = input.autonomy;
     this.model = input.model;
     this.mapper = new CodexEventMapper(input.appSessionId, input.model);
@@ -135,6 +141,10 @@ export class CodexSession implements ProviderSession {
   // Codex owns its thread ids, so this is the handle a restart resumes from.
   get resumeId(): string | undefined {
     return this.threadId;
+  }
+
+  get canvasTools(): SessionSummary['canvasTools'] {
+    return this.startedCanvasTools;
   }
 
   get isClosed(): boolean {
@@ -177,6 +187,7 @@ export class CodexSession implements ProviderSession {
         }));
     this.threadId = response.thread.id;
     this.threadModel = response.model;
+    if (!resumeId) this.startedCanvasTools = this.declaresCanvasTools ? 'at_start' : 'none';
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
     await this.pushThreadSettings();

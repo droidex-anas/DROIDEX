@@ -14,6 +14,7 @@ import './canvasBoard.css';
 import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useSessionLive } from '../../hooks/useSessionLive';
+import { useStoreSelector } from '../../hooks/useStore';
 import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
 import { canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
@@ -29,6 +30,7 @@ import {
   CanvasNote,
   CanvasPlate,
   CanvasStatus,
+  CanvasToolsMissing,
 } from './CanvasPaneStates';
 import {
   acknowledgeAttachment,
@@ -38,6 +40,7 @@ import {
 } from './canvasChats';
 import {
   initialCanvasPaneState,
+  lacksCanvasTools,
   outdatedCanvasMessage,
   SELECT_MODE,
   type BoardInteraction,
@@ -305,6 +308,9 @@ function CanvasBody({
   onRetry: () => void;
   onOpenSource: (designId: string) => void;
 }) {
+  const toolsMissing = useStoreSelector((current) =>
+    lacksCanvasTools(current.sessions[appSessionId]),
+  );
   switch (state.status) {
     case 'opening':
       return <CanvasStatus label="Opening Canvas…" />;
@@ -327,6 +333,7 @@ function CanvasBody({
         </CanvasPlate>
       );
     case 'unattached':
+      if (toolsMissing) return <CanvasToolsMissing canvasId={null} />;
       return (
         <CanvasEmptyState
           error={state.error}
@@ -375,6 +382,9 @@ function CanvasBoardMount({
 }) {
   const { canvasId } = snapshot;
   const agentWorking = useSessionLive(appSessionId);
+  const toolsMissing = useStoreSelector((current) =>
+    lacksCanvasTools(current.sessions[appSessionId]),
+  );
   const arrangeFrames = useCallback(
     (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
     [appSessionId, canvasId],
@@ -404,6 +414,11 @@ function CanvasBoardMount({
   );
   const { frames } = snapshot;
   const { selectedFrameIds } = interaction;
+  const emptyBoard = toolsMissing ? (
+    <CanvasToolsMissing canvasId={canvasId} />
+  ) : (
+    <CanvasInvitation />
+  );
   useEffect(() => {
     const byId = new Map(frames.map((frame) => [frame.designId, frame]));
     return showBoard({
@@ -423,7 +438,7 @@ function CanvasBoardMount({
   return (
     <div data-canvas-board className="min-h-0 flex-1">
       {snapshot.frames.length === 0 ? (
-        <CanvasInvitation />
+        emptyBoard
       ) : (
         <CanvasBoard
           ref={boardRef}

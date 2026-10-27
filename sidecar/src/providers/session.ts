@@ -7,6 +7,7 @@ import type {
   ReasoningEffort,
   SessionInteractionMode,
   SessionPurpose,
+  SessionSummary,
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
@@ -132,6 +133,9 @@ export interface ProviderSession {
   // The provider's own handle for reopening this conversation, when it differs
   // from providerSessionId. Only Codex, which mints its own thread ids, has one.
   readonly resumeId?: string;
+  // Set when a provider fixes its tools as a new conversation starts: whether
+  // that start declared the Canvas tools. A resumed session leaves it unset.
+  readonly canvasTools?: SessionSummary['canvasTools'];
   // The live agent process, when the provider runs one, so it can be tracked.
   readonly process?: { pid: number; isAlive(): boolean };
   // For a runtime that can end outside a turn. Never rejects; a failure carries

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   initialCanvasPaneState,
+  lacksCanvasTools,
   openSourceFrame,
   openSourcePanel,
   reduceCanvasPane,
@@ -18,6 +19,7 @@ import {
   REVIEWING_REMOVAL,
 } from './canvasState';
 import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from './protocol';
+import { sessionSummary } from '../../test/sessionSummary';
 
 function frame(designId: string, name: string): CanvasFrame {
   return {
@@ -79,6 +81,22 @@ test('a chat whose canvas an earlier DROIDEX made is unattached and says which i
   // Its name is often a whole first prompt, so only the start is quoted.
   assert.match(outdatedCanvasMessage('Pricing'), /^“Pricing” was made by an earlier DROIDEX/);
   assert.match(outdatedCanvasMessage('x'.repeat(60)), /^“x{47}…” was made/);
+});
+
+test('only a Codex thread started without the Canvas tools gets the new-chat recovery', () => {
+  assert.equal(lacksCanvasTools(sessionSummary('droid')), false);
+  assert.equal(lacksCanvasTools(sessionSummary('claude', { provider: 'claude' })), false);
+  const codex = { provider: 'codex', resumeId: 'thread' } as const;
+  assert.equal(
+    lacksCanvasTools(sessionSummary('codex-new', { ...codex, canvasTools: 'at_start' })),
+    false,
+  );
+  assert.equal(
+    lacksCanvasTools(sessionSummary('codex-old', { ...codex, canvasTools: 'none' })),
+    true,
+  );
+  // A chat this window has not loaded is not claimed to be broken.
+  assert.equal(lacksCanvasTools(undefined), false);
 });
 
 test('reopening a pane with an unsettled attachment keeps recovery ahead of the cache', () => {

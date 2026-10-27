@@ -1522,14 +1522,19 @@ function summarizeSessionFile(
   // exchange here cannot hide a first turn while it is running.
   if (!classification || !hasCompletedConversation) return { summary: null, ...cachedLaunch };
   const title = start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
+  // A Droid file carries no binding, so it reads as Droid without migration.
+  const provider = providerKind(start.provider) ?? DEFAULT_PROVIDER;
   return {
     summary: {
       appSessionId: providerSessionId,
       providerSessionId,
       missionId: classification.missionId,
-      // A Droid file carries no binding, so it reads as Droid without migration.
-      provider: providerKind(start.provider) ?? DEFAULT_PROVIDER,
+      provider,
       ...(start.resumeId ? { resumeId: start.resumeId } : {}),
+      // A Codex thread stored without the record started before Canvas existed.
+      ...(provider === 'codex'
+        ? { canvasTools: start.canvasTools === 'at_start' ? 'at_start' : 'none' }
+        : {}),
       sessionPurpose: classification.sessionPurpose,
       interactionMode: classification.interactionMode,
       role: classification.role,
