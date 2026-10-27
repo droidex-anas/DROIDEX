@@ -10,10 +10,15 @@ import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import type {
+  EditElementInput,
+  ElementEditResult,
+} from '../../../src/features/canvas/elementEditProtocol';
+import type {
   ArrangeFramesInput,
   CanvasFrame,
   CanvasSnapshot,
   FrameRect,
+  SourceElement,
 } from '../../../src/features/canvas/protocol';
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
 import '../../../src/index.css';
@@ -42,6 +47,10 @@ interface BoardHarness {
   resize: (width: number) => void;
   /** Closes the source drawer the way the workspace does, focus included. */
   closeSource: () => void;
+  editCalls: EditElementInput[];
+  /** Answers one edit with the revision it wrote, and builds that revision. */
+  answerEdit: (index: number, resolution: ElementEditResult['resolution']) => void;
+  refuseEdit: (index: number) => void;
 }
 
 declare global {
@@ -135,6 +144,38 @@ const SEEDED: Annotation[] = [
   },
 ];
 const seeded = params.has('marks') ? SEEDED : [];
+// `?edit=1` maps Design A's source to two elements Edit can pick.
+const ELEMENTS: SourceElement[] = params.has('edit')
+  ? [
+      {
+        elementId: 'el_title',
+        file: 'main.tsx',
+        start: 40,
+        end: 90,
+        tagName: 'h1',
+        editability: 'literal',
+      },
+      {
+        elementId: 'el_card',
+        file: 'main.tsx',
+        start: 10,
+        end: 200,
+        tagName: 'section',
+        editability: 'shared',
+      },
+    ]
+  : [];
+
+function built(revisionId: string): CanvasFrame['build'] {
+  return {
+    status: 'ready',
+    generation: 1,
+    revisionId,
+    artifactId: 'a'.repeat(64),
+    elements: ELEMENTS,
+    diagnostics: [],
+  };
+}
 
 const initial: CanvasSnapshot = {
   canvasId: 'cv_board',
@@ -148,16 +189,7 @@ const initial: CanvasSnapshot = {
       manifestVersion: 1,
       revisionId: 'rev_01',
       designSystem: { id: 'droidex', version: 1, mode: scheme },
-      build: params.has('building')
-        ? { status: 'building', generation: 1 }
-        : {
-            status: 'ready',
-            generation: 1,
-            revisionId: 'rev_01',
-            artifactId: 'a'.repeat(64),
-            elements: [],
-            diagnostics: [],
-          },
+      build: params.has('building') ? { status: 'building', generation: 1 } : built('rev_01'),
     }),
   ),
 };
@@ -166,6 +198,11 @@ const calls: ArrangeFramesInput[] = [];
 const annotateCalls: AnnotateCanvasInput[] = [];
 const annotateReplies: { resolve: () => void; reject: (error: Error) => void }[] = [];
 const previewClicks: string[] = [];
+const editCalls: EditElementInput[] = [];
+const editReplies: {
+  resolve: (result: ElementEditResult) => void;
+  reject: (error: Error) => void;
+}[] = [];
 const readArtifact = () => Promise.resolve({ artifactId: 'a'.repeat(64), html: '<p>Ready</p>' });
 
 function Harness() {
@@ -244,18 +281,28 @@ function Harness() {
     buildReady: () =>
       setSnapshot((current) => ({
         ...current,
-        frames: current.frames.map((frame) => ({
-          ...frame,
-          build: {
-            status: 'ready',
-            generation: 1,
-            revisionId: 'rev_01',
-            artifactId: 'a'.repeat(64),
-            elements: [],
-            diagnostics: [],
-          },
-        })),
+        frames: current.frames.map((frame) => ({ ...frame, build: built('rev_01') })),
       })),
+    editCalls,
+    answerEdit: (index, resolution) => {
+      const { designId } = editCalls[index].edit.element;
+      const revisionId = `rev_0${String(index + 2)}`;
+      editReplies[index].resolve({
+        receipt: { designId, revisionId, sequence: index + 2 },
+        resolution,
+      });
+      setSnapshot((current) => ({
+        ...current,
+        sequence: current.sequence + 1,
+        frames: current.frames.map((frame) =>
+          frame.designId === designId ? { ...frame, revisionId, build: built(revisionId) } : frame,
+        ),
+      }));
+    },
+    refuseEdit: (index) =>
+      editReplies[index].reject(
+        new CanvasRequestError('stale_reference', 'This element changed. Pick it again.'),
+      ),
   };
   return (
     <div style={{ padding: 24 }}>
@@ -269,7 +316,7 @@ function Harness() {
           interaction={interaction}
           agentWorking={false}
           onInteractionChange={setInteraction}
-          renderPreview={(frame, revisionId) =>
+          renderPreview={(frame, revisionId, selections) =>
             params.get('preview') === 'guest' ? (
               <DesignPreview
                 canvasId={snapshot.canvasId}
@@ -277,6 +324,7 @@ function Harness() {
                 revisionId={revisionId}
                 readArtifact={readArtifact}
                 reportPreview={() => undefined}
+                selections={selections}
               />
             ) : (
               <button
@@ -297,6 +345,12 @@ function Harness() {
             annotateCalls.push(input);
             return new Promise<void>((resolve, reject) =>
               annotateReplies.push({ resolve, reject }),
+            );
+          }}
+          onEditElement={(input) => {
+            editCalls.push(input);
+            return new Promise<ElementEditResult>((resolve, reject) =>
+              editReplies.push({ resolve, reject }),
             );
           }}
           onOpenSource={setSourceOpen}

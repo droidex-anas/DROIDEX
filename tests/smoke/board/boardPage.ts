@@ -8,6 +8,8 @@ import type {} from './CanvasBoardHarness';
 declare global {
   interface Window {
     boardGuestReady: boolean;
+    guestCommands: Record<string, unknown>[];
+    guestAnswer: (command: string, argument: Record<string, unknown>) => unknown;
   }
 }
 
@@ -54,10 +56,14 @@ export async function openBoard(
 /**
  * Stands in for the preview host: every `<webview>` the board makes answers as
  * guest 41, bound to this canvas, and reports ready once `boardGuestReady` is set.
+ * Pick and select commands are recorded in `guestCommands` and answered by
+ * `guestAnswer`.
  */
 export async function stubGuests(page: Page) {
   await page.addInitScript(() => {
     window.boardGuestReady = false;
+    window.guestCommands = [];
+    window.guestAnswer = () => null;
     Object.defineProperty(window, 'droidControl', {
       value: {
         canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
@@ -76,15 +82,24 @@ export async function stubGuests(page: Page) {
         if (tag !== 'webview') return guest;
         let identity = {};
         let sent = false;
+        const answers: unknown[] = [];
         Object.assign(guest, {
           getWebContentsId: () => 41,
           executeJavaScript: async (script: string) => {
-            if (script.startsWith('globalThis.__droidexCanvasPreview.start(')) {
-              identity = JSON.parse(script.slice(script.indexOf('(') + 1, -1));
+            const call = /^globalThis\.__droidexCanvasPreview\.(\w+)\((.*)\)$/s.exec(script);
+            const argument = call?.[2] ? JSON.parse(call[2]) : null;
+            if (call?.[1] === 'start') {
+              identity = argument;
               return 'started';
+            }
+            if (call?.[1] === 'pick' || call?.[1] === 'select') {
+              window.guestCommands.push({ command: call[1], ...argument });
+              answers.push({ event: 'selection', element: window.guestAnswer(call[1], argument) });
+              return 'sent';
             }
             const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];
             if (events.length > 0) sent = true;
+            events.push(...answers.splice(0));
             return JSON.stringify({ ...identity, events, dropped: 0 });
           },
         });

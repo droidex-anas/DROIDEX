@@ -215,3 +215,70 @@
   color: var(--droid-red);
   font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
 }
+
+/* The selected element's styles, at the board's right while Edit has one. */
+.canvas-element-panel {
+  position: absolute;
+  z-index: 2;
+  top: 52px;
+  right: 12px;
+  width: 248px;
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+  font: 12px / 18px var(--ui-font-family, system-ui, sans-serif);
+  color: var(--droid-text);
+}
+
+.canvas-element-title > span {
+  font-weight: 600;
+}
+
+.canvas-element-panel legend {
+  margin-top: 10px;
+  font-weight: 500;
+}
+
+.canvas-element-note,
+.canvas-element-title,
+.canvas-element-row > span {
+  color: var(--droid-text-secondary);
+}
+
+.canvas-element-note {
+  margin-top: 8px;
+}
+
+.canvas-element-row {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.canvas-element-row > input {
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  /* A tint rather than the elevated rung, which dark themes share with the raised panel. */
+  background: color-mix(in srgb, var(--droid-text) 6%, transparent);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.canvas-element-row > input:focus-visible {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--droid-selection) 45%, transparent);
+}
+
+.canvas-element-row > input[data-previewed] {
+  color: var(--droid-selection-label);
+}
+
+.canvas-element-row > input:read-only {
+  color: var(--droid-text-secondary);
+}

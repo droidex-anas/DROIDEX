@@ -10,7 +10,7 @@
 
 import { type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import { AlertTriangle, Check, MessageThread, Play } from '@droidex/icons';
-import type { FrameHandle } from './canvasGeometry';
+import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
 import { FrameLabel } from './FrameLabel';
@@ -69,6 +69,12 @@ export interface DesignFrameProps {
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
+  /** A press in Edit, at a point in the design's own pixels. */
+  onPickElement: (frame: CanvasFrame, at: Point) => void;
+  /** Enter on the label in Edit. */
+  onEditEnter: (frame: CanvasFrame) => void;
+  /** The box of the element Edit has picked in this frame, in the design's pixels. */
+  elementBox: FrameRect | null;
   /** This frame's label holds the frames' one tab stop. */
   tabStop: boolean;
   onFocusLabel: (frame: CanvasFrame) => void;
@@ -82,7 +88,8 @@ export interface DesignFrameProps {
 
 export function DesignFrame(props: DesignFrameProps) {
   const { frame, rect, scale, motion, arriving, mode, selected, showTools, held } = props;
-  const { capturePointer, onHold, onPick, onInteract } = props;
+  const { capturePointer, onHold, onPick, onInteract, onPickElement, onEditEnter } = props;
+  const { elementBox } = props;
   const animated = arriving && motion.frameArrivalMs > 0;
   const screenWidth = rect.width * scale;
   const tools = toolsPlacement(props);
@@ -110,6 +117,15 @@ export function DesignFrame(props: DesignFrameProps) {
         onHold={onHold}
         onPick={onPick}
         onInteract={onInteract}
+        onEnter={(picked) => {
+          // Edit goes into the frame's elements; otherwise Enter picks the
+          // frame, and on one already picked starts interacting with it.
+          if (mode === 'edit') {
+            onPick(picked, false);
+            onEditEnter(picked);
+          } else if (selected) onInteract(picked);
+          else onPick(picked, false);
+        }}
         onFocusLabel={props.onFocusLabel}
       />
 
@@ -134,6 +150,11 @@ export function DesignFrame(props: DesignFrameProps) {
               event.stopPropagation();
               if (mode === 'edit') {
                 onPick(frame, false);
+                const box = event.currentTarget.getBoundingClientRect();
+                onPickElement(frame, {
+                  x: (event.clientX - box.left) / scale,
+                  y: (event.clientY - box.top) / scale,
+                });
                 return;
               }
               onPick(frame, event.shiftKey);
@@ -142,6 +163,18 @@ export function DesignFrame(props: DesignFrameProps) {
             onDoubleClick={(event) => {
               event.stopPropagation();
               if (mode === 'select') onInteract(frame);
+            }}
+          />
+        )}
+        {elementBox && (
+          <div
+            aria-hidden
+            className="canvas-element-outline"
+            style={{
+              left: elementBox.x,
+              top: elementBox.y,
+              width: elementBox.width,
+              height: elementBox.height,
             }}
           />
         )}

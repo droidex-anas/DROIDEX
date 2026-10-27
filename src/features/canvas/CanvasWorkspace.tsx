@@ -18,6 +18,7 @@ import { canvasClient as canvas, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
 import type { AnnotateCanvasInput } from './annotationProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
 import { DesignPreview } from './DesignPreview';
 import {
@@ -379,6 +380,10 @@ function CanvasBoardMount({
     (input: AnnotateCanvasInput) => canvas.annotate(appSessionId, canvasId, input),
     [appSessionId, canvasId],
   );
+  const editElement = useCallback(
+    (input: EditElementInput) => canvas.source.editElement(appSessionId, canvasId, input),
+    [appSessionId, canvasId],
+  );
   const pins = useFramePins(appSessionId);
   const pinnedIds = useMemo(
     () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
@@ -416,6 +421,7 @@ function CanvasBoardMount({
           onOpenSource={onOpenSource}
           onArrangeFrames={arrangeFrames}
           onAnnotate={annotate}
+          onEditElement={editElement}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           agentWorking={agentWorking}
@@ -427,13 +433,14 @@ function CanvasBoardMount({
                 }
               : undefined
           }
-          renderPreview={(frame, revisionId) => (
+          renderPreview={(frame, revisionId, selections) => (
             <DesignPreview
               canvasId={canvasId}
               frame={frame}
               revisionId={revisionId}
               readArtifact={readArtifact}
               reportPreview={reportPreview}
+              selections={selections}
             />
           )}
         />

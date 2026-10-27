@@ -85,6 +85,8 @@ function isLength(property: string): boolean {
   );
 }
 
+export type CommitOutcome = { status: 'edited'; revisionId: string } | { status: 'refused' };
+
 /**
  * Settles the pending commit; a reply for any other mutation changes nothing.
  * An edit that made a new revision stays pending until `followRevision` moves
@@ -93,7 +95,7 @@ function isLength(property: string): boolean {
 export function settleCommit(
   draft: ElementEditDraft | null,
   mutationId: string,
-  outcome: { status: 'edited'; revisionId: string } | { status: 'refused' },
+  outcome: CommitOutcome,
 ): ElementEditDraft | null {
   if (draft?.pendingMutationId !== mutationId) return draft;
   if (outcome.status === 'refused') return null;

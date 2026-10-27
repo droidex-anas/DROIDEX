@@ -26,6 +26,8 @@ export interface BoardKeyActions {
   /** Ends a gesture or puts down an annotation tool; true when there was one. */
   cancel: () => boolean;
   annotationKey: (event: KeyboardEvent) => boolean;
+  /** Edit's own keys, on the frame the keyboard is on or the one selected. */
+  editKey: (event: KeyboardEvent, designId: string | null) => boolean;
   zoom: (command: ZoomCommand) => void;
   setMode: (mode: BoardMode) => void;
   holdSpace: () => void;
@@ -53,9 +55,15 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
     handled =
       runShortcut(event, actions) ||
       actions.annotationKey(event) ||
-      (onBoard && runBoardKey(event, header, actions));
+      (onBoard &&
+        (actions.editKey(event, header ?? soleSelection(actions.interaction)) ||
+          runBoardKey(event, header, actions)));
   }
   if (handled) event.preventDefault();
+}
+
+function soleSelection({ selectedFrameIds }: BoardInteraction): string | null {
+  return selectedFrameIds.length === 1 ? selectedFrameIds[0] : null;
 }
 
 /** Escape: a gesture first, then a tool, mode or selection; from a frame in Select, back to the board. */

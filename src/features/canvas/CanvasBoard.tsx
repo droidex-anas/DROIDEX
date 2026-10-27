@@ -41,11 +41,15 @@ import {
   type BoardMode,
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
+import type { PreviewSelections } from './DesignPreview';
+import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import { ElementPanel } from './ElementPanel';
 import { useCanvasMotion } from './useCanvasMotion';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures, type Band } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardViewport } from './useBoardViewport';
+import { useElementEditor } from './useElementEditor';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
 export interface CanvasBoardHandle {
@@ -66,8 +70,17 @@ export interface CanvasBoardProps {
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
   /** The one annotation write, bound to `CanvasClient.annotate` for this canvas. */
   onAnnotate: (input: AnnotateCanvasInput) => Promise<unknown>;
-  /** One frame's live preview of `revisionId`, mounted only while it holds a slot. */
-  renderPreview: (frame: CanvasFrame, revisionId: string) => ReactNode;
+  /** The one direct element edit, bound to `CanvasClient.source.editElement` for this canvas. */
+  onEditElement: (input: EditElementInput) => Promise<ElementEditResult>;
+  /**
+   * One frame's live preview of `revisionId`, mounted only while it holds a
+   * slot, reporting to the board's element editor through `selections`.
+   */
+  renderPreview: (
+    frame: CanvasFrame,
+    revisionId: string,
+    selections: PreviewSelections,
+  ) => ReactNode;
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
@@ -85,6 +98,7 @@ export function CanvasBoard({
   snapshot,
   onArrangeFrames,
   onAnnotate,
+  onEditElement,
   renderPreview,
   interaction,
   onInteractionChange,
@@ -137,6 +151,13 @@ export function CanvasBoard({
     onAnnotate,
   });
 
+  const editor = useElementEditor({
+    canvasId: snapshot.canvasId,
+    frames,
+    active: interaction.mode === 'edit',
+    onEditElement,
+  });
+
   const gestures = useBoardGestures({
     board,
     frames,
@@ -147,7 +168,10 @@ export function CanvasBoard({
       view.stopAnimating();
     },
     onPan: view.panByScreen,
-    onClear: annotation.clearSelection,
+    onClear: () => {
+      annotation.clearSelection();
+      editor.clear();
+    },
     onBand: pickBand,
     onArrangeFrames,
   });
@@ -208,7 +232,9 @@ export function CanvasBoard({
   }, [dispatch, fitTo, focusRequest, frames]);
 
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
-  const previews = useBoardPreviews(frames, visible, interaction, renderPreview);
+  const previews = useBoardPreviews(frames, visible, interaction, (frame, revisionId) =>
+    renderPreview(frame, revisionId, editor.selections),
+  );
   const announcement = useBoardAnnouncer({
     frames,
     shown: previews.shown,
@@ -299,8 +325,9 @@ export function CanvasBoard({
           interaction,
           order,
           dispatch,
-          cancel: () => gestures.cancel() || annotation.escape(),
+          cancel: () => gestures.cancel() || annotation.escape() || editor.clear(),
           annotationKey: annotation.runKey,
+          editKey: editor.runKey,
           zoom: onZoom,
           setMode: onMode,
           holdSpace: () => {
@@ -371,6 +398,17 @@ export function CanvasBoard({
             onInteract={(picked) => {
               dispatch({ type: 'interact', designId: picked.designId });
             }}
+            onPickElement={(picked, at) => {
+              editor.pick(picked.designId, at);
+            }}
+            onEditEnter={(picked) => {
+              editor.enter(picked.designId);
+            }}
+            elementBox={
+              editor.selection?.draft.element.designId === frame.designId
+                ? editor.selection.shown.rect
+                : null
+            }
             tabStop={frame.designId === tabStopId}
             onFocusLabel={onFocusLabel}
           />
@@ -398,7 +436,7 @@ export function CanvasBoard({
         mode={interaction.mode}
         selectedCount={interaction.selectedFrameIds.length}
         hasFrames={frames.length > 0}
-        error={gestures.layoutError || annotation.error}
+        error={gestures.layoutError || annotation.error || editor.error}
         onMode={onMode}
         onZoom={onZoom}
         onAlign={(edge: AlignEdge) => {
@@ -409,6 +447,16 @@ export function CanvasBoard({
         }}
         annotationTools={<AnnotationTools {...annotation.rail} />}
       />
+      {editor.selection && (
+        <ElementPanel
+          ref={editor.panel}
+          selection={editor.selection}
+          onPreview={editor.preview}
+          onRevert={editor.revert}
+          onCommit={editor.commit}
+          onLeave={() => board.current?.focus({ preventScroll: true })}
+        />
+      )}
 
       <p role="status" className="sr-only">
         {announcement}
