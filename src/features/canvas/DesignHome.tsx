@@ -154,7 +154,7 @@ function DesignDraftShell({
 
         <div className="droid-rise mt-7" style={{ animationDelay: '90ms' }}>
           <div className="mb-2 flex px-3">
-            <CanvasDesignSystem canvasKey={canvasKey} />
+            <CanvasDesignSystem canvasKey={canvasKey} appSessionId={null} />
           </div>
           <PromptInput appSessionId={null} compact />
           <ul className="mt-2 flex flex-wrap gap-1.5 px-3">

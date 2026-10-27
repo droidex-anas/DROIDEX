@@ -2,8 +2,9 @@
 // and where the arrow keys move. Presets keep the sidecar's order and the
 // user's kits read by name, as the Manage dialog lists them.
 
-import type { DesignSystemChoice } from './designSystemChoices';
+import { DEFAULT_DESIGN_SYSTEM, type DesignSystemChoice } from './designSystemChoices';
 import { sameKit } from './designSystemsState';
+import { requestDesignSystem, type FramePin } from './framePins';
 import type { PreviewMode } from './PreviewModeToggle';
 import type { DesignSystemRef, DesignSystemSummary } from './protocol';
 
@@ -58,6 +59,19 @@ export function rowAfterKey(
   const from = active ? rows.indexOf(active) : -1;
   if (from === -1) return step === 1 ? rows[0] : rows[rows.length - 1];
   return rows[(from + step + rows.length) % rows.length];
+}
+
+/** The kit the chip names: the one the next request runs under, by the send's own rule. */
+export function shownKit(
+  pins: readonly FramePin[],
+  choice: DesignSystemChoice | null,
+  systems: readonly DesignSystemSummary[] | null,
+): DesignSystemChoice {
+  const ref = requestDesignSystem(pins, choice?.ref ?? null);
+  if (choice) return { ref, name: choice.name };
+  if (sameKit(ref, DEFAULT_DESIGN_SYSTEM.ref)) return { ref, name: DEFAULT_DESIGN_SYSTEM.name };
+  const listed = systems?.find((kit) => sameKit(kit, ref));
+  return { ref, name: listed?.name ?? 'Pinned frame’s kit' };
 }
 
 /** What picking a kit pins: this version, in the mode the picker previews. */

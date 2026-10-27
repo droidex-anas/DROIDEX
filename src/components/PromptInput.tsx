@@ -2354,7 +2354,7 @@ export default function PromptInput({
             {/* A design draft shows its own above the composer. */}
             {appSessionId && references.canvasKey && (
               <Suspense fallback={null}>
-                <CanvasDesignSystem canvasKey={references.canvasKey} />
+                <CanvasDesignSystem canvasKey={references.canvasKey} appSessionId={appSessionId} />
               </Suspense>
             )}
 

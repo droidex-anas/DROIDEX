@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { activeRow, choiceOf, pickerRows, rowAfterKey } from './designSystemPickerRows';
-import type { DesignSystemSummary } from './protocol';
+import { DEFAULT_DESIGN_SYSTEM } from './designSystemChoices';
+import { activeRow, choiceOf, pickerRows, rowAfterKey, shownKit } from './designSystemPickerRows';
+import { canvasContextOf, type FramePin } from './framePins';
+import type { DesignSystemRef, DesignSystemSummary } from './protocol';
 
 function kit(id: string, name: string, kind: DesignSystemSummary['kind']): DesignSystemSummary {
   const swatch = { surface: '#fff', accent: '#000' };
@@ -55,4 +57,34 @@ test('picking a kit pins its version in the previewed mode', () => {
     ref: { id: 'claude-inspired', version: 1, mode: 'dark' },
     name: 'Claude-inspired',
   });
+});
+
+test('the chip names the kit a request runs under: the choice, else the first pin’s, else DROIDEX', () => {
+  const pin = (designSystem: DesignSystemRef): FramePin => ({
+    canvasId: 'cv',
+    designId: `d_${designSystem.id}`,
+    revisionId: 'r1',
+    name: 'Frame',
+    size: '10 × 10',
+    designSystem,
+  });
+  const claude = pin({ id: 'claude-inspired', version: 1, mode: 'dark' });
+  const zinc = pin({ id: 'kit_z', version: 1, mode: 'light' });
+  const chosen = choiceOf(systems[3], 'light');
+
+  assert.deepEqual(shownKit([claude, zinc], chosen, systems), chosen);
+  assert.deepEqual(shownKit([claude, zinc], null, systems), {
+    ref: claude.designSystem,
+    name: 'Claude-inspired',
+  });
+  assert.deepEqual(shownKit([], null, null), DEFAULT_DESIGN_SYSTEM);
+  for (const [pins, choice] of [
+    [[claude, zinc], chosen],
+    [[zinc], null],
+    [[], null],
+  ] as const)
+    assert.deepEqual(
+      shownKit(pins, choice, systems).ref,
+      canvasContextOf(pins, { designSystem: choice?.ref ?? null, imageAssetIds: [] })?.designSystem,
+    );
 });

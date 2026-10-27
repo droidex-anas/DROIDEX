@@ -174,6 +174,17 @@ export interface CanvasRequestPins {
 }
 
 /**
+ * The kit a request runs under: the user's choice for the canvas, else the
+ * first pinned frame's kit, else DROIDEX. The composer's chip names the same.
+ */
+export function requestDesignSystem(
+  pins: readonly FramePin[],
+  chosen: DesignSystemRef | null,
+): DesignSystemRef {
+  return chosen ?? pins.at(0)?.designSystem ?? DEFAULT_DESIGN_SYSTEM.ref;
+}
+
+/**
  * The turn context a send carries: the frames' revisions and the kit as they
  * are now, in fresh objects, so nothing that changes afterwards can retarget
  * the request. A chat on no canvas, with nothing pinned, carries none.
@@ -182,9 +193,8 @@ export function canvasContextOf(
   pins: readonly FramePin[] = NONE,
   onCanvas: CanvasRequestPins | null = null,
 ): CanvasTurnContext | undefined {
-  const first = pins.at(0);
-  if (!first && !onCanvas) return undefined;
-  const designSystem = onCanvas?.designSystem ?? first?.designSystem ?? DEFAULT_DESIGN_SYSTEM.ref;
+  if (pins.length === 0 && !onCanvas) return undefined;
+  const designSystem = requestDesignSystem(pins, onCanvas?.designSystem ?? null);
   const images = onCanvas?.imageAssetIds ?? [];
   return {
     designs: pins.map(({ designId, revisionId }) => ({ designId, revisionId })),

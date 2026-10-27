@@ -18,13 +18,20 @@ import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import {
   chooseDesignSystem,
-  DEFAULT_DESIGN_SYSTEM,
   useDesignSystemChoice,
   type DesignSystemChoice,
 } from './designSystemChoices';
 import { KitSwatches } from './DesignSystemList';
-import { activeRow, choiceOf, kitKey, pickerRows, rowAfterKey } from './designSystemPickerRows';
+import {
+  activeRow,
+  choiceOf,
+  kitKey,
+  pickerRows,
+  rowAfterKey,
+  shownKit,
+} from './designSystemPickerRows';
 import { sameKit, type KitList } from './designSystemsState';
+import { useFramePins, type FramePin } from './framePins';
 import { MenuHeading, MenuNote } from './menuRows';
 import { PreviewModeToggle, type PreviewMode } from './PreviewModeToggle';
 import type { DesignSystemRef, DesignSystemSummary } from './protocol';
@@ -32,12 +39,20 @@ import { useManageDesignSystems } from './useManageDesignSystems';
 
 const PICKER_WIDTH_PX = 280;
 
-/** The control bound to a canvas's stored choice. */
-export function CanvasDesignSystem({ canvasKey }: { canvasKey: string }) {
+/** The control bound to a canvas's stored choice and the frames its chat has pinned. */
+export function CanvasDesignSystem({
+  canvasKey,
+  appSessionId,
+}: {
+  canvasKey: string;
+  appSessionId: string | null;
+}) {
   const choice = useDesignSystemChoice(canvasKey);
+  const pins = useFramePins(appSessionId);
   return (
     <DesignSystemControl
       value={choice}
+      pins={pins}
       onChange={(next) => {
         chooseDesignSystem(canvasKey, next);
       }}
@@ -45,12 +60,17 @@ export function CanvasDesignSystem({ canvasKey }: { canvasKey: string }) {
   );
 }
 
-/** `value` null runs under DROIDEX; the control owns its popover and the Manage dialog. */
+/**
+ * `value` null runs under the pinned frames' kit, else DROIDEX. The control
+ * owns its popover, the kit list and the Manage dialog.
+ */
 export function DesignSystemControl({
   value,
+  pins,
   onChange,
 }: {
   value: DesignSystemChoice | null;
+  pins: readonly FramePin[];
   onChange: (choice: DesignSystemChoice | null) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -59,7 +79,26 @@ export function DesignSystemControl({
     setOpen(false);
   }, []);
   const manage = useManageDesignSystems();
-  const shown = value ?? DEFAULT_DESIGN_SYSTEM;
+  const [list, setList] = useState<KitList>({ status: 'loading' });
+  const [reads, setReads] = useState(0);
+  const shown = shownKit(pins, value, list.status === 'listed' ? list.systems : null);
+
+  // Read on mount, to name a pinned frame's kit, and on every open, so a kit
+  // saved in Manage design systems shows next time.
+  useEffect(() => {
+    let active = true;
+    canvasClient.designSystems.list().then(
+      (systems) => {
+        if (active) setList({ status: 'listed', systems });
+      },
+      (error: unknown) => {
+        if (active) setList({ status: 'failed', message: canvasMessage(error) });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [reads]);
 
   return (
     <div
@@ -73,7 +112,8 @@ export function DesignSystemControl({
         aria-label={`Design system: ${shown.name}. Change it`}
         title="Design system for this canvas's requests"
         onClick={() => {
-          setOpen((current) => !current);
+          if (!open) setReads((count) => count + 1);
+          setOpen(!open);
         }}
         className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
       >
@@ -103,6 +143,11 @@ export function DesignSystemControl({
         className="!border-transparent !bg-droid-raised"
       >
         <PickerPanel
+          list={list}
+          onRetry={() => {
+            setList({ status: 'loading' });
+            setReads((count) => count + 1);
+          }}
           current={shown.ref}
           onPick={(kit, mode) => {
             close();
@@ -120,35 +165,21 @@ export function DesignSystemControl({
 }
 
 function PickerPanel({
+  list,
+  onRetry,
   current,
   onPick,
   onManage,
 }: {
+  list: KitList;
+  onRetry: () => void;
   current: DesignSystemRef;
   onPick: (kit: DesignSystemSummary, mode: PreviewMode) => void;
   onManage: () => void;
 }) {
-  const [list, setList] = useState<KitList>({ status: 'loading' });
-  const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<PreviewMode>(current.mode);
   const [movedTo, setMovedTo] = useState<string | null>(null);
-
-  // Read on every open, so a kit saved in Manage design systems shows next time.
-  useEffect(() => {
-    let active = true;
-    canvasClient.designSystems.list().then(
-      (systems) => {
-        if (active) setList({ status: 'listed', systems });
-      },
-      (error: unknown) => {
-        if (active) setList({ status: 'failed', message: canvasMessage(error) });
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [attempt]);
 
   const searching = query.trim() !== '';
   const { presets, yours } = pickerRows(list.status === 'listed' ? list.systems : [], query);
@@ -225,10 +256,7 @@ function PickerPanel({
             <p className="text-[12px] text-droid-red">{list.message}</p>
             <button
               type="button"
-              onClick={() => {
-                setList({ status: 'loading' });
-                setAttempt((count) => count + 1);
-              }}
+              onClick={onRetry}
               className="cursor-pointer rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
             >
               Try again
