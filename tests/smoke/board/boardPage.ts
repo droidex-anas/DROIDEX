@@ -82,7 +82,7 @@ export async function stubGuests(page: Page) {
         if (tag !== 'webview') return guest;
         let identity = {};
         let sent = false;
-        const answers: { event: 'selection'; element: unknown }[] = [];
+        const answers: { event: 'selection'; sequence: number; element: unknown }[] = [];
         Object.assign(guest, {
           getWebContentsId: () => 41,
           executeJavaScript: async (script: string) => {
@@ -94,7 +94,11 @@ export async function stubGuests(page: Page) {
             }
             if (call?.[1] === 'pick' || call?.[1] === 'select') {
               window.guestCommands.push({ command: call[1], ...argument });
-              answers.push({ event: 'selection', element: window.guestAnswer(call[1], argument) });
+              answers.push({
+                event: 'selection',
+                sequence: argument.sequence,
+                element: window.guestAnswer(call[1], argument),
+              });
               return 'sent';
             }
             const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];

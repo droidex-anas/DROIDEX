@@ -13,7 +13,8 @@
  * the generated code can read (spec §6), not an authorization token.
  *
  * It also answers the board's selection commands with a `selection` event for
- * the element picked or named, and again whenever that element's box moves.
+ * the element picked or named, and again whenever that element's box moves,
+ * each echoing the sequence number of the command it answers.
  * The intermediate accepts `interaction` too, which nothing produces yet.
  */
 const GENERATED_FRAME_REPORTER = `(() => {
@@ -83,6 +84,9 @@ const GENERATED_FRAME_REPORTER = `(() => {
     return at || null;
   };
   let selected = null;
+  // The command that made the current selection; every report of it echoes
+  // this so the board can tell its latest command's answer from a late one.
+  let commandSequence = 0;
   let previewed = [];
   let lastSelection = '';
   let selectionQueued = false;
@@ -109,11 +113,12 @@ const GENERATED_FRAME_REPORTER = `(() => {
       const encoded = JSON.stringify(element);
       if (encoded === lastSelection) return;
       lastSelection = encoded;
-      post('selection', { element: element });
+      post('selection', { sequence: commandSequence, element: element });
     });
   };
   const watchSelected = new ResizeObserver(reportSelection);
-  const select = (node, properties, styles) => {
+  const select = (node, properties, styles, sequence) => {
+    commandSequence = sequence;
     for (const entry of previewed.reverse())
       entry.node.style.setProperty(entry.property, entry.value, entry.priority);
     previewed = [];
@@ -160,12 +165,12 @@ const GENERATED_FRAME_REPORTER = `(() => {
         const hit = document.elementFromPoint(command.x, command.y);
         node = hit && hit.closest('[' + MARKER + ']');
       }
-      select(node || null, command.properties, {});
+      select(node || null, command.properties, {}, command.sequence);
     } else if (command.command === 'select') {
       const target = command.target;
       const node = target ? atPath(target.instancePath) : null;
       const found = node && node.getAttribute(MARKER) === target.elementId ? node : null;
-      select(found, command.properties, target ? target.styles : {});
+      select(found, command.properties, target ? target.styles : {}, command.sequence);
     }
   });
 })();`;

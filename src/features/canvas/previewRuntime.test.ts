@@ -70,7 +70,7 @@ function createObserver() {
     ready: 0,
     sizes: [] as { width: number; height: number }[],
     diagnostics: [] as CanvasDiagnostic[],
-    selections: [] as (PreviewElement | null)[],
+    selections: [] as { element: PreviewElement | null; sequence: number }[],
     lost: [] as PreviewLostReason[],
   };
   return {
@@ -79,7 +79,8 @@ function createObserver() {
       onReady: () => (seen.ready += 1),
       onResize: (size: { width: number; height: number }) => seen.sizes.push(size),
       onDiagnostics: (entries: CanvasDiagnostic[]) => seen.diagnostics.push(...entries),
-      onSelection: (element: PreviewElement | null) => seen.selections.push(element),
+      onSelection: (element: PreviewElement | null, sequence: number) =>
+        seen.selections.push({ element, sequence }),
       onLost: (reason: PreviewLostReason) => seen.lost.push(reason),
     },
   };
@@ -191,15 +192,14 @@ test('selection commands reach only a guest this run started and has not stopped
   assert.equal(session.calls.length, 1, 'nothing is sent before the guest has started');
 
   await started(session);
-  session.preview.pick({ step: 'next' }, ['gap']);
-  session.preview.select({ elementId: 'el_1', instancePath: '0/1', styles: { gap: '8px' } }, [
-    'gap',
-  ]);
+  assert.equal(session.preview.pick({ step: 'next' }, ['gap']), 2);
+  const target = { elementId: 'el_1', instancePath: '0/1', styles: { gap: '8px' } };
+  assert.equal(session.preview.select(target, ['gap']), 3);
   assert.deepEqual(
     session.calls.slice(2).map((call) => call.code),
     [
-      'globalThis.__droidexCanvasPreview.pick({"step":"next","properties":["gap"]})',
-      'globalThis.__droidexCanvasPreview.select({"target":{"elementId":"el_1","instancePath":"0/1","styles":{"gap":"8px"}},"properties":["gap"]})',
+      'globalThis.__droidexCanvasPreview.pick({"step":"next","properties":["gap"],"sequence":2})',
+      'globalThis.__droidexCanvasPreview.select({"target":{"elementId":"el_1","instancePath":"0/1","styles":{"gap":"8px"}},"properties":["gap"],"sequence":3})',
     ],
   );
 
@@ -211,14 +211,15 @@ test('selection commands reach only a guest this run started and has not stopped
 test('bounded events reach the board, and what a flood dropped is not reported', async () => {
   const session = run();
   const nonce = await started(session);
+  const sequence = session.preview.pick({ x: 10, y: 20 }, ['gap']);
 
   session.calls[1].settle(
     snapshot(
       [
         { event: 'resize', width: 640, height: 480 },
         { event: 'diagnostics', diagnostics: [{ code: 'preview_error', message: 'Boom' }] },
-        { event: 'selection', element: picked },
-        { event: 'selection', element: null },
+        { event: 'selection', sequence, element: picked },
+        { event: 'selection', sequence, element: null },
       ],
       7,
       { nonce },
@@ -232,8 +233,32 @@ test('bounded events reach the board, and what a flood dropped is not reported',
     session.seen.diagnostics.map((entry) => entry.code),
     ['preview_error'],
   );
-  assert.deepEqual(session.seen.selections, [picked, null]);
+  assert.deepEqual(session.seen.selections, [
+    { element: picked, sequence },
+    { element: null, sequence },
+  ]);
   assert.deepEqual(session.seen.lost, []);
+});
+
+test("a select's late reply landing between a pick and its answer is not taken for it", async () => {
+  const session = run();
+  const nonce = await started(session);
+  const answered = async (call: number, events: unknown[]) => {
+    session.calls[call].settle(snapshot(events, 0, { nonce }));
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+  const first = { ...picked, elementId: 'el_0', instancePath: '0/0' };
+  const select = session.preview.select({ ...first, styles: {} }, ['gap']);
+  const pick = session.preview.pick({ step: 'next' }, ['gap']);
+
+  // The guest answered the select after the arrow's pick had been sent.
+  await answered(1, [{ event: 'selection', sequence: select, element: first }]);
+  assert.deepEqual(session.seen.selections, []);
+
+  session.clock.fire(PREVIEW_POLL_INTERVAL_MS);
+  await answered(4, [{ event: 'selection', sequence: pick, element: picked }]);
+  assert.deepEqual(session.seen.selections, [{ element: picked, sequence: pick }]);
 });
 
 test('a poll that misses its deadline has main end the guest', async () => {

@@ -46,12 +46,15 @@ export interface PreviewElement {
   styles: Record<string, string>;
 }
 
-/** Everything a preview may report; nothing produces `interaction` yet. */
+/**
+ * Everything a preview may report; nothing produces `interaction` yet. A
+ * `selection` echoes the sequence number of the pick or select it answers.
+ */
 export type PreviewEvent =
   | { event: 'ready' }
   | { event: 'resize'; width: number; height: number }
   | { event: 'diagnostics'; diagnostics: CanvasDiagnostic[] }
-  | { event: 'selection'; element: PreviewElement | null }
+  | { event: 'selection'; sequence: number; element: PreviewElement | null }
   | { event: 'interaction'; kind: string };
 
 /** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
@@ -88,17 +91,28 @@ export const PREVIEW_STARTED = 'started';
 /** Drains the guest's bounded queue and answers with one JSON snapshot. */
 export const PREVIEW_POLL_SCRIPT = 'globalThis.__droidexCanvasPreview.drain()';
 
-/** Selects the element under a point or the next one along; a `selection` event answers. */
-export function previewPickScript(pick: PreviewPick, properties: readonly string[]): string {
-  return `globalThis.__droidexCanvasPreview.pick(${jsonArgument({ ...pick, properties })})`;
+/**
+ * Selects the element under a point or the next one along; a `selection` event
+ * carrying `sequence` answers.
+ */
+export function previewPickScript(
+  pick: PreviewPick,
+  properties: readonly string[],
+  sequence: number,
+): string {
+  return `globalThis.__droidexCanvasPreview.pick(${jsonArgument({ ...pick, properties, sequence })})`;
 }
 
-/** Selects one named element, or none, and previews its styles; a `selection` event answers. */
+/**
+ * Selects one named element, or none, and previews its styles; a `selection`
+ * event carrying `sequence` answers.
+ */
 export function previewSelectScript(
   target: PreviewTarget | null,
   properties: readonly string[],
+  sequence: number,
 ): string {
-  return `globalThis.__droidexCanvasPreview.select(${jsonArgument({ target, properties })})`;
+  return `globalThis.__droidexCanvasPreview.select(${jsonArgument({ target, properties, sequence })})`;
 }
 
 /**
@@ -160,7 +174,7 @@ function readEvent(value: unknown): PreviewEvent | null {
     case 'diagnostics':
       return readDiagnostics(value.diagnostics);
     case 'selection':
-      return readSelection(value.element);
+      return readSelection(value);
     case 'interaction':
       return present(value.kind) ? { event: 'interaction', kind: clamp(value.kind) } : null;
     default:
@@ -178,14 +192,15 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   return { event: 'diagnostics', diagnostics };
 }
 
-function readSelection(value: unknown): PreviewEvent | null {
-  if (value === null) return { event: 'selection', element: null };
-  if (!record(value) || !present(value.elementId) || typeof value.instancePath !== 'string')
+function readSelection({ sequence, element }: Record<string, unknown>): PreviewEvent | null {
+  if (!count(sequence) || sequence === 0) return null;
+  if (element === null) return { event: 'selection', sequence, element: null };
+  if (!record(element) || !present(element.elementId) || typeof element.instancePath !== 'string')
     return null;
-  const rect = readRect(value.rect);
-  if (!rect || !record(value.styles)) return null;
+  const rect = readRect(element.rect);
+  if (!rect || !record(element.styles)) return null;
   const styles: Record<string, string> = {};
-  const entries = Object.entries(value.styles);
+  const entries = Object.entries(element.styles);
   if (entries.length > MAX_PREVIEW_STYLE_PROPERTIES) return null;
   for (const [name, style] of entries) {
     if (typeof style !== 'string') return null;
@@ -193,9 +208,10 @@ function readSelection(value: unknown): PreviewEvent | null {
   }
   return {
     event: 'selection',
+    sequence,
     element: {
-      elementId: clamp(value.elementId),
-      instancePath: clamp(value.instancePath),
+      elementId: clamp(element.elementId),
+      instancePath: clamp(element.instancePath),
       rect,
       styles,
     },

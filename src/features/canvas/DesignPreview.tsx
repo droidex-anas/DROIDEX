@@ -41,7 +41,13 @@ export interface DesignPreviewProps {
 export interface PreviewSelections {
   /** A preview of one revision rendered; the call returned forgets it. */
   attach(designId: string, revisionId: string, run: PreviewRun): () => void;
-  report(designId: string, revisionId: string, element: PreviewElement | null): void;
+  /** The guest's answer to the command that returned `sequence`, or that element's box moving. */
+  report(
+    designId: string,
+    revisionId: string,
+    element: PreviewElement | null,
+    sequence: number,
+  ): void;
 }
 
 /** Every mount takes the next number, so a replacement is never this instance. */
@@ -296,8 +302,8 @@ export function PreviewGuestFrame({
               fresh.map((entry) => entry.message),
             );
           },
-          onSelection: (element) => {
-            selected.current?.report(designId, revisionId, element);
+          onSelection: (element, sequence) => {
+            selected.current?.report(designId, revisionId, element, sequence);
           },
           onLost: (reason) => {
             // A guest the board lost is not the design's fault; a stall is.

@@ -71,8 +71,12 @@ export interface PreviewObserver {
   onReady(): void;
   onResize(size: { width: number; height: number }): void;
   onDiagnostics(diagnostics: CanvasDiagnostic[]): void;
-  /** The element the guest has selected after a pick or select, or as its box moves. */
-  onSelection(element: PreviewElement | null): void;
+  /**
+   * The guest's answer to this run's latest pick or select, under the sequence
+   * number that command returned, and again as that element's box moves. A late
+   * reply to an earlier command never arrives here.
+   */
+  onSelection(element: PreviewElement | null, sequence: number): void;
   /** The guest was ended; nothing else arrives from it. */
   onLost(reason: PreviewLostReason): void;
 }
@@ -92,13 +96,13 @@ export interface PreviewRunOptions {
 
 /**
  * One running preview. `stop` is idempotent and releases every timer. The two
- * selection commands reach a guest that has started and is still this run's;
- * `onSelection` carries the answer.
+ * selection commands reach a guest that has started and is still this run's,
+ * and each returns the sequence number its `onSelection` answer carries.
  */
 export interface PreviewRun {
   stop(): void;
-  pick(pick: PreviewPick, properties: readonly string[]): void;
-  select(target: PreviewTarget | null, properties: readonly string[]): void;
+  pick(pick: PreviewPick, properties: readonly string[]): number;
+  select(target: PreviewTarget | null, properties: readonly string[]): number;
 }
 
 const realPreviewClock: PreviewClock = {
@@ -128,6 +132,8 @@ class GuestRun implements PreviewRun {
   private stopped = false;
   private started = false;
   private polling = false;
+  /** The sequence number of the latest selection command, whose answer alone is reported. */
+  private latestCommand = 0;
   private releaseReadyDeadline: (() => void) | null = null;
   private releasePollDeadline: (() => void) | null = null;
   private releaseNextPoll: (() => void) | null = null;
@@ -179,18 +185,19 @@ class GuestRun implements PreviewRun {
     this.release();
   }
 
-  pick(pick: PreviewPick, properties: readonly string[]): void {
-    this.command(previewPickScript(pick, properties));
+  pick(pick: PreviewPick, properties: readonly string[]): number {
+    return this.command((sequence) => previewPickScript(pick, properties, sequence));
   }
 
-  select(target: PreviewTarget | null, properties: readonly string[]): void {
-    this.command(previewSelectScript(target, properties));
+  select(target: PreviewTarget | null, properties: readonly string[]): number {
+    return this.command((sequence) => previewSelectScript(target, properties, sequence));
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */
-  private command(code: string): void {
-    if (this.stopped || !this.started) return;
-    void this.ask(code);
+  private command(script: (sequence: number) => string): number {
+    this.latestCommand += 1;
+    if (!this.stopped && this.started) void this.ask(script(this.latestCommand));
+    return this.latestCommand;
   }
 
   private release(): void {
@@ -265,7 +272,10 @@ class GuestRun implements PreviewRun {
         this.options.observer.onDiagnostics(event.diagnostics);
         return;
       case 'selection':
-        this.options.observer.onSelection(event.element);
+        // An earlier command's reply can land after a later one was sent, and
+        // would undo what superseded it.
+        if (event.sequence === this.latestCommand)
+          this.options.observer.onSelection(event.element, event.sequence);
         return;
       case 'interaction':
         return;

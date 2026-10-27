@@ -120,8 +120,12 @@ const INTERMEDIATE_SCRIPT = `(() => {
 
   // The properties the board asked about last; a selection carries no others.
   let asked = [];
-  const normalizeSelection = (element) => {
-    if (element === null) return { event: 'selection', element: null };
+  // A command's sequence number, which its answer echoes.
+  const isSequence = (value) => Number.isSafeInteger(value) && value > 0;
+  const normalizeSelection = (data) => {
+    if (!isSequence(data.sequence)) return null;
+    const element = data.element;
+    if (element === null) return { event: 'selection', sequence: data.sequence, element: null };
     if (!element || typeof element !== 'object' || !element.rect || typeof element.rect !== 'object')
       return null;
     const rect = {};
@@ -137,6 +141,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
     for (const name of asked) if (typeof given[name] === 'string') styles[name] = text(given[name]);
     return {
       event: 'selection',
+      sequence: data.sequence,
       element: { elementId, instancePath: text(element.instancePath), rect, styles },
     };
   };
@@ -158,13 +163,14 @@ const INTERMEDIATE_SCRIPT = `(() => {
         .map((entry) => ({ code: text(entry.code) || 'preview_error', message: text(entry.message) }));
       return { event: 'diagnostics', diagnostics };
     }
-    if (data.event === 'selection') return normalizeSelection(data.element);
+    if (data.event === 'selection') return normalizeSelection(data);
     if (data.event === 'interaction') return { event: 'interaction', kind: text(data.kind) };
     return null;
   };
 
   // The board's two selection commands, passed to the reporter in the frame.
-  // They name style properties to read and preview, never code to run.
+  // They name style properties to read and preview, never code to run, and
+  // carry the board's sequence number for the answer to echo.
   const PICK_STEPS = ['first', 'next', 'previous'];
   const propertiesOf = (request) => {
     if (!request || typeof request !== 'object' || !Array.isArray(request.properties)) return null;
@@ -253,18 +259,19 @@ const INTERMEDIATE_SCRIPT = `(() => {
     pick(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
       const properties = propertiesOf(request);
-      if (!properties) return 'invalid_request';
+      if (!properties || !isSequence(request.sequence)) return 'invalid_request';
+      const { sequence } = request;
       if (PICK_STEPS.includes(request.step))
-        return command({ command: 'pick', step: request.step, properties });
+        return command({ command: 'pick', sequence, step: request.step, properties });
       if (!Number.isFinite(request.x) || !Number.isFinite(request.y)) return 'invalid_request';
-      return command({ command: 'pick', x: request.x, y: request.y, properties });
+      return command({ command: 'pick', sequence, x: request.x, y: request.y, properties });
     },
     select(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
       const properties = propertiesOf(request);
-      if (!properties) return 'invalid_request';
-      const target = request.target;
-      if (target === null) return command({ command: 'select', target: null, properties });
+      if (!properties || !isSequence(request.sequence)) return 'invalid_request';
+      const { sequence, target } = request;
+      if (target === null) return command({ command: 'select', sequence, target: null, properties });
       if (
         !target ||
         typeof target !== 'object' ||
@@ -280,6 +287,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
         if (typeof target.styles[name] === 'string') styles[name] = text(target.styles[name]);
       return command({
         command: 'select',
+        sequence,
         target: { elementId: text(target.elementId), instancePath: target.instancePath, styles },
         properties,
       });

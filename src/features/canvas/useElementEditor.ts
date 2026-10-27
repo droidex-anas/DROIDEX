@@ -51,10 +51,10 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   /** The run whose guest holds the selection, so moving it elsewhere releases this one. */
   const holder = useRef<PreviewRun | null>(null);
   /**
-   * The run a pick was sent to. Its next report of anything but the selected
-   * element answers the pick, since a reply to an earlier select can land first.
+   * The pick waiting for its answer. A run reports only its latest command's
+   * replies, so a report under another sequence answers a select.
    */
-  const picking = useRef<PreviewRun | null>(null);
+  const picking = useRef<{ run: PreviewRun; sequence: number } | null>(null);
   const panel = useRef<HTMLDivElement>(null);
 
   if (!active && (selection !== null || error !== '')) {
@@ -92,43 +92,21 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     holder.current = next;
   }, [draft]);
 
-  const [selections] = useState<PreviewSelections>(() => ({
-    attach(designId, revisionId, run) {
-      runs.current.set(designId, { revisionId, run });
-      const current = latest.current.selection?.draft;
-      if (current?.element.designId === designId && current.element.revisionId === revisionId) {
-        run.select(target(current), PROPERTIES);
-        holder.current = run;
-      }
-      return () => {
-        if (runs.current.get(designId)?.run === run) runs.current.delete(designId);
-        if (holder.current === run) holder.current = null;
-      };
-    },
-    report(designId, revisionId, element) {
-      const held = runs.current.get(designId);
-      if (held?.revisionId !== revisionId) return;
-      const current = latest.current.selection;
-      const ref = current?.draft.element;
-      const selected = ref?.designId === designId && ref.revisionId === revisionId ? current : null;
-      if (element && selected && sameElement(selected.draft.element, element)) {
-        choose({ ...selected, shown: element });
-        return;
-      }
-      // Anything else that is not a pick's answer is a late reply to an earlier
-      // select; only the guest losing the selected element means something.
-      if (picking.current !== held.run) {
-        if (element === null && selected) choose(null);
-        return;
-      }
-      picking.current = null;
+  const [selections] = useState<PreviewSelections>(() => {
+    /** A pick's answer: the element it found becomes the selection, once its revision has built. */
+    const answerPick = (
+      designId: string,
+      revisionId: string,
+      run: PreviewRun,
+      element: PreviewElement | null,
+    ) => {
       if (element === null) {
         choose(null);
         return;
       }
       const site = siteOf(latest.current.frames, designId, revisionId, element.elementId);
       if (!site) {
-        held.run.select(null, PROPERTIES);
+        run.select(null, PROPERTIES);
         choose(null);
         setError('This design is still building. Pick the element again once it has.');
         return;
@@ -144,8 +122,39 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
         shown: element,
         written: null,
       });
-    },
-  }));
+    };
+
+    return {
+      attach(designId, revisionId, run) {
+        runs.current.set(designId, { revisionId, run });
+        const current = latest.current.selection?.draft;
+        if (current?.element.designId === designId && current.element.revisionId === revisionId) {
+          run.select(target(current), PROPERTIES);
+          holder.current = run;
+        }
+        return () => {
+          if (runs.current.get(designId)?.run === run) runs.current.delete(designId);
+          if (holder.current === run) holder.current = null;
+        };
+      },
+      report(designId, revisionId, element, sequence) {
+        const held = runs.current.get(designId);
+        if (held?.revisionId !== revisionId) return;
+        const asked = picking.current;
+        const answersPick = asked?.run === held.run && asked.sequence === sequence;
+        if (answersPick) picking.current = null;
+        const selected = selectionIn(latest.current.selection, designId, revisionId);
+        if (element && selected && sameElement(selected.draft.element, element)) {
+          choose({ ...selected, shown: element });
+          return;
+        }
+        if (answersPick) answerPick(designId, revisionId, held.run, element);
+        // A select names the selected element, so its answer means something
+        // only when the guest has lost that element.
+        else if (element === null && selected) choose(null);
+      },
+    };
+  });
   /** Picks in one design's live preview: at a point in its pixels, or a step along. */
   const pick = (designId: string, at: PreviewPick): boolean => {
     const held = runs.current.get(designId);
@@ -155,8 +164,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     }
     setError('');
     if (latest.current.selection?.draft.element.designId !== designId) choose(null);
-    picking.current = held.run;
-    held.run.pick(at, PROPERTIES);
+    picking.current = { run: held.run, sequence: held.run.pick(at, PROPERTIES) };
     return true;
   };
 
@@ -245,6 +253,12 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
   return { elementId, instancePath, styles: { ...draft.values } };
+}
+
+/** The selection when it is in this revision of this design, else null. */
+function selectionIn(selection: ElementSelection | null, designId: string, revisionId: string) {
+  const element = selection?.draft.element;
+  return element?.designId === designId && element.revisionId === revisionId ? selection : null;
 }
 
 /** Where an element is written, known only once its revision has built. */
