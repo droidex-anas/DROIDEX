@@ -82,8 +82,11 @@ export function Popover({
   // to the clicked target (or <body>) before cleanup, so it clears the flag and
   // does not steal focus back.
   const focusInsideRef = useRef(false);
+  // The panel mounts only once it is placed, which on a first open is a render
+  // after `open` turns true.
+  const placed = pos !== null;
   useEffect(() => {
-    if (!open) return;
+    if (!open || !placed) return;
     const track = () => {
       focusInsideRef.current = !!panelRef.current?.contains(document.activeElement);
     };
@@ -105,7 +108,7 @@ export function Popover({
       if (focusInsideRef.current) anchor?.focus();
       focusInsideRef.current = false;
     };
-  }, [open, anchorRef]);
+  }, [open, placed, anchorRef]);
 
   useLayoutEffect(() => {
     if (!open) return;

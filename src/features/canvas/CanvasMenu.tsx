@@ -22,7 +22,7 @@ import { searchCanvases } from './canvasChats';
 import { useOpenCanvas } from './useOpenCanvas';
 import { useManageDesignSystems } from './useManageDesignSystems';
 import { CanvasVariants } from './CanvasVariants';
-import type { VariantSource } from './variantRequests';
+import { variantSource, type VariantSource } from './variantRequests';
 
 /** What a dialog acts on, fixed when it opens so a selection change cannot retarget it. */
 type MenuDialog =
@@ -178,6 +178,7 @@ function CanvasActions({
     : null;
   // Frames land through the chat's attachment, so another chat's canvas takes none.
   const attached = board?.attached ? board : null;
+  const variants = attached && frame ? variantSource(canvasId, frame) : null;
   return (
     <>
       <MenuHeading>{name}</MenuHeading>
@@ -197,22 +198,10 @@ function CanvasActions({
       />
       <MenuRow
         label="Make variants…"
-        disabled={!attached || !frame || !revision}
+        disabled={!variants}
         onRun={() => {
-          if (!attached || !frame || !revision) return;
-          const { width, height } = frame.rect;
-          onRun({
-            kind: 'variants',
-            appSessionId: attached.appSessionId,
-            source: {
-              canvasId,
-              revision,
-              name: frame.name,
-              width,
-              height,
-              designSystem: frame.designSystem,
-            },
-          });
+          if (attached && variants)
+            onRun({ kind: 'variants', appSessionId: attached.appSessionId, source: variants });
         }}
       />
       <MenuRow

@@ -38,6 +38,12 @@ export interface HistoryState {
   restore: RestoreState;
 }
 
+/** A revision's place counted from the frame's first, once the whole history is read. */
+export function revisionNumber(list: RevisionList, revisionId: string | null): number | null {
+  if (list.status !== 'listed' || !list.complete || revisionId === null) return null;
+  const index = list.revisions.findIndex((revision) => revision.revisionId === revisionId);
+  return index < 0 ? null : list.revisions.length - index;
+}
 const LOADING: RevisionList = { status: 'loading' };
 const IDLE: RestoreState = { status: 'idle' };
 

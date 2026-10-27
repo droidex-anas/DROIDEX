@@ -43,6 +43,7 @@ import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
 import { ElementPanel } from './ElementPanel';
+import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
 import { useAnnotationEditor } from './useAnnotationEditor';
@@ -97,6 +98,8 @@ export interface CanvasBoardProps {
   pinnedIds?: ReadonlySet<string>;
   /** Pins a frame to the chat's next prompt or takes it off; absent where frames cannot be pinned. */
   onToggleChat?: (frame: CanvasFrame) => void;
+  /** What the selected frame's toolbar does to the canvas. */
+  frameActions: FrameActions;
 }
 
 export function CanvasBoard({
@@ -114,6 +117,7 @@ export function CanvasBoard({
   onOpenSource,
   pinnedIds,
   onToggleChat,
+  frameActions,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -388,6 +392,8 @@ export function CanvasBoard({
             onOpenSource={onOpenSource}
             inChat={pinnedIds?.has(frame.designId) ?? false}
             onToggleChat={onToggleChat}
+            actions={frameActions}
+            onDelete={removeSelection}
             onHold={gestures.onFramePointerDown}
             onPick={(picked, additive) => {
               dispatch({ type: 'pick', designId: picked.designId, additive });
