@@ -75,6 +75,7 @@ function createNativeBrowserManager(options) {
     sendToRenderer: options.sendToRenderer,
     findEntryForContents: findNativeBrowserEntryForWebContents,
     nativeImage: options.nativeImage,
+    clipboard: options.clipboard,
   });
 
   const preview = createBrowserPreview({

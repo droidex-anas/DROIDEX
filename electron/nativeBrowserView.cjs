@@ -2,6 +2,7 @@
 // keep the entry's URL, history, console and load state current. The partition
 // handlers stay as they were for views: permissions and devices are denied.
 const { CONSOLE_LEVELS } = require('./browserDiagnostics.cjs');
+const { isAgentKey } = require('./browserKeys.cjs');
 
 function createNativeBrowserViewFactory({
   session,
@@ -101,9 +102,10 @@ function createNativeBrowserViewFactory({
       if (current()) void loadUrl(entry, nextUrl);
       return { action: 'deny' };
     });
-    // Only the page the browser shows forwards app shortcuts, not one let go.
+    // Only the page the browser shows forwards app shortcuts, not one let go,
+    // and only the user's keys: an agent's chord is for the page.
     contents.on('before-input-event', (event, input) => {
-      if (current()) onInput(event, input);
+      if (current() && !isAgentKey(contents)) onInput(event, input);
     });
     contents.on('console-message', (details) => {
       // Electron's own notices about the guest are not the page's.

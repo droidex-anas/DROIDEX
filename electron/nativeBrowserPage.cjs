@@ -20,6 +20,7 @@ function createNativeBrowserPage({
   sendToRenderer,
   findEntryForContents,
   nativeImage,
+  clipboard,
 }) {
   const operationsOn = new WeakMap(); // guest contents -> { count, generation }
   const reading = createBrowserReading({
@@ -38,8 +39,11 @@ function createNativeBrowserPage({
     credentials,
     unthrottled,
     redactUrl: redactBrowserPageUrl,
+    clipboard,
     onPoint: ({ browserSessionId }, { x, y }) =>
       sendToRenderer('native-browser-agent-point', { browserSessionId, x, y }),
+    onPress: ({ browserSessionId }, { pressedAt, done }) =>
+      sendToRenderer('native-browser-agent-press', { browserSessionId, pressedAt, done }),
   });
   const waits = createBrowserWait({ reading });
 

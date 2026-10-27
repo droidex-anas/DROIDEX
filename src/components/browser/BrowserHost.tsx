@@ -23,6 +23,7 @@ import {
 } from './designMarks';
 import {
   listWorkingNativeBrowsers,
+  onNativeBrowserAgentPress,
   onNativeBrowserClosed,
   onNativeBrowserDesignEvent,
   onNativeBrowserLoadFailed,
@@ -188,25 +189,50 @@ function BrowserPageFrame({
 
   useEffect(() => {
     const webview = webviewRef.current;
-    if (!working || !webview) return;
-    // An agent's click focuses the page and takes the keyboard from the user;
-    // hand it back. The page fires no focus event here, only the user's element
-    // blurring and then a window blur that leaves the page active.
-    let previous: HTMLElement | null = null;
-    const remember = (event: FocusEvent) => {
-      if (event.target instanceof HTMLElement && event.target !== webview) previous = event.target;
+    if (!webview) return;
+    // An agent's press takes the keyboard into the page, away from wherever the
+    // user was typing. The page gets no focus event, so the user's element
+    // losing focus after the press began is what tells it from the user's own
+    // click into the page. The window blurs as the page takes the keyboard,
+    // which hands it back before the next key; the press being done is the
+    // backstop for when that news came first.
+    let userLeft: { element: HTMLElement; at: number } | null = null;
+    let pressedAt: number | null = null;
+    let blurTimer: ReturnType<typeof setTimeout> | undefined;
+    const returnKeyboard = () => {
+      if (pressedAt === null || document.hasFocus()) return;
+      if (!userLeft || userLeft.at < pressedAt) return;
+      const { element } = userLeft;
+      // The user's element can still be the active one while the keys go to
+      // the page; focusing it again does nothing until both let go.
+      webview.blur();
+      element.blur();
+      if (element.isConnected) element.focus({ preventScroll: true });
     };
-    const returnFocus = () => {
-      if (document.activeElement === webview && previous?.isConnected)
-        previous.focus({ preventScroll: true });
+    const onFocusOut = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement && event.target !== webview)
+        userLeft = { element: event.target, at: Date.now() };
     };
-    document.addEventListener('focusout', remember, true);
-    window.addEventListener('blur', returnFocus);
+    // Focus given back while the window is still blurring does not stick.
+    const onWindowBlur = () => {
+      clearTimeout(blurTimer);
+      blurTimer = setTimeout(returnKeyboard);
+    };
+    document.addEventListener('focusout', onFocusOut, true);
+    window.addEventListener('blur', onWindowBlur);
+    const stopListening = onNativeBrowserAgentPress((press) => {
+      if (press.browserSessionId !== page.browserSessionId) return;
+      pressedAt = press.pressedAt;
+      returnKeyboard();
+      if (press.done) pressedAt = null;
+    });
     return () => {
-      document.removeEventListener('focusout', remember, true);
-      window.removeEventListener('blur', returnFocus);
+      document.removeEventListener('focusout', onFocusOut, true);
+      window.removeEventListener('blur', onWindowBlur);
+      clearTimeout(blurTimer);
+      stopListening();
     };
-  }, [working]);
+  }, [page.browserSessionId]);
 
   return (
     <div style={frameStyle(placement, anchor, radius)} aria-hidden={!shown}>

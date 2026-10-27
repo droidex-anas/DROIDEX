@@ -80,6 +80,14 @@ export interface NativeBrowserAgentPoint {
   y: number;
 }
 
+/** An agent's mouse press on a page is about to go out, or is done. */
+export interface NativeBrowserAgentPress {
+  browserSessionId: string;
+  /** When the press began, in epoch milliseconds. */
+  pressedAt: number;
+  done: boolean;
+}
+
 /** One frame of a page's live picture-in-picture preview. */
 export interface NativeBrowserFrame {
   browserSessionId: string;
@@ -194,6 +202,12 @@ export function onNativeBrowserAgentPoint(
   handler: (event: NativeBrowserAgentPoint) => void,
 ): () => void {
   return window.droidex?.onNativeBrowserAgentPoint(handler) ?? (() => undefined);
+}
+
+export function onNativeBrowserAgentPress(
+  handler: (event: NativeBrowserAgentPress) => void,
+): () => void {
+  return window.droidex?.onNativeBrowserAgentPress(handler) ?? (() => undefined);
 }
 
 // How many previews are watching each page: main is told when the first one

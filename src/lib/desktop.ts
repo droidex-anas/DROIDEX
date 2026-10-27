@@ -8,6 +8,7 @@ import type {
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
   NativeBrowserAgentPoint,
+  NativeBrowserAgentPress,
   NativeBrowserFrame,
   NativeBrowserWorking,
 } from './nativeBrowser';
@@ -391,6 +392,7 @@ export interface DroidexApi {
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
   onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
   onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;
+  onNativeBrowserAgentPress: (handler: (event: NativeBrowserAgentPress) => void) => () => void;
   onNativeBrowserFrame: (handler: (event: NativeBrowserFrame) => void) => () => void;
   onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
 }
