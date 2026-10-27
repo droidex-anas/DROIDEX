@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { DESIGN_SYSTEM_LIMITS } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
+import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
 import type { CanvasCommand } from './protocol.js';
 import {
   arrangeFramesInputSchema,
@@ -31,6 +32,11 @@ import {
 const request = { requestId: canvasIdentifierSchema };
 const session = { appSessionId: z.string().min(1).max(200) };
 const target = { ...session, canvasId: canvasIdentifierSchema };
+const base64Schema = (maxLength: number) =>
+  z
+    .string()
+    .max(maxLength)
+    .regex(/^[A-Za-z0-9+/]*={0,2}$/);
 const kitName = {
   name: z.string().trim().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
 };
@@ -237,6 +243,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       canvasId: canvasIdentifierSchema,
       revision: revisionRefSchema,
       name: canvasNameSchema,
+      thumbnail: base64Schema(MAX_THUMBNAIL_BASE64_LENGTH).optional(),
     })
     .strict(),
   z
@@ -244,6 +251,13 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.listLibraryItems'),
       ...request,
       query: z.string().max(CANVAS_LIMITS.maxFrameNameLength),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readLibraryThumbnail'),
+      ...request,
+      itemId: canvasIdentifierSchema,
     })
     .strict(),
   z
@@ -271,10 +285,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
         z
           .object({
             ok: z.literal(true),
-            png: z
-              .string()
-              .max(MAX_CAPTURE_BASE64_LENGTH)
-              .regex(/^[A-Za-z0-9+/]*={0,2}$/),
+            png: base64Schema(MAX_CAPTURE_BASE64_LENGTH),
           })
           .strict(),
         z.object({ ok: z.literal(false), message: z.string().min(1).max(300) }).strict(),

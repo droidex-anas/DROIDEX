@@ -89,8 +89,22 @@ export async function mountPreviewGuest(page: Page): Promise<number> {
   return guestId;
 }
 
-/** Mounts the real renderer component beneath a board zoom, including its capture registry. */
-export async function mountZoomedPreview(page: Page, html: string): Promise<void> {
+/** One saved revision a probe preview mounts, which is also its capture key. */
+export interface PreviewProbeIds {
+  canvasId: string;
+  designId: string;
+  revisionId: string;
+}
+
+/**
+ * Mounts the real renderer component beneath a board zoom, including its
+ * capture registry, and exposes `window.__canvasPreviewProbe` for those ids.
+ */
+export async function mountZoomedPreview(
+  page: Page,
+  html: string,
+  ids: PreviewProbeIds = { canvasId: 'cv_zoom', designId: 'dsg_zoom', revisionId: 'rev_zoom' },
+): Promise<void> {
   const fromSidecar = createRequire(path.resolve('sidecar/package.json'));
   const bundler = fromSidecar('esbuild') as {
     build(options: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
@@ -102,17 +116,22 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PreviewGuestFrame } from '../../src/features/canvas/DesignPreview';
 import { captureCanvasImage } from '../../src/features/canvas/captureCanvasImage';
+import { libraryThumbnail } from '../../src/features/canvas/libraryThumbnail';
 const container = document.createElement('div');
 container.id = 'canvas-zoom-probe';
 container.style.cssText = 'position:fixed;left:0;top:0;width:720px;height:720px;transform:scale(0.5);transform-origin:top left;z-index:99999';
 document.body.append(container);
+const ids = ${JSON.stringify(ids)};
+const ref = { designId: ids.designId, revisionId: ids.revisionId };
 createRoot(container).render(createElement(PreviewGuestFrame, {
-  canvasId: 'cv_zoom', designId: 'dsg_zoom', revisionId: 'rev_zoom',
+  canvasId: ids.canvasId, designId: ids.designId, revisionId: ids.revisionId,
   showingRevisionId: null, html: ${JSON.stringify(html)}, diagnostics: [],
   reportPreview: () => undefined,
 }));
-Object.assign(window, { __canvasZoomCapture: () =>
-  captureCanvasImage('cv_zoom', { designId: 'dsg_zoom', revisionId: 'rev_zoom' }, new AbortController().signal) });
+Object.assign(window, { __canvasPreviewProbe: {
+  capture: () => captureCanvasImage(ids.canvasId, ref, new AbortController().signal),
+  libraryThumbnail: () => libraryThumbnail(ids.canvasId, ref),
+} });
 `,
       resolveDir: path.resolve('tests/smoke'),
       sourcefile: 'canvasZoomProbe.tsx',

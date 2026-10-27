@@ -16,7 +16,7 @@ import { CanvasFrameCreation } from './CanvasFrameCreation.js';
 import { stageRevision, type SourceWriteOptions } from './canvasFrames.js';
 import { CanvasHeads, UNREADABLE_CANVAS } from './canvasHeads.js';
 import { CanvasLeases, type CanvasLeaseRegistry } from './canvasLeases.js';
-import { readRevisionCopy, type RevisionCopy } from './canvasLibrary.js';
+import { readRevisionCopy, type FrameCopy } from './canvasLibrary.js';
 import { CanvasRemoval, discardRemovedCanvases } from './canvasRemoval.js';
 import { CanvasPreviewReports } from './canvasPreviewReports.js';
 import { CanvasRevisionHistory } from './canvasRevisionHistory.js';
@@ -291,11 +291,13 @@ export class CanvasWorkspace {
     return this.removal.remove(canvasId, expectedSequence, expectedAttachedAppSessionIds);
   }
 
-  /** A committed revision's source and owned images, for a copy that outlives this canvas. */
-  copyRevision(canvasId: string, ref: RevisionRef): Promise<RevisionCopy> {
-    return this.commits.admit(() => {
+  /** A committed revision's source, owned images and frame size, for a copy that outlives this canvas. */
+  copyRevision(canvasId: string, ref: RevisionRef): Promise<FrameCopy> {
+    return this.commits.admit(async () => {
       this.commits.requireOpen();
-      return readRevisionCopy(this.history, this.writerLease.directory, canvasId, ref);
+      const { rect } = requireDesign(this.canvas(canvasId), ref.designId);
+      const copy = await readRevisionCopy(this.history, this.writerLease.directory, canvasId, ref);
+      return { ...copy, width: rect.width, height: rect.height };
     });
   }
 

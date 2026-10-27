@@ -105,7 +105,12 @@ export async function withCanvasBridge(
       );
       socket.send(JSON.stringify({ ...command, requestId }));
       const event = await response;
-      assert.ok(event.type === 'canvas.result' && event.ok, `Canvas command ${requestId} failed`);
+      assert.ok(
+        event.type === 'canvas.result' && event.ok,
+        `Canvas command ${requestId} failed: ${
+          event.type === 'canvas.result' && !event.ok ? JSON.stringify(event.error) : event.type
+        }`,
+      );
       return event.reply;
     };
     await use(send);

@@ -188,7 +188,7 @@ export async function answerCaptureRequest(
   }
 }
 
-function base64(bytes: Uint8Array): string {
+export function base64(bytes: Uint8Array): string {
   let binary = '';
   // Chunked so a multi-megabyte capture never overflows the argument list.
   for (let start = 0; start < bytes.length; start += 0x8000)

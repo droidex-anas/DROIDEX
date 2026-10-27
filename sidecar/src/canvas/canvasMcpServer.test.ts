@@ -540,7 +540,7 @@ test('Canvas create preserves seeded variant placement and mutation retry identi
   // A library item the user named inserts through the same tool and schema.
   const ref = { designId, revisionId: written.receipt.revisionId };
   const item = { itemId: 'mcp-hey', name: 'Hey', sourceCanvasId: canvasId, source: ref };
-  await saveLibraryItem(item, () => h.workspace.copyRevision(canvasId, ref));
+  await saveLibraryItem(item, null, () => h.workspace.copyRevision(canvasId, ref));
   const seeded = (itemId: string) => [{ ...frame, seed: { kind: 'library', itemId } }];
   const inserted = await h.call('canvas_create', {
     scopeId,

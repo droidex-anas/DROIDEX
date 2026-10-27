@@ -1,8 +1,9 @@
 // The local library (spec §7): immutable copies of saved frames under
-// <profile>/canvas-library/<itemId>/. An item owns its source and the images
-// that source names, so it outlives the canvas it came from; the canvas and
-// revision it records are provenance only. Like a kit, an item is named by the
-// mutation that saved it, so a retried save finds the copy it already made.
+// <profile>/canvas-library/<itemId>/. An item owns its source, the images that
+// source names and its thumbnail, so it outlives the canvas it came from; the
+// canvas and revision it records are provenance only. Like a kit, an item is
+// named by the mutation that saved it, so a retried save finds the copy it
+// already made.
 
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -12,12 +13,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { canvasLibraryDir } from '../droidexPaths.js';
 import {
+  imageMediaType,
   ownedAssetSchema,
   readOwnedImage,
   referencedAssetIds,
   type OwnedImage,
 } from './canvasAssets.js';
-import { canvasError, storageFailure } from './canvasError.js';
+import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
 import type { CanvasRevisionHistory } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type {
@@ -31,14 +33,19 @@ import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
   designSystemRefSchema,
+  dimensionPxSchema,
   revisionRefSchema,
   sourcePathSchema,
 } from './schema.js';
 
 /** The most items one listing answers with, newest first. */
 const LIBRARY_LIST_LIMIT = 50;
+/** The renderer saves a downscaled capture, so a picker row's preview stays small. */
+const MAX_THUMBNAIL_BYTES = 512 * 1024;
+export const MAX_THUMBNAIL_BASE64_LENGTH = Math.ceil(MAX_THUMBNAIL_BYTES / 3) * 4;
 
 const ITEM_FILE = 'item.json';
+const THUMBNAIL_FILE = 'thumbnail.png';
 const SOURCE_DIRECTORY = 'files';
 const IMAGES_DIRECTORY = 'images';
 const STAGING_PREFIX = '.staging-';
@@ -48,10 +55,12 @@ const CREATE_FLAGS =
 
 const MISSING_ITEM = 'That library item is not available. Choose another one.';
 const DAMAGED_ITEM = 'That library item is damaged and cannot be used.';
+const OUTDATED_ITEM = 'That library item was made by an earlier DROIDEX. Choose another one.';
 const SAVE_RECOVERY = 'The library item could not be saved. Free some disk space and try again.';
 const LIST_RECOVERY = 'The Canvas library could not be read.';
 const REUSED_ID = 'That mutation ID already saved a different library item. Use a new mutation ID.';
 const LINKED_STORAGE = 'The Canvas library holds a symbolic link and was not used.';
+const NOT_PNG = 'A library thumbnail must be a PNG.';
 
 /** A committed revision's whole source and the owned images it names. */
 export interface RevisionCopy {
@@ -60,24 +69,39 @@ export interface RevisionCopy {
   images: OwnedImage[];
 }
 
+/** A revision a save copies, with the size its frame has on the source canvas. */
+export interface FrameCopy extends RevisionCopy {
+  width: number;
+  height: number;
+}
+
+/** What a save names; the rest of the item comes from the revision it copies. */
+type ItemRequest = Pick<LibraryItem, 'itemId' | 'name' | 'sourceCanvasId' | 'source'>;
+
 export type LibraryCommand = Extract<
   CanvasCommand,
-  { type: `canvas.${'saveLibraryItem' | 'listLibraryItems'}` }
+  { type: `canvas.${'saveLibraryItem' | 'listLibraryItems' | 'readLibraryThumbnail'}` }
 >;
 
 export function isLibraryCommand(command: CanvasCommand): command is LibraryCommand {
-  return command.type === 'canvas.saveLibraryItem' || command.type === 'canvas.listLibraryItems';
+  return (
+    command.type === 'canvas.saveLibraryItem' ||
+    command.type === 'canvas.listLibraryItems' ||
+    command.type === 'canvas.readLibraryThumbnail'
+  );
 }
 
 const savedItemSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     item: z
       .object({
         itemId: canvasIdentifierSchema,
         name: z.string().min(1).max(CANVAS_LIMITS.maxFrameNameLength),
         sourceCanvasId: canvasIdentifierSchema,
         source: revisionRefSchema,
+        width: dimensionPxSchema,
+        height: dimensionPxSchema,
         designSystem: designSystemRefSchema,
       })
       .strict(),
@@ -92,6 +116,9 @@ type SavedItem = z.infer<typeof savedItemSchema>;
 // Staging trees of saves still running, which a listing's sweep leaves alone;
 // any other one is what a terminated run left behind.
 const savesStaging = new Set<string>();
+// An earlier DROIDEX's items are a stable fact about this profile, so a listing
+// says each one once rather than once per read of the picker's search box.
+const outdatedItems = new Set<string>();
 
 export async function answerLibraryCommand(
   workspace: CanvasWorkspace,
@@ -99,6 +126,14 @@ export async function answerLibraryCommand(
 ): Promise<CanvasReply> {
   if (command.type === 'canvas.listLibraryItems')
     return { kind: 'libraryItems', items: await listLibraryItems(command.query) };
+  if (command.type === 'canvas.readLibraryThumbnail') {
+    const png = await readLibraryThumbnail(command.itemId);
+    return { kind: 'libraryThumbnail', png: png?.toString('base64') ?? null };
+  }
+  const thumbnail =
+    command.thumbnail === undefined ? null : Buffer.from(command.thumbnail, 'base64');
+  if (thumbnail && imageMediaType(thumbnail) !== 'image/png')
+    throw canvasError('invalid_input', NOT_PNG);
   const item = await saveLibraryItem(
     {
       itemId: command.mutationId,
@@ -106,6 +141,7 @@ export async function answerLibraryCommand(
       sourceCanvasId: command.canvasId,
       source: command.revision,
     },
+    thumbnail,
     () => workspace.copyRevision(command.canvasId, command.revision),
   );
   return { kind: 'libraryItem', item };
@@ -128,26 +164,34 @@ export async function readRevisionCopy(
 
 /**
  * Saves one immutable copy, or answers the copy this mutation already saved,
- * even after its source canvas is gone. The design system is the one the
- * revision was committed with, never the caller's word.
+ * even after its source canvas is gone. The design system and size are the
+ * revision's and its frame's, never the caller's word. A thumbnail is the
+ * caller's picture of that revision; a retry's thumbnail never replaces one.
  */
 export async function saveLibraryItem(
-  request: Omit<LibraryItem, 'designSystem'>,
-  readSource: () => Promise<RevisionCopy>,
+  request: ItemRequest,
+  thumbnail: Buffer | null,
+  readSource: () => Promise<FrameCopy>,
 ): Promise<LibraryItem> {
   const saved = await readSavedItem(request.itemId);
   if (saved) return sameSave(saved, request);
   const copy = await readSource();
-  const item: LibraryItem = { ...request, designSystem: copy.designSystem };
+  const item: LibraryItem = {
+    ...request,
+    width: copy.width,
+    height: copy.height,
+    designSystem: copy.designSystem,
+  };
   const published = await publishItem(
     {
-      version: 1,
+      version: 2,
       item,
       savedAt: Date.now(),
       files: [...copy.files.keys()],
       images: copy.images.map((image) => image.asset),
     },
     copy,
+    thumbnail,
   );
   if (published) return item;
   // A racing retry of this save published first.
@@ -179,6 +223,13 @@ async function listLibraryItems(query: string): Promise<LibraryItem[]> {
       const saved = await readSavedItem(name);
       if (saved?.item.name.toLocaleLowerCase().includes(needle)) matched.push(saved);
     } catch (error) {
+      if (error instanceof CanvasCommandError && error.message === OUTDATED_ITEM) {
+        if (!outdatedItems.has(name)) {
+          outdatedItems.add(name);
+          console.error(`Library item ${name} was not listed because an earlier DROIDEX made it.`);
+        }
+        continue;
+      }
       // One damaged item must not hide the rest of the library.
       console.error(`Library item ${name} was not listed:`, error);
     }
@@ -216,7 +267,23 @@ export async function readLibraryCopy(itemId: string): Promise<RevisionCopy> {
   }
 }
 
-function sameSave(saved: SavedItem, request: Omit<LibraryItem, 'designSystem'>): LibraryItem {
+/** The item's own thumbnail PNG, or null when it was saved without one. */
+async function readLibraryThumbnail(itemId: string): Promise<Buffer | null> {
+  if (!(await readSavedItem(itemId))) throw canvasError('not_found', MISSING_ITEM);
+  const directory = itemPath(itemId);
+  try {
+    // A save never stores one this large, so a bigger file was written outside
+    // DROIDEX; refuse it before reading instead of letting the renderer reject it.
+    const { size } = await lstat(join(directory, THUMBNAIL_FILE));
+    if (size > MAX_THUMBNAIL_BYTES) throw canvasError('storage_failed', DAMAGED_ITEM);
+    return await readInside(directory, [THUMBNAIL_FILE]);
+  } catch (error) {
+    if (isCode(error, 'ENOENT')) return null;
+    throw storageFailure(DAMAGED_ITEM, error);
+  }
+}
+
+function sameSave(saved: SavedItem, request: ItemRequest): LibraryItem {
   const { itemId, name, sourceCanvasId, source } = saved.item;
   if (!isDeepStrictEqual({ itemId, name, sourceCanvasId, source }, request))
     throw canvasError('invalid_input', REUSED_ID);
@@ -244,8 +311,15 @@ async function readSavedItem(itemId: string): Promise<SavedItem | null> {
   }
   const parsed = savedItemSchema.safeParse(value);
   if (!parsed.success || parsed.data.item.itemId !== itemId)
-    throw canvasError('storage_failed', DAMAGED_ITEM);
+    throw canvasError('storage_failed', isEarlierRecord(value) ? OUTDATED_ITEM : DAMAGED_ITEM);
   return parsed.data;
+}
+
+/** A whole record this DROIDEX did not write, like a version 1 item. */
+function isEarlierRecord(written: unknown): boolean {
+  if (typeof written !== 'object' || written === null) return false;
+  const { version } = written as Record<string, unknown>;
+  return typeof version === 'number' && version < 2;
 }
 
 /**
@@ -253,7 +327,11 @@ async function readSavedItem(itemId: string): Promise<SavedItem | null> {
  * one rename. A rename onto an existing item fails, which is what keeps a
  * published item immutable; false says another save got there first.
  */
-async function publishItem(saved: SavedItem, copy: RevisionCopy): Promise<boolean> {
+async function publishItem(
+  saved: SavedItem,
+  copy: RevisionCopy,
+  thumbnail: Buffer | null,
+): Promise<boolean> {
   const root = canvasLibraryDir();
   const staging = join(root, `${STAGING_PREFIX}${randomUUID()}`);
   savesStaging.add(staging);
@@ -266,6 +344,7 @@ async function publishItem(saved: SavedItem, copy: RevisionCopy): Promise<boolea
       await writeInside(staging, [SOURCE_DIRECTORY, ...path.split('/')], content, directories);
     for (const { asset, bytes } of copy.images)
       await writeInside(staging, [IMAGES_DIRECTORY, asset.assetId], bytes, directories);
+    if (thumbnail) await writeInside(staging, [THUMBNAIL_FILE], thumbnail, directories);
     await writeInside(staging, [ITEM_FILE], `${JSON.stringify(saved)}\n`, directories);
     // Deepest first, so each directory is flushed after the entries it holds.
     for (const directory of [...directories].sort((a, b) => b.length - a.length))
