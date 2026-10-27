@@ -2,7 +2,7 @@ import { useRef, useEffect, useMemo, useState, useCallback, Suspense, type React
 import { GripVertical, ChevronRight, Square } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
-import { LazyAttachedChatsMenu } from '../lib/lazySurfaces';
+import { LazyAttachedChatsMenu, LazyCanvasColumnTabs } from '../lib/lazySurfaces';
 import { utilityPanelForSession } from '../lib/utilityPanel';
 import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
@@ -935,6 +935,11 @@ export default function ChatView({
     <div data-testid="chat-view" className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
       {header}
       <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
+        {activeSession && boardCanvasId !== null && (
+          <Suspense fallback={null}>
+            <LazyCanvasColumnTabs key={boardCanvasId} canvasId={boardCanvasId} />
+          </Suspense>
+        )}
         <TranscriptReachHost
           items={feedItems}
           updateKind={feedUpdateKind}

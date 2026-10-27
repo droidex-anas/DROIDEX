@@ -410,6 +410,7 @@ function CanvasBoardMount({
       appSessionId,
       canvasId,
       attached: pinnable,
+      frames,
       selected: selectedFrameIds
         .map((designId) => byId.get(designId))
         .filter((frame): frame is CanvasFrame => frame !== undefined),

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Toaster from '../../../src/components/Toaster';
 import type {
@@ -6,6 +6,8 @@ import type {
   AnnotateCanvasInput,
 } from '../../../src/features/canvas/annotationProtocol';
 import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChange';
+import { showBoard } from '../../../src/features/canvas/boardOnScreen';
+import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
@@ -102,6 +104,7 @@ applyTheme({
 
 // Two frames by default, which is what the geometry cases are measured against.
 // `?frames=n` adds more in a row below them for the preview-slot budget.
+// `?navigator=1` puts the chat column's Components tab beside the board.
 const PLACED: { designId: string; name: string; rect: FrameRect }[] = [
   { designId: 'a', name: 'Design A', rect: { x: 100, y: 50, width: 400, height: 300 } },
   { designId: 'b', name: 'Design B', rect: { x: 650, y: 300, width: 400, height: 300 } },
@@ -314,6 +317,19 @@ function Harness() {
   live.current = interaction;
   const shown = useRef(snapshot);
   shown.current = snapshot;
+  useEffect(() => {
+    if (!params.has('navigator')) return undefined;
+    return showBoard({
+      appSessionId: 'chat_1',
+      canvasId: snapshot.canvasId,
+      attached: true,
+      frames: snapshot.frames,
+      selected: snapshot.frames.filter((frame) =>
+        interaction.selectedFrameIds.includes(frame.designId),
+      ),
+      focusFrame: (designId) => board.current?.focusFrame(designId),
+    });
+  }, [snapshot, interaction]);
   const change = (frames: CanvasFrame[], removedDesignIds: string[]): CanvasChange => ({
     canvasId: shown.current.canvasId,
     sequence: shown.current.sequence + 1,
@@ -508,6 +524,13 @@ function Harness() {
         {sourceOpen && (
           <aside data-harness-source={sourceOpen} style={{ width: 280, flexShrink: 0 }}>
             Source of {sourceOpen}
+          </aside>
+        )}
+        {params.has('navigator') && (
+          <aside
+            style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: 260 }}
+          >
+            <CanvasColumnTabs canvasId={snapshot.canvasId} />
           </aside>
         )}
       </div>
