@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { PREVIEW_POLL_SCRIPT, PREVIEW_STARTED } from './previewDocument';
 import {
   PREVIEW_POLL_DEADLINE_MS,
@@ -403,6 +405,26 @@ test('stopping releases every timer and silences a late answer', async () => {
   assert.equal(session.seen.ready, 0);
   assert.deepEqual(session.seen.lost, []);
   assert.deepEqual(session.terminated, []);
+});
+
+test('a stopped run lets go of its element while a call to it never answers', async () => {
+  setFlagsFromString('--expose-gc');
+  const collectGarbage = runInNewContext('gc') as () => void;
+  // Electron never settles a call on a guest destroyed mid-call, and keeps the
+  // call pending for good; the fake's held calls stand in for that.
+  async function stoppedMidPoll() {
+    const session = run();
+    await started(session);
+    session.preview.stop();
+    return { element: new WeakRef(session.element.guest), unanswered: session.calls };
+  }
+  const { element, unanswered } = await stoppedMidPoll();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  collectGarbage();
+
+  assert.equal(unanswered.length, 2);
+  assert.equal(element.deref(), undefined);
 });
 
 test('a guest that was never attached is lost before anything is run on it', () => {
