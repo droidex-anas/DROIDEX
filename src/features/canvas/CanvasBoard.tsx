@@ -21,7 +21,6 @@ import { AnnotationTools } from './AnnotationTools';
 import { BoardControls, type ZoomCommand } from './BoardControls';
 import { useBoardAnnouncer } from './boardAnnouncer';
 import { onBoardKeyDown } from './boardKeyDown';
-import { readingOrder } from './boardKeys';
 import {
   alignRects,
   distributeRects,
@@ -51,6 +50,7 @@ import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
+import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
@@ -199,26 +199,16 @@ export function CanvasBoard({
     dispatch({ type: 'frames', designIds });
   }, [designIds, dispatch]);
 
-  // The frames share one tab stop: the label focus last rested on, else the
-  // selection, else the first frame a reader meets.
-  const [focusedId, setFocusedId] = useState<string | null>(null);
-  const order = readingOrder(drawn);
-  const tabStopId = [focusedId, interaction.selectedFrameIds.at(0), order.at(0)].find(
-    (designId) => designId != null && order.includes(designId),
-  );
-  const focusLabel = useCallback((designId: string) => {
-    board.current
-      ?.querySelector<HTMLElement>(
-        `[data-design-frame="${CSS.escape(designId)}"] [data-frame-header]`,
-      )
-      ?.focus({ preventScroll: true });
-  }, []);
-  const onFocusLabel = (frame: CanvasFrame) => {
-    setFocusedId(frame.designId);
-    // A focused label must not scroll the clipped board under its transform.
-    if (board.current) board.current.scrollTop = board.current.scrollLeft = 0;
-    view.reveal(gestures.rectFor(frame));
-  };
+  const { focusedId, order, tabStopId, focusFrame, focusLabel, onFocusLabel } = useFrameFocus({
+    board,
+    frames,
+    drawn,
+    selectedFrameIds: interaction.selectedFrameIds,
+    dispatch,
+    fitTo,
+    reveal: view.reveal,
+    rectFor: gestures.rectFor,
+  });
 
   const removeSelection = useFrameRemoval({
     board,
@@ -231,24 +221,10 @@ export function CanvasBoard({
     onRemoveFrames,
   });
 
-  const [focusRequest, setFocusRequest] = useState<string | null>(null);
-  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame: setFocusRequest, focusLabel }), [
+  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame, focusLabel }), [
+    focusFrame,
     focusLabel,
   ]);
-
-  // A focus asked for before its frame arrived waits for it rather than being
-  // dropped: Open on an artifact card reaches the pane before the snapshot does.
-  useEffect(() => {
-    if (focusRequest === null) return;
-    const target = frames.find((frame) => frame.designId === focusRequest);
-    if (!target) return;
-    setFocusRequest(null);
-    board.current?.focus({ preventScroll: true });
-    // The acknowledged rect, not an optimistic hold: focus shows where the
-    // canvas says the frame is.
-    fitTo([target.rect]);
-    dispatch({ type: 'pick', designId: focusRequest, additive: false });
-  }, [dispatch, fitTo, focusRequest, frames]);
 
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
   const previews = useBoardPreviews(frames, visible, interaction, (frame, revisionId) =>
