@@ -163,7 +163,7 @@ export async function restoreRevision(
 ): Promise<WriteReceipt> {
   const canvasId = scope.canvasId;
   const mutation = { kind: 'restore', input } as const;
-  const recorded = workspace.recordedSourceMutation(scope, input.designId, mutation);
+  const recorded = workspace.recordedRestore(scope, input);
   if (recorded) return recorded;
   const target = workspace.buildTarget(canvasId, input.designId);
   if (!target)

@@ -7,6 +7,7 @@
 // renderer only ever sends the pinned CanvasTurnContext beside its prompt.
 
 import type { AnnotateCanvasInput, Annotation, AnnotationChange } from './annotationProtocol';
+import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
 
 export interface DesignSystemRef {
   id: string;
@@ -287,17 +288,6 @@ export interface WriteFilesInput {
   files: SourceFiles;
   deletedPaths: string[];
   designSystem?: DesignSystemRef;
-}
-
-export interface EditElementInput {
-  mutationId: string;
-  edit: {
-    element: ElementRef;
-    change:
-      | { kind: 'text'; value: string }
-      | { kind: 'token'; property: string; token: string }
-      | { kind: 'image'; assetId: string };
-  };
 }
 
 export interface ArrangeFramesInput {
@@ -585,6 +575,7 @@ export type CanvasReply =
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
+  | ({ kind: 'edited' } & ElementEditResult)
   | { kind: 'arranged'; change: CanvasChange }
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }

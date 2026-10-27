@@ -20,11 +20,13 @@ import type {
   DesignSystemRef,
   ElementEdit,
   SourceElement,
+  StyleResolution,
 } from './protocol.js';
 import {
   CANVAS_LIMITS,
   sourceElementSchema,
   sourceFilesSchema,
+  styleResolutionSchema,
   type SourceFiles,
 } from './schema.js';
 
@@ -97,11 +99,22 @@ export type CompilerRequest =
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
-type EditFailureCode = 'stale_reference' | 'ambiguous_element' | 'invalid_source' | 'invalid_edit';
+type EditFailureCode =
+  | 'stale_reference'
+  | 'ambiguous_element'
+  | 'invalid_source'
+  | 'invalid_edit'
+  | 'unsupported_edit';
+
+/** An edit's changed files and what its style value resolved to. */
+export interface EditedSource {
+  files: SourceFiles;
+  resolution: StyleResolution | null;
+}
 
 export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
-  | { requestId: number; status: 'edited'; files: SourceFiles }
+  | ({ requestId: number; status: 'edited' } & EditedSource)
   | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
@@ -120,7 +133,7 @@ interface PendingCompile {
 }
 
 interface PendingEdit {
-  resolve(files: SourceFiles): void;
+  resolve(edited: EditedSource): void;
   reject(error: Error): void;
   release(): void;
 }
@@ -181,7 +194,7 @@ export class CompilerWorker {
     edit: ElementEdit,
     designSystem: DesignSystemRef,
     signal: AbortSignal,
-  ): Promise<SourceFiles> {
+  ): Promise<EditedSource> {
     if (this.termination !== null)
       return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
@@ -189,7 +202,7 @@ export class CompilerWorker {
       return this.retiring.then(() => this.edit(files, elements, edit, designSystem, signal));
     const requestId = this.nextRequestId++;
     const compiler = this.liveCompiler();
-    return new Promise<SourceFiles>((resolve, reject) => {
+    return new Promise<EditedSource>((resolve, reject) => {
       const onAbort = (): void => {
         this.settleEdit(requestId, () => {
           reject(new CompileCancelledError());
@@ -276,7 +289,7 @@ export class CompilerWorker {
       this.settleEdit(response.requestId, (call) => {
         switch (response.status) {
           case 'edited':
-            call.resolve(response.files);
+            call.resolve({ files: response.files, resolution: response.resolution });
             return;
           case 'edit_failed':
             call.reject(canvasError(response.code, response.message));
@@ -367,6 +380,7 @@ const EDIT_FAILURE_CODES: readonly EditFailureCode[] = [
   'ambiguous_element',
   'invalid_source',
   'invalid_edit',
+  'unsupported_edit',
 ];
 
 /**
@@ -379,18 +393,10 @@ const EDIT_FAILURE_CODES: readonly EditFailureCode[] = [
  */
 export function compilerResponse(message: unknown): CompilerResponse | null {
   if (typeof message !== 'object' || message === null) return null;
-  const {
-    requestId,
-    status,
-    reason,
-    message: text,
-    design,
-    diagnostics,
-    files,
-    code,
-  } = message as Record<string, unknown>;
+  const fields = message as Record<string, unknown>;
+  const { requestId, status, reason, message: text, design, diagnostics } = fields;
   if (typeof requestId !== 'number') return null;
-  const edit = editResponse(requestId, status, files, code, text);
+  const edit = editResponse(requestId, fields);
   if (edit !== undefined) return edit;
   switch (status) {
     case 'cancelled':
@@ -413,14 +419,13 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
 
 function editResponse(
   requestId: number,
-  status: unknown,
-  files: unknown,
-  code: unknown,
-  message: unknown,
+  { status, files, resolution, code, message }: Record<string, unknown>,
 ): Extract<CompilerResponse, { status: 'edited' | 'edit_failed' }> | null | undefined {
   if (status === 'edited') {
-    const parsed = sourceFilesSchema.safeParse(files);
-    return parsed.success ? { requestId, status, files: parsed.data } : null;
+    const parsedFiles = sourceFilesSchema.safeParse(files);
+    const parsedResolution = styleResolutionSchema.nullable().safeParse(resolution);
+    if (!parsedFiles.success || !parsedResolution.success) return null;
+    return { requestId, status, files: parsedFiles.data, resolution: parsedResolution.data };
   }
   if (status === 'edit_failed')
     return typeof message === 'string' && EDIT_FAILURE_CODES.includes(code as EditFailureCode)

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { SourceMap } from 'node:module';
 import { test } from 'node:test';
-import type { ElementEdit, SourceElement, SourceFiles } from './protocol.js';
+import type { SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
-import { applyElementEdit, instrumentSource, SourceElementError } from './sourceElements.js';
+import { applyElementEdit, type SourceChange, type SourceEdit } from './sourceElementEdits.js';
+import { instrumentSource, SourceElementError } from './sourceElements.js';
 
 function reference(element: SourceElement, revisionId = 'r1') {
   return { designId: 'design', revisionId, elementId: element.elementId, instancePath: '0' };
@@ -17,8 +18,8 @@ function onlyElement(files: SourceFiles) {
   return { ...mapped, element };
 }
 
-test('text, token and image edits return complete changed files without touching surrounding bytes', () => {
-  const cases: { markup: string; change: ElementEdit['change']; changed: string }[] = [
+test('text, style and image edits return complete changed files without touching surrounding bytes', () => {
+  const cases: { markup: string; change: SourceChange; changed: string }[] = [
     {
       markup: '<h1></h1>',
       change: { kind: 'text', value: 'Welcome back' },
@@ -41,7 +42,7 @@ test('text, token and image edits return complete changed files without touching
     },
     {
       markup: "<h1 style={{ color: 'var(--ds-text)' }}>Hello</h1>",
-      change: { kind: 'token', property: 'color', token: '--ds-accent' },
+      change: { kind: 'style', property: 'color', value: 'var(--ds-accent)' },
       changed: '<h1 style={{ color: "var(--ds-accent)" }}>Hello</h1>',
     },
     {
@@ -75,11 +76,73 @@ test('text, token and image edits return complete changed files without touching
   }
 });
 
+test('a style edit replaces a set property, appends a missing one, and adds style last', () => {
+  const cases: { markup: string; property: string; value: string; changed: string }[] = [
+    {
+      markup: "<h1 style={{ padding: '1rem' }}>Hi</h1>",
+      property: 'padding',
+      value: 'var(--ds-space-2)',
+      changed: '<h1 style={{ padding: "var(--ds-space-2)" }}>Hi</h1>',
+    },
+    {
+      markup: '<h1 style={{ color: "var(--ds-fg)", }}>Hi</h1>',
+      property: 'gap',
+      value: '4px',
+      changed: '<h1 style={{ color: "var(--ds-fg)", gap: "4px", }}>Hi</h1>',
+    },
+    {
+      markup: '<h1 style={{opacity:1}}>Hi</h1>',
+      property: 'opacity',
+      value: '0.5',
+      changed: '<h1 style={{opacity:"0.5"}}>Hi</h1>',
+    },
+    {
+      markup: '<h1 style={{}}>Hi</h1>',
+      property: 'fontWeight',
+      value: '600',
+      changed: '<h1 style={{ fontWeight: "600" }}>Hi</h1>',
+    },
+    {
+      markup: '<h1 className="title">Hi</h1>',
+      property: 'flexDirection',
+      value: 'column',
+      changed: '<h1 className="title" style={{ flexDirection: "column" }}>Hi</h1>',
+    },
+    {
+      markup: '<img src="canvas-asset:a" />',
+      property: 'width',
+      value: '320px',
+      changed: '<img src="canvas-asset:a" style={{ width: "320px" }} />',
+    },
+    {
+      markup: '<h1>Hi</h1>',
+      property: 'backgroundColor',
+      value: 'var(--ds-accent)',
+      changed: '<h1 style={{ backgroundColor: "var(--ds-accent)" }}>Hi</h1>',
+    },
+  ];
+  for (const { markup, property, value, changed } of cases) {
+    const files = { 'main.tsx': `export default () => ${markup};\n` };
+    const mapped = onlyElement(files);
+    const edit: SourceEdit = {
+      element: reference(mapped.element),
+      change: { kind: 'style', property, value },
+    };
+    const first = applyElementEdit(files, mapped.elements, edit);
+    assert.deepEqual(first, { 'main.tsx': `export default () => ${changed};\n` });
+    assert.deepEqual(
+      applyElementEdit(files, mapped.elements, edit),
+      first,
+      'same edit, same bytes',
+    );
+    assert.equal(onlyElement(first).element.editability, 'literal', 'still directly editable');
+  }
+});
 test('revision, source changes and forged ranges cannot retarget a selection', () => {
   const files = { 'main.tsx': 'export default () => <h1>Hello</h1>' };
   const mapped = onlyElement(files);
   const other = instrumentSource(files, 'r2');
-  const edit: ElementEdit = {
+  const edit: SourceEdit = {
     element: reference(mapped.element),
     change: { kind: 'text', value: 'Welcome' },
   };
@@ -89,7 +152,7 @@ test('revision, source changes and forged ranges cannot retarget a selection', (
     [{ ...files, 'main.tsx': files['main.tsx'].replace('Hello', 'Later') }, mapped.elements, edit],
     [files, [{ ...mapped.element, start: 0 }], edit],
     [files, [mapped.element, mapped.element], edit],
-  ] satisfies [SourceFiles, SourceElement[], ElementEdit][]) {
+  ] satisfies [SourceFiles, SourceElement[], SourceEdit][]) {
     assert.throws(
       () => applyElementEdit(source, elements, request),
       (error: unknown) => {
@@ -238,25 +301,24 @@ test('syntax diagnostics use canonical UTF-8 byte columns', () => {
   );
 });
 
-test('token and image edits cannot introduce arbitrary style expressions or image URLs', () => {
+test('image and style edits cannot introduce an arbitrary image URL or style property', () => {
   const files = {
     'main.tsx':
       'export default () => <img src="canvas-asset:old" style={{color:"var(--ds-text)"}} />',
   };
   const mapped = onlyElement(files);
-  for (const change of [
-    { kind: 'image', assetId: '../../private' },
-    { kind: 'token', property: 'backgroundImage', token: '--ds-accent' },
-    { kind: 'token', property: 'color', token: '--ds-accent);evil' },
-  ] satisfies ElementEdit['change'][]) {
+  for (const [change, code] of [
+    [{ kind: 'image', assetId: '../../private' }, 'invalid_edit'],
+    [{ kind: 'style', property: 'backgroundImage', value: 'url(x)' }, 'unsupported_edit'],
+    [{ kind: 'style', property: 'a}} onClick={evil} b={{c', value: '1' }, 'unsupported_edit'],
+  ] satisfies [SourceChange, string][]) {
     assert.throws(
       () =>
         applyElementEdit(files, mapped.elements, { element: reference(mapped.element), change }),
-      (error: unknown) => error instanceof SourceElementError && error.code === 'invalid_edit',
+      (error: unknown) => error instanceof SourceElementError && error.code === code,
     );
   }
 });
-
 test('instrumented lines and insertion edges map back to canonical source', () => {
   const source = 'export default function App(){\r\n  return <h1>Hi</h1>;\r\n}';
   const mapped = onlyElement({ 'main.tsx': source });

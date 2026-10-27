@@ -406,3 +406,11 @@
   border: 1px solid var(--droid-selection);
   background: color-mix(in srgb, var(--droid-selection) 8%, transparent);
 }
+
+/* The element Edit has picked, outlined over the guest that draws it. */
+.canvas-element-outline {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--droid-selection);
+  background: color-mix(in srgb, var(--droid-selection) 6%, transparent);
+}

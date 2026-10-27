@@ -535,9 +535,12 @@ through bundling
 without shipping host runtime paths or canonical source content in the final artifact map.
 Direct edits reparse that source and
 replace one literal AST range; computed/shared sites require an agent edit and stale
-references require reselection. `canvas.editElement` validates the request and pinned kit
-tokens before committing through the workspace's revision compare-and-swap. Image edits
-remain unavailable until the asset store can verify ownership.
+references require reselection. `canvas.editElement` sets text, or one whitelisted style
+property as a spacing, size, colour, typography, layout or opacity change. A style value is a
+pinned kit token's name, or a raw value that resolves to the kit token with that value and stays
+raw only when the kit has none; the reply and the edit's ledger record carry that resolution, so
+a retry answers it unchanged. The edit commits through the workspace's revision
+compare-and-swap. Image edits remain unavailable until the asset store can verify ownership.
 
 The source drawer keeps drafts and save operations in the feature-local
 `canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the

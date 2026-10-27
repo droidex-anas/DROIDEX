@@ -2,7 +2,7 @@
 // commands over it, the tool rail in its top-left corner and the zoom readout
 // in its bottom-left.
 //
-// The board owns when the Select overlay can flip: the hit-test change waits
+// The board owns when the frames' input overlay can flip: the hit-test change waits
 // for an active wheel gesture to finish.
 
 import {
@@ -20,21 +20,12 @@ import { AnnotationLayer, DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
 import { BoardControls, type ZoomCommand } from './BoardControls';
 import { useBoardAnnouncer } from './boardAnnouncer';
-import {
-  frameHeaderOf,
-  frameStep,
-  isBoardControl,
-  isBoardEditor,
-  modeShortcut,
-  readingOrder,
-  zoomShortcut,
-} from './boardKeys';
+import { onBoardKeyDown } from './boardKeyDown';
+import { readingOrder } from './boardKeys';
 import {
   alignRects,
-  arrowDirection,
   distributeRects,
   framesInBand,
-  nudgeStep,
   visibleDesignIds,
   type AlignEdge,
   type DistributeAxis,
@@ -50,15 +41,16 @@ import {
   type BoardMode,
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
+import type { PreviewSelections } from './DesignPreview';
+import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import { ElementPanel } from './ElementPanel';
 import { useCanvasMotion } from './useCanvasMotion';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures, type Band } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardViewport } from './useBoardViewport';
+import { useElementEditor } from './useElementEditor';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
-
-/** Board-local pixels one arrow key pans by when nothing is selected. */
-const ARROW_PAN_PX = 32;
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -78,8 +70,17 @@ export interface CanvasBoardProps {
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
   /** The one annotation write, bound to `CanvasClient.annotate` for this canvas. */
   onAnnotate: (input: AnnotateCanvasInput) => Promise<unknown>;
-  /** One frame's live preview of `revisionId`, mounted only while it holds a slot. */
-  renderPreview: (frame: CanvasFrame, revisionId: string) => ReactNode;
+  /** The one direct element edit, bound to `CanvasClient.source.editElement` for this canvas. */
+  onEditElement: (input: EditElementInput) => Promise<ElementEditResult>;
+  /**
+   * One frame's live preview of `revisionId`, mounted only while it holds a
+   * slot, reporting to the board's element editor through `selections`.
+   */
+  renderPreview: (
+    frame: CanvasFrame,
+    revisionId: string,
+    selections: PreviewSelections,
+  ) => ReactNode;
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
@@ -97,6 +98,7 @@ export function CanvasBoard({
   snapshot,
   onArrangeFrames,
   onAnnotate,
+  onEditElement,
   renderPreview,
   interaction,
   onInteractionChange,
@@ -113,7 +115,7 @@ export function CanvasBoard({
 
   const view = useBoardViewport(board, frames, motion);
   const { fitTo } = view;
-  const [overlayCapture, setOverlayCapture] = useState(interaction.mode === 'select');
+  const [overlayCapture, setOverlayCapture] = useState(interaction.mode !== 'interact');
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
@@ -149,6 +151,13 @@ export function CanvasBoard({
     onAnnotate,
   });
 
+  const editor = useElementEditor({
+    canvasId: snapshot.canvasId,
+    frames,
+    active: interaction.mode === 'edit',
+    onEditElement,
+  });
+
   const gestures = useBoardGestures({
     board,
     frames,
@@ -159,7 +168,10 @@ export function CanvasBoard({
       view.stopAnimating();
     },
     onPan: view.panByScreen,
-    onClear: annotation.clearSelection,
+    onClear: () => {
+      annotation.clearSelection();
+      editor.clear();
+    },
     onBand: pickBand,
     onArrangeFrames,
   });
@@ -220,7 +232,9 @@ export function CanvasBoard({
   }, [dispatch, fitTo, focusRequest, frames]);
 
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
-  const previews = useBoardPreviews(frames, visible, interaction, renderPreview);
+  const previews = useBoardPreviews(frames, visible, interaction, (frame, revisionId) =>
+    renderPreview(frame, revisionId, editor.selections),
+  );
   const announcement = useBoardAnnouncer({
     frames,
     shown: previews.shown,
@@ -232,7 +246,7 @@ export function CanvasBoard({
   // Spec §4: the overlay's hit-test flip waits for an arriving wheel gesture to
   // go quiet and then for the frame that paints it, so it is committed before
   // any later input is read against it.
-  const capturePointer = interaction.mode === 'select';
+  const capturePointer = interaction.mode !== 'interact';
   useEffect(() => {
     if (overlayCapture === capturePointer || view.scrolling) return undefined;
     const frame = requestAnimationFrame(() => {
@@ -267,6 +281,10 @@ export function CanvasBoard({
       dispatch({ type: 'escape' });
       return;
     }
+    if (next === 'edit') {
+      dispatch({ type: 'edit' });
+      return;
+    }
     const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
     if (target !== undefined) dispatch({ type: 'interact', designId: target });
   };
@@ -281,79 +299,6 @@ export function CanvasBoard({
       );
     else if (command === 'actual') view.zoomTo(1);
     else view.stepZoom(command === 'in' ? 1 : -1);
-  };
-
-  /** Escape: a gesture first, then a tool, mode or selection; from a frame in Select, back to the board. */
-  const onEscape = (header: string | null) => {
-    if (gestures.cancel() || annotation.escape()) return;
-    dispatch({ type: 'escape' });
-    if (header !== null && interaction.mode === 'select')
-      board.current?.focus({ preventScroll: true });
-  };
-
-  /** The zoom and mode keys, which the board's own tools take as well. */
-  const runShortcut = (event: React.KeyboardEvent): boolean => {
-    const zoom = zoomShortcut(event);
-    if (zoom) onZoom(zoom);
-    const mode = zoom ? null : modeShortcut(event);
-    if (mode) onMode(mode);
-    return zoom !== null || mode !== null;
-  };
-
-  /**
-   * A key on the board or a frame's label. On a label the arrows, Home and End
-   * move to another frame and select it, so Enter acts on the frame the
-   * keyboard is on; there ⌥ and the arrows move the selection instead.
-   */
-  const runBoardKey = (event: React.KeyboardEvent, header: string | null): boolean => {
-    const next = header === null ? null : frameStep(event, order, header);
-    if (next !== null) {
-      if (next !== header) {
-        dispatch({ type: 'pick', designId: next, additive: false });
-        focusLabel(next);
-      }
-      return true;
-    }
-    if (event.key === ' ') {
-      gestures.holdSpace(true);
-      return true;
-    }
-    if (event.key === 'Enter' && interaction.selectedFrameIds.length === 1) {
-      dispatch({ type: 'interact', designId: interaction.selectedFrameIds[0] });
-      return true;
-    }
-    const direction = arrowDirection(event.key);
-    if (!direction || (header !== null && !event.altKey)) return false;
-    if (interaction.selectedFrameIds.length === 0) {
-      view.markNavigated();
-      view.stopAnimating();
-      view.panByScreen({ x: -direction.x * ARROW_PAN_PX, y: -direction.y * ARROW_PAN_PX });
-      return true;
-    }
-    const step = nudgeStep(direction, event.shiftKey);
-    placeSelection((rects) =>
-      rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
-    );
-    return true;
-  };
-
-  const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    // Inputs and editors keep their shortcuts, including Escape.
-    if (isBoardEditor(event.target)) return;
-    const header = frameHeaderOf(event.target);
-    // Board commands belong to the board and its frame labels. Its own tools take
-    // the zoom and mode keys too, so a key still works after one was clicked;
-    // Space, Enter and the arrows stay theirs.
-    const onBoard = event.target === event.currentTarget || header !== null;
-    let handled = false;
-    if (event.key === 'Escape') {
-      onEscape(header);
-      handled = true;
-    } else if (onBoard || isBoardControl(event.target)) {
-      handled =
-        runShortcut(event) || annotation.runKey(event) || (onBoard && runBoardKey(event, header));
-    }
-    if (handled) event.preventDefault();
   };
 
   return (
@@ -375,7 +320,33 @@ export function CanvasBoard({
       onLostPointerCapture={(event) => {
         gestures.endGesture(event, false);
       }}
-      onKeyDown={onBoardKeyDown}
+      onKeyDown={(event) => {
+        onBoardKeyDown(event, {
+          interaction,
+          order,
+          dispatch,
+          cancel: () => gestures.cancel() || annotation.escape() || editor.clear(),
+          annotationKey: annotation.runKey,
+          editKey: editor.runKey,
+          zoom: onZoom,
+          setMode: onMode,
+          holdSpace: () => {
+            gestures.holdSpace(true);
+          },
+          pan: (delta) => {
+            view.markNavigated();
+            view.stopAnimating();
+            view.panByScreen(delta);
+          },
+          nudge: (step) => {
+            placeSelection((rects) =>
+              rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
+            );
+          },
+          focusBoard: () => board.current?.focus({ preventScroll: true }),
+          focusLabel,
+        });
+      }}
       onKeyUp={(event) => {
         if (event.key === ' ') gestures.holdSpace(false);
       }}
@@ -427,6 +398,17 @@ export function CanvasBoard({
             onInteract={(picked) => {
               dispatch({ type: 'interact', designId: picked.designId });
             }}
+            onPickElement={(picked, at) => {
+              editor.pick(picked.designId, at);
+            }}
+            onEditEnter={(picked) => {
+              editor.enter(picked.designId);
+            }}
+            elementBox={
+              editor.selection?.draft.element.designId === frame.designId
+                ? editor.selection.shown.rect
+                : null
+            }
             tabStop={frame.designId === tabStopId}
             onFocusLabel={onFocusLabel}
           />
@@ -434,7 +416,9 @@ export function CanvasBoard({
         <AnnotationLayer
           {...annotation.layer}
           scale={scale}
-          interactive={capturePointer && annotation.tool === null && !gestures.spaceHeld}
+          interactive={
+            interaction.mode === 'select' && annotation.tool === null && !gestures.spaceHeld
+          }
         />
       </div>
 
@@ -452,7 +436,7 @@ export function CanvasBoard({
         mode={interaction.mode}
         selectedCount={interaction.selectedFrameIds.length}
         hasFrames={frames.length > 0}
-        error={gestures.layoutError || annotation.error}
+        error={gestures.layoutError || annotation.error || editor.error}
         onMode={onMode}
         onZoom={onZoom}
         onAlign={(edge: AlignEdge) => {
@@ -463,6 +447,16 @@ export function CanvasBoard({
         }}
         annotationTools={<AnnotationTools {...annotation.rail} />}
       />
+      {editor.selection && (
+        <ElementPanel
+          ref={editor.panel}
+          selection={editor.selection}
+          onPreview={editor.preview}
+          onRevert={editor.revert}
+          onCommit={editor.commit}
+          onLeave={() => board.current?.focus({ preventScroll: true })}
+        />
+      )}
 
       <p role="status" className="sr-only">
         {announcement}

@@ -6,9 +6,16 @@
 import { expect, type ElectronApplication, type Page } from '@playwright/test';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import assert from 'node:assert/strict';
 import { CompilerWorker, type CompiledDesign } from '../../sidecar/src/canvas/compiler';
 import { DEFAULT_DESIGN_SYSTEM_REF } from '../../sidecar/src/canvas/designSystems';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
+import {
+  PREVIEW_POLL_SCRIPT,
+  previewNonce,
+  readPreviewSnapshot,
+  type PreviewInstance,
+} from '../../src/features/canvas/previewDocument';
 import { bounded } from './canvasSmoke';
 
 export const GUEST_ELEMENT_ID = 'canvas-preview-guest';
@@ -175,6 +182,18 @@ export async function askGuest(page: Page, code: string): Promise<unknown> {
     'guest script',
     10_000,
   );
+}
+
+/** One poll of the production pull channel, validated by the production reader. */
+export async function drainGuest(page: Page, instance: PreviewInstance) {
+  const answer = await askGuest(page, PREVIEW_POLL_SCRIPT);
+  const snapshot = readPreviewSnapshot(answer, instance);
+  assert.ok(snapshot, 'the guest answered with a snapshot for this instance');
+  return snapshot;
+}
+
+export function newInstance(designId: string): PreviewInstance {
+  return { nonce: previewNonce(), designId, revisionId: `rev_${designId}`, generation: 1 };
 }
 
 /** The page's own view of the guest URL, so navigation can be checked. */

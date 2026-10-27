@@ -257,6 +257,24 @@ export const writeFilesInputSchema = z
     });
   });
 
+// A style edit's value is a kit token's name (`--ds-space-2`) or a raw CSS value,
+// which the edit resolves to a kit token with that value when the kit has one.
+function styleChangeSchema<Kind extends string>(kind: Kind) {
+  return z
+    .object({
+      kind: z.literal(kind),
+      property: z.string().min(1).max(64),
+      value: z.string().min(1).max(128),
+    })
+    .strict();
+}
+
+/** What a direct edit wrote: a kit token, or the raw value the kit had no token for. */
+export const styleResolutionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('token'), token: z.string().min(1).max(128) }).strict(),
+  z.object({ kind: z.literal('raw'), value: z.string().min(1).max(128) }).strict(),
+]);
+
 export const editElementInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
@@ -272,13 +290,12 @@ export const editElementInputSchema = z
           .strict(),
         change: z.discriminatedUnion('kind', [
           z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
-          z
-            .object({
-              kind: z.literal('token'),
-              property: z.string().min(1).max(64),
-              token: z.string().min(1).max(128),
-            })
-            .strict(),
+          styleChangeSchema('spacing'),
+          styleChangeSchema('size'),
+          styleChangeSchema('colour'),
+          styleChangeSchema('typography'),
+          styleChangeSchema('layout'),
+          styleChangeSchema('opacity'),
           z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
         ]),
       })
@@ -382,6 +399,7 @@ export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
 export type EditElementInput = z.infer<typeof editElementInputSchema>;
+export type StyleResolution = z.infer<typeof styleResolutionSchema>;
 export type RevisionPage = z.infer<typeof revisionPageSchema>;
 export type RestoreRevisionInput = z.infer<typeof restoreRevisionInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;

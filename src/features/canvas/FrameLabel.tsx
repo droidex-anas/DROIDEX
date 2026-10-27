@@ -20,6 +20,7 @@ export function FrameLabel({
   onHold,
   onPick,
   onInteract,
+  onEnter,
   onFocusLabel,
 }: {
   frame: CanvasFrame;
@@ -33,6 +34,7 @@ export function FrameLabel({
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
+  onEnter: (frame: CanvasFrame) => void;
   onFocusLabel: (frame: CanvasFrame) => void;
 }) {
   return (
@@ -58,16 +60,14 @@ export function FrameLabel({
         event.stopPropagation();
         onInteract(frame);
       }}
-      // The keyboard's route to spec §4's click and double-click: Enter picks
-      // the frame and Enter on one already picked starts interacting with it,
-      // while Space toggles it in a multiple selection.
+      // The keyboard's route to spec §4's click: Enter does what the board's
+      // mode makes of one, while Space toggles the frame in a multiple selection.
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         event.stopPropagation();
         if (event.key === ' ') onPick(frame, true);
-        else if (selected) onInteract(frame);
-        else onPick(frame, false);
+        else onEnter(frame);
       }}
     >
       <span className="canvas-frame-name">{frame.name}</span>

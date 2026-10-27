@@ -20,11 +20,13 @@ import {
 import {
   askGuest,
   compileDesign,
+  drainGuest,
   generatedFrameUrl,
   guestUrl,
   inspectGuest,
   mountPreviewGuest,
   mountZoomedPreview,
+  newInstance,
 } from './canvasPreviewHost';
 import { runCanvasAssetsSmoke } from './canvasAssetsSmoke';
 import {
@@ -91,18 +93,6 @@ export default function Hey() {
 }
 `,
   };
-}
-
-/** One poll of the production pull channel, validated by the production reader. */
-async function drainGuest(page: Page, instance: PreviewInstance) {
-  const answer = await askGuest(page, PREVIEW_POLL_SCRIPT);
-  const snapshot = readPreviewSnapshot(answer, instance);
-  assert.ok(snapshot, 'the guest answered with a snapshot for this instance');
-  return snapshot;
-}
-
-function newInstance(designId: string): PreviewInstance {
-  return { nonce: previewNonce(), designId, revisionId: `rev_${designId}`, generation: 1 };
 }
 
 test(

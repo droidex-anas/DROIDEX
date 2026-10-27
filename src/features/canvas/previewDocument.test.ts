@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   MAX_PREVIEW_SNAPSHOT_EVENTS,
   previewNonce,
+  previewSelectScript,
   readPreviewSnapshot,
   type PreviewInstance,
 } from './previewDocument';
@@ -25,12 +26,20 @@ test('a nonce is the hex charset the guest will embed', () => {
   for (const nonce of minted) assert.match(nonce, /^[0-9a-f]{32}$/);
 });
 
+const selected = {
+  elementId: 'el_1',
+  instancePath: '0/2',
+  rect: { x: -4, y: 2.5, width: 120, height: 0 },
+  styles: { gap: '4px', color: 'rgb(0, 0, 0)' },
+};
+
 test('every bounded event shape is accepted', () => {
   const events = [
     { event: 'ready' },
     { event: 'resize', width: 1024, height: 768 },
     { event: 'diagnostics', diagnostics: [{ code: 'preview_error', message: 'Boom' }] },
-    { event: 'selection', elementId: 'el_1', instancePath: '0/2' },
+    { event: 'selection', sequence: 1, element: selected },
+    { event: 'selection', sequence: 2, element: null },
     { event: 'interaction', kind: 'click' },
   ];
 
@@ -61,7 +70,25 @@ test('a malformed or oversized answer is refused whole', () => {
     answer({ events: [{ event: 'unknown' }] }),
     answer({ events: [{ event: 'resize', width: -1, height: 10 }] }),
     answer({ events: [{ event: 'resize', width: 1.5, height: 10 }] }),
-    answer({ events: [{ event: 'selection', elementId: '', instancePath: '0' }] }),
+    answer({ events: [{ event: 'selection', element: selected }] }),
+    answer({ events: [{ event: 'selection', sequence: 0, element: null }] }),
+    answer({ events: [{ event: 'selection', sequence: 1.5, element: null }] }),
+    answer({
+      events: [{ event: 'selection', sequence: 1, element: { ...selected, elementId: '' } }],
+    }),
+    answer({ events: [{ event: 'selection', sequence: 1, elementId: 'el_1', instancePath: '0' }] }),
+    answer({
+      events: [
+        {
+          event: 'selection',
+          sequence: 1,
+          element: { ...selected, rect: { ...selected.rect, width: -1 } },
+        },
+      ],
+    }),
+    answer({
+      events: [{ event: 'selection', sequence: 1, element: { ...selected, styles: { gap: 4 } } }],
+    }),
     answer({ events: [{ event: 'diagnostics', diagnostics: [{ code: 'x' }] }] }),
     // One good event does not carry a bad one past the boundary.
     answer({ events: [{ event: 'ready' }, { event: 'resize', width: 'wide', height: 1 }] }),
@@ -79,6 +106,20 @@ test('a snapshot over the queue cap is refused rather than trimmed', () => {
     atCap.length,
   );
   assert.equal(readPreviewSnapshot(answer({ events: [...atCap, ready] }), instance), null);
+});
+
+test('a queue the guest filled within its own bounds is read, not refused', () => {
+  // Each event sits just under the 4096 bytes the intermediate accepts, so a
+  // full queue of them is legal: ending the guest over one is what the two
+  // sides' bounds exist to prevent, not a reason to refuse the snapshot.
+  const event = {
+    event: 'diagnostics',
+    diagnostics: Array.from({ length: 7 }, () => ({ code: 'e', message: 'a'.repeat(505) })),
+  };
+  assert.ok(new TextEncoder().encode(JSON.stringify(event)).length <= 4096);
+  const events = Array.from({ length: MAX_PREVIEW_SNAPSHOT_EVENTS }, () => event);
+
+  assert.equal(readPreviewSnapshot(answer({ events }), instance)?.events.length, events.length);
 });
 
 test('an over-long text field is cut on a code point boundary, not refused', () => {
@@ -113,10 +154,29 @@ test('an over-long text field is cut on a code point boundary, not refused', () 
 
 test('a snapshot over its own byte bound is still refused whole', () => {
   // The structural bounds are what a guest is ended over, and they stay strict.
+  // Astral characters are four bytes each, so this clears the whole-snapshot
+  // bound with room to spare however the fields are cut.
   const huge = answer({ events: [{ event: 'ready' }] }).replace(
     '"events"',
-    `"padding":"${'😀'.repeat(20_000)}","events"`,
+    `"padding":"${'😀'.repeat(90_000)}","events"`,
   );
 
   assert.equal(readPreviewSnapshot(huge, instance), null);
+});
+
+test('a selection command is a fixed call whose previewed styles are data, not code', () => {
+  const script = previewSelectScript(
+    { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' } },
+    ['color'],
+    7,
+  );
+  const call = 'globalThis.__droidexCanvasPreview.select(';
+
+  assert.ok(script.startsWith(call) && script.endsWith(')'));
+  assert.equal(script.includes('<'), false);
+  assert.deepEqual(JSON.parse(script.slice(call.length, -1)), {
+    target: { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' } },
+    properties: ['color'],
+    sequence: 7,
+  });
 });

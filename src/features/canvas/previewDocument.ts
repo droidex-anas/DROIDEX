@@ -1,8 +1,8 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly these two audited literals. Every
-// payload is a JSON-serialised argument to a fixed string, so nothing the
+// element's `executeJavaScript`, with exactly the four audited literals below.
+// Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
 // What comes back is untrusted. A snapshot is accepted only when it echoes the
@@ -10,14 +10,18 @@
 // shapes below; the intermediate in `electron/canvasPreview.cjs` enforces the
 // same caps on the way in.
 
-import type { CanvasDiagnostic } from './protocol';
+import type { CanvasDiagnostic, FrameRect } from './protocol';
 
 /** Events one snapshot may carry, matching the intermediate's queue cap. */
 export const MAX_PREVIEW_SNAPSHOT_EVENTS = 64;
 const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_TEXT = 512;
+/** Style properties one selection command may name, as the intermediate caps them. */
+const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+/** Bytes one queued event may measure, as the intermediate accepts it. */
+const MAX_PREVIEW_EVENT_BYTES = 4096;
 /** The queue cap times the largest event the guest will keep, with headroom. */
-const MAX_PREVIEW_SNAPSHOT_BYTES = 64 * 1024;
+const MAX_PREVIEW_SNAPSHOT_BYTES = MAX_PREVIEW_SNAPSHOT_EVENTS * MAX_PREVIEW_EVENT_BYTES + 1024;
 
 /** One live preview's identity, minted by the board and echoed by the guest. */
 export interface PreviewInstance {
@@ -31,13 +35,39 @@ export interface PreviewInstance {
   generation: number;
 }
 
-/** Everything a preview may report. Task 8 fills `selection`/`interaction`. */
+/**
+ * The element a preview has selected, as its guest reports it: the source
+ * marker, the path from the document body that tells repeated instances apart,
+ * its box in the design's own pixels and the computed values of the style
+ * properties the board asked for. Display data and a selection hint only.
+ */
+export interface PreviewElement {
+  elementId: string;
+  instancePath: string;
+  rect: FrameRect;
+  styles: Record<string, string>;
+}
+
+/**
+ * Everything a preview may report; nothing produces `interaction` yet. A
+ * `selection` echoes the sequence number of the pick or select it answers.
+ */
 export type PreviewEvent =
   | { event: 'ready' }
   | { event: 'resize'; width: number; height: number }
   | { event: 'diagnostics'; diagnostics: CanvasDiagnostic[] }
-  | { event: 'selection'; elementId: string; instancePath: string }
+  | { event: 'selection'; sequence: number; element: PreviewElement | null }
   | { event: 'interaction'; kind: string };
+
+/** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
+export type PreviewPick = { x: number; y: number } | { step: 'first' | 'next' | 'previous' };
+
+/** An element to select by its marker and path, with the inline styles it previews. */
+export interface PreviewTarget {
+  elementId: string;
+  instancePath: string;
+  styles: Record<string, string>;
+}
 
 /** One drained queue, with how many messages the guest dropped under its cap. */
 export interface PreviewSnapshot {
@@ -62,6 +92,30 @@ export const PREVIEW_STARTED = 'started';
 
 /** Drains the guest's bounded queue and answers with one JSON snapshot. */
 export const PREVIEW_POLL_SCRIPT = 'globalThis.__droidexCanvasPreview.drain()';
+
+/**
+ * Selects the element under a point or the next one along; a `selection` event
+ * carrying `sequence` answers.
+ */
+export function previewPickScript(
+  pick: PreviewPick,
+  properties: readonly string[],
+  sequence: number,
+): string {
+  return `globalThis.__droidexCanvasPreview.pick(${jsonArgument({ ...pick, properties, sequence })})`;
+}
+
+/**
+ * Selects one named element, or none, and previews its styles; a `selection`
+ * event carrying `sequence` answers.
+ */
+export function previewSelectScript(
+  target: PreviewTarget | null,
+  properties: readonly string[],
+  sequence: number,
+): string {
+  return `globalThis.__droidexCanvasPreview.select(${jsonArgument({ target, properties, sequence })})`;
+}
 
 /**
  * A JSON literal that is also a safe JS expression: escaping `<` means no
@@ -122,13 +176,7 @@ function readEvent(value: unknown): PreviewEvent | null {
     case 'diagnostics':
       return readDiagnostics(value.diagnostics);
     case 'selection':
-      return present(value.elementId) && present(value.instancePath)
-        ? {
-            event: 'selection',
-            elementId: clamp(value.elementId),
-            instancePath: clamp(value.instancePath),
-          }
-        : null;
+      return readSelection(value);
     case 'interaction':
       return present(value.kind) ? { event: 'interaction', kind: clamp(value.kind) } : null;
     default:
@@ -146,12 +194,50 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   return { event: 'diagnostics', diagnostics };
 }
 
+function readSelection({ sequence, element }: Record<string, unknown>): PreviewEvent | null {
+  if (!count(sequence) || sequence === 0) return null;
+  if (element === null) return { event: 'selection', sequence, element: null };
+  if (!record(element) || !present(element.elementId) || typeof element.instancePath !== 'string')
+    return null;
+  const rect = readRect(element.rect);
+  if (!rect || !record(element.styles)) return null;
+  const styles: Record<string, string> = {};
+  const entries = Object.entries(element.styles);
+  if (entries.length > MAX_PREVIEW_STYLE_PROPERTIES) return null;
+  for (const [name, style] of entries) {
+    if (typeof style !== 'string') return null;
+    styles[name] = clamp(style);
+  }
+  return {
+    event: 'selection',
+    sequence,
+    element: {
+      elementId: clamp(element.elementId),
+      instancePath: clamp(element.instancePath),
+      rect,
+      styles,
+    },
+  };
+}
+
+/** A box in the design's own pixels, which may start above or left of its viewport. */
+function readRect(value: unknown): FrameRect | null {
+  if (!record(value)) return null;
+  const { x, y, width, height } = value;
+  if (!finite(x) || !finite(y) || !finite(width) || !finite(height)) return null;
+  return width < 0 || height < 0 ? null : { x, y, width, height };
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function finite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function present(value: unknown): value is string {

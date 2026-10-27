@@ -5,7 +5,7 @@
 // board behind it, and each names its keyboard shortcut.
 
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Maximize, MousePointer, Play } from '@droidex/icons';
+import { Maximize, MousePointer, Play, SlidersHorizontal } from '@droidex/icons';
 import { Popover } from '../../components/environment/Popover';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
@@ -154,6 +154,17 @@ export function BoardControls({
           }}
         >
           <Play className="h-4 w-4" aria-hidden />
+        </Tool>
+        <Tool
+          label="Edit element"
+          tip="Edit element  E"
+          pressed={mode === 'edit'}
+          disabled={!hasFrames}
+          onClick={() => {
+            onMode('edit');
+          }}
+        >
+          <SlidersHorizontal className="h-4 w-4" aria-hidden />
         </Tool>
         <span aria-hidden className="canvas-rail-divider" />
         {annotationTools}

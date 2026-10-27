@@ -19,8 +19,8 @@ import { CHART_DESIGN } from './fixtures/chart.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
-import type { CanvasDiagnostic, ElementEdit } from './protocol.js';
-import { applyElementEdit } from './sourceElements.js';
+import type { CanvasDiagnostic } from './protocol.js';
+import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import type { SourceFiles } from './schema.js';
 import { compileInput, mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
 
@@ -86,11 +86,11 @@ test('a design above the selection limit still compiles with an honest diagnosti
 });
 
 test('direct edits compile through the worker and its map points to canonical source', async () => {
-  const cases: { source: string; change: ElementEdit['change']; rendered: string }[] = [
+  const cases: { source: string; change: SourceChange; rendered: string }[] = [
     { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
     {
       source: '<h1 style={{color:"var(--ds-text)"}}>Hello</h1>',
-      change: { kind: 'token', property: 'color', token: '--ds-accent' },
+      change: { kind: 'style', property: 'color', value: 'var(--ds-accent)' },
       rendered: 'var(--ds-accent)',
     },
     {
@@ -573,7 +573,12 @@ test('a reply the protocol does not define is not an answer', () => {
     requestId: 2,
     status: 'stopped',
   });
-  const edited = { requestId: 3, status: 'edited', files: { 'main.tsx': '<h1>Changed</h1>' } };
+  const edited = {
+    requestId: 3,
+    status: 'edited',
+    files: { 'main.tsx': '<h1>Changed</h1>' },
+    resolution: null,
+  };
   assert.deepEqual(compilerResponse(edited), edited);
 
   for (const malformed of [
@@ -590,6 +595,7 @@ test('a reply the protocol does not define is not an answer', () => {
     { requestId: 1, status: 'ready', design: { artifactId: 'a', html: 'h' } },
     { requestId: 1, status: 'failed' },
     { requestId: 1, status: 'edited', files: { '../outside.tsx': 'bad' } },
+    { ...edited, resolution: { kind: 'token' } },
     { requestId: 1, status: 'edit_failed', code: 'unknown', message: 'bad' },
   ]) {
     assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));

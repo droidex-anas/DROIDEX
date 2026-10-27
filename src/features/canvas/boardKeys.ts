@@ -1,4 +1,4 @@
-// What a key means on the board: the zoom, mode and annotation tool shortcuts, which elements
+// What a key means on the board: the zoom, mode and annotation tool shortcuts, Edit's element keys, which elements
 // keep their own keys, and how focus moves between frames. The board reads
 // these; nothing here touches React state.
 
@@ -20,11 +20,12 @@ export function zoomShortcut(event: KeyboardEvent): ZoomCommand | null {
   return null;
 }
 
-/** V for Select and I for Interact, as the rail's tips say. */
+/** V for Select, I for Interact and E for Edit element, as the rail's tips say. */
 export function modeShortcut(event: KeyboardEvent): BoardMode | null {
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
   if (event.key === 'v' || event.key === 'V') return 'select';
   if (event.key === 'i' || event.key === 'I') return 'interact';
+  if (event.key === 'e' || event.key === 'E') return 'edit';
   return null;
 }
 
@@ -42,6 +43,15 @@ const ANNOTATION_KEYS = new Map<string, AnnotationTool>([
 export function annotationShortcut(event: KeyboardEvent): AnnotationTool | null {
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
   return ANNOTATION_KEYS.get(event.key.toLowerCase()) ?? null;
+}
+
+/** Edit's keys: Enter for the first element, or into the panel once one is picked; the arrows step. */
+export function elementStep(event: KeyboardEvent): 'first' | 'next' | 'previous' | null {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+  if (event.key === 'Enter') return 'first';
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') return 'next';
+  if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') return 'previous';
+  return null;
 }
 
 /** The frame whose name label this is, or null for anything else. */

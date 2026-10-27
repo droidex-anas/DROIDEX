@@ -8,6 +8,7 @@ import { reply, requestId, wrongReply, type ReplyEvent } from './canvasReply';
 import { DesignSystemRequests } from './designSystemRequests';
 import { LibraryRequests } from './libraryRequests';
 import { RemovalRequests } from './removalRequests';
+import { SourceRequests } from './sourceRequests';
 import type {
   ArrangeFramesInput,
   CanvasAttachment,
@@ -24,10 +25,7 @@ import type {
   PreviewArtifact,
   RemoveFramesInput,
   RenameFrameInput,
-  SourceFiles,
   UndoRemovalInput,
-  WriteFilesInput,
-  WriteReceipt,
 } from './protocol';
 
 const MAX_PENDING_REQUESTS = 32;
@@ -94,6 +92,7 @@ export class CanvasClient {
   readonly designSystems = new DesignSystemRequests((command) => this.request(command));
   readonly library = new LibraryRequests((command) => this.request(command));
   readonly removal = new RemovalRequests((command) => this.request(command));
+  readonly source = new SourceRequests((command) => this.request(command));
 
   listCanvases(): Promise<CanvasSummary[]> {
     return this.request({ type: 'canvas.list', requestId: requestId() }).then(
@@ -162,21 +161,6 @@ export class CanvasClient {
       input,
     });
     return reply(event, 'created').created;
-  }
-
-  async writeFiles(
-    appSessionId: string,
-    canvasId: string,
-    input: WriteFilesInput,
-  ): Promise<WriteReceipt> {
-    const event = await this.request({
-      type: 'canvas.write',
-      requestId: requestId(),
-      appSessionId,
-      canvasId,
-      input,
-    });
-    return reply(event, 'written').receipt;
   }
 
   async arrangeFrames(
@@ -277,18 +261,6 @@ export class CanvasClient {
     return () => {
       this.summaryListeners.delete(listener);
     };
-  }
-
-  /** Reads immutable source without moving the design's head. */
-  async readSource(canvasId: string, designId: string, revisionId: string): Promise<SourceFiles> {
-    const event = await this.request({
-      type: 'canvas.readSource',
-      requestId: requestId(),
-      canvasId,
-      designId,
-      revisionId,
-    });
-    return reply(event, 'source').files;
   }
 
   /** This client's projection of a canvas, once its snapshot has landed. */
