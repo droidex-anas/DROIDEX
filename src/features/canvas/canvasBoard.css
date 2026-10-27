@@ -336,13 +336,6 @@
   pointer-events: none;
 }
 
-.canvas-sheet-thumbnail {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
-}
-
 /* ── Annotations ────────────────────────────────────────────────────────── */
 
 /* One SVG at the world layer's origin, drawing past its 1px box. It lets the
