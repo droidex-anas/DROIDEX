@@ -67,7 +67,10 @@ export function useCanvasImageReferences(appSessionId: string | null) {
     // A pasted bitmap has no file on disk for the canvas to own.
     if (canvasId === null || !pathForFile(file)) return;
     const target = canvasId;
-    const active = [...current.values()].filter((reference) => reference.status !== 'failed');
+    // The ref, not the render's copy: one drop imports several files before it re-renders.
+    const held = referencesRef.current;
+    const counted = held.canvasId === target ? [...held.bySequence.values()] : [];
+    const active = counted.filter((reference) => reference.status !== 'failed');
     if (active.length >= MAX_IMAGES) {
       put(target, sequence, {
         status: 'failed',
