@@ -38,6 +38,7 @@ interface LivePreview {
 }
 
 const livePreviews = new Map<string, LivePreview>();
+const captureListeners = new Map<string, Set<() => void>>();
 
 function captureKey(canvasId: string, ref: RevisionRef): string {
   return JSON.stringify([canvasId, ref.designId, ref.revisionId]);
@@ -57,6 +58,23 @@ export function registerCanvasPreview(
     if (livePreviews.get(key) !== live) return;
     livePreviews.delete(key);
     live.ended.abort();
+  };
+}
+
+/** Calls back each time main keeps a new picture of that revision. */
+export function onCanvasImageCaptured(
+  canvasId: string,
+  ref: RevisionRef,
+  listener: () => void,
+): () => void {
+  const key = captureKey(canvasId, ref);
+  const listeners = captureListeners.get(key) ?? new Set();
+  listeners.add(listener);
+  captureListeners.set(key, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && captureListeners.get(key) === listeners)
+      captureListeners.delete(key);
   };
 }
 
@@ -109,6 +127,8 @@ export function captureCanvasImage(
       scaleFactor: preview.scaleFactor,
     }).then(
       (result) => {
+        // Main keeps every picture it reports, even one this request no longer wants.
+        if (result.ok) for (const listener of captureListeners.get(key) ?? []) listener();
         if (settled) return;
         if (livePreviews.get(key) !== preview) {
           cancel();
