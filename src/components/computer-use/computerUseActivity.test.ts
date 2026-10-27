@@ -32,14 +32,13 @@ test('screenshots stay within a turn and a steer keeps the current surface', () 
   ];
   assert.equal(computerUseActivity(events), null);
   events.push(call('current-call'));
-  assert.deepEqual(computerUseActivity(events), { kind: 'computer', turnId: 'prompt-2' });
+  assert.deepEqual(computerUseActivity(events), { kind: 'computer' });
   events.push(
     result('current-call', '/current.png'),
     event('steer', { author: 'user', steered: true }),
   );
   assert.deepEqual(computerUseActivity(events), {
     kind: 'computer',
-    turnId: 'prompt-2',
     image: '/current.png',
   });
 });
@@ -62,7 +61,6 @@ test('a screenshot requires a successful associated computer call, regardless of
   ];
   assert.deepEqual(computerUseActivity(events), {
     kind: 'computer',
-    turnId: 'prompt',
     image: '/screenshot.png',
   });
 });
@@ -79,11 +77,9 @@ test('parent and child surfaces cannot borrow each other’s calls or screenshot
   ];
   assert.deepEqual(computerUseActivity(events), {
     kind: 'browser',
-    turnId: 'parent-prompt',
   });
   assert.deepEqual(computerUseActivity(events, 'child'), {
     kind: 'computer',
-    turnId: 'child-prompt',
     image: '/child.png',
   });
   assert.equal(computerUseActivity(events, 'other-child'), null);
@@ -97,23 +93,20 @@ test('the latest relevant call selects the surface and retains the computer fram
     call('unrelated', 'view_image'),
     result('unrelated', '/unrelated.png'),
   ];
-  assert.deepEqual(computerUseActivity(events), { kind: 'computer', turnId: 'prompt' });
+  assert.deepEqual(computerUseActivity(events), { kind: 'computer' });
   events.push(result('computer-call', '/computer.png'));
   assert.deepEqual(computerUseActivity(events), {
     kind: 'computer',
-    turnId: 'prompt',
     image: '/computer.png',
   });
   events.push(call('computer-next'));
   assert.deepEqual(computerUseActivity(events), {
     kind: 'computer',
-    turnId: 'prompt',
     image: '/computer.png',
   });
   events.push(call('browser-next', 'mcp__droidex-browser__browser_click'));
   assert.deepEqual(computerUseActivity(events), {
     kind: 'browser',
-    turnId: 'prompt',
   });
 });
 
@@ -151,7 +144,7 @@ test('direct and forwarded CUA calls are recognized without treating arbitrary e
     ]);
     assert.deepEqual(
       activity,
-      fixture.isComputer ? { kind: 'computer', turnId: 'prompt', image: '/image.png' } : null,
+      fixture.isComputer ? { kind: 'computer', image: '/image.png' } : null,
       fixture.name,
     );
   }
@@ -166,7 +159,6 @@ test('a named CUA function output starts the preview with its screenshot without
   ];
   assert.deepEqual(computerUseActivity(events), {
     kind: 'computer',
-    turnId: 'prompt',
     image: '/screen.png',
   });
 });

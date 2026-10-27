@@ -17,7 +17,6 @@ import { isEmbedded } from './lib/embed';
 import { getApiKey, isRemoteClient, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { forwardNativeBrowserShortcuts, hasNativeBrowser } from './lib/nativeBrowser';
 import { BrowserHost } from './components/browser/BrowserHost';
-import { ComputerUsePictureInPicture } from './components/computer-use/ComputerUsePictureInPicture';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import { shouldOpenSelectedChild } from './lib/childSessions';
 import type { ChildAccess } from './hooks/storeChildSession';
@@ -125,6 +124,11 @@ import { noteComposerNotApplicable, noteFirstMeaningfulShellPaint } from './lib/
 const LazyRemoteApprovalPanel = lazy(() =>
   import('./components/RemoteApprovalPanel').then((module) => ({
     default: module.RemoteApprovalPanel,
+  })),
+);
+const LazyComputerUsePictureInPicture = lazy(() =>
+  import('./components/computer-use/ComputerUsePictureInPicture').then((module) => ({
+    default: module.ComputerUsePictureInPicture,
   })),
 );
 
@@ -1156,9 +1160,11 @@ export default function App() {
         </Suspense>
       )}
       {!embedded && (
-        <ComputerUsePictureInPicture
-          hidden={showWizard || state.settingsOpen || fullContentRoute}
-        />
+        <Suspense fallback={null}>
+          <LazyComputerUsePictureInPicture
+            hidden={showWizard || state.settingsOpen || fullContentRoute}
+          />
+        </Suspense>
       )}
 
       <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>

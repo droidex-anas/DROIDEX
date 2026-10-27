@@ -54,7 +54,7 @@ export const AGENT_STATUS_ORDER: readonly ChildStatus[] = [
 export const AGENT_STATUS_LABEL: Record<ChildStatus | 'queued', string> = {
   running: 'Running',
   paused: 'Awaiting approval',
-  pending: 'Awaiting status',
+  pending: 'Starting',
   failed: 'Failed',
   completed: 'Done',
   queued: 'Queued',
@@ -244,7 +244,8 @@ export function agentWaveTimeMs(input: {
   return Math.max(0, input.lastSettledAt - input.firstStartedAt);
 }
 
-// The quiet line on the right of the header strip.
+// The wave's state on the right of the header strip: starting, working, then
+// finished, so the card alone tells the lifecycle.
 export function agentMonitorMeta(input: {
   counts: AgentStatusCounts;
   total: number;
@@ -255,45 +256,11 @@ export function agentMonitorMeta(input: {
   if (counts.failed > 0 && counts.completed + counts.failed === total) {
     return `${String(counts.failed)} of ${String(total)} ${plural} failed`;
   }
-  if (counts.completed === total) return `All ${String(total)} ${plural} finished`;
-  if (input.inFlight && counts.running === 0 && counts.queued > 0) {
-    return `${String(counts.queued)} ${counts.queued === 1 ? 'agent' : 'agents'} queued`;
-  }
-  if (input.inFlight && counts.running === 0 && counts.pending > 0) {
-    return `Awaiting status for ${String(counts.pending)} ${counts.pending === 1 ? 'agent' : 'agents'}`;
-  }
-  return `${String(counts.completed)} of ${String(total)} ${plural} finished`;
-}
-
-// Agent lifecycle as the transcript tells it: one quiet sentence for the whole
-// wave rather than a row per agent. Derived from the children's own statuses —
-// there is no lifecycle event on the wire to render instead.
-const LIFECYCLE_NAME_LIMIT = 3;
-
-function foldAgentNames(names: readonly string[]): string {
-  const shown = names.slice(0, LIFECYCLE_NAME_LIMIT);
-  const rest = names.length - shown.length;
-  if (rest > 0) return `${shown.join(', ')} and ${String(rest)} more`;
-  if (shown.length <= 1) return shown[0] ?? '';
-  return `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
-}
-
-export interface AgentLifecycleLines {
-  started?: string;
-  finished?: string;
-}
-
-export function agentLifecycleLines(rows: readonly AgentRow[]): AgentLifecycleLines {
-  if (rows.length === 0) return {};
-  const started = rows.filter((row) => !row.queued && row.status !== 'pending');
-  const settled = rows.filter((row) => isSettledAgentStatus(row.status));
-  const group = rows.find((row) => row.child.group)?.child.group;
-  return {
-    ...(started.length > 0
-      ? { started: `${foldAgentNames(started.map((row) => row.agentName))} started working` }
-      : {}),
-    ...(settled.length === rows.length
-      ? { finished: `${group ?? foldAgentNames(rows.map((row) => row.agentName))} finished` }
-      : {}),
-  };
+  if (counts.completed === total) return 'Finished';
+  const progress = `${String(counts.completed)} of ${String(total)} ${plural} finished`;
+  if (!input.inFlight) return progress;
+  if (counts.running === 0 && counts.pending > 0) return 'Starting';
+  if (counts.running === 0 && counts.queued > 0) return 'Queued';
+  if (counts.running === 0 && counts.paused > 0) return 'Awaiting approval';
+  return counts.completed > 0 ? `Working · ${progress}` : 'Working';
 }

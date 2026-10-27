@@ -3,9 +3,7 @@ import { transcriptEventIsVisible } from '../../lib/childSessions';
 import type { TranscriptEvent } from '../../types/bridge';
 import { startsTurn } from '../chatFeed';
 
-type ComputerUseActivity =
-  | { kind: 'browser'; turnId: string }
-  | { kind: 'computer'; turnId: string; image?: string };
+type ComputerUseActivity = { kind: 'browser' } | { kind: 'computer'; image?: string };
 
 const CUA_TOOL = /^mcp__cua[-_]repl__js$/;
 const EXEC_TOOL = /^(?:functions\.exec|mcp__functions__exec)$/;
@@ -31,18 +29,15 @@ function activityKind(event: TranscriptEvent): 'browser' | 'computer' | null {
   return isComputerCall(event) ? 'computer' : null;
 }
 
-function currentTurn(
-  events: TranscriptEvent[],
-  childSessionId: string | null,
-): { start: number; id: string } | null {
-  let turnId: string | undefined;
+function currentTurnStart(events: TranscriptEvent[], childSessionId: string | null): number | null {
+  let start: number | null = null;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (!transcriptEventIsVisible(event, childSessionId)) continue;
-    turnId = event.id;
-    if (startsTurn(event) && !event.steered) return { start: index, id: event.id };
+    if (startsTurn(event) && !event.steered) return index;
+    start = 0;
   }
-  return turnId ? { start: 0, id: turnId } : null;
+  return start;
 }
 
 function latestComputerImage(
@@ -74,23 +69,23 @@ export function computerUseActivity(
   events: TranscriptEvent[],
   childSessionId: string | null = null,
 ): ComputerUseActivity | null {
-  const turn = currentTurn(events, childSessionId);
-  if (!turn) return null;
+  const turnStart = currentTurnStart(events, childSessionId);
+  if (turnStart === null) return null;
 
   let activity: ComputerUseActivity | null = null;
   const computerCalls = new Set<string>();
-  for (let index = turn.start; index < events.length; index += 1) {
+  for (let index = turnStart; index < events.length; index += 1) {
     const event = events[index];
     if (!transcriptEventIsVisible(event, childSessionId)) continue;
     const kind = activityKind(event);
     if (!kind) continue;
-    activity = { kind, turnId: turn.id };
+    activity = { kind };
     if (kind === 'computer' && event.toolUseId) computerCalls.add(event.toolUseId);
   }
   if (activity?.kind !== 'computer') return activity;
 
   // Collect calls first: restored history can deliver a result before its call.
-  const image = latestComputerImage(events, turn.start, childSessionId, computerCalls);
+  const image = latestComputerImage(events, turnStart, childSessionId, computerCalls);
   if (image) return { ...activity, image };
   return activity;
 }

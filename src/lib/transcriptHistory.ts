@@ -53,7 +53,7 @@ function replayScope(event: TranscriptEvent): string {
   return `${sessionKey(event)}:${event.author ?? event.role}:${event.kind}`;
 }
 
-function textMessageKey(event: TranscriptEvent): string | undefined {
+export function textMessageKey(event: TranscriptEvent): string | undefined {
   if (!event.textUpdate || event.author || (event.kind !== 'text' && event.kind !== 'thinking')) {
     return undefined;
   }

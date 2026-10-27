@@ -318,12 +318,12 @@ export class ChildSessions {
         this.noteWaveSettlement(child, previousStatus);
       }
       // The parent agent is the sender, so the brief reads as a prompt in the
-      // agent's pane rather than as a status line.
-      if (
-        child.prompt &&
-        child.prompt !== previousPrompt &&
-        parent.lease.summary.provider !== 'codex'
-      )
+      // agent's pane rather than as a status line. Codex threads and Droid's own
+      // Task transcripts already open with it.
+      const provider = parent.lease.summary.provider;
+      const transcriptOpensWithBrief =
+        provider === 'codex' || (provider === 'droid' && child.transcriptAvailable);
+      if (child.prompt && child.prompt !== previousPrompt && !transcriptOpensWithBrief)
         this.d.timeline.appendPrompt(
           child.identity.parentAppSessionId,
           child.prompt,

@@ -148,7 +148,7 @@ function AgentListRow({
 function activeDetail(row: AgentRow): string {
   if (row.queued) return 'Queued';
   if (row.status === 'paused') return 'Awaiting approval';
-  if (row.status === 'pending') return 'Awaiting status';
+  if (row.status === 'pending') return 'Starting';
   return row.snapshot.step || 'Working';
 }
 

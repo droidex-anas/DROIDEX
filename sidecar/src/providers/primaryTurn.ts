@@ -30,9 +30,10 @@ export interface PrimaryTurnRequest {
   prompt: string;
   mentions?: ProviderMention[];
   delivery?: ScheduledTurnDelivery;
-  // Set when the app, not the user, started this turn. The transcript then gets
-  // this quiet status row instead of a prompt bubble nobody typed.
-  notice?: string;
+  // Set when the app, not the user, started this turn. Nobody typed the prompt,
+  // so it is never drawn as a bubble; the notice, when given, is the quiet
+  // status row the transcript gets instead.
+  appStarted?: { notice?: string };
   // Set for a prompt the chat has not drawn as a row: one nobody typed (a
   // scheduled delivery, a message from another chat), or a steer that runs as
   // a turn of its own, which the chat showed only as pending. The turn adds
@@ -50,7 +51,7 @@ export async function runPrimaryTurn(
   liveSession: LiveSession,
   request: PrimaryTurnRequest,
 ): Promise<void> {
-  const { prompt, mentions, delivery, notice, announce, steerId, stillAllowed } = request;
+  const { prompt, mentions, delivery, appStarted, announce, steerId, stillAllowed } = request;
   const appSessionId = liveSession.summary.appSessionId;
   const providerSession = liveSession.session;
   const isCurrent = () =>
@@ -86,8 +87,9 @@ export async function runPrimaryTurn(
     return;
   }
   d.eventFlow.beginTurn(appSessionId, appSessionId);
-  if (notice) d.timeline.appendStatus(appSessionId, notice);
-  else {
+  if (appStarted) {
+    if (appStarted.notice) d.timeline.appendStatus(appSessionId, appStarted.notice);
+  } else {
     const writing = announce
       ? d.timeline.announcePrompt(appSessionId, prompt, false, steerId)
       : d.timeline.recordPrompt(appSessionId, prompt);

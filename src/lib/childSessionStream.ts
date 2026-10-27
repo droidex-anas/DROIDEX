@@ -8,9 +8,6 @@ import { childSessionKey, childSessionLatest, type ChildSessionActivity } from '
 
 export const CHILD_STREAM_PREVIEW_MAX_LINES = 3;
 export const CHILD_STREAM_PREVIEW_MAX_CHARS = 280;
-export const CHILD_STREAM_PREVIEW_BOX_CLASS = 'min-h-[3.75rem] max-h-[3.75rem] overflow-hidden';
-export const CHILD_STREAM_PREVIEW_EXPANDED_BOX_CLASS =
-  'min-h-[3.75rem] max-h-[15rem] overflow-y-auto';
 
 export type ChildStreamPhase =
   | 'queued'
@@ -181,10 +178,6 @@ function childStreamStep(input: {
   if (input.fidelity === 'tool' && input.toolName) return input.toolName;
   if (input.phase === 'streaming') return 'Working';
   return CHILD_STREAM_PHASE_LABEL[input.phase];
-}
-
-export function childStreamPreviewBoxClass(expanded: boolean): string {
-  return expanded ? CHILD_STREAM_PREVIEW_EXPANDED_BOX_CLASS : CHILD_STREAM_PREVIEW_BOX_CLASS;
 }
 
 export function childStreamSnapshot(

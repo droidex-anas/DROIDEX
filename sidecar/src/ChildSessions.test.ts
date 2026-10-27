@@ -1060,26 +1060,29 @@ test('completion rejects an immediate stale provider observation', async () => {
 
 test('repeated child observations publish only new task prompts', () => {
   const record = childRecord('child', 'provider');
-  const h = createHarness([record]);
-  const observePrompt = (prompt?: string) =>
+  const observePrompt = (h: Harness, prompt?: string) =>
     observe(h, {
       providerSessionId: record.providerSessionId,
       role: record.role,
       ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
       ...(prompt ? { prompt } : {}),
     });
-
-  observePrompt('first prompt');
-  observePrompt();
-  observePrompt('first prompt');
-  observePrompt('changed prompt');
-
-  assert.deepEqual(
+  const publishedPrompts = (h: Harness) =>
     h.calls
       .filter((call) => call.target === 'protocol' && call.method === 'timeline.prompt')
-      .map((call) => call.args[1]),
-    ['first prompt', 'changed prompt'],
-  );
+      .map((call) => call.args[1]);
+
+  const claude = createHarness([record], { parentProvider: 'claude' });
+  observePrompt(claude, 'first prompt');
+  observePrompt(claude);
+  observePrompt(claude, 'first prompt');
+  observePrompt(claude, 'changed prompt');
+  assert.deepEqual(publishedPrompts(claude), ['first prompt', 'changed prompt']);
+
+  // A Droid Task child's own transcript opens with the brief.
+  const droid = createHarness([record]);
+  observePrompt(droid, 'first prompt');
+  assert.deepEqual(publishedPrompts(droid), []);
 });
 
 test('repeated same-provider observation preserves automatic compaction settlement', async () => {

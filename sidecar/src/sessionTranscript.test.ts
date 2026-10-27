@@ -11,6 +11,7 @@ import {
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import type { TranscriptEvent } from './protocol.js';
+import { RESTART_CONTINUE_PROMPT } from './sessionAdoption.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'droid-transcript-'));
 let fileCount = 0;
@@ -164,6 +165,7 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
     userMessage('shared prompt', 'both'),
     userMessage('Skill "review" activated: PR #100', 'user_only'),
     userMessage(notification),
+    userMessage(RESTART_CONTINUE_PROMPT),
     assistant('Review started'),
   ]);
 

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { useBrowserHost } from '../../lib/browserHost';
@@ -6,16 +6,25 @@ import { visibleSessionTarget } from '../../lib/childSessions';
 import { sessionIsLive } from '../../lib/sessions';
 import { utilityPanelForSession } from '../../lib/utilityPanel';
 import type { TranscriptEvent } from '../../types/bridge';
-import type { PreviewSource } from './ComputerUsePreviewWindow';
+import {
+  ComputerUsePreviewWindow,
+  type PreviewPlacement,
+  type PreviewSource,
+} from './ComputerUsePreviewWindow';
 import { ImageLightbox } from '../media/ImageLightbox';
 import { computerUseActivity } from './computerUseActivity';
 
 const NO_EVENTS: TranscriptEvent[] = [];
-const PreviewWindow = lazy(() => import('./ComputerUsePreviewWindow'));
 
 /** One preview for the focused conversation, kept across steps until its turn settles. */
 export function ComputerUsePictureInPicture({ hidden }: { hidden: boolean }) {
   const [inspectedImage, setInspectedImage] = useState<string | null>(null);
+  // Owned here so a moved or minimized window stays put across turns and sources.
+  const [placement, setPlacement] = useState<PreviewPlacement>({
+    right: 16,
+    top: 56,
+    minimized: false,
+  });
   const current = useStoreSelector((state) => {
     const appSessionId = state.activeAppSessionId;
     const session = appSessionId ? state.sessions[appSessionId] : undefined;
@@ -66,17 +75,17 @@ export function ComputerUsePictureInPicture({ hidden }: { hidden: boolean }) {
 
   return (
     <>
-      <Suspense fallback={null}>
-        <AnimatePresence>
-          {current.appSessionId && source && activity && (
-            <PreviewWindow
-              key={`${current.appSessionId}:${current.childSessionId ?? 'primary'}:${activity.turnId}:${source.kind}`}
-              source={source}
-              onInspect={setInspectedImage}
-            />
-          )}
-        </AnimatePresence>
-      </Suspense>
+      <AnimatePresence>
+        {current.appSessionId && source && (
+          <ComputerUsePreviewWindow
+            key={`${current.appSessionId}:${current.childSessionId ?? 'primary'}`}
+            source={source}
+            placement={placement}
+            onPlacementChange={setPlacement}
+            onInspect={setInspectedImage}
+          />
+        )}
+      </AnimatePresence>
       {inspectedImage && (
         <ImageLightbox
           src={inspectedImage}

@@ -129,7 +129,7 @@ test('the collapsed card counts agents by their own status, with a completion su
   assert.ok(collapsed.includes('Agents'));
   assert.ok(collapsed.includes('1 Running'));
   assert.ok(collapsed.includes('1 Done'));
-  // Rows stay unmounted while collapsed; only the lifecycle line names agents.
+  // Rows stay unmounted while collapsed.
   assert.equal(html.includes('data-testid="agent-row"'), false);
 
   const mixed = cardText({
@@ -214,11 +214,11 @@ test('two in-flight waves render two docks, each scoped to its own agents', () =
   assert.ok(text.includes('Running'));
   assert.ok(text.includes('1 Done'));
   // The header summarizes completion; the pills carry the status breakdown.
-  assert.ok(text.includes('All 1 agent finished'));
-  assert.ok(text.includes('0 of 1 agent finished'));
+  assert.ok(text.includes('Finished'));
+  assert.ok(text.includes('Working'));
 });
 
-test('an unresolved live spawn reports unknown status and never infers lifecycle', () => {
+test('an unresolved live spawn reads as starting and never infers progress', () => {
   // A background Task acknowledges its launch immediately, so the spawn call
   // already carries an endTs while the subagent is only starting up.
   const launched = {
@@ -229,8 +229,7 @@ test('an unresolved live spawn reports unknown status and never infers lifecycle
   const wave = resolveWaveSessions([launched], []);
   assert.equal(wave[0].status, 'pending');
   const text = cardText({ sessions: wave, models: [], live: true });
-  assert.ok(text.includes('Awaiting status'));
-  assert.ok(text.includes('Awaiting status for 1 agent'));
+  assert.ok(text.includes('Starting'));
   // With no activity yet, the row says what the agent was asked to do.
   assert.ok(text.includes('explorer work'));
   assert.ok(!text.includes('1m</'));
@@ -243,7 +242,7 @@ test('an unresolved live spawn reports unknown status and never infers lifecycle
     live: true,
   });
   assert.ok(queued.includes('Queued'));
-  assert.ok(!queued.includes('Awaiting status'));
+  assert.ok(!queued.includes('Starting'));
 });
 
 test('the dock renders from spawn events before sessions register, and stays unknown', () => {
@@ -251,7 +250,7 @@ test('the dock renders from spawn events before sessions register, and stays unk
   // per-spawn lines while the store catches up.
   const text = textOf(feedHtml([userMsg('go'), spawn('t1', 'explorer')], noSessions));
   assert.ok(text.includes('Agents'));
-  assert.ok(text.includes('Awaiting status'));
+  assert.ok(text.includes('Starting'));
 
   // The parent keeps talking (plan updates, narration) while its subagents work,
   // so "is this wave live" cannot be "is this the last feed item".
@@ -261,7 +260,7 @@ test('the dock renders from spawn events before sessions register, and stays unk
       noSessions,
     ),
   );
-  assert.ok(followed.includes('Awaiting status'));
+  assert.ok(followed.includes('Starting'));
   assert.ok(!followed.includes('Never started'));
 });
 
@@ -338,14 +337,12 @@ test('a trailing agent poll reads as checking subagents, not a stuck or stopped 
 test('a running wave card is the only live cue until it settles', () => {
   // The dock's own session status suppresses the global Working cue, even
   // without an activity callback.
-  const docked = textOf(
-    feedHtml([userMsg('go'), spawn('t1', 'explorer')], {
-      sessions: [childSession('explorer', 't1', 'running')],
-      models: [],
-    }),
-  );
-  assert.ok(docked.includes('Agents'));
-  assert.equal(docked.includes('Working'), false);
+  const docked = feedHtml([userMsg('go'), spawn('t1', 'explorer')], {
+    sessions: [childSession('explorer', 't1', 'running')],
+    models: [],
+  });
+  assert.ok(textOf(docked).includes('Agents'));
+  assert.equal(docked.includes('aria-live="polite">Working<'), false);
 
   // The card at the tail already reports the wave with its own status pills and
   // timers, so announcing the check as well would say the same thing twice.
@@ -505,7 +502,7 @@ test('an expanded wave folds rows past the visible limit, preserving spawn order
   assert.deepEqual(foldedAgentRows(rows, true), rows);
 });
 
-test('a workflow labels its phases and folds its lifecycle; a plain wave stays flat', () => {
+test('a workflow labels its phases; a plain wave stays flat', () => {
   const workflow = cardText({
     sessions: [
       { ...childSession('explorer', 't1', 'running'), group: 'Repair work', phase: 'Read' },
@@ -525,15 +522,4 @@ test('a workflow labels its phases and folds its lifecycle; a plain wave stays f
     createElement(AgentMonitorCard, { ...monitorData, live: true }),
   );
   assert.equal(plain.includes('agent-section-label'), false);
-
-  // The transcript states a finished wave's lifecycle in one folded sentence.
-  const finished = cardText({
-    sessions: [
-      { ...childSession('explorer', 't1', 'completed'), group: 'Repair work' },
-      { ...childSession('worker', 't2', 'completed'), group: 'Repair work' },
-    ],
-    models: [],
-  });
-  assert.ok(finished.includes('explorer and worker started working'));
-  assert.ok(finished.includes('Repair work finished'));
 });

@@ -14,6 +14,10 @@ import { adoptedSessionFacts, retirableSessions } from './sessionRuntimeRetireme
 // Boot time is derived from uptime, which drifts by a little between reads.
 const SAME_BOOT_TOLERANCE_MS = 60_000;
 export const TURN_INTERRUPTED = 'The agent runtime restarted and this turn did not continue.';
+// The provider stores this prompt; the notification frame keeps it out of the
+// chat when the history replays.
+export const RESTART_CONTINUE_PROMPT =
+  '<system-notification>DROIDEX restarted while you were working. Continue from where you stopped; your worktree and history are intact.</system-notification>';
 const SESSION_UNAVAILABLE = 'This session could not reconnect. Reopen it to continue.';
 const CHILD_INTERRUPTED = 'The agent runtime restarted and this child agent did not continue.';
 
@@ -23,15 +27,11 @@ export interface SessionAdoptionDependencies {
     liveSessionsSnapshot(): readonly { summary: SessionSummary }[];
     getCanonicalSummary(id: string): SessionSummary | undefined;
     getLive(id: string): { summary: SessionSummary } | undefined;
-    // The owner of a live session's summary: patches what it says now, then
-    // stores and publishes it.
-    updateSummary(
-      id: string,
-      patch: Pick<SessionSummary, 'streaming' | 'phase' | 'interruptReason'>,
-      options: { touchActivity: false },
-    ): unknown;
   };
-  lifecycle: { resume(id: string): Promise<RegisteredSession | undefined> };
+  lifecycle: {
+    resume(id: string): Promise<RegisteredSession | undefined>;
+    continueTurn(id: string, prompt: string): void;
+  };
   historyReady: () => Promise<void>;
   isShutdownStarted: () => boolean;
   liveChildren: () => readonly LiveChildIdentity[];
@@ -53,6 +53,7 @@ export interface SessionAdoptionResult {
 export class SessionAdoption {
   private started: Promise<SessionAdoptionResult> | null = null;
   private readonly interrupted: InterruptedSessionRecord[] = [];
+  private journaledStreaming = new Map<string, boolean>();
 
   constructor(private readonly dependencies: SessionAdoptionDependencies) {}
 
@@ -78,8 +79,16 @@ export class SessionAdoption {
     );
   }
 
+  // The journal is how the next run learns a turn was cut off, so a turn
+  // starting or settling must reach it, not only the live set changing.
+  observeSummary(summary: SessionSummary): void {
+    const streaming = summary.streaming === true;
+    if (this.journaledStreaming.get(summary.appSessionId) === streaming) return;
+    if (!this.dependencies.registry.getLive(summary.appSessionId)) return;
+    this.persistLiveSet();
+  }
+
   persistLiveSet(): void {
-    if (this.journalIsForeign()) return;
     const sessions: LiveSessionIdentity[] = this.dependencies.registry
       .liveSessionsSnapshot()
       .flatMap((live) => {
@@ -95,6 +104,10 @@ export class SessionAdoption {
           },
         ];
       });
+    this.journaledStreaming = new Map(
+      sessions.map((session) => [session.appSessionId, session.streaming]),
+    );
+    if (this.journalIsForeign()) return;
     this.dependencies.journal.write({
       owner: { pid: process.pid, bootedAt: systemBootedAt() },
       sessions,
@@ -168,13 +181,8 @@ export class SessionAdoption {
       }
       if (!wasStreaming) return;
       if (this.dependencies.registry.getLive(identity.appSessionId) !== resumed) return;
-      await this.markSessionInterrupted(
-        identity,
-        historical,
-        true,
-        'Send a message to resume.',
-        resumed,
-      );
+      // The composer already shows the turn running, so it leaves no row.
+      this.dependencies.lifecycle.continueTurn(identity.appSessionId, RESTART_CONTINUE_PROMPT);
     } catch (error) {
       if (this.dependencies.isShutdownStarted()) return;
       if (this.dependencies.registry.getLive(identity.appSessionId)) return;
@@ -192,20 +200,12 @@ export class SessionAdoption {
     historical: SessionSummary | undefined,
     wasStreaming: boolean,
     reason: string,
-    resumed?: RegisteredSession,
   ): Promise<void> {
     const prefix = wasStreaming ? TURN_INTERRUPTED : 'The agent runtime restarted.';
     const interruptReason = `${prefix} ${reason}`;
     const { registry } = this.dependencies;
-    const live = registry.getLive(identity.appSessionId);
-    if (live !== resumed) return;
-    if (live) {
-      registry.updateSummary(
-        identity.appSessionId,
-        interruption(live.summary, wasStreaming, interruptReason),
-        { touchActivity: false },
-      );
-    } else if (historical) {
+    if (registry.getLive(identity.appSessionId)) return;
+    if (historical) {
       const current = registry.getCanonicalSummary(identity.appSessionId);
       if (
         !current ||

@@ -105,8 +105,8 @@ export interface StartedLocalMcpResources {
 export interface SessionPrompt {
   text: string;
   mentions?: ProviderMention[];
-  // See PrimaryTurnRequest.notice: set for a turn the app owes the chat.
-  notice?: string;
+  // See PrimaryTurnRequest.appStarted: set for a turn the app owes the chat.
+  appStarted?: { notice?: string };
   // A typed steer is listed as pending until the model
   // takes it in, whether the harness holds it or it waits on the queue.
   steerId?: string;
@@ -1078,11 +1078,16 @@ export class SessionLifecycle {
     if (liveSession.compacting || liveSession.autoCompacting) return false;
     if (liveSession.summary.sessionPurpose === 'mission-control') return true;
     if (liveSession.streaming || liveSession.pendingSends.length > 0) return true;
-    void this.driveInBackground(liveSession.summary.appSessionId, {
-      ...sessionPrompt(prompt),
-      notice,
-    });
+    this.continueTurn(liveSession.summary.appSessionId, prompt, notice);
     return true;
+  }
+
+  // A turn nobody typed: the chat never shows its prompt, only the notice if one is given.
+  continueTurn(appSessionId: string, prompt: string, notice?: string): void {
+    void this.driveInBackground(appSessionId, {
+      ...sessionPrompt(prompt),
+      appStarted: notice ? { notice } : {},
+    });
   }
 
   async interrupt(requestedAppSessionId: string): Promise<void> {
@@ -1740,7 +1745,7 @@ export class SessionLifecycle {
       delivery?.declined('stale');
       // The runtime was released under this send. A prompt the user typed
       // reopens the chat, as a send to any released chat does.
-      if (liveSession.closeMode === 'preserve-pending' && !delivery && !prompt.notice)
+      if (liveSession.closeMode === 'preserve-pending' && !delivery && !prompt.appStarted)
         await this.sendPrompt(appSessionId, prompt);
       return;
     }
@@ -1798,7 +1803,7 @@ export class SessionLifecycle {
         prompt: prompt.text,
         ...(prompt.mentions ? { mentions: prompt.mentions } : {}),
         ...(delivery ? { delivery } : {}),
-        ...(prompt.notice ? { notice: prompt.notice } : {}),
+        ...(prompt.appStarted ? { appStarted: prompt.appStarted } : {}),
         ...(prompt.steerId || prompt.announce ? { announce: true as const } : {}),
         ...(prompt.steerId ? { steerId: prompt.steerId } : {}),
         ...(prompt.isCurrent ? { stillAllowed: prompt.isCurrent } : {}),

@@ -12,6 +12,7 @@ import {
   estimateReplacedTranscriptEventCost,
 } from './transcriptWindow';
 import { isChildSessionTool, mergeChildSessionSpawn } from './childSessionEvents';
+import { textMessageKey } from './transcriptHistory';
 
 export interface TranscriptIngestionResult {
   events: TranscriptEvent[];
@@ -568,14 +569,6 @@ function textMergeTarget(
     return { index, previous, text: next.text };
   }
   return undefined;
-}
-
-function textMessageKey(event: TranscriptEvent): string | undefined {
-  if (!event.textUpdate || event.author || (event.kind !== 'text' && event.kind !== 'thinking')) {
-    return undefined;
-  }
-  const source = event.role === 'primary' ? 'primary' : event.sourceSessionId;
-  return `${source}\n${event.kind}\n${event.textUpdate.messageId}`;
 }
 
 // The one earlier snapshot of a streamed call, wherever it landed. The index

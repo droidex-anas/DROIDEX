@@ -16,18 +16,27 @@ export type PreviewSource =
   | { kind: 'browser'; browserSessionId: string; title: string }
   | { kind: 'computer'; image?: string; title: string };
 
-export default function ComputerUsePreviewWindow({
+export interface PreviewPlacement {
+  right: number;
+  top: number;
+  minimized: boolean;
+}
+
+export function ComputerUsePreviewWindow({
   source,
+  placement,
+  onPlacementChange,
   onInspect,
 }: {
   source: PreviewSource;
+  placement: PreviewPlacement;
+  onPlacementChange: (placement: PreviewPlacement) => void;
   onInspect: (src: string) => void;
 }) {
   const dispatch = useStoreDispatch();
   const reducedMotion = useReducedMotion();
   const present = useIsPresent();
-  const [minimized, setMinimized] = useState(false);
-  const [position, setPosition] = useState({ right: EDGE_PX, top: 56 });
+  const { minimized } = placement;
   const [area, setArea] = useState({ width: window.innerWidth, height: window.innerHeight });
   const windowRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLButtonElement>(null);
@@ -46,7 +55,10 @@ export default function ComputerUsePreviewWindow({
     right: Math.max(EDGE_PX, Math.min(right, area.width - width - EDGE_PX)),
     top: Math.max(EDGE_PX, Math.min(top, area.height - height - EDGE_PX)),
   });
-  const shown = fit(position.right, position.top);
+  const shown = fit(placement.right, placement.top);
+  const moveTo = (right: number, top: number) => {
+    onPlacementChange({ ...fit(right, top), minimized });
+  };
   const src = source.kind === 'computer' && source.image ? imageSrc(source.image) : null;
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const canExpand = source.kind === 'browser' || (src !== null && src !== failedSrc);
@@ -82,7 +94,7 @@ export default function ComputerUsePreviewWindow({
     if (!start) return;
     if (Math.abs(event.clientX - start.x) + Math.abs(event.clientY - start.y) > 3)
       dragged.current = true;
-    setPosition(fit(start.right - (event.clientX - start.x), start.top + event.clientY - start.y));
+    moveTo(start.right - (event.clientX - start.x), start.top + event.clientY - start.y);
   };
   const endDrag = () => {
     gesture.current = null;
@@ -121,7 +133,7 @@ export default function ComputerUsePreviewWindow({
           }}
           onLostPointerCapture={endDrag}
           onClick={() => {
-            if (minimized && !dragged.current) setMinimized(false);
+            if (minimized && !dragged.current) onPlacementChange({ ...shown, minimized: false });
             dragged.current = false;
           }}
           onKeyDown={(event) => {
@@ -144,7 +156,7 @@ export default function ComputerUsePreviewWindow({
                 return;
             }
             event.preventDefault();
-            setPosition(fit(right, top));
+            moveTo(right, top);
           }}
         >
           <Icon className="size-icon-sm shrink-0" aria-hidden="true" />
@@ -169,7 +181,7 @@ export default function ComputerUsePreviewWindow({
                 icon={X}
                 aria-label="Hide preview"
                 onClick={() => {
-                  setMinimized(true);
+                  onPlacementChange({ ...shown, minimized: true });
                   // This button unmounts, so keep keyboard focus on the restore control.
                   headerRef.current?.focus();
                 }}

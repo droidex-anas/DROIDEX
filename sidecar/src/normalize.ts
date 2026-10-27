@@ -332,6 +332,8 @@ export function normalizeNotification(
   notification: Record<string, unknown>,
 ): NormalizedEvent[] {
   const raw = extractNotification(notification);
+  const startedChild = childSessionAvailableFrom(raw);
+  if (startedChild) return [{ childSession: startedChild }];
   const backgroundTaskProviderSessionId = backgroundTaskCompletionProviderSessionIdFrom(raw);
   if (backgroundTaskProviderSessionId)
     return [
@@ -379,6 +381,23 @@ function skillActivationFromNotification(raw: unknown): SkillActivation | undefi
   if (!block || typeof block !== 'object' || Array.isArray(block)) return undefined;
   const text = (block as Record<string, unknown>).text;
   return typeof text === 'string' ? parseSkillActivation(text) : undefined;
+}
+
+// The Droid CLI announces a Task subagent's own session as soon as it starts.
+// Without it the child is only known from the Task result, after it finished.
+function childSessionAvailableFrom(raw: unknown): ChildSessionSignal | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const notification = raw as Record<string, unknown>;
+  if (notification.type !== 'child_session_available') return undefined;
+  const providerSessionId = str(notification.childSessionId);
+  if (!providerSessionId) return undefined;
+  const toolUseId = str(notification.toolUseId);
+  const label = str(notification.subagentType) ?? str(notification.description);
+  return {
+    providerSessionId,
+    ...(toolUseId ? { toolUseId } : {}),
+    ...(label ? { label } : {}),
+  };
 }
 
 function backgroundTaskCompletionProviderSessionIdFrom(raw: unknown): string | undefined {

@@ -27,6 +27,10 @@ import {
 
 export type { CompactionExecutionResult } from './sessionCompactionExecution.js';
 
+// Raw notices the SDK stream never yields; every other type reaches the event
+// flow through the stream, and forwarding it here too would duplicate it.
+const PRIMARY_RAW_NOTIFICATIONS = new Set(['create_message', 'child_session_available']);
+
 export interface CompactionLimitRequest {
   modelId?: string;
   exposed?: CompactionTokenLimitPatch;
@@ -215,7 +219,8 @@ export class SessionCompaction {
     liveSession.unsubscribe = session.onNotification((note: Record<string, unknown>) => {
       if (!this.isCurrent(target, epoch)) return;
       if (!liveSession.compacting) this.handleAutomaticNotification(target, note);
-      if (notificationType(note) === 'create_message')
+      const type = notificationType(note);
+      if (type && PRIMARY_RAW_NOTIFICATIONS.has(type))
         this.dependencies.onPrimaryNotification(target, note);
     });
   }

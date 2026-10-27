@@ -477,6 +477,7 @@ export class SessionManager {
       projectSummary: (summary) => this.lineage.project(this.modelSettings.project({ ...summary })),
       onSummaryUpdated: (summary) => {
         this.emit({ type: 'session.updated', session: summary });
+        this.adoption.observeSummary(summary);
         this.runtimeRetirement.arm();
       },
       onLiveProviderReplaced: (providerSessionId) => {
@@ -840,7 +841,12 @@ export class SessionManager {
       historyReady: () => this.sessionFiles.whenBootReconciled(),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       registry: this.registry,
-      lifecycle: { resume: (id) => this.lifecycle.resume(id, true) },
+      lifecycle: {
+        resume: (id) => this.lifecycle.resume(id, true),
+        continueTurn: (id, prompt) => {
+          this.lifecycle.continueTurn(id, prompt);
+        },
+      },
       liveChildren: () =>
         this.childSessions.liveChildSummaries().map((child) => ({
           parentAppSessionId: child.parentAppSessionId,

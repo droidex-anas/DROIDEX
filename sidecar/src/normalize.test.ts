@@ -82,6 +82,31 @@ test('only a terminal background-task notification completes its child', () => {
   assert.deepEqual(background('Background task launched.\ntask_id: child-1'), []);
 });
 
+test('a started Task subagent is announced with its session before it finishes', () => {
+  assert.deepEqual(
+    normalizeNotification('parent', 'parent', 'primary', {
+      params: {
+        notification: {
+          type: 'child_session_available',
+          childSessionId: 'child-provider-1',
+          toolUseId: 'task-call-1',
+          subagentType: 'worker',
+          description: 'Write a story',
+        },
+      },
+    }),
+    [
+      {
+        childSession: {
+          providerSessionId: 'child-provider-1',
+          toolUseId: 'task-call-1',
+          label: 'worker',
+        },
+      },
+    ],
+  );
+});
+
 test('user create_message notifications reach the transcript only as parsed harness signals', () => {
   const activation = userMessage({
     id: 'skill-activation-1',

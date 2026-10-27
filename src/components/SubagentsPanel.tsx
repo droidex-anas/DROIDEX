@@ -21,7 +21,7 @@ const STACK_LIMIT = 4;
 // Same status vocabulary as the in-chat subagents dock.
 const STATUS_LABEL: Record<ChildStatus, string> = {
   running: 'Working',
-  pending: 'Awaiting status',
+  pending: 'Starting',
   paused: 'Idle',
   completed: 'Done',
   failed: 'Failed',

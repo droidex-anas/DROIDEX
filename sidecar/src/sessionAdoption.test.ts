@@ -11,7 +11,7 @@ import {
   type LiveChildIdentity,
   type LiveSessionIdentity,
 } from './liveRuntimeJournal.js';
-import { SessionAdoption } from './sessionAdoption.js';
+import { RESTART_CONTINUE_PROMPT, SessionAdoption } from './sessionAdoption.js';
 import { SESSION_RUNTIME_IDLE_RETIREMENT_MS } from './sessionRuntimeRetirement.js';
 import type { SessionSummary } from './protocol.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
@@ -49,9 +49,8 @@ function createAdoption(
       liveSessionsSnapshot: () => [],
       getCanonicalSummary: (id) => summary(id),
       getLive: () => undefined,
-      updateSummary: () => undefined,
     },
-    lifecycle: { resume: async () => undefined },
+    lifecycle: { resume: async () => undefined, continueTurn: () => undefined },
     historyReady: () => Promise.resolve(),
     isShutdownStarted: () => false,
     liveChildren: () => [],
@@ -98,9 +97,9 @@ test('failed provider adoption marks the session interrupted instead of running'
       liveSessionsSnapshot: () => [],
       getCanonicalSummary: () => historical,
       getLive: () => undefined,
-      updateSummary: () => undefined,
     },
     lifecycle: {
+      continueTurn: () => undefined,
       resume: async () => {
         noteStarted();
         await resumed;
@@ -155,9 +154,9 @@ test('adoption waits for stored provenance and never invents a harness for a mis
       liveSessionsSnapshot: () => [],
       getCanonicalSummary: (id) => (loaded && id === 'codex' ? native : undefined),
       getLive: () => undefined,
-      updateSummary: () => undefined,
     },
     lifecycle: {
+      continueTurn: () => undefined,
       resume: async (id) => {
         resumed.push(id);
         return undefined;
@@ -217,12 +216,9 @@ test('boot adoption leaves a newly opened chat or a shutting-down app untouched'
         liveSessionsSnapshot: () => (departed && departure === 'opened' ? [current] : []),
         getCanonicalSummary: () => summary('app-current'),
         getLive: () => (departed && departure === 'opened' ? current : undefined),
-        updateSummary: (_id, patch) => {
-          current.summary = { ...current.summary, ...patch };
-          effects.push('patched');
-        },
       },
       lifecycle: {
+        continueTurn: () => undefined,
         resume: async () => {
           effects.push('resumed');
           return current;
@@ -244,7 +240,7 @@ test('boot adoption leaves a newly opened chat or a shutting-down app untouched'
   }
 });
 
-test('a resumed session interrupts only a turn that was streaming', async (t) => {
+test('a resumed session continues only a turn that was streaming, without a notice', async (t) => {
   for (const streaming of [true, false]) {
     const { journal } = scratchJournal(t);
     journal.write({
@@ -254,17 +250,17 @@ test('a resumed session interrupts only a turn that was streaming', async (t) =>
     });
     const live = { summary: { ...summary('app-2'), streaming: false } };
     let isLive = false;
+    const continued: string[] = [];
     const persisted: SessionSummary[] = [];
+    const statuses: string[] = [];
     const adoption = createAdoption(journal, {
       registry: {
         liveSessionsSnapshot: () => (isLive ? [live] : []),
         getCanonicalSummary: () => live.summary,
         getLive: () => (isLive ? live : undefined),
-        updateSummary: (_id, patch) => {
-          live.summary = { ...live.summary, ...patch };
-        },
       },
       lifecycle: {
+        continueTurn: (id, prompt) => continued.push(`${id}: ${prompt}`),
         resume: async () => {
           isLive = true;
           return live;
@@ -273,19 +269,19 @@ test('a resumed session interrupts only a turn that was streaming', async (t) =>
       persistSummaries: (sessions) => {
         persisted.push(...sessions);
       },
+      appendStatus: (_id, text) => statuses.push(text),
     });
 
     const result = await adoption.adopt();
     assert.ok(isLive, 'the settled runtime is resumed rather than retired');
-    if (streaming) {
-      assert.equal(result.interrupted[0]?.reason.includes('did not continue'), true);
-      assert.equal(typeof live.summary.interruptReason, 'string');
-    } else {
-      assert.deepEqual(result.interrupted, []);
-      assert.equal(live.summary.interruptReason, undefined);
-    }
-    assert.equal(live.summary.phase, streaming ? 'paused' : 'running');
-    assert.equal(live.summary.streaming, false);
+    assert.deepEqual(
+      continued,
+      streaming ? [`app-2: ${RESTART_CONTINUE_PROMPT}`] : [],
+      String(streaming),
+    );
+    assert.deepEqual(result.interrupted, []);
+    assert.deepEqual(statuses, []);
+    assert.equal(live.summary.interruptReason, undefined);
     // A live summary has one owner, so adoption never stores a copy of its own.
     assert.deepEqual(persisted, []);
   }
@@ -312,12 +308,9 @@ test('a completed or failed boot resume cannot pause a replacement runtime', asy
         liveSessionsSnapshot: () => (state.current ? [state.current] : []),
         getCanonicalSummary: () => old.summary,
         getLive: () => state.current,
-        updateSummary: (_id, patch) => {
-          replacement.summary = { ...replacement.summary, ...patch };
-          effects.push('patched');
-        },
       },
       lifecycle: {
+        continueTurn: () => undefined,
         resume: async () => {
           noteStarted();
           await ready;
@@ -341,7 +334,7 @@ test('a completed or failed boot resume cannot pause a replacement runtime', asy
   }
 });
 
-test('project restart continues only an interrupted turn and preserves a finished project', async (t) => {
+test('project restart continues only an interrupted turn, once, and preserves a finished project', async (t) => {
   const finished: Project = {
     id: 'finished',
     title: 'Finished project',
@@ -395,18 +388,15 @@ test('project restart continues only an interrupted turn and preserves a finishe
     processes: [],
   });
   const live = new Map<string, { summary: SessionSummary }>();
+  const continued: string[] = [];
   const adoption = createAdoption(journal, {
     registry: {
       liveSessionsSnapshot: () => [...live.values()],
       getCanonicalSummary: (id) => h.sessions.get(id),
       getLive: (id) => live.get(id),
-      updateSummary: (id, patch) => {
-        const summary = h.sessions.get(id);
-        assert.ok(summary);
-        Object.assign(summary, patch);
-      },
     },
     lifecycle: {
+      continueTurn: (id) => continued.push(id),
       resume: async (id) => {
         const summary = h.sessions.get(id);
         if (!summary || id === 'idle-paused') return undefined;
@@ -422,11 +412,9 @@ test('project restart continues only an interrupted turn and preserves a finishe
   h.projects.historyReady();
   await drain();
 
-  assert.deepEqual(
-    h.sent.map(({ id }) => id),
-    ['interrupted'],
-  );
-  assert.match(h.sent[0]?.prompt ?? '', /DROIDEX restarted while you were working/);
+  // The resumed thread continues its own turn, so the project sends no second nudge.
+  assert.deepEqual(continued, ['interrupted']);
+  assert.deepEqual(h.sent, []);
   assert.deepEqual(h.projects.list().find(({ id }) => id === finished.id)?.done, finished.done);
   assert.deepEqual(h.steered, []);
 });
@@ -477,9 +465,9 @@ function bootAdoption(t: TestContext, options: BootCase = {}) {
       liveSessionsSnapshot: () => [],
       getCanonicalSummary: () => summary(identity.appSessionId, 'completed'),
       getLive: () => undefined,
-      updateSummary: () => undefined,
     },
     lifecycle: {
+      continueTurn: () => undefined,
       resume: async (appSessionId: string) => {
         resumed.push(appSessionId);
         return { summary: summary(appSessionId) };
@@ -516,6 +504,7 @@ test('boot resumes only the three most recently active settled sessions and an i
   const resumed: string[] = [];
   const adoption = createAdoption(journal, {
     lifecycle: {
+      continueTurn: () => undefined,
       resume: async (appSessionId) => {
         resumed.push(appSessionId);
         return { summary: summary(appSessionId) };
@@ -557,6 +546,7 @@ test('boot skips a settled session that reaches its idle deadline while an earli
   const adoption = createAdoption(journal, {
     now: () => now,
     lifecycle: {
+      continueTurn: () => undefined,
       resume: async (appSessionId) => {
         resumed.push(appSessionId);
         if (appSessionId === 'first') {
@@ -609,9 +599,8 @@ test('the journal carries when each live session was last active, and drops an e
       liveSessionsSnapshot: () => [live],
       getCanonicalSummary: () => live.summary,
       getLive: () => live,
-      updateSummary: () => undefined,
     },
-    lifecycle: { resume: async () => live },
+    lifecycle: { resume: async () => live, continueTurn: () => undefined },
   });
 
   adoption.persistLiveSet();
@@ -649,6 +638,25 @@ test('the journal carries when each live session was last active, and drops an e
   });
 });
 
+test('a turn starting or settling reaches the journal the next run adopts from', (t) => {
+  const { journal } = scratchJournal(t);
+  const live = { summary: { ...summary('app-turn', 'paused'), streaming: false } };
+  const adoption = createAdoption(journal, {
+    registry: {
+      liveSessionsSnapshot: () => [live],
+      getCanonicalSummary: () => live.summary,
+      getLive: () => live,
+    },
+  });
+  adoption.persistLiveSet();
+
+  for (const streaming of [true, false]) {
+    live.summary = { ...live.summary, streaming };
+    adoption.observeSummary(live.summary);
+    assert.equal(journal.read().sessions[0]?.streaming, streaming);
+  }
+});
+
 test('a journal another running sidecar owns is not reaped, adopted or overwritten', async (t) => {
   const { journal } = scratchJournal(t);
   const owned = {
@@ -665,6 +673,7 @@ test('a journal another running sidecar owns is not reaped, adopted or overwritt
       reaped = true;
     },
     lifecycle: {
+      continueTurn: () => undefined,
       resume: async () => {
         resumed = true;
         return undefined;
