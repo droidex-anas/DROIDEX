@@ -20,21 +20,12 @@ import { AnnotationLayer, DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
 import { BoardControls, type ZoomCommand } from './BoardControls';
 import { useBoardAnnouncer } from './boardAnnouncer';
-import {
-  frameHeaderOf,
-  frameStep,
-  isBoardControl,
-  isBoardEditor,
-  modeShortcut,
-  readingOrder,
-  zoomShortcut,
-} from './boardKeys';
+import { onBoardKeyDown } from './boardKeyDown';
+import { readingOrder } from './boardKeys';
 import {
   alignRects,
-  arrowDirection,
   distributeRects,
   framesInBand,
-  nudgeStep,
   visibleDesignIds,
   type AlignEdge,
   type DistributeAxis,
@@ -56,9 +47,6 @@ import { useBoardGestures, type Band } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardViewport } from './useBoardViewport';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
-
-/** Board-local pixels one arrow key pans by when nothing is selected. */
-const ARROW_PAN_PX = 32;
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -283,79 +271,6 @@ export function CanvasBoard({
     else view.stepZoom(command === 'in' ? 1 : -1);
   };
 
-  /** Escape: a gesture first, then a tool, mode or selection; from a frame in Select, back to the board. */
-  const onEscape = (header: string | null) => {
-    if (gestures.cancel() || annotation.escape()) return;
-    dispatch({ type: 'escape' });
-    if (header !== null && interaction.mode === 'select')
-      board.current?.focus({ preventScroll: true });
-  };
-
-  /** The zoom and mode keys, which the board's own tools take as well. */
-  const runShortcut = (event: React.KeyboardEvent): boolean => {
-    const zoom = zoomShortcut(event);
-    if (zoom) onZoom(zoom);
-    const mode = zoom ? null : modeShortcut(event);
-    if (mode) onMode(mode);
-    return zoom !== null || mode !== null;
-  };
-
-  /**
-   * A key on the board or a frame's label. On a label the arrows, Home and End
-   * move to another frame and select it, so Enter acts on the frame the
-   * keyboard is on; there ⌥ and the arrows move the selection instead.
-   */
-  const runBoardKey = (event: React.KeyboardEvent, header: string | null): boolean => {
-    const next = header === null ? null : frameStep(event, order, header);
-    if (next !== null) {
-      if (next !== header) {
-        dispatch({ type: 'pick', designId: next, additive: false });
-        focusLabel(next);
-      }
-      return true;
-    }
-    if (event.key === ' ') {
-      gestures.holdSpace(true);
-      return true;
-    }
-    if (event.key === 'Enter' && interaction.selectedFrameIds.length === 1) {
-      dispatch({ type: 'interact', designId: interaction.selectedFrameIds[0] });
-      return true;
-    }
-    const direction = arrowDirection(event.key);
-    if (!direction || (header !== null && !event.altKey)) return false;
-    if (interaction.selectedFrameIds.length === 0) {
-      view.markNavigated();
-      view.stopAnimating();
-      view.panByScreen({ x: -direction.x * ARROW_PAN_PX, y: -direction.y * ARROW_PAN_PX });
-      return true;
-    }
-    const step = nudgeStep(direction, event.shiftKey);
-    placeSelection((rects) =>
-      rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
-    );
-    return true;
-  };
-
-  const onBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    // Inputs and editors keep their shortcuts, including Escape.
-    if (isBoardEditor(event.target)) return;
-    const header = frameHeaderOf(event.target);
-    // Board commands belong to the board and its frame labels. Its own tools take
-    // the zoom and mode keys too, so a key still works after one was clicked;
-    // Space, Enter and the arrows stay theirs.
-    const onBoard = event.target === event.currentTarget || header !== null;
-    let handled = false;
-    if (event.key === 'Escape') {
-      onEscape(header);
-      handled = true;
-    } else if (onBoard || isBoardControl(event.target)) {
-      handled =
-        runShortcut(event) || annotation.runKey(event) || (onBoard && runBoardKey(event, header));
-    }
-    if (handled) event.preventDefault();
-  };
-
   return (
     <div
       ref={board}
@@ -375,7 +290,32 @@ export function CanvasBoard({
       onLostPointerCapture={(event) => {
         gestures.endGesture(event, false);
       }}
-      onKeyDown={onBoardKeyDown}
+      onKeyDown={(event) => {
+        onBoardKeyDown(event, {
+          interaction,
+          order,
+          dispatch,
+          cancel: () => gestures.cancel() || annotation.escape(),
+          annotationKey: annotation.runKey,
+          zoom: onZoom,
+          setMode: onMode,
+          holdSpace: () => {
+            gestures.holdSpace(true);
+          },
+          pan: (delta) => {
+            view.markNavigated();
+            view.stopAnimating();
+            view.panByScreen(delta);
+          },
+          nudge: (step) => {
+            placeSelection((rects) =>
+              rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
+            );
+          },
+          focusBoard: () => board.current?.focus({ preventScroll: true }),
+          focusLabel,
+        });
+      }}
       onKeyUp={(event) => {
         if (event.key === ' ') gestures.holdSpace(false);
       }}
