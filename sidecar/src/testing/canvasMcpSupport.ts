@@ -28,6 +28,8 @@ export interface Reply {
   message?: string;
   scopeId?: string;
   pinned?: { designs: { designId: string }[] };
+  canvasId?: string;
+  chatAttached?: true;
   created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
   receipt?: { revisionId: string };
   frames?: { designId: string }[];

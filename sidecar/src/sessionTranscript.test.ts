@@ -291,11 +291,22 @@ for (const provider of ['claude', 'codex'] as const) {
     });
     const claude = new ClaudeEventMapper(appSessionId);
     const codex = new CodexEventMapper(appSessionId);
+    const created = (designId: string, name: string) => ({
+      canvasId: 'canvas-1',
+      frames: [{ designId, name }],
+    });
+    const written = (designId: string, revisionId: string) => ({
+      canvasId: 'canvas-1',
+      receipt: { designId, revisionId },
+    });
     const outcomes = [
-      { tool: 'canvas_create', body: { frames: [{ designId: 'design-1', name: 'Welcome' }] } },
-      { tool: 'canvas_write', body: { designId: 'design-1', revisionId: 'rev-1' } },
-      { tool: 'canvas_create', body: { frames: [{ designId: 'design-2', name: 'Dashboard' }] } },
-      { tool: 'canvas_write', body: { designId: 'design-2', revisionId: 'rev-2' } },
+      {
+        tool: 'canvas_create',
+        body: { ok: true, chatAttached: true, created: created('design-1', 'Welcome') },
+      },
+      { tool: 'canvas_write', body: { ok: true, ...written('design-1', 'rev-1') } },
+      { tool: 'canvas_create', body: { ok: true, created: created('design-2', 'Dashboard') } },
+      { tool: 'canvas_write', body: { ok: true, ...written('design-2', 'rev-2') } },
     ];
     for (const [index, outcome] of outcomes.entries()) {
       flow.beginTurn(appSessionId, appSessionId);
@@ -360,6 +371,20 @@ for (const provider of ['claude', 'codex'] as const) {
       live.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.text),
       expected,
     );
+    const artifacts = (events: TranscriptEvent[]) =>
+      events
+        .filter((entry) => entry.kind === 'tool_result')
+        .map(({ canvasActivity: activity }) => [
+          activity?.canvasId,
+          activity?.title,
+          activity?.firstArtifact,
+        ]);
+    assert.deepEqual(artifacts(live), [
+      ['canvas-1', 'Welcome', true],
+      ['canvas-1', undefined, undefined],
+      ['canvas-1', 'Dashboard', undefined],
+      ['canvas-1', undefined, undefined],
+    ]);
     const lazy = new SessionTranscriptReader(appSessionId, appSessionId, file.path, 'primary');
     const paged: TranscriptEvent[] = [];
     let cursor: TranscriptWindowCursor | undefined;
@@ -380,6 +405,7 @@ for (const provider of ['claude', 'codex'] as const) {
         reloaded.filter((entry) => entry.kind === 'tool_call').map((entry) => entry.id),
         live.filter((entry) => entry.kind === 'tool_call').map((entry) => entry.id),
       );
+      assert.deepEqual(artifacts(reloaded), artifacts(live));
       const markdown = transcriptToMarkdown(reloaded, {
         title: 'Canvas',
         providerSessionId: appSessionId,

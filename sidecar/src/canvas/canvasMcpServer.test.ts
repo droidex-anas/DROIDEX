@@ -308,6 +308,9 @@ test('lost create response retries to the same canvas and invalid source paths h
   const retry = await h.call('canvas_create', input);
   assert.equal(first.ok, true);
   assert.deepEqual(retry.created, first.created);
+  // Only the create that gave this chat its canvas says so; its retry finds it attached.
+  assert.equal(first.chatAttached, true);
+  assert.equal(retry.chatAttached, undefined);
   assert.equal(h.workspace.listCanvases().length, 1);
   const designId = first.created?.frames[0].designId;
   assert.ok(designId);
@@ -330,6 +333,7 @@ test('lost create response retries to the same canvas and invalid source paths h
   });
   assert.equal(written.ok, true);
   assert.ok(written.receipt?.revisionId);
+  assert.equal(written.canvasId, first.created?.canvasId);
   assert.equal((await h.call('canvas_inspect', { designId })).ok, true);
   assert.equal(
     (await h.call('canvas_inspect', { designId, kind: 'screenshot' })).code,

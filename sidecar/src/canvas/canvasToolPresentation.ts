@@ -12,6 +12,12 @@ export interface CanvasActivity {
   designIds: string[];
   state: 'running' | 'completed' | 'failed';
   message: string;
+  /** The canvas a create or write changed, as its reply named it. */
+  canvasId?: string;
+  /** The name of the first frame a create reserved. */
+  title?: string;
+  /** This create gave an unattached chat its canvas, so it is the chat's first artifact. */
+  firstArtifact?: true;
 }
 
 export interface ToolProvenance {
@@ -28,7 +34,14 @@ export interface CanvasToolBinding {
   designIds: string[];
   revisionId?: string;
   frameNames?: string[];
+  canvasId?: string;
+  firstArtifact?: true;
 }
+
+type ResultReferences = Pick<
+  CanvasToolBinding,
+  'designIds' | 'revisionId' | 'frameNames' | 'canvasId' | 'firstArtifact'
+>;
 
 const IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;
 const ACTIONS: Record<CanvasToolName, CanvasActivity['action']> = {
@@ -84,7 +97,7 @@ function designIds(value: unknown): string[] {
   if (!input) return [];
   const ids = new Set<string>();
   const add = (candidate: unknown) => {
-    if (typeof candidate === 'string' && IDENTIFIER.test(candidate)) ids.add(candidate);
+    if (isIdentifier(candidate)) ids.add(candidate);
   };
   add(input.designId);
   const frames = Array.isArray(input.frames) ? input.frames : [];
@@ -92,27 +105,53 @@ function designIds(value: unknown): string[] {
   return [...ids];
 }
 
-function resultReferences(
-  text: string | undefined,
-): Pick<CanvasToolBinding, 'designIds' | 'revisionId' | 'frameNames'> {
+export function isIdentifier(value: unknown): value is string {
+  return typeof value === 'string' && IDENTIFIER.test(value);
+}
+
+function resultReferences(text: string | undefined): ResultReferences {
   if (!text || text.length > 256_000) return { designIds: [] };
   try {
-    const value: unknown = JSON.parse(text);
-    const record = objectValue(value);
-    const revisionId = record?.revisionId;
-    const frames = Array.isArray(record?.frames) ? record.frames : [];
-    const frameNames = frames.slice(0, 50).flatMap((frame) => {
-      const name = safeFrameName(objectValue(frame)?.name);
-      return name ? [name] : [];
-    });
-    return {
-      designIds: designIds(value),
-      ...(typeof revisionId === 'string' && IDENTIFIER.test(revisionId) ? { revisionId } : {}),
-      ...(frameNames.length ? { frameNames } : {}),
-    };
+    return referencesIn(objectValue(JSON.parse(text)));
   } catch {
     return { designIds: [] };
   }
+}
+
+function referencesIn(record: Record<string, unknown> | undefined): ResultReferences {
+  // A create answers under `created` and a write under `receipt`; reads answer at the top.
+  const answer = objectValue(record?.created) ?? objectValue(record?.receipt) ?? record;
+  const revisionId = answer?.revisionId;
+  const canvasId = answer?.canvasId ?? record?.canvasId;
+  const frameNames = safeFrameNames(answer?.frames);
+  return {
+    designIds: designIds(answer),
+    ...(isIdentifier(revisionId) ? { revisionId } : {}),
+    ...(isIdentifier(canvasId) ? { canvasId } : {}),
+    ...(frameNames.length ? { frameNames } : {}),
+    ...(record?.chatAttached === true ? { firstArtifact: true } : {}),
+  };
+}
+
+function safeFrameNames(value: unknown): string[] {
+  const frames = Array.isArray(value) ? value : [];
+  return frames.slice(0, 50).flatMap((frame) => {
+    const name = safeFrameName(objectValue(frame)?.name);
+    return name ? [name] : [];
+  });
+}
+
+/** The binding with what its result named, or the same binding when it named nothing new. */
+function withResult(binding: CanvasToolBinding, result: ResultReferences): CanvasToolBinding {
+  const { designIds: ids, ...named } = result;
+  const changed =
+    ids.some((id) => !binding.designIds.includes(id)) ||
+    (named.revisionId !== undefined && named.revisionId !== binding.revisionId) ||
+    (named.frameNames !== undefined && named.frameNames.join() !== binding.frameNames?.join()) ||
+    (named.canvasId !== undefined && named.canvasId !== binding.canvasId) ||
+    (named.firstArtifact === true && binding.firstArtifact !== true);
+  if (!changed) return binding;
+  return { ...binding, ...named, designIds: [...new Set([...binding.designIds, ...ids])] };
 }
 
 function bindingSource(event: TranscriptEvent): string {
@@ -158,6 +197,18 @@ function activity(binding: CanvasToolBinding, event: TranscriptEvent): CanvasAct
     designIds: binding.designIds,
     state,
     message,
+    ...artifactNames(binding),
+  };
+}
+
+/** What names the artifact a create or write made, for the transcript's card. */
+function artifactNames(
+  binding: CanvasToolBinding,
+): Pick<CanvasActivity, 'canvasId' | 'title' | 'firstArtifact'> {
+  return {
+    ...(binding.canvasId ? { canvasId: binding.canvasId } : {}),
+    ...(binding.frameNames?.length ? { title: binding.frameNames[0] } : {}),
+    ...(binding.firstArtifact ? { firstArtifact: true } : {}),
   };
 }
 
@@ -278,20 +329,9 @@ export class CanvasToolPresentation {
     if (!binding) return event;
     if (activeKey) this.active.set(activeKey, binding);
     if (event.kind === 'tool_result') {
-      const { designIds: ids, revisionId, frameNames } = resultReferences(event.text);
-      const knownIds = binding.designIds;
-      const nextFrameNames = frameNames?.join();
-      if (
-        ids.some((id) => !knownIds.includes(id)) ||
-        (revisionId && revisionId !== binding.revisionId) ||
-        (nextFrameNames !== undefined && nextFrameNames !== binding.frameNames?.join())
-      ) {
-        binding = {
-          ...binding,
-          designIds: [...new Set([...binding.designIds, ...ids])],
-          ...(revisionId ? { revisionId } : {}),
-          ...(frameNames ? { frameNames } : {}),
-        };
+      const named = withResult(binding, resultReferences(event.text));
+      if (named !== binding) {
+        binding = named;
         this.remember?.(binding);
         this.bindings.set(
           bindingKey(binding.sourceSessionId, binding.toolUseId, binding.occurrenceId),

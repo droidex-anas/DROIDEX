@@ -104,10 +104,20 @@ test('only the reserved server and correlated call are projected', () => {
   const created = projector.project(
     event('tool_result', {
       toolUseId: 'create-1',
-      text: JSON.stringify({ frames: [{ designId: 'design-2', name: 'Hey', source: CANARY }] }),
+      text: JSON.stringify({
+        ok: true,
+        chatAttached: true,
+        created: {
+          canvasId: 'canvas-1',
+          frames: [{ designId: 'design-2', name: 'Hey', source: CANARY }],
+        },
+      }),
     }),
   );
   assert.deepEqual(created.canvasActivity?.designIds, ['design-2']);
   assert.equal(created.canvasActivity?.message, 'Created Hey');
+  assert.equal(created.canvasActivity?.canvasId, 'canvas-1');
+  assert.equal(created.canvasActivity?.title, 'Hey');
+  assert.equal(created.canvasActivity?.firstArtifact, true);
   assert.ok(!JSON.stringify(created).includes(CANARY));
 });

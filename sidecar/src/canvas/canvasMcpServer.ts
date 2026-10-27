@@ -277,10 +277,13 @@ export function createCanvasMcpServer(
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
           const { mutationId, frames, placeBeside } = createSchema.parse(raw);
+          // Read before the create binds this turn's lease to the canvas it makes.
+          const attachesChat = scope.canvasId === null;
           const created = await (
             await workspace()
           ).create(scope, { mutationId, frames, placeBeside });
           return {
+            ...(attachesChat ? { chatAttached: true } : {}),
             created: {
               canvasId: created.canvasId,
               frames: created.frames.map((frame) => agentFrame(frame, null)),
@@ -315,13 +318,13 @@ export function createCanvasMcpServer(
               owner.snapshot(canvasId).frames.find((entry) => entry.designId === receipt.designId),
             receipt.revisionId,
           );
-          if (!frame) return { receipt };
+          if (!frame) return { canvasId, receipt };
           // A newer write moved the frame on; report the build it is on now.
           const preview =
             frame.revisionId === receipt.revisionId && frame.build.status === 'ready'
               ? await renderedPreview(owner.previews, canvasId, frame)
               : owner.previews.reportFor(canvasId, frame);
-          return { receipt, build: buildReport(frame, preview) };
+          return { canvasId, receipt, build: buildReport(frame, preview) };
         }),
     ),
     tool(

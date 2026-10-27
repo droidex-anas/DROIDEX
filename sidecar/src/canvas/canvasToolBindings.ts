@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { droidexUserDataDir } from '../droidexPaths.js';
 import { objectValue } from '../values.js';
-import { safeFrameName, type CanvasToolBinding } from './canvasToolPresentation.js';
+import { isIdentifier, safeFrameName, type CanvasToolBinding } from './canvasToolPresentation.js';
 
 const ACTIONS: CanvasToolBinding['action'][] = [
   'create',
@@ -64,12 +64,9 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
       if (!action) continue;
       if (!Array.isArray(value.designIds)) continue;
       const rawIds: unknown[] = value.designIds;
-      const designIds = rawIds.filter(
-        (id): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id),
-      );
+      const designIds = rawIds.filter(isIdentifier);
       if (designIds.length !== rawIds.length) continue;
-      const revisionId = value.revisionId;
-      const frameNames = value.frameNames;
+      const { revisionId, canvasId, frameNames } = value;
       const rawNames: unknown[] = Array.isArray(frameNames) ? frameNames : [];
       const safeNames = rawNames.filter(
         (name): name is string => typeof name === 'string' && safeFrameName(name) === name,
@@ -80,9 +77,9 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
         sourceSessionId: value.sourceSessionId,
         action,
         designIds,
-        ...(typeof revisionId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(revisionId)
-          ? { revisionId }
-          : {}),
+        ...(isIdentifier(revisionId) ? { revisionId } : {}),
+        ...(isIdentifier(canvasId) ? { canvasId } : {}),
+        ...(value.firstArtifact === true ? { firstArtifact: true } : {}),
         ...(Array.isArray(frameNames) &&
         safeNames.length === rawNames.length &&
         safeNames.length <= 50

@@ -452,7 +452,24 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.transient === undefined || value.transient === true) &&
     isOptionalString(value.forkPointId) &&
     (value.sideChatReplies === undefined || stringArray(value.sideChatReplies)) &&
-    (value.canvasFrames === undefined || stringArray(value.canvasFrames))
+    (value.canvasFrames === undefined || stringArray(value.canvasFrames)) &&
+    (value.canvasActivity === undefined || isCanvasActivity(value.canvasActivity))
+  );
+}
+
+// An artifact card opens the canvas and frame this names, so it is checked whole.
+function isCanvasActivity(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ['toolUseId', 'message']) &&
+    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme'].includes(
+      value.action as string,
+    ) &&
+    ['running', 'completed', 'failed'].includes(value.state as string) &&
+    stringArray(value.designIds) &&
+    isOptionalString(value.canvasId) &&
+    isOptionalString(value.title) &&
+    (value.firstArtifact === undefined || value.firstArtifact === true)
   );
 }
 
