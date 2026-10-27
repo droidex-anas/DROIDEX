@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from 'react';
 import './canvasAnimations.css';
+import './canvasBloom.css';
 import './canvasBoard.css';
 import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';

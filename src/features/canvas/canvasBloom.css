@@ -1,0 +1,39 @@
+/* Canvas pending bloom: the stage name of a frame the agent is still writing
+   or building, in the activity shimmer the chat uses. The board and the
+   transcript's artifact card both show it and each imports this sheet lazily.
+   Duration and play state come from the component, which decides from the
+   motion tokens and the frame's visibility whether the loop runs; the media
+   query below makes the reduced-motion half of that true even if a caller gets
+   it wrong. */
+@keyframes canvas-bloom {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.canvas-bloom-label {
+  background: linear-gradient(
+    90deg,
+    var(--droid-text-muted) 0%,
+    var(--droid-text) 50%,
+    var(--droid-text-muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation-name: canvas-bloom;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-bloom-label {
+    animation: none;
+    background: none;
+    color: var(--droid-text-muted);
+  }
+}

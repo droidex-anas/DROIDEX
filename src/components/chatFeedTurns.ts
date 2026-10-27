@@ -319,9 +319,9 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       // The user heard this. Folding it into "Worked for …" would hide half of
       // the conversation they just had.
       survivors.push(it);
-    } else if (it.type === 'generated_image') {
-      // The image is what the turn produced, not a step along the way: folding
-      // it would hide the thing that was asked for.
+    } else if (it.type === 'generated_image' || it.type === 'canvas_artifact') {
+      // The image or design is what the turn produced, not a step along the
+      // way: folding it would hide the thing that was asked for.
       survivors.push(it);
     } else if (isCompactionMarker(it)) {
       // Provisional: the marker moves into the fold when the run has real work.
