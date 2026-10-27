@@ -595,6 +595,39 @@ test('a Droid bundle led by a Canvas tool still asks for the whole request', asy
   assert.equal(approvalRequests(harness.emitted).length, 1);
 });
 
+function foreignMcpUse(toolUseId: string): RequestPermissionRequestParams['toolUses'][number] {
+  return {
+    toolUse: {
+      type: 'tool_use',
+      id: toolUseId,
+      name: 'acme-fs___read_file',
+      input: { path: '/tmp/notes' },
+    },
+    confirmationType: ToolConfirmationType.McpTool,
+    details: {
+      type: ToolConfirmationType.McpTool,
+      toolName: 'acme-fs___read_file',
+      impactLevel: 'low',
+    },
+  };
+}
+
+test('a Droid bundle of Canvas and a foreign MCP tool asks for the whole request', async () => {
+  const harness = createHarness();
+  harness.addLiveSession('design').summary.autonomy = 'off';
+  const bundle: RequestPermissionRequestParams = {
+    toolUses: [canvasWriteUse('write-light'), foreignMcpUse('read-1')],
+    options: [],
+  };
+  const pending = Promise.resolve(harness.permissionHandler({ id: 'design' })(bundle));
+  const request = latestApprovalRequest(harness.emitted);
+  assert.equal(request.title, 'droidex-canvas · canvas_write, acme-fs · read_file');
+  assert.equal(request.canAlwaysAllow, false);
+  await harness.interactions.respondToApproval('design', request.requestId, 'refuse');
+  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
+  assert.equal(approvalRequests(harness.emitted).length, 1);
+});
+
 function droidScriptPermission(calls: unknown[]): RequestPermissionRequestParams {
   const message = normalizeDroidTransportMessage({
     jsonrpc: '2.0',
