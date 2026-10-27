@@ -270,8 +270,13 @@ export async function readLibraryCopy(itemId: string): Promise<RevisionCopy> {
 /** The item's own thumbnail PNG, or null when it was saved without one. */
 async function readLibraryThumbnail(itemId: string): Promise<Buffer | null> {
   if (!(await readSavedItem(itemId))) throw canvasError('not_found', MISSING_ITEM);
+  const directory = itemPath(itemId);
   try {
-    return await readInside(itemPath(itemId), [THUMBNAIL_FILE]);
+    // A save never stores one this large, so a bigger file was written outside
+    // DROIDEX; refuse it before reading instead of letting the renderer reject it.
+    const { size } = await lstat(join(directory, THUMBNAIL_FILE));
+    if (size > MAX_THUMBNAIL_BYTES) throw canvasError('storage_failed', DAMAGED_ITEM);
+    return await readInside(directory, [THUMBNAIL_FILE]);
   } catch (error) {
     if (isCode(error, 'ENOENT')) return null;
     throw storageFailure(DAMAGED_ITEM, error);

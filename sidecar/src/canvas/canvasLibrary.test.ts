@@ -299,3 +299,26 @@ test('an item outlives its source canvas, answering retries and inserting elsewh
   assert.equal(errorOf(canvas, 'req-missing-thumbnail').code, 'not_found');
   assert.equal(canvas.workspace.snapshot(other).frames.length, 1);
 });
+
+test('a thumbnail bigger than a save could store is refused as damaged', async (t) => {
+  const profile = await libraryProfile(t);
+  const { canvas, canvasId, revision } = await heroCanvas(t, profile);
+  await save(canvas, 'req-save', {
+    mutationId: 'save-edited',
+    canvasId,
+    revision,
+    name: 'Hero',
+    thumbnail: THUMBNAIL,
+  });
+  // The save caps a thumbnail at 512 KiB, so a bigger file is a hand-edited profile.
+  await writeFile(
+    join(profile, 'canvas-library', 'save-edited', 'thumbnail.png'),
+    Buffer.alloc(512 * 1024 + 1),
+  );
+  await canvas.handle({
+    type: 'canvas.readLibraryThumbnail',
+    requestId: 'req-read-edited',
+    itemId: 'save-edited',
+  });
+  assert.equal(errorOf(canvas, 'req-read-edited').code, 'storage_failed');
+});
