@@ -84,7 +84,7 @@ export function FrameLabel({
 
 /**
  * The label while the frame is renamed. Enter or leaving the field saves the
- * name against the frame as it was when renaming began; Escape keeps the old one.
+ * name unless someone else renamed the frame meanwhile; Escape keeps the old one.
  */
 export function FrameNameField({
   frame,
@@ -97,7 +97,7 @@ export function FrameNameField({
   onRename: (frame: CanvasFrame, name: string) => Promise<unknown>;
   onDone: () => void;
 }) {
-  const [renamed] = useState(frame);
+  const [originalName] = useState(frame.name);
   const [name, setName] = useState(frame.name);
   const [pending, setPending] = useState(false);
   const field = useRef<HTMLInputElement>(null);
@@ -113,13 +113,20 @@ export function FrameNameField({
   const save = async () => {
     if (pending || finished.current) return;
     const trimmed = name.trim();
-    if (trimmed === '' || trimmed === renamed.name) {
+    if (trimmed === '' || trimmed === originalName) {
+      finish();
+      return;
+    }
+    if (frame.name !== originalName) {
+      toast.error(`This frame was renamed to “${frame.name}” meanwhile.`);
       finish();
       return;
     }
     setPending(true);
     try {
-      await onRename(renamed, trimmed);
+      // The live frame: writes and builds move its manifest version too, and
+      // only another rename should stop this one.
+      await onRename(frame, trimmed);
       finish();
     } catch (error) {
       toast.error(canvasMessage(error));
@@ -132,7 +139,7 @@ export function FrameNameField({
     <div className="canvas-frame-label canvas-chrome" style={{ width: Math.max(0, width) }}>
       <input
         ref={field}
-        aria-label={`Name of ${renamed.name}`}
+        aria-label={`Name of ${originalName}`}
         value={name}
         maxLength={MAX_FRAME_NAME_LENGTH}
         readOnly={pending}
