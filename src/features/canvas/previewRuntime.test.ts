@@ -8,6 +8,7 @@ import {
   startPreview,
   type PreviewClock,
   type PreviewLostReason,
+  type PreviewVisibility,
 } from './previewRuntime';
 import type { PreviewElement } from './previewDocument';
 import type { CanvasDiagnostic } from './protocol';
@@ -32,6 +33,33 @@ function createClock() {
       assert.ok(entry, `No timer pending for ${String(delayMs)} ms`);
       timers.delete(entry[0]);
       entry[1].task();
+    },
+  };
+}
+
+/** A window the test hides and shows itself. */
+function createVisibility() {
+  let hidden = false;
+  const waiting = new Set<() => void>();
+  const visibility: PreviewVisibility = {
+    isHidden: () => hidden,
+    whenShown(resume) {
+      waiting.add(resume);
+      return () => waiting.delete(resume);
+    },
+  };
+  return {
+    visibility,
+    waiting: () => waiting.size,
+    hide: () => {
+      hidden = true;
+    },
+    show: () => {
+      hidden = false;
+      for (const resume of [...waiting]) {
+        waiting.delete(resume);
+        resume();
+      }
     },
   };
 }
@@ -94,6 +122,7 @@ interface RunOptions {
 function run(options: RunOptions = {}) {
   const terminated: number[] = [];
   const clock = createClock();
+  const visibility = createVisibility();
   const element = createGuest(options.webContentsId);
   const { guest, calls } = element;
   const { observer, seen } = createObserver();
@@ -105,6 +134,7 @@ function run(options: RunOptions = {}) {
     html: '<!doctype html><body>Hey</body>',
     observer,
     clock: clock.clock,
+    visibility: visibility.visibility,
     terminate:
       options.terminate ??
       ((guestId) => {
@@ -112,7 +142,7 @@ function run(options: RunOptions = {}) {
         return Promise.resolve(true);
       }),
   });
-  return { preview, clock, calls, seen, terminated, element };
+  return { preview, clock, calls, seen, terminated, element, visibility };
 }
 
 /** The identity the guest echoes back, as `start` was given it. */
@@ -177,6 +207,39 @@ test('a started guest is polled one call at a time on a bounded cadence', async 
   session.clock.fire(PREVIEW_POLL_INTERVAL_MS);
   assert.equal(session.calls.length, 3);
   assert.deepEqual(session.clock.pending(), [PREVIEW_POLL_DEADLINE_MS]);
+});
+
+test('a hidden window polls a ready guest only once it is shown again', async () => {
+  const session = run();
+  const nonce = await started(session);
+  // Hidden while starting, the guest is still polled until it reports ready.
+  session.visibility.hide();
+  session.calls[1].settle(snapshot([], 0, { nonce }));
+  await Promise.resolve();
+  await Promise.resolve();
+  session.clock.fire(PREVIEW_POLL_INTERVAL_MS);
+  assert.equal(session.calls.length, 3);
+
+  session.calls[2].settle(snapshot([{ event: 'ready' }], 0, { nonce }));
+  await Promise.resolve();
+  await Promise.resolve();
+  session.clock.fire(PREVIEW_POLL_INTERVAL_MS);
+  assert.equal(session.calls.length, 3, 'a ready guest is not polled while hidden');
+  assert.deepEqual(session.clock.pending(), []);
+  assert.equal(session.visibility.waiting(), 1);
+
+  session.visibility.show();
+  assert.equal(session.calls.length, 4);
+  assert.equal(session.calls[3].code, PREVIEW_POLL_SCRIPT);
+
+  // Stopping while hidden releases the wait.
+  session.calls[3].settle(snapshot([], 0, { nonce }));
+  await Promise.resolve();
+  await Promise.resolve();
+  session.visibility.hide();
+  session.clock.fire(PREVIEW_POLL_INTERVAL_MS);
+  session.preview.stop();
+  assert.equal(session.visibility.waiting(), 0);
 });
 
 const picked: PreviewElement = {
