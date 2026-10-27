@@ -234,6 +234,14 @@ export const canvasManifestSchema = z
     message: 'Revision history must follow the canvas commit sequence.',
   });
 
+/** Why a stored manifest was refused, naming the field at fault so a log can be acted on. */
+export function manifestMismatch(error: z.ZodError): string {
+  // A failed parse always carries at least one issue.
+  const issue = error.issues[0];
+  if (issue.path.length === 0) return issue.message;
+  return `its manifest field ${issue.path.join('.')} is invalid (${issue.message})`;
+}
+
 export type PersistedDesign = z.infer<typeof persistedDesignSchema>;
 export type Placement = z.infer<typeof placementSchema>;
 export type PersistedMutation = z.infer<typeof persistedMutationSchema>;

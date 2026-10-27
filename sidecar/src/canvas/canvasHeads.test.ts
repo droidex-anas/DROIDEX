@@ -81,6 +81,38 @@ test('a canvas an earlier DROIDEX made is not opened, but its chats are told its
   assert.equal(heads.outdatedCanvas('app-1'), null);
 });
 
+test('a head holding an edit record without its resolution is damaged and named, not fatal', async (t) => {
+  const logged = t.mock.method(console, 'error', () => undefined);
+  const root = await saved(t);
+  const files = new CanvasFiles(root);
+  await files.writeManifest(manifest('cv_02', 'app-2'), keepGoing);
+  const before = {
+    ...manifest('cv_02', 'app-2'),
+    mutations: [
+      {
+        kind: 'edit',
+        mutationId: 'm-edit',
+        scopeId: 'scope',
+        fingerprint: 'a'.repeat(64),
+        designId: 'dsg_01',
+        revisionId: 'rev_01',
+        sequence: 1,
+      },
+    ],
+  };
+  await writeFile(join(root, 'cv_02', 'manifest.json'), JSON.stringify(before));
+
+  const heads = await reopen(root);
+  assert.deepEqual(
+    heads.all().map((head) => head.canvasId),
+    ['cv_01'],
+  );
+  assert.deepEqual(heads.damagedIds(), ['cv_02']);
+  assert.match(
+    String(logged.mock.calls.at(-1)?.arguments[0]),
+    /^Canvas cv_02 was not opened because its manifest field mutations\.0\.resolution /,
+  );
+});
 test('a readable head is served with exactly the attachments it records', async (t) => {
   const root = await saved(t);
   const heads = await reopen(root);

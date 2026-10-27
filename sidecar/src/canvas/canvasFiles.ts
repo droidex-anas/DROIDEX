@@ -9,7 +9,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import { canvasError, storageFailure } from './canvasError.js';
-import { canvasManifestSchema, type CanvasManifest } from './canvasManifest.js';
+import { canvasManifestSchema, manifestMismatch, type CanvasManifest } from './canvasManifest.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 import {
@@ -150,7 +150,7 @@ export class CanvasFiles {
     if (!parsed.success)
       return {
         state: 'damaged',
-        reason: parsed.error.issues[0]?.message ?? 'its manifest does not match the current schema',
+        reason: manifestMismatch(parsed.error),
         written: value,
       };
     if (parsed.data.canvasId !== canvasId)
