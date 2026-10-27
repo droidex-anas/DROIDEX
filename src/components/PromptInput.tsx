@@ -101,6 +101,7 @@ import { useComposerReferences } from './composer/useComposerReferences';
 import { useCanvasImageReferences } from './composer/useCanvasImageReferences';
 import { CanvasImageChip } from './composer/CanvasImageChip';
 import { NEW_CANVAS_KEY, oweCreatedCanvasChoice } from '../features/canvas/designSystemChoices';
+import { oweCreatedCanvasSeed } from '../features/canvas/librarySeed';
 import { createComposerTranscriptSelector } from './composer/composerTranscript';
 import {
   childRuntimeSubmitTarget,
@@ -1519,7 +1520,10 @@ export default function PromptInput({
         return;
       }
       try {
-        if (references.canvasKey === NEW_CANVAS_KEY) oweCreatedCanvasChoice(clientRef);
+        if (references.canvasKey === NEW_CANVAS_KEY) {
+          oweCreatedCanvasChoice(clientRef);
+          oweCreatedCanvasSeed(clientRef);
+        }
         createSession({
           clientRef,
           cwd: dir,
@@ -1973,7 +1977,10 @@ export default function PromptInput({
         );
         return;
       }
-      if (references.canvasKey === NEW_CANVAS_KEY) oweCreatedCanvasChoice(clientRef);
+      if (references.canvasKey === NEW_CANVAS_KEY) {
+        oweCreatedCanvasChoice(clientRef);
+        oweCreatedCanvasSeed(clientRef);
+      }
       createSession({
         clientRef,
         cwd: preparation.path,

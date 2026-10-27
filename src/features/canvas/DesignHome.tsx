@@ -6,14 +6,17 @@
 // a restored window and a new tab reach this home with no draft of their own.
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { LibraryBig } from 'lucide-react';
 import { BrandMark } from '../../components/BrandMark';
 import PromptInput from '../../components/PromptInput';
-import { Search } from '@droidex/icons';
+import { Search, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { formatRelativeTime } from '../../lib/time';
 import { searchCanvases } from './canvasChats';
 import { NEW_CANVAS_KEY } from './designSystemChoices';
 import { CanvasDesignSystem } from './DesignSystemPicker';
+import { LibraryPicker } from './LibraryPicker';
+import { armLibrarySeed, useArmedLibrarySeed } from './librarySeed';
 import { useCanvases } from './useCanvases';
 import { useOpenCanvas } from './useOpenCanvas';
 import type { CanvasSummary } from './protocol';
@@ -55,6 +58,7 @@ function NewCanvasHome() {
       canvasKey={NEW_CANVAS_KEY}
       title="What should we design?"
       hint="Every prompt here starts a new canvas and a chat attached to it."
+      startingPoint={<LibrarySeedChip />}
     >
       <div className="droid-rise mt-12" style={{ animationDelay: '160ms' }}>
         <div className="flex items-center justify-between gap-3 px-1">
@@ -131,12 +135,15 @@ function DesignDraftShell({
   canvasKey,
   title,
   hint,
+  startingPoint,
   children,
 }: {
   /** Whose design-system choice the draft's prompt runs under. */
   canvasKey: string;
   title: string;
   hint: string;
+  /** What a new canvas starts from, beside the design-system chip. */
+  startingPoint?: ReactNode;
   children?: ReactNode;
 }) {
   const dispatch = useStoreDispatch();
@@ -153,8 +160,9 @@ function DesignDraftShell({
         </div>
 
         <div className="droid-rise mt-7" style={{ animationDelay: '90ms' }}>
-          <div className="mb-2 flex px-3">
+          <div className="mb-2 flex gap-1 px-3">
             <CanvasDesignSystem canvasKey={canvasKey} appSessionId={null} />
+            {startingPoint}
           </div>
           <PromptInput appSessionId={null} compact />
           <ul className="mt-2 flex flex-wrap gap-1.5 px-3">
@@ -176,6 +184,70 @@ function DesignDraftShell({
 
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * From library on the Design home: the item the next prompt's canvas starts
+ * from, its first frame an independent copy. The send makes the canvas, so
+ * picking only arms it; leaving the home drops it.
+ */
+function LibrarySeedChip() {
+  const armed = useArmedLibrarySeed();
+  const [picking, setPicking] = useState(false);
+  useEffect(
+    () => () => {
+      armLibrarySeed(null);
+    },
+    [],
+  );
+  return (
+    <div
+      className={`flex min-w-0 shrink-0 items-center rounded-full text-[11px] ${armed ? 'bg-droid-elevated/60' : ''}`}
+    >
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-label={
+          armed
+            ? `Starts from ${armed.name}. Choose another saved frame`
+            : 'Start from a saved frame'
+        }
+        title="Start the new canvas from a frame saved to the library"
+        onClick={() => {
+          setPicking(true);
+        }}
+        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+      >
+        <LibraryBig aria-hidden className="h-3.5 w-3.5 shrink-0" />
+        <span className="max-w-[160px] truncate">{armed ? armed.name : 'From library…'}</span>
+      </button>
+      {armed && (
+        <button
+          type="button"
+          aria-label={`Start blank instead of from ${armed.name}`}
+          title="Start blank"
+          onClick={() => {
+            armLibrarySeed(null);
+          }}
+          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+        >
+          <X aria-hidden className="h-2.5 w-2.5" strokeWidth={3} />
+        </button>
+      )}
+      {picking && (
+        <LibraryPicker
+          canvasId={null}
+          onPick={(item) => {
+            armLibrarySeed(item);
+            return Promise.resolve();
+          }}
+          onClose={() => {
+            setPicking(false);
+          }}
+        />
+      )}
     </div>
   );
 }
