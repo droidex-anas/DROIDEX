@@ -21,7 +21,6 @@ import { AnnotationTools } from './AnnotationTools';
 import { BoardControls, type ZoomCommand } from './BoardControls';
 import { useBoardAnnouncer } from './boardAnnouncer';
 import { onBoardKeyDown } from './boardKeyDown';
-import { readingOrder } from './boardKeys';
 import {
   alignRects,
   distributeRects,
@@ -44,6 +43,7 @@ import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
 import { ElementPanel } from './ElementPanel';
+import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
 import { useAnnotationEditor } from './useAnnotationEditor';
@@ -51,6 +51,7 @@ import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
+import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
@@ -97,6 +98,8 @@ export interface CanvasBoardProps {
   pinnedIds?: ReadonlySet<string>;
   /** Pins a frame to the chat's next prompt or takes it off; absent where frames cannot be pinned. */
   onToggleChat?: (frame: CanvasFrame) => void;
+  /** What the selected frame's toolbar does to the canvas. */
+  frameActions: FrameActions;
 }
 
 export function CanvasBoard({
@@ -114,6 +117,7 @@ export function CanvasBoard({
   onOpenSource,
   pinnedIds,
   onToggleChat,
+  frameActions,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -199,26 +203,16 @@ export function CanvasBoard({
     dispatch({ type: 'frames', designIds });
   }, [designIds, dispatch]);
 
-  // The frames share one tab stop: the label focus last rested on, else the
-  // selection, else the first frame a reader meets.
-  const [focusedId, setFocusedId] = useState<string | null>(null);
-  const order = readingOrder(drawn);
-  const tabStopId = [focusedId, interaction.selectedFrameIds.at(0), order.at(0)].find(
-    (designId) => designId != null && order.includes(designId),
-  );
-  const focusLabel = useCallback((designId: string) => {
-    board.current
-      ?.querySelector<HTMLElement>(
-        `[data-design-frame="${CSS.escape(designId)}"] [data-frame-header]`,
-      )
-      ?.focus({ preventScroll: true });
-  }, []);
-  const onFocusLabel = (frame: CanvasFrame) => {
-    setFocusedId(frame.designId);
-    // A focused label must not scroll the clipped board under its transform.
-    if (board.current) board.current.scrollTop = board.current.scrollLeft = 0;
-    view.reveal(gestures.rectFor(frame));
-  };
+  const { focusedId, order, tabStopId, focusFrame, focusLabel, onFocusLabel } = useFrameFocus({
+    board,
+    frames,
+    drawn,
+    selectedFrameIds: interaction.selectedFrameIds,
+    dispatch,
+    fitTo,
+    reveal: view.reveal,
+    rectFor: gestures.rectFor,
+  });
 
   const removeSelection = useFrameRemoval({
     board,
@@ -231,24 +225,10 @@ export function CanvasBoard({
     onRemoveFrames,
   });
 
-  const [focusRequest, setFocusRequest] = useState<string | null>(null);
-  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame: setFocusRequest, focusLabel }), [
+  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame, focusLabel }), [
+    focusFrame,
     focusLabel,
   ]);
-
-  // A focus asked for before its frame arrived waits for it rather than being
-  // dropped: Open on an artifact card reaches the pane before the snapshot does.
-  useEffect(() => {
-    if (focusRequest === null) return;
-    const target = frames.find((frame) => frame.designId === focusRequest);
-    if (!target) return;
-    setFocusRequest(null);
-    board.current?.focus({ preventScroll: true });
-    // The acknowledged rect, not an optimistic hold: focus shows where the
-    // canvas says the frame is.
-    fitTo([target.rect]);
-    dispatch({ type: 'pick', designId: focusRequest, additive: false });
-  }, [dispatch, fitTo, focusRequest, frames]);
 
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
   const previews = useBoardPreviews(frames, visible, interaction, (frame, revisionId) =>
@@ -412,6 +392,8 @@ export function CanvasBoard({
             onOpenSource={onOpenSource}
             inChat={pinnedIds?.has(frame.designId) ?? false}
             onToggleChat={onToggleChat}
+            actions={frameActions}
+            onDelete={removeSelection}
             onHold={gestures.onFramePointerDown}
             onPick={(picked, additive) => {
               dispatch({ type: 'pick', designId: picked.designId, additive });

@@ -2,7 +2,7 @@
 // source frame, and the plain request that asks the chat's agent to rework
 // them. The frames are reserved first so the request can pin them.
 
-import type { CreateFramesInput, DesignSystemRef, RevisionRef } from './protocol';
+import type { CanvasFrame, CreateFramesInput, DesignSystemRef, RevisionRef } from './protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 export type VariantKind = 'layout' | 'style' | 'colour';
@@ -25,6 +25,20 @@ export interface VariantSource {
   width: number;
   height: number;
   designSystem: DesignSystemRef;
+}
+
+/** What Make variants starts from, or null for a frame with no source yet. */
+export function variantSource(canvasId: string, frame: CanvasFrame): VariantSource | null {
+  if (!frame.revisionId) return null;
+  const { width, height } = frame.rect;
+  return {
+    canvasId,
+    revision: { designId: frame.designId, revisionId: frame.revisionId },
+    name: frame.name,
+    width,
+    height,
+    designSystem: frame.designSystem,
+  };
 }
 
 const CHANGE: Record<VariantKind, string> = {

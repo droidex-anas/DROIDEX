@@ -75,7 +75,8 @@ const MAX_SOURCE_FILE_BYTES = 256 * 1024;
 // schema: 64 files, each path at most 256 characters.
 const MAX_SOURCE_PATHS = 64;
 const MAX_SOURCE_PATH_LENGTH = 256;
-const MAX_REVISION_PAGE_SIZE = 50;
+// One read of a design's history asks for the whole page.
+export const MAX_REVISION_PAGE_SIZE = 50;
 const MAX_REVISION_DIFF_BYTES = 256 * 1024;
 // `LIBRARY_LIST_LIMIT` in the sidecar's canvasLibrary.ts.
 const MAX_LIBRARY_ITEMS = 50;

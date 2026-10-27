@@ -10,6 +10,8 @@ export interface BoardOnScreen {
   canvasId: string;
   /** The pane's chat is attached to this canvas, so it can add frames to it. */
   attached: boolean;
+  /** Every frame on the board, in the canvas's order. */
+  frames: readonly CanvasFrame[];
   /** The selected frames, in the order the user picked them. */
   selected: CanvasFrame[];
   focusFrame: (designId: string) => void;

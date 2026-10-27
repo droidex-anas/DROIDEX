@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Toaster from '../../../src/components/Toaster';
 import type {
@@ -6,11 +6,14 @@ import type {
   AnnotateCanvasInput,
 } from '../../../src/features/canvas/annotationProtocol';
 import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChange';
+import { showBoard } from '../../../src/features/canvas/boardOnScreen';
+import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
+import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import type {
   EditElementInput,
   ElementEditResult,
@@ -22,6 +25,9 @@ import type {
   CanvasSnapshot,
   FrameRect,
   RemoveFramesInput,
+  RenameFrameInput,
+  RestoreRevisionInput,
+  RevisionSummary,
   SourceElement,
   UndoRemovalInput,
 } from '../../../src/features/canvas/protocol';
@@ -64,6 +70,20 @@ interface BoardHarness {
   answerUndo: (index: number) => void;
   /** Refuses one Undo because another frame now sits there. */
   refuseUndo: (index: number) => void;
+  /** The designs whose history the toolbar read, in order. */
+  historyReads: string[];
+  /** Answers one history read with two revisions: `rev_01` on `rev_00`. */
+  answerHistory: (index: number) => void;
+  renameCalls: RenameFrameInput[];
+  /** Renames the frame the way the sidecar does, and answers. */
+  answerRename: (index: number) => void;
+  /** A manifest commit lands on the frame: a build's, or with `name`, a rename from elsewhere. */
+  commitManifest: (designId: string, name?: string) => void;
+  restoreCalls: RestoreRevisionInput[];
+  /** Refuses one Restore because the frame's head moved. */
+  refuseRestore: (index: number) => void;
+  /** The toolbar's dialogs asked for, as `<kind>:<designId>`. */
+  dialogs: string[];
 }
 
 declare global {
@@ -86,6 +106,7 @@ applyTheme({
 
 // Two frames by default, which is what the geometry cases are measured against.
 // `?frames=n` adds more in a row below them for the preview-slot budget.
+// `?navigator=1` puts the chat column's Components tab beside the board.
 const PLACED: { designId: string; name: string; rect: FrameRect }[] = [
   { designId: 'a', name: 'Design A', rect: { x: 100, y: 50, width: 400, height: 300 } },
   { designId: 'b', name: 'Design B', rect: { x: 650, y: 300, width: 400, height: 300 } },
@@ -235,6 +256,57 @@ const removals = new FrameRemovals({
     return reply.promise;
   },
 });
+const historyReads: string[] = [];
+const historyReplies: PromiseWithResolvers<RevisionSummary[]>[] = [];
+const renameCalls: RenameFrameInput[] = [];
+const renameReplies: PromiseWithResolvers<void>[] = [];
+const restoreCalls: RestoreRevisionInput[] = [];
+const restoreReplies: PromiseWithResolvers<void>[] = [];
+const dialogs: string[] = [];
+const frameActions: FrameActions = {
+  history: {
+    listRevisions: (designId) => {
+      historyReads.push(designId);
+      const reply = Promise.withResolvers<RevisionSummary[]>();
+      historyReplies.push(reply);
+      return reply.promise;
+    },
+    restoreRevision: (input) => {
+      restoreCalls.push(input);
+      const reply = Promise.withResolvers<void>();
+      restoreReplies.push(reply);
+      return reply.promise;
+    },
+  },
+  canEdit: true,
+  rename: (frame, name) => {
+    renameCalls.push({
+      mutationId: 'rename',
+      designId: frame.designId,
+      name,
+      expectedManifestVersion: frame.manifestVersion,
+    });
+    const reply = Promise.withResolvers<void>();
+    renameReplies.push(reply);
+    return reply.promise;
+  },
+  makeVariants: (frame) => dialogs.push(`variants:${frame.designId}`),
+  saveToLibrary: (frame) => dialogs.push(`save:${frame.designId}`),
+};
+
+function revision(revisionId: string, sequence: number, author: 'user' | 'agent'): RevisionSummary {
+  return {
+    revisionId,
+    sequence,
+    author: author === 'user' ? { kind: 'user' } : { kind: 'agent', scopeRef: 'chat_1' },
+    mutationKind: sequence === 1 ? 'create' : 'edit',
+    state: 'saved',
+    createdAt: Date.now() - (3 - sequence) * 3_600_000,
+    designSystem: { id: 'droidex', version: 1, mode: scheme },
+    buildStatus: 'ready',
+  };
+}
+
 const readArtifact = () => Promise.resolve({ artifactId: 'a'.repeat(64), html: '<p>Ready</p>' });
 
 function Harness() {
@@ -247,6 +319,19 @@ function Harness() {
   live.current = interaction;
   const shown = useRef(snapshot);
   shown.current = snapshot;
+  useEffect(() => {
+    if (!params.has('navigator')) return undefined;
+    return showBoard({
+      appSessionId: 'chat_1',
+      canvasId: snapshot.canvasId,
+      attached: true,
+      frames: snapshot.frames,
+      selected: snapshot.frames.filter((frame) =>
+        interaction.selectedFrameIds.includes(frame.designId),
+      ),
+      focusFrame: (designId) => board.current?.focusFrame(designId),
+    });
+  }, [snapshot, interaction]);
   const change = (frames: CanvasFrame[], removedDesignIds: string[]): CanvasChange => ({
     canvasId: shown.current.canvasId,
     sequence: shown.current.sequence + 1,
@@ -364,6 +449,35 @@ function Harness() {
       undoReplies[index].reject(
         new CanvasRequestError('layout_conflict', 'Another frame now occupies that location.'),
       ),
+    historyReads,
+    answerHistory: (index) =>
+      historyReplies[index].resolve([
+        revision('rev_01', 2, 'user'),
+        revision('rev_00', 1, 'agent'),
+      ]),
+    renameCalls,
+    answerRename: (index) => {
+      const { designId, name } = renameCalls[index];
+      const renamed = shown.current.frames
+        .filter((frame) => frame.designId === designId)
+        .map((frame) => ({ ...frame, name, manifestVersion: frame.manifestVersion + 1 }));
+      setSnapshot(applyCanvasChange(shown.current, change(renamed, [])));
+      renameReplies[index].resolve();
+    },
+    commitManifest: (designId, name) => {
+      const committed = shown.current.frames
+        .filter((frame) => frame.designId === designId)
+        .map((frame) => ({
+          ...frame,
+          name: name ?? frame.name,
+          manifestVersion: frame.manifestVersion + 1,
+        }));
+      setSnapshot(applyCanvasChange(shown.current, change(committed, [])));
+    },
+    restoreCalls,
+    refuseRestore: (index) =>
+      restoreReplies[index].reject(new CanvasRequestError('revision_conflict', 'The head moved.')),
+    dialogs,
   };
   return (
     <div style={{ padding: 24 }}>
@@ -417,10 +531,18 @@ function Harness() {
           onOpenSource={setSourceOpen}
           onRemoveFrames={(frames) => removals.remove('chat_1', snapshot.canvasId, frames)}
           onUndoRemoval={() => removals.undoLatest(snapshot.canvasId)}
+          frameActions={frameActions}
         />
         {sourceOpen && (
           <aside data-harness-source={sourceOpen} style={{ width: 280, flexShrink: 0 }}>
             Source of {sourceOpen}
+          </aside>
+        )}
+        {params.has('navigator') && (
+          <aside
+            style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: 260 }}
+          >
+            <CanvasColumnTabs canvasId={snapshot.canvasId} />
           </aside>
         )}
       </div>

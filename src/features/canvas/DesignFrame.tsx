@@ -8,23 +8,19 @@
 // at screen size: the board stylesheet divides it by --board-scale, because
 // chrome that shrinks with the board is unusable on a 50-frame canvas.
 
-import { type CSSProperties, type PointerEvent, type ReactNode } from 'react';
-import { AlertTriangle, Check, MessageThread, Play } from '@droidex/icons';
+import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
+import { AlertTriangle } from '@droidex/icons';
 import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
-import { FrameLabel } from './FrameLabel';
+import { FrameLabel, FrameNameField } from './FrameLabel';
 import { FrameThumbnail } from './FrameThumbnail';
+import { FrameToolbar, type FrameActions } from './FrameToolbar';
 import { PendingBloom } from './PendingBloom';
 import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
 
-/** Screen room the selected frame's actions take at the right of its label row. */
-const TOOLS_PX = 168;
-/** The room "Add to chat" adds to them, where the frame can be added. */
-const CHAT_TOOL_PX = 112;
-/** Room the label keeps beside the actions; below it they sit above the label. */
-const LABEL_ROOM_PX = 120;
 /** Below this on screen a sheet shows its title alone, without the detail. */
 const COMPACT_SHEET_PX = { width: 220, height: 140 };
 /** Below this a sheet has no room for words; the label above still names it. */
@@ -47,7 +43,7 @@ export interface DesignFrameProps {
   visible: boolean;
   mode: BoardMode;
   selected: boolean;
-  /** It is the only frame selected, or the one Interact drives: it shows its actions. */
+  /** It is the only frame selected, or the one Interact drives: it shows its toolbar. */
   showTools: boolean;
   /** This is the frame Interact is driving. */
   interacted: boolean;
@@ -84,16 +80,20 @@ export interface DesignFrameProps {
   inChat: boolean;
   /** Pins it to the chat's next prompt or takes it off; absent where it cannot be pinned. */
   onToggleChat?: (frame: CanvasFrame) => void;
+  actions: FrameActions;
+  /** Deletes the selection, which is this frame while it shows its toolbar. */
+  onDelete: () => void;
 }
 
 export function DesignFrame(props: DesignFrameProps) {
   const { frame, rect, scale, motion, arriving, mode, selected, showTools, held } = props;
   const { capturePointer, onHold, onPick, onInteract, onPickElement, onEditEnter } = props;
   const { elementBox } = props;
+  const [renaming, setRenaming] = useState(false);
+  const label = useRef<HTMLDivElement>(null);
   const animated = arriving && motion.frameArrivalMs > 0;
   const screenWidth = rect.width * scale;
-  const tools = toolsPlacement(props);
-  const toolsBeside = showTools && tools.stacked === undefined;
+  const focusLabel = () => label.current?.focus({ preventScroll: true });
   return (
     <div
       data-design-frame={frame.designId}
@@ -107,27 +107,61 @@ export function DesignFrame(props: DesignFrameProps) {
         ...(animated ? arrival(motion) : {}),
       }}
     >
-      <FrameLabel
-        frame={frame}
-        width={screenWidth - (toolsBeside ? tools.width : 0)}
-        selected={selected}
-        interacted={props.interacted}
-        held={held}
-        tabStop={props.tabStop}
-        onHold={onHold}
-        onPick={onPick}
-        onInteract={onInteract}
-        onEnter={(picked) => {
-          // Edit goes into the frame's elements; otherwise Enter picks the
-          // frame, and on one already picked starts interacting with it.
-          if (mode === 'edit') {
-            onPick(picked, false);
-            onEditEnter(picked);
-          } else if (selected) onInteract(picked);
-          else onPick(picked, false);
-        }}
-        onFocusLabel={props.onFocusLabel}
-      />
+      {renaming ? (
+        <FrameNameField
+          frame={frame}
+          width={screenWidth}
+          onRename={props.actions.rename}
+          onDone={() => {
+            // The label has to be back before it can take the keyboard.
+            flushSync(() => {
+              setRenaming(false);
+            });
+            focusLabel();
+          }}
+        />
+      ) : (
+        <FrameLabel
+          ref={label}
+          frame={frame}
+          width={screenWidth}
+          selected={selected}
+          interacted={props.interacted}
+          held={held}
+          tabStop={props.tabStop}
+          onHold={onHold}
+          onPick={onPick}
+          onInteract={onInteract}
+          onEnter={(picked) => {
+            // Edit goes into the frame's elements; otherwise Enter picks the
+            // frame, and on one already picked starts interacting with it.
+            if (mode === 'edit') {
+              onPick(picked, false);
+              onEditEnter(picked);
+            } else if (selected) onInteract(picked);
+            else onPick(picked, false);
+          }}
+          onFocusLabel={props.onFocusLabel}
+        />
+      )}
+      {showTools && !held && (
+        <FrameToolbar
+          frame={frame}
+          interacted={props.interacted}
+          roomRight={props.roomRight}
+          inChat={props.inChat}
+          actions={props.actions}
+          onInteract={onInteract}
+          onExitInteract={props.onExitInteract}
+          onOpenSource={props.onOpenSource}
+          onToggleChat={props.onToggleChat}
+          onRename={() => {
+            setRenaming(true);
+          }}
+          onDelete={props.onDelete}
+          onLeave={focusLabel}
+        />
+      )}
 
       <div
         // The sheet is the design's, never the board's background: in Interact
@@ -180,8 +214,6 @@ export function DesignFrame(props: DesignFrameProps) {
         )}
       </div>
 
-      {showTools && <FrameTools {...props} stacked={tools.stacked} />}
-
       {selected && (
         <div className="canvas-frame-size canvas-chrome">
           <span>
@@ -207,116 +239,6 @@ export function DesignFrame(props: DesignFrameProps) {
           />
         ))}
     </div>
-  );
-}
-
-/**
- * Where the selected frame's actions go: beside its label when the frame is wide
- * enough on screen for both, otherwise above the label, starting where it does
- * unless the board ends first.
- */
-function toolsPlacement({ rect, scale, roomRight, onToggleChat }: DesignFrameProps): {
-  width: number;
-  stacked?: 'start' | 'end';
-} {
-  const width = TOOLS_PX + (onToggleChat ? CHAT_TOOL_PX : 0);
-  if (rect.width * scale >= width + LABEL_ROOM_PX) return { width };
-  return { width, stacked: roomRight >= width ? 'start' : 'end' };
-}
-
-/** The selected frame's actions: run it, read its source, add it to the chat, or return to Select. */
-function FrameTools({
-  frame,
-  interacted,
-  stacked,
-  inChat,
-  onInteract,
-  onExitInteract,
-  onOpenSource,
-  onToggleChat,
-}: DesignFrameProps & { stacked?: 'start' | 'end' }) {
-  return (
-    <div
-      data-stacked={stacked}
-      className="canvas-frame-tools canvas-chrome"
-      onPointerDown={(event) => {
-        event.stopPropagation();
-      }}
-    >
-      <div className="canvas-frame-toolbar">
-        {interacted ? (
-          <button
-            type="button"
-            aria-label="Return to Select"
-            title="Return to Select (Escape)"
-            className="canvas-frame-tool"
-            onClick={onExitInteract}
-          >
-            Done
-          </button>
-        ) : (
-          <button
-            type="button"
-            aria-label={`Interact with ${frame.name}`}
-            title="Interact (double-click)"
-            className="canvas-frame-tool"
-            onClick={() => {
-              onInteract(frame);
-            }}
-          >
-            <Play className="h-3.5 w-3.5" aria-hidden />
-            Interact
-          </button>
-        )}
-        {onOpenSource && (
-          <button
-            type="button"
-            aria-label={`Source of ${frame.name}`}
-            className="canvas-frame-tool"
-            onClick={() => {
-              onOpenSource(frame.designId);
-            }}
-          >
-            <CodeGlyph />
-            Source
-          </button>
-        )}
-        {onToggleChat && (
-          <button
-            type="button"
-            aria-pressed={inChat}
-            aria-label={
-              inChat ? `Take ${frame.name} out of the chat` : `Add ${frame.name} to the chat`
-            }
-            className="canvas-frame-tool"
-            onClick={() => {
-              onToggleChat(frame);
-            }}
-          >
-            {inChat ? (
-              <Check className="h-3.5 w-3.5" aria-hidden />
-            ) : (
-              <MessageThread className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {inChat ? 'In chat' : 'Add to chat'}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CodeGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" aria-hidden>
-      <path
-        d="M9 7 4 12l5 5M15 7l5 5-5 5"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 

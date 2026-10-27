@@ -8,6 +8,7 @@ import { reply, requestId, wrongReply, type ReplyEvent } from './canvasReply';
 import { DesignSystemRequests } from './designSystemRequests';
 import { LibraryRequests } from './libraryRequests';
 import { RemovalRequests } from './removalRequests';
+import { RevisionRequests } from './revisionRequests';
 import { SourceRequests } from './sourceRequests';
 import type {
   ArrangeFramesInput,
@@ -92,6 +93,7 @@ export class CanvasClient {
   readonly designSystems = new DesignSystemRequests((command) => this.request(command));
   readonly library = new LibraryRequests((command) => this.request(command));
   readonly removal = new RemovalRequests((command) => this.request(command));
+  readonly revisions = new RevisionRequests((command) => this.request(command));
   readonly source = new SourceRequests((command) => this.request(command));
 
   listCanvases(): Promise<CanvasSummary[]> {

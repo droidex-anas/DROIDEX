@@ -51,6 +51,7 @@ import { CanvasSourceSlot } from './CanvasSourceSlot';
 import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
 import { showBoard } from './boardOnScreen';
 import { useCloseCanvasTab } from './leaveDeletedCanvas';
+import { useFrameActions } from './useFrameActions';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
 
 const readArtifact = canvas.readArtifact.bind(canvas);
@@ -391,6 +392,7 @@ function CanvasBoardMount({
     [appSessionId, canvasId],
   );
   const undoRemoval = useCallback(() => frameRemovals.undoLatest(canvasId), [canvasId]);
+  const frameActions = useFrameActions(appSessionId, canvasId, pinnable);
   const pins = useFramePins(appSessionId);
   const pinnedIds = useMemo(
     () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
@@ -408,6 +410,7 @@ function CanvasBoardMount({
       appSessionId,
       canvasId,
       attached: pinnable,
+      frames,
       selected: selectedFrameIds
         .map((designId) => byId.get(designId))
         .filter((frame): frame is CanvasFrame => frame !== undefined),
@@ -435,6 +438,7 @@ function CanvasBoardMount({
           onInteractionChange={onInteractionChange}
           agentWorking={agentWorking}
           pinnedIds={pinnedIds}
+          frameActions={frameActions.actions}
           onToggleChat={
             pinnable
               ? (frame) => {
@@ -454,6 +458,7 @@ function CanvasBoardMount({
           )}
         />
       )}
+      {frameActions.dialog}
     </div>
   );
 }

@@ -1,0 +1,135 @@
+/* The docked chat column's Agent | Components tabs and the frame list
+   (CanvasColumnTabs, CanvasNavigator). Lazy with them, so none of it is in
+   the entry stylesheet. */
+
+.canvas-column-tabs {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 12px;
+}
+
+.canvas-column-tab {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--droid-text-muted);
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.canvas-column-tab:hover,
+.canvas-column-tab:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--droid-text) 6%, transparent);
+  color: var(--droid-text);
+}
+
+.canvas-column-tab[aria-selected='true'] {
+  background: var(--droid-elevated);
+  color: var(--droid-text);
+}
+
+/* Over the transcript, under the tabs; the composer below stays. */
+.canvas-column-panel {
+  position: absolute;
+  inset: 36px 0 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--droid-bg);
+}
+
+.canvas-navigator {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.canvas-navigator-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin: 4px 12px 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--droid-elevated);
+  color: var(--droid-text-muted);
+}
+
+.canvas-navigator-search:focus-within {
+  background: var(--droid-active);
+}
+
+.canvas-navigator-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  color: var(--droid-text);
+}
+
+.canvas-navigator-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+
+.canvas-navigator-row {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--droid-text-secondary);
+}
+
+.canvas-navigator-row:hover,
+.canvas-navigator-row[aria-selected='true'] {
+  background: color-mix(in srgb, var(--droid-text) 6%, transparent);
+  color: var(--droid-text);
+}
+
+/* Selected on the board: weight, not a fill, so it reads beside the active row. */
+.canvas-navigator-row[data-picked] {
+  font-weight: 500;
+  color: var(--droid-text);
+}
+
+.canvas-navigator-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-navigator-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--droid-text-muted);
+}
+
+.canvas-navigator-status[data-status='failed'] {
+  color: var(--droid-red);
+}
+
+.canvas-navigator-note {
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--droid-text-muted);
+}

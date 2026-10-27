@@ -102,27 +102,21 @@
   color: var(--droid-selection-label);
 }
 
-/* The selected frame's actions, at the right end of the label row. The
+/* The selected frame's toolbar, above its label row, starting where the label
+   does, or ending where the frame does when the board would cut it off. The
    wrapper is what scales, so the gap under the bar is in screen pixels. */
 .canvas-frame-tools {
   position: absolute;
-  bottom: 100%;
-  right: 0;
-  padding-bottom: 6px;
-  transform-origin: 100% 100%;
-}
-
-/* A frame too narrow on screen for both keeps its label and lifts its actions
-   above the label row, starting where the label does, or ending where the
-   frame does when the board would cut them off. */
-.canvas-frame-tools[data-stacked] {
   bottom: calc(100% + 32px / var(--board-scale));
+  left: 0;
+  padding-bottom: 6px;
+  transform-origin: 0 100%;
 }
 
-.canvas-frame-tools[data-stacked='start'] {
-  right: auto;
-  left: 0;
-  transform-origin: 0 100%;
+.canvas-frame-tools[data-align='end'] {
+  right: 0;
+  left: auto;
+  transform-origin: 100% 100%;
 }
 
 .canvas-frame-toolbar {
@@ -149,10 +143,25 @@
 }
 
 .canvas-frame-tool:hover,
-.canvas-frame-tool:focus-visible {
+.canvas-frame-tool:focus-visible,
+.canvas-frame-tool[aria-expanded='true'] {
   outline: none;
   background: color-mix(in srgb, var(--droid-text) 8%, transparent);
   color: var(--droid-text);
+}
+
+.canvas-frame-version {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The name while it is renamed: the label's own pill, holding a field. */
+.canvas-frame-name-field {
+  width: 100%;
+  outline: none;
+  color: var(--droid-text);
+  box-shadow:
+    0 0 0 1.5px var(--droid-selection),
+    var(--droid-shadow-sm);
 }
 
 /* The selected frame's size, under its bottom edge. The wrapper scales about
