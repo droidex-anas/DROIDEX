@@ -45,6 +45,18 @@ export function annotationShortcut(event: KeyboardEvent): AnnotationTool | null 
   return ANNOTATION_KEYS.get(event.key.toLowerCase()) ?? null;
 }
 
+/** Backspace or Delete, unmodified, as the frame menu's Delete says. */
+export function isDeleteKey(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+  return event.key === 'Backspace' || event.key === 'Delete';
+}
+
+/** ⌘Z, or Ctrl+Z off the Mac. */
+export function isUndoKey(event: KeyboardEvent): boolean {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return false;
+  return event.key.toLowerCase() === 'z';
+}
+
 /** Edit's keys: Enter for the first element, or into the panel once one is picked; the arrows step. */
 export function elementStep(event: KeyboardEvent): 'first' | 'next' | 'previous' | null {
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;

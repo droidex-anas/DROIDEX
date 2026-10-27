@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import Toaster from '../../../src/components/Toaster';
 import type {
   Annotation,
   AnnotateCanvasInput,
@@ -9,16 +10,20 @@ import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canva
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
+import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type {
   EditElementInput,
   ElementEditResult,
 } from '../../../src/features/canvas/elementEditProtocol';
 import type {
   ArrangeFramesInput,
+  CanvasChange,
   CanvasFrame,
   CanvasSnapshot,
   FrameRect,
+  RemoveFramesInput,
   SourceElement,
+  UndoRemovalInput,
 } from '../../../src/features/canvas/protocol';
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
 import '../../../src/index.css';
@@ -51,6 +56,14 @@ interface BoardHarness {
   /** Answers one edit with the revision it wrote, and builds that revision. */
   answerEdit: (index: number, resolution: ElementEditResult['resolution']) => void;
   refuseEdit: (index: number) => void;
+  removeCalls: RemoveFramesInput[];
+  /** Removes one delete's frames the way the sidecar does, answering `undo_<index>`. */
+  answerRemove: (index: number) => void;
+  undoCalls: UndoRemovalInput[];
+  /** Puts the frames that Undo names back. */
+  answerUndo: (index: number) => void;
+  /** Refuses one Undo because another frame now sits there. */
+  refuseUndo: (index: number) => void;
 }
 
 declare global {
@@ -203,6 +216,25 @@ const editReplies: {
   resolve: (result: ElementEditResult) => void;
   reject: (error: Error) => void;
 }[] = [];
+const removeCalls: RemoveFramesInput[] = [];
+const removeReplies: PromiseWithResolvers<string>[] = [];
+const undoCalls: UndoRemovalInput[] = [];
+const undoReplies: PromiseWithResolvers<CanvasChange>[] = [];
+const removedFrames = new Map<string, CanvasFrame[]>();
+const removals = new FrameRemovals({
+  removeFrames: (_appSessionId, _canvasId, input) => {
+    removeCalls.push(input);
+    const reply = Promise.withResolvers<string>();
+    removeReplies.push(reply);
+    return reply.promise;
+  },
+  undoRemoval: (_appSessionId, _canvasId, input) => {
+    undoCalls.push(input);
+    const reply = Promise.withResolvers<CanvasChange>();
+    undoReplies.push(reply);
+    return reply.promise;
+  },
+});
 const readArtifact = () => Promise.resolve({ artifactId: 'a'.repeat(64), html: '<p>Ready</p>' });
 
 function Harness() {
@@ -213,6 +245,14 @@ function Harness() {
   const board = useRef<CanvasBoardHandle>(null);
   const live = useRef(interaction);
   live.current = interaction;
+  const shown = useRef(snapshot);
+  shown.current = snapshot;
+  const change = (frames: CanvasFrame[], removedDesignIds: string[]): CanvasChange => ({
+    canvasId: shown.current.canvasId,
+    sequence: shown.current.sequence + 1,
+    frames,
+    removedDesignIds,
+  });
   window.boardHarness = {
     calls,
     annotateCalls,
@@ -303,6 +343,27 @@ function Harness() {
       editReplies[index].reject(
         new CanvasRequestError('stale_reference', 'This element changed. Pick it again.'),
       ),
+    removeCalls,
+    answerRemove: (index) => {
+      const { designIds } = removeCalls[index];
+      const undoId = `undo_${String(index)}`;
+      removedFrames.set(
+        undoId,
+        shown.current.frames.filter((frame) => designIds.includes(frame.designId)),
+      );
+      setSnapshot(applyCanvasChange(shown.current, change([], designIds)));
+      removeReplies[index].resolve(undoId);
+    },
+    undoCalls,
+    answerUndo: (index) => {
+      const restored = change(removedFrames.get(undoCalls[index].undoId) ?? [], []);
+      setSnapshot(applyCanvasChange(shown.current, restored));
+      undoReplies[index].resolve(restored);
+    },
+    refuseUndo: (index) =>
+      undoReplies[index].reject(
+        new CanvasRequestError('layout_conflict', 'Another frame now occupies that location.'),
+      ),
   };
   return (
     <div style={{ padding: 24 }}>
@@ -354,6 +415,8 @@ function Harness() {
             );
           }}
           onOpenSource={setSourceOpen}
+          onRemoveFrames={(frames) => removals.remove('chat_1', snapshot.canvasId, frames)}
+          onUndoRemoval={() => removals.undoLatest(snapshot.canvasId)}
         />
         {sourceOpen && (
           <aside data-harness-source={sourceOpen} style={{ width: 280, flexShrink: 0 }}>
@@ -361,6 +424,7 @@ function Harness() {
           </aside>
         )}
       </div>
+      <Toaster />
     </div>
   );
 }

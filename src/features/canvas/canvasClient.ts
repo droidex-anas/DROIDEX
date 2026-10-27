@@ -5,9 +5,11 @@
 import { bridge } from '../../lib/bridge';
 import { answerCaptureRequest } from './captureCanvasImage';
 import { CanvasClient } from './client';
+import { FrameRemovals } from './frameRemovals';
 import type { PreviewReport } from './protocol';
 
 export const canvasClient = new CanvasClient(bridge);
+export const frameRemovals = new FrameRemovals(canvasClient);
 
 // Every page answers an agent's screenshot request; the sidecar counts only the
 // pages watching that canvas, and a lost answer costs the agent only that capture.

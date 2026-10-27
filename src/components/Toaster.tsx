@@ -67,6 +67,18 @@ export default function Toaster() {
               <span className="min-w-0 flex-1 text-[13px] leading-snug text-droid-text">
                 {t.message}
               </span>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    t.action?.run();
+                    dismissToast(t.id);
+                  }}
+                  className="shrink-0 rounded-md bg-droid-elevated px-2 py-0.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/15"
+                >
+                  {t.action.label}
+                </button>
+              )}
               <button
                 onClick={() => {
                   dismissToast(t.id);

@@ -15,7 +15,7 @@ import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
-import { canvasClient as canvas, reportPreview } from './canvasClient';
+import { canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
 import type { AnnotateCanvasInput } from './annotationProtocol';
@@ -166,6 +166,7 @@ export function CanvasWorkspace({
     if (watched === null) return undefined;
     return canvas.subscribeSummaries((summaries) => {
       if (summaries.some((summary) => summary.canvasId === watched)) return;
+      frameRemovals.forget(watched);
       if (namedCanvasId === undefined) attach(null);
       else closeCanvasTab(appSessionId);
     });
@@ -385,6 +386,11 @@ function CanvasBoardMount({
     (input: EditElementInput) => canvas.source.editElement(appSessionId, canvasId, input),
     [appSessionId, canvasId],
   );
+  const removeFrames = useCallback(
+    (removing: CanvasFrame[]) => frameRemovals.remove(appSessionId, canvasId, removing),
+    [appSessionId, canvasId],
+  );
+  const undoRemoval = useCallback(() => frameRemovals.undoLatest(canvasId), [canvasId]);
   const pins = useFramePins(appSessionId);
   const pinnedIds = useMemo(
     () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
@@ -423,6 +429,8 @@ function CanvasBoardMount({
           onArrangeFrames={arrangeFrames}
           onAnnotate={annotate}
           onEditElement={editElement}
+          onRemoveFrames={removeFrames}
+          onUndoRemoval={undoRemoval}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           agentWorking={agentWorking}

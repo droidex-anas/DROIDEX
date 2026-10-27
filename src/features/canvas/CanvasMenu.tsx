@@ -10,6 +10,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { Popover } from '../../components/environment/Popover';
 import { useBoardOnScreen, type BoardOnScreen } from './boardOnScreen';
+import { frameRemovals } from './canvasClient';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import { LibraryPicker } from './LibraryPicker';
@@ -96,6 +97,10 @@ export function CanvasMenu({
               name={canvas?.name ?? 'This canvas'}
               board={board}
               onRun={run}
+              onDeleteFrames={(shown) => {
+                close();
+                void frameRemovals.remove(shown.appSessionId, shown.canvasId, shown.selected);
+              }}
             />
           )}
 
@@ -149,20 +154,23 @@ export function CanvasMenu({
   );
 }
 
-/** What can be done to the canvas on screen, and to the one frame selected on it. */
+/** What can be done to the canvas on screen, and to the frames selected on it. */
 function CanvasActions({
   appSessionId,
   canvasId,
   name,
   board,
   onRun,
+  onDeleteFrames,
 }: {
   appSessionId: string;
   canvasId: string;
   name: string;
   board: BoardOnScreen | null;
   onRun: (dialog: MenuDialog) => void;
+  onDeleteFrames: (board: BoardOnScreen) => void;
 }) {
+  const selectedCount = board?.selected.length ?? 0;
   // Only a built frame has a revision to save or vary, and each names one frame.
   const frame = board?.selected.length === 1 ? board.selected[0] : null;
   const revision = frame?.revisionId
@@ -205,6 +213,14 @@ function CanvasActions({
               designSystem: frame.designSystem,
             },
           });
+        }}
+      />
+      <MenuRow
+        label={selectedCount > 1 ? `Delete ${String(selectedCount)} frames` : 'Delete frame'}
+        hint="⌫"
+        disabled={selectedCount === 0}
+        onRun={() => {
+          if (board && selectedCount > 0) onDeleteFrames(board);
         }}
       />
       <MenuRow

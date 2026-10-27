@@ -8,6 +8,8 @@ import {
   frameStep,
   isBoardControl,
   isBoardEditor,
+  isDeleteKey,
+  isUndoKey,
   modeShortcut,
   zoomShortcut,
 } from './boardKeys';
@@ -35,6 +37,10 @@ export interface BoardKeyActions {
   pan: (delta: Point) => void;
   /** Moves the selected frames by world units. */
   nudge: (step: Point) => void;
+  /** Deletes the selected frames; false when there is nothing Delete can take. */
+  removeSelection: () => boolean;
+  /** Undoes this canvas's latest deletion; false when none is offered. */
+  undoRemoval: () => boolean;
   focusBoard: () => void;
   focusLabel: (designId: string) => void;
 }
@@ -101,6 +107,8 @@ function runBoardKey(
     }
     return true;
   }
+  if (isDeleteKey(event)) return actions.removeSelection();
+  if (isUndoKey(event)) return actions.undoRemoval();
   if (event.key === ' ') {
     actions.holdSpace();
     return true;

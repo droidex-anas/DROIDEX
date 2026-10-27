@@ -45,11 +45,13 @@ import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
 import { ElementPanel } from './ElementPanel';
 import { useCanvasMotion } from './useCanvasMotion';
+import { RubberBand } from './RubberBand';
 import { useAnnotationEditor } from './useAnnotationEditor';
-import { useBoardGestures, type Band } from './useBoardGestures';
+import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
+import { useFrameRemoval } from './useFrameRemoval';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
 export interface CanvasBoardHandle {
@@ -72,6 +74,10 @@ export interface CanvasBoardProps {
   onAnnotate: (input: AnnotateCanvasInput) => Promise<unknown>;
   /** The one direct element edit, bound to `CanvasClient.source.editElement` for this canvas. */
   onEditElement: (input: EditElementInput) => Promise<ElementEditResult>;
+  /** Deletes frames from this canvas (`FrameRemovals.remove`); true once they are gone. */
+  onRemoveFrames: (frames: CanvasFrame[]) => Promise<boolean>;
+  /** Undoes this canvas's latest deletion; false when none is offered. */
+  onUndoRemoval: () => boolean;
   /**
    * One frame's live preview of `revisionId`, mounted only while it holds a
    * slot, reporting to the board's element editor through `selections`.
@@ -99,6 +105,8 @@ export function CanvasBoard({
   onArrangeFrames,
   onAnnotate,
   onEditElement,
+  onRemoveFrames,
+  onUndoRemoval,
   renderPreview,
   interaction,
   onInteractionChange,
@@ -211,6 +219,18 @@ export function CanvasBoard({
     if (board.current) board.current.scrollTop = board.current.scrollLeft = 0;
     view.reveal(gestures.rectFor(frame));
   };
+
+  const removeSelection = useFrameRemoval({
+    board,
+    canvasId: snapshot.canvasId,
+    frames,
+    order,
+    interaction,
+    markSelected: annotation.layer.selectedId !== null,
+    dispatch,
+    focusLabel,
+    onRemoveFrames,
+  });
 
   const [focusRequest, setFocusRequest] = useState<string | null>(null);
   useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame: setFocusRequest, focusLabel }), [
@@ -343,6 +363,8 @@ export function CanvasBoard({
               rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
             );
           },
+          removeSelection,
+          undoRemoval: onUndoRemoval,
           focusBoard: () => board.current?.focus({ preventScroll: true }),
           focusLabel,
         });
@@ -462,22 +484,6 @@ export function CanvasBoard({
         {announcement}
       </p>
     </div>
-  );
-}
-
-/** The rubber band, drawn in screen space above the world layer. */
-function RubberBand({ band: { origin, current } }: { band: Band }) {
-  return (
-    <div
-      aria-hidden
-      className="canvas-band"
-      style={{
-        left: Math.min(origin.x, current.x),
-        top: Math.min(origin.y, current.y),
-        width: Math.abs(current.x - origin.x),
-        height: Math.abs(current.y - origin.y),
-      }}
-    />
   );
 }
 

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildAnnouncement, selectionAnnouncement, zoomAnnouncement } from './boardAnnouncer';
+import {
+  buildAnnouncement,
+  removalAnnouncement,
+  selectionAnnouncement,
+  zoomAnnouncement,
+} from './boardAnnouncer';
 import { NO_SHOWN_REVISIONS } from './previewLabels';
 import type { CanvasBuildState, CanvasFrame } from './protocol';
 
@@ -74,6 +79,13 @@ test('many frames changing at once are counted rather than read out', () => {
     buildAnnouncement(before.slice(0, 2), after.slice(0, 2), NO_SHOWN_REVISIONS),
     'Design a is ready; Design b is ready',
   );
+});
+
+test('deleted frames are named, and counted beyond two', () => {
+  const frames = ['a', 'b', 'c'].map((id) => frame(id, READY));
+  assert.equal(removalAnnouncement(frames, frames.slice(1)), 'Design a deleted');
+  assert.equal(removalAnnouncement(frames, []), '3 frames deleted');
+  assert.equal(removalAnnouncement(frames, frames), null);
 });
 
 test('a selection is said unless the focused label already says it', () => {

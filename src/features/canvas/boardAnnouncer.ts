@@ -1,7 +1,8 @@
 // What the board says to a screen reader, through one polite live region:
-// a frame that starts building, becomes ready or fails, a selection the focus
-// does not already speak, and the zoom once it settles. Spec §11 asks for
-// concise status, never animation ticks, so each change is one short line.
+// a frame that starts building, becomes ready or fails, frames deleted, a
+// selection the focus does not already speak, and the zoom once it settles.
+// Spec §11 asks for concise status, never animation ticks, so each change is
+// one short line.
 
 import { useEffect, useRef, useState } from 'react';
 import type { ShownRevisions } from './previewLabels';
@@ -51,6 +52,19 @@ export function buildAnnouncement(
   return `${String(changes.length)} frames changed: ${counts.join(', ')}`;
 }
 
+/** Frames that left the board, by name for one or two and counted beyond. */
+export function removalAnnouncement(
+  previous: readonly CanvasFrame[],
+  next: readonly CanvasFrame[],
+): string | null {
+  const kept = new Set(next.map((frame) => frame.designId));
+  const removed = previous.filter((frame) => !kept.has(frame.designId));
+  if (removed.length === 0) return null;
+  if (removed.length <= NAMED_CHANGES)
+    return removed.map((frame) => `${frame.name} deleted`).join('; ');
+  return `${String(removed.length)} frames deleted`;
+}
+
 /**
  * The selection news. A single frame chosen from its focused label is already
  * spoken by that label, so only other changes are said.
@@ -95,20 +109,29 @@ export function useBoardAnnouncer({
   now.current = { frames, shown, focusedId };
 
   useEffect(() => {
-    const said = buildAnnouncement(heard.current.frames, frames, now.current.shown);
+    const said = [
+      removalAnnouncement(heard.current.frames, frames),
+      buildAnnouncement(heard.current.frames, frames, now.current.shown),
+    ].filter((line) => line !== null);
     heard.current.frames = frames;
-    if (said) setLine(said);
+    if (said.length > 0) setLine(said.join('; '));
   }, [frames]);
 
   useEffect(() => {
     const names = new Map(now.current.frames.map((frame) => [frame.designId, frame.name]));
+    // A selection that only lost deleted frames is told by the deletion.
+    const previous = heard.current.selectedFrameIds;
+    const pruned =
+      selectedFrameIds.every((designId) => previous.includes(designId)) &&
+      previous.every((designId) => selectedFrameIds.includes(designId) || !names.has(designId));
+    heard.current.selectedFrameIds = selectedFrameIds;
+    if (pruned) return;
     const said = selectionAnnouncement(
-      heard.current.selectedFrameIds,
+      previous,
       selectedFrameIds,
       (designId) => names.get(designId) ?? 'Frame',
       now.current.focusedId,
     );
-    heard.current.selectedFrameIds = selectedFrameIds;
     if (said) setLine(said);
   }, [selectedFrameIds]);
 
