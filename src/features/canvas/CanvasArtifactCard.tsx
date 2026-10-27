@@ -8,9 +8,12 @@ import './canvasBloom.css';
 import './canvasArtifactCard.css';
 import type { CanvasArtifact } from '../../components/chatFeedArtifacts';
 import { useSessionLive } from '../../hooks/useSessionLive';
+import { useStoreSelector } from '../../hooks/useStore';
 import { useBoardOnScreen } from './boardOnScreen';
 import { canvasClient } from './canvasClient';
 import type { CanvasActivityStage } from './canvasMotion';
+import { CanvasToolsRecovery } from './CanvasPaneStates';
+import { lacksCanvasTools } from './canvasState';
 import { FrameThumbnail } from './FrameThumbnail';
 import { useOpenCanvasPane } from './openCanvasPane';
 import { PendingBloom } from './PendingBloom';
@@ -28,6 +31,9 @@ export default function CanvasArtifactCard({
   const designId = designIds.at(0) ?? null;
   const frame = useCanvasFrame(canvasId, designId);
   const agentWorking = useSessionLive(appSessionId);
+  const toolsMissing = useStoreSelector((current) =>
+    lacksCanvasTools(current.sessions[appSessionId]),
+  );
   const motion = useCanvasMotion();
   const board = useBoardOnScreen(canvasId);
   const openPane = useOpenCanvasPane();
@@ -47,34 +53,42 @@ export default function CanvasArtifactCard({
   };
 
   return (
-    <button
-      type="button"
-      className="canvas-artifact"
-      onClick={open}
-      aria-label={`Open ${title} on the canvas`}
-    >
-      <span className="canvas-artifact-sheet">
-        <Sheet canvasId={canvasId} frame={frame} revisionId={status?.revisionId ?? null} />
-      </span>
-      <span className="canvas-artifact-footer">
-        <span className="canvas-artifact-text">
-          <span className="canvas-artifact-title">{title}</span>
-          <span className="canvas-artifact-meta">
-            {status?.stage ? (
-              // Rows only mount near the viewport, and a hidden window pauses
-              // the loop, so a mounted card is a visible one.
-              <PendingBloom stage={status.stage} visible motion={motion} />
-            ) : (
-              metaNote(frame)
-            )}
-            {more > 0 && ` · ${String(more)} more ${more === 1 ? 'frame' : 'frames'}`}
+    <>
+      <button
+        type="button"
+        className="canvas-artifact"
+        onClick={open}
+        aria-label={`Open ${title} on the canvas`}
+      >
+        <span className="canvas-artifact-sheet">
+          <Sheet canvasId={canvasId} frame={frame} revisionId={status?.revisionId ?? null} />
+        </span>
+        <span className="canvas-artifact-footer">
+          <span className="canvas-artifact-text">
+            <span className="canvas-artifact-title">{title}</span>
+            <span className="canvas-artifact-meta">
+              {status?.stage ? (
+                // Rows only mount near the viewport, and a hidden window pauses
+                // the loop, so a mounted card is a visible one.
+                <PendingBloom stage={status.stage} visible motion={motion} />
+              ) : (
+                metaNote(frame)
+              )}
+              {more > 0 && ` · ${String(more)} more ${more === 1 ? 'frame' : 'frames'}`}
+            </span>
+          </span>
+          <span className="canvas-artifact-open" aria-hidden>
+            Open
           </span>
         </span>
-        <span className="canvas-artifact-open" aria-hidden>
-          Open
-        </span>
-      </span>
-    </button>
+      </button>
+      {toolsMissing && frame?.revisionId === null && (
+        // A frame this chat reserved and can no longer write.
+        <div className="flex max-w-[320px] flex-col gap-3">
+          <CanvasToolsRecovery canvasId={canvasId} />
+        </div>
+      )}
+    </>
   );
 }
 

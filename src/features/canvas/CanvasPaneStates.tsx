@@ -5,6 +5,7 @@ import { canvasClient as canvas } from './canvasClient';
 import { canvasMessage } from './client';
 import { outdatedCanvasMessage } from './canvasState';
 import type { CanvasSummary } from './protocol';
+import { useOpenCanvas } from './useOpenCanvas';
 
 // Starting points for a canvas with nothing on it. Each one seeds the chat's
 // own composer; nothing is sent, so the user can keep typing or press Enter.
@@ -45,6 +46,36 @@ export function CanvasInvitation({ children }: { children?: ReactNode }) {
       </ul>
       {children}
     </CanvasPlate>
+  );
+}
+
+const CANVAS_TOOLS_MISSING =
+  "This chat's agent started without the Canvas tools and cannot get them now. " +
+  'Start a new chat; for an existing canvas, choose New chat with this canvas.';
+
+/** Stands in for the invitation when the chat's agent cannot call the Canvas tools. */
+export function CanvasToolsMissing({ canvasId }: { canvasId: string | null }) {
+  return (
+    <CanvasPlate title="This chat cannot design">
+      <CanvasToolsRecovery canvasId={canvasId} />
+    </CanvasPlate>
+  );
+}
+
+export function CanvasToolsRecovery({ canvasId }: { canvasId: string | null }) {
+  const { startCanvasChat } = useOpenCanvas();
+  return (
+    <>
+      <CanvasNote>{CANVAS_TOOLS_MISSING}</CanvasNote>
+      <div className="flex gap-1.5">
+        <CanvasAction
+          label={canvasId ? 'New chat with this canvas' : 'New chat'}
+          onClick={() => {
+            startCanvasChat(canvasId);
+          }}
+        />
+      </div>
+    </>
   );
 }
 

@@ -152,6 +152,9 @@ export interface SessionSummary {
   // Provider-owned handle for resuming this conversation, when the provider
   // does not let us pin its session id (Codex threads). Absent for Droid.
   resumeId?: string;
+  // Absent means the agent receives the Canvas tools each time it opens. 'none'
+  // is a Codex thread started without them, which no resume can add.
+  canvasTools?: 'at_start' | 'none';
   sessionPurpose: SessionPurpose;
   interactionMode: SessionInteractionMode;
   role: 'primary' | 'user';

@@ -397,6 +397,7 @@ function isSessionSummary(value: unknown): boolean {
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
+    isOptionalCanvasTools(value.canvasTools) &&
     isOptionalBoolean(value.fastMode) &&
     isOptionalContextWindow(value.contextWindowTokens) &&
     (value.pendingSteers === undefined ||
@@ -704,6 +705,10 @@ function isOptionalString(value: unknown): boolean {
 
 function isOptionalContextWindow(value: unknown): boolean {
   return value === undefined || value === 200000 || value === 1000000;
+}
+
+function isOptionalCanvasTools(value: unknown): boolean {
+  return value === undefined || value === 'at_start' || value === 'none';
 }
 
 function isOptionalBoolean(value: unknown): boolean {

@@ -60,6 +60,7 @@ export interface StoredSessionStart {
   // carries neither, which is what keeps every existing session reading as Droid.
   provider?: string;
   resumeId?: string;
+  canvasTools?: string;
   // Droid only loads a session from the Factory organization it was created in.
   organizationId?: string;
   decompSessionType?: string;

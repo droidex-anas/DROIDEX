@@ -342,6 +342,7 @@ export class SessionLifecycle {
         autonomy,
         provider: kind,
         ...(providerSession.resumeId ? { resumeId: providerSession.resumeId } : {}),
+        ...(providerSession.canvasTools ? { canvasTools: providerSession.canvasTools } : {}),
         ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),

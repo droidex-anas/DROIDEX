@@ -497,6 +497,25 @@ test('a fork reads behind the queued lines and copies the transcript through its
   );
 });
 
+test('a Codex transcript keeps the Canvas tools its thread started with', async () => {
+  const scanned = async (appSessionId: string, summary: SessionSummary) => {
+    const transcript = new ProviderTranscriptFile(appSessionId, () => summary);
+    await transcript.appendPrompt('design a card');
+    transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Done.' }));
+    await transcript.flush();
+    return reconciledHistorySessions().find((row) => row.summary.appSessionId === appSessionId)
+      ?.summary.canvasTools;
+  };
+  const codex = { provider: 'codex', resumeId: 'thread-canvas' } as const;
+  const started = providerSummary('codex-canvas-at-start', { ...codex, canvasTools: 'at_start' });
+  assert.equal(await scanned(started.appSessionId, started), 'at_start');
+  // A thread stored before the record existed started before Canvas did.
+  const older = providerSummary('codex-canvas-before', codex);
+  assert.equal(await scanned(older.appSessionId, older), 'none');
+  const claude = providerSummary('claude-canvas-per-open');
+  assert.equal(await scanned(claude.appSessionId, claude), undefined);
+});
+
 function providerSummary(
   appSessionId: string,
   overrides: Partial<SessionSummary> = {},

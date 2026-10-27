@@ -4,12 +4,12 @@ import { PROVIDER_KINDS } from './providers/providerKind.js';
 import { objectValue, stringValue } from './values.js';
 
 interface PersistedSessionFileSummary {
-  cacheVersion: 2;
+  cacheVersion: 3;
   summary: SessionSummary;
 }
 
 // Bump when admission or summary rules change so cached rows are rebuilt.
-const SESSION_FILE_SUMMARY_CACHE_VERSION = 2;
+export const SESSION_FILE_SUMMARY_CACHE_VERSION = 3;
 
 export const SESSION_FILE_REASONING_EFFORTS: Record<ReasoningEffort, true> = {
   off: true,
@@ -103,6 +103,7 @@ function hasOptionalSummaryFields(summary: Record<string, unknown>): boolean {
     optionalRecordKeyOf(summary, 'validatorReasoningEffort', SESSION_FILE_REASONING_EFFORTS) &&
     optionalRecordOneOf(summary, 'contextAccuracy', ['exact', 'estimated']) &&
     optionalRecordOneOf(summary, 'workspaceKind', ['folder', 'none']) &&
+    optionalRecordOneOf(summary, 'canvasTools', ['at_start', 'none']) &&
     optionalFiniteNumber(summary, [
       'queuedSends',
       'contextRemainingTokens',

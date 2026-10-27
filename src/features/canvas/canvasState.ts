@@ -1,3 +1,4 @@
+import type { SessionSummary } from '../../types/bridge';
 import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from './protocol';
 
 export type CanvasPaneState =
@@ -76,6 +77,11 @@ export function watchedCanvasId(state: CanvasPaneState): string | null {
 export function outdatedCanvasMessage(name: string): string {
   const shown = name.length > 48 ? `${name.slice(0, 47).trimEnd()}…` : name;
   return `“${shown}” was made by an earlier DROIDEX and can’t be opened here.`;
+}
+
+/** A chat whose agent can never design: the pane offers a new chat instead of waiting on it. */
+export function lacksCanvasTools(session: SessionSummary | undefined): boolean {
+  return session?.canvasTools === 'none';
 }
 
 /** No canvas to show: an earlier error stays, and an outdated canvas is named. */

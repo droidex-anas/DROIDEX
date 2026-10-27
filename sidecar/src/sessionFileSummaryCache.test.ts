@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   parseCachedSessionSummary,
   serializeCachedSessionSummary,
+  SESSION_FILE_SUMMARY_CACHE_VERSION,
 } from './sessionFileSummaryCache.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
@@ -23,10 +24,24 @@ test('cached session summaries reject malformed required arrays, discriminants a
     { ...sessionSummary(), reasoningEffort: 'toString' },
   ]) {
     assert.equal(
-      parseCachedSessionSummary(JSON.stringify({ cacheVersion: 2, summary: invalid })),
+      parseCachedSessionSummary(
+        JSON.stringify({ cacheVersion: SESSION_FILE_SUMMARY_CACHE_VERSION, summary: invalid }),
+      ),
       undefined,
     );
   }
+});
+
+test('a valid summary cached by an older DROIDEX is dropped so its row is rebuilt', () => {
+  assert.equal(
+    parseCachedSessionSummary(
+      JSON.stringify({
+        cacheVersion: SESSION_FILE_SUMMARY_CACHE_VERSION - 1,
+        summary: sessionSummary(),
+      }),
+    ),
+    undefined,
+  );
 });
 
 test('only SQL NULL represents an intentionally excluded session summary', () => {
