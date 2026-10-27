@@ -8,7 +8,7 @@ import { CanvasRequestError, canvasMessage, type CanvasClient } from './client';
 import type { CanvasFrame } from './protocol';
 
 /** How long the Undo toast stays up, before hovering or focus pauses it. */
-export const UNDO_WINDOW_MS = 8000;
+const UNDO_WINDOW_MS = 8000;
 
 type RemovalClient = Pick<CanvasClient, 'removeFrames' | 'undoRemoval'>;
 
