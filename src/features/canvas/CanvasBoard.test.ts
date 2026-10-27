@@ -11,11 +11,20 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CanvasBoard } from './CanvasBoard';
 import { DesignPreview } from './DesignPreview';
+import type { FrameActions } from './FrameToolbar';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
 import type { Annotation } from './annotationProtocol';
 import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
 const ACKNOWLEDGED: FrameRect = { x: 100, y: 50, width: 400, height: 300 };
+
+const FRAME_ACTIONS: FrameActions = {
+  history: { listRevisions: () => Promise.resolve([]), restoreRevision: () => Promise.resolve() },
+  canEdit: false,
+  rename: () => Promise.resolve(),
+  makeVariants: () => undefined,
+  saveToLibrary: () => undefined,
+};
 
 function frame(designId: string, rect: FrameRect): CanvasFrame {
   return {
@@ -54,6 +63,7 @@ function render(
       snapshot,
       interaction,
       agentWorking,
+      frameActions: FRAME_ACTIONS,
       onInteractionChange: () => undefined,
       onArrangeFrames: () => Promise.resolve(),
       onAnnotate: () => Promise.resolve(),

@@ -334,7 +334,8 @@ function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
     },
     [history],
   );
-  return { history, state: useSyncExternalStore(history.subscribe, history.read) };
+  const state = useSyncExternalStore(history.subscribe, history.read, history.read);
+  return { history, state };
 }
 
 /** The bar's tools in order, which is the order the arrows walk. */

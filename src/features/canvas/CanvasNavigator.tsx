@@ -63,7 +63,7 @@ export function CanvasNavigator({ canvasId }: { canvasId: string }) {
       <label className="canvas-navigator-search">
         <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
         <input
-          type="search"
+          type="text"
           role="combobox"
           aria-label="Search frames"
           aria-controls={listId}
