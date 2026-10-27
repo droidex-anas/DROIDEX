@@ -74,7 +74,7 @@ export default function Toaster() {
                     t.action?.run();
                     dismissToast(t.id);
                   }}
-                  className="shrink-0 rounded-md bg-droid-elevated px-2 py-0.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/15"
+                  className="shrink-0 rounded-md bg-droid-accent/15 px-2 py-0.5 text-[12px] font-medium text-droid-accent transition-colors hover:bg-droid-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
                 >
                   {t.action.label}
                 </button>
