@@ -10,6 +10,7 @@ import {
   CanvasImageError,
   captureCanvasImage,
   exportCanvasImage,
+  onCanvasImageCaptured,
   registerCanvasPreview,
 } from './captureCanvasImage';
 
@@ -103,6 +104,36 @@ test('releasing the preview slot cancels a pending capture', async () => {
     await assert.rejects(capture, (error: unknown) => error instanceof CanvasImageError);
     assert.deepEqual(desktop.cancelled, [desktop.pending[0].request.requestId]);
   } finally {
+    desktop.close();
+  }
+});
+
+test('a picture main keeps reaches the listeners of that revision, a failed capture does not', async () => {
+  const desktop = desktopCapture();
+  const release = mount(41);
+  let landed = 0;
+  const stopListening = onCanvasImageCaptured('cv_01', ref, () => (landed += 1));
+  try {
+    const failed = captureCanvasImage('cv_01', ref, new AbortController().signal);
+    desktop.pending[0].answer({
+      ok: false,
+      error: { code: 'capture_unavailable', message: 'Not painted yet.' },
+    });
+    await assert.rejects(failed, (error: unknown) => error instanceof CanvasImageError);
+    assert.equal(landed, 0);
+
+    const kept = captureCanvasImage('cv_01', ref, new AbortController().signal);
+    desktop.pending[1].answer({ ok: true, mediaType: 'image/png', bytes: new Uint8Array([1]) });
+    await kept;
+    assert.equal(landed, 1);
+
+    stopListening();
+    const unheard = captureCanvasImage('cv_01', ref, new AbortController().signal);
+    desktop.pending[2].answer({ ok: true, mediaType: 'image/png', bytes: new Uint8Array([2]) });
+    await unheard;
+    assert.equal(landed, 1);
+  } finally {
+    release();
     desktop.close();
   }
 });

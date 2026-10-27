@@ -92,6 +92,7 @@ import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { listProjects } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
+import { useFirstArtifactPane } from './features/canvas/useFirstArtifactPane';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
 import { useWorkspaceSessionList } from './hooks/useWorkspaceSessionList';
 import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
@@ -243,6 +244,7 @@ export default function App() {
   useFinishNotifications(!embedded && !showWizard);
   const hasProjects = useStoreSelector((current) => current.projects.length > 0);
   useThreadsPaneAutoOpen();
+  useFirstArtifactPane(!embedded);
   const activeSession = state.activeSession;
   const canvasAttachment = useStoreSelector((current) =>
     activeSession ? (current.canvasAttachments[activeSession.appSessionId] ?? null) : null,

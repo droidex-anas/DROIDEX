@@ -381,6 +381,24 @@ test('transient transcript events accept only the literal true or an absent flag
   for (const canvasFrames of ['Pricing · Wide', [1], [null], {}]) {
     assertRejected({ type: 'event.appended', event: { ...event, canvasFrames } });
   }
+  // An artifact card opens the canvas and frame its activity names.
+  const canvasActivity = {
+    toolUseId: 'call-1',
+    action: 'create',
+    designIds: ['design-1'],
+    state: 'completed',
+    message: 'Created Hey',
+    canvasId: 'canvas-1',
+    title: 'Hey',
+    firstArtifact: true,
+  };
+  assertAccepted({ type: 'event.appended', event: { ...event, canvasActivity } });
+  for (const wrong of [{ canvasId: 1 }, { designIds: 'design-1' }, { firstArtifact: false }]) {
+    assertRejected({
+      type: 'event.appended',
+      event: { ...event, canvasActivity: { ...canvasActivity, ...wrong } },
+    });
+  }
 });
 
 test('droidproxy reports and outcomes accept known providers and phases only', () => {

@@ -1,0 +1,116 @@
+/* The artifact card a Canvas create or write leaves in the transcript. It is
+   imported by the lazy card, so it loads with the first card rather than on
+   every app start. A quiet tile like the generated-image card: tone and a soft
+   shadow on the sheet, no outlines. */
+
+.canvas-artifact {
+  display: flex;
+  width: 360px;
+  max-width: 100%;
+  flex-direction: column;
+  margin: 6px 0;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--droid-elevated);
+  font-family: var(--ui-font-family, system-ui, sans-serif);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.canvas-artifact:hover {
+  background: var(--droid-active);
+}
+
+.canvas-artifact:focus-visible {
+  outline: none;
+  background: var(--droid-active);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--droid-accent) 45%, transparent);
+}
+
+.canvas-artifact-sheet {
+  position: relative;
+  display: flex;
+  aspect-ratio: 16 / 10;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--droid-raised);
+  box-shadow: var(--droid-shadow-sm);
+}
+
+.canvas-artifact-sheet img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+
+.canvas-artifact-note {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--droid-text-muted);
+}
+
+.canvas-artifact-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 6px 2px;
+}
+
+.canvas-artifact-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.canvas-artifact-title,
+.canvas-artifact-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-artifact-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--droid-text);
+}
+
+.canvas-artifact-meta {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--droid-text-muted);
+}
+
+/* The stage label is the board's own (PendingBloom), set at the card's size. */
+.canvas-artifact-meta .canvas-sheet-title {
+  font: inherit;
+}
+
+.canvas-artifact-meta .canvas-sheet-title:not(.canvas-bloom-label) {
+  color: var(--droid-text-secondary);
+}
+
+.canvas-artifact-open {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--droid-text);
+  background: color-mix(in srgb, var(--droid-text) 7%, transparent);
+  transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.canvas-artifact:hover .canvas-artifact-open,
+.canvas-artifact:focus-visible .canvas-artifact-open {
+  background: color-mix(in srgb, var(--droid-text) 12%, transparent);
+}

@@ -237,6 +237,11 @@ export interface TranscriptEvent {
     designIds: string[];
     state: 'running' | 'completed' | 'failed';
     message: string;
+    // The canvas a create or write changed, and the first frame a create named.
+    canvasId?: string;
+    title?: string;
+    // This create gave an unattached chat its canvas: the chat's first artifact.
+    firstArtifact?: true;
   };
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already

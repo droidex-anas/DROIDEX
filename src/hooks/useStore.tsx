@@ -2146,7 +2146,8 @@ export function reducer(state: AppState, action: Action): AppState {
       );
       return {
         ...state,
-        rightPanelOpen: false,
+        // Context is one app-wide panel; a background chat's pane must not close it.
+        rightPanelOpen: appSessionId === state.activeAppSessionId ? false : state.rightPanelOpen,
         utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
         reviewOpenAppSessionId:
           action.tool === 'review' ? appSessionId : state.reviewOpenAppSessionId,
