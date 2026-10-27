@@ -19,11 +19,7 @@ export interface EditElementInput {
   mutationId: string;
   edit: {
     element: ElementRef;
-    change:
-      | { kind: 'text'; value: string }
-      | { kind: 'token'; property: string; token: string }
-      | StyleChange
-      | { kind: 'image'; assetId: string };
+    change: { kind: 'text'; value: string } | StyleChange | { kind: 'image'; assetId: string };
   };
 }
 

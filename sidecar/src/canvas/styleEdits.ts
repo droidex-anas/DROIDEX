@@ -60,6 +60,9 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   color: COLOUR,
   backgroundColor: COLOUR,
   borderColor: COLOUR,
+  // Shadows are kit-owned surface effects, so only the kit's tokens are offered.
+  boxShadow: { kind: 'colour', tokens: '--ds-shadow-', values: [] },
+  fontFamily: { kind: 'typography', tokens: '--ds-font-', values: [] },
   fontSize: { kind: 'typography', tokens: '--ds-text-', values: 'length' },
   fontWeight: { kind: 'typography', tokens: '--ds-weight-', values: 'weight' },
   lineHeight: { kind: 'typography', tokens: '--ds-leading-', values: 'line-height' },

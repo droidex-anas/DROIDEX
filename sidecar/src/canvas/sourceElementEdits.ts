@@ -13,10 +13,11 @@ import {
   sourceSites,
   type ElementNode,
 } from './sourceElements.js';
+import { STYLE_PROPERTIES } from './styleEdits.js';
 
 /** One edit as source sees it: a style edit arrives already resolved to the CSS it writes. */
 export type SourceChange =
-  | Extract<ElementEdit['change'], { kind: 'text' | 'token' | 'image' }>
+  | Extract<ElementEdit['change'], { kind: 'text' | 'image' }>
   | { kind: 'style'; property: string; value: string };
 
 export interface SourceEdit {
@@ -29,29 +30,6 @@ interface SourceReplacement {
   end: number;
   replacement: string;
 }
-const TOKEN_PROPERTIES = new Set([
-  'color',
-  'backgroundColor',
-  'borderColor',
-  'borderRadius',
-  'boxShadow',
-  'fontFamily',
-  'fontSize',
-  'fontWeight',
-  'lineHeight',
-  'letterSpacing',
-  'gap',
-  'padding',
-  'paddingTop',
-  'paddingRight',
-  'paddingBottom',
-  'paddingLeft',
-  'margin',
-  'marginTop',
-  'marginRight',
-  'marginBottom',
-  'marginLeft',
-]);
 
 /** Returns only changed paths, with their complete contents, for workspace.write. */
 export function applyElementEdit(
@@ -81,9 +59,6 @@ export function applyElementEdit(
   switch (edit.change.kind) {
     case 'text':
       changed = replaceText(node, source, edit.change.value);
-      break;
-    case 'token':
-      changed = replaceToken(opening, source, edit.change);
       break;
     case 'image':
       changed = replaceImage(opening, source, edit.change.assetId);
@@ -117,37 +92,6 @@ function replaceText(node: ElementNode, source: ts.SourceFile, value: string): S
   throw ambiguous();
 }
 
-function replaceToken(
-  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
-  source: ts.SourceFile,
-  change: Extract<ElementEdit['change'], { kind: 'token' }>,
-): SourceReplacement {
-  if (!TOKEN_PROPERTIES.has(change.property) || !/^--[a-z0-9]+(-[a-z0-9]+)*$/.test(change.token))
-    throw new SourceElementError(
-      'invalid_edit',
-      'Choose a supported style property and a design-system token.',
-    );
-  const style = attributeValue(attribute(opening, 'style'));
-  if (!style || !ts.isObjectLiteralExpression(style)) throw ambiguous();
-  const properties = style.properties.filter(
-    (property) => property.name && propertyName(property.name) === change.property,
-  );
-  const property = properties.at(0);
-  if (
-    properties.length !== 1 ||
-    !property ||
-    !ts.isPropertyAssignment(property) ||
-    !isLiteral(property.initializer) ||
-    !/^var\(--[a-z0-9]+(-[a-z0-9]+)*\)$/.test(property.initializer.text)
-  )
-    throw ambiguous();
-  return {
-    start: property.initializer.getStart(source),
-    end: property.initializer.end,
-    replacement: JSON.stringify(`var(${change.token})`),
-  };
-}
-
 /**
  * Sets one property in the element's literal style object: its value is
  * replaced where it is set, appended as the last entry where it is not, and a
@@ -160,6 +104,9 @@ function setStyle(
   property: string,
   value: string,
 ): SourceReplacement {
+  // The property becomes source text, so only a whitelisted name may reach it.
+  if (!Object.hasOwn(STYLE_PROPERTIES, property))
+    throw new SourceElementError('unsupported_edit', `${property} is not a style Canvas can edit.`);
   const entry = `${property}: ${JSON.stringify(value)}`;
   const styleAttribute = attribute(opening, 'style');
   if (!styleAttribute) {

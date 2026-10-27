@@ -28,6 +28,8 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleKind>> = {
   color: 'colour',
   backgroundColor: 'colour',
   borderColor: 'colour',
+  boxShadow: 'colour',
+  fontFamily: 'typography',
   fontSize: 'typography',
   fontWeight: 'typography',
   lineHeight: 'typography',

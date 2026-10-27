@@ -18,7 +18,7 @@ function onlyElement(files: SourceFiles) {
   return { ...mapped, element };
 }
 
-test('text, token and image edits return complete changed files without touching surrounding bytes', () => {
+test('text, style and image edits return complete changed files without touching surrounding bytes', () => {
   const cases: { markup: string; change: SourceChange; changed: string }[] = [
     {
       markup: '<h1></h1>',
@@ -42,7 +42,7 @@ test('text, token and image edits return complete changed files without touching
     },
     {
       markup: "<h1 style={{ color: 'var(--ds-text)' }}>Hello</h1>",
-      change: { kind: 'token', property: 'color', token: '--ds-accent' },
+      change: { kind: 'style', property: 'color', value: 'var(--ds-accent)' },
       changed: '<h1 style={{ color: "var(--ds-accent)" }}>Hello</h1>',
     },
     {
@@ -301,25 +301,24 @@ test('syntax diagnostics use canonical UTF-8 byte columns', () => {
   );
 });
 
-test('token and image edits cannot introduce arbitrary style expressions or image URLs', () => {
+test('image and style edits cannot introduce an arbitrary image URL or style property', () => {
   const files = {
     'main.tsx':
       'export default () => <img src="canvas-asset:old" style={{color:"var(--ds-text)"}} />',
   };
   const mapped = onlyElement(files);
-  for (const change of [
-    { kind: 'image', assetId: '../../private' },
-    { kind: 'token', property: 'backgroundImage', token: '--ds-accent' },
-    { kind: 'token', property: 'color', token: '--ds-accent);evil' },
-  ] satisfies SourceChange[]) {
+  for (const [change, code] of [
+    [{ kind: 'image', assetId: '../../private' }, 'invalid_edit'],
+    [{ kind: 'style', property: 'backgroundImage', value: 'url(x)' }, 'unsupported_edit'],
+    [{ kind: 'style', property: 'a}} onClick={evil} b={{c', value: '1' }, 'unsupported_edit'],
+  ] satisfies [SourceChange, string][]) {
     assert.throws(
       () =>
         applyElementEdit(files, mapped.elements, { element: reference(mapped.element), change }),
-      (error: unknown) => error instanceof SourceElementError && error.code === 'invalid_edit',
+      (error: unknown) => error instanceof SourceElementError && error.code === code,
     );
   }
 });
-
 test('instrumented lines and insertion edges map back to canonical source', () => {
   const source = 'export default function App(){\r\n  return <h1>Hi</h1>;\r\n}';
   const mapped = onlyElement({ 'main.tsx': source });

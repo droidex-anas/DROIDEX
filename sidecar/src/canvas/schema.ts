@@ -290,13 +290,6 @@ export const editElementInputSchema = z
           .strict(),
         change: z.discriminatedUnion('kind', [
           z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
-          z
-            .object({
-              kind: z.literal('token'),
-              property: z.string().min(1).max(64),
-              token: z.string().min(1).max(128),
-            })
-            .strict(),
           styleChangeSchema('spacing'),
           styleChangeSchema('size'),
           styleChangeSchema('colour'),

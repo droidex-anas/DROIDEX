@@ -28,8 +28,10 @@ test('a direct element edit commits a new revision and rejects untrusted targets
     });
   };
 
-  await edit('req-bad-token', { kind: 'token', property: 'color', token: '--not-a-kit-token' });
+  await edit('req-bad-token', { kind: 'colour', property: 'color', value: '--not-a-kit-token' });
   assert.equal(errorOf(canvas, 'req-bad-token').code, 'invalid_edit');
+  await edit('req-token-kind', { kind: 'token', property: 'color', token: '--ds-accent' });
+  assert.equal(errorOf(canvas, 'req-token-kind').code, 'invalid_input');
   await edit('req-image', { kind: 'image', assetId: 'not_owned' });
   assert.equal(errorOf(canvas, 'req-image').code, 'unsupported_edit');
   await edit(
@@ -46,7 +48,7 @@ test('a direct element edit commits a new revision and rejects untrusted targets
   assert.equal(errorOf(canvas, 'req-malformed').code, 'invalid_input');
   assert.equal((await canvas.workspace.readFiles(canvasId, element))['main.tsx'], EDITABLE);
 
-  await edit('req-edit-valid', { kind: 'token', property: 'color', token: '--ds-accent' });
+  await edit('req-edit-valid', { kind: 'colour', property: 'color', value: '--ds-accent' });
   const changed = okReply(canvas, 'req-edit-valid');
   assert.ok(changed.kind === 'edited');
   assert.deepEqual(changed.resolution, { kind: 'token', token: '--ds-accent' });

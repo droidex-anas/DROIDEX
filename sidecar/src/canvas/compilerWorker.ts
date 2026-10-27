@@ -236,15 +236,9 @@ async function sourceChange(
     case 'text':
     case 'image':
       return { change, resolution: null };
-    case 'token': {
-      const kit = await readDesignSystem(designSystem);
-      if (!hasKitToken(kit, designSystem.mode, change.token))
-        throw new SourceElementError('invalid_edit', 'Choose a token in this design’s pinned kit.');
-      return { change, resolution: { kind: 'token', token: change.token } };
-    }
     default: {
       const kit = await readDesignSystem(designSystem);
-      const resolution = resolveStyleChange(change, kit.modes[designSystem.mode]);
+      const resolution = resolveStyleChange(change, kitTokens(kit, designSystem.mode));
       return {
         change: { kind: 'style', property: change.property, value: styleValue(resolution) },
         resolution,
@@ -253,17 +247,16 @@ async function sourceChange(
   }
 }
 
-function hasKitToken(kit: DesignSystem, mode: DesignSystemRef['mode'], token: string): boolean {
-  if (Object.hasOwn(kit.modes[mode], token)) return true;
+/** The kit's tokens in one mode: those its CSS declares, overridden by the mode's own values. */
+function kitTokens(kit: DesignSystem, mode: DesignSystemRef['mode']): Record<string, string> {
+  const tokens: Record<string, string> = {};
   for (const [path, css] of Object.entries(kit.files)) {
     if (!path.endsWith('.css')) continue;
-    const tokens = new Set<string>();
     postcss.parse(css).walkDecls((declaration) => {
-      tokens.add(declaration.prop);
+      if (declaration.prop.startsWith('--')) tokens[declaration.prop] = declaration.value;
     });
-    if (tokens.has(token)) return true;
   }
-  return false;
+  return { ...tokens, ...kit.modes[mode] };
 }
 
 /** Releases the service process, flushes the acknowledgement, and exits. */

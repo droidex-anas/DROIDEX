@@ -27,6 +27,11 @@ test('each kind writes the kit token with that value, and the raw value only whe
     [{ kind: 'size', property: 'width', value: '320px' }, '320px'],
     [{ kind: 'colour', property: 'color', value: '#8A5A1F' }, 'var(--ds-accent)'],
     [{ kind: 'colour', property: 'borderColor', value: 'rgb(1 2 3)' }, 'rgb(1 2 3)'],
+    [{ kind: 'colour', property: 'boxShadow', value: '--ds-shadow-sm' }, 'var(--ds-shadow-sm)'],
+    [
+      { kind: 'typography', property: 'fontFamily', value: '--ds-font-mono' },
+      'var(--ds-font-mono)',
+    ],
     [{ kind: 'typography', property: 'fontSize', value: '1rem' }, 'var(--ds-text-base)'],
     [{ kind: 'typography', property: 'fontWeight', value: '600' }, '600'],
     [{ kind: 'layout', property: 'justifyContent', value: 'space-between' }, 'space-between'],
@@ -58,6 +63,7 @@ test('a token outside the property family and a value it cannot take are invalid
     { kind: 'colour', property: 'color', value: 'red;background:url(x)' },
     { kind: 'opacity', property: 'opacity', value: '1.5' },
     { kind: 'layout', property: 'justifyContent', value: 'left' },
+    { kind: 'typography', property: 'fontFamily', value: 'Comic Sans MS' },
   ] satisfies Change[]) {
     assert.equal(refusal(change).code, 'invalid_edit', `${change.property}: ${change.value}`);
   }

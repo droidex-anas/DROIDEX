@@ -90,7 +90,7 @@ test('direct edits compile through the worker and its map points to canonical so
     { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
     {
       source: '<h1 style={{color:"var(--ds-text)"}}>Hello</h1>',
-      change: { kind: 'token', property: 'color', token: '--ds-accent' },
+      change: { kind: 'style', property: 'color', value: 'var(--ds-accent)' },
       rendered: 'var(--ds-accent)',
     },
     {
