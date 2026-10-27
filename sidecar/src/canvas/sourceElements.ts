@@ -12,6 +12,7 @@ export class SourceElementError extends Error {
       | 'ambiguous_element'
       | 'invalid_source'
       | 'invalid_edit'
+      | 'unsupported_edit'
       | 'selection_limit',
     message: string,
     readonly file?: string,

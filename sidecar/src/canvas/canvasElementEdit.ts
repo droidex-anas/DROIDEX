@@ -4,8 +4,8 @@
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
-import { CompileCancelledError, CompilerWorker } from './compiler.js';
-import type { CanvasScope, EditElementInput, SourceFiles, WriteReceipt } from './protocol.js';
+import { CompileCancelledError, CompilerWorker, type EditedSource } from './compiler.js';
+import type { CanvasScope, EditElementInput, ElementEditResult } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 export async function editCanvasElement(
@@ -13,10 +13,9 @@ export async function editCanvasElement(
   builds: CanvasBuilds,
   scope: Extract<CanvasScope, { origin: 'user' }>,
   input: EditElementInput,
-): Promise<WriteReceipt> {
+): Promise<ElementEditResult> {
   // A successful edit advanced this revision, so its retry must be answered first.
-  const mutation = { kind: 'edit', input } as const;
-  const recorded = workspace.recordedSourceMutation(scope, input.edit.element.designId, mutation);
+  const recorded = workspace.recordedEdit(scope, input);
   if (recorded) return recorded;
   const { element, change } = input.edit;
   const target = workspace.buildTarget(scope.canvasId, element.designId);
@@ -33,16 +32,16 @@ export async function editCanvasElement(
       'unsupported_edit',
       'Image replacement is unavailable until Canvas assets can verify ownership.',
     );
-  const files = await workspace.readFiles(scope.canvasId, element);
+  const source = await workspace.readFiles(scope.canvasId, element);
   const worker = new CompilerWorker();
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort();
   }, CANVAS_LIMITS.buildDeadlineMs).unref();
-  let changed: SourceFiles;
+  let edited: EditedSource;
   try {
-    changed = await worker.edit(
-      files,
+    edited = await worker.edit(
+      source,
       build.elements,
       input.edit,
       frame.designSystem,
@@ -56,18 +55,22 @@ export async function editCanvasElement(
     clearTimeout(timer);
     await worker.terminate();
   }
+  const { files, resolution } = edited;
   try {
-    return await workspace.write(
+    // A concurrent duplicate resolved the same change against the same pinned
+    // kit version, so its resolution is the one the ledger recorded.
+    const receipt = await workspace.write(
       scope,
       {
         mutationId: input.mutationId,
         designId: element.designId,
         expectedRevisionId: element.revisionId,
-        files: changed,
+        files,
         deletedPaths: [],
       },
-      { mutation },
+      { mutation: { kind: 'edit', input, resolution } },
     );
+    return { receipt, resolution };
   } catch (error) {
     if (error instanceof CanvasCommandError && error.code === 'revision_conflict')
       throw canvasError(

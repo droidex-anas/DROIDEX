@@ -23,10 +23,16 @@ import { designEntryDiagnostic } from './designEntry.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
-import { applyElementEdit } from './sourceElementEdits.js';
+import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { instrumentSource, SourceElementError } from './sourceElements.js';
+import { resolveStyleChange, styleValue } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
-import type { CanvasDiagnostic, DesignSystemRef } from './protocol.js';
+import type {
+  CanvasDiagnostic,
+  DesignSystemRef,
+  ElementEdit,
+  StyleResolution,
+} from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
 
@@ -186,15 +192,11 @@ async function runEdit(
   const { requestId, files, elements, edit, designSystem } = request;
   try {
     stopIfCancelled(signal);
-    if (edit.change.kind === 'token') {
-      const kit = await readDesignSystem(designSystem);
-      stopIfCancelled(signal);
-      if (!hasKitToken(kit, designSystem.mode, edit.change.token))
-        throw new SourceElementError('invalid_edit', 'Choose a token in this design’s pinned kit.');
-    }
-    const changed = applyElementEdit(files, elements, edit);
+    const { change, resolution } = await sourceChange(edit.change, designSystem);
     stopIfCancelled(signal);
-    send({ requestId, status: 'edited', files: changed } satisfies CompilerResponse);
+    const changed = applyElementEdit(files, elements, { element: edit.element, change });
+    stopIfCancelled(signal);
+    send({ requestId, status: 'edited', files: changed, resolution } satisfies CompilerResponse);
   } catch (error) {
     if (error instanceof SourceElementError) {
       const code = error.code === 'selection_limit' ? 'stale_reference' : error.code;
@@ -221,6 +223,32 @@ async function runEdit(
         reason: 'lost-compiler',
         message: COMPILER_RECOVERY,
       } satisfies CompilerResponse);
+    }
+  }
+}
+
+/** Resolves a style edit against the pinned kit into the CSS value source receives. */
+async function sourceChange(
+  change: ElementEdit['change'],
+  designSystem: DesignSystemRef,
+): Promise<{ change: SourceChange; resolution: StyleResolution | null }> {
+  switch (change.kind) {
+    case 'text':
+    case 'image':
+      return { change, resolution: null };
+    case 'token': {
+      const kit = await readDesignSystem(designSystem);
+      if (!hasKitToken(kit, designSystem.mode, change.token))
+        throw new SourceElementError('invalid_edit', 'Choose a token in this design’s pinned kit.');
+      return { change, resolution: { kind: 'token', token: change.token } };
+    }
+    default: {
+      const kit = await readDesignSystem(designSystem);
+      const resolution = resolveStyleChange(change, kit.modes[designSystem.mode]);
+      return {
+        change: { kind: 'style', property: change.property, value: styleValue(resolution) },
+        resolution,
+      };
     }
   }
 }

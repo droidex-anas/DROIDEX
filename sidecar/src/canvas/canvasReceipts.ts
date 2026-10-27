@@ -9,6 +9,7 @@ import type {
   AnnotatedChange,
   CanvasChange,
   CreateFramesResult,
+  ElementEditResult,
   WriteReceipt,
 } from './protocol.js';
 
@@ -37,6 +38,18 @@ export function recordedRevision(
   if (record?.kind !== 'write' && record?.kind !== 'edit' && record?.kind !== 'restore')
     return null;
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
+}
+
+/** The original receipt for a direct edit, with what its style value resolved to. */
+export function recordedEdit(
+  manifest: CanvasManifest,
+  mutationId: string,
+  fingerprint: string,
+): ElementEditResult | null {
+  const record = findMutation(manifest, mutationId, 'edit', fingerprint);
+  if (record?.kind !== 'edit') return null;
+  const { designId, revisionId, sequence, resolution } = record;
+  return { receipt: { designId, revisionId, sequence }, resolution };
 }
 
 export function recordedArrange(

@@ -33,9 +33,8 @@ import {
   requireExpectedRevision,
   toFrame,
   type CanvasManifest,
-  type SourceRevisionMutation,
 } from './canvasManifest.js';
-import { recordedRevision } from './canvasReceipts.js';
+import { recordedEdit, recordedRevision } from './canvasReceipts.js';
 import type {
   ArrangeFramesInput,
   CanvasChange,
@@ -44,8 +43,11 @@ import type {
   CanvasSummary,
   CreateFramesInput,
   CreateFramesResult,
+  EditElementInput,
+  ElementEditResult,
   OutdatedCanvas,
   OwnedAsset,
+  RestoreRevisionInput,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -181,15 +183,16 @@ export class CanvasWorkspace {
     return this.creation.create(scope, input);
   }
 
-  recordedSourceMutation(
-    scope: CanvasScope,
-    designId: string,
-    mutation: SourceRevisionMutation,
-  ): WriteReceipt | null {
+  recordedEdit(scope: CanvasScope, input: EditElementInput): ElementEditResult | null {
     this.commits.requireOpen();
-    const manifest = this.leases.requireDesigns(scope, [designId]);
-    const fingerprint = mutationFingerprint(mutation.input);
-    return recordedRevision(manifest, mutation.input.mutationId, mutation.kind, fingerprint);
+    const manifest = this.leases.requireDesigns(scope, [input.edit.element.designId]);
+    return recordedEdit(manifest, input.mutationId, mutationFingerprint(input));
+  }
+
+  recordedRestore(scope: CanvasScope, input: RestoreRevisionInput): WriteReceipt | null {
+    this.commits.requireOpen();
+    const manifest = this.leases.requireDesigns(scope, [input.designId]);
+    return recordedRevision(manifest, input.mutationId, 'restore', mutationFingerprint(input));
   }
 
   // Edits and restores retain their original request fingerprint, not the derived file write.
@@ -230,15 +233,17 @@ export class CanvasWorkspace {
           sequence: next.sequence,
         };
         recordRevisions(next, scope, kind, [revision]);
+        const record = {
+          mutationId: input.mutationId,
+          scopeId: scope.scopeId,
+          fingerprint,
+          ...receipt,
+        };
         recordMutation(
           next,
-          {
-            kind,
-            mutationId: input.mutationId,
-            scopeId: scope.scopeId,
-            fingerprint,
-            ...receipt,
-          },
+          mutation?.kind === 'edit'
+            ? { kind: 'edit', ...record, resolution: mutation.resolution }
+            : { kind: mutation?.kind ?? 'write', ...record },
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, [input.designId]));

@@ -46,6 +46,7 @@ const REPLY_KINDS = new Set([
   'canvasCreated',
   'created',
   'written',
+  'edited',
   'arranged',
   'removed',
   'undone',
@@ -147,6 +148,11 @@ function isReply(value: unknown): boolean {
       );
     case 'written':
       return isReceipt(value.receipt);
+    case 'edited':
+      return (
+        isReceipt(value.receipt) &&
+        (value.resolution === null || isStyleResolution(value.resolution))
+      );
     case 'arranged':
     case 'undone':
     case 'renamed':
@@ -364,6 +370,12 @@ function isSummary(value: unknown): boolean {
 
 function isReceipt(value: unknown): boolean {
   return record(value) && id(value.designId) && id(value.revisionId) && count(value.sequence);
+}
+
+function isStyleResolution(value: unknown): boolean {
+  if (!record(value)) return false;
+  if (value.kind === 'token') return boundedText(value.token, 128);
+  return value.kind === 'raw' && boundedText(value.value, 128);
 }
 
 function isFrame(value: unknown): boolean {

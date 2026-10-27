@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { z } from 'zod';
 
 import type * as RendererAnnotations from '../../../src/features/canvas/annotationProtocol.js';
+import type * as RendererEdits from '../../../src/features/canvas/elementEditProtocol.js';
 import type * as Renderer from '../../../src/features/canvas/protocol.js';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
 import type {
@@ -104,7 +105,7 @@ type RendererWire = {
   designRef: Renderer.DesignRef;
   elementRef: Renderer.ElementRef;
   element: Renderer.SourceElement;
-  edit: Renderer.EditElementInput;
+  edit: RendererEdits.EditElementInput;
   revision: Renderer.RevisionSummary;
   diff: Renderer.RevisionDiff;
   page: Renderer.RevisionPage;
@@ -670,7 +671,7 @@ test('the mutation fixtures parse, and the parsed values fit the mirror', () => 
   const create: Renderer.CreateFramesInput = createFramesInputSchema.parse(wire.create);
   const write: Renderer.WriteFilesInput = writeFilesInputSchema.parse(wire.write);
   const arrange: Renderer.ArrangeFramesInput = arrangeFramesInputSchema.parse(wire.arrange);
-  const edit: Renderer.EditElementInput = editElementInputSchema.parse(wire.edit);
+  const edit: RendererEdits.EditElementInput = editElementInputSchema.parse(wire.edit);
   const remove: Renderer.RemoveFramesInput = removeFramesInputSchema.parse(wire.remove);
   const undo: Renderer.UndoRemovalInput = undoRemovalInputSchema.parse(wire.undo);
   const rename: Renderer.RenameFrameInput = renameFrameInputSchema.parse(wire.rename);

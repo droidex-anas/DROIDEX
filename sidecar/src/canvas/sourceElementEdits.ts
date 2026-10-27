@@ -2,7 +2,7 @@
 // canonical source range an element is, and an edit replaces exactly one range.
 
 import ts from 'typescript';
-import type { ElementEdit, SourceElement, SourceFiles } from './protocol.js';
+import type { ElementEdit, ElementRef, SourceElement, SourceFiles } from './protocol.js';
 import {
   ambiguous,
   attribute,
@@ -13,6 +13,16 @@ import {
   sourceSites,
   type ElementNode,
 } from './sourceElements.js';
+
+/** One edit as source sees it: a style edit arrives already resolved to the CSS it writes. */
+export type SourceChange =
+  | Extract<ElementEdit['change'], { kind: 'text' | 'token' | 'image' }>
+  | { kind: 'style'; property: string; value: string };
+
+export interface SourceEdit {
+  element: ElementRef;
+  change: SourceChange;
+}
 
 interface SourceReplacement {
   start: number;
@@ -47,7 +57,7 @@ const TOKEN_PROPERTIES = new Set([
 export function applyElementEdit(
   files: SourceFiles,
   elements: SourceElement[],
-  edit: ElementEdit,
+  edit: SourceEdit,
 ): SourceFiles {
   const selected = elements.filter((element) => element.elementId === edit.element.elementId);
   if (selected.length !== 1) throw staleReference();
@@ -77,6 +87,9 @@ export function applyElementEdit(
       break;
     case 'image':
       changed = replaceImage(opening, source, edit.change.assetId);
+      break;
+    case 'style':
+      changed = setStyle(opening, source, edit.change.property, edit.change.value);
       break;
   }
   const { start, end, replacement } = changed;
@@ -133,6 +146,42 @@ function replaceToken(
     end: property.initializer.end,
     replacement: JSON.stringify(`var(${change.token})`),
   };
+}
+
+/**
+ * Sets one property in the element's literal style object: its value is
+ * replaced where it is set, appended as the last entry where it is not, and a
+ * style attribute is added last when the element has none. Inline style is
+ * what the board previews, so the edit writes exactly what the user saw.
+ */
+function setStyle(
+  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  source: ts.SourceFile,
+  property: string,
+  value: string,
+): SourceReplacement {
+  const entry = `${property}: ${JSON.stringify(value)}`;
+  const styleAttribute = attribute(opening, 'style');
+  if (!styleAttribute) {
+    const end = opening.attributes.end;
+    return { start: end, end, replacement: ` style={{ ${entry} }}` };
+  }
+  const style = attributeValue(styleAttribute);
+  if (!style || !ts.isObjectLiteralExpression(style)) throw ambiguous();
+  const existing = style.properties.find(
+    (candidate) => candidate.name && propertyName(candidate.name) === property,
+  );
+  if (existing) {
+    if (!ts.isPropertyAssignment(existing)) throw ambiguous();
+    return {
+      start: existing.initializer.getStart(source),
+      end: existing.initializer.end,
+      replacement: JSON.stringify(value),
+    };
+  }
+  const last = style.properties.at(-1);
+  if (!last) return { start: style.getStart(source), end: style.end, replacement: `{ ${entry} }` };
+  return { start: last.end, end: last.end, replacement: `, ${entry}` };
 }
 
 function replaceImage(
