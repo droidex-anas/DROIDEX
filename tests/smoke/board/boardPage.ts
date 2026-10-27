@@ -82,7 +82,7 @@ export async function stubGuests(page: Page) {
         if (tag !== 'webview') return guest;
         let identity = {};
         let sent = false;
-        const answers: unknown[] = [];
+        const answers: { event: 'selection'; element: unknown }[] = [];
         Object.assign(guest, {
           getWebContentsId: () => 41,
           executeJavaScript: async (script: string) => {

@@ -14,6 +14,7 @@ import {
   PREVIEW_STARTED,
   previewNonce,
   previewStartScript,
+  readPreviewSnapshot,
   type PreviewInstance,
 } from '../../src/features/canvas/previewDocument';
 import {
