@@ -63,12 +63,29 @@ test('a committed preview sends its property as the kind the whitelist names', (
   }
 });
 
+test('a value is sent the way the grammar reads it: lowercase, and a zero length in px', () => {
+  for (const [property, value, sent] of [
+    ['backgroundColor', '  #FFF ', '#fff'],
+    ['paddingTop', '0.5REM', '0.5rem'],
+    ['gap', '0', '0px'],
+    ['fontSize', '0', '0px'],
+    ['opacity', '0', '0'],
+    ['lineHeight', '0', '0'],
+  ]) {
+    assert.equal(committed(property, value, 'm').input.edit.change.value, sent, property);
+  }
+});
+
 test('every refusal drops the draft, and a reply for another mutation changes nothing', () => {
   const { draft } = committed('gap', '4px', 'm-gap');
-  assert.equal(settleCommit(draft, 'm-other', 'refused'), draft);
-  assert.equal(settleCommit(draft, 'm-gap', 'refused'), null);
-  const edited = settleCommit(draft, 'm-gap', 'edited');
-  assert.deepEqual(edited, { ...draft, pendingMutationId: null });
+  assert.equal(settleCommit(draft, 'm-other', { status: 'refused' }), draft);
+  assert.equal(settleCommit(draft, 'm-gap', { status: 'refused' }), null);
+  // The edit's own revision has not built yet: nothing can be committed against the old one.
+  assert.equal(settleCommit(draft, 'm-gap', { status: 'edited', revisionId: 'r2' }), draft);
+  assert.deepEqual(settleCommit(draft, 'm-gap', { status: 'edited', revisionId: 'r1' }), {
+    ...draft,
+    pendingMutationId: null,
+  });
 });
 
 test('one commit at a time, and only for a previewed whitelisted property', () => {

@@ -58,21 +58,48 @@ export function commitStyle(
   const kind = styleKind(property);
   if (draft.pendingMutationId !== null || kind === null || !Object.hasOwn(draft.values, property))
     return null;
-  const change: StyleChange = { kind, property, value: draft.values[property] };
+  const change: StyleChange = {
+    kind,
+    property,
+    value: canonicalValue(property, draft.values[property]),
+  };
   return {
     draft: { ...draft, pendingMutationId: mutationId },
     input: { mutationId, edit: { element: draft.element, change } },
   };
 }
 
-/** Settles the pending commit; a reply for any other mutation changes nothing. */
+/**
+ * The value as the sidecar's grammar reads it: lowercase, single-spaced, and a
+ * bare zero length as `0px`, which is what a kit's zero token holds.
+ */
+function canonicalValue(property: string, value: string): string {
+  const canonical = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return canonical === '0' && isLength(property) ? '0px' : canonical;
+}
+
+function isLength(property: string): boolean {
+  const kind = styleKind(property);
+  return (
+    kind === 'spacing' || kind === 'size' || property === 'fontSize' || property === 'letterSpacing'
+  );
+}
+
+/**
+ * Settles the pending commit; a reply for any other mutation changes nothing.
+ * An edit that made a new revision stays pending until `followRevision` moves
+ * the draft onto it, so nothing is committed against the revision it replaced.
+ */
 export function settleCommit(
   draft: ElementEditDraft | null,
   mutationId: string,
-  outcome: 'edited' | 'refused',
+  outcome: { status: 'edited'; revisionId: string } | { status: 'refused' },
 ): ElementEditDraft | null {
   if (draft?.pendingMutationId !== mutationId) return draft;
-  return outcome === 'edited' ? { ...draft, pendingMutationId: null } : null;
+  if (outcome.status === 'refused') return null;
+  return outcome.revisionId === draft.element.revisionId
+    ? { ...draft, pendingMutationId: null }
+    : draft;
 }
 
 /**
