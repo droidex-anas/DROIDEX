@@ -183,7 +183,7 @@ function LibraryThumbnail({ itemId }: { itemId: string }) {
     };
   }, [itemId]);
   return (
-    <span className="flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-droid-raised text-[10px] text-droid-text-muted shadow-droid-sm">
+    <span className="flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-droid-elevated text-[10px] text-droid-text-muted shadow-droid-sm">
       {png ? (
         <img
           src={`data:image/png;base64,${png}`}
