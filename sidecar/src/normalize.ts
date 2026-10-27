@@ -612,10 +612,12 @@ export function confirmationType(params: RequestPermissionRequestParams): string
 // "Always allow" even when the underlying agent does not persist the grant.
 // An empty string means the request is not eligible for always-allow caching,
 // as no bundle is: a grant keyed by one of its tools would let a later bundle
-// carry other tools through under it.
+// carry other tools through under it. Nor is a call from a Droid script: the
+// daemon reads "always" for a script as allowing every command of its impact.
 export function permissionSignature(params: RequestPermissionRequestParams): string {
   if (params.toolUses.length > 1) return '';
   const c = primaryConfirmation(params);
+  if (c.inScript === true) return '';
   const type = typeof c.type === 'string' ? c.type : 'other';
   switch (type) {
     case 'exec': {

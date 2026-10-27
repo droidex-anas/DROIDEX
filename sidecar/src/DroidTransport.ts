@@ -32,25 +32,73 @@ export function normalizeDroidTransportMessage(
     return message;
 
   const params = message.params;
-  if (!isRecord(params) || !Array.isArray(params.options)) return message;
+  if (!isRecord(params)) return message;
 
-  let changed = false;
-  const options = params.options.map((option: unknown) => {
-    if (!isRecord(option)) return option;
-    const normalized = normalizePermissionOption(option.value);
-    if (normalized === option.value) return option;
-    changed = true;
-    return { ...option, value: normalized };
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- TS can't see the mutation inside the .map() closure above.
-  if (!changed) return message;
-  return { ...message, params: { ...params, options } };
+  const toolUses = expandScriptToolUses(params.toolUses);
+  const options = normalizePermissionOptions(params.options);
+  if (toolUses === params.toolUses && options === params.options) return message;
+  return { ...message, params: { ...params, toolUses, options } };
 }
 
-function normalizePermissionOption(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  return PERMISSION_OPTION_ALIASES[value] ?? value;
+function normalizePermissionOptions(options: unknown): unknown {
+  if (!Array.isArray(options)) return options;
+  const normalized = options.map((option: unknown) => {
+    if (!isRecord(option) || typeof option.value !== 'string') return option;
+    const value = PERMISSION_OPTION_ALIASES[option.value];
+    return value ? { ...option, value } : option;
+  });
+  return normalized.some((option, index) => option !== options[index]) ? normalized : options;
+}
+
+// Droid CLI 0.119 runs tool calls inside its Script tool and asks once for the
+// whole script (`details.type === 'script'`), a shape the installed SDK rejects
+// before any handler runs. Each script becomes its calls' own confirmations, as
+// the CLI's own prompt lists them, so the one answer is decided by the existing
+// bundle rules. Remove once the SDK's RequestPermission schema accepts `script`.
+function expandScriptToolUses(toolUses: unknown): unknown {
+  if (!Array.isArray(toolUses) || !toolUses.some(isScriptToolUse)) return toolUses;
+  const expanded: unknown[] = [];
+  for (const toolUse of toolUses) {
+    if (!isScriptToolUse(toolUse)) {
+      expanded.push(toolUse);
+      continue;
+    }
+    const calls = scriptCalls(toolUse);
+    // Left as is, the SDK refuses the request, so an unreadable script is
+    // never approved on behalf of calls nobody could see.
+    if (!calls) return toolUses;
+    expanded.push(...calls);
+  }
+  return expanded;
+}
+
+type ScriptToolUse = Record<string, unknown> & { details: Record<string, unknown> };
+
+function isScriptToolUse(toolUse: unknown): toolUse is ScriptToolUse {
+  return isRecord(toolUse) && isRecord(toolUse.details) && toolUse.details.type === 'script';
+}
+
+function scriptCalls({ toolUse, details }: ScriptToolUse): Record<string, unknown>[] | null {
+  if (!isRecord(toolUse) || typeof toolUse.id !== 'string') return null;
+  if (!Array.isArray(details.calls) || details.calls.length === 0) return null;
+  const calls: Record<string, unknown>[] = [];
+  for (const [index, call] of details.calls.entries()) {
+    if (!isRecord(call) || typeof call.toolName !== 'string' || !isRecord(call.toolInput))
+      return null;
+    const confirmation = call.confirmation;
+    if (!isRecord(confirmation) || typeof confirmation.type !== 'string') return null;
+    calls.push({
+      toolUse: {
+        type: 'tool_use',
+        id: `${toolUse.id}:${String(index)}`,
+        name: call.toolName,
+        input: call.toolInput,
+      },
+      confirmationType: confirmation.type,
+      details: { ...confirmation, inScript: true },
+    });
+  }
+  return calls;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
