@@ -7,6 +7,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { PresenceContext } from 'framer-motion';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CanvasBoard } from './CanvasBoard';
@@ -51,32 +52,34 @@ function annotated(snapshot: CanvasSnapshot, annotations: Annotation[]): CanvasS
   return { ...snapshot, annotationsVersion: annotations.length, annotations };
 }
 
-function render(
+function board(
   snapshot: CanvasSnapshot,
   interaction: BoardInteraction = SELECT_MODE,
   agentWorking = false,
   pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onToggleChat'> = {},
-): string {
-  return renderToStaticMarkup(
-    createElement(CanvasBoard, {
-      ...pins,
-      snapshot,
-      interaction,
-      agentWorking,
-      frameActions: FRAME_ACTIONS,
-      onInteractionChange: () => undefined,
-      onArrangeFrames: () => Promise.resolve(),
-      onAnnotate: () => Promise.resolve(),
-      renderPreview: (frame, revisionId) =>
-        createElement(DesignPreview, {
-          canvasId: snapshot.canvasId,
-          frame,
-          revisionId,
-          readArtifact: () => Promise.resolve(null),
-          reportPreview: () => undefined,
-        }),
-    }),
-  );
+) {
+  return createElement(CanvasBoard, {
+    ...pins,
+    snapshot,
+    interaction,
+    agentWorking,
+    frameActions: FRAME_ACTIONS,
+    onInteractionChange: () => undefined,
+    onArrangeFrames: () => Promise.resolve(),
+    onAnnotate: () => Promise.resolve(),
+    renderPreview: (frame, revisionId) =>
+      createElement(DesignPreview, {
+        canvasId: snapshot.canvasId,
+        frame,
+        revisionId,
+        readArtifact: () => Promise.resolve(null),
+        reportPreview: () => undefined,
+      }),
+  });
+}
+
+function render(...args: Parameters<typeof board>): string {
+  return renderToStaticMarkup(board(...args));
 }
 
 test('with no drag of its own the board draws each frame at its acknowledged rect', () => {
@@ -195,6 +198,37 @@ test('a frame with no live preview says only what is true of it', () => {
   assert.match(failed, /main\.tsx · line 3/);
   assert.match(failed, /Unexpected token/);
   assert.equal(failed.includes('data-preview-phase'), false);
+});
+
+test('a board leaving with its pane mounts no live preview', () => {
+  // Spec §4: closing the pane releases the previews. A board that kept handing
+  // out slots as the pane shrank would start a guest for frame after frame.
+  const built = snapshotOf(
+    withBuild(frame('dsg_hey', ACKNOWLEDGED), {
+      status: 'ready',
+      revisionId: 'rev_01',
+      artifactId: 'a'.repeat(64),
+      elements: [],
+      diagnostics: [],
+    }),
+  );
+  const interacting: BoardInteraction = {
+    mode: 'interact',
+    selectedFrameIds: ['dsg_hey'],
+    interactedFrameId: 'dsg_hey',
+  };
+  const inPane = (isPresent: boolean) =>
+    renderToStaticMarkup(
+      createElement(
+        PresenceContext.Provider,
+        { value: { id: 'utility-pane', isPresent, register: () => () => undefined } },
+        board(built, interacting),
+      ),
+    );
+
+  // The preview's own first paint, which only a frame holding a slot reaches.
+  assert.match(inPane(true), /Loading this preview/);
+  assert.equal(inPane(false).includes('Loading this preview'), false);
 });
 
 test('a selected frame offers Add to chat only on its chat’s own canvas, and says when it is in', () => {

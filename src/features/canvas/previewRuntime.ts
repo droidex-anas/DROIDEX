@@ -2,11 +2,14 @@
 // main carries out when this board decides the guest is lost (spec §6).
 //
 // Exactly one poll is in flight per guest and the cadence between polls is
-// bounded, so a design cannot make the board busy by producing events. Every
+// bounded, so a design cannot make the board busy by producing events. A hidden
+// window polls no ready guest, so a board nobody can see does no work. Every
 // answer is revalidated against the instance this run started, and a run that
 // has been stopped reports nothing: a stale guest's result can never reach the
-// replacement that took its place.
+// replacement that took its place. A stopped run gives up on its calls in
+// flight, so a guest destroyed mid-call cannot keep the run or its element alive.
 
+import { isDocumentVisible, subscribeVisibilityChange } from '../../hooks/useDocumentVisible';
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
@@ -63,6 +66,13 @@ export interface PreviewClock {
   schedule(task: () => void, delayMs: number): () => void;
 }
 
+/** Whether the board can be seen, injected for the same reason as the clock. */
+export interface PreviewVisibility {
+  isHidden(): boolean;
+  /** Runs `resume` once the board is shown again; the returned call cancels it. */
+  whenShown(resume: () => void): () => void;
+}
+
 /** Why a guest stopped being this board's preview. */
 export type PreviewLostReason = 'poll_timeout' | 'not_ready' | 'guest_gone';
 
@@ -92,6 +102,7 @@ export interface PreviewRunOptions {
   /** Ends one guest through main, which owns the guests it attached. */
   terminate: (guestId: number) => Promise<unknown>;
   clock?: PreviewClock;
+  visibility?: PreviewVisibility;
 }
 
 /**
@@ -114,6 +125,18 @@ const realPreviewClock: PreviewClock = {
   },
 };
 
+const documentVisibility: PreviewVisibility = {
+  isHidden: () => !isDocumentVisible(),
+  whenShown(resume) {
+    const release = subscribeVisibilityChange(() => {
+      if (!isDocumentVisible()) return;
+      release();
+      resume();
+    });
+    return release;
+  },
+};
+
 /**
  * Starts one preview on an already attached guest. The caller owns the element
  * and removes it when this run is over; that releases the guest's processes on
@@ -128,9 +151,11 @@ export function startPreview(options: PreviewRunOptions): PreviewRun {
 class GuestRun implements PreviewRun {
   private readonly instance: PreviewInstance;
   private readonly clock: PreviewClock;
+  private readonly visibility: PreviewVisibility;
   private readonly guestId: number | null;
   private stopped = false;
   private started = false;
+  private ready = false;
   private polling = false;
   /** The sequence number of the latest selection command, whose answer alone is reported. */
   private latestCommand = 0;
@@ -138,6 +163,7 @@ class GuestRun implements PreviewRun {
   private releasePollDeadline: (() => void) | null = null;
   private releaseNextPoll: (() => void) | null = null;
   private releaseGoneEvents: (() => void) | null = null;
+  private readonly abandonCalls = new Set<() => void>();
 
   constructor(private readonly options: PreviewRunOptions) {
     this.instance = {
@@ -147,6 +173,7 @@ class GuestRun implements PreviewRun {
       generation: options.generation,
     };
     this.clock = options.clock ?? realPreviewClock;
+    this.visibility = options.visibility ?? documentVisibility;
     this.guestId = guestIdOf(options.guest);
   }
 
@@ -209,6 +236,8 @@ class GuestRun implements PreviewRun {
     this.releaseReadyDeadline = null;
     this.releasePollDeadline = null;
     this.releaseNextPoll = null;
+    for (const abandon of this.abandonCalls) abandon();
+    this.abandonCalls.clear();
   }
 
   private async start(): Promise<void> {
@@ -253,14 +282,31 @@ class GuestRun implements PreviewRun {
     if (this.stopped) return;
     this.releaseNextPoll = this.clock.schedule(() => {
       this.releaseNextPoll = null;
-      this.poll();
+      this.pollWhenShown();
     }, PREVIEW_POLL_INTERVAL_MS);
+  }
+
+  /**
+   * A hidden board waits to poll a ready guest until it is shown, and then polls
+   * at once. A guest still starting keeps being polled, or its ready deadline
+   * would end a design that is only waiting for the window to come back.
+   */
+  private pollWhenShown(): void {
+    if (!this.ready || !this.visibility.isHidden()) {
+      this.poll();
+      return;
+    }
+    this.releaseNextPoll = this.visibility.whenShown(() => {
+      this.releaseNextPoll = null;
+      this.poll();
+    });
   }
 
   private report(event: PreviewEvent): void {
     if (this.stopped) return;
     switch (event.event) {
       case 'ready':
+        this.ready = true;
         this.releaseReadyDeadline?.();
         this.releaseReadyDeadline = null;
         this.options.observer.onReady();
@@ -283,12 +329,17 @@ class GuestRun implements PreviewRun {
   }
 
   /** One guest call. A rejection is a guest this board can no longer reach. */
-  private async ask(code: string): Promise<unknown> {
+  private ask(code: string): Promise<unknown> {
+    let call: Promise<unknown>;
     try {
-      return await this.options.guest.executeJavaScript(code);
+      call = this.options.guest.executeJavaScript(code);
     } catch {
-      return null;
+      return Promise.resolve(null);
     }
+    const { answer, abandon } = abandonable(call);
+    this.abandonCalls.add(abandon);
+    void answer.then(() => this.abandonCalls.delete(abandon));
+    return answer;
   }
 
   /**
@@ -306,6 +357,31 @@ class GuestRun implements PreviewRun {
     }
     this.options.observer.onLost(reason);
   }
+}
+
+/**
+ * A guest call that can be given up on, answering `null` when it is. Electron
+ * never settles a call whose guest was destroyed mid-call, so the handlers left
+ * on it reach nothing once the call is abandoned.
+ */
+function abandonable(call: Promise<unknown>): { answer: Promise<unknown>; abandon: () => void } {
+  let settle: ((answer: unknown) => void) | null = null;
+  const answer = new Promise<unknown>((resolve) => {
+    settle = resolve;
+  });
+  const finish = (value: unknown) => {
+    settle?.(value);
+    settle = null;
+  };
+  call.then(finish, () => {
+    finish(null);
+  });
+  return {
+    answer,
+    abandon: () => {
+      finish(null);
+    },
+  };
 }
 
 /** A guest that is not attached yet has no ID, and nothing can be run on it. */
