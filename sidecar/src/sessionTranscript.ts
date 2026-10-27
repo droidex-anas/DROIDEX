@@ -101,14 +101,12 @@ export function parseFullSessionTranscript(
   for (const raw of window.text.split(/\r?\n/)) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
-    let stored: StoredMessageLine | StoredSessionStart;
     try {
-      stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
+      const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
+      events.push(...parseSessionLineEvents(appSessionId, providerSessionId, role, stored));
     } catch {
       /* skip partial/corrupt JSONL rows */
-      continue;
     }
-    events.push(...parseSessionLineEvents(appSessionId, providerSessionId, role, stored));
   }
   const notices = readSessionNotices(appSessionId, providerSessionId, role);
   // Corrections append to JSONL; replay exposes only the latest text per row
@@ -305,12 +303,12 @@ export class SessionTranscriptReader {
         const messageIndex = candidate.textUpdate ? messageIndexes.get(candidate.id) : undefined;
         if (candidate.textUpdate) {
           const anchor = parsed?.anchors.get(`${candidate.kind}:${candidate.textUpdate.messageId}`);
-          if (anchor === undefined)
-            throw new Error('Missing native message anchor in saved transcript. Start a new chat.');
-          const firstSeq = this.parseLine(file, anchor).messageSeqs.get(candidate.id);
-          if (firstSeq === undefined)
-            throw new Error('Invalid native message start in saved transcript. Start a new chat.');
-          earliestMessageSeq = Math.min(earliestMessageSeq, firstSeq);
+          // A start row lost to corruption leaves the message beginning here.
+          const firstSeq =
+            anchor === undefined
+              ? undefined
+              : this.parseLine(file, anchor).messageSeqs.get(candidate.id);
+          earliestMessageSeq = Math.min(earliestMessageSeq, firstSeq ?? candidate.seq ?? 0);
         }
         if (!candidate.spoken || !seenSpoken.has(candidate.id)) {
           if (messageIndex !== undefined)
@@ -346,7 +344,7 @@ export class SessionTranscriptReader {
     const start = this.lineStarts[index];
     const end = index + 1 < this.lineStarts.length ? this.lineStarts[index + 1] : this.sizeBytes;
     let events: TranscriptEvent[] = [];
-    let stored: StoredMessageLine | StoredSessionStart | undefined;
+    let anchors = new Map<string, number>();
     if (end > start) {
       file.fd ??= openSync(this.path, 'r');
       const buffer = Buffer.alloc(end - start);
@@ -354,21 +352,21 @@ export class SessionTranscriptReader {
       const raw = buffer.toString('utf8').trim();
       if (raw) {
         try {
-          stored = JSON.parse(raw) as StoredMessageLine | StoredSessionStart;
+          const stored = JSON.parse(raw) as StoredMessageLine | StoredSessionStart;
+          const lineEvents = parseSessionLineEvents(
+            this.appSessionId,
+            this.providerSessionId,
+            this.role,
+            stored,
+            { fullText: this.fullText },
+          );
+          anchors = storedMessageAnchors(stored, index);
+          events = lineEvents;
         } catch {
           /* skip partial/corrupt JSONL rows */
         }
       }
     }
-    const anchors = stored ? storedMessageAnchors(stored, index) : new Map<string, number>();
-    if (stored)
-      events = parseSessionLineEvents(
-        this.appSessionId,
-        this.providerSessionId,
-        this.role,
-        stored,
-        { fullText: this.fullText },
-      );
     const base = (index + 1) * LINE_EVENT_STRIDE;
     const messageSeqs = new Map<string, number>();
     events.forEach((e, i) => {

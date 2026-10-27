@@ -186,6 +186,28 @@ function BrowserPageFrame({
     if (!shown && webview && document.activeElement === webview) webview.blur();
   }, [shown]);
 
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!working || !webview) return;
+    // An agent's click focuses the page and takes the keyboard from the user;
+    // hand it back. The page fires no focus event here, only the user's element
+    // blurring and then a window blur that leaves the page active.
+    let previous: HTMLElement | null = null;
+    const remember = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement && event.target !== webview) previous = event.target;
+    };
+    const returnFocus = () => {
+      if (document.activeElement === webview && previous?.isConnected)
+        previous.focus({ preventScroll: true });
+    };
+    document.addEventListener('focusout', remember, true);
+    window.addEventListener('blur', returnFocus);
+    return () => {
+      document.removeEventListener('focusout', remember, true);
+      window.removeEventListener('blur', returnFocus);
+    };
+  }, [working]);
+
   return (
     <div style={frameStyle(placement, anchor, radius)} aria-hidden={!shown}>
       <webview

@@ -83,8 +83,8 @@ export interface NativeBrowserAgentPoint {
 /** One frame of a page's live picture-in-picture preview. */
 export interface NativeBrowserFrame {
   browserSessionId: string;
-  /** A JPEG, base64. */
-  image: string;
+  /** JPEG bytes. */
+  image: Uint8Array<ArrayBuffer>;
   /** The page's own size in CSS pixels. */
   width: number;
   height: number;

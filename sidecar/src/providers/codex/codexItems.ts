@@ -10,6 +10,13 @@ import { generatedImage, type GeneratedImage } from './codexImages.js';
 // The tool name the transcript renders as an image card. Shared with the
 // renderer by convention, the way every other tool row is matched by name.
 const IMAGE_TOOL_NAME = 'image_generation';
+// The tool name the preview follows as computer use. Codex names the bundled
+// plugin's calls only by the server it happens to run, so the plugin is the key.
+const COMPUTER_USE_TOOL_NAME = 'computer_use';
+const COMPUTER_USE_PLUGIN_PREFIX = 'unified-computer-use@';
+// A code-mode call to that plugin reports only its server namespace.
+const COMPUTER_USE_NAMESPACE = 'mcp__cua_repl';
+
 export interface FileUpdateChange {
   path: string;
   kind: { type: string; move_path?: string | null };
@@ -37,6 +44,7 @@ export type ThreadItem =
       tool: string;
       status: string;
       arguments: unknown;
+      pluginId?: string | null;
       result: { content: unknown[] } | null;
       error: { message: string } | null;
     }
@@ -211,12 +219,14 @@ export interface ToolCall {
 }
 
 // Tool names follow the conventions the transcript already classifies by:
-// a shell name for commands, an edit name for patches, and Claude's `mcp__`
-// prefix for an MCP tool.
+// a shell name for commands, an edit name for patches, one name for computer
+// use, and Claude's `mcp__` prefix for any other MCP tool.
 export function toolCall(item: ThreadItem): ToolCall | undefined {
   if (item.type === 'functionCallOutput') {
     let name = item.name;
-    if (item.namespace?.startsWith('mcp__')) {
+    if (item.namespace === COMPUTER_USE_NAMESPACE && item.name === 'js')
+      name = COMPUTER_USE_TOOL_NAME;
+    else if (item.namespace?.startsWith('mcp__')) {
       const server = item.namespace.slice('mcp__'.length);
       name = `mcp__${server.replaceAll('_', '-')}__${item.name}`;
     } else if (item.namespace) name = `${item.namespace}.${item.name}`;
@@ -267,7 +277,10 @@ function describeCall(item: ThreadItem): Omit<ToolCall, 'interrupted'> | undefin
   if (item.type === 'mcpToolCall')
     return {
       id: item.id,
-      name: `mcp__${item.server}__${item.tool}`,
+      name:
+        typeof item.pluginId === 'string' && item.pluginId.startsWith(COMPUTER_USE_PLUGIN_PREFIX)
+          ? COMPUTER_USE_TOOL_NAME
+          : `mcp__${item.server}__${item.tool}`,
       detail: item.tool,
       args: item.arguments,
       // Codex reports a tool that answered with an error as completed, so the

@@ -45,10 +45,14 @@ test('debugger operations are serialized and reuse one attachment', async () => 
   });
 
   await firstStarted;
-  assert.deepEqual(contents.calls, [['attach', '1.3'], ['first-start']]);
+  const attach = [
+    ['attach', '1.3'],
+    ['sendCommand', 'Emulation.setFocusEmulationEnabled', { enabled: true }],
+  ];
+  assert.deepEqual(contents.calls, [...attach, ['first-start']]);
   releaseFirst();
   await Promise.all([first, second]);
-  assert.deepEqual(contents.calls, [['attach', '1.3'], ['first-start'], ['first-end'], ['second']]);
+  assert.deepEqual(contents.calls, [...attach, ['first-start'], ['first-end'], ['second']]);
 });
 
 test('destroyed web contents skip debugger operations', async () => {

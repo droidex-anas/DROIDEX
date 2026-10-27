@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { useBrowserHost } from '../../lib/browserHost';
@@ -12,9 +12,26 @@ import {
   type PreviewSource,
 } from './ComputerUsePreviewWindow';
 import { ImageLightbox } from '../media/ImageLightbox';
-import { computerUseActivity } from './computerUseActivity';
+import { computerUseActivity, type ComputerUseActivity } from './computerUseActivity';
 
 const NO_EVENTS: TranscriptEvent[] = [];
+
+// The selector runs on every store update; rescan only when the transcript changes.
+const activityByTranscript = new WeakMap<
+  TranscriptEvent[],
+  { childSessionId: string | null; activity: ComputerUseActivity | null }
+>();
+
+function transcriptActivity(
+  events: TranscriptEvent[],
+  childSessionId: string | null,
+): ComputerUseActivity | null {
+  const memo = activityByTranscript.get(events);
+  if (memo?.childSessionId === childSessionId) return memo.activity;
+  const activity = computerUseActivity(events, childSessionId);
+  activityByTranscript.set(events, { childSessionId, activity });
+  return activity;
+}
 
 /** One preview for the focused conversation, kept across steps until its turn settles. */
 export function ComputerUsePictureInPicture({ hidden }: { hidden: boolean }) {
@@ -41,36 +58,36 @@ export function ComputerUsePictureInPicture({ hidden }: { hidden: boolean }) {
       state.childAccess,
     );
     const childSessionId = target.kind === 'child' ? target.childSessionId : null;
+    const live =
+      target.kind === 'child'
+        ? target.child.status === 'running' && !target.child.queued
+        : session !== undefined && sessionIsLive(session);
+    const activity =
+      session && live && !hidden
+        ? transcriptActivity(state.transcripts[session.appSessionId] ?? NO_EVENTS, childSessionId)
+        : null;
     return {
       appSessionId: session?.appSessionId,
       childSessionId,
-      events: session ? (state.transcripts[session.appSessionId] ?? NO_EVENTS) : NO_EVENTS,
-      live:
-        target.kind === 'child'
-          ? target.child.status === 'running' && !target.child.queued
-          : session !== undefined && sessionIsLive(session),
+      activityKind: activity?.kind ?? null,
+      computerImage: activity?.kind === 'computer' ? activity.image : undefined,
       browser: session ? state.browsers[session.appSessionId] : undefined,
     };
   }, shallowEqual);
-  const activity = useMemo(
-    () => computerUseActivity(current.events, current.childSessionId),
-    [current.events, current.childSessionId],
-  );
   const browserHost = useBrowserHost();
   let source: PreviewSource | null = null;
-  if (!hidden && current.live && activity) {
-    if (activity.kind === 'computer') {
-      source = { kind: 'computer', image: activity.image, title: 'Computer use' };
-    } else if (
-      current.browser &&
-      browserHost.slot?.browserSessionId !== current.browser.browserSessionId
-    ) {
-      source = {
-        kind: 'browser',
-        browserSessionId: current.browser.browserSessionId,
-        title: current.browser.title?.length ? current.browser.title : 'Browser',
-      };
-    }
+  if (current.activityKind === 'computer') {
+    source = { kind: 'computer', image: current.computerImage, title: 'Computer use' };
+  } else if (
+    current.activityKind === 'browser' &&
+    current.browser &&
+    browserHost.slot?.browserSessionId !== current.browser.browserSessionId
+  ) {
+    source = {
+      kind: 'browser',
+      browserSessionId: current.browser.browserSessionId,
+      title: current.browser.title?.length ? current.browser.title : 'Browser',
+    };
   }
 
   return (

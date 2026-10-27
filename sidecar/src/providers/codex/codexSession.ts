@@ -677,11 +677,9 @@ export class CodexSession implements ProviderSession {
 
   restoreChildren(children: readonly ProviderChildSession[]): void {
     if (this.hasClosed) return;
-    if (children.some((child) => child.providerSessionId === this.threadId))
-      throw new Error(
-        'Codex child history lists the parent thread as an agent. Start a new chat to continue.',
-      );
-    this.childThreads.restore(this.client, children, (events) => {
+    // The parent thread is never its own agent; skip such a record instead of failing the resume.
+    const agents = children.filter((child) => child.providerSessionId !== this.threadId);
+    this.childThreads.restore(this.client, agents, (events) => {
       this.deliver(events);
     });
   }

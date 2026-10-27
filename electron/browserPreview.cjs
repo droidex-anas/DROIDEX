@@ -1,14 +1,14 @@
-// A small live picture of a page for picture in picture: a CDP
-// screencast, small and slow by design, that runs only while the app's renderer
-// says a preview is watching the page.
+// A small live picture of a page for picture in picture: a CDP screencast
+// that runs only while the app's renderer says a preview is watching the page.
 
-const MAX_WIDTH = 480;
-const MAX_HEIGHT = 960;
-const JPEG_QUALITY = 50;
-// At most four frames and 150 KB a second reach the renderer, counted as the
-// base64 text it is sent as. A still page sends its one frame at once.
-const FRAME_MS = 250;
-const BYTES_PER_SECOND = 150_000;
+// Sharp at twice the preview window's 320 CSS pixels.
+const MAX_WIDTH = 640;
+const MAX_HEIGHT = 800;
+const JPEG_QUALITY = 60;
+// At most fifteen frames and 1.5 MB of JPEG a second reach the renderer.
+// A still page sends its one frame at once.
+const FRAME_MS = 66;
+const BYTES_PER_SECOND = 1_500_000;
 
 function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, sendToRenderer }) {
   const watched = new Set(); // browser sessions a preview is watching
@@ -56,11 +56,12 @@ function createBrowserPreview({ liveContentsOf, runWithWebContentsDebugger, send
     const show = () => {
       timer = null;
       if (contents.isDestroyed()) return;
-      const bytes = latest.data.length;
-      due = Date.now() + Math.max(FRAME_MS, (bytes / BYTES_PER_SECOND) * 1000);
+      // Sent as bytes: the renderer decodes them off its main thread.
+      const image = Buffer.from(latest.data, 'base64');
+      due = Date.now() + Math.max(FRAME_MS, (image.length / BYTES_PER_SECOND) * 1000);
       sendToRenderer('native-browser-frame', {
         browserSessionId,
-        image: latest.data,
+        image,
         // The page's own size in CSS pixels, to place the cursor on the picture.
         width: latest.metadata.deviceWidth,
         height: latest.metadata.deviceHeight,

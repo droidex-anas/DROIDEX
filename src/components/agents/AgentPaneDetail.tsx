@@ -111,7 +111,8 @@ export function AgentPaneDetail({
               </Button>
             </div>
           ) : null}
-          {history?.status === 'failed' ? (
+          {/* Once messages show, a failed load keeps them; the next change or click retries. */}
+          {events.length === 0 && history?.status === 'failed' ? (
             <div role="alert" className="mb-3 flex flex-col items-start gap-2">
               <p className="text-body text-secondary">
                 Couldn&apos;t load this agent&apos;s conversation.

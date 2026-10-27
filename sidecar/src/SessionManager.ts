@@ -648,6 +648,9 @@ export class SessionManager {
       onFilesReconciled: (changes) => {
         this.childHistoryWatch.filesReconciled(changes);
       },
+      onSessionFileWrite: (providerSessionId) => {
+        this.childHistoryWatch.fileWritten(providerSessionId);
+      },
       listSummaries: (listOptions) => this.registry.listSummaries(listOptions),
       emitList: ({ sessions, earlierSessionsByCwd }) => {
         this.emit({ type: 'sessions.list', sessions, earlierSessionsByCwd });

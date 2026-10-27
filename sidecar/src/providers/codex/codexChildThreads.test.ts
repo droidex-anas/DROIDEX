@@ -13,18 +13,16 @@ test('root agent activity keeps parent output in its own transcript without hidi
   const session = codexSession(client, 'app-parent');
   t.after(() => session.close());
   await session.open();
-  assert.throws(
-    () =>
-      session.restoreChildren([
-        {
-          providerSessionId: 'parent-thread',
-          role: 'worker',
-          status: 'running',
-          modelId: 'model',
-          transcriptAvailable: true,
-        },
-      ]),
-    /parent thread.*Start a new chat/,
+  assert.doesNotThrow(() =>
+    session.restoreChildren([
+      {
+        providerSessionId: 'parent-thread',
+        role: 'worker',
+        status: 'running',
+        modelId: 'model',
+        transcriptAvailable: true,
+      },
+    ]),
   );
   const events: NormalizedEvent[] = [];
   session.onBackgroundEvent((event) => events.push(event));

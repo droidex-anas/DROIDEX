@@ -15,7 +15,7 @@ function event(id: string, extra: Partial<TranscriptEvent> = {}): TranscriptEven
   };
 }
 
-function call(id: string, toolName = 'mcp__cua_repl__js'): TranscriptEvent {
+function call(id: string, toolName = 'computer_use'): TranscriptEvent {
   return event(id, { kind: 'tool_call', toolUseId: id, toolName });
 }
 
@@ -112,8 +112,8 @@ test('the latest relevant call selects the surface and retains the computer fram
 
 test('direct and forwarded CUA calls are recognized without treating arbitrary executor images as screenshots', () => {
   const cases: { name: string; args?: unknown; isComputer: boolean }[] = [
-    { name: 'mcp__cua-repl__js', isComputer: true },
-    { name: 'mcp__cua_repl__js_reset', isComputer: false },
+    { name: 'computer_use', isComputer: true },
+    { name: 'mcp__cua_repl__js', isComputer: false },
     {
       name: 'functions.exec',
       args: 'const result = await tools.mcp__cua_repl__js({code: "await tab.cua.click({x:1,y:2})"});',
@@ -153,9 +153,9 @@ test('direct and forwarded CUA calls are recognized without treating arbitrary e
 test('a named CUA function output starts the preview with its screenshot without a separate call row', () => {
   const events = [
     event('prompt', { author: 'user' }),
-    result('cua-output', '/screen.png', { toolName: 'mcp__cua-repl__js' }),
+    result('cua-output', '/screen.png', { toolName: 'computer_use' }),
     result('unrelated-executor', '/file.png', { toolName: 'mcp__functions__exec' }),
-    result('failed-cua', '/failed.png', { toolName: 'mcp__cua-repl__js', isError: true }),
+    result('failed-cua', '/failed.png', { toolName: 'computer_use', isError: true }),
   ];
   assert.deepEqual(computerUseActivity(events), {
     kind: 'computer',

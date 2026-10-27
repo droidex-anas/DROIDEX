@@ -5,6 +5,9 @@ import type { SessionFileChange } from './sessionFileCache.js';
 
 type WatchCommand = Extract<ClientCommand, { type: 'child.watchHistory' }>;
 
+// One write burst (FSEvents reports several events per append) becomes one read.
+const WRITE_SETTLE_MS = 100;
+
 interface Selection {
   owner: object;
   requestId: string;
@@ -13,6 +16,7 @@ interface Selection {
   limit?: number;
   dirty: boolean;
   reading: boolean;
+  writeTimer?: NodeJS.Timeout;
 }
 
 interface Dependencies {
@@ -21,125 +25,158 @@ interface Dependencies {
   reportError(identity: ChildIdentity, error: unknown): void;
 }
 
+function unboundSelection(selection: Selection): Selection {
+  return {
+    owner: selection.owner,
+    requestId: selection.requestId,
+    identity: selection.identity,
+    ...(selection.limit === undefined ? {} : { limit: selection.limit }),
+    dirty: true,
+    reading: false,
+  };
+}
+
 // Droid's autonomous Task process writes its own transcript. The selected pane
 // observes that file; opening another SDK process would not subscribe to it.
+// Each connection owns one selection, so two windows can watch different agents.
 export class ChildHistoryWatch {
-  private selected?: Selection;
+  private readonly selections = new Map<object, Selection>();
 
   constructor(private readonly dependencies: Dependencies) {}
 
   set(owner: object, command: WatchCommand): void {
     if (!command.target) {
-      if (this.selected?.owner === owner && this.selected.requestId === command.requestId)
-        this.selected = undefined;
+      if (this.selections.get(owner)?.requestId === command.requestId) this.remove(owner);
       return;
     }
     const { parentAppSessionId, childSessionId, limit } = command.target;
-    const identity = { parentAppSessionId, childSessionId };
-    const selected = {
+    const selection: Selection = {
       owner,
       requestId: command.requestId,
-      identity,
+      identity: { parentAppSessionId, childSessionId },
       ...(limit === undefined ? {} : { limit }),
       dirty: true,
       reading: false,
     };
-    this.selected = selected;
-    this.bindSource(selected);
+    this.replace(selection);
+    this.bindSource(selection);
   }
 
   clearOwner(owner: object): void {
-    if (this.selected?.owner === owner) this.selected = undefined;
+    this.remove(owner);
   }
 
   clearParent(parentAppSessionId: string): void {
-    if (this.selected?.identity.parentAppSessionId === parentAppSessionId)
-      this.selected = undefined;
+    for (const selection of this.selectionsOf(parentAppSessionId)) this.remove(selection.owner);
   }
 
   // Retirement and restarts close the runtime under an open pane, which never
   // re-sends its watch; the reopened parent rebinds the kept selection.
   parentClosing(parentAppSessionId: string): void {
-    const selected = this.selected;
-    if (selected?.identity.parentAppSessionId !== parentAppSessionId) return;
-    this.selected = {
-      owner: selected.owner,
-      requestId: selected.requestId,
-      identity: selected.identity,
-      ...(selected.limit === undefined ? {} : { limit: selected.limit }),
-      dirty: true,
-      reading: false,
-    };
+    for (const selection of this.selectionsOf(parentAppSessionId))
+      this.replace(unboundSelection(selection));
   }
 
   close(): void {
-    this.selected = undefined;
+    for (const owner of [...this.selections.keys()]) this.remove(owner);
   }
 
   parentAttached(parentAppSessionId: string): void {
-    const selected = this.selected;
-    if (selected?.identity.parentAppSessionId !== parentAppSessionId) return;
-    if (!selected.source) this.bindSource(selected);
-    else if (!selected.source.isCurrent()) this.selected = undefined;
+    for (const selection of this.selectionsOf(parentAppSessionId)) {
+      if (!selection.source) this.bindSource(selection);
+      else if (!selection.source.isCurrent()) this.remove(selection.owner);
+    }
   }
 
   filesReconciled(changes: readonly SessionFileChange[] | null): void {
-    const selected = this.selected;
-    if (!selected) return;
-    const source = selected.source;
-    if (!source) {
-      this.bindSource(selected);
-      return;
+    for (const selection of [...this.selections.values()]) {
+      const source = selection.source;
+      if (!source) {
+        this.bindSource(selection);
+        continue;
+      }
+      if (!source.isCurrent()) {
+        this.remove(selection.owner);
+        continue;
+      }
+      if (
+        changes &&
+        !changes.some(({ providerSessionId }) => source.containsProvider(providerSessionId))
+      )
+        continue;
+      selection.dirty = true;
+      this.read(selection);
     }
-    if (!source.isCurrent()) {
-      this.selected = undefined;
-      return;
-    }
-    if (
-      changes &&
-      !changes.some(({ providerSessionId }) => source.containsProvider(providerSessionId))
-    )
-      return;
-    selected.dirty = true;
-    this.read(selected);
   }
 
-  private isCurrent(selected: Selection): boolean {
-    return this.selected === selected && selected.source?.isCurrent() === true;
+  // The list reconcile batches writes for over a second; an open pane reads its
+  // own agent's file as soon as a write settles.
+  fileWritten(providerSessionId: string): void {
+    for (const selection of this.selections.values()) {
+      if (selection.writeTimer || !selection.source?.containsProvider(providerSessionId)) continue;
+      selection.writeTimer = setTimeout(() => {
+        selection.writeTimer = undefined;
+        if (!this.isCurrent(selection)) return;
+        selection.dirty = true;
+        this.read(selection);
+      }, WRITE_SETTLE_MS);
+    }
   }
 
-  private bindSource(selected: Selection): void {
-    const source = this.dependencies.fileHistorySource(selected.identity, selected.limit);
-    if (!source || this.selected !== selected) return;
-    const bound = { ...selected, source, dirty: true, reading: false };
-    this.selected = bound;
+  private replace(selection: Selection): void {
+    clearTimeout(this.selections.get(selection.owner)?.writeTimer);
+    this.selections.set(selection.owner, selection);
+  }
+
+  private remove(owner: object): void {
+    clearTimeout(this.selections.get(owner)?.writeTimer);
+    this.selections.delete(owner);
+  }
+
+  private selectionsOf(parentAppSessionId: string): Selection[] {
+    return [...this.selections.values()].filter(
+      (selection) => selection.identity.parentAppSessionId === parentAppSessionId,
+    );
+  }
+
+  private isCurrent(selection: Selection): boolean {
+    return (
+      this.selections.get(selection.owner) === selection && selection.source?.isCurrent() === true
+    );
+  }
+
+  private bindSource(selection: Selection): void {
+    const source = this.dependencies.fileHistorySource(selection.identity, selection.limit);
+    if (!source || this.selections.get(selection.owner) !== selection) return;
+    const bound = { ...selection, source, dirty: true, reading: false };
+    this.replace(bound);
     this.read(bound);
   }
 
-  private read(selected: Selection): void {
-    if (selected.reading) return;
-    selected.reading = true;
-    void this.refresh(selected).finally(() => {
-      selected.reading = false;
-      if (selected.dirty && this.isCurrent(selected)) this.read(selected);
+  private read(selection: Selection): void {
+    if (selection.reading) return;
+    selection.reading = true;
+    void this.refresh(selection).finally(() => {
+      selection.reading = false;
+      if (selection.dirty && this.isCurrent(selection)) this.read(selection);
     });
   }
 
-  private async refresh(selected: Selection): Promise<void> {
-    const source = selected.source;
+  private async refresh(selection: Selection): Promise<void> {
+    const source = selection.source;
     if (!source) return;
     try {
-      while (selected.dirty && this.isCurrent(selected)) {
+      while (selection.dirty && this.isCurrent(selection)) {
         await this.dependencies.whenHistoryReady();
-        if (!this.isCurrent(selected)) return;
+        if (!this.isCurrent(selection)) return;
         // Changes received while waiting for the path index are included by
         // this read. Only changes during the read require another pass.
-        selected.dirty = false;
-        await source.refresh(() => this.isCurrent(selected));
+        selection.dirty = false;
+        await source.refresh(() => this.isCurrent(selection));
       }
     } catch (error) {
-      selected.dirty = false;
-      if (this.isCurrent(selected)) this.dependencies.reportError(selected.identity, error);
+      selection.dirty = false;
+      if (this.isCurrent(selection)) this.dependencies.reportError(selection.identity, error);
     }
   }
 }

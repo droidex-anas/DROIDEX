@@ -57,7 +57,12 @@ test('preview watchers share capture and release all frame listeners when stoppe
       },
     },
   };
-  const frame = { browserSessionId: 'preview-page', image: 'jpeg', width: 1280, height: 800 };
+  const frame = {
+    browserSessionId: 'preview-page',
+    image: new Uint8Array(),
+    width: 1280,
+    height: 800,
+  };
   try {
     const stopFirst = watchNativeBrowser(frame.browserSessionId, () => received.push('first'));
     const stopSecond = watchNativeBrowser(frame.browserSessionId, () => received.push('second'));

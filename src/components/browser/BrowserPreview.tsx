@@ -6,10 +6,16 @@ import { watchNativeBrowser, type NativeBrowserFrame } from '../../lib/nativeBro
 import { BrowserAgentCursor } from './BrowserAgentCursor';
 import design from './browserAgentCursorDesign.json';
 
+interface PageSize {
+  width: number;
+  height: number;
+}
+
 /** A read-only live picture; the native page keeps its viewport and ownership. */
 export function BrowserPreview({ browserSessionId }: { browserSessionId: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
-  const [frame, setFrame] = useState<NativeBrowserFrame | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [frame, setFrame] = useState<PageSize | null>(null);
   const [width, setWidth] = useState(0);
   const visible = useDocumentVisible();
   const host = useBrowserHost();
@@ -30,7 +36,37 @@ export function BrowserPreview({ browserSessionId }: { browserSessionId: string 
 
   useEffect(() => {
     if (!visible) return;
-    return watchNativeBrowser(browserSessionId, setFrame);
+    // Frames decode off the main thread and draw in arrival order; a frame
+    // whose decode finishes after a newer one has drawn is dropped.
+    let latest = 0;
+    let drawn = 0;
+    let stopped = false;
+    const draw = async (next: NativeBrowserFrame) => {
+      const order = ++latest;
+      const bitmap = await createImageBitmap(new Blob([next.image], { type: 'image/jpeg' }));
+      const canvas = canvasRef.current;
+      if (stopped || order < drawn || !canvas) {
+        bitmap.close();
+        return;
+      }
+      drawn = order;
+      if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
+      if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      setFrame((size) =>
+        size?.width === next.width && size.height === next.height
+          ? size
+          : { width: next.width, height: next.height },
+      );
+    };
+    const stop = watchNativeBrowser(browserSessionId, (next) => {
+      draw(next).catch(() => undefined);
+    });
+    return () => {
+      stopped = true;
+      stop();
+    };
   }, [browserSessionId, visible]);
 
   // The page is fitted whole inside the box, so a phone's tall page stands
@@ -52,14 +88,12 @@ export function BrowserPreview({ browserSessionId }: { browserSessionId: string 
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         style={frame ? { width: frame.width * fit, height: frame.height * fit } : undefined}
       >
-        {shown && (
-          <img
-            src={`data:image/jpeg;base64,${frame.image}`}
-            alt="Agent's browser"
-            draggable={false}
-            className="block h-full w-full select-none"
-          />
-        )}
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Agent's browser"
+          className={`h-full w-full select-none ${shown ? 'block' : 'hidden'}`}
+        />
         <BrowserAgentCursor
           browserSessionId={browserSessionId}
           scale={fit}

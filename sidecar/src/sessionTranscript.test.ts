@@ -146,12 +146,25 @@ test("a page boundary may split one line's events across pages", () => {
 });
 
 test('corrupt lines are skipped without losing their neighbors', () => {
-  const path = writeSession([assistant('a1'), '{not json', assistant('a2')]);
-  const all = collectAll(path, 10);
-  assert.deepEqual(
-    all.map((e) => e.text),
-    ['a1', 'a2'],
-  );
+  const badIdentity = JSON.stringify({
+    type: 'message',
+    id: 'bad-identity',
+    timestamp: new Date(clock).toISOString(),
+    message: {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'lost', textUpdate: { kind: 'delta' }, messageStartLine: 1 }],
+    },
+  });
+  const path = writeSession([assistant('a1'), '{not json', badIdentity, assistant('a2')]);
+  for (const events of [
+    collectAll(path, 10),
+    parseFullSessionTranscript('app', 'provider', path, 'primary'),
+  ]) {
+    assert.deepEqual(
+      events.map((e) => e.text),
+      ['a1', 'a2'],
+    );
+  }
 });
 
 test('eager and paged replay hide internal user messages, show Droid notices as status, and restore skill activations', () => {

@@ -16,7 +16,13 @@ function runWithWebContentsDebugger(contents, operation) {
     if (contents.isDestroyed()) return undefined;
     const dbg = contents.debugger;
     if (!dbg) throw new Error('Chromium debugger is unavailable.');
-    if (!dbg.isAttached()) dbg.attach('1.3');
+    if (!dbg.isAttached()) {
+      dbg.attach('1.3');
+      // The app hands the keyboard back to the user after an agent's click
+      // focuses the page; the page still behaves as focused, so menus and
+      // fields it opened do not close on that blur.
+      await dbg.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+    }
     return operation(dbg, () => !released);
   });
   let timer;

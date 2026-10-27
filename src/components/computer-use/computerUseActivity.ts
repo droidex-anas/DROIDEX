@@ -3,15 +3,16 @@ import { transcriptEventIsVisible } from '../../lib/childSessions';
 import type { TranscriptEvent } from '../../types/bridge';
 import { startsTurn } from '../chatFeed';
 
-type ComputerUseActivity = { kind: 'browser' } | { kind: 'computer'; image?: string };
+export type ComputerUseActivity = { kind: 'browser' } | { kind: 'computer'; image?: string };
 
-const CUA_TOOL = /^mcp__cua[-_]repl__js$/;
+// The name the provider adapters give a computer-use call.
+const COMPUTER_USE_TOOL = 'computer_use';
 const EXEC_TOOL = /^(?:functions\.exec|mcp__functions__exec)$/;
 const FORWARDED_CUA = /\btools\.mcp__cua[-_]repl__js\s*\(/;
 const CUA_API = /\bcua\.(?:getApp|getBrowser|getTab|createBrowserTab|getState)\s*\(/;
 
 function isComputerCall(event: TranscriptEvent): boolean {
-  if (CUA_TOOL.test(event.toolName ?? '')) return true;
+  if (event.toolName === COMPUTER_USE_TOOL) return true;
   if (!EXEC_TOOL.test(event.toolName ?? '')) return false;
   const args = event.toolArgs;
   let code = '';
@@ -23,7 +24,7 @@ function isComputerCall(event: TranscriptEvent): boolean {
 
 function activityKind(event: TranscriptEvent): 'browser' | 'computer' | null {
   if (event.interrupted || event.isError) return null;
-  if (event.kind === 'tool_result') return CUA_TOOL.test(event.toolName ?? '') ? 'computer' : null;
+  if (event.kind === 'tool_result') return event.toolName === COMPUTER_USE_TOOL ? 'computer' : null;
   if (event.kind !== 'tool_call') return null;
   if (browserToolOf(event.toolName)) return 'browser';
   return isComputerCall(event) ? 'computer' : null;

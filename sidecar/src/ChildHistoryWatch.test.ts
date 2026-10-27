@@ -109,6 +109,42 @@ test('socket ownership and request identity prevent old disconnects and same-tar
   assert.equal(h.emitted.length, 2);
 });
 
+test('each connection keeps its own selection', async () => {
+  const h = createHarness();
+  const other = { parentAppSessionId: 'parent', childSessionId: 'other-child' };
+  const firstWindow = {};
+  h.select(firstWindow, 'first');
+  h.select({}, 'second', other);
+  await settle();
+  assert.deepEqual(h.emitted, [identity, other]);
+
+  h.watch.clearOwner(firstWindow);
+  h.watch.filesReconciled([change('provider-child')]);
+  await settle();
+  assert.deepEqual(h.emitted, [identity, other, other]);
+});
+
+test('a burst of writes to the watched file is read once it settles, without the list reconcile', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = createHarness();
+  const owner = {};
+  h.select(owner, 'writes');
+  await settle();
+  assert.equal(h.state.reads, 1);
+
+  h.watch.fileWritten('sibling');
+  for (let index = 0; index < 3; index += 1) h.watch.fileWritten('provider-child');
+  t.mock.timers.tick(100);
+  await settle();
+  assert.equal(h.state.reads, 2);
+
+  h.watch.fileWritten('provider-child');
+  h.watch.clearOwner(owner);
+  t.mock.timers.tick(100);
+  await settle();
+  assert.equal(h.state.reads, 2, 'a closed pane drops its pending read');
+});
+
 test('parent close and source replacement invalidate pending reads before their awaits finish', async () => {
   const h = createHarness();
   const reading = gate();

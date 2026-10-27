@@ -62,7 +62,7 @@ test('Codex function outputs retain their tool identity and screenshot without i
   assert.equal(output?.kind, 'tool_result');
   assert.equal(output?.appSessionId, 'app-1');
   assert.equal(output?.toolUseId, 'computer-output');
-  assert.equal(output?.toolName, 'mcp__cua-repl__js');
+  assert.equal(output?.toolName, 'computer_use');
   assert.equal(output?.text, 'Screenshot of the viewport.');
   assert.match(output?.images?.[0] ?? '', /tool-[0-9a-f]{32}\.jpg$/);
   assert.equal(output?.isError, false);
@@ -83,6 +83,31 @@ test('Codex function outputs retain their tool identity and screenshot without i
     }),
     [],
   );
+});
+
+test('a Codex computer-use plugin call is named computer use, whatever server runs it', () => {
+  const mapper = new CodexEventMapper('app-1');
+  const call = (id: string, server: string, pluginId: string | null) =>
+    mapper.map('item/started', {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      item: {
+        type: 'mcpToolCall',
+        id,
+        server,
+        tool: 'js',
+        status: 'inProgress',
+        arguments: { code: 'await cua.getState();' },
+        pluginId,
+        result: null,
+        error: null,
+      },
+    })[0]?.transcript?.toolName;
+  assert.equal(
+    call('computer', 'renamed_repl', 'unified-computer-use@openai-bundled'),
+    'computer_use',
+  );
+  assert.equal(call('other', 'cua_repl', null), 'mcp__cua_repl__js');
 });
 
 // The servers start before the session's first turn, so the row has to survive
