@@ -10,6 +10,7 @@ export default defineConfig({
     'electronCanvasRecovery.smoke.spec.ts',
     'electronCanvasBoard.smoke.spec.ts',
     'electronCanvasBoardEdit.smoke.spec.ts',
+    'electronCanvasBoardDelete.smoke.spec.ts',
   ],
   timeout: 120_000,
   workers: 1,
