@@ -1,6 +1,6 @@
 // The style properties a direct edit may set and the kind each is sent as,
 // mirrored from STYLE_PROPERTIES in sidecar/src/canvas/styleEdits.ts, which
-// owns their values; sidecar/src/canvas/schema.test.ts fails when they drift.
+// owns their values; sidecar/src/canvas/styleEdits.test.ts fails when they drift.
 
 import type { StyleKind } from './elementEditProtocol';
 
