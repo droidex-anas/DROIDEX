@@ -14,6 +14,7 @@ import {
 import { Palette } from 'lucide-react';
 import { Check, Search, X } from '@droidex/icons';
 import { Popover } from '../../components/environment/Popover';
+import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import {
@@ -81,11 +82,17 @@ export function DesignSystemControl({
   const manage = useManageDesignSystems();
   const [list, setList] = useState<KitList>({ status: 'loading' });
   const [reads, setReads] = useState(0);
+  const isConnected = useStoreSelector((state) => state.connection === 'connected');
   const shown = shownKit(pins, value, list.status === 'listed' ? list.systems : null);
+  // A deleted kit stays chosen until the user picks or removes it; its requests
+  // reach the agent as unavailable rather than quietly running under another.
+  const isUnavailable =
+    list.status === 'listed' && !list.systems.some((kit) => sameKit(kit, shown.ref));
 
-  // Read on mount, to name a pinned frame's kit, and on every open, so a kit
-  // saved in Manage design systems shows next time.
+  // Read once connected, to name a pinned frame's kit and notice a deleted one,
+  // and on every open, so a kit saved in Manage design systems shows next time.
   useEffect(() => {
+    if (!isConnected) return;
     let active = true;
     canvasClient.designSystems.list().then(
       (systems) => {
@@ -98,7 +105,7 @@ export function DesignSystemControl({
     return () => {
       active = false;
     };
-  }, [reads]);
+  }, [reads, isConnected]);
 
   return (
     <div
@@ -109,8 +116,12 @@ export function DesignSystemControl({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Design system: ${shown.name}. Change it`}
-        title="Design system for this canvas's requests"
+        aria-label={`Design system: ${shown.name}${isUnavailable ? ', unavailable' : ''}. Change it`}
+        title={
+          isUnavailable
+            ? `${shown.name} is no longer saved. Pick another design system.`
+            : "Design system for this canvas's requests"
+        }
         onClick={() => {
           if (!open) setReads((count) => count + 1);
           setOpen(!open);
@@ -119,6 +130,7 @@ export function DesignSystemControl({
       >
         <Palette aria-hidden className="h-3.5 w-3.5 shrink-0" />
         <span className="max-w-[160px] truncate">{shown.name}</span>
+        {isUnavailable && <span className="shrink-0 text-droid-orange">· unavailable</span>}
       </button>
       {value && (
         <button
