@@ -226,7 +226,6 @@ export function CanvasBoard({
     frames,
     order,
     interaction,
-    markSelected: annotation.layer.selectedId !== null,
     dispatch,
     focusLabel,
     onRemoveFrames,

@@ -12,7 +12,6 @@ export function useFrameRemoval({
   frames,
   order,
   interaction,
-  markSelected,
   dispatch,
   focusLabel,
   onRemoveFrames,
@@ -23,8 +22,6 @@ export function useFrameRemoval({
   /** The frames in reading order, which picks the neighbour. */
   order: readonly string[];
   interaction: BoardInteraction;
-  /** A selected mark takes Delete for itself. */
-  markSelected: boolean;
   dispatch: (event: BoardInteractionEvent) => void;
   focusLabel: (designId: string) => void;
   onRemoveFrames: (frames: CanvasFrame[]) => Promise<boolean>;
@@ -42,7 +39,8 @@ export function useFrameRemoval({
 
   return () => {
     const { mode, selectedFrameIds } = interaction;
-    if (mode !== 'select' || markSelected) return false;
+    // A selected mark never sits beside selected frames; it takes Delete itself.
+    if (mode !== 'select') return false;
     const removing = frames.filter((frame) => selectedFrameIds.includes(frame.designId));
     if (removing.length === 0) return false;
     const removedIds = removing.map((frame) => frame.designId);
