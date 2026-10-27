@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  RequestPermissionRequestSchema,
   ToolConfirmationOutcome,
   ToolConfirmationType,
   type AskUserRequestParams,
   type RequestPermissionRequestParams,
 } from '@factory/droid-sdk';
+
+import { normalizeDroidTransportMessage } from './DroidTransport.js';
 
 import { claudeCanUseTool } from './providers/claude/claudePermissions.js';
 import type { ServerEvent } from './protocol.js';
@@ -592,6 +595,62 @@ test('a Droid bundle led by a Canvas tool still asks for the whole request', asy
   assert.equal(approvalRequests(harness.emitted).length, 1);
 });
 
+function droidScriptPermission(calls: unknown[]): RequestPermissionRequestParams {
+  const message = normalizeDroidTransportMessage({
+    jsonrpc: '2.0',
+    factoryApiVersion: '1.0.0',
+    type: 'request',
+    id: 'permission-script',
+    method: 'droid.request_permission',
+    params: {
+      toolUses: [
+        {
+          toolUse: { type: 'tool_use', id: 'script-1', name: 'Script', input: { script: '…' } },
+          confirmationType: 'script',
+          details: { type: 'script', impactLevel: 'high', calls },
+        },
+      ],
+      options: [],
+    },
+  });
+  return RequestPermissionRequestSchema.parse(message).params;
+}
+
+function scriptCall(toolName: string, confirmation: Record<string, unknown>) {
+  return { toolName, toolInput: {}, confirmation };
+}
+
+const scriptCanvasWrite = scriptCall('droidex-canvas___canvas_write', {
+  type: 'mcp_tool',
+  toolName: 'droidex-canvas___canvas_write',
+  serverName: 'droidex-canvas',
+  impactLevel: 'high',
+});
+
+test('a Droid script of Canvas calls proceeds, and one with a command asks once', async () => {
+  const harness = createHarness();
+  harness.addLiveSession('design').summary.autonomy = 'off';
+  const ask = harness.permissionHandler({ id: 'design' });
+
+  const canvasOnly = droidScriptPermission([scriptCanvasWrite, scriptCanvasWrite]);
+  assert.equal(await ask(canvasOnly), ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(approvalRequests(harness.emitted).length, 0);
+
+  const command = scriptCall('Execute', { type: 'exec', fullCommand: 'ls', command: 'ls' });
+  for (const calls of [[scriptCanvasWrite, command], [command]]) {
+    const pending = Promise.resolve(ask(droidScriptPermission(calls)));
+    const request = latestApprovalRequest(harness.emitted);
+    assert.equal(
+      request.title,
+      calls.length === 2 ? 'droidex-canvas · canvas_write, Run command' : 'Run command',
+    );
+    // "Always" on a script grants every command of its impact level.
+    assert.equal(request.canAlwaysAllow, false);
+    await harness.interactions.respondToApproval('design', request.requestId, 'refuse');
+    assert.equal(await pending, ToolConfirmationOutcome.Cancel);
+  }
+  assert.equal(approvalRequests(harness.emitted).length, 2);
+});
 // SessionManager wiring: the module tests above own settlement rules; these
 // prove the facade routes provider callbacks to the right app session and
 // applies a Spec exit to the real provider.

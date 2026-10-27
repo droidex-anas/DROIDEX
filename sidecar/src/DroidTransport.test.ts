@@ -45,6 +45,86 @@ test('normalizes current CLI permission options before SDK validation', () => {
   assert.doesNotThrow(() => RequestPermissionRequestSchema.parse(normalized));
 });
 
+function scriptPermissionMessage(calls: unknown[]) {
+  return {
+    jsonrpc: '2.0',
+    factoryApiVersion: '1.0.0',
+    type: 'request',
+    id: 'permission-script',
+    method: 'droid.request_permission',
+    params: {
+      toolUses: [
+        {
+          toolUse: { type: 'tool_use', id: 'script-1', name: 'Script', input: { script: '…' } },
+          confirmationType: 'script',
+          details: { type: 'script', impactLevel: 'high', calls },
+        },
+      ],
+      options: [{ label: 'Yes, allow all', value: 'proceed_once' }],
+    },
+  };
+}
+
+const canvasReadCall = {
+  toolName: 'droidex-canvas___canvas_read',
+  toolInput: {},
+  confirmation: {
+    type: 'mcp_tool',
+    toolName: 'droidex-canvas___canvas_read',
+    serverName: 'droidex-canvas',
+    impactLevel: 'high',
+  },
+};
+
+const touchCall = {
+  toolName: 'Execute',
+  toolInput: { command: 'touch probe' },
+  confirmation: {
+    type: 'exec',
+    fullCommand: 'touch probe',
+    command: 'touch',
+    impactLevel: 'medium',
+  },
+};
+
+test('expands a Droid script permission into the confirmations of its calls', () => {
+  const normalized = RequestPermissionRequestSchema.parse(
+    normalizeDroidTransportMessage(scriptPermissionMessage([canvasReadCall, touchCall])),
+  );
+
+  assert.deepEqual(
+    normalized.params.toolUses.map(({ toolUse, confirmationType, details }) => ({
+      id: toolUse.id,
+      name: toolUse.name,
+      confirmationType,
+      type: details.type,
+      inScript: details.inScript,
+    })),
+    [
+      {
+        id: 'script-1:0',
+        name: 'droidex-canvas___canvas_read',
+        confirmationType: 'mcp_tool',
+        type: 'mcp_tool',
+        inScript: true,
+      },
+      { id: 'script-1:1', name: 'Execute', confirmationType: 'exec', type: 'exec', inScript: true },
+    ],
+  );
+});
+
+test('leaves an unreadable script for the SDK to refuse', () => {
+  for (const calls of [
+    [],
+    [{ ...canvasReadCall, confirmation: undefined }],
+    [{ ...canvasReadCall, confirmation: { toolName: 'canvas_read' } }],
+    [canvasReadCall, { ...touchCall, toolInput: 'touch probe' }],
+  ]) {
+    const message = scriptPermissionMessage(calls);
+    assert.equal(normalizeDroidTransportMessage(message), message);
+    assert.throws(() => RequestPermissionRequestSchema.parse(message));
+  }
+});
 test('leaves non-permission messages untouched', () => {
   const message = {
     jsonrpc: '2.0',
