@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -194,6 +194,49 @@ test('a library item is an immutable copy that inserts as an independent design'
     { ...(await canvas.workspace.readFiles(canvasId, revision)) },
     { 'main.tsx': SOURCE },
   );
+});
+
+test('an item an earlier DROIDEX made is skipped without hiding the items it can read', async (t) => {
+  const profile = await libraryProfile(t);
+  const { canvas, canvasId, revision } = await heroCanvas(t, profile);
+  await save(canvas, 'req-save-current', {
+    mutationId: 'save-current',
+    canvasId,
+    revision,
+    name: 'Hero',
+  });
+  const older = join(profile, 'canvas-library', 'save-old');
+  await mkdir(older, { recursive: true });
+  await writeFile(
+    join(older, 'item.json'),
+    `${JSON.stringify({
+      version: 1,
+      item: {
+        itemId: 'save-old',
+        name: 'Old hero',
+        sourceCanvasId: canvasId,
+        source: revision,
+        designSystem,
+      },
+      savedAt: 1,
+      files: ['main.tsx'],
+      images: [],
+    })}\n`,
+  );
+
+  const listed = await list(canvas, 'req-list-current', '');
+  assert.deepEqual(
+    listed.map((item) => item.itemId),
+    ['save-current'],
+  );
+  await canvas.handle({
+    type: 'canvas.readLibraryThumbnail',
+    requestId: 'req-old-thumbnail',
+    itemId: 'save-old',
+  });
+  const error = errorOf(canvas, 'req-old-thumbnail');
+  assert.equal(error.code, 'storage_failed');
+  assert.match(error.message, /earlier DROIDEX/);
 });
 
 test('an item outlives its source canvas, answering retries and inserting elsewhere', async (t) => {

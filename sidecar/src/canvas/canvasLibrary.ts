@@ -19,7 +19,7 @@ import {
   referencedAssetIds,
   type OwnedImage,
 } from './canvasAssets.js';
-import { canvasError, storageFailure } from './canvasError.js';
+import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
 import type { CanvasRevisionHistory } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type {
@@ -55,6 +55,7 @@ const CREATE_FLAGS =
 
 const MISSING_ITEM = 'That library item is not available. Choose another one.';
 const DAMAGED_ITEM = 'That library item is damaged and cannot be used.';
+const OUTDATED_ITEM = 'That library item was made by an earlier DROIDEX. Choose another one.';
 const SAVE_RECOVERY = 'The library item could not be saved. Free some disk space and try again.';
 const LIST_RECOVERY = 'The Canvas library could not be read.';
 const REUSED_ID = 'That mutation ID already saved a different library item. Use a new mutation ID.';
@@ -115,6 +116,9 @@ type SavedItem = z.infer<typeof savedItemSchema>;
 // Staging trees of saves still running, which a listing's sweep leaves alone;
 // any other one is what a terminated run left behind.
 const savesStaging = new Set<string>();
+// An earlier DROIDEX's items are a stable fact about this profile, so a listing
+// says each one once rather than once per read of the picker's search box.
+const outdatedItems = new Set<string>();
 
 export async function answerLibraryCommand(
   workspace: CanvasWorkspace,
@@ -219,6 +223,13 @@ async function listLibraryItems(query: string): Promise<LibraryItem[]> {
       const saved = await readSavedItem(name);
       if (saved?.item.name.toLocaleLowerCase().includes(needle)) matched.push(saved);
     } catch (error) {
+      if (error instanceof CanvasCommandError && error.message === OUTDATED_ITEM) {
+        if (!outdatedItems.has(name)) {
+          outdatedItems.add(name);
+          console.error(`Library item ${name} was not listed because an earlier DROIDEX made it.`);
+        }
+        continue;
+      }
       // One damaged item must not hide the rest of the library.
       console.error(`Library item ${name} was not listed:`, error);
     }
@@ -295,8 +306,15 @@ async function readSavedItem(itemId: string): Promise<SavedItem | null> {
   }
   const parsed = savedItemSchema.safeParse(value);
   if (!parsed.success || parsed.data.item.itemId !== itemId)
-    throw canvasError('storage_failed', DAMAGED_ITEM);
+    throw canvasError('storage_failed', isEarlierRecord(value) ? OUTDATED_ITEM : DAMAGED_ITEM);
   return parsed.data;
+}
+
+/** A whole record this DROIDEX did not write, like a version 1 item. */
+function isEarlierRecord(written: unknown): boolean {
+  if (typeof written !== 'object' || written === null) return false;
+  const { version } = written as Record<string, unknown>;
+  return typeof version === 'number' && version < 2;
 }
 
 /**
