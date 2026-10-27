@@ -194,9 +194,10 @@ export function reduceCanvasRemoval(
 /**
  * Spec §4: Select gives the board pointer ownership through a transparent
  * overlay over the guests; Interact removes it so the preview receives real
- * pointer and keyboard events.
+ * pointer and keyboard events. Edit keeps the overlay, and a press on a frame
+ * picks the element under it instead of the frame.
  */
-export type BoardMode = 'select' | 'interact';
+export type BoardMode = 'select' | 'interact' | 'edit';
 
 export interface BoardInteraction {
   mode: BoardMode;
@@ -225,13 +226,14 @@ export type BoardInteractionEvent =
   | { type: 'clear' }
   /** Double-click, or Enter on a single selected frame. */
   | { type: 'interact'; designId: string }
+  | { type: 'edit' }
   | { type: 'escape' }
   /** Frames the canvas no longer has, so nothing points at a deleted design. */
   | { type: 'frames'; designIds: string[] };
 
 /**
  * Spec §4: Escape returns to selection and Escape again clears it, so the two
- * steps out of Interact are never one. Picking while interacting moves Interact
+ * steps out of Interact or Edit are never one. Picking while interacting moves Interact
  * to the frame picked, which keeps the live slot under the hand; picking
  * several leaves Interact, because it drives one frame.
  */
@@ -263,8 +265,10 @@ export function reduceBoardInteraction(
         selectedFrameIds: [event.designId],
         interactedFrameId: event.designId,
       };
+    case 'edit':
+      return { ...state, mode: 'edit', interactedFrameId: null };
     case 'escape':
-      if (state.mode === 'interact') return { ...state, mode: 'select', interactedFrameId: null };
+      if (state.mode !== 'select') return { ...state, mode: 'select', interactedFrameId: null };
       return state.selectedFrameIds.length === 0 ? state : settle(state, []);
     case 'frames': {
       const held = new Set(event.designIds);
@@ -288,14 +292,14 @@ export function showsFrameTools(interaction: BoardInteraction, designId: string)
 }
 
 /**
- * The state a new selection leaves, with Interact following a single frame.
- * A selection that did not actually change keeps its identity, so re-picking
- * the frame already selected costs the board nothing.
+ * The state a new selection leaves, with Interact following a single frame and
+ * Edit staying on. A selection that did not actually change keeps its identity,
+ * so re-picking the frame already selected costs the board nothing.
  */
 function settle(state: BoardInteraction, selected: string[]): BoardInteraction {
-  const interacted = state.mode === 'select' || selected.length !== 1 ? null : selected[0];
+  const interacted = state.mode === 'interact' && selected.length === 1 ? selected[0] : null;
   const next: BoardInteraction = {
-    mode: state.mode === 'interact' && interacted !== null ? 'interact' : 'select',
+    mode: state.mode === 'interact' && interacted === null ? 'select' : state.mode,
     selectedFrameIds: selected,
     interactedFrameId: interacted,
   };

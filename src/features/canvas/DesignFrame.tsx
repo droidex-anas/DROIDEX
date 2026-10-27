@@ -56,8 +56,8 @@ export interface DesignFrameProps {
   /** This chat's agent has a turn running, so a frame with no source is being written. */
   agentWorking: boolean;
   /**
-   * Spec §4: Select installs a transparent overlay over the guest and Interact
-   * removes it. The board owns when flipping it is safe; this only paints it.
+   * Spec §4: Select and Edit install a transparent overlay over the guest and
+   * Interact removes it. The board owns when flipping it is safe; this only paints it.
    */
   capturePointer: boolean;
   /** The revision on show: its working one, or the one it showed before a newer build. */
@@ -132,12 +132,16 @@ export function DesignFrame(props: DesignFrameProps) {
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.stopPropagation();
+              if (mode === 'edit') {
+                onPick(frame, false);
+                return;
+              }
               onPick(frame, event.shiftKey);
               if (!event.shiftKey) onHold(frame, 'move', event);
             }}
             onDoubleClick={(event) => {
               event.stopPropagation();
-              onInteract(frame);
+              if (mode === 'select') onInteract(frame);
             }}
           />
         )}

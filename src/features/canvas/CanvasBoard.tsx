@@ -2,7 +2,7 @@
 // commands over it, the tool rail in its top-left corner and the zoom readout
 // in its bottom-left.
 //
-// The board owns when the Select overlay can flip: the hit-test change waits
+// The board owns when the frames' input overlay can flip: the hit-test change waits
 // for an active wheel gesture to finish.
 
 import {
@@ -101,7 +101,7 @@ export function CanvasBoard({
 
   const view = useBoardViewport(board, frames, motion);
   const { fitTo } = view;
-  const [overlayCapture, setOverlayCapture] = useState(interaction.mode === 'select');
+  const [overlayCapture, setOverlayCapture] = useState(interaction.mode !== 'interact');
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
@@ -220,7 +220,7 @@ export function CanvasBoard({
   // Spec §4: the overlay's hit-test flip waits for an arriving wheel gesture to
   // go quiet and then for the frame that paints it, so it is committed before
   // any later input is read against it.
-  const capturePointer = interaction.mode === 'select';
+  const capturePointer = interaction.mode !== 'interact';
   useEffect(() => {
     if (overlayCapture === capturePointer || view.scrolling) return undefined;
     const frame = requestAnimationFrame(() => {
@@ -253,6 +253,10 @@ export function CanvasBoard({
     if (next === interaction.mode) return;
     if (next === 'select') {
       dispatch({ type: 'escape' });
+      return;
+    }
+    if (next === 'edit') {
+      dispatch({ type: 'edit' });
       return;
     }
     const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
@@ -374,7 +378,9 @@ export function CanvasBoard({
         <AnnotationLayer
           {...annotation.layer}
           scale={scale}
-          interactive={capturePointer && annotation.tool === null && !gestures.spaceHeld}
+          interactive={
+            interaction.mode === 'select' && annotation.tool === null && !gestures.spaceHeld
+          }
         />
       </div>
 

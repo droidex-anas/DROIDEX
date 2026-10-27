@@ -98,11 +98,11 @@ export function useAnnotationEditor({
   const frame = useRef<number | null>(null);
   const writes = useRef<AnnotationWriteQueue | null>(null);
 
-  // Interact and a picked frame take the board's attention from the marks.
+  // Interact, Edit and a picked frame take the board's attention from the marks.
   if (seen.mode !== mode || seen.selectedFrameCount !== selectedFrameCount) {
     setSeen({ mode, selectedFrameCount });
-    if (mode === 'interact') setTool(null);
-    if (mode === 'interact' || selectedFrameCount > 0) setSelectedId(null);
+    if (mode !== 'select') setTool(null);
+    if (mode !== 'select' || selectedFrameCount > 0) setSelectedId(null);
   }
 
   const unanswered = unansweredWrites(pending, annotationsVersion);
@@ -340,7 +340,7 @@ export function useAnnotationEditor({
     setTool(next);
     if (next === null) return;
     setSelectedId(null);
-    if (mode === 'interact') dispatch({ type: 'escape' });
+    if (mode !== 'select') dispatch({ type: 'escape' });
   };
 
   const pickColor = (next: AnnotationColor) => {

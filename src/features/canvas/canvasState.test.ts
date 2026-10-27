@@ -318,6 +318,20 @@ test('Interact follows a frame picked while it runs, and lets go of a multiple s
   assert.deepEqual(reduceBoardInteraction(interacting, { type: 'clear' }), SELECT_MODE);
 });
 
+test('Edit stays on while frames are picked, and Escape leaves it before it clears', () => {
+  const editing = pick(
+    SELECT_MODE,
+    { type: 'pick', designId: 'a', additive: false },
+    { type: 'edit' },
+    { type: 'pick', designId: 'b', additive: false },
+  );
+  assert.deepEqual(editing, { mode: 'edit', selectedFrameIds: ['b'], interactedFrameId: null });
+  assert.equal(reduceBoardInteraction(editing, { type: 'clear' }).mode, 'edit');
+
+  const selected = reduceBoardInteraction(editing, { type: 'escape' });
+  assert.deepEqual(selected, { mode: 'select', selectedFrameIds: ['b'], interactedFrameId: null });
+});
+
 test('nothing points at a frame the canvas has lost', () => {
   const interacting = pick(
     SELECT_MODE,
