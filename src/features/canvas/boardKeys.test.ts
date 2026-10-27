@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { annotationShortcut, frameStep, readingOrder } from './boardKeys';
+import { annotationShortcut, focusStep, readingOrder } from './boardKeys';
 
 const at = (designId: string, x: number, y: number, height = 300) => ({
   designId,
@@ -10,7 +10,10 @@ const at = (designId: string, x: number, y: number, height = 300) => ({
 test('frames are read in rows from the top, each row left to right', () => {
   // c sits a little lower than b but in the same row; d starts the next row.
   const order = readingOrder([at('d', 0, 600), at('c', 900, 40), at('b', 450, 0), at('a', 0, 10)]);
-  assert.deepEqual(order, ['a', 'b', 'c', 'd']);
+  assert.deepEqual(
+    order.map(({ designId }) => designId),
+    ['a', 'b', 'c', 'd'],
+  );
   assert.deepEqual(readingOrder([]), []);
 });
 
@@ -25,17 +28,17 @@ test('the arrows step through that order, Home and End jump to its ends', () => 
     ...modifiers,
   });
 
-  assert.equal(frameStep(key('ArrowRight'), order, 'a'), 'b');
-  assert.equal(frameStep(key('ArrowDown'), order, 'b'), 'c');
-  assert.equal(frameStep(key('ArrowLeft'), order, 'b'), 'a');
-  assert.equal(frameStep(key('ArrowUp'), order, 'a'), 'a');
-  assert.equal(frameStep(key('ArrowRight'), order, 'c'), 'c');
-  assert.equal(frameStep(key('Home'), order, 'c'), 'a');
-  assert.equal(frameStep(key('End'), order, 'a'), 'c');
+  assert.equal(focusStep(key('ArrowRight'), order, 'a'), 'b');
+  assert.equal(focusStep(key('ArrowDown'), order, 'b'), 'c');
+  assert.equal(focusStep(key('ArrowLeft'), order, 'b'), 'a');
+  assert.equal(focusStep(key('ArrowUp'), order, 'a'), 'a');
+  assert.equal(focusStep(key('ArrowRight'), order, 'c'), 'c');
+  assert.equal(focusStep(key('Home'), order, 'c'), 'a');
+  assert.equal(focusStep(key('End'), order, 'a'), 'c');
   // A modified arrow moves the selection instead, and other keys are not steps.
-  assert.equal(frameStep(key('ArrowRight', { altKey: true }), order, 'a'), null);
-  assert.equal(frameStep(key('ArrowRight', { shiftKey: true }), order, 'a'), null);
-  assert.equal(frameStep(key('Enter'), order, 'a'), null);
+  assert.equal(focusStep(key('ArrowRight', { altKey: true }), order, 'a'), null);
+  assert.equal(focusStep(key('ArrowRight', { shiftKey: true }), order, 'a'), null);
+  assert.equal(focusStep(key('Enter'), order, 'a'), null);
 });
 
 test('each annotation tool has a letter, and a modified letter is not one', () => {

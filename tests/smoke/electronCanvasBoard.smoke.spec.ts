@@ -800,6 +800,40 @@ test('a mark moves, resizes and nudges, one write at a time', async ({ page }) =
   await expect(page.locator('[data-draw-surface]')).toHaveCount(0);
 });
 
+test('the marks share one tab stop: the arrows walk them, ⌥ nudges, Delete hands the keyboard on', async ({
+  page,
+}) => {
+  await openBoard(page, 14, 'reduce', '&marks=1');
+  const mark = (id: string) => page.locator(`[data-annotation="${id}"]`);
+  const board = page.getByTestId('canvas-board');
+  // The marks' one stop sits after the frames and before the rail, on the
+  // first mark in reading order.
+  await page.getByRole('button', { name: 'Select', exact: true }).focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(mark('agent-box')).toBeFocused();
+  await expect(mark('agent-box')).toHaveAccessibleName('Rectangle by the agent, on Design A');
+  await expect(page.locator('[data-annotation-selection="agent-box"]')).toHaveCount(1);
+  for (const id of ['note', 'arrow']) {
+    await page.keyboard.press('ArrowRight');
+    await expect(mark(id)).toBeFocused();
+  }
+  await expect(page.locator('[data-annotation-selection="arrow"]')).toHaveCount(1);
+  expect(await page.evaluate(() => window.boardHarness.annotateCalls)).toEqual([]);
+
+  await page.keyboard.press('Alt+ArrowDown');
+  await page.evaluate(() => window.boardHarness.answerAnnotate(0));
+  await page.keyboard.press('Delete');
+  await expect(mark('label')).toBeFocused();
+  await expect.poll(() => page.evaluate(() => window.boardHarness.annotateCalls.length)).toBe(2);
+  const [nudged, deleted] = await page.evaluate(() => window.boardHarness.annotateCalls);
+  expect(nudged.upserts).toMatchObject([{ id: 'arrow', points: [{ x: 520, y: 201 }, { y: 381 }] }]);
+  expect(deleted).toMatchObject({ upserts: [], deletes: ['arrow'] });
+
+  await page.keyboard.press('Escape');
+  await expect(board).toBeFocused();
+  await expect(page.locator('[data-annotation-selection]')).toHaveCount(0);
+});
+
 type Point = { x: number; y: number };
 
 /** Presses at `from` and releases `by` further on, passing through `steps` moves. */

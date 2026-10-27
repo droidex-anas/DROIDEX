@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { AnnotationColor, AnnotationDraft, AnnotateCanvasInput } from './annotationProtocol';
 import {
+  draftBounds,
   draggedDraft,
   extendStroke,
   movedDraft,
@@ -32,8 +33,14 @@ import {
   type Viewport,
 } from './canvasGeometry';
 import type { BoardInteraction, BoardInteractionEvent } from './canvasState';
-import type { CanvasSnapshot } from './protocol';
-import { annotationShortcut } from './boardKeys';
+import type { CanvasSnapshot, FrameRect } from './protocol';
+import {
+  annotationMarkOf,
+  annotationShortcut,
+  isDeleteKey,
+  markFocusOrder,
+  markKey,
+} from './boardKeys';
 import { CanvasRequestError } from './client';
 
 /** Screen pixels a press travels before it draws or moves anything. */
@@ -53,6 +60,8 @@ interface AnnotationInputs {
   interaction: BoardInteraction;
   dispatch: (event: BoardInteractionEvent) => void;
   onAnnotate: (input: AnnotateCanvasInput) => Promise<unknown>;
+  /** Brings a mark the keyboard moved to onto the board. */
+  reveal: (rect: FrameRect) => void;
 }
 
 type Gesture =
@@ -83,6 +92,7 @@ export function useAnnotationEditor({
   interaction,
   dispatch,
   onAnnotate,
+  reveal,
 }: AnnotationInputs) {
   const { mode } = interaction;
   const selectedFrameCount = interaction.selectedFrameIds.length;
@@ -109,6 +119,7 @@ export function useAnnotationEditor({
   const settled = shownMarks(annotations, unanswered);
   const marks = withEdits(settled, editing?.draft ?? live);
   const selected = marks.find((mark) => mark.draft.id === selectedId) ?? null;
+  const { order: markOrder, tabStopId } = markFocusOrder(marks, selectedId);
 
   const latest = useRef({
     viewport,
@@ -360,6 +371,44 @@ export function useAnnotationEditor({
     return true;
   };
 
+  const focusMark = (id: string) => {
+    board.current
+      ?.querySelector<SVGElement>(`[data-annotation="${CSS.escape(id)}"]`)
+      ?.focus({ preventScroll: true });
+  };
+
+  /** The keyboard reached a mark: it is selected, and shown if the board had it out of view. */
+  const onFocusMark = (id: string) => {
+    const root = board.current;
+    // A focused mark must not scroll the clipped board under its transform.
+    if (root) root.scrollTop = root.scrollLeft = 0;
+    const mark = marks.find((candidate) => candidate.draft.id === id);
+    if (!mark) return;
+    reveal(draftBounds(mark.draft));
+    if (selectedId === id) return;
+    setSelectedId(id);
+    dispatch({ type: 'clear' });
+  };
+
+  const runMarkKey = (event: React.KeyboardEvent, id: string): boolean => {
+    const mark = marks.find((candidate) => candidate.draft.id === id);
+    const key = mark ? markKey(event, markOrder, mark) : null;
+    if (!mark || !key) return false;
+    if (key.kind === 'focus' && key.id !== id) focusMark(key.id);
+    else if (key.kind === 'type') editText(id);
+    else if (key.kind === 'nudge') write([movedDraft(mark.draft, key.step)], []);
+    else if (key.kind === 'delete') {
+      // The keyboard moves on before the mark it is on leaves the board.
+      if (key.neighbour) focusMark(key.neighbour);
+      else {
+        setSelectedId(null);
+        board.current?.focus({ preventScroll: true });
+      }
+      write([], [id]);
+    }
+    return true;
+  };
+
   /**
    * A tool's letter wherever the board's shortcuts reach; on the board itself,
    * Delete removes the selected mark and the arrows nudge it as they do frames.
@@ -370,8 +419,10 @@ export function useAnnotationEditor({
       pickTool(shortcut);
       return true;
     }
+    const focused = annotationMarkOf(event.target);
+    if (focused !== null) return runMarkKey(event, focused);
     if (!selected || event.target !== board.current) return false;
-    if (event.key === 'Backspace' || event.key === 'Delete') {
+    if (isDeleteKey(event)) {
       setSelectedId(null);
       write([], [selected.draft.id]);
       return true;
@@ -399,6 +450,8 @@ export function useAnnotationEditor({
       marks,
       selectedId: selected ? selectedId : null,
       editingId: editing?.draft.id ?? null,
+      tabStopId,
+      onFocusMark,
       onMarkPointerDown,
       onEditText: editText,
       onCommitText: commitText,
