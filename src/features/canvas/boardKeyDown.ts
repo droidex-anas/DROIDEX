@@ -1,11 +1,12 @@
-// The board's keyboard: what one key press on the board, a frame's label or
-// the board's own tools does. The board supplies its state and the actions a
-// key can take; the meaning of each key lives in boardKeys.ts.
+// The board's keyboard: what one key press on the board, a frame's label, a
+// mark or the board's own tools does. The board supplies its state and the
+// actions a key can take; the meaning of each key lives in boardKeys.ts.
 
 import type { KeyboardEvent } from 'react';
 import {
+  annotationMarkOf,
+  focusStep,
   frameHeaderOf,
-  frameStep,
   isBoardControl,
   isBoardEditor,
   isDeleteKey,
@@ -49,15 +50,17 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
   // Inputs and editors keep their shortcuts, including Escape.
   if (isBoardEditor(event.target)) return;
   const header = frameHeaderOf(event.target);
+  const mark = annotationMarkOf(event.target);
   // Board commands belong to the board and its frame labels. Its own tools take
   // the zoom and mode keys too, so a key still works after one was clicked;
-  // Space, Enter and the arrows stay theirs.
+  // Space, Enter and the arrows stay theirs. A focused mark takes the
+  // annotation keys alone.
   const onBoard = event.target === event.currentTarget || header !== null;
   let handled = false;
   if (event.key === 'Escape') {
-    escape(header, actions);
+    escape(header, mark, actions);
     handled = true;
-  } else if (onBoard || isBoardControl(event.target)) {
+  } else if (onBoard || mark !== null || isBoardControl(event.target)) {
     handled =
       runShortcut(event, actions) ||
       actions.annotationKey(event) ||
@@ -72,8 +75,16 @@ function soleSelection({ selectedFrameIds }: BoardInteraction): string | null {
   return selectedFrameIds.length === 1 ? selectedFrameIds[0] : null;
 }
 
-/** Escape: a gesture first, then a tool, mode or selection; from a frame in Select, back to the board. */
-function escape(header: string | null, actions: BoardKeyActions) {
+/**
+ * Escape: a gesture first, then a tool, mode or selection; from a frame in
+ * Select, back to the board. A mark lets go of its selection and of the keyboard.
+ */
+function escape(header: string | null, mark: string | null, actions: BoardKeyActions) {
+  if (mark !== null) {
+    actions.cancel();
+    actions.focusBoard();
+    return;
+  }
   if (actions.cancel()) return;
   actions.dispatch({ type: 'escape' });
   if (header !== null && actions.interaction.mode === 'select') actions.focusBoard();
@@ -99,7 +110,7 @@ function runBoardKey(
   actions: BoardKeyActions,
 ): boolean {
   const { interaction } = actions;
-  const next = header === null ? null : frameStep(event, actions.order, header);
+  const next = header === null ? null : focusStep(event, actions.order, header);
   if (next !== null) {
     if (next !== header) {
       actions.dispatch({ type: 'pick', designId: next, additive: false });

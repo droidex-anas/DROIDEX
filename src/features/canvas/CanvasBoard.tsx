@@ -161,6 +161,7 @@ export function CanvasBoard({
     interaction,
     dispatch,
     onAnnotate,
+    reveal: view.reveal,
   });
 
   const editor = useElementEditor({
@@ -418,6 +419,7 @@ export function CanvasBoard({
         ))}
         <AnnotationLayer
           {...annotation.layer}
+          frames={frames}
           scale={scale}
           interactive={
             interaction.mode === 'select' && annotation.tool === null && !gestures.spaceHeld

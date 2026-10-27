@@ -24,11 +24,15 @@ export interface Viewport {
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 4;
 
-/**
- * Screen padding Fit and focus leave around what they frame: room for the tool
- * rail at the board's left and for the labels above the top row of frames.
- */
+/** Screen padding Fit and focus leave around what they frame, which clears the tool rail. */
 const FIT_PADDING_PX = 72;
+
+/**
+ * Screen height a selected frame's label and toolbar stand above its top edge
+ * (`.canvas-frame-tools` in canvasBoard.css). Fit keeps its padding above them
+ * too, so a focused frame's toolbar clears the pane's own controls.
+ */
+const FRAME_CHROME_PX = 66;
 
 /**
  * Fit never magnifies past 100%: one small frame focused into a wide pane should
@@ -95,12 +99,12 @@ export function fitFrames(rects: readonly FrameRect[], viewportSize: Point): Vie
   if (!bounds || viewportSize.x <= 0 || viewportSize.y <= 0) return { x: 0, y: 0, scale: 1 };
   const room = {
     x: Math.max(1, viewportSize.x - FIT_PADDING_PX * 2),
-    y: Math.max(1, viewportSize.y - FIT_PADDING_PX * 2),
+    y: Math.max(1, viewportSize.y - FIT_PADDING_PX * 2 - FRAME_CHROME_PX),
   };
   const scale = clampScale(Math.min(MAX_FIT_SCALE, room.x / bounds.width, room.y / bounds.height));
   return {
     x: viewportSize.x / 2 - (bounds.x + bounds.width / 2) * scale,
-    y: viewportSize.y / 2 - (bounds.y + bounds.height / 2) * scale,
+    y: (viewportSize.y + FRAME_CHROME_PX) / 2 - (bounds.y + bounds.height / 2) * scale,
     scale,
   };
 }

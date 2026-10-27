@@ -82,19 +82,25 @@ test('wheel and pinch zoom are reversible, and pinch is the finer of the two', (
   assert.ok(wheelZoomScale(1, 120, true) < out);
 });
 
-test('fit centres every frame with padding and never magnifies past 100%', () => {
+test('fit centres every frame and its chrome with padding and never magnifies past 100%', () => {
   const size = { x: 1000, y: 800 };
   const wide = fitFrames([rect(0, 0, 2000, 400), rect(2200, 600, 800, 400)], size);
 
   // 72 px of padding each side leaves 856 px for a 3000 px span.
   assert.ok(Math.abs(wide.scale - 856 / 3000) < 1e-12);
-  // The bounds centre lands on the viewport centre.
-  assert.deepEqual(canvasToScreen(wide, { x: 1500, y: 500 }), { x: 500, y: 400 });
+  // The 66 px label and toolbar above the frames are framed with them, so the
+  // bounds centre sits half that below the viewport centre.
+  assert.deepEqual(canvasToScreen(wide, { x: 1500, y: 500 }), { x: 500, y: 433 });
 
   // One small frame reads at its real size instead of filling the board.
   const single = fitFrames([rect(-40, 120, 320, 240)], size);
   assert.equal(single.scale, 1);
-  assert.deepEqual(canvasToScreen(single, { x: 120, y: 240 }), { x: 500, y: 400 });
+  assert.deepEqual(canvasToScreen(single, { x: 120, y: 240 }), { x: 500, y: 433 });
+
+  // A tall frame keeps the padding above its toolbar, not just above its edge.
+  const tall = fitFrames([rect(0, 0, 400, 2000)], size);
+  assert.equal(canvasToScreen(tall, { x: 0, y: 0 }).y, 72 + 66);
+  assert.equal(canvasToScreen(tall, { x: 0, y: 2000 }).y, 800 - 72);
 
   // Nothing to frame, and a board with no measured size, are both identity.
   assert.deepEqual(fitFrames([], size), { x: 0, y: 0, scale: 1 });

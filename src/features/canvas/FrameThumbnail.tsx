@@ -46,5 +46,7 @@ export function FrameThumbnail({
   }, [canvasId, designId, revisionId]);
 
   if (url === null) return fallback;
-  return <img className="canvas-sheet-thumbnail" src={url} alt="" draggable={false} />;
+  // Whole, as the board shows the frame: a card's 16:10 tile must not cut a
+  // portrait frame down to its top.
+  return <img className="h-full w-full object-contain" src={url} alt="" draggable={false} />;
 }

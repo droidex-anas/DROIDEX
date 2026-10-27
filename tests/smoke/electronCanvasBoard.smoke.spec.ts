@@ -411,7 +411,7 @@ test('at most four previews stay mounted and the interacted frame keeps its slot
 
   // Pan the interacted frame clear off the top of the board, leaving plenty of
   // other visible frames to compete for the four slots.
-  await wheel(page, 400, 300, 330, { deltaX: 0 });
+  await wheel(page, 400, 300, 400, { deltaX: 0 });
   await page.clock.runFor(200);
   const boardBox = await box(board);
   const frameA = await box(frame(page, 'A'));
@@ -470,7 +470,8 @@ test('the public focusFrame entry point centers acknowledged geometry and takes 
   const focused = await box(frame(page, 'B'));
   expect(focused.width).toBeCloseTo(400, 1);
   expect(focused.x + 200).toBeCloseTo(board.x + board.width / 2, 1);
-  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2, 1);
+  // Its label and toolbar are framed with it, half their 66 px below centre.
+  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2 + 33, 1);
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
 
@@ -798,6 +799,40 @@ test('a mark moves, resizes and nudges, one write at a time', async ({ page }) =
   await expect(page.locator('[data-draw-surface]')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-draw-surface]')).toHaveCount(0);
+});
+
+test('the marks share one tab stop: the arrows walk them, ⌥ nudges, Delete hands the keyboard on', async ({
+  page,
+}) => {
+  await openBoard(page, 14, 'reduce', '&marks=1');
+  const mark = (id: string) => page.locator(`[data-annotation="${id}"]`);
+  const board = page.getByTestId('canvas-board');
+  // The marks' one stop sits after the frames and before the rail, on the
+  // first mark in reading order.
+  await page.getByRole('button', { name: 'Select', exact: true }).focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(mark('agent-box')).toBeFocused();
+  await expect(mark('agent-box')).toHaveAccessibleName('Rectangle by the agent, on Design A');
+  await expect(page.locator('[data-annotation-selection="agent-box"]')).toHaveCount(1);
+  for (const id of ['note', 'arrow']) {
+    await page.keyboard.press('ArrowRight');
+    await expect(mark(id)).toBeFocused();
+  }
+  await expect(page.locator('[data-annotation-selection="arrow"]')).toHaveCount(1);
+  expect(await page.evaluate(() => window.boardHarness.annotateCalls)).toEqual([]);
+
+  await page.keyboard.press('Alt+ArrowDown');
+  await page.evaluate(() => window.boardHarness.answerAnnotate(0));
+  await page.keyboard.press('Delete');
+  await expect(mark('label')).toBeFocused();
+  await expect.poll(() => page.evaluate(() => window.boardHarness.annotateCalls.length)).toBe(2);
+  const [nudged, deleted] = await page.evaluate(() => window.boardHarness.annotateCalls);
+  expect(nudged.upserts).toMatchObject([{ id: 'arrow', points: [{ x: 520, y: 201 }, { y: 381 }] }]);
+  expect(deleted).toMatchObject({ upserts: [], deletes: ['arrow'] });
+
+  await page.keyboard.press('Escape');
+  await expect(board).toBeFocused();
+  await expect(page.locator('[data-annotation-selection]')).toHaveCount(0);
 });
 
 type Point = { x: number; y: number };

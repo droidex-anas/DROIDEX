@@ -411,7 +411,8 @@ export const SELECTION_COLORS = {
 // The seven colours a board annotation can be drawn in, by the token names the
 // canvas stores. Muted, so a sketch never shouts over the designs it marks up,
 // yet each keeps AA for text on the board and its raised chrome in every
-// built-in preset, because a text label is drawn in it.
+// built-in preset, because a text label is drawn in it. A custom board these
+// cannot read on pulls them toward its text colour (see annotationColors).
 const ANNOTATION_STROKES = {
   dark: {
     ink: '#d8d4cf',
@@ -436,14 +437,23 @@ const ANNOTATION_STROKES = {
 /**
  * Each annotation colour's stroke and the fill a note of that colour sits on:
  * the stroke washed into the board, far enough that body text reads on it.
+ * A stroke pulls toward the theme's text until it reads on the harder of the
+ * board and its raised chrome, and a fill washes further into the board until
+ * the text reads on it. A board whose raised chrome crowds the stroke (mid-grey
+ * with light text) admits no colour that reads on both, so the pull keeps to
+ * the board, where the marks are drawn.
  */
-export function annotationColors(theme: Pick<ThemeColors, 'bg'>) {
+export function annotationColors(theme: Pick<ThemeColors, 'bg' | 'surface' | 'fg'>) {
   const bgIsDark = colorLuminance(theme.bg) < 0.4;
+  const raised = raisedSurfaceColor(theme);
   return Object.fromEntries(
-    Object.entries(ANNOTATION_STROKES[bgIsDark ? 'dark' : 'light']).map(([name, stroke]) => [
-      name,
-      { stroke, fill: mixHex(stroke, theme.bg, bgIsDark ? 0.78 : 0.75) },
-    ]),
+    Object.entries(ANNOTATION_STROKES[bgIsDark ? 'dark' : 'light']).map(([name, tuned]) => {
+      const ground =
+        contrastRatio(tuned, theme.bg) < contrastRatio(tuned, raised) ? theme.bg : raised;
+      const stroke = pullToContrast(tuned, theme.fg, ground, AA_NORMAL_TEXT);
+      const wash = mixHex(stroke, theme.bg, bgIsDark ? 0.78 : 0.75);
+      return [name, { stroke, fill: pullToContrast(wash, theme.bg, theme.fg, AA_NORMAL_TEXT) }];
+    }),
   );
 }
 
@@ -713,15 +723,21 @@ const AA_NORMAL_TEXT = 4.5;
  * unchanged, so only the presets that actually fail AA shift.
  */
 export function statusColorOnLight(hex: string, bg: string): string {
-  if (contrastRatio(hex, bg) >= AA_NORMAL_TEXT) return hex;
-  let light = 0;
-  let dark = 1;
+  return pullToContrast(hex, '#000000', bg, AA_NORMAL_TEXT);
+}
+
+// Blend `hex` toward `pull` only as far as `ratio` contrast against `ground`
+// needs, so a shade that already reads comes back unchanged.
+function pullToContrast(hex: string, pull: string, ground: string, ratio: number): string {
+  if (contrastRatio(hex, ground) >= ratio) return hex;
+  let short = 0;
+  let enough = 1;
   for (let i = 0; i < 12; i++) {
-    const middle = (light + dark) / 2;
-    if (contrastRatio(mixHex(hex, '#000000', middle), bg) >= AA_NORMAL_TEXT) dark = middle;
-    else light = middle;
+    const middle = (short + enough) / 2;
+    if (contrastRatio(mixHex(hex, pull, middle), ground) >= ratio) enough = middle;
+    else short = middle;
   }
-  return mixHex(hex, '#000000', dark);
+  return mixHex(hex, pull, enough);
 }
 
 // sRGB channel -> linear-light value, for WCAG contrast checks.

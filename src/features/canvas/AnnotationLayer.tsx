@@ -2,7 +2,8 @@
 // marks pan and zoom with the frames they sit beside. Strokes, handles and the
 // author glyph keep their screen size at every zoom. The layer lets the pointer
 // through except where Select can take hold of a mark, and the surface below
-// takes the board's presses while a drawing tool is armed.
+// takes the board's presses while a drawing tool is armed. In Select each mark
+// is also a control the keyboard can reach, through the marks' one tab stop.
 
 import { useRef, type PointerEvent } from 'react';
 import type { AnnotationDraft, AnnotationRect } from './annotationProtocol';
@@ -17,6 +18,7 @@ import {
   type TextDraft,
 } from './annotationGeometry';
 import type { ShownMark } from './annotationWrites';
+import type { CanvasFrame } from './protocol';
 import type { MarkGrip } from './useAnnotationEditor';
 
 /** Screen pixels: a mark's stroke, the band around it that takes a press, and its arrowheads. */
@@ -26,6 +28,15 @@ const ARROW_HEAD_PX = 12;
 /** Screen pixels between a selected mark and its outline. */
 const OUTLINE_GAP_PX = 4;
 const HANDLE_PX = 8;
+
+const KIND_NAMES: Record<AnnotationDraft['kind'], string> = {
+  rect: 'Rectangle',
+  ellipse: 'Ellipse',
+  line: 'Line',
+  path: 'Drawing',
+  text: 'Text',
+  note: 'Note',
+};
 
 const BOX_HANDLES = ['nw', 'ne', 'sw', 'se'] as const;
 const HANDLE_CURSORS: Record<AnnotationHandle, string> = {
@@ -39,12 +50,17 @@ const HANDLE_CURSORS: Record<AnnotationHandle, string> = {
 
 export interface AnnotationLayerProps {
   marks: ShownMark[];
+  /** The frames a mark's name says it sits on. */
+  frames: readonly Pick<CanvasFrame, 'name' | 'rect'>[];
   selectedId: string | null;
   editingId: string | null;
+  /** The mark holding the marks' one tab stop. */
+  tabStopId: string | null;
   scale: number;
-  /** Select with no tool armed: a press on a mark takes hold of it. */
+  /** Select with no tool armed: a press on a mark takes hold of it, and Tab reaches it. */
   interactive: boolean;
   onMarkPointerDown: (id: string, grip: MarkGrip, event: PointerEvent) => void;
+  onFocusMark: (id: string) => void;
   onEditText: (id: string) => void;
   onCommitText: (text: string) => void;
   onCancelText: () => void;
@@ -91,20 +107,40 @@ export function DrawSurface({
 }
 
 function Mark({
-  mark: { draft, author },
+  mark,
+  frames,
   editing,
+  tabStopId,
   scale,
   interactive,
   onMarkPointerDown,
+  onFocusMark,
   onEditText,
   onCommitText,
   onCancelText,
 }: AnnotationLayerProps & { mark: ShownMark; editing: boolean }) {
+  const { draft, author } = mark;
   const hold = (event: PointerEvent) => {
     onMarkPointerDown(draft.id, 'move', event);
   };
+  // While its text is edited the mark is the editor alone, as a renaming
+  // frame's label is: a button must not hold the field inside it.
+  const control = editing ? undefined : 'button';
   return (
-    <g data-annotation={draft.id} data-kind={draft.kind}>
+    <g
+      data-annotation={draft.id}
+      data-kind={draft.kind}
+      role={control}
+      tabIndex={interactive && !editing && draft.id === tabStopId ? 0 : -1}
+      aria-label={control && markName(mark, frames)}
+      aria-keyshortcuts={
+        control &&
+        'ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown Delete Enter'
+      }
+      onFocus={(event) => {
+        if (event.target === event.currentTarget) onFocusMark(draft.id);
+      }}
+    >
       {isTextDraft(draft) ? (
         <TextMark
           draft={draft}
@@ -125,6 +161,24 @@ function Mark({
       )}
     </g>
   );
+}
+
+/** What a mark is, its words, who drew it and the frame its middle sits on. */
+function markName({ draft, author }: ShownMark, frames: AnnotationLayerProps['frames']): string {
+  const arrow = draft.kind === 'line' && (draft.arrowStart || draft.arrowEnd);
+  const kind = arrow ? 'Arrow' : KIND_NAMES[draft.kind];
+  const words = isTextDraft(draft) ? `${kind} “${draft.text}”` : kind;
+  const by = author.kind === 'agent' ? ' by the agent' : '';
+  const { x, y, width, height } = draftBounds(draft);
+  const middle = { x: x + width / 2, y: y + height / 2 };
+  const under = frames.findLast(
+    ({ rect }) =>
+      middle.x >= rect.x &&
+      middle.x <= rect.x + rect.width &&
+      middle.y >= rect.y &&
+      middle.y <= rect.y + rect.height,
+  );
+  return `${words}${by}, on ${under ? under.name : 'the board'}`;
 }
 
 /** A shape, line or stroke, with a wider invisible copy of it that takes the press. */

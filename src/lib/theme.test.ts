@@ -222,24 +222,35 @@ describe('fixed label colors', () => {
   });
 
   it('keeps every annotation colour readable on the board, and note text on its fill', () => {
-    for (const preset of BUILT_IN_THEMES) {
-      for (const scheme of ['light', 'dark'] as const) {
-        const variant = preset[scheme];
-        const colors = Object.entries(annotationColors(variant));
-        assert.equal(colors.length, 7);
-        for (const [name, { stroke, fill }] of colors) {
-          // A text label is drawn in the stroke, so it is held to text contrast.
-          for (const ground of [variant.bg, raisedSurfaceColor(variant)]) {
-            assert.ok(
-              contrastRatio(stroke, ground) >= 4.5,
-              `${preset.id} ${scheme} ${name} stroke should reach 4.5:1 on ${ground}`,
-            );
-          }
+    // Custom boards in the mid tones the tuned palettes cannot read on.
+    const custom = {
+      'grey dark': { bg: '#5a5a5a', fg: '#f5f5f5', surface: '#626262' },
+      'grey light': { bg: '#8c8c8c', fg: '#111111', surface: '#949494' },
+      'tan light': { bg: '#d9c7a3', fg: '#2a2116', surface: '#e2d2b2' },
+    };
+    const boards = [
+      ...BUILT_IN_THEMES.flatMap((preset) =>
+        (['light', 'dark'] as const).map(
+          (scheme) => [`${preset.id} ${scheme}`, preset[scheme]] as const,
+        ),
+      ),
+      ...Object.entries(custom),
+    ];
+    for (const [board, variant] of boards) {
+      const colors = Object.entries(annotationColors(variant));
+      assert.equal(colors.length, 7);
+      for (const [name, { stroke, fill }] of colors) {
+        // A text label is drawn in the stroke, so it is held to text contrast.
+        for (const ground of [variant.bg, raisedSurfaceColor(variant)]) {
           assert.ok(
-            contrastRatio(variant.fg, fill) >= 4.5,
-            `${preset.id} ${scheme} note text should reach 4.5:1 on its ${name} fill`,
+            contrastRatio(stroke, ground) >= 4.5,
+            `${board} ${name} stroke should reach 4.5:1 on ${ground}`,
           );
         }
+        assert.ok(
+          contrastRatio(variant.fg, fill) >= 4.5,
+          `${board} note text should reach 4.5:1 on its ${name} fill`,
+        );
       }
     }
   });

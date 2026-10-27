@@ -336,13 +336,6 @@
   pointer-events: none;
 }
 
-.canvas-sheet-thumbnail {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
-}
-
 /* ── Annotations ────────────────────────────────────────────────────────── */
 
 /* One SVG at the world layer's origin, drawing past its 1px box. It lets the
@@ -352,6 +345,15 @@
   left: 0;
   top: 0;
   pointer-events: none;
+}
+
+/* The keyboard's place among the marks: a soft halo in the selection blue. */
+.canvas-annotations [data-annotation] {
+  outline: none;
+}
+
+.canvas-annotations [data-annotation]:focus-visible {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--droid-selection) 60%, transparent));
 }
 
 .canvas-annotation-text {

@@ -31,7 +31,7 @@ export function useFrameFocus({
   // The frames share one tab stop: the label focus last rested on, else the
   // selection, else the first frame a reader meets.
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const order = readingOrder(drawn);
+  const order = readingOrder(drawn).map((placed) => placed.designId);
   const tabStopId = [focusedId, selectedFrameIds.at(0), order.at(0)].find(
     (designId) => designId != null && order.includes(designId),
   );
