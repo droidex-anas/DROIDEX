@@ -12,6 +12,7 @@ import {
   QUIET_BUTTON_CLASS,
 } from './CanvasDialog';
 import { canvasMessage, CanvasRequestError } from './client';
+import { libraryThumbnail } from './libraryThumbnail';
 import type { RevisionRef } from './protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
@@ -42,7 +43,12 @@ export function SaveToLibraryDialog({
     setPending(true);
     setError(null);
     try {
-      await canvasClient.library.save(mutationId.current, canvasId, revision, trimmed);
+      const thumbnail = await libraryThumbnail(canvasId, revision).catch((failure: unknown) => {
+        // A save without a picture is still a save; the picker says it has none.
+        console.error('A library thumbnail could not be made:', failure);
+        return null;
+      });
+      await canvasClient.library.save(mutationId.current, canvasId, revision, trimmed, thumbnail);
       toast.success(`Saved “${trimmed}” to the library.`);
       onClose();
     } catch (failure) {

@@ -6,7 +6,6 @@ import test, { type TestContext } from 'node:test';
 import {
   APP,
   createCanvas,
-  createFrame,
   designSystem,
   errorOf,
   harness,
@@ -18,6 +17,7 @@ import { readLibraryCopy } from './canvasLibrary.js';
 import type { LibraryItem, RevisionRef } from './protocol.js';
 
 const SOURCE = `export default function Hero(){return <img src="canvas-asset:${CANVAS_PNG_ASSET_ID}" alt="Hero"/>}`;
+const THUMBNAIL = CANVAS_PNG.toString('base64');
 
 /** A profile of its own, so each test sees only the library it saved. */
 async function libraryProfile(t: TestContext): Promise<string> {
@@ -32,11 +32,24 @@ async function libraryProfile(t: TestContext): Promise<string> {
   return profile;
 }
 
-/** A canvas with one frame whose committed source shows an owned image. */
+/** A 640 × 400 frame whose committed source shows an owned image. */
 async function heroCanvas(t: TestContext, profile: string) {
   const canvas = await harness(t);
   const canvasId = await createCanvas(canvas);
-  const designId = await createFrame(canvas, canvasId);
+  await canvas.handle({
+    type: 'canvas.create',
+    requestId: 'req-create-hero',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'create-hero',
+      frames: [{ name: 'Hero', width: 640, height: 400, designSystem }],
+    },
+  });
+  const reserved = okReply(canvas, 'req-create-hero');
+  assert.ok(reserved.kind === 'created');
+  const designId = reserved.created.frames[0]?.designId;
+  assert.ok(designId);
   const image = join(profile, 'hero.png');
   await writeFile(image, CANVAS_PNG);
   await canvas.workspace.importCanvasImage({
@@ -62,9 +75,22 @@ async function heroCanvas(t: TestContext, profile: string) {
 async function save(
   canvas: Harness,
   requestId: string,
-  fields: { mutationId: string; canvasId: string; revision: RevisionRef; name: string },
+  fields: {
+    mutationId: string;
+    canvasId: string;
+    revision: RevisionRef;
+    name: string;
+    thumbnail?: string;
+  },
 ) {
   await canvas.handle({ type: 'canvas.saveLibraryItem', requestId, ...fields });
+}
+
+async function thumbnail(canvas: Harness, requestId: string, itemId: string) {
+  await canvas.handle({ type: 'canvas.readLibraryThumbnail', requestId, itemId });
+  const reply = okReply(canvas, requestId);
+  assert.ok(reply.kind === 'libraryThumbnail');
+  return reply.png;
 }
 
 async function list(canvas: Harness, requestId: string, query: string): Promise<LibraryItem[]> {
@@ -85,15 +111,27 @@ test('a library item is an immutable copy that inserts as an independent design'
   });
   const saved = okReply(canvas, 'req-save');
   assert.ok(saved.kind === 'libraryItem');
+  // The size is the frame's on its canvas, never the caller's word.
   assert.deepEqual(saved.item, {
     itemId: 'save-hero',
     name: 'Hero Card',
     sourceCanvasId: canvasId,
     source: revision,
+    width: 640,
+    height: 400,
     designSystem,
   });
   assert.deepEqual(await list(canvas, 'req-list-hero', '  hERO '), [saved.item]);
   assert.deepEqual(await list(canvas, 'req-list-none', 'footer'), []);
+  assert.equal(await thumbnail(canvas, 'req-no-thumbnail', 'save-hero'), null);
+  await save(canvas, 'req-save-text', {
+    mutationId: 'save-text',
+    canvasId,
+    revision,
+    name: 'Hero',
+    thumbnail: Buffer.from('not a png').toString('base64'),
+  });
+  assert.equal(errorOf(canvas, 'req-save-text').code, 'invalid_input');
 
   // Another chat's canvas takes the item through an ordinary create.
   const other = await canvas.workspace.createCanvas('app-2', 'create-other');
@@ -162,7 +200,7 @@ test('an item outlives its source canvas, answering retries and inserting elsewh
   const profile = await libraryProfile(t);
   const { canvas, canvasId, revision } = await heroCanvas(t, profile);
   const fields = { mutationId: 'save-once', canvasId, revision, name: 'Hero' };
-  await save(canvas, 'req-first', fields);
+  await save(canvas, 'req-first', { ...fields, thumbnail: THUMBNAIL });
   await canvas.handle({
     type: 'canvas.removeCanvas',
     requestId: 'req-remove',
@@ -175,6 +213,8 @@ test('an item outlives its source canvas, answering retries and inserting elsewh
   await save(canvas, 'req-retry', fields);
   assert.deepEqual(okReply(canvas, 'req-retry'), okReply(canvas, 'req-first'));
   assert.deepEqual(await readdir(join(profile, 'canvas-library')), ['save-once']);
+  // The item owns its picture, so it survives the canvas whose capture it copied.
+  assert.equal(await thumbnail(canvas, 'req-thumbnail', 'save-once'), THUMBNAIL);
   await save(canvas, 'req-renamed', { ...fields, name: 'Another hero' });
   assert.equal(errorOf(canvas, 'req-renamed').code, 'invalid_input');
 
@@ -208,5 +248,11 @@ test('an item outlives its source canvas, answering retries and inserting elsewh
   assert.deepEqual({ ...(await canvas.workspace.readFiles(other, ref)) }, { 'main.tsx': SOURCE });
   await insert('req-missing-item', 'never-saved');
   assert.equal(errorOf(canvas, 'req-missing-item').code, 'not_found');
+  await canvas.handle({
+    type: 'canvas.readLibraryThumbnail',
+    requestId: 'req-missing-thumbnail',
+    itemId: 'never-saved',
+  });
+  assert.equal(errorOf(canvas, 'req-missing-thumbnail').code, 'not_found');
   assert.equal(canvas.workspace.snapshot(other).frames.length, 1);
 });

@@ -10,12 +10,14 @@ import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { Popover } from '../../components/environment/Popover';
 import { useBoardOnScreen, type BoardOnScreen } from './boardOnScreen';
-import { frameRemovals } from './canvasClient';
+import { canvasClient, frameRemovals } from './canvasClient';
+import { CanvasRequestError } from './client';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import { LibraryPicker } from './LibraryPicker';
+import { libraryFrame } from './libraryRequests';
 import { MENU_WIDTH_PX, MenuHeading, MenuNote, MenuRow } from './menuRows';
-import type { CanvasRemovalPreview, RevisionRef } from './protocol';
+import type { CanvasRemovalPreview, LibraryItem, RevisionRef } from './protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
 import { useCanvases } from './useCanvases';
 import { searchCanvases } from './canvasChats';
@@ -222,6 +224,31 @@ function CanvasActions({
   );
 }
 
+/** From library on a board: the picked item lands as a new frame beside the selection. */
+function BoardLibraryPicker({ board, onClose }: { board: BoardOnScreen; onClose: () => void }) {
+  // One mutation per item until the sidecar answers, so picking it again after
+  // a lost reply finds the frame that request placed instead of a second one.
+  const attempt = useRef<{ itemId: string; mutationId: string } | null>(null);
+  const place = async (item: LibraryItem) => {
+    if (attempt.current?.itemId !== item.itemId)
+      attempt.current = { itemId: item.itemId, mutationId: crypto.randomUUID() };
+    const beside = board.selected.at(0);
+    try {
+      const created = await canvasClient.createFrames(board.appSessionId, board.canvasId, {
+        mutationId: attempt.current.mutationId,
+        ...(beside ? { placeBeside: { designId: beside.designId } } : {}),
+        frames: [libraryFrame(item)],
+      });
+      const frame = created.frames.at(0);
+      if (frame) board.focusFrame(frame.designId);
+    } catch (failure) {
+      if (failure instanceof CanvasRequestError) attempt.current = null;
+      throw failure;
+    }
+  };
+  return <LibraryPicker canvasId={board.canvasId} onPick={place} onClose={onClose} />;
+}
+
 function OpenDialog({
   dialog,
   onClose,
@@ -242,7 +269,7 @@ function OpenDialog({
         />
       );
     case 'insert':
-      return <LibraryPicker board={dialog.board} onClose={onClose} />;
+      return <BoardLibraryPicker board={dialog.board} onClose={onClose} />;
     case 'variants':
       return (
         <CanvasVariants

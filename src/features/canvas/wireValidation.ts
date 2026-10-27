@@ -61,6 +61,7 @@ const REPLY_KINDS = new Set([
   'designSystemSaved',
   'libraryItem',
   'libraryItems',
+  'libraryThumbnail',
   'removalPreview',
 ]);
 
@@ -78,8 +79,11 @@ const MAX_SOURCE_PATH_LENGTH = 256;
 // One read of a design's history asks for the whole page.
 export const MAX_REVISION_PAGE_SIZE = 50;
 const MAX_REVISION_DIFF_BYTES = 256 * 1024;
-// `LIBRARY_LIST_LIMIT` in the sidecar's canvasLibrary.ts.
+// `LIBRARY_LIST_LIMIT` and `MAX_THUMBNAIL_BASE64_LENGTH` in the sidecar's canvasLibrary.ts.
 const MAX_LIBRARY_ITEMS = 50;
+export const MAX_LIBRARY_THUMBNAIL_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
+// The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
+const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
 export const MAX_FRAME_NAME_LENGTH = 120;
 // A kit's bounds, matching `DESIGN_SYSTEM_LIMITS` in the sidecar's designSystems.ts.
@@ -182,6 +186,11 @@ function isReply(value: unknown): boolean {
       return isLibraryItem(value.item);
     case 'libraryItems':
       return boundedList(value.items, MAX_LIBRARY_ITEMS, isLibraryItem);
+    case 'libraryThumbnail':
+      return (
+        value.png === null ||
+        (typeof value.png === 'string' && value.png.length <= MAX_LIBRARY_THUMBNAIL_BASE64_LENGTH)
+      );
     case 'removalPreview':
       return (
         record(value.preview) &&
@@ -206,7 +215,18 @@ function isLibraryItem(value: unknown): boolean {
     record(value.source) &&
     id(value.source.designId) &&
     id(value.source.revisionId) &&
+    isFrameDimension(value.width) &&
+    isFrameDimension(value.height) &&
     isDesignSystem(value.designSystem)
+  );
+}
+
+function isFrameDimension(value: unknown): boolean {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= MAX_FRAME_DIMENSION_PX
   );
 }
 

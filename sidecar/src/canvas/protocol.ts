@@ -266,6 +266,9 @@ export interface LibraryItem {
   name: string;
   sourceCanvasId: string;
   source: RevisionRef;
+  /** The frame's size on its source canvas when it was saved, in CSS px. */
+  width: number;
+  height: number;
   designSystem: DesignSystemRef;
 }
 
@@ -458,7 +461,9 @@ export type CanvasCommand =
       source: DesignSystemSource;
     }
   // The local library (spec §7). A new item is named by its mutationId, so a
-  // retried save finds the copy it already made.
+  // retried save finds the copy it already made. `thumbnail` is a base64 PNG
+  // of that revision, which the item keeps as its own; a listing carries none,
+  // so each is read by item.
   | {
       type: 'canvas.saveLibraryItem';
       requestId: string;
@@ -466,8 +471,10 @@ export type CanvasCommand =
       canvasId: string;
       revision: RevisionRef;
       name: string;
+      thumbnail?: string;
     }
   | { type: 'canvas.listLibraryItems'; requestId: string; query: string }
+  | { type: 'canvas.readLibraryThumbnail'; requestId: string; itemId: string }
   // Explicit whole-canvas deletion from the canvas picker, never an agent tool.
   // The preview names what deleting would end, and removal carries back its
   // sequence and chats so a canvas that changed since is not deleted unseen.
@@ -529,6 +536,7 @@ export type CanvasReply =
   | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
   | { kind: 'libraryItem'; item: LibraryItem }
   | { kind: 'libraryItems'; items: LibraryItem[] }
+  | { kind: 'libraryThumbnail'; png: string | null }
   | { kind: 'removalPreview'; preview: CanvasRemovalPreview };
 
 export type CanvasEvent =

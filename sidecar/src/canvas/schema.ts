@@ -166,7 +166,7 @@ export const canvasSeedSchema = z.discriminatedUnion('kind', [
 const coordinateSchema = z
   .number({ invalid_type_error: COORDINATE_MESSAGE })
   .finite(COORDINATE_MESSAGE);
-const dimensionPxSchema = z
+export const dimensionPxSchema = z
   .number({ invalid_type_error: DIMENSION_MESSAGE })
   .finite(DIMENSION_MESSAGE)
   .positive(DIMENSION_MESSAGE)

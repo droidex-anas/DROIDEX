@@ -1,17 +1,13 @@
-// From library (spec §7): the saved frames, newest first, and the one the user
-// picks placed on this canvas as a new frame beside the selection. An item
-// keeps no picture, so a row names it and the canvas it was saved from.
+// From library (spec §7): the saved frames, newest first, each with the
+// picture it was saved with and the canvas it came from. What a pick does is
+// the owner's: a board places a frame, the Design home starts its next canvas.
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { canvasClient } from './canvasClient';
-import type { BoardOnScreen } from './boardOnScreen';
 import { CanvasDialog, FIELD_CLASS, QUIET_BUTTON_CLASS } from './CanvasDialog';
-import { canvasMessage, CanvasRequestError } from './client';
+import { canvasMessage } from './client';
 import type { CanvasSummary, LibraryItem } from './protocol';
 import { useCanvases } from './useCanvases';
-
-// An item records no size, so it takes the selected frame's or a square.
-const DEFAULT_FRAME_PX = 720;
 
 type Listing =
   | { status: 'loading' }
@@ -19,51 +15,40 @@ type Listing =
   | { status: 'listed'; items: LibraryItem[]; query: string }
   | { status: 'failed'; message: string };
 
-export function LibraryPicker({ board, onClose }: { board: BoardOnScreen; onClose: () => void }) {
+export function LibraryPicker({
+  canvasId,
+  onPick,
+  onClose,
+}: {
+  /** The canvas a pick lands on, whose own items read "From this canvas"; null before it exists. */
+  canvasId: string | null;
+  /** Uses the item. The picker closes once it resolves and shows why it rejected. */
+  onPick: (item: LibraryItem) => Promise<void>;
+  onClose: () => void;
+}) {
   const [query, setQuery] = useState('');
   const { listing, retry } = useLibraryItems(query);
   const { canvases } = useCanvases();
   const [adding, setAdding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // One mutation per item until the sidecar answers, so picking it again after
-  // a lost reply finds the frame that request placed instead of a second one.
-  const attempt = useRef<{ itemId: string; mutationId: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
 
   const add = async (item: LibraryItem) => {
     if (adding !== null) return;
-    if (attempt.current?.itemId !== item.itemId)
-      attempt.current = { itemId: item.itemId, mutationId: crypto.randomUUID() };
-    const beside = board.selected.at(0);
     setAdding(item.itemId);
     setError(null);
     try {
-      const created = await canvasClient.createFrames(board.appSessionId, board.canvasId, {
-        mutationId: attempt.current.mutationId,
-        ...(beside ? { placeBeside: { designId: beside.designId } } : {}),
-        frames: [
-          {
-            name: item.name,
-            width: beside?.rect.width ?? DEFAULT_FRAME_PX,
-            height: beside?.rect.height ?? DEFAULT_FRAME_PX,
-            designSystem: item.designSystem,
-            seed: { kind: 'library', itemId: item.itemId },
-          },
-        ],
-      });
-      const frame = created.frames.at(0);
-      if (frame) board.focusFrame(frame.designId);
+      await onPick(item);
       onClose();
     } catch (failure) {
-      if (failure instanceof CanvasRequestError) attempt.current = null;
       setError(canvasMessage(failure));
       setAdding(null);
     }
   };
 
   const origin = (item: LibraryItem) =>
-    canvases.status === 'listed' ? originLabel(item, board.canvasId, canvases.summaries) : null;
+    canvases.status === 'listed' ? originLabel(item, canvasId, canvases.summaries) : null;
 
   return (
     <CanvasDialog
@@ -127,16 +112,17 @@ export function LibraryPicker({ board, onClose }: { board: BoardOnScreen; onClos
                   onClick={() => {
                     void add(item);
                   }}
-                  className="flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-droid-accent/10 focus-visible:bg-droid-accent/10 focus-visible:outline-none disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-droid-accent/10 focus-visible:bg-droid-accent/10 focus-visible:outline-none disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
                 >
-                  <span className="w-full truncate text-[12px] text-droid-text">
-                    {adding === item.itemId ? `Adding ${item.name}…` : item.name}
-                  </span>
-                  {origin(item) && (
-                    <span className="w-full truncate text-[11px] text-droid-text-muted">
-                      {origin(item)}
+                  <LibraryThumbnail itemId={item.itemId} />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-[12px] text-droid-text">
+                      {adding === item.itemId ? `Adding ${item.name}…` : item.name}
                     </span>
-                  )}
+                    <span className="truncate text-[11px] text-droid-text-muted">
+                      {[sizeLabel(item), origin(item)].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
                 </button>
               </li>
             ))}
@@ -173,7 +159,54 @@ function useLibraryItems(query: string): { listing: Listing; retry: () => void }
   return { listing, retry };
 }
 
-function originLabel(item: LibraryItem, canvasId: string, summaries: CanvasSummary[]): string {
+/**
+ * The picture the item was saved with, read by item like a frame's capture. An
+ * item saved before its frame was ever previewed has none, and says so.
+ */
+function LibraryThumbnail({ itemId }: { itemId: string }) {
+  // Undefined until the read answers, so the tile stays quiet rather than
+  // flashing "No preview" before the picture arrives.
+  const [png, setPng] = useState<string | null>();
+  useEffect(() => {
+    let active = true;
+    canvasClient.library.thumbnail(itemId).then(
+      (read) => {
+        if (active) setPng(read);
+      },
+      (error: unknown) => {
+        if (active) setPng(null);
+        console.error('A library thumbnail could not be read:', error);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [itemId]);
+  return (
+    <span className="flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-droid-raised text-[10px] text-droid-text-muted shadow-droid-sm">
+      {png ? (
+        <img
+          src={`data:image/png;base64,${png}`}
+          alt=""
+          draggable={false}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        png === null && 'No preview'
+      )}
+    </span>
+  );
+}
+
+function sizeLabel(item: LibraryItem): string {
+  return `${String(Math.round(item.width))} × ${String(Math.round(item.height))}`;
+}
+
+function originLabel(
+  item: LibraryItem,
+  canvasId: string | null,
+  summaries: CanvasSummary[],
+): string {
   if (item.sourceCanvasId === canvasId) return 'From this canvas';
   const source = summaries.find((summary) => summary.canvasId === item.sourceCanvasId);
   return source ? `From ${source.name}` : 'From a deleted canvas';
