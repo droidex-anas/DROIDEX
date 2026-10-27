@@ -416,14 +416,14 @@ test('a stopped run lets go of its element while a call to it never answers', as
     const session = run();
     await started(session);
     session.preview.stop();
-    return { element: new WeakRef(session.element.guest), unanswered: session.calls };
+    return { element: new WeakRef(session.element.guest), held: session.calls };
   }
-  const { element, unanswered } = await stoppedMidPoll();
+  const { element, held } = await stoppedMidPoll();
   await new Promise((resolve) => setImmediate(resolve));
 
   collectGarbage();
 
-  assert.equal(unanswered.length, 2);
+  assert.equal(held.length, 2);
   assert.equal(element.deref(), undefined);
 });
 
