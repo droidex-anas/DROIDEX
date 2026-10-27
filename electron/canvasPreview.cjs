@@ -82,15 +82,18 @@ const MAX_PREVIEW_DIAGNOSTICS = 8;
  * preview by writing a diagnostic in a script where characters are three bytes.
  */
 const MAX_PREVIEW_TEXT_BYTES = 512;
+/** Style properties one selection command may read and preview. */
+const MAX_PREVIEW_STYLE_PROPERTIES = 40;
 /** The nonce charset the intermediate will embed; the renderer mints hex. */
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 
 /**
- * The intermediate's own script: the receiver, the bounded queue, and the two
+ * The intermediate's own script: the receiver, the bounded queue, and the
  * calls the renderer drives through `executeJavaScript`. `start` installs one
  * instance and nothing can replace it, so a second start reaches a fresh guest
  * or nothing; `drain` throws when this document was never started, which the
- * renderer reads as a guest it no longer owns.
+ * renderer reads as a guest it no longer owns. `pick` and `select` pass a
+ * bounded selection command on to the generated frame.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -115,6 +118,29 @@ const INTERMEDIATE_SCRIPT = `(() => {
   const size = (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
 
+  // The properties the board asked about last; a selection carries no others.
+  let asked = [];
+  const normalizeSelection = (element) => {
+    if (element === null) return { event: 'selection', element: null };
+    if (!element || typeof element !== 'object' || !element.rect || typeof element.rect !== 'object')
+      return null;
+    const rect = {};
+    for (const side of ['x', 'y', 'width', 'height']) {
+      const value = element.rect[side];
+      if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+      rect[side] = value;
+    }
+    const elementId = text(element.elementId);
+    if (!elementId || rect.width < 0 || rect.height < 0) return null;
+    const given = element.styles && typeof element.styles === 'object' ? element.styles : {};
+    const styles = {};
+    for (const name of asked) if (typeof given[name] === 'string') styles[name] = text(given[name]);
+    return {
+      event: 'selection',
+      element: { elementId, instancePath: text(element.instancePath), rect, styles },
+    };
+  };
+
   // Only these shapes leave the intermediate, rebuilt field by field so no
   // getter, prototype or extra property from generated code ever travels.
   const normalize = (data) => {
@@ -132,15 +158,30 @@ const INTERMEDIATE_SCRIPT = `(() => {
         .map((entry) => ({ code: text(entry.code) || 'preview_error', message: text(entry.message) }));
       return { event: 'diagnostics', diagnostics };
     }
-    if (data.event === 'selection') {
-      return {
-        event: 'selection',
-        elementId: text(data.elementId),
-        instancePath: text(data.instancePath),
-      };
-    }
+    if (data.event === 'selection') return normalizeSelection(data.element);
     if (data.event === 'interaction') return { event: 'interaction', kind: text(data.kind) };
     return null;
+  };
+
+  // The board's two selection commands, passed to the reporter in the frame.
+  // They name style properties to read and preview, never code to run.
+  const PICK_STEPS = ['first', 'next', 'previous'];
+  const propertiesOf = (request) => {
+    if (!request || typeof request !== 'object' || !Array.isArray(request.properties)) return null;
+    const { properties } = request;
+    if (properties.length > ${String(MAX_PREVIEW_STYLE_PROPERTIES)}) return null;
+    const named = properties.every(
+      (name) => typeof name === 'string' && /^[a-z][A-Za-z]{0,31}$/.test(name),
+    );
+    return named ? properties.slice() : null;
+  };
+  const command = (message) => {
+    asked = message.properties;
+    frame.contentWindow.postMessage(
+      Object.assign({ canvasPreviewCommand: instance.nonce }, message),
+      '*',
+    );
+    return 'sent';
   };
 
   addEventListener('message', (message) => {
@@ -161,6 +202,11 @@ const INTERMEDIATE_SCRIPT = `(() => {
     }
     const event = normalize(data);
     if (!event) return;
+    // Only the latest selection means anything, so it replaces an earlier one.
+    if (event.event === 'selection') {
+      const earlier = queue.findIndex((queued) => queued.event === 'selection');
+      if (earlier >= 0) queue.splice(earlier, 1);
+    }
     // Full queue drops the newest: the queue never grows under a flood.
     if (queue.length >= ${String(MAX_PREVIEW_QUEUED_EVENTS)}) {
       dropped += 1;
@@ -202,6 +248,40 @@ const INTERMEDIATE_SCRIPT = `(() => {
         generation: instance.generation,
         events,
         dropped: lost,
+      });
+    },
+    pick(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      const properties = propertiesOf(request);
+      if (!properties) return 'invalid_request';
+      if (PICK_STEPS.includes(request.step))
+        return command({ command: 'pick', step: request.step, properties });
+      if (!Number.isFinite(request.x) || !Number.isFinite(request.y)) return 'invalid_request';
+      return command({ command: 'pick', x: request.x, y: request.y, properties });
+    },
+    select(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      const properties = propertiesOf(request);
+      if (!properties) return 'invalid_request';
+      const target = request.target;
+      if (target === null) return command({ command: 'select', target: null, properties });
+      if (
+        !target ||
+        typeof target !== 'object' ||
+        typeof target.elementId !== 'string' ||
+        typeof target.instancePath !== 'string' ||
+        !/^[0-9]+(?:[/][0-9]+)*$/.test(target.instancePath) ||
+        !target.styles ||
+        typeof target.styles !== 'object'
+      )
+        return 'invalid_request';
+      const styles = {};
+      for (const name of properties)
+        if (typeof target.styles[name] === 'string') styles[name] = text(target.styles[name]);
+      return command({
+        command: 'select',
+        target: { elementId: text(target.elementId), instancePath: target.instancePath, styles },
+        properties,
       });
     },
     identity() {

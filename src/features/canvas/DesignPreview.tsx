@@ -13,6 +13,7 @@ import {
 } from '../../lib/desktop';
 import { diagnosticPlace, missingLabel } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
+import type { PreviewElement } from './previewDocument';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import { useCanvasMotion } from './useCanvasMotion';
 import type { CanvasDiagnostic, CanvasFrame, PreviewArtifact, PreviewReport } from './protocol';
@@ -32,6 +33,15 @@ export interface DesignPreviewProps {
   reportPreview: (canvasId: string, report: PreviewReport) => void;
   /** The content size a mounted preview reports, so the board can fit it. */
   onResize?: (designId: string, size: { width: number; height: number }) => void;
+  /** The element editor, which picks and previews elements in a rendered preview. */
+  selections?: PreviewSelections;
+}
+
+/** How the element editor reaches the previews that rendered, and hears what they selected. */
+export interface PreviewSelections {
+  /** A preview of one revision rendered; the call returned forgets it. */
+  attach(designId: string, revisionId: string, run: PreviewRun): () => void;
+  report(designId: string, revisionId: string, element: PreviewElement | null): void;
 }
 
 /** Every mount takes the next number, so a replacement is never this instance. */
@@ -52,6 +62,7 @@ export function DesignPreview({
   readArtifact,
   reportPreview,
   onResize,
+  selections,
 }: DesignPreviewProps) {
   const read = useArtifact(canvasId, frame, revisionId, readArtifact, reportPreview);
   const { build } = frame;
@@ -71,6 +82,7 @@ export function DesignPreview({
       diagnostics={build.status === 'failed' ? build.diagnostics : []}
       reportPreview={reportPreview}
       onResize={onResize}
+      selections={selections}
     />
   );
 }
@@ -147,6 +159,7 @@ export function PreviewGuestFrame({
   diagnostics,
   reportPreview,
   onResize,
+  selections,
 }: {
   canvasId: string;
   designId: string;
@@ -157,6 +170,7 @@ export function PreviewGuestFrame({
   diagnostics: CanvasDiagnostic[];
   reportPreview: DesignPreviewProps['reportPreview'];
   onResize: DesignPreviewProps['onResize'];
+  selections?: PreviewSelections;
 }) {
   const motion = useCanvasMotion();
   const host = useRef<HTMLDivElement>(null);
@@ -164,6 +178,8 @@ export function PreviewGuestFrame({
   resized.current = onResize;
   const reported = useRef(reportPreview);
   reported.current = reportPreview;
+  const selected = useRef(selections);
+  selected.current = selections;
   const [phase, setPhase] = useState<'mounting' | 'ready' | PreviewLostReason>('mounting');
   // Only what the design threw: the host's own notes would crowd it out.
   const [thrown, setThrown] = useState<CanvasDiagnostic[]>([]);
@@ -176,6 +192,7 @@ export function PreviewGuestFrame({
     let run: PreviewRun | null = null;
     let mounted = true;
     let releaseCapture: (() => void) | null = null;
+    let detachSelections: (() => void) | null = null;
     let captureSize = '';
     const mountGeneration = (previewMounts += 1);
     const thumbnailCapture = new AbortController();
@@ -266,6 +283,7 @@ export function PreviewGuestFrame({
             setPhase('ready');
             updateCapture();
             sizeObserver.observe(guest);
+            if (run) detachSelections = selected.current?.attach(designId, revisionId, run) ?? null;
           },
           onResize: (size) => resized.current?.(designId, size),
           onDiagnostics: (entries) => {
@@ -278,10 +296,15 @@ export function PreviewGuestFrame({
               fresh.map((entry) => entry.message),
             );
           },
+          onSelection: (element) => {
+            selected.current?.report(designId, revisionId, element);
+          },
           onLost: (reason) => {
             // A guest the board lost is not the design's fault; a stall is.
             if (reason !== 'guest_gone')
               report(painted ? 'rendered' : 'failed', [lostLabel(reason)]);
+            detachSelections?.();
+            detachSelections = null;
             thumbnailCapture.abort();
             if (thumbnailTimer) clearTimeout(thumbnailTimer);
             releaseCapture?.();
@@ -307,6 +330,7 @@ export function PreviewGuestFrame({
       thumbnailCapture.abort();
       if (thumbnailTimer) clearTimeout(thumbnailTimer);
       releaseCapture?.();
+      detachSelections?.();
       sizeObserver.disconnect();
       run?.stop();
       guest.remove();

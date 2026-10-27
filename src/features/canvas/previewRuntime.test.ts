@@ -9,6 +9,7 @@ import {
   type PreviewClock,
   type PreviewLostReason,
 } from './previewRuntime';
+import type { PreviewElement } from './previewDocument';
 import type { CanvasDiagnostic } from './protocol';
 
 /** Timers a test fires itself; nothing here waits on wall-clock time. */
@@ -69,6 +70,7 @@ function createObserver() {
     ready: 0,
     sizes: [] as { width: number; height: number }[],
     diagnostics: [] as CanvasDiagnostic[],
+    selections: [] as (PreviewElement | null)[],
     lost: [] as PreviewLostReason[],
   };
   return {
@@ -77,6 +79,7 @@ function createObserver() {
       onReady: () => (seen.ready += 1),
       onResize: (size: { width: number; height: number }) => seen.sizes.push(size),
       onDiagnostics: (entries: CanvasDiagnostic[]) => seen.diagnostics.push(...entries),
+      onSelection: (element: PreviewElement | null) => seen.selections.push(element),
       onLost: (reason: PreviewLostReason) => seen.lost.push(reason),
     },
   };
@@ -175,6 +178,36 @@ test('a started guest is polled one call at a time on a bounded cadence', async 
   assert.deepEqual(session.clock.pending(), [PREVIEW_POLL_DEADLINE_MS]);
 });
 
+const picked: PreviewElement = {
+  elementId: 'el_1',
+  instancePath: '0/1',
+  rect: { x: 8, y: 12, width: 120, height: 32 },
+  styles: { gap: '4px' },
+};
+
+test('selection commands reach only a guest this run started and has not stopped', async () => {
+  const session = run();
+  session.preview.pick({ x: 10, y: 20 }, ['gap']);
+  assert.equal(session.calls.length, 1, 'nothing is sent before the guest has started');
+
+  await started(session);
+  session.preview.pick({ step: 'next' }, ['gap']);
+  session.preview.select({ elementId: 'el_1', instancePath: '0/1', styles: { gap: '8px' } }, [
+    'gap',
+  ]);
+  assert.deepEqual(
+    session.calls.slice(2).map((call) => call.code),
+    [
+      'globalThis.__droidexCanvasPreview.pick({"step":"next","properties":["gap"]})',
+      'globalThis.__droidexCanvasPreview.select({"target":{"elementId":"el_1","instancePath":"0/1","styles":{"gap":"8px"}},"properties":["gap"]})',
+    ],
+  );
+
+  session.preview.stop();
+  session.preview.select(null, ['gap']);
+  assert.equal(session.calls.length, 4);
+});
+
 test('bounded events reach the board, and what a flood dropped is not reported', async () => {
   const session = run();
   const nonce = await started(session);
@@ -184,7 +217,8 @@ test('bounded events reach the board, and what a flood dropped is not reported',
       [
         { event: 'resize', width: 640, height: 480 },
         { event: 'diagnostics', diagnostics: [{ code: 'preview_error', message: 'Boom' }] },
-        { event: 'selection', elementId: 'el_1', instancePath: '0/1' },
+        { event: 'selection', element: picked },
+        { event: 'selection', element: null },
       ],
       7,
       { nonce },
@@ -198,6 +232,7 @@ test('bounded events reach the board, and what a flood dropped is not reported',
     session.seen.diagnostics.map((entry) => entry.code),
     ['preview_error'],
   );
+  assert.deepEqual(session.seen.selections, [picked, null]);
   assert.deepEqual(session.seen.lost, []);
 });
 

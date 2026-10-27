@@ -11,10 +11,15 @@ import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
   previewNonce,
+  previewPickScript,
+  previewSelectScript,
   previewStartScript,
   readPreviewSnapshot,
+  type PreviewElement,
   type PreviewEvent,
   type PreviewInstance,
+  type PreviewPick,
+  type PreviewTarget,
 } from './previewDocument';
 import type { CanvasDiagnostic } from './protocol';
 
@@ -66,6 +71,8 @@ export interface PreviewObserver {
   onReady(): void;
   onResize(size: { width: number; height: number }): void;
   onDiagnostics(diagnostics: CanvasDiagnostic[]): void;
+  /** The element the guest has selected after a pick or select, or as its box moves. */
+  onSelection(element: PreviewElement | null): void;
   /** The guest was ended; nothing else arrives from it. */
   onLost(reason: PreviewLostReason): void;
 }
@@ -83,9 +90,15 @@ export interface PreviewRunOptions {
   clock?: PreviewClock;
 }
 
-/** One running preview. `stop` is idempotent and releases every timer. */
+/**
+ * One running preview. `stop` is idempotent and releases every timer. The two
+ * selection commands reach a guest that has started and is still this run's;
+ * `onSelection` carries the answer.
+ */
 export interface PreviewRun {
   stop(): void;
+  pick(pick: PreviewPick, properties: readonly string[]): void;
+  select(target: PreviewTarget | null, properties: readonly string[]): void;
 }
 
 const realPreviewClock: PreviewClock = {
@@ -113,6 +126,7 @@ class GuestRun implements PreviewRun {
   private readonly clock: PreviewClock;
   private readonly guestId: number | null;
   private stopped = false;
+  private started = false;
   private polling = false;
   private releaseReadyDeadline: (() => void) | null = null;
   private releasePollDeadline: (() => void) | null = null;
@@ -165,6 +179,20 @@ class GuestRun implements PreviewRun {
     this.release();
   }
 
+  pick(pick: PreviewPick, properties: readonly string[]): void {
+    this.command(previewPickScript(pick, properties));
+  }
+
+  select(target: PreviewTarget | null, properties: readonly string[]): void {
+    this.command(previewSelectScript(target, properties));
+  }
+
+  /** A command's answer arrives through the poll, so its own result is not read. */
+  private command(code: string): void {
+    if (this.stopped || !this.started) return;
+    void this.ask(code);
+  }
+
   private release(): void {
     this.releaseGoneEvents?.();
     this.releaseGoneEvents = null;
@@ -183,6 +211,7 @@ class GuestRun implements PreviewRun {
       this.lose('guest_gone');
       return;
     }
+    this.started = true;
     this.poll();
   }
 
@@ -235,9 +264,9 @@ class GuestRun implements PreviewRun {
       case 'diagnostics':
         this.options.observer.onDiagnostics(event.diagnostics);
         return;
-      // Task 8 owns what a board does with these; the channel already carries
-      // and bounds them.
       case 'selection':
+        this.options.observer.onSelection(event.element);
+        return;
       case 'interaction':
         return;
     }
