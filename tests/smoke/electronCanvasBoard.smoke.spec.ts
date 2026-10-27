@@ -411,7 +411,7 @@ test('at most four previews stay mounted and the interacted frame keeps its slot
 
   // Pan the interacted frame clear off the top of the board, leaving plenty of
   // other visible frames to compete for the four slots.
-  await wheel(page, 400, 300, 330, { deltaX: 0 });
+  await wheel(page, 400, 300, 400, { deltaX: 0 });
   await page.clock.runFor(200);
   const boardBox = await box(board);
   const frameA = await box(frame(page, 'A'));
@@ -470,7 +470,8 @@ test('the public focusFrame entry point centers acknowledged geometry and takes 
   const focused = await box(frame(page, 'B'));
   expect(focused.width).toBeCloseTo(400, 1);
   expect(focused.x + 200).toBeCloseTo(board.x + board.width / 2, 1);
-  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2, 1);
+  // Its label and toolbar are framed with it, half their 66 px below centre.
+  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2 + 33, 1);
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
 
