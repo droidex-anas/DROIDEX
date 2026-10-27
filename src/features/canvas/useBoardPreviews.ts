@@ -3,6 +3,7 @@
 // (previewSlots.ts). Both are retained, so a frame keeps its design while a
 // newer revision builds and keeps its slot while it stays in view.
 
+import { useIsPresent } from 'framer-motion';
 import { useState, type ReactNode } from 'react';
 import type { BoardInteraction } from './canvasState';
 import { NO_SHOWN_REVISIONS, shownRevisions } from './previewLabels';
@@ -20,12 +21,20 @@ export function useBoardPreviews(
   // Only a frame with something to show has a document to run.
   const shown = shownRevisions(retainedShown, frames);
   if (shown !== retainedShown) setRetainedShown(shown);
-  const slots = reducePreviewSlots(retainedSlots, {
-    designIds: frames.filter((frame) => shown.has(frame.designId)).map((frame) => frame.designId),
-    visible,
-    interacted: interaction.interactedFrameId,
-    selected: interaction.selectedFrameIds,
-  });
+  // Closing the pane releases the previews as it starts to leave (spec §4).
+  // Holding them, every frame its shrinking width uncovered would claim a slot
+  // and start a guest that is gone a moment later.
+  const isLeaving = !useIsPresent();
+  const slots = isLeaving
+    ? NO_PREVIEW_SLOTS
+    : reducePreviewSlots(retainedSlots, {
+        designIds: frames
+          .filter((frame) => shown.has(frame.designId))
+          .map((frame) => frame.designId),
+        visible,
+        interacted: interaction.interactedFrameId,
+        selected: interaction.selectedFrameIds,
+      });
   if (slots !== retainedSlots) setRetainedSlots(slots);
 
   /** One frame's live preview, or null when it holds no slot. */
