@@ -108,6 +108,20 @@ test('a snapshot over the queue cap is refused rather than trimmed', () => {
   assert.equal(readPreviewSnapshot(answer({ events: [...atCap, ready] }), instance), null);
 });
 
+test('a queue the guest filled within its own bounds is read, not refused', () => {
+  // Each event sits just under the 4096 bytes the intermediate accepts, so a
+  // full queue of them is legal: ending the guest over one is what the two
+  // sides' bounds exist to prevent, not a reason to refuse the snapshot.
+  const event = {
+    event: 'diagnostics',
+    diagnostics: Array.from({ length: 7 }, () => ({ code: 'e', message: 'a'.repeat(505) })),
+  };
+  assert.ok(new TextEncoder().encode(JSON.stringify(event)).length <= 4096);
+  const events = Array.from({ length: MAX_PREVIEW_SNAPSHOT_EVENTS }, () => event);
+
+  assert.equal(readPreviewSnapshot(answer({ events }), instance)?.events.length, events.length);
+});
+
 test('an over-long text field is cut on a code point boundary, not refused', () => {
   // A diagnostic is display data. Refusing the snapshot over one would end a
   // guest because its design wrote an error message in a non-Latin script.
@@ -140,9 +154,11 @@ test('an over-long text field is cut on a code point boundary, not refused', () 
 
 test('a snapshot over its own byte bound is still refused whole', () => {
   // The structural bounds are what a guest is ended over, and they stay strict.
+  // Astral characters are four bytes each, so this clears the whole-snapshot
+  // bound with room to spare however the fields are cut.
   const huge = answer({ events: [{ event: 'ready' }] }).replace(
     '"events"',
-    `"padding":"${'😀'.repeat(20_000)}","events"`,
+    `"padding":"${'😀'.repeat(90_000)}","events"`,
   );
 
   assert.equal(readPreviewSnapshot(huge, instance), null);

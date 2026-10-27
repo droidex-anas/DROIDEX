@@ -18,8 +18,10 @@ const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_TEXT = 512;
 /** Style properties one selection command may name, as the intermediate caps them. */
 const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+/** Bytes one queued event may measure, as the intermediate accepts it. */
+const MAX_PREVIEW_EVENT_BYTES = 4096;
 /** The queue cap times the largest event the guest will keep, with headroom. */
-const MAX_PREVIEW_SNAPSHOT_BYTES = 64 * 1024;
+const MAX_PREVIEW_SNAPSHOT_BYTES = MAX_PREVIEW_SNAPSHOT_EVENTS * MAX_PREVIEW_EVENT_BYTES + 1024;
 
 /** One live preview's identity, minted by the board and echoed by the guest. */
 export interface PreviewInstance {
