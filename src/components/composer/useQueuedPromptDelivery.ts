@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
-import { canvasContextOf, promptWithFramePins } from '../../features/canvas/framePins';
+import { promptWithFramePins } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
 import {
@@ -14,6 +14,7 @@ import { promptWithSideChatReplies } from '../../lib/sideChats';
 import {
   createLocalDesignTranscriptEvent,
   createPromptQueueDeliveryGuard,
+  type QueuedPrompt,
 } from '../../lib/promptQueue';
 import { browserTranscriptReferencesFromDesignReferences } from '../browser/browserTranscriptReferences';
 
@@ -87,31 +88,8 @@ export function useQueuedPromptDelivery({
           });
         } else {
           const transcript = store.getState().transcripts[appSessionId] ?? [];
-          // Rows queued as mentions kept their place in the chip list for the
-          // preview; the text they are sent with must still leave them out.
-          const mentioned = new Set(head.mentions?.map((mention) => mention.name));
-          sendToSession(
-            appSessionId,
-            promptWithFramePins(
-              promptWithSideChatReplies(
-                composePrompt(
-                  head.text,
-                  head.skills.filter((name) => !mentioned.has(name)),
-                  head.files,
-                ),
-                head.sideChatReplies ?? [],
-              ),
-              head.framePins,
-            ),
-            {
-              responseFormat: responseFormatForPrompt(
-                head.text,
-                hasAppContextForTranscript(transcript, null),
-              ),
-              mentions: head.mentions,
-              canvasContext: canvasContextOf(head.framePins),
-            },
-          );
+          const { text, options } = queuedSend(head, hasAppContextForTranscript(transcript, null));
+          sendToSession(appSessionId, text, options);
           dispatch({
             type: 'SESSION_TRANSCRIPT',
             event: {
@@ -165,6 +143,35 @@ export function useQueuedPromptDelivery({
       void deliverPrompt();
     previousInstalling.current = appUpdateInstalling;
   }, [appSessionId, appUpdateInstalling, appUpdateInstallResult, deliverPrompt, isLive, store]);
+}
+
+/** What a queued prompt is sent with: everything as it was when it was queued. */
+export function queuedSend(
+  head: QueuedPrompt,
+  hasAppContext: boolean,
+): { text: string; options: Parameters<typeof sendToSession>[2] } {
+  // Rows queued as mentions kept their place in the chip list for the
+  // preview; the text they are sent with must still leave them out.
+  const mentioned = new Set(head.mentions?.map((mention) => mention.name));
+  const text = promptWithFramePins(
+    promptWithSideChatReplies(
+      composePrompt(
+        head.text,
+        head.skills.filter((name) => !mentioned.has(name)),
+        head.files,
+      ),
+      head.sideChatReplies ?? [],
+    ),
+    head.framePins,
+  );
+  return {
+    text,
+    options: {
+      responseFormat: responseFormatForPrompt(head.text, hasAppContext),
+      mentions: head.mentions,
+      canvasContext: head.canvasContext,
+    },
+  };
 }
 
 export function shouldResumeQueuedPromptAfterUpdate(

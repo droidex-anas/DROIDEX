@@ -512,6 +512,15 @@ export async function saveAttachment(name: string, dataUrl: string): Promise<str
   return requireDesktopApi('File attachments need the desktop app.').saveAttachment(name, dataUrl);
 }
 
+// Imports a dropped image into the canvas as an owned asset. Main rejects with
+// a curated { code, message } that never names the file's path.
+export async function importCanvasImage(canvasId: string, file: File): Promise<OwnedAsset> {
+  return requireDesktopApi('Reference images need the desktop app.').canvasDropImage(
+    canvasId,
+    file,
+  );
+}
+
 // Absolute path behind a dropped or pasted File, or '' when there is none
 // (clipboard snapshot, plain browser). A real path is attached by reference
 // instead of being copied into the temp store.

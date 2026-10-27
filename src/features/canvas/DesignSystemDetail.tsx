@@ -9,9 +9,8 @@ import { canvasMessage, CanvasRequestError } from './client';
 import { TokenPanel } from './DesignSystemTokens';
 import { TOKEN_TABS, tokensByTab, type TokenTab } from './designSystemTokenTabs';
 import type { KitRead } from './designSystemsState';
+import { PreviewModeToggle, type PreviewMode } from './PreviewModeToggle';
 import type { CanvasDiagnostic, DesignSystemDetail, DesignSystemSummary } from './protocol';
-
-export type PreviewMode = 'light' | 'dark';
 
 const ACTION_CLASS =
   'flex items-center gap-1.5 rounded-lg bg-droid-active px-2.5 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 disabled:cursor-default disabled:opacity-60';
@@ -219,7 +218,7 @@ function KitDetail({
             </button>
           ))}
         </div>
-        <ModeToggle mode={mode} onChange={onModeChange} />
+        <PreviewModeToggle mode={mode} onChange={onModeChange} />
       </div>
 
       <div
@@ -256,41 +255,6 @@ function kitOrigin(
   if ('copiedFrom' in provenance)
     return `${version} · copy of ${nameOf(provenance.copiedFrom.id) ?? 'another kit'}`;
   return `${version} · extracted from a canvas`;
-}
-
-function ModeToggle({
-  mode,
-  onChange,
-}: {
-  mode: PreviewMode;
-  onChange: (mode: PreviewMode) => void;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Preview mode"
-      className="ml-auto flex items-center gap-0.5 rounded-lg bg-droid-active/60 p-0.5"
-    >
-      {(['light', 'dark'] as const).map((option) => (
-        <button
-          key={option}
-          type="button"
-          role="radio"
-          aria-checked={mode === option}
-          onClick={() => {
-            onChange(option);
-          }}
-          className={`cursor-pointer rounded-md px-2 py-0.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 ${
-            mode === option
-              ? 'bg-droid-accent/15 text-droid-text'
-              : 'text-droid-text-muted hover:text-droid-text'
-          }`}
-        >
-          {option}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function ImportNotes({ notes }: { notes: CanvasDiagnostic[] }) {

@@ -1243,7 +1243,7 @@ export default function App() {
       {!embedded &&
         canvasRequests.map(([clientRef, request]) => (
           <Suspense key={clientRef} fallback={null}>
-            <LazyCanvasChatBootstrap appSessionId={request.appSessionId} />
+            <LazyCanvasChatBootstrap clientRef={clientRef} appSessionId={request.appSessionId} />
           </Suspense>
         ))}
       {/* Watches project threads for a block that needs the user. Nothing to

@@ -226,5 +226,10 @@ test('a malformed pinned context is refused with the limit’s own message', () 
   assert.throws(() => assertCanvasTurnContext({ ...context(), extra: 1 }), {
     code: 'invalid_input',
   });
-  assertCanvasTurnContext(context('dsg_hey'));
+  // A reference image is named only by its owned asset ID, never a path.
+  assert.throws(
+    () => assertCanvasTurnContext({ ...context(), images: [{ assetId: '/tmp/a.png' }] }),
+    { code: 'invalid_input' },
+  );
+  assertCanvasTurnContext({ ...context('dsg_hey'), images: [{ assetId: 'a'.repeat(64) }] });
 });

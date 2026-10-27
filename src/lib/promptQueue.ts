@@ -1,4 +1,5 @@
 import type { FramePin } from '../features/canvas/framePins';
+import type { CanvasTurnContext } from '../features/canvas/protocol';
 import type {
   BrowserTranscriptReference,
   DesignReference,
@@ -24,6 +25,8 @@ export interface QueuedPrompt {
   sideChatReplies?: string[];
   /** Canvas frames pinned to this request, as they were when it was queued. */
   framePins?: readonly FramePin[];
+  /** What it runs under, fixed when it was queued: a later kit choice reaches only later prompts. */
+  canvasContext?: CanvasTurnContext;
   design?: QueuedDesignContext;
 }
 

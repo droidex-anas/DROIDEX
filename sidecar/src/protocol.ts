@@ -798,6 +798,8 @@ export type ClientCommand =
       goal: string;
       // Catalog rows staged with the first prompt, as on a send.
       mentions?: ProviderMention[];
+      // What the first prompt pinned, as `session.send` carries it.
+      canvasContext?: CanvasTurnContext;
       sessionPurpose: SessionPurpose;
       // Omitted means the default provider.
       provider?: ProviderKind;

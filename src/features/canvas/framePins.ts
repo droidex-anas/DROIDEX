@@ -4,7 +4,8 @@
 // sends and clears them. Neither owns the other, so they live here, by chat.
 
 import { useSyncExternalStore } from 'react';
-import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext } from './protocol';
+import { DEFAULT_DESIGN_SYSTEM } from './designSystemChoices';
+import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
 
 /** The sidecar's limit on the designs one request may pin. */
 const MAX_PINNED = 32;
@@ -165,17 +166,41 @@ function publishChanged(appSessionId: string, held: readonly FramePin[], next: F
     publish(appSessionId, next);
 }
 
+/** What a request on a canvas carries beside its frames. */
+export interface CanvasRequestPins {
+  /** The user's choice for the canvas; null runs under the frames' own kit, else DROIDEX. */
+  designSystem: DesignSystemRef | null;
+  imageAssetIds: readonly string[];
+}
+
 /**
- * The turn context a send carries: the frames' revisions as they are now, in
- * fresh objects, so nothing that changes afterwards can retarget the request.
+ * The kit a request runs under: the user's choice for the canvas, else the
+ * first pinned frame's kit, else DROIDEX. The composer's chip names the same.
  */
-export function canvasContextOf(pins: readonly FramePin[] = NONE): CanvasTurnContext | undefined {
-  const first = pins.at(0);
-  if (!first) return undefined;
+export function requestDesignSystem(
+  pins: readonly FramePin[],
+  chosen: DesignSystemRef | null,
+): DesignSystemRef {
+  return chosen ?? pins.at(0)?.designSystem ?? DEFAULT_DESIGN_SYSTEM.ref;
+}
+
+/**
+ * The turn context a send carries: the frames' revisions and the kit as they
+ * are now, in fresh objects, so nothing that changes afterwards can retarget
+ * the request. A chat on no canvas, with nothing pinned, carries none.
+ */
+export function canvasContextOf(
+  pins: readonly FramePin[] = NONE,
+  onCanvas: CanvasRequestPins | null = null,
+): CanvasTurnContext | undefined {
+  if (pins.length === 0 && !onCanvas) return undefined;
+  const designSystem = requestDesignSystem(pins, onCanvas?.designSystem ?? null);
+  const images = onCanvas?.imageAssetIds ?? [];
   return {
     designs: pins.map(({ designId, revisionId }) => ({ designId, revisionId })),
     elements: [],
-    designSystem: { ...first.designSystem },
+    designSystem: { ...designSystem },
+    ...(images.length > 0 ? { images: images.map((assetId) => ({ assetId })) } : {}),
   };
 }
 

@@ -2059,6 +2059,20 @@ test('an ordinary chat can create its first canvas during its initial turn', asy
   assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
 });
 
+test('a first prompt runs under the kit its create pinned', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'first-pinned');
+  const gate = provider.deferNextStream();
+  const kit = { id: 'claude-inspired', version: 1, mode: 'dark' } as const;
+  const canvasContext = { designs: [], elements: [], designSystem: kit };
+
+  await h.lifecycle.create({ ...createCommand(), canvasContext });
+  await provider.waitForPrompts(1);
+  assert.deepEqual(turnLease(h, 'first-pinned').context.designSystem, kit);
+  gate.resolve();
+  await requireLive(h, 'first-pinned').turnPromise;
+});
+
 test('a queued or reordered prompt runs under the references it was sent with', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'pinned');
