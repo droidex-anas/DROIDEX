@@ -123,14 +123,20 @@ function Mark({
   const hold = (event: PointerEvent) => {
     onMarkPointerDown(draft.id, 'move', event);
   };
+  // While its text is edited the mark is the editor alone, as a renaming
+  // frame's label is: a button must not hold the field inside it.
+  const control = editing ? undefined : 'button';
   return (
     <g
       data-annotation={draft.id}
       data-kind={draft.kind}
-      role="button"
-      tabIndex={interactive && draft.id === tabStopId ? 0 : -1}
-      aria-label={markName(mark, frames)}
-      aria-keyshortcuts="ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown Delete Enter"
+      role={control}
+      tabIndex={interactive && !editing && draft.id === tabStopId ? 0 : -1}
+      aria-label={control && markName(mark, frames)}
+      aria-keyshortcuts={
+        control &&
+        'ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown Delete Enter'
+      }
       onFocus={(event) => {
         if (event.target === event.currentTarget) onFocusMark(draft.id);
       }}
