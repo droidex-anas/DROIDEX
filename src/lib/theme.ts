@@ -437,9 +437,11 @@ const ANNOTATION_STROKES = {
 /**
  * Each annotation colour's stroke and the fill a note of that colour sits on:
  * the stroke washed into the board, far enough that body text reads on it.
- * Both hold AA on any board: a stroke pulls toward the theme's text until it
- * reads on the harder of the board and its raised chrome, and a fill washes
- * further into the board until the text reads on it.
+ * A stroke pulls toward the theme's text until it reads on the harder of the
+ * board and its raised chrome, and a fill washes further into the board until
+ * the text reads on it. A board whose raised chrome crowds the stroke (mid-grey
+ * with light text) admits no colour that reads on both, so the pull keeps to
+ * the board, where the marks are drawn.
  */
 export function annotationColors(theme: Pick<ThemeColors, 'bg' | 'surface' | 'fg'>) {
   const bgIsDark = colorLuminance(theme.bg) < 0.4;
