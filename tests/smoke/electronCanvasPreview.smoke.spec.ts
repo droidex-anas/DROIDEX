@@ -409,10 +409,10 @@ test('a scale(0.5) board preview captures the full layout viewport and far edge'
       )
       .not.toBeNull();
     const probe = await page.evaluate(async () => {
-      const capture = Reflect.get(window, '__canvasZoomCapture') as () => Promise<{
-        bytes: Uint8Array;
-      }>;
-      const image = await capture();
+      const capture = Reflect.get(window, '__canvasPreviewProbe') as {
+        capture: () => Promise<{ bytes: Uint8Array }>;
+      };
+      const image = await capture.capture();
       const bitmap = await createImageBitmap(new Blob([image.bytes], { type: 'image/png' }));
       const canvas = document.createElement('canvas');
       canvas.width = bitmap.width;
