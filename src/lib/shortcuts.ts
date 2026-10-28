@@ -13,6 +13,7 @@ const APPLE = typeof navigator !== 'undefined' && navigator.userAgent.includes('
 export type ShortcutAction =
   | 'toggleSidebar'
   | 'toggleUtilityPane'
+  | 'toggleProduct'
   | 'openCommandPalette'
   | 'openSettings'
   | 'newTab'
@@ -37,6 +38,11 @@ export interface ShortcutDefinition {
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { action: 'toggleSidebar', label: 'Toggle sidebar', defaultChord: 'Meta+\\' },
   { action: 'toggleUtilityPane', label: 'Toggle utility pane', defaultChord: 'Meta+J' },
+  {
+    action: 'toggleProduct',
+    label: 'Switch between Chat and Design',
+    defaultChord: 'Meta+Shift+M',
+  },
   { action: 'openCommandPalette', label: 'Command palette', defaultChord: 'Meta+K' },
   { action: 'openSettings', label: 'Open settings', defaultChord: 'Meta+,' },
   { action: 'newTab', label: 'New tab', defaultChord: 'Meta+T' },

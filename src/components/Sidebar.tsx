@@ -7,6 +7,7 @@ import { pickDirectory } from '../lib/desktop';
 import { dismissSidebarCard, loadSidebarCardSeen } from '../lib/sidebarCards';
 import { SIDEBAR_WELCOME_CARD_ID } from './SidebarWelcomeCard';
 import { ProductSwitcher } from './ProductSwitcher';
+import { BrandMark } from './BrandMark';
 import { LazyDesignSidebar, LazyNewCanvasRow } from '../lib/lazySurfaces';
 import SidebarSearch from './SidebarSearch';
 import { MessageCirclePlus, Search, SquarePen } from '@droidex/icons';
@@ -312,14 +313,16 @@ export default function Sidebar({
         WebkitBackdropFilter: 'var(--sidebar-blur)',
       }}
     >
-      {/* Empty titlebar strip so traffic lights never collide with chrome. */}
-      <div data-electron-drag-region className="h-9 shrink-0" />
-
-      {/* Brand row: the wordmark is also the Chat | Design product switcher
-          (spec §4); ghost icon actions right (session search palette +
-          unread-only filter). */}
-      <div className="px-3 pb-1 pt-0.5 flex items-center justify-between">
+      {/* Titlebar strip: the traffic lights own its left end, the Chat | Design
+          switch its right. */}
+      <div data-electron-drag-region className="flex h-9 shrink-0 items-center justify-end px-3">
         <ProductSwitcher />
+      </div>
+
+      {/* Brand row: the wordmark, then ghost icon actions right (session
+          search palette + unread-only filter). */}
+      <div className="px-3 pb-1 pt-0.5 flex items-center justify-between">
+        <BrandMark size={13} className="pl-2 text-primary" />
         <div className="flex items-center gap-0.5">
           <Tooltip label="Search chats, messages, and PRs" placement="bottom">
             <Button

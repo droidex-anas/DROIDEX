@@ -1,105 +1,88 @@
-import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
-import { Check } from '@droidex/icons';
-import { useDismiss } from './ui/useDismiss';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { useRef, type KeyboardEvent } from 'react';
+import { motion } from 'framer-motion';
+import { MessageBubble, Sketch } from '@droidex/icons';
+import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ProductMode } from '../hooks/persistedUiPreferences';
-import { BrandMark } from './BrandMark';
+import { formatChord } from '../lib/shortcuts';
+import { Tooltip } from './ui/Tooltip';
 
-const MODES: { mode: ProductMode; label: string; hint: string }[] = [
-  { mode: 'chat', label: 'Chat', hint: 'Chats and their work' },
-  { mode: 'design', label: 'Design', hint: 'Canvases of working interfaces' },
-];
+const PRODUCTS = [
+  { mode: 'chat', label: 'Chat', icon: MessageBubble },
+  { mode: 'design', label: 'Design', icon: Sketch },
+] as const;
+
+const ARROW_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
 /**
- * The wordmark in the sidebar's brand row, which is also how the user moves
- * between Chat and Design (spec §4). The menu stays inside the sidebar's width,
- * so it needs no portal.
+ * The Chat | Design segmented switch in the sidebar's title strip (spec §4).
+ * The store owns what each product opens on: Design its home, Chat the chat it
+ * was left on.
  */
 export function ProductSwitcher() {
-  const [open, setOpen] = useState(false);
-  const { productMode, label } = useStoreSelector(
-    (current) => ({
-      productMode: current.productMode,
-      label: current.productMode === 'design' ? 'Design' : 'Chat',
-    }),
-    shallowEqual,
-  );
+  const productMode = useStoreSelector((current) => current.productMode);
+  const chord = useStoreSelector((current) => current.shortcutBindings.toggleProduct);
   const dispatch = useStoreDispatch();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const close = useCallback(() => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  }, []);
-  const ref = useDismiss(open, close);
+  const segments = useRef<Partial<Record<ProductMode, HTMLButtonElement | null>>>({});
 
-  // The store owns what each product opens on: Design its home, Chat the chat
-  // it was left on (spec §4).
   const select = (mode: ProductMode) => {
-    close();
-    if (mode === productMode) return;
-    dispatch({ type: 'SET_PRODUCT_MODE', mode });
+    if (mode !== productMode) dispatch({ type: 'SET_PRODUCT_MODE', mode });
   };
 
-  // Arrows walk the two rows; the menu is short enough that wrapping at either
-  // end reads as one loop rather than a dead end.
+  // A radio group moves its selection with the arrows; with two products,
+  // every arrow lands on the other one.
   const walk = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    if (!ARROW_KEYS.has(event.key)) return;
     event.preventDefault();
-    const rows = [
-      ...(ref.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? []),
-    ];
-    const here = rows.indexOf(document.activeElement as HTMLButtonElement);
-    const step = event.key === 'ArrowDown' ? 1 : -1;
-    rows[(here + step + rows.length) % rows.length]?.focus();
+    const other: ProductMode = productMode === 'chat' ? 'design' : 'chat';
+    select(other);
+    segments.current[other]?.focus();
   };
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`DROIDEX — ${label}. Switch product`}
-        onClick={() => {
-          setOpen((value) => !value);
-        }}
-        className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-primary transition-colors hover:bg-elevated/50"
-      >
-        <BrandMark size={13} />
-        <span className="text-caption font-medium text-muted">{label}</span>
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          aria-label="Product"
-          onKeyDown={walk}
-          className="absolute left-0 top-full z-50 mt-1 w-56 rounded-xl bg-raised p-1 shadow-lg"
-        >
-          {MODES.map((entry) => (
+    <div
+      role="radiogroup"
+      aria-label="Product"
+      onKeyDown={walk}
+      className="flex gap-0.5 rounded-lg bg-elevated p-0.5"
+    >
+      {PRODUCTS.map((product) => {
+        const { mode, label } = product;
+        const selected = mode === productMode;
+        return (
+          <Tooltip
+            key={mode}
+            label={selected ? label : `Switch to ${label} (${formatChord(chord)})`}
+            placement="bottom"
+          >
             <button
-              key={entry.mode}
-              type="button"
-              role="menuitemradio"
-              aria-checked={entry.mode === productMode}
-              autoFocus={entry.mode === productMode}
-              onClick={() => {
-                select(entry.mode);
+              ref={(node) => {
+                segments.current[mode] = node;
               }}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/10 focus-visible:bg-accent/10 focus-visible:outline-none"
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              aria-label={label}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => {
+                select(mode);
+              }}
+              className={`relative flex size-control-sm cursor-pointer items-center justify-center rounded-md transition-colors ${
+                selected ? 'text-primary' : 'text-muted hover:text-primary'
+              }`}
             >
-              <span className="min-w-0 flex-1">
-                <span className="block text-body-strong text-primary">{entry.label}</span>
-                <span className="block text-caption text-muted">{entry.hint}</span>
-              </span>
-              {entry.mode === productMode && (
-                <Check aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent" />
+              {selected && (
+                <motion.span
+                  layoutId="product-switcher-pill"
+                  aria-hidden
+                  className="absolute inset-0 rounded-md bg-active"
+                  transition={{ type: 'spring', stiffness: 520, damping: 38 }}
+                />
               )}
+              <product.icon aria-hidden className="relative size-icon-md" />
             </button>
-          ))}
-        </div>
-      )}
+          </Tooltip>
+        );
+      })}
     </div>
   );
 }

@@ -670,6 +670,10 @@ export default function App() {
         dispatch({ type: 'TOGGLE_SIDEBAR' });
       },
       toggleUtilityPane,
+      toggleProduct: () => {
+        const mode = store.getState().productMode === 'chat' ? 'design' : 'chat';
+        dispatch({ type: 'SET_PRODUCT_MODE', mode });
+      },
       openCommandPalette: () => {
         dispatch({ type: 'TOGGLE_COMMAND_PALETTE' });
       },
