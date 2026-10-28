@@ -54,11 +54,11 @@ export function AttachedChatsMenu({
         className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md text-left"
       >
         <span
-          className={`min-w-0 truncate text-[13px] font-medium ${live ? 'shimmer-text' : 'text-droid-text'}`}
+          className={`min-w-0 truncate text-body-strong ${live ? 'shimmer-text' : 'text-primary'}`}
         >
           {title}
         </span>
-        <ChevronDown aria-hidden className="h-3 w-3 shrink-0 text-droid-text-muted" />
+        <ChevronDown aria-hidden className="h-3 w-3 shrink-0 text-muted" />
       </button>
 
       <Popover

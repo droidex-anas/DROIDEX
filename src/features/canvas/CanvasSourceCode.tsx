@@ -11,14 +11,14 @@ import { resolveFilePresentation } from '../../lib/filePresentation';
 import type { SourceIssue } from './canvasSourceIssues';
 
 export const LINE_HEIGHT = 20;
-const TEXT_METRICS = 'font-mono text-[12px]';
+const TEXT_METRICS = 'font-mono text-code';
 // Both layers take the same box; only the gutter's own left rail differs.
 const PADDING = 'py-3 pr-4';
 const GUTTER_PADDING = 'py-3 px-4';
 
 /** The drawer's focus cue: a faint ring, never the platform's hard outline. */
 export const SOFT_FOCUS =
-  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/30';
+  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring';
 
 /** The one element a file's layers scroll inside, so they scroll together. */
 export function SourceScroller({ children, label }: { children: ReactNode; label?: string }) {
@@ -28,7 +28,7 @@ export function SourceScroller({ children, label }: { children: ReactNode; label
       tabIndex={label ? 0 : undefined}
       role={label ? 'region' : undefined}
       aria-label={label}
-      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-droid-code focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-droid-accent/15"
+      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-code focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring"
     >
       <div className="flex min-h-full w-max min-w-full">{children}</div>
     </div>
@@ -57,13 +57,13 @@ export function SourceCode({
     <>
       <div
         aria-hidden
-        className={`sticky left-0 z-10 shrink-0 select-none bg-droid-code text-right text-droid-text-muted/60 ${TEXT_METRICS} ${GUTTER_PADDING}`}
+        className={`sticky left-0 z-10 shrink-0 select-none bg-code text-right text-muted/60 ${TEXT_METRICS} ${GUTTER_PADDING}`}
       >
         {lines.map((_, index) => (
           <div
             key={index}
             style={{ height: LINE_HEIGHT, lineHeight: `${String(LINE_HEIGHT)}px` }}
-            className={issues.has(index + 1) ? 'text-droid-red' : undefined}
+            className={issues.has(index + 1) ? 'text-danger' : undefined}
           >
             {index + 1}
           </div>
@@ -107,7 +107,7 @@ function CodeLayer({ children, hidden }: { children: ReactNode; hidden: boolean 
     <pre
       aria-hidden={hidden}
       style={{ lineHeight: `${String(LINE_HEIGHT)}px`, tabSize: 2 }}
-      className={`m-0 whitespace-pre text-droid-text-secondary ${TEXT_METRICS} ${PADDING}`}
+      className={`m-0 whitespace-pre text-secondary ${TEXT_METRICS} ${PADDING}`}
     >
       {children}
     </pre>
@@ -117,7 +117,7 @@ function CodeLayer({ children, hidden }: { children: ReactNode; hidden: boolean 
 /** One line, tinted when the build reported something on it. */
 function CodeLine({ faulted, children }: { faulted: boolean; children: ReactNode }) {
   return (
-    <div style={{ height: LINE_HEIGHT }} className={faulted ? 'bg-droid-red/10' : undefined}>
+    <div style={{ height: LINE_HEIGHT }} className={faulted ? 'bg-danger/10' : undefined}>
       {children}
     </div>
   );

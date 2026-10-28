@@ -391,7 +391,7 @@ function FailedNote({
   const place = first ? diagnosticPlace(first) : null;
   return (
     <>
-      <AlertTriangle className="h-4 w-4 text-droid-red" aria-hidden />
+      <AlertTriangle className="h-4 w-4 text-danger" aria-hidden />
       <p className="canvas-sheet-title">Didn’t build</p>
       {!compact && first && (
         <p className="canvas-sheet-detail canvas-sheet-clamp">

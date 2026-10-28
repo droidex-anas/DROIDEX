@@ -94,12 +94,12 @@ export function NewDesignSystemForm({
       className="flex min-h-0 flex-1 flex-col gap-3 px-6 pb-5 pt-5"
     >
       <div className="pr-8">
-        <h3 id={`${nameId}-title`} className="text-[15px] font-semibold text-droid-text">
+        <h3 id={`${nameId}-title`} className="text-subheading text-primary">
           {copy.title}
         </h3>
-        <p className="mt-1 text-[12px] leading-5 text-droid-text-muted">{copy.hint}</p>
+        <p className="mt-1 text-label font-normal leading-5 text-muted">{copy.hint}</p>
       </div>
-      <label htmlFor={nameId} className="text-[12px] font-medium text-droid-text">
+      <label htmlFor={nameId} className="text-label text-primary">
         Name
       </label>
       <input
@@ -114,7 +114,7 @@ export function NewDesignSystemForm({
         }}
         className={`h-8 ${FIELD_CLASS}`}
       />
-      <label htmlFor={textId} className="text-[12px] font-medium text-droid-text">
+      <label htmlFor={textId} className="text-label text-primary">
         {copy.field}
       </label>
       <textarea
@@ -129,7 +129,7 @@ export function NewDesignSystemForm({
         className={`min-h-0 flex-1 resize-none py-2 leading-5 ${FIELD_CLASS}`}
       />
       {error && (
-        <p role="alert" className="text-[12px] text-droid-red">
+        <p role="alert" className="text-label font-normal text-danger">
           {error}
         </p>
       )}

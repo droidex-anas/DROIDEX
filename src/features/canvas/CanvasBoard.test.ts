@@ -275,8 +275,8 @@ test('saved marks draw in their theme colour, and an agent’s carry its glyph',
     ]),
   );
 
-  assert.match(markup, /background:var\(--droid-annotation-yellow-fill\)[^>]*>Tighten this/);
-  assert.match(markup, /stroke="var\(--droid-annotation-red\)"/);
+  assert.match(markup, /background:var\(--annotation-yellow-fill\)[^>]*>Tighten this/);
+  assert.match(markup, /stroke="var\(--annotation-red\)"/);
   assert.equal(markup.match(/<title>Drawn by the agent<\/title>/g)?.length, 1);
   // The rail names its drawing tools; colours wait for a tool or a mark.
   for (const tool of ['Draw', 'Shapes', 'Text', 'Note'])

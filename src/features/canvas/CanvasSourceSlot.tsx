@@ -28,7 +28,7 @@ export function CanvasSourceSlot({
   if (!frame || canvasId === null) return null;
   return (
     <div className="min-h-0 shrink-0 basis-1/2 px-2 pb-2">
-      <Suspense fallback={<div aria-hidden className="h-full rounded-2xl bg-droid-raised" />}>
+      <Suspense fallback={<div aria-hidden className="h-full rounded-2xl bg-raised" />}>
         <LazySourcePanel
           canvasId={canvasId}
           frame={frame}

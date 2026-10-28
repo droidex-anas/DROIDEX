@@ -11,7 +11,7 @@
   margin: 6px 0;
   padding: 6px;
   border-radius: 16px;
-  background: var(--droid-elevated);
+  background: var(--elevated);
   font-family: var(--ui-font-family, system-ui, sans-serif);
   text-align: left;
   cursor: pointer;
@@ -19,13 +19,13 @@
 }
 
 .canvas-artifact:hover {
-  background: var(--droid-active);
+  background: var(--active);
 }
 
 .canvas-artifact:focus-visible {
   outline: none;
-  background: var(--droid-active);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--droid-accent) 45%, transparent);
+  background: var(--active);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .canvas-artifact-sheet {
@@ -36,14 +36,14 @@
   justify-content: center;
   overflow: hidden;
   border-radius: 10px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
 }
 
 .canvas-artifact-note {
   font-size: 12px;
   line-height: 18px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 
 .canvas-artifact-footer {
@@ -71,13 +71,13 @@
   font-size: 13px;
   font-weight: 500;
   line-height: 20px;
-  color: var(--droid-text);
+  color: var(--text);
 }
 
 .canvas-artifact-meta {
   font-size: 12px;
   line-height: 18px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 
 /* The stage label is the board's own (PendingBloom), set at the card's size. */
@@ -86,7 +86,7 @@
 }
 
 .canvas-artifact-meta .canvas-sheet-title:not(.canvas-bloom-label) {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 
 .canvas-artifact-open {
@@ -98,12 +98,12 @@
   border-radius: 7px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--droid-text);
-  background: color-mix(in srgb, var(--droid-text) 7%, transparent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
   transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .canvas-artifact:hover .canvas-artifact-open,
 .canvas-artifact:focus-visible .canvas-artifact-open {
-  background: color-mix(in srgb, var(--droid-text) 12%, transparent);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
 }

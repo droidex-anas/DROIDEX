@@ -59,7 +59,7 @@ export function LibraryPicker({
       className="flex w-full max-w-md flex-col"
     >
       <div className="flex flex-col gap-3 px-5 pb-3 pt-5">
-        <h2 id={titleId} className="text-[15px] font-semibold text-droid-text">
+        <h2 id={titleId} className="text-heading text-primary">
           From library
         </h2>
         <input
@@ -74,20 +74,20 @@ export function LibraryPicker({
           className={`h-8 ${FIELD_CLASS}`}
         />
         {error && (
-          <p role="alert" className="text-[12px] text-droid-red">
+          <p role="alert" className="text-label font-normal text-danger">
             {error}
           </p>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {listing.status === 'loading' && (
-          <p role="status" className="px-2 py-1 text-[12px] text-droid-text-muted">
+          <p role="status" className="px-2 py-1 text-label font-normal text-muted">
             Reading the library…
           </p>
         )}
         {listing.status === 'failed' && (
           <div className="flex flex-col items-start gap-2 px-2 py-1">
-            <p role="alert" className="text-[12px] text-droid-red">
+            <p role="alert" className="text-label font-normal text-danger">
               {listing.message}
             </p>
             <button type="button" onClick={retry} className={QUIET_BUTTON_CLASS}>
@@ -96,7 +96,7 @@ export function LibraryPicker({
           </div>
         )}
         {listing.status === 'listed' && listing.items.length === 0 && (
-          <p className="px-2 py-1 text-[12px] leading-5 text-droid-text-muted">
+          <p className="px-2 py-1 text-label font-normal leading-5 text-muted">
             {listing.query === ''
               ? 'Nothing is saved yet. Select a frame and choose Save to library in the canvas menu.'
               : `No saved frame is named like “${listing.query}”.`}
@@ -112,14 +112,14 @@ export function LibraryPicker({
                   onClick={() => {
                     void add(item);
                   }}
-                  className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-droid-accent/10 focus-visible:bg-droid-accent/10 focus-visible:outline-none disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/10 focus-visible:bg-accent/10 focus-visible:outline-none disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
                 >
                   <LibraryThumbnail itemId={item.itemId} />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-[12px] text-droid-text">
+                    <span className="truncate text-label font-normal text-primary">
                       {adding === item.itemId ? `Adding ${item.name}…` : item.name}
                     </span>
-                    <span className="truncate text-[11px] text-droid-text-muted">
+                    <span className="truncate text-caption text-muted">
                       {[sizeLabel(item), origin(item)].filter(Boolean).join(' · ')}
                     </span>
                   </span>
@@ -183,7 +183,7 @@ function LibraryThumbnail({ itemId }: { itemId: string }) {
     };
   }, [itemId]);
   return (
-    <span className="flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-droid-elevated text-[10px] text-droid-text-muted shadow-droid-sm">
+    <span className="flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-elevated text-overline text-muted shadow-sm">
       {png ? (
         <img
           src={`data:image/png;base64,${png}`}

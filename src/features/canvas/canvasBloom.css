@@ -15,12 +15,7 @@
 }
 
 .canvas-bloom-label {
-  background: linear-gradient(
-    90deg,
-    var(--droid-text-muted) 0%,
-    var(--droid-text) 50%,
-    var(--droid-text-muted) 100%
-  );
+  background: linear-gradient(90deg, var(--text-muted) 0%, var(--text) 50%, var(--text-muted) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -34,6 +29,6 @@
   .canvas-bloom-label {
     animation: none;
     background: none;
-    color: var(--droid-text-muted);
+    color: var(--text-muted);
   }
 }

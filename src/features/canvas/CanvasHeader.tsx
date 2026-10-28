@@ -17,13 +17,13 @@ export function CanvasHeader({
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <BrandMark size={13} className="shrink-0 text-droid-text" />
+      <BrandMark size={13} className="shrink-0 text-primary" />
       <CanvasMenu appSessionId={appSessionId} canvasId={canvasId} />
       <div className="flex min-w-0 flex-1 items-center justify-end">
         <div
           role="radiogroup"
           aria-label="Board width"
-          className="flex items-center gap-0.5 rounded-lg bg-droid-elevated/60 p-0.5"
+          className="flex items-center gap-0.5 rounded-lg bg-elevated/60 p-0.5"
         >
           <WidthSegment label="Chat" selected={false} onSelect={onDock} />
           <WidthSegment label="Canvas" selected />
@@ -48,10 +48,8 @@ function WidthSegment({
       role="radio"
       aria-checked={selected}
       onClick={onSelect}
-      className={`cursor-pointer rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
-        selected
-          ? 'bg-droid-raised text-droid-text shadow-droid-sm'
-          : 'text-droid-text-muted hover:text-droid-text'
+      className={`cursor-pointer rounded-md px-2 py-0.5 text-caption font-medium transition-colors ${
+        selected ? 'bg-raised text-primary shadow-sm' : 'text-muted hover:text-primary'
       }`}
     >
       {label}

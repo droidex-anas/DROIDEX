@@ -9,7 +9,7 @@ import type { RevisionSummary } from './protocol';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 const ACTION_CLASS =
-  'shrink-0 cursor-pointer rounded-md px-1.5 py-0.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated/50 focus-visible:bg-droid-elevated/50 focus-visible:outline-none';
+  'shrink-0 cursor-pointer rounded-md px-1.5 py-0.5 text-label text-primary transition-colors hover:bg-elevated/50 focus-visible:bg-elevated/50 focus-visible:outline-none';
 
 export function RevisionHistory({
   history,
@@ -94,16 +94,16 @@ function RevisionRow({
   const saved = revision.state === 'saved' ? revision : null;
   return (
     <div className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5">
-      <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text">
+      <span className="min-w-0 flex-1 truncate text-label font-normal text-primary">
         {phase === 'confirming' ? `Restore ${called}?` : describe(revision, name, restoredFrom)}
       </span>
       {phase === 'idle' && saved && (
-        <span className="shrink-0 text-[11px] text-droid-text-muted">
+        <span className="shrink-0 text-caption text-muted">
           {isHead ? 'Current' : formatRelativeTime(saved.createdAt)}
         </span>
       )}
       {phase === 'restoring' && (
-        <span role="status" className="shrink-0 text-[11px] text-droid-text-muted">
+        <span role="status" className="shrink-0 text-caption text-muted">
           Restoring…
         </span>
       )}

@@ -232,14 +232,11 @@ export function CanvasWorkspace({
     );
 
   return (
-    <div
-      data-testid="canvas-workspace"
-      className="relative flex h-full min-h-0 flex-col bg-droid-bg"
-    >
+    <div data-testid="canvas-workspace" className="relative flex h-full min-h-0 flex-col bg-bg">
       {/* Expanded, the window's top row carries the canvas name and the
           Chat | Canvas control instead (`CanvasHeader`). */}
       {!isExpanded && (
-        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-droid-raised px-1 shadow-droid-sm">
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-raised px-1 shadow-sm">
           {watched !== null && <CanvasMenu appSessionId={appSessionId} canvasId={watched} />}
           <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
         </div>

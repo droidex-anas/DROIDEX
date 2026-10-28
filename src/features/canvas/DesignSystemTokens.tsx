@@ -19,7 +19,7 @@ export function TokenPanel({
   unmapped: ReadonlySet<string>;
 }) {
   if (tokens.length === 0)
-    return <p className="py-6 text-[12px] text-droid-text-muted">This kit sets no tokens here.</p>;
+    return <p className="py-6 text-label font-normal text-muted">This kit sets no tokens here.</p>;
   if (tab === 'shadows')
     return (
       <div
@@ -56,7 +56,8 @@ function TokenSample({ tab, name, value }: { tab: TokenTab; name: string; value:
     return (
       <span
         aria-hidden
-        className="h-8 w-8 shrink-0 rounded-lg ring-1 ring-inset ring-droid-border"
+        // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
+        className="h-8 w-8 shrink-0 rounded-lg ring-1 ring-inset ring-divider"
         style={{ background: paint }}
       />
     );
@@ -68,7 +69,7 @@ function TokenSample({ tab, name, value }: { tab: TokenTab; name: string; value:
     return (
       <span
         aria-hidden
-        className="w-12 shrink-0 truncate text-[18px] text-droid-text"
+        className="w-12 shrink-0 truncate text-heading font-normal text-primary"
         style={style}
       >
         Aa
@@ -77,16 +78,12 @@ function TokenSample({ tab, name, value }: { tab: TokenTab; name: string; value:
   }
   if (/radius|rounded/.test(name))
     return (
-      <span
-        aria-hidden
-        className="h-8 w-8 shrink-0 bg-droid-accent/15"
-        style={{ borderRadius: paint }}
-      />
+      <span aria-hidden className="h-8 w-8 shrink-0 bg-accent/15" style={{ borderRadius: paint }} />
     );
   return (
     <span aria-hidden className="flex w-8 shrink-0 items-center">
       <span
-        className="h-2 rounded-full bg-droid-accent/70"
+        className="h-2 rounded-full bg-accent/70"
         style={{ width: paint && `min(${paint}, 100%)` }}
       />
     </span>
@@ -108,14 +105,16 @@ function TokenLabel({
   return (
     <span className="flex min-w-0 flex-1 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className={`truncate text-[12px] ${onCanvas ? '' : 'text-droid-text'}`}>{name}</span>
+        <span className={`truncate text-label font-normal ${onCanvas ? '' : 'text-primary'}`}>
+          {name}
+        </span>
         {unmapped && (
-          <span className="shrink-0 rounded-full bg-droid-orange/10 px-1.5 text-[10px] text-droid-orange">
+          <span className="shrink-0 rounded-full bg-warning/10 px-1.5 text-overline text-warning">
             Unmapped
           </span>
         )}
       </span>
-      <span className={`truncate text-[11px] ${onCanvas ? 'opacity-70' : 'text-droid-text-muted'}`}>
+      <span className={`truncate text-caption ${onCanvas ? 'opacity-70' : 'text-muted'}`}>
         {value}
       </span>
     </span>

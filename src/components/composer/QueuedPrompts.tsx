@@ -88,7 +88,7 @@ export function QueuedPrompts({
                 </span>
               )}
               {p.framePins && p.framePins.length > 0 && (
-                <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-droid-active px-1.5 py-0.5 text-[11px] text-droid-text-muted">
+                <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-active px-1.5 py-0.5 text-caption text-muted">
                   <Frame className="w-3 h-3" />
                   {p.framePins.length === 1
                     ? p.framePins[0].name

@@ -122,10 +122,10 @@ export function CanvasVariants({
         className="flex flex-col gap-3 p-5"
       >
         <div>
-          <h2 id={titleId} className="truncate text-[15px] font-semibold text-droid-text">
+          <h2 id={titleId} className="truncate text-heading text-primary">
             Make variants of {source.name}
           </h2>
-          <p className="mt-1 text-[12px] leading-5 text-droid-text-muted">
+          <p className="mt-1 text-label font-normal leading-5 text-muted">
             Each starts as a copy of this revision and is placed below it. {source.name} stays as it
             is.
           </p>
@@ -138,9 +138,9 @@ export function CanvasVariants({
           selectedRef={kindRef}
           onChange={setKind}
         />
-        <p className="-mt-1.5 text-[11px] text-droid-text-muted">{selectedKind.hint}</p>
-        <label htmlFor={directionId} className="text-[12px] font-medium text-droid-text">
-          Direction <span className="font-normal text-droid-text-muted">(optional)</span>
+        <p className="-mt-1.5 text-caption text-muted">{selectedKind.hint}</p>
+        <label htmlFor={directionId} className="text-label text-primary">
+          Direction <span className="font-normal text-muted">(optional)</span>
         </label>
         <textarea
           id={directionId}
@@ -162,11 +162,11 @@ export function CanvasVariants({
           onChange={setCount}
         />
         {error ? (
-          <p role="alert" className="text-[12px] text-droid-red">
+          <p role="alert" className="text-label font-normal text-danger">
             {error}
           </p>
         ) : (
-          <p className="text-[11px] leading-4 text-droid-text-muted">
+          <p className="text-caption leading-4 text-muted">
             Adds {frames} to the canvas, then puts the request in your composer to send.
           </p>
         )}
@@ -213,7 +213,7 @@ function ChoiceGroup<T extends string | number>({
   };
   return (
     <div className="flex flex-col gap-1.5">
-      <span id={labelId} className="text-[12px] font-medium text-droid-text">
+      <span id={labelId} className="text-label text-primary">
         {label}
       </span>
       <div
@@ -221,7 +221,7 @@ function ChoiceGroup<T extends string | number>({
         role="radiogroup"
         aria-labelledby={labelId}
         onKeyDown={onKeyDown}
-        className="flex items-center gap-0.5 rounded-lg bg-droid-accent/[0.07] p-0.5"
+        className="flex items-center gap-0.5 rounded-lg bg-accent/[0.07] p-0.5"
       >
         {options.map((option) => {
           const selected = option.value === value;
@@ -237,10 +237,10 @@ function ChoiceGroup<T extends string | number>({
               onClick={() => {
                 onChange(option.value);
               }}
-              className={`flex-1 cursor-pointer rounded-md px-2 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 disabled:cursor-default ${
+              className={`flex-1 cursor-pointer rounded-md px-2 py-1 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default ${
                 selected
-                  ? 'bg-droid-accent/15 text-droid-text'
-                  : 'text-droid-text-muted hover:bg-droid-accent/10 hover:text-droid-text'
+                  ? 'bg-accent/15 text-primary'
+                  : 'text-muted hover:bg-accent/10 hover:text-primary'
               }`}
             >
               {option.label}

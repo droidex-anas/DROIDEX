@@ -198,7 +198,7 @@ function StrokedMark({
     <>
       <g
         fill="none"
-        stroke={`var(--droid-annotation-${draft.color})`}
+        stroke={`var(--annotation-${draft.color})`}
         strokeWidth={STROKE_PX}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -286,9 +286,8 @@ function TextMark({
         data-kind={draft.kind}
         style={{
           fontSize: textSizePx(draft),
-          color: draft.kind === 'text' ? `var(--droid-annotation-${draft.color})` : undefined,
-          background:
-            draft.kind === 'note' ? `var(--droid-annotation-${draft.color}-fill)` : undefined,
+          color: draft.kind === 'text' ? `var(--annotation-${draft.color})` : undefined,
+          background: draft.kind === 'note' ? `var(--annotation-${draft.color}-fill)` : undefined,
           pointerEvents: interactive || editing ? 'auto' : 'none',
         }}
         onPointerDown={editing ? undefined : onPointerDown}
@@ -374,7 +373,7 @@ function AuthorGlyph({
       <circle cx={10} cy={-10} r={9} className="canvas-annotation-glyph" />
       <path
         d="M10 -15.5 Q10.8 -10.8 15.5 -10 Q10.8 -9.2 10 -4.5 Q9.2 -9.2 4.5 -10 Q9.2 -10.8 10 -15.5Z"
-        fill="var(--droid-text-secondary)"
+        fill="var(--text-secondary)"
       />
     </g>
   );

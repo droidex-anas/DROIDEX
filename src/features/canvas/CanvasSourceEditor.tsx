@@ -79,7 +79,7 @@ export function CanvasSourceEditor({
             }
           }}
           style={{ lineHeight: `${String(LINE_HEIGHT)}px`, tabSize: 2 }}
-          className={`absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre break-normal bg-transparent text-transparent caret-droid-text outline-none selection:bg-droid-accent/25 ${INPUT_METRICS}`}
+          className={`absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre break-normal bg-transparent text-transparent caret-text outline-none selection:bg-accent/25 ${INPUT_METRICS}`}
         />
       </SourceCode>
     </SourceScroller>

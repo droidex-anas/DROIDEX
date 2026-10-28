@@ -90,7 +90,7 @@ export function DesignSystemsDialog({ onClose }: { onClose: () => void }) {
         type="button"
         aria-label="Close design systems"
         onClick={onClose}
-        className="absolute right-3 top-3 rounded-md p-1.5 text-droid-text-muted transition-colors hover:bg-droid-accent/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+        className="absolute right-3 top-3 rounded-md p-1.5 text-muted transition-colors hover:bg-accent/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         <X aria-hidden className="h-4 w-4" />
       </button>

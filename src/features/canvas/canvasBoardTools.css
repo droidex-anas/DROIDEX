@@ -10,8 +10,8 @@
   position: absolute;
   z-index: 2;
   display: flex;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
   font-family: var(--ui-font-family, system-ui, sans-serif);
 }
 
@@ -27,7 +27,7 @@
 .canvas-rail-divider {
   height: 1px;
   margin: 3px 6px;
-  background: color-mix(in srgb, var(--droid-text) 10%, transparent);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
 }
 
 .canvas-tool {
@@ -38,7 +38,7 @@
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   transition:
     background 120ms,
     color 120ms;
@@ -47,13 +47,13 @@
 .canvas-tool:hover:not(:disabled),
 .canvas-tool:focus-visible {
   outline: none;
-  background: color-mix(in srgb, var(--droid-text) 8%, transparent);
-  color: var(--droid-text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
 }
 
 .canvas-tool[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--droid-selection) 16%, transparent);
-  color: var(--droid-selection-label);
+  background: color-mix(in srgb, var(--selection) 16%, transparent);
+  color: var(--selection-label);
 }
 
 .canvas-tool:disabled {
@@ -68,9 +68,9 @@
   top: 50%;
   padding: 3px 8px;
   border-radius: 6px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
-  color: var(--droid-text);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
   font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
   white-space: nowrap;
   opacity: 0;
@@ -108,8 +108,8 @@
   gap: 2px;
   padding: 4px;
   border-radius: 12px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
 }
 
 .canvas-tool-options-group {
@@ -159,7 +159,7 @@
   border-radius: 7px;
   font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
   font-variant-numeric: tabular-nums;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   transition:
     background 120ms,
     color 120ms;
@@ -169,8 +169,8 @@
 .canvas-zoom-value:focus-visible,
 .canvas-zoom-value[aria-expanded='true'] {
   outline: none;
-  background: color-mix(in srgb, var(--droid-text) 8%, transparent);
-  color: var(--droid-text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
 }
 
 .canvas-selection-bar {
@@ -210,9 +210,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
-  color: var(--droid-red);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
+  color: var(--danger);
   font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
 }
 
@@ -227,10 +227,10 @@
   overflow-y: auto;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
   font: 12px / 18px var(--ui-font-family, system-ui, sans-serif);
-  color: var(--droid-text);
+  color: var(--text);
 }
 
 .canvas-element-title > span {
@@ -245,7 +245,7 @@
 .canvas-element-note,
 .canvas-element-title,
 .canvas-element-row > span {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 
 .canvas-element-note {
@@ -266,19 +266,19 @@
   padding: 0 6px;
   border-radius: 6px;
   /* A tint rather than the elevated rung, which dark themes share with the raised panel. */
-  background: color-mix(in srgb, var(--droid-text) 6%, transparent);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
   font-variant-numeric: tabular-nums;
   outline: none;
 }
 
 .canvas-element-row > input:focus-visible {
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--droid-selection) 45%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--selection) 45%, transparent);
 }
 
 .canvas-element-row > input[data-previewed] {
-  color: var(--droid-selection-label);
+  color: var(--selection-label);
 }
 
 .canvas-element-row > input:read-only {
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }

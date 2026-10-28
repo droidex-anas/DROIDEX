@@ -75,10 +75,10 @@ export function CanvasMenu({
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated/50 focus-visible:bg-droid-elevated/50 focus-visible:outline-none"
+        className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-label text-primary transition-colors hover:bg-elevated/50 focus-visible:bg-elevated/50 focus-visible:outline-none"
       >
         <span className="min-w-0 truncate">Canvas</span>
-        <ChevronDown aria-hidden className="h-3 w-3 shrink-0 text-droid-text-muted" />
+        <ChevronDown aria-hidden className="h-3 w-3 shrink-0 text-muted" />
       </button>
 
       {/* The docked pane clips its overflow, so the picker is portalled and
