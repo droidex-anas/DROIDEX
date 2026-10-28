@@ -14,7 +14,7 @@ const PRODUCTS = [
 const ARROW_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
 /**
- * The Chat | Design segmented switch in the sidebar's title strip (spec §4).
+ * The Chat | Design segmented switch beside the window controls (spec §4).
  * The store owns what each product opens on: Design its home, Chat the chat it
  * was left on.
  */

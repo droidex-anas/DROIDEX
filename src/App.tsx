@@ -1,6 +1,15 @@
-import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
 import { hasActiveSessionWork } from './lib/sessions';
 import { bridge } from './lib/bridge';
@@ -34,17 +43,14 @@ import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/us
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
-import {
-  TOP_ROW_HEIGHT_PX,
-  WINDOW_CONTROLS_INSET_PX,
-  WINDOW_CONTROLS_LEAD_PX,
-} from './lib/windowChrome';
+import { TOP_ROW_HEIGHT_PX, WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome';
 import { HeaderTabs } from './features/tabs/HeaderTabs';
 import { RunningProcessesMenu } from './components/RunningProcessesMenu';
 import { ChatTiles } from './features/tabs/ChatTiles';
 import {
   activeGrid,
   adjacentTabId,
+  mainRowLeadPx,
   numberedTabId,
   showsTabStrip,
   type TabAction,
@@ -54,6 +60,7 @@ import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
 import { UtilityPane } from './components/utility/UtilityPane';
+import { ProductSwitcher } from './components/ProductSwitcher';
 import { terminalInstances, releaseTerminalInstancesExcept } from './lib/terminalInstanceRegistry';
 import {
   isExpandableTool,
@@ -155,6 +162,14 @@ const UTILITY_PANE_MIN = 420;
 // Spec §4: the canvas workspace's docked chat column. Narrower than the pane's
 // own minimum, because here the board takes the rest of the row.
 const DESIGN_CHAT_COLUMN = 360;
+const EXPANDED_CANVAS_CHAT_STYLE: CSSProperties = { flex: `0 0 ${String(DESIGN_CHAT_COLUMN)}px` };
+// Design's chat column is a side panel a tone off the board; scoping `--bg`
+// carries that tone to everything in it that paints the page background.
+const DESIGN_CHAT_COLUMN_STYLE = {
+  ...EXPANDED_CANVAS_CHAT_STYLE,
+  backgroundColor: 'var(--sidebar)',
+  '--bg': 'var(--sidebar)',
+} as CSSProperties;
 
 /** How wide an expanded pane is: the whole row, or the row beside the board's
  * chat column. */
@@ -297,8 +312,18 @@ export default function App() {
   // the chat column stays beside it at its docked width so the transcript and
   // composer never move (spec §4). Every other expandable tool still covers
   // the row and leaves the chat behind it inert.
-  const canvasExpanded = paneExpanded && activeUtilityTab?.tool === 'canvas';
+  // Design has no docked pane: an open canvas tab is the board beside the chat
+  // column, filling the rest of the row.
+  const designCanvasTab =
+    state.productMode === 'design' && showUtilityPane && activeUtilityTab?.tool === 'canvas'
+      ? activeUtilityTab
+      : null;
+  const canvasExpanded =
+    designCanvasTab !== null || (paneExpanded && activeUtilityTab?.tool === 'canvas');
   const chatObscured = paneExpanded && !canvasExpanded;
+  let chatColumnStyle: CSSProperties | undefined;
+  if (designCanvasTab) chatColumnStyle = DESIGN_CHAT_COLUMN_STYLE;
+  else if (canvasExpanded) chatColumnStyle = EXPANDED_CANVAS_CHAT_STYLE;
   // Only a request whose create has replied has a canvas pane to open.
   const canvasRequests = Object.entries(state.canvasChatRequests).filter(
     (entry): entry is [string, { appSessionId: string }] => entry[1].appSessionId !== null,
@@ -353,6 +378,21 @@ export default function App() {
       dispatch({ type: 'SET_CANVAS_ATTACHMENT', appSessionId, canvasId });
     },
     [dispatch],
+  );
+  const renderCanvasWorkspace = (appSessionId: string, tab: UtilityTab, expanded: boolean) => (
+    <Suspense fallback={utilityToolFallback('canvas')}>
+      <LazyCanvasWorkspace
+        appSessionId={appSessionId}
+        canvasId={canvasAttachment}
+        namedCanvasId={tab.canvasId ?? undefined}
+        frameId={tab.frameId ?? undefined}
+        isExpanded={expanded}
+        onToggleExpanded={() => {
+          setExpandedPaneAppSessionId(expanded ? null : appSessionId);
+        }}
+        onAttachmentChange={setCanvasAttachment}
+      />
+    </Suspense>
   );
   const shellPaintMarked = useRef(false);
   const composerStartupResolved = useRef(false);
@@ -825,7 +865,7 @@ export default function App() {
       <div className="flex-1 flex min-h-0 relative">
         {/* Sidebar with collapse animation */}
         <AnimatePresence initial={false}>
-          {!state.sidebarCollapsed && (
+          {!state.sidebarCollapsed && state.productMode !== 'design' && (
             <motion.div
               key="sidebar"
               initial={{ width: 0, opacity: 0 }}
@@ -849,10 +889,7 @@ export default function App() {
             second tab open, the tab strip stacks above and takes that role. */}
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
           {state.tabStripShown && (
-            <HeaderTabs
-              leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
-              controls={sessionControls}
-            />
+            <HeaderTabs leadPx={mainRowLeadPx(state) ?? 16} controls={sessionControls} />
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
@@ -861,7 +898,7 @@ export default function App() {
               // a few composer controls turn pointer events back on; inert
               // keeps the whole column out of reach.
               inert={chatObscured && !browserExpanded}
-              style={canvasExpanded ? { flex: `0 0 ${String(DESIGN_CHAT_COLUMN)}px` } : undefined}
+              style={chatColumnStyle}
               className={`flex min-w-0 flex-col overflow-hidden ${
                 browserExpanded
                   ? 'pointer-events-none absolute inset-0 z-20'
@@ -931,8 +968,28 @@ export default function App() {
             {browserExpanded && <div className="min-w-0 flex-1" />}
             {sideChatClose.dialog}
 
+            {/* Keyed once, so switching chats swaps the board in place instead
+                of replaying its entrance. It leaves at once: a fading board
+                would squeeze whatever takes its place in the row. */}
+            <MotionConfig reducedMotion="user">
+              <AnimatePresence initial={false}>
+                {designCanvasTab && activeSession && (
+                  <motion.div
+                    key="design-canvas"
+                    initial={{ opacity: 0, x: 8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, transition: { duration: 0 } }}
+                    transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                    className="relative h-full min-w-0 flex-1"
+                  >
+                    {renderCanvasWorkspace(activeSession.appSessionId, designCanvasTab, true)}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </MotionConfig>
+
             <AnimatePresence initial={false}>
-              {showUtilityPane && (
+              {showUtilityPane && !designCanvasTab && (
                 <motion.div
                   key="utility-pane"
                   initial={{ width: 0, opacity: 0 }}
@@ -1077,23 +1134,7 @@ export default function App() {
                         );
                       }
                       if (tab.tool === 'canvas') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('canvas')}>
-                            <LazyCanvasWorkspace
-                              appSessionId={activeSession.appSessionId}
-                              canvasId={canvasAttachment}
-                              namedCanvasId={tab.canvasId ?? undefined}
-                              frameId={tab.frameId ?? undefined}
-                              isExpanded={paneExpanded}
-                              onToggleExpanded={() => {
-                                setExpandedPaneAppSessionId(
-                                  paneExpanded ? null : activeSession.appSessionId,
-                                );
-                              }}
-                              onAttachmentChange={setCanvasAttachment}
-                            />
-                          </Suspense>
-                        );
+                        return renderCanvasWorkspace(activeSession.appSessionId, tab, paneExpanded);
                       }
                       if (tab.tool === 'review') {
                         return (
@@ -1199,20 +1240,34 @@ export default function App() {
         className="absolute h-9 z-40 flex items-center gap-1.5"
         style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
       >
-        <Tooltip
-          label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
-          placement="bottom"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={PanelLeft}
-            onClick={() => {
-              dispatch({ type: 'TOGGLE_SIDEBAR' });
-            }}
-            aria-label="Toggle sidebar"
-          />
-        </Tooltip>
+        {/* The switch leads, so it stays under the pointer across products;
+            Design has no sidebar to toggle. */}
+        <ProductSwitcher />
+        <AnimatePresence initial={false}>
+          {state.productMode === 'chat' && (
+            <motion.div
+              key="sidebar-toggle"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: 0.15, ease: 'easeOut' } }}
+              exit={{ opacity: 0, transition: { duration: 0.08, ease: 'easeIn' } }}
+            >
+              <Tooltip
+                label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
+                placement="bottom"
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={PanelLeft}
+                  onClick={() => {
+                    dispatch({ type: 'TOGGLE_SIDEBAR' });
+                  }}
+                  aria-label="Toggle sidebar"
+                />
+              </Tooltip>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Without tabs, the session's controls float at the end of the view's own top row. */}

@@ -4,8 +4,7 @@ import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import type { UtilityPanelState, UtilityTab, UtilityTool } from '../../lib/utilityPanel';
 import { useStoreSelector } from '../../hooks/useStore';
-import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
-import { viewRowHoldsWindowControls } from '../../features/tabs/tabStrip';
+import { viewRowLeadPx } from '../../features/tabs/tabStrip';
 import { PaneResizeHandle } from './PaneResizeHandle';
 import { UtilityToolGrid, UtilityToolMenu } from './UtilityToolPicker';
 import { UTILITY_TOOL_OPTIONS, utilityToolOption } from './utilityToolOptions';
@@ -48,8 +47,8 @@ export function UtilityPane({
   const addRef = useRef<HTMLButtonElement>(null);
   // Expanded, the pane owns the view's top row, where the traffic lights and
   // the sidebar toggle may sit too.
-  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
-  const leadPx = expanded && holdsWindowControls ? WINDOW_CONTROLS_LEAD_PX : undefined;
+  const rowLeadPx = useStoreSelector(viewRowLeadPx);
+  const leadPx = expanded && rowLeadPx !== null ? rowLeadPx : undefined;
   const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId) ?? null;
   const openSingletons = new Set(panel.tabs.map((tab) => tab.tool));
   const availableTools = UTILITY_TOOL_OPTIONS.map((option) => option.tool).filter(

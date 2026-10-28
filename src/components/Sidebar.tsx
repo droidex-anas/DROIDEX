@@ -1,14 +1,12 @@
 import { ACTIVITY_LABELS, canSettleSession } from '../lib/sidebarActivity';
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { useDocumentVisible } from '../hooks/useDocumentVisible';
 import { pickDirectory } from '../lib/desktop';
 import { dismissSidebarCard, loadSidebarCardSeen } from '../lib/sidebarCards';
 import { SIDEBAR_WELCOME_CARD_ID } from './SidebarWelcomeCard';
-import { ProductSwitcher } from './ProductSwitcher';
 import { BrandMark } from './BrandMark';
-import { LazyDesignSidebar, LazyNewCanvasRow } from '../lib/lazySurfaces';
 import SidebarSearch from './SidebarSearch';
 import { MessageCirclePlus, Search, SquarePen } from '@droidex/icons';
 import { Button } from './ui/Button';
@@ -73,8 +71,6 @@ export default function Sidebar({
     shallowEqual,
   );
   const activeSession = state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null;
-  // Design mode replaces the chat list with the canvases list (spec §4).
-  const designMode = useStoreSelector((current) => current.productMode === 'design');
   // Sidebar-local chrome state: the search palette and the unread-only filter
   // (Codex-style bell toggle) belong to the sidebar, not the root store.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -313,11 +309,8 @@ export default function Sidebar({
         WebkitBackdropFilter: 'var(--sidebar-blur)',
       }}
     >
-      {/* Titlebar strip: the traffic lights own its left end, the Chat | Design
-          switch its right. */}
-      <div data-electron-drag-region className="flex h-9 shrink-0 items-center justify-end px-3">
-        <ProductSwitcher />
-      </div>
+      {/* Titlebar strip, under the window's floating controls. */}
+      <div data-electron-drag-region className="h-9 shrink-0" />
 
       {/* Brand row: the wordmark, then ghost icon actions right (session
           search palette + unread-only filter). */}
@@ -335,63 +328,48 @@ export default function Sidebar({
               }}
             />
           </Tooltip>
-          {/* The unread filter reads the chat list, which Design mode replaces. */}
-          {!designMode && (
-            <UnreadFilterActions
-              unreadOnly={unreadOnly}
-              unreadCount={unreadCount}
-              onToggleUnread={() => {
-                setUnreadOnly((value) => !value);
-              }}
-              onMarkAllRead={markAllSessionsRead}
-            />
-          )}
+          <UnreadFilterActions
+            unreadOnly={unreadOnly}
+            unreadCount={unreadCount}
+            onToggleUnread={() => {
+              setUnreadOnly((value) => !value);
+            }}
+            onMarkAllRead={markAllSessionsRead}
+          />
         </div>
       </div>
 
-      {designMode ? (
-        <Suspense fallback={null}>
-          <LazyNewCanvasRow />
-        </Suspense>
-      ) : (
-        <>
-          {/* Navigation rows sit at session-row scale so the sidebar reads as one
+      {/* Navigation rows sit at session-row scale so the sidebar reads as one
               list instead of a banner above it. */}
-          <div className="px-2 pb-1.5">
-            {/* The plus overlays the row's trailing edge, like a session row's menu. */}
-            <div className="relative">
-              <Row
-                icon={<SquarePen className="size-icon-md" />}
-                label="New chat"
-                onClick={newChat}
-              />
-              <Tooltip
-                label="New chat without a workspace"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2"
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={MessageCirclePlus}
-                  data-testid="new-workspaceless-chat"
-                  aria-label="New chat without a workspace"
-                  onClick={() => {
-                    startChat('');
-                  }}
-                />
-              </Tooltip>
-            </div>
-            <SidebarNavigation announcementShown={welcomeVisible || remoteLaunch.visible} />
-          </div>
+      <div className="px-2 pb-1.5">
+        {/* The plus overlays the row's trailing edge, like a session row's menu. */}
+        <div className="relative">
+          <Row icon={<SquarePen className="size-icon-md" />} label="New chat" onClick={newChat} />
+          <Tooltip
+            label="New chat without a workspace"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2"
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={MessageCirclePlus}
+              data-testid="new-workspaceless-chat"
+              aria-label="New chat without a workspace"
+              onClick={() => {
+                startChat('');
+              }}
+            />
+          </Tooltip>
+        </div>
+        <SidebarNavigation announcementShown={welcomeVisible || remoteLaunch.visible} />
+      </div>
 
-          <SidebarCustomize
-            preferences={preferences}
-            unreadCount={unreadCount}
-            onChange={activity.update}
-            onMarkAllRead={markAllSessionsRead}
-          />
-        </>
-      )}
+      <SidebarCustomize
+        preferences={preferences}
+        unreadCount={unreadCount}
+        onChange={activity.update}
+        onMarkAllRead={markAllSessionsRead}
+      />
       {/* The list runs to the bottom of the sidebar and the footer floats over
           it, so rows pass underneath the Settings row. */}
       <div className="relative min-h-0 flex-1">
@@ -400,54 +378,46 @@ export default function Sidebar({
           className="sidebar-list scrollbar-while-scrolling h-full overflow-y-auto px-2"
         >
           <div ref={listRef} className="space-y-3">
-            {designMode ? (
-              <Suspense fallback={null}>
-                <LazyDesignSidebar />
-              </Suspense>
+            {unreadOnly && unreadCount === 0 && (
+              <div className="px-3 pt-2 pb-1 text-caption text-muted">No unread sessions.</div>
+            )}
+            {view === 'activity' ? (
+              <SidebarActivity
+                key={preferences.limit}
+                sessions={visibleSessions}
+                activeAppSessionId={state.activeAppSessionId}
+                statusFor={statusFor}
+                renderRow={renderRow}
+                limit={preferences.limit}
+                showSettled={preferences.filter === 'settled'}
+                hiddenCount={agedOutCount}
+              />
+            ) : view === 'pull-requests' ? (
+              <SidebarPullRequests
+                key={preferences.limit}
+                sessions={visibleSessions}
+                metadata={chatMetadata}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                limit={preferences.limit}
+              />
             ) : (
-              <>
-                {unreadOnly && unreadCount === 0 && (
-                  <div className="px-3 pt-2 pb-1 text-caption text-muted">No unread sessions.</div>
-                )}
-                {view === 'activity' ? (
-                  <SidebarActivity
-                    key={preferences.limit}
-                    sessions={visibleSessions}
-                    activeAppSessionId={state.activeAppSessionId}
-                    statusFor={statusFor}
-                    renderRow={renderRow}
-                    limit={preferences.limit}
-                    showSettled={preferences.filter === 'settled'}
-                    hiddenCount={agedOutCount}
-                  />
-                ) : view === 'pull-requests' ? (
-                  <SidebarPullRequests
-                    key={preferences.limit}
-                    sessions={visibleSessions}
-                    metadata={chatMetadata}
-                    activeAppSessionId={state.activeAppSessionId}
-                    renderRow={renderRow}
-                    limit={preferences.limit}
-                  />
-                ) : (
-                  <SidebarWorkspaceList
-                    key={preferences.limit}
-                    limit={preferences.limit}
-                    workspaces={workspaces}
-                    chatSessions={chatSessions}
-                    pinnedSessions={pinnedSessions}
-                    isFiltered={unreadOnly || preferences.filter !== 'all'}
-                    activeAppSessionId={state.activeAppSessionId}
-                    renderRow={renderRow}
-                    onAddWorkspace={pickAndChat}
-                    onNewChat={startChat}
-                    onRemoveWorkspace={(cwd) => {
-                      dispatch({ type: 'REMOVE_WORKSPACE', cwd });
-                    }}
-                    onShowEarlierSessions={onShowEarlierSessions}
-                  />
-                )}
-              </>
+              <SidebarWorkspaceList
+                key={preferences.limit}
+                limit={preferences.limit}
+                workspaces={workspaces}
+                chatSessions={chatSessions}
+                pinnedSessions={pinnedSessions}
+                isFiltered={unreadOnly || preferences.filter !== 'all'}
+                activeAppSessionId={state.activeAppSessionId}
+                renderRow={renderRow}
+                onAddWorkspace={pickAndChat}
+                onNewChat={startChat}
+                onRemoveWorkspace={(cwd) => {
+                  dispatch({ type: 'REMOVE_WORKSPACE', cwd });
+                }}
+                onShowEarlierSessions={onShowEarlierSessions}
+              />
             )}
           </div>
         </div>

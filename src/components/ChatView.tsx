@@ -6,7 +6,6 @@ import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useS
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
 import { LazyAttachedChatsMenu, LazyCanvasColumnTabs } from '../lib/lazySurfaces';
 import { utilityPanelForSession } from '../lib/utilityPanel';
-import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
 import type { SessionRestore } from '../hooks/storeChildSession';
@@ -59,7 +58,7 @@ import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
-import { showsTabStrip, viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
+import { showsTabStrip, viewRowLeadPx } from '../features/tabs/tabStrip';
 import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
 import { tileHandleProps } from '../features/tabs/tileDrag';
 
@@ -326,7 +325,7 @@ export default function ChatView({
     [isObscured],
   );
   const state = useStoreSelector(selectState, equalChatState);
-  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
+  const rowLeadPx = useStoreSelector(viewRowLeadPx);
   const tabStripShown = useStoreSelector(showsTabStrip);
   const boardCanvasId = useStoreSelector((current) => canvasOnBoard(current, appSessionId));
   // Tool-activity settings are render-only feed props; select them apart from
@@ -889,8 +888,7 @@ export default function ChatView({
   }
 
   // Only the top-left tile's header row takes in the window controls.
-  const leadPx =
-    holdsWindowControls && (!tile || (tile.atTop && tile.atLeft)) ? WINDOW_CONTROLS_LEAD_PX : 16;
+  const leadPx = rowLeadPx !== null && (!tile || (tile.atTop && tile.atLeft)) ? rowLeadPx : 16;
   // A lone chat in a tab is named by its tab, whose row also lists its
   // processes, so it needs a header only for a crumb back — or for the canvas
   // on its board, whose chats this column's header owns (spec §4).
