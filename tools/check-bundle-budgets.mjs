@@ -167,8 +167,15 @@ import { join } from 'node:path';
 // production build measures 108_631 bytes, leaving ~1.3KB of headroom. The
 // Remote browser build compiles its own stylesheet (remote-web/vite.config.ts),
 // so its pairing screens do not count here.
+//
+// Raised from 1_486_000 to 1_490_000 for streamed agent transcripts. The store
+// ingests a subagent's streamed transcript and merges it with saved history,
+// and the bridge validates the new child events, so both sit on the entry; the
+// browser pane hands the keyboard back after an agent's click. The preview
+// window moved off the entry on the same branch. Main at a026a2b1 measures
+// 1_483_901 and the branch 1_486_133, leaving ~3.9KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_486_000,
+  initialRendererJsBytes: 1_490_000,
   initialCssBytes: 110_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
