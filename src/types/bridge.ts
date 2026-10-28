@@ -294,7 +294,7 @@ export interface TranscriptEvent {
     designIds: string[];
     state: 'running' | 'completed' | 'failed';
     message: string;
-    // The canvas a create or write changed, and the first frame a create named.
+    // The canvas a create or write changed, as its reply named it.
     canvasId?: string;
     title?: string;
     // This create gave an unattached chat its canvas: the chat's first artifact.
@@ -802,8 +802,8 @@ export type ClientCommand =
       // waits for the turn to end.
       steerId?: string;
       // What the Canvas pane had selected when this prompt was composed. It
-      // travels beside the text and is never concatenated into it; the turn that
-      // runs this prompt mints its lease from it.
+      // travels beside the text and is never concatenated into it (spec §9);
+      // the turn that runs this prompt mints its lease from it.
       canvasContext?: CanvasTurnContext;
     }
   // Stops the running turn so a steer the model has not taken in yet goes first.
