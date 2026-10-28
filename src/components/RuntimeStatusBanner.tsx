@@ -3,7 +3,10 @@ import { createElement, useEffect, useState, type ComponentType } from 'react';
 
 import { useHistoryHealth } from '../hooks/useHistoryHealth';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
-import { HISTORY_PERSISTENCE_DEGRADED_MESSAGE } from '../lib/historyStatusCopy';
+import {
+  HISTORY_PERSISTENCE_DEGRADED_MESSAGE,
+  HISTORY_UNAVAILABLE_MESSAGE,
+} from '../lib/historyStatusCopy';
 import { hasConnectedAgentTransport } from '../lib/runtimeHealth';
 import { WINDOW_CONTROLS_INSET_PX } from '../lib/windowChrome';
 
@@ -21,23 +24,34 @@ export default function RuntimeStatusBanner() {
     hasConnectedAgentTransport(),
     health.reason,
   );
-  const persistenceDegraded = history.persistence === 'degraded';
-  if (!runtimeMessage && !persistenceDegraded) return null;
+  let persistenceMessage = null;
+  if (history.persistence === 'unavailable') persistenceMessage = HISTORY_UNAVAILABLE_MESSAGE;
+  else if (history.persistence === 'degraded')
+    persistenceMessage = HISTORY_PERSISTENCE_DEGRADED_MESSAGE;
+  const searchMessage = history.searchUnavailableMessage;
+  if (!runtimeMessage && !persistenceMessage && !searchMessage) return null;
   const runtimeIcon = health.lifecycle === 'recovery-required' ? AlertTriangle : RefreshCw;
-  const runtimeAccent =
-    health.lifecycle === 'recovery-required' ? 'text-droid-orange' : 'text-droid-accent';
+  const runtimeAccent = health.lifecycle === 'recovery-required' ? 'text-warning' : 'text-accent';
 
   return (
     <>
       {runtimeMessage ? (
         <StatusBannerRow icon={runtimeIcon} accent={runtimeAccent} message={runtimeMessage} />
       ) : null}
-      {persistenceDegraded ? (
+      {persistenceMessage ? (
         <StatusBannerRow
           icon={AlertTriangle}
-          accent="text-droid-orange"
-          message={HISTORY_PERSISTENCE_DEGRADED_MESSAGE}
+          accent="text-warning"
+          message={persistenceMessage}
           testId="history-persistence-banner"
+        />
+      ) : null}
+      {searchMessage ? (
+        <StatusBannerRow
+          icon={AlertTriangle}
+          accent="text-warning"
+          message={searchMessage}
+          testId="history-search-banner"
         />
       ) : null}
     </>
@@ -59,11 +73,11 @@ function StatusBannerRow({
     <div
       role="status"
       data-testid={testId}
-      className="shrink-0 flex items-center gap-2 pr-4 h-8 border-b border-droid-border bg-droid-elevated/60 text-[12px]"
+      className="shrink-0 flex items-center gap-2 pr-4 py-1 min-h-8 bg-elevated/60 text-body"
       style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
     >
       {createElement(icon, { className: `w-3.5 h-3.5 ${accent}` })}
-      <span className="text-droid-text">{message}</span>
+      <span className="text-primary">{message}</span>
     </div>
   );
 }

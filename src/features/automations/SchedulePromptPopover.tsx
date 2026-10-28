@@ -1,7 +1,8 @@
-import { Clock, Spinner } from '@droidex/icons';
+import { Clock } from '@droidex/icons';
 import { X } from 'lucide-react';
 import { useState, type RefObject } from 'react';
-import { AnchoredPopover } from './AnchoredPopover';
+import { Button } from '../../components/ui/Button';
+import { Popover } from '../../components/ui/Popover';
 import { ScheduleControls } from './ScheduleControls';
 import { AutomationRequestUnconfirmedError } from './client';
 import type { AutomationSchedule } from './types';
@@ -48,38 +49,37 @@ export default function SchedulePromptPopover({
   };
 
   return (
-    <AnchoredPopover
+    <Popover
       open
       anchorRef={anchorRef}
       onClose={close}
-      ariaLabel="Schedule prompt"
+      label="Schedule prompt"
+      placement="top-end"
       width={360}
-      maximumHeight={520}
     >
       <form
-        className="max-h-[inherit] overflow-y-auto p-4"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4"
         onSubmit={(event) => {
           event.preventDefault();
           void save();
         }}
       >
         <div className="flex items-start gap-3">
-          <Clock className="mt-1 h-4 w-4 shrink-0 text-droid-text-secondary" />
+          <Clock className="mt-1 size-icon-md shrink-0 text-secondary" />
           <div className="min-w-0 flex-1">
-            <h2 className="text-[14px] font-medium text-droid-text">Send later</h2>
-            <p className="mt-0.5 truncate text-[11px] text-droid-text-muted" title={sessionTitle}>
+            <h2 className="text-subheading text-primary">Send later</h2>
+            <p className="mt-0.5 truncate text-caption text-muted" title={sessionTitle}>
               Continue in {sessionTitle || 'this conversation'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={close}
-            disabled={saving}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={X}
             aria-label="Close schedule"
-            className="rounded-lg p-1.5 text-droid-text-muted hover:bg-droid-surface focus-visible:outline focus-visible:outline-droid-border-hover"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+            disabled={saving}
+            onClick={close}
+          />
         </div>
 
         <fieldset disabled={saving || unconfirmed} className="mt-4 min-w-0">
@@ -88,20 +88,20 @@ export default function SchedulePromptPopover({
               { label: 'In 1 hour', runAt: nextHour },
               { label: 'Tomorrow, 9 AM', runAt: tomorrowMorning },
             ].map((preset) => (
-              <button
+              <Button
                 key={preset.label}
-                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   setSchedule({ kind: 'once', runAt: preset.runAt() });
                   setError(null);
                 }}
-                className="rounded-lg border border-droid-border px-2.5 py-1.5 text-[11px] text-droid-text-secondary transition-colors hover:bg-droid-surface focus-visible:outline focus-visible:outline-droid-border-hover"
               >
                 {preset.label}
-              </button>
+              </Button>
             ))}
           </div>
-          <div className="rounded-xl border border-droid-border bg-droid-surface/30">
+          <div className="rounded-lg bg-bg dark:bg-surface/30">
             <ScheduleControls
               schedule={schedule}
               timezone={timezone}
@@ -112,31 +112,30 @@ export default function SchedulePromptPopover({
             />
           </div>
         </fieldset>
-        <p className="mt-2 text-right text-[11px] text-droid-text-muted">
-          {timezone.replaceAll('_', ' ')}
-        </p>
-        <p className="mt-4 text-[11px] leading-[17px] text-droid-text-muted">
+        <p className="mt-2 text-right text-caption text-muted">{timezone.replaceAll('_', ' ')}</p>
+        <p className="mt-4 text-caption text-muted">
           Uses this conversation’s settings and permissions. If it is busy, delivery waits. If
           DROIDEX is asleep or closed, it sends when available again.
         </p>
         {error && (
-          <p role="alert" className="mt-3 text-[11px] leading-4 text-droid-orange">
+          <p role="alert" className="mt-3 text-caption text-warning">
             {error}
           </p>
         )}
         <div className="mt-4 flex items-center justify-between gap-3">
-          <span className="text-[11px] text-droid-text-muted">Manage in Automations</span>
-          <button
+          <span className="text-caption text-muted">Manage in Automations</span>
+          <Button
             type="submit"
+            variant="primary"
+            size="md"
+            loading={saving}
             disabled={saving || unconfirmed}
-            className="inline-flex items-center gap-2 rounded-lg bg-droid-text px-3 py-2 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {saving && <Spinner className="h-3 w-3 motion-safe:animate-spin-slow" />}
-            {saving ? 'Scheduling…' : 'Schedule prompt'}
-          </button>
+            Schedule prompt
+          </Button>
         </div>
       </form>
-    </AnchoredPopover>
+    </Popover>
   );
 }
 

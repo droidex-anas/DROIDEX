@@ -55,7 +55,7 @@ async function assertPreloadOnlyBootstrap(page: Page, url: string): Promise<void
     url: window.location.href,
     scriptCount: document.scripts.length,
     hasReactRoot: document.getElementById('root') !== null,
-    hasPreload: typeof window.droidControl?.bridgeInfo === 'function',
+    hasPreload: typeof window.droidex?.bridgeInfo === 'function',
   }));
   assert.deepEqual(state, { url, scriptCount: 0, hasReactRoot: false, hasPreload: true });
 }
@@ -305,7 +305,7 @@ async function verifyOwnedBridge(page: Page, bridge: BridgeInfo): Promise<void> 
 
 async function runRoundTrip(page: Page): Promise<SmokeResult> {
   return page.evaluate(async (bridgeProtocol) => {
-    const { port, token } = await window.droidControl!.bridgeInfo();
+    const { port, token } = await window.droidex!.bridgeInfo();
     const ws = new WebSocket(
       `ws://127.0.0.1:${port}?token=${encodeURIComponent(token)}&bridgeProtocol=${bridgeProtocol}`,
     );
@@ -458,6 +458,10 @@ test('[E1] Authenticated desktop round trip', async () => {
     XDG_DATA_HOME: profile.data,
     APPDATA: profile.roamingAppData,
     LOCALAPPDATA: profile.localAppData,
+    // Claude Code's updater installs into XDG_DATA_HOME and links the launcher
+    // to it; from this profile that would leave the launcher dangling once the
+    // profile is deleted.
+    DISABLE_UPDATES: '1',
     ELECTRON_START_URL: bootstrapUrl,
     DROID_PATH: droidPath,
     SIDECAR_ENTRY: sidecarEntry,
@@ -482,7 +486,7 @@ test('[E1] Authenticated desktop round trip', async () => {
     assert.equal(isWithin(home, userData), true, 'E1 userData escaped its isolated profile.');
     // This is the preload IPC boundary; no bridge socket may run until its
     // token is bound to the supervisor's readiness proof below.
-    const bridge = await page.evaluate(() => window.droidControl!.bridgeInfo());
+    const bridge = await page.evaluate(() => window.droidex!.bridgeInfo());
     assert.equal(bridge.port, bridgePort, 'E1 bridge did not report the selected port.');
     assert.equal(
       typeof bridge.token === 'string' && bridge.token.length > 0,
@@ -493,10 +497,11 @@ test('[E1] Authenticated desktop round trip', async () => {
     await verifyOwnedBridge(page, bridge);
 
     await page.evaluate(async (key) => {
-      await window.droidControl!.setApiKey(key);
-      await window.droidControl!.setOnboarding({
+      await window.droidex!.setApiKey(key);
+      await window.droidex!.setOnboarding({
         completed: false,
         cliAutoUpdate: false,
+        harnessCliAutoUpdate: false,
         appAutoUpdate: false,
       });
     }, apiKey);

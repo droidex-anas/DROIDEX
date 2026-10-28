@@ -4,10 +4,12 @@ import type { NormalizedEvent } from '../normalize.js';
 import type {
   Autonomy,
   ContextWindowTokens,
+  ProviderUsage,
   ReasoningEffort,
   SessionInteractionMode,
   SessionPurpose,
   SessionSummary,
+  UsageMeter,
   VoiceNarration,
 } from '../protocol.js';
 import type { ProviderMention, SkillInfo } from './catalog.js';
@@ -17,6 +19,9 @@ import type { ProviderKind } from './providerKind.js';
 import type { ProviderProbe } from './providerProbes.js';
 
 export interface ProviderOpenInput {
+  droidProfile?: 'alt';
+  // A queued thread already owns its application identity before the provider opens.
+  appSessionId?: string;
   cwd: string;
   sessionPurpose?: SessionPurpose;
   interactionMode: SessionInteractionMode;
@@ -35,6 +40,7 @@ export interface ProviderOpenInput {
 }
 
 export interface ProviderResumeInput {
+  droidProfile?: 'alt';
   // DROIDEX's own identity for the session, which a resumed provider session
   // does not carry and which stamps everything the session streams.
   appSessionId: string;
@@ -58,6 +64,7 @@ export interface ProviderResumeInput {
 }
 
 export interface ProviderForkSource {
+  droidProfile?: 'alt';
   providerSessionId: string;
   resumeId?: string;
   // The provider sessions the conversation compacted from, oldest first.
@@ -77,6 +84,8 @@ export interface ProviderForkSource {
 export interface ProviderForkHandle {
   providerSessionId: string;
   resumeId?: string;
+  // Releases a provisional fork client if resume did not take ownership.
+  release?: () => Promise<void>;
   // Source fork points the copy knows by another id, for a provider that
   // renames messages as it copies them.
   forkPointRenames?: ReadonlyMap<string, string>;
@@ -126,8 +135,32 @@ export interface ProviderVoice {
   onEvent(listener: (event: ProviderVoiceEvent) => void): () => void;
 }
 
+// A window as the harness reports it; the account stamps when it arrived.
+export type ReportedMeter = Omit<UsageMeter, 'updatedAt'>;
+
+// One read of a harness account's usage: every window it reports, replacing
+// what an earlier read said. A reading that `covers` only some windows leaves
+// every other one as it was.
+export type UsageReading = Pick<ProviderUsage, 'extra' | 'unavailable'> & {
+  meters: ReportedMeter[];
+  covers?: readonly string[];
+};
+
+// Windows the harness pushes as they change, each replacing only its own row.
+export type UsageMetersListener = (meters: ReportedMeter[]) => void;
+
+// How a turn the provider started by itself ended.
+export type DelegatedTurnEnd =
+  | { status: 'completed' | 'interrupted' }
+  | { status: 'failed'; error: Error };
+
+/** Only false permits replay; withdrawal and uncertainty settle without it. */
+export type SteerOutcome = boolean | 'withdrawn' | 'unconfirmed';
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
+  // Local approval policy: revocations apply immediately, grants after acceptance.
+  readonly autonomy: Autonomy;
   // Native id of the session the provider holds open.
   readonly providerSessionId: string;
   // The provider's own handle for reopening this conversation, when it differs
@@ -158,12 +191,19 @@ export interface ProviderSession {
    * for through the composer, and the rest of the app has to know so a typed
    * prompt queues behind it and Stop can reach it.
    */
-  onDelegatedTurn?(listener: (running: boolean) => void): () => void;
+  // `end` says how a turn that ended did.
+  onDelegatedTurn?(listener: (running: boolean, end?: DelegatedTurnEnd) => void): () => void;
   // Hands a prompt to the running turn, which the harness delivers at its own
-  // next step. Resolves true once the model has it, and false when the turn
-  // cannot take it or ends without it; the session layer then sends it as an
-  // ordinary message, as it does on a provider without a steer.
-  steer?(text: string, mentions?: ProviderMention[]): Promise<boolean>;
+  // next step. True confirms delivery; false requeues it; 'withdrawn' settles
+  // it without delivery or requeue. 'unconfirmed' prevents uncertain replay.
+  // The id also names provider cancellation.
+  steer(
+    text: string,
+    mentions: ProviderMention[] | undefined,
+    steerId: string,
+  ): Promise<SteerOutcome>;
+  // True only after the harness confirms the model can no longer take it in.
+  withdrawSteer?(steerId: string): Promise<boolean>;
   // Provider-native command/skill/app/plugin rows, cached for this live runtime.
   catalogItems?(): Promise<SkillInfo[]>;
   onCatalogUpdated?(listener: (items: SkillInfo[]) => void): () => void;
@@ -176,6 +216,8 @@ export interface ProviderSession {
   setInteractionMode?(mode: SessionInteractionMode): Promise<void>;
   // Present only on a provider that can hold a voice conversation.
   readonly voice?: ProviderVoice;
+  // Present when the session's own connection can read the account's usage.
+  readonly usage?: { read(signal: AbortSignal): Promise<UsageReading> };
   interrupt(): Promise<void>;
   close(): Promise<void>;
 }
@@ -186,8 +228,12 @@ export interface Provider {
   create(input: ProviderOpenInput): Promise<ProviderSession>;
   resume(providerSessionId: string, input: ProviderResumeInput): Promise<ProviderSession>;
   // Copies a settled conversation into a new, independent one the provider can
-  // resume. Nothing is opened; the caller resumes the copy.
+  // resume. The caller releases any provisional client after the first send,
+  // or when the copy fails or stays unopened.
   fork(source: ProviderForkSource): Promise<ProviderForkHandle>;
+  // Reads the account's usage with no session to go through. Claude Code and
+  // Codex start a short-lived process for it, which `signal` ends.
+  readUsage(signal: AbortSignal): Promise<UsageReading>;
 }
 
 // A provider backed by a CLI learns what it can do by probing that CLI; Droid's

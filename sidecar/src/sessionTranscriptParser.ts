@@ -6,7 +6,8 @@
 // mapping, the canonical event builder, and the text shaping (trimming,
 // system-text filtering, tool-result stringification) every parsed event
 // shares.
-import { dateMs, numberValue, objectValue, safeStringify, stringValue } from './values.js';
+import { toolResultParts } from './toolResultImages.js';
+import { dateMs, numberValue, objectValue, stringValue } from './values.js';
 import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
@@ -30,6 +31,9 @@ import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 // fence cut mid-script and rendered dead after a restart.
 const MAX_TEXT_CHARS = 12_000;
 const MAX_APP_ANSWER_CHARS = 256_000;
+
+// Droid persists caller-supplied message ids; native writers use the same marker.
+export const STEER_MESSAGE_PREFIX = 'droidex-steer-';
 
 export function isLlmOnlyMessage(message: unknown): boolean {
   return objectValue(message)?.visibility === 'llm_only';
@@ -115,6 +119,7 @@ function assistantBlockEvent(
   index: number,
   block: Record<string, unknown>,
   forkPointId: string | undefined,
+  fullText: boolean,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'thinking') {
@@ -125,7 +130,8 @@ function assistantBlockEvent(
     return text ? event(base, index, 'thinking', { text }) : null;
   }
   if (type === 'text') {
-    const text = trimAnswerText(nonEmpty(stringValue(block.text)));
+    const answer = nonEmpty(stringValue(block.text));
+    const text = fullText ? answer : trimAnswerText(answer);
     if (!text) return null;
     return event(base, index, 'text', { text, ...(forkPointId ? { forkPointId } : {}) });
   }
@@ -152,13 +158,19 @@ function nonAssistantBlockEvent(
   index: number,
   block: Record<string, unknown>,
   messageRole: string | undefined,
+  textOnly: boolean,
 ): TranscriptEvent | null {
   const type = stringValue(block.type);
   if (type === 'tool_result') {
+    // A text-only read leaves the content, and the pictures it would save, unread.
+    const parts = textOnly ? { text: '' } : toolResultParts(block.content);
+    // The app's own transcript files keep the saved paths beside the text.
+    const images = parts.images ?? storedImages(block.images);
     return event(base, index, 'tool_result', {
       toolName: stringValue(block.name),
       // Machine output, never a runnable App: the shared cap always applies.
-      text: trimText(stringifyToolResult(block.content), MAX_TEXT_CHARS),
+      text: trimText(parts.text, MAX_TEXT_CHARS),
+      ...(images ? { images } : {}),
       isError: Boolean(block.is_error ?? block.isError),
       // Carry the originating call's id so the renderer can correlate a
       // result to its tool_call exactly (result blocks have no name and
@@ -186,7 +198,8 @@ export function userPromptDisplay(storedText: string) {
   // A branch prompt carries a whole copied conversation after its request; it
   // is cut back to the request before the cap could cut the request off.
   const rawText = trimText(branchPromptDisplayFromText(outer.text) ?? outer.text, MAX_TEXT_CHARS);
-  const designDisplay = designPromptDisplayFromText(rawText);
+  // Design prompts once went out inside the App frame; both frames come off.
+  const designDisplay = designPromptDisplayFromText(appPromptDisplayFromText(rawText) ?? rawText);
   // An App request wraps the whole composed prompt, frames and answers included.
   const inner = attachedToPrompt(
     designDisplay?.text ??
@@ -197,7 +210,8 @@ export function userPromptDisplay(storedText: string) {
   return {
     text: inner.text,
     browserRefs: designDisplay?.browserRefs,
-    sideChatReplies: outer.sideChatReplies ?? inner.sideChatReplies,
+    sideChatReplies:
+      outer.sideChatReplies ?? inner.sideChatReplies ?? designDisplay?.sideChatReplies,
     canvasFrames: outer.canvasFrames ?? inner.canvasFrames,
   };
 }
@@ -216,15 +230,18 @@ function attachedToPrompt(text: string) {
 
 // Map one stored JSONL row to its transcript events. Each line converts
 // independently (no cross-line state), which is what makes backward,
-// parse-on-demand windowing safe.
+// parse-on-demand windowing safe. A text-only read, for search, still yields
+// every event so their indices match the replay's.
 export function parseSessionLineEvents(
   appSessionId: string,
   providerSessionId: string,
   role: SessionRole,
   line: StoredMessageLine | StoredSessionStart,
-  canvas: CanvasToolPresentation | null = new CanvasToolPresentation(
-    readCanvasToolBindings(appSessionId),
-  ),
+  {
+    textOnly = false,
+    fullText = false,
+    canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId)),
+  }: { textOnly?: boolean; fullText?: boolean; canvas?: CanvasToolPresentation | null } = {},
 ): TranscriptEvent[] {
   const notice = parseStoredNotice(appSessionId, providerSessionId, role, line);
   if (notice) return [notice];
@@ -301,16 +318,28 @@ export function parseSessionLineEvents(
     ];
   }
 
+  // Droid stores its own notices ("Unable to reach…", BYOK errors, budget
+  // switches) as user text only the user sees. They are not the user's words.
+  const droidNotice = messageRole === 'user' && message?.visibility === 'user_only';
   const forkPointId = line.forkPointId ?? line.id;
   const events: TranscriptEvent[] = [];
   content.forEach((item, index) => {
     const block = objectValue(item);
     if (!block) return;
+    if (droidNotice && block.type === 'text') {
+      const text = stringValue(block.text)?.trim();
+      if (text) events.push(event(base, index, 'status', { text }));
+      return;
+    }
     const parsed =
       messageRole === 'assistant'
-        ? assistantBlockEvent(base, index, block, forkPointId)
-        : nonAssistantBlockEvent(base, index, block, messageRole);
-    if (parsed) events.push(parsed);
+        ? assistantBlockEvent(base, index, block, forkPointId, fullText)
+        : nonAssistantBlockEvent(base, index, block, messageRole, textOnly);
+    if (parsed) {
+      if (parsed.author === 'user' && line.id?.startsWith(STEER_MESSAGE_PREFIX))
+        parsed.steered = true;
+      events.push(parsed);
+    }
   });
   if (!canvas) return events;
   return events.map((entry) =>
@@ -350,18 +379,10 @@ function skillActivationFromContent(content: unknown[]) {
   return parseSkillActivation(text);
 }
 
-function stringifyToolResult(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        const block = objectValue(item);
-        return nonEmpty(stringValue(block?.text), safeStringify(item));
-      })
-      .filter(Boolean)
-      .join('\n');
-  }
-  return safeStringify(value);
+function storedImages(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const paths = value.filter((path): path is string => typeof path === 'string');
+  return paths.length > 0 ? paths : undefined;
 }
 
 function trimText(text: string, max: number): string {

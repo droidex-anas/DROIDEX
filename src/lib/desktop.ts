@@ -1,16 +1,18 @@
+import type { PublishedProfile } from '../../packages/remote/src/profile';
+import type { RemoteState, RemoteSettings, RemoteSetup } from '../../packages/remote/src/desktop';
+import type { ProfileUsageSnapshot } from '../features/profile/profileShare';
 import type {
-  NativeBrowserAgentAction,
-  NativeBrowserAgentResult,
-  NativeBrowserBounds,
-  NativeBrowserBox,
-  NativeBrowserCaptureOptions,
-  NativeBrowserDesignPrompt,
+  NativeBrowserDesignEvent,
+  NativeBrowserDesignState,
   NativeBrowserKeyPress,
   NativeBrowserLoadFailed,
   NativeBrowserLoaded,
-  NativeBrowserSelection,
+  NativeBrowserAgentPoint,
+  NativeBrowserFrame,
+  NativeBrowserWorking,
 } from './nativeBrowser';
 import type { NativeBrowserChord } from './shortcuts';
+import type { BrowserViewportMode } from '../types/bridge';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
 import type {
@@ -117,7 +119,7 @@ export interface TerminalSessionInfo {
   exitCode?: number | null;
 }
 
-type TerminalEvent =
+export type TerminalEvent =
   | {
       kind: 'replay';
       data: string;
@@ -151,6 +153,20 @@ export interface TerminalDataChannel {
   postInput: (data: string) => void;
   onEvent: (handler: (event: TerminalEvent) => void) => () => void;
   close: () => void;
+}
+
+// Stored values every copy of the app shares; the desktop app accepts no others.
+export type SharedStorageKey = 'droid-workspaces' | 'droid-chat-metadata';
+
+export interface SharedStorageChange {
+  key: SharedStorageKey;
+  value: string;
+}
+
+export interface DirectoryListing {
+  path: string;
+  parent: string | null;
+  directories: string[];
 }
 
 export interface FilesEntry {
@@ -221,7 +237,52 @@ export type NotifyResult =
       message?: string;
     };
 
-interface DroidControlApi {
+type SaveImageResult = { saved: true; filePath: string } | { saved: false };
+
+export type RemoteNotificationState =
+  | 'on'
+  | 'off'
+  | 'unsupported'
+  | 'needs-home-screen'
+  | 'not-remembered';
+
+/** A Remote browser's own pairing with the laptop. */
+export interface RemoteBrowserControls {
+  handle: string;
+  trustedUntil: () => number;
+  notifications: () => Promise<RemoteNotificationState>;
+  setNotifications: (enabled: boolean) => Promise<RemoteNotificationState>;
+  forget: () => Promise<void>;
+}
+
+/** The part of a WebSocket the bridge uses; a Remote browser tunnels it to the laptop. */
+export interface BridgeSocket {
+  readonly readyState: number;
+  onopen: ((event: Event) => void) | null;
+  onmessage: ((event: MessageEvent) => void) | null;
+  onclose: ((event: CloseEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  send: (data: string) => void;
+  close: (code?: number, reason?: string) => void;
+}
+
+export interface DroidexApi {
+  /** Set by DROIDEX Remote: this window is a browser driving the laptop over the relay. */
+  remoteBrowser?: RemoteBrowserControls;
+  openBridgeSocket?: (url: string) => BridgeSocket;
+  getRemoteState: () => Promise<RemoteState>;
+  configureRemote: (patch: Partial<RemoteSettings>) => Promise<RemoteState>;
+  setupRemoteAuthenticator: () => Promise<RemoteSetup>;
+  confirmRemoteAuthenticator: (code: string) => Promise<RemoteState>;
+  decideRemoteRequest: (id: string, approved: boolean) => Promise<RemoteState>;
+  revokeRemoteDevice: (id: string) => Promise<RemoteState>;
+  resetRemotePairing: () => Promise<RemoteState>;
+  getPublishedProfile: () => Promise<PublishedProfile | null>;
+  publishPublicProfile: (payload: string) => Promise<PublishedProfile>;
+  revokePublicProfile: (payload: string) => Promise<void>;
+  remoteQr: (text: string) => Promise<string>;
+  onRemoteState: (handler: (state: RemoteState) => void) => () => void;
+  getProfileUsage: () => Promise<ProfileUsageSnapshot>;
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;
@@ -229,9 +290,11 @@ interface DroidControlApi {
   pickFiles: () => Promise<string[]>;
   canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
   canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
+  listDirectories: (path: string) => Promise<DirectoryListing>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
   discardImage: (path: string) => Promise<void>;
+  saveImageAs: (url: string, name: string) => Promise<SaveImageResult>;
   pathForFile: (file: File) => string;
   notify: (title: string, body: string, options?: NotifyOptions) => Promise<NotifyResult>;
   onNotificationActivate: (handler: (payload: { appSessionId: string }) => void) => () => void;
@@ -241,7 +304,8 @@ interface DroidControlApi {
   setApiKey: (key: string) => Promise<void>;
   listFiles: (dir: string) => Promise<string[]>;
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
-  canvasPreviewUrl: string;
+  /** Null where previews cannot run, such as a Remote browser. */
+  canvasPreviewUrl: string | null;
   canvasPreviewBind: (guestId: number, canvasId: string) => Promise<boolean>;
   canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
   canvasPreviewCapture: (
@@ -266,6 +330,13 @@ interface DroidControlApi {
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
   onMemoryPressure: (handler: (payload: { at: number }) => void) => () => void;
   readFile: (path: string) => Promise<string>;
+  /** The bytes behind a droidex-img URL, for a Remote browser that cannot load the scheme. */
+  readLocalImage: (url: string) => Promise<{ mime: string; data: Uint8Array }>;
+  /** The laptop window's stored values for these keys, so a Remote browser starts from its projects and look. */
+  readRendererStorage: (keys: string[]) => Promise<Record<string, string | null>>;
+  /** Relays a saved shared value to the laptop window and every paired Remote browser but this one. */
+  writeSharedStorage: (key: SharedStorageKey, value: string) => Promise<void>;
+  onSharedStorage: (handler: (change: SharedStorageChange) => void) => () => void;
   repoStatus: (dir: string) => Promise<RepoStatus | null>;
   listEditors: () => Promise<EditorId[]>;
   editorIcon: (editor: EditorId) => Promise<string | null>;
@@ -354,46 +425,35 @@ interface DroidControlApi {
   filesPreview: (accessToken: string, relative: string) => Promise<FilePreviewPayload>;
   filesOpen: (accessToken: string, relative: string) => Promise<void>;
   filesReveal: (accessToken: string, relative: string) => Promise<void>;
-  nativeBrowserOpen: (
+  nativeBrowserReserve: (
     browserSessionId: string,
-    url: string,
-    bounds?: NativeBrowserBounds,
-    viewport?: { width: number; height: number; deviceScaleFactor: number },
-  ) => Promise<void>;
-  nativeBrowserAttach: (
-    browserSessionId: string,
-    bounds: NativeBrowserBounds,
-    url?: string,
-  ) => Promise<void>;
-  nativeBrowserDetach: (browserSessionId?: string) => Promise<void>;
-  nativeBrowserSetBounds: (browserSessionId: string, bounds: NativeBrowserBounds) => Promise<void>;
-  nativeBrowserSetVisible: (browserSessionId: string, visible: boolean) => Promise<void>;
-  nativeBrowserClose: (browserSessionId: string) => Promise<void>;
-  nativeBrowserReload: (browserSessionId: string) => Promise<void>;
+    savedUrl?: string,
+    savedMode?: BrowserViewportMode,
+  ) => Promise<{ src: string; generation: number }>;
+  nativeBrowserRelease: (browserSessionId: string) => Promise<void>;
+  nativeBrowserWorkingSessions: () => Promise<string[]>;
+  nativeBrowserShown: (browserSessionId: string, shown: boolean) => Promise<void>;
+  nativeBrowserWatch: (browserSessionId: string, watching: boolean) => Promise<void>;
   nativeBrowserGoBack: (browserSessionId: string) => Promise<boolean>;
   nativeBrowserGoForward: (browserSessionId: string) => Promise<boolean>;
-  nativeBrowserSetDesignMode: (browserSessionId: string, active: boolean) => Promise<void>;
-  nativeBrowserSetPencilMode: (browserSessionId: string, active: boolean) => Promise<void>;
-  nativeBrowserAgentAction: (
-    request: NativeBrowserAgentAction,
-  ) => Promise<NativeBrowserAgentResult | undefined>;
-  nativeBrowserCapture: (
+  nativeBrowserSetDesignState: (
     browserSessionId: string,
-    box?: NativeBrowserBox,
-    options?: NativeBrowserCaptureOptions,
-  ) => Promise<string | undefined>;
+    state: NativeBrowserDesignState,
+  ) => Promise<void>;
   nativeBrowserSetShortcuts: (chords: NativeBrowserChord[]) => Promise<void>;
   onNativeBrowserShortcut: (handler: (press: NativeBrowserKeyPress) => void) => () => void;
-  onNativeBrowserSelection: (handler: (selection: NativeBrowserSelection) => void) => () => void;
-  onNativeBrowserDesignPrompt: (handler: (prompt: NativeBrowserDesignPrompt) => void) => () => void;
+  onNativeBrowserDesignEvent: (handler: (event: NativeBrowserDesignEvent) => void) => () => void;
   onNativeBrowserLoaded: (handler: (event: NativeBrowserLoaded) => void) => () => void;
   onNativeBrowserLoadFailed: (handler: (event: NativeBrowserLoadFailed) => void) => () => void;
-  onNativeBrowserAgentResult: (handler: (result: NativeBrowserAgentResult) => void) => () => void;
+  onNativeBrowserWorking: (handler: (event: NativeBrowserWorking) => void) => () => void;
+  onNativeBrowserAgentPoint: (handler: (event: NativeBrowserAgentPoint) => void) => () => void;
+  onNativeBrowserFrame: (handler: (event: NativeBrowserFrame) => void) => () => void;
+  onNativeBrowserClosed: (handler: (event: { browserSessionId: string }) => void) => () => void;
 }
 
 declare global {
   interface Window {
-    droidControl?: DroidControlApi;
+    droidex?: DroidexApi;
   }
 }
 
@@ -401,15 +461,7 @@ interface DesktopPerformanceMetrics {
   timestamp: number;
   webContentsTotal: number;
   ptys: number;
-  nativeBrowsers?: {
-    total: number;
-    live: number;
-    attached: number;
-    warm: number;
-    serialized: number;
-    maxLive: number;
-    idleMs: number;
-  };
+  nativeBrowsers?: { sessions: number; live: number };
   terminals?: { live: number; retained: number; total: number };
   powerTier?: 'interactive' | 'hidden' | 'low-power';
   memory: { rssBytes: number; heapUsedBytes: number; heapTotalBytes: number };
@@ -423,11 +475,20 @@ export interface DesktopPowerTierSnapshot {
   onBattery: boolean;
 }
 
-function desktopApi(): DroidControlApi | undefined {
-  return typeof window !== 'undefined' ? window.droidControl : undefined;
+function desktopApi(): DroidexApi | undefined {
+  return typeof window !== 'undefined' ? window.droidex : undefined;
 }
 
 export const isDesktop = () => Boolean(desktopApi());
+
+/** True in a DROIDEX Remote browser, where the laptop's own window features are out of reach. */
+export const isRemoteClient = () => Boolean(desktopApi()?.remoteBrowser);
+
+export const remoteBrowser = () => desktopApi()?.remoteBrowser;
+
+export function openBridgeSocket(url: string): BridgeSocket {
+  return desktopApi()?.openBridgeSocket?.(url) ?? new WebSocket(url);
+}
 
 export async function systemIdleTime(): Promise<number | null> {
   const api = desktopApi();
@@ -460,7 +521,7 @@ export function onDesktopMemoryPressure(handler: (payload: { at: number }) => vo
   return api.onMemoryPressure(handler);
 }
 
-function requireDesktopApi(message: string): DroidControlApi {
+function requireDesktopApi(message: string): DroidexApi {
   const api = desktopApi();
   if (!api) throw new Error(message);
   return api;
@@ -484,6 +545,20 @@ export function onSidecarStatus(handler: (status: SidecarSupervisorSnapshot) => 
   return api.onSidecarStatus(handler);
 }
 
+export function writeSharedStorage(key: SharedStorageKey, value: string): void {
+  const api = desktopApi();
+  if (!api?.writeSharedStorage) return;
+  void api.writeSharedStorage(key, value).catch(() => {
+    // The other copies read the stored list when they next start.
+  });
+}
+
+export function onSharedStorage(handler: (change: SharedStorageChange) => void): () => void {
+  const api = desktopApi();
+  if (!api?.onSharedStorage) return () => undefined;
+  return api.onSharedStorage(handler);
+}
+
 export async function pickDirectory(): Promise<string | null> {
   const api = desktopApi();
   if (!api) return null;
@@ -504,6 +579,12 @@ export async function pickFiles(): Promise<string[]> {
 // is what the prompt @-mentions. Only the desktop app can write to disk.
 export async function saveImage(dataUrl: string): Promise<string> {
   return requireDesktopApi('Image attachments need the desktop app.').saveImage(dataUrl);
+}
+
+// Asks where to save an image the viewer is showing and writes it there. The
+// main process fetches it, since droidex-img bytes are unreadable to the page.
+export async function saveImageAs(url: string, name: string): Promise<SaveImageResult> {
+  return requireDesktopApi('Saving images needs the desktop app.').saveImageAs(url, name);
 }
 
 // Same store for pasted non-image files; the original name is kept (sanitized)

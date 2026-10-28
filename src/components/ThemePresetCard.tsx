@@ -5,14 +5,12 @@
 // the active preset into an unsaved custom look until saved as a theme.
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Pencil, Plus, Trash2 } from 'lucide-react';
-import { Copy, Download, Upload } from '@droidex/icons';
+import { Check, Copy, Download, Pencil, Plus, Trash, Upload } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { persistCustomThemes, type ThemeConfig } from '../hooks/persistedThemePreferences';
 import {
   applyTheme,
   BUILT_IN_THEMES,
-  contrastRatio,
   CUSTOM_THEME_ID,
   DEFAULT_THEME,
   findPreset,
@@ -24,10 +22,12 @@ import {
   type ThemeColors,
   type ThemePreset,
 } from '../lib/theme';
+import { contrastRatio } from '../lib/themeTokens';
 import { ColorPicker, ColorPopover } from './ColorPicker';
 import { Dropdown } from './settingsKit';
 import { ThemeEditor, type ThemeDraft } from './ThemeEditor';
 import { ThemeSwatches } from './ThemePreview';
+import { Button } from './ui/Button';
 
 const QUICK_ACCENTS = [
   '#ee6018',
@@ -64,34 +64,6 @@ type EditorState =
 const contrastInk = (value: string): string =>
   contrastRatio(value, '#101010') >= contrastRatio(value, '#f7f7f7') ? '#101010' : '#f7f7f7';
 
-function CardButton({
-  icon: Icon,
-  label,
-  danger = false,
-  onClick,
-}: {
-  icon: React.ElementType;
-  label: string;
-  danger?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-colors ${
-        danger
-          ? 'text-droid-red hover:bg-droid-red/10'
-          : 'text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
-}
-
 /** One color row: label on the left, solid pill (ring dot + hex) on the right. */
 function ThemeColorRow({
   label,
@@ -110,10 +82,10 @@ function ThemeColorRow({
   // (near-black or near-white) has better contrast against it.
   const ink = contrastInk(value);
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-droid-border">
+    <div className="flex items-center justify-between gap-3 py-3">
       <div>
-        <div className="text-[13px] text-droid-text">{label}</div>
-        <div className="text-[11px] text-droid-text-muted">{description}</div>
+        <div className="text-body text-primary">{label}</div>
+        <div className="text-caption text-muted">{description}</div>
       </div>
       <button
         ref={pillRef}
@@ -122,7 +94,7 @@ function ThemeColorRow({
           setOpen((o) => !o);
         }}
         title={`Pick ${label.toLowerCase()}`}
-        className="flex h-8 min-w-[124px] shrink-0 items-center gap-2 rounded-lg px-2.5 font-mono text-[11px] uppercase transition-transform hover:scale-[1.02]"
+        className="flex h-control-md min-w-32 shrink-0 items-center gap-2 rounded-md px-2.5 font-mono text-code-sm transition duration-150 ease-out hover:opacity-90 active:scale-97"
         style={{
           backgroundColor: value,
           color: ink,
@@ -130,14 +102,14 @@ function ThemeColorRow({
         }}
       >
         <span
-          className="h-3.5 w-3.5 shrink-0 rounded-full"
+          className="size-icon-sm shrink-0 rounded-full"
           style={{ boxShadow: `inset 0 0 0 1.5px ${ink}` }}
         />
         {value}
       </button>
       {open && (
         <ColorPopover
-          anchor={pillRef.current}
+          anchorRef={pillRef}
           onClose={() => {
             setOpen(false);
           }}
@@ -159,8 +131,6 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
-  // Element that opened the editor; focus returns here when it closes.
-  const openerRef = useRef<HTMLElement | null>(null);
 
   const activePreset = findPreset(theme.presetId, customThemes);
   const activeIsCustom = activePreset ? customThemes.some((p) => p.id === activePreset.id) : false;
@@ -194,18 +164,13 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
 
   /* ── editor flows ── */
   const openEditor = (next: EditorState) => {
-    // Capture the opener BEFORE the dialog mounts (the editor auto-focuses its
-    // name field, so reading activeElement after mount would capture the
-    // dialog itself), and drop any stale error — a fresh flow must not show a
-    // previous import/save failure; only a failed save retry sets it again.
-    openerRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // A fresh flow must not show a previous import/save failure; only a
+    // failed save retry sets it again.
     setThemeError(null);
     setEditor(next);
   };
   const closeEditor = () => {
     setEditor(null);
-    openerRef.current?.focus();
   };
   const openNewTheme = () => {
     openEditor({
@@ -363,19 +328,22 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
   ];
 
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-surface mb-8">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-droid-border">
-        <div className="text-[13px] font-medium text-droid-text">
+    <div className="mb-8 rounded-xl bg-surface shadow-lg">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <div className="text-body-strong text-primary">
           {resolvedScheme === 'dark' ? 'Dark' : 'Light'} theme
         </div>
         <div className="flex items-center gap-1">
-          <CardButton
+          <Button
+            variant="ghost"
+            size="sm"
             icon={Upload}
-            label="Import"
             onClick={() => {
               importInputRef.current?.click();
             }}
-          />
+          >
+            Import
+          </Button>
           <Dropdown
             ariaLabel="Theme preset"
             value={theme.presetId}
@@ -389,9 +357,13 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
           />
         </div>
       </div>
-      {themeError && <p className="px-4 pt-2.5 text-[11px] text-droid-red">{themeError}</p>}
+      {themeError && (
+        <p role="alert" className="px-4 pb-2.5 text-body text-danger">
+          {themeError}
+        </p>
+      )}
 
-      <div className="px-4 [&>*:last-child]:border-b-0">
+      <div className="px-4">
         {COLOR_ROWS.map(({ key, label, description }) => (
           <ThemeColorRow
             key={key}
@@ -403,10 +375,10 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
             }}
           />
         ))}
-        <div className="flex items-center justify-between gap-3 py-2.5 border-b border-droid-border">
+        <div className="flex items-center justify-between gap-3 py-3">
           <div>
-            <div className="text-[13px] text-droid-text">Quick accents</div>
-            <div className="text-[11px] text-droid-text-muted">One-tap accent colors</div>
+            <div className="text-body text-primary">Quick accents</div>
+            <div className="text-caption text-muted">One-tap accent colors</div>
           </div>
           <div className="flex flex-wrap justify-end gap-1.5">
             {QUICK_ACCENTS.map((c) => {
@@ -419,19 +391,17 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
                   key={c}
                   type="button"
                   title={c}
+                  aria-label={`Accent ${c}`}
+                  aria-pressed={selected}
                   onClick={() => {
                     updateColors({ accent: c });
                   }}
-                  className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
-                    selected ? 'border-droid-text' : 'border-transparent'
-                  }`}
-                  // A hairline inside the ring keeps a swatch the colour of the
-                  // panel (white on a light theme) from reading as an empty slot.
-                  style={{ backgroundColor: c, boxShadow: 'inset 0 0 0 1px var(--droid-border)' }}
+                  className="flex size-6 items-center justify-center rounded-full transition-transform hover:scale-110"
+                  // A hairline keeps a swatch the colour of the panel (white on
+                  // a light theme) from reading as an empty slot.
+                  style={{ backgroundColor: c, boxShadow: 'inset 0 0 0 1px var(--divider)' }}
                 >
-                  {selected && (
-                    <Check className="w-3 h-3 mx-auto" style={{ color: ink }} strokeWidth={3} />
-                  )}
+                  {selected && <Check className="size-icon-sm" style={{ color: ink }} />}
                 </button>
               );
             })}
@@ -439,38 +409,49 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-droid-border px-2.5 py-2">
-        <div className="flex items-center">
-          <CardButton icon={Plus} label="New theme" onClick={openNewTheme} />
+      <div className="flex items-center justify-between gap-2 px-2 py-2">
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" icon={Plus} onClick={openNewTheme}>
+            New theme
+          </Button>
           {activePreset && (
-            <CardButton
+            <Button
+              variant="ghost"
+              size="sm"
               icon={Copy}
-              label="Duplicate"
               onClick={() => {
                 openDuplicate(activePreset);
               }}
-            />
+            >
+              Duplicate
+            </Button>
           )}
           {activeIsCustom && activePreset && (
             <>
-              <CardButton
+              <Button
+                variant="ghost"
+                size="sm"
                 icon={Pencil}
-                label="Edit"
                 onClick={() => {
                   openEdit(activePreset);
                 }}
-              />
-              <CardButton
+              >
+                Edit
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 icon={Download}
-                label="Export"
                 onClick={() => {
                   exportTheme(activePreset);
                 }}
-              />
-              <CardButton
-                icon={Trash2}
-                label={deleteArmed ? 'Click again to delete' : 'Delete'}
-                danger={deleteArmed}
+              >
+                Export
+              </Button>
+              <Button
+                variant={deleteArmed ? 'danger' : 'ghost'}
+                size="sm"
+                icon={Trash}
                 onClick={() => {
                   if (!deleteArmed) {
                     setDeleteArmed(true);
@@ -479,12 +460,16 @@ export function ThemePresetCard({ resolvedScheme }: { resolvedScheme: 'light' | 
                   setDeleteArmed(false);
                   handleDelete(activePreset);
                 }}
-              />
+              >
+                {deleteArmed ? 'Click again to delete' : 'Delete'}
+              </Button>
             </>
           )}
         </div>
         {!activePreset && (
-          <CardButton icon={Plus} label="Save as theme…" onClick={openSaveCurrentAs} />
+          <Button variant="ghost" size="sm" icon={Plus} onClick={openSaveCurrentAs}>
+            Save as theme…
+          </Button>
         )}
       </div>
 

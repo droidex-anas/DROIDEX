@@ -21,11 +21,7 @@ import {
   sanitizeUtilityPanels,
   type UtilityPanelState,
 } from '../lib/utilityPanel';
-import {
-  loadPersistedBrowserOpenKeys,
-  loadPersistedBrowsers,
-  persistBrowsers,
-} from './persistedBrowserSnapshot';
+import { loadPersistedBrowsers } from './persistedBrowserSnapshot';
 
 export type MissionRole = 'worker' | 'validator';
 export type AgentKind = 'primary' | MissionRole;
@@ -141,7 +137,7 @@ const DEFAULT_VOICE_STORAGE_KEY = 'droid-default-voice';
 const KNOWN_VOICES_STORAGE_KEY = 'droid-known-voices';
 const NARRATION_MODE_STORAGE_KEY = 'droid-narration-mode';
 const REVIEW_SCOPE_STORAGE_KEY = 'droid-review-scope';
-const WORKSPACES_STORAGE_KEY = 'droid-workspaces';
+export const WORKSPACES_STORAGE_KEY = 'droid-workspaces';
 const SESSION_LAST_SEEN_STORAGE_KEY = 'droid-session-last-seen-v1';
 const SHORTCUTS_STORAGE_KEY = 'droid-shortcuts-v1';
 const UI_STATE_STORAGE_KEY = 'droid-ui-state-v2';
@@ -160,12 +156,12 @@ interface PersistedUiState {
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
-  browserOpenKeys: Record<string, boolean>;
   selectedFeatureId: string | null;
   mainView?: MainView;
   prWorkspaceCwd?: string | null;
   prWorkspaceNumber?: number | null;
   prBacklogIds?: string[];
+  revealEarlierCwds?: string[];
 }
 
 export function loadCompactionModel(): string {
@@ -337,6 +333,12 @@ export function saveWorkspaceCwds(cwds: string[]): void {
   saveItem(WORKSPACES_STORAGE_KEY, JSON.stringify(cwds));
 }
 
+function sanitizeRevealEarlierCwds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const cwds = value.filter((cwd): cwd is string => typeof cwd === 'string' && cwd.length > 0);
+  return [...new Set(cwds)];
+}
+
 export function loadPersistedUiState(): Partial<PersistedUiState> {
   try {
     const raw = getLocalStorage()?.getItem(UI_STATE_STORAGE_KEY);
@@ -345,6 +347,7 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
     return {
       ...sanitizePersistedPrWorkspace(parsed.prWorkspaceCwd, parsed.prWorkspaceNumber),
       prBacklogIds: sanitizePersistedPrBacklog(parsed.prBacklogIds),
+      revealEarlierCwds: sanitizeRevealEarlierCwds(parsed.revealEarlierCwds),
       activeAppSessionId:
         typeof parsed.activeAppSessionId === 'string' ? parsed.activeAppSessionId : null,
       rightPanelOpen:
@@ -357,7 +360,6 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
       missionControlMode:
         typeof parsed.missionControlMode === 'boolean' ? parsed.missionControlMode : undefined,
       browsers: loadPersistedBrowsers(parsed.browsers),
-      browserOpenKeys: loadPersistedBrowserOpenKeys(parsed.browserOpenKeys),
       selectedFeatureId:
         typeof parsed.selectedFeatureId === 'string' ? parsed.selectedFeatureId : null,
       mainView:
@@ -382,12 +384,12 @@ export interface PersistedUiStateSource {
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
-  browserOpenKeys: Record<string, boolean>;
   selectedFeatureId: string | null;
   mainView: MainView;
   prWorkspaceCwd: string | null;
   prWorkspaceNumber: number | null;
   prBacklogIds: string[];
+  revealEarlierCwds: string[];
 }
 
 export function savePersistedUiState(state: PersistedUiStateSource): void {
@@ -399,13 +401,13 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     productMode: state.productMode,
     specMode: state.specMode,
     missionControlMode: state.missionControlMode,
-    browsers: persistBrowsers(state.browsers),
-    browserOpenKeys: state.browserOpenKeys,
+    browsers: state.browsers,
     selectedFeatureId: state.selectedFeatureId,
     mainView: state.mainView,
     prWorkspaceCwd: state.prWorkspaceCwd,
     prWorkspaceNumber: state.prWorkspaceNumber,
     prBacklogIds: state.prBacklogIds,
+    revealEarlierCwds: state.revealEarlierCwds,
   };
   saveItem(UI_STATE_STORAGE_KEY, JSON.stringify(snapshot));
 }

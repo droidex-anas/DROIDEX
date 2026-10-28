@@ -98,7 +98,6 @@ test('childEnv drops the app-private variables and keeps the user shell', () => 
     DROIDEX_HISTORY_DIR: '/profile/history',
     BRIDGE_PORT: '1234',
     BRIDGE_TOKEN: 'secret',
-    BROWSER_ASSET_TOKEN: 'secret',
     CANVAS_ASSET_SECRET: 'synthetic-secret',
     CANVAS_EXPORT_TOKEN: 'secret',
     BRIDGE_EXIT_ON_STDIN_CLOSE: '1',

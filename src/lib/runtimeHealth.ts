@@ -66,7 +66,7 @@ export function getRuntimeHealth(): RuntimeHealthSnapshot {
 
 function sidecarSupervisorPresent(): boolean {
   if (typeof window === 'undefined') return false;
-  return typeof window.droidControl?.sidecarStatus === 'function';
+  return typeof window.droidex?.sidecarStatus === 'function';
 }
 
 export function canRunAgents(): boolean {

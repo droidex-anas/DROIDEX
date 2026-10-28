@@ -13,7 +13,7 @@ export function PreviewModeToggle({
     <div
       role="radiogroup"
       aria-label="Preview mode"
-      className="ml-auto flex items-center gap-0.5 rounded-lg bg-droid-active/60 p-0.5"
+      className="ml-auto flex items-center gap-0.5 rounded-lg bg-active/60 p-0.5"
     >
       {(['light', 'dark'] as const).map((option) => (
         <button
@@ -24,10 +24,8 @@ export function PreviewModeToggle({
           onClick={() => {
             onChange(option);
           }}
-          className={`cursor-pointer rounded-md px-2 py-0.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 ${
-            mode === option
-              ? 'bg-droid-accent/15 text-droid-text'
-              : 'text-droid-text-muted hover:text-droid-text'
+          className={`cursor-pointer rounded-md px-2 py-0.5 text-caption font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
+            mode === option ? 'bg-accent/15 text-primary' : 'text-muted hover:text-primary'
           }`}
         >
           {option}

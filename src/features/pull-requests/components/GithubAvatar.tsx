@@ -24,7 +24,7 @@ export function GithubAvatar({
     <span
       title={name}
       style={box}
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-droid-elevated ring-1 ring-inset ring-droid-text/10 ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-elevated ${className}`}
     >
       {showImage ? (
         <img
@@ -45,7 +45,7 @@ export function GithubAvatar({
         <span
           aria-hidden="true"
           style={{ fontSize: Math.max(9, Math.round(size * 0.36)) }}
-          className="font-semibold text-droid-text-secondary"
+          className="font-medium text-secondary"
         >
           {authorInitials(login)}
         </span>

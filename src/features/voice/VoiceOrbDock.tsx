@@ -27,14 +27,14 @@ export function VoiceOrbDock() {
         aria-label="Open the voice surface"
         title="Open the voice surface"
         onClick={voice.expand}
-        className="pointer-events-auto rounded-full focus-visible:outline focus-visible:outline-droid-border-hover"
+        className="pointer-events-auto rounded-full"
       >
         <VoiceOrb micStream={session.micStream} replyStream={session.replyStream} size={72} />
       </button>
       <span
         aria-live="polite"
-        className={`text-[11px] ${
-          voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-droid-text-muted'
+        className={`text-caption ${
+          voiceStatusIsLive(voice.activity) ? 'shimmer-text font-medium' : 'text-muted'
         }`}
       >
         {voiceStatusLabel(voice.activity)}

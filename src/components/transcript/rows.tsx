@@ -2,36 +2,27 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 import type { TranscriptEvent } from '../../types/bridge';
 import {
-  describeToolCall,
   toolMeta,
   safeJson,
   stripAnsi,
   formatDuration,
   parseTodos,
+  isListingTool,
   isWebSearchTool,
   isWebFetchTool,
   toolArgString,
-  type ToolCallLabel,
   type TodoStatus,
 } from '../../lib/tools';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { classifyEvent } from '../../lib/transcript';
 import { compactPath } from '../../lib/pathDisplay';
 import { StreamingCaret } from '../StreamingCaret';
-import {
-  Caret,
-  ErrorTag,
-  InterruptedTag,
-  Expand,
-  firstLine,
-  linkify,
-  RED,
-  RED_TINT,
-  useElapsed,
-} from './primitives';
-import { CommandCard, CommandLine, ToolCallCard } from './commandCard';
-import { LinkBadge } from './LinkBadge';
-import { useToolSourceMark } from './toolSourceMark';
+import { Caret, ErrorTag, Expand, firstLine, linkify, useElapsed } from './primitives';
+import { CommandCard, CommandLine } from './commandCard';
+import { TranscriptImage } from '../media/TranscriptImage';
+import { ToolLine } from './toolLine';
+import { ToolFilesCard, type ExplorationCall } from './toolFilesCard';
+import { SkillCard } from './skillCard';
 import { WebFetchCard, WebSearchCard } from './webCards';
 
 /* ── Thinking / Thought ── */
@@ -64,17 +55,17 @@ export function ThinkingItem({
         className="group flex items-center gap-1.5 text-left"
         aria-expanded={open}
       >
-        <Caret open={open} />
         {active ? (
-          <span className="shimmer-text text-[13px] font-medium">{label}</span>
+          <span className="shimmer-text text-body-strong">{label}</span>
         ) : (
-          <span className="text-[13px] text-droid-text-muted group-hover:text-droid-text-secondary transition-colors">
+          <span className="text-body text-muted group-hover:text-secondary transition-colors">
             {label}
           </span>
         )}
+        <Caret open={open} />
       </button>
       <Expand open={open}>
-        <div className="mt-2 pl-[18px] text-[13px] text-droid-text-muted/55 leading-[1.7] whitespace-pre-wrap break-words">
+        <div className="mt-2 pl-5 text-body text-quiet whitespace-pre-wrap break-words">
           {text}
           {active && <StreamingCaret />}
         </div>
@@ -146,10 +137,6 @@ function countToolCall(counts: ActivityCounts, e: TranscriptEvent): void {
   else counts.step++;
 }
 
-function isListingTool(name: string | undefined): boolean {
-  return /(^|[^a-z])(ls|list|dir)([^a-z]|$)/i.test(name ?? '');
-}
-
 function formatCounts(counts: ActivityCounts, live: boolean): string {
   const parts: string[] = [];
   const add = (n: number, s: string, p: string) => {
@@ -214,7 +201,7 @@ export function summarizeTools(events: TranscriptEvent[], live = false): string 
 // row: a red "error" tag with the first line, expanding to the full message.
 // An error reads like the other turn rows ("Worked for 12s"): a disclosure
 // whose label names the error, with the tag at the row's right edge.
-export function ErrorLine({ text }: { text: string }) {
+export function ErrorLine({ text, attempts }: { text: string; attempts?: number }) {
   const [open, setOpen] = useState(false);
   const body = stripAnsi(text).trim();
   const head = firstLine(body);
@@ -225,152 +212,21 @@ export function ErrorLine({ text }: { text: string }) {
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-[13px] leading-relaxed"
+        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={open}
       >
+        <span className="min-w-0 truncate text-secondary">{label}</span>
+        {attempts ? <span className="shrink-0 text-muted">· {attempts} attempts</span> : null}
         <Caret open={open} />
-        <span className="min-w-0 truncate text-droid-text-secondary">{label}</span>
         <ErrorTag emphasis />
       </button>
       <Expand open={open}>
-        <div className="mt-1.5 pl-[18px]">
-          <pre
-            className="max-h-56 overflow-auto rounded-md px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words"
-            style={{ backgroundColor: RED_TINT, color: RED }}
-          >
+        <div className="mt-1.5 pl-5">
+          <pre className="max-h-56 overflow-auto rounded-sm px-2.5 py-2 font-mono text-code whitespace-pre-wrap break-words bg-danger-soft text-danger">
             {linkify(body)}
           </pre>
         </div>
       </Expand>
-    </div>
-  );
-}
-
-// The row's object: a path opens in Review when the transcript can, anything
-// else is plain text. Paths compact to their tail with the directory dimmed so
-// the file name carries the line.
-function ToolTarget({
-  call,
-  onOpenReviewFile,
-}: {
-  call: ToolCallLabel;
-  onOpenReviewFile?: OpenReviewFileHandler;
-}) {
-  if (call.objectKind === 'none') return null;
-  if (call.objectKind !== 'path') {
-    return <span className="min-w-0 truncate text-droid-text-muted">{call.object}</span>;
-  }
-  const shown = compactPath(call.object);
-  const slash = shown.lastIndexOf('/');
-  const dir = slash >= 0 ? shown.slice(0, slash + 1) : '';
-  const name = slash >= 0 ? shown.slice(slash + 1) : shown;
-  const parts = (
-    <>
-      {dir && <span className="text-droid-text-muted/50">{dir}</span>}
-      <span className="text-droid-text-muted transition-colors group-hover/path:text-droid-text">
-        {name}
-      </span>
-    </>
-  );
-  if (!onOpenReviewFile) return <span className="min-w-0 truncate">{parts}</span>;
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpenReviewFile(call.object);
-      }}
-      title={`Open ${call.object} in Review`}
-      className="group/path min-w-0 truncate text-left"
-    >
-      {parts}
-    </button>
-  );
-}
-
-// One tool call as a sentence: "Read src/app.tsx", "Searched src", or a
-// readable tool name. In flight the verb shimmers in its live form; a body
-// (captured output or the error) sits behind the caret.
-function ToolLine({
-  event,
-  output,
-  error = false,
-  interrupted = false,
-  running = false,
-  forceOpen = false,
-  onOpenReviewFile,
-}: {
-  event: TranscriptEvent;
-  output?: string;
-  error?: boolean;
-  interrupted?: boolean;
-  running?: boolean;
-  forceOpen?: boolean;
-  onOpenReviewFile?: OpenReviewFileHandler;
-}) {
-  const call = describeToolCall(event.toolName, event.toolArgs);
-  const out = output ? stripAnsi(output).trimEnd() : '';
-  const [open, setOpen] = useState(false);
-  const expanded = open || forceOpen;
-  // Only a row with output can be collapsed again; detailed density still
-  // opens every call to its arguments, result or not.
-  const collapsible = out.length > 0;
-  const hasBody = collapsible || forceOpen;
-  // An MCP tool wears its server's mark instead of spelling its source.
-  const mark = useToolSourceMark(call.source);
-  const verb = (
-    <span className="flex shrink-0 items-center">
-      {mark && <LinkBadge link={mark} />}
-      {running ? (
-        <span className="shimmer-text font-medium">{call.liveVerb}</span>
-      ) : (
-        <span className="text-droid-text-secondary">{call.verb}</span>
-      )}
-    </span>
-  );
-  return (
-    <div>
-      <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-relaxed">
-        {collapsible ? (
-          <button
-            type="button"
-            onClick={() => {
-              setOpen((o) => !o);
-            }}
-            aria-expanded={expanded}
-            className="group flex shrink-0 items-center gap-1.5 text-left"
-          >
-            <Caret open={expanded} />
-            {verb}
-          </button>
-        ) : (
-          <>
-            {/* Caret-width spacer keeps the label flush with the expandable rows. */}
-            <span className="w-3 shrink-0" aria-hidden="true" />
-            {verb}
-          </>
-        )}
-        <ToolTarget call={call} onOpenReviewFile={onOpenReviewFile} />
-        {call.source && !mark && (
-          <span className="shrink-0 text-droid-text-muted/60">· {call.source}</span>
-        )}
-        {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
-      </div>
-      {hasBody && (
-        <Expand open={expanded}>
-          <div className="mt-1.5 pl-[18px]">
-            <ToolCallCard
-              heading={
-                <pre className="whitespace-pre-wrap break-words text-droid-text">
-                  {safeJson(event.toolArgs)}
-                </pre>
-              }
-              output={out}
-              error={error}
-            />
-          </div>
-        </Expand>
-      )}
     </div>
   );
 }
@@ -380,33 +236,34 @@ function ToolLine({
 function TodoMark({ status }: { status: TodoStatus }) {
   if (status === 'completed') {
     return (
-      <span className="mt-[5px] flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-droid-text-muted">
-        <Check className="h-2 w-2 text-droid-bg" strokeWidth={3} />
+      <span className="mt-0.5 flex size-icon-sm shrink-0 items-center justify-center rounded-full bg-muted">
+        <Check className="size-2.5 text-bg" strokeWidth={3} />
       </span>
     );
   }
   return (
-    <span
-      className={`mt-[5px] h-3 w-3 shrink-0 rounded-full border-[1.5px] ${
-        status === 'in_progress' ? 'border-droid-text' : 'border-droid-text-muted/40'
+    <svg
+      viewBox="0 0 14 14"
+      aria-hidden="true"
+      className={`mt-0.5 size-icon-sm shrink-0 ${
+        status === 'in_progress' ? 'text-primary' : 'text-muted/40'
       }`}
-    />
+    >
+      <circle cx="7" cy="7" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 
 function TodoChecklist({ event }: { event: TranscriptEvent }) {
   const todos = parseTodos(event.toolArgs);
-  if (todos.length === 0)
-    return <div className="text-[13px] text-droid-text-secondary">Updated plan</div>;
+  if (todos.length === 0) return <div className="text-body text-secondary">Updated plan</div>;
   return (
     <div className="space-y-1">
       {todos.map((t, i) => (
         <div
           key={i}
-          className={`flex items-start gap-2 text-[13px] leading-relaxed break-words ${
-            t.status === 'completed'
-              ? 'text-droid-text-muted line-through'
-              : 'text-droid-text-secondary'
+          className={`flex items-start gap-2 text-body break-words ${
+            t.status === 'completed' ? 'text-muted line-through' : 'text-secondary'
           }`}
         >
           <TodoMark status={t.status} />
@@ -463,9 +320,41 @@ export function correlateResults(events: TranscriptEvent[]): {
   return { resultByCall, consumed };
 }
 
+// The maximal run of consecutive read/search calls starting at `start`, in
+// which every member renders as file chips. Correlated results interleave with
+// the calls (a replayed transcript batches several calls before their
+// results), so consumed results are stepped over; anything else — another
+// tool, a plan update, an unconsumed result — ends the run.
+function gatherExplorationRun(
+  events: TranscriptEvent[],
+  start: number,
+  resultByCall: Map<TranscriptEvent, TranscriptEvent>,
+  consumed: Set<TranscriptEvent>,
+): { run: ExplorationCall[]; end: number } {
+  const run: ExplorationCall[] = [
+    { event: events[start], result: resultByCall.get(events[start]) },
+  ];
+  let end = start + 1;
+  while (end < events.length) {
+    const next = events[end];
+    if (next.kind === 'tool_result' && consumed.has(next)) {
+      end++;
+      continue;
+    }
+    if (next.kind !== 'tool_call' || classifyEvent(next) === 'plan_update') break;
+    const { cat } = toolMeta(next.toolName, next.toolArgs);
+    if (cat !== 'read' && cat !== 'search') break;
+    run.push({ event: next, result: resultByCall.get(next) });
+    end++;
+  }
+  return { run, end };
+}
+
 // Render one tool group's calls as readable rows. `detailed` shows bodies
 // inline (the detailed density); otherwise rows are lines that expand to their
-// bodies on click.
+// bodies on click. Reads and searches are the exception: they render
+// visual-only rows (file chips, no raw body), and a consecutive burst of them
+// merges into a single row.
 export function renderToolEvents(
   events: TranscriptEvent[],
   live = false,
@@ -474,7 +363,8 @@ export function renderToolEvents(
 ): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   const { resultByCall, consumed } = correlateResults(events);
-  for (const e of events) {
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
     if (e.kind === 'tool_call') {
       if (classifyEvent(e) === 'plan_update') {
         nodes.push(<TodoChecklist key={e.id} event={e} />);
@@ -497,6 +387,7 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -510,6 +401,21 @@ export function renderToolEvents(
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
+            error={isError}
+            interrupted={interrupted}
+            running={running}
+            forceOpen={detailed}
+          />,
+        );
+      } else if (cat === 'skill') {
+        // A skill invocation reads as the skill, not as its raw payload.
+        nodes.push(
+          <SkillCard
+            key={e.id}
+            event={e}
+            output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -530,6 +436,7 @@ export function renderToolEvents(
               key={e.id}
               command={command}
               output={result?.text}
+              images={result?.images}
               error={isError}
               interrupted={interrupted}
               running={running}
@@ -539,6 +446,7 @@ export function renderToolEvents(
               key={e.id}
               command={command}
               output={result?.text}
+              images={result?.images}
               error={isError}
               interrupted={interrupted}
               running={running}
@@ -546,12 +454,25 @@ export function renderToolEvents(
             />
           ),
         );
+      } else if (cat === 'search' || cat === 'read') {
+        // A burst of consecutive reads/searches is one exploration gesture and
+        // renders as a single row with every file pooled into one chip rail.
+        // Keyed by the run's first call, so a live row growing into a burst
+        // keeps its chips instead of remounting.
+        const { run, end } = gatherExplorationRun(events, i, resultByCall, consumed);
+        nodes.push(
+          <ToolFilesCard key={e.id} calls={run} live={live} onOpenReviewFile={onOpenReviewFile} />,
+        );
+        // The run's results are consumed, so the tail skip renders nothing for
+        // them; landing the loop past them keeps the walk linear.
+        i = end - 1;
       } else {
         nodes.push(
           <ToolLine
             key={e.id}
             event={e}
             output={result?.text}
+            images={result?.images}
             error={isError}
             interrupted={interrupted}
             running={running}
@@ -565,6 +486,9 @@ export function renderToolEvents(
     // A result already shown as its call's inline output (or a silently consumed
     // plan result) must not also render as raw activity.
     if (e.kind === 'tool_result' && consumed.has(e)) continue;
+    // A result whose call is out of view still shows the pictures it carried.
+    for (const [index, image] of (e.images ?? []).entries())
+      nodes.push(<TranscriptImage key={`${e.id}-${String(index)}-${image}`} reference={image} />);
     const body = stripAnsi(e.text ?? safeJson(e.toolArgs)).trimEnd();
     if (!body) continue;
     // A failed result with no call to fold into (e.g. a failed edit that broke
@@ -576,7 +500,7 @@ export function renderToolEvents(
     nodes.push(
       <pre
         key={e.id}
-        className="max-h-48 overflow-auto rounded-md bg-droid-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-droid-text-muted/80 whitespace-pre-wrap break-words"
+        className="max-h-48 overflow-auto rounded-sm bg-bg/50 px-2.5 py-2 font-mono text-code text-muted/80 whitespace-pre-wrap break-words"
       >
         {linkify(body)}
       </pre>,

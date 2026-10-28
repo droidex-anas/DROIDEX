@@ -107,6 +107,27 @@ test('a mounted fallback says the latest change did not build, over the older re
   );
 });
 
+test('a host with no preview source says previews are laptop-only', () => {
+  // A Remote browser has no canvasPreviewUrl, so its preview sheet must not
+  // read as loading forever.
+  Reflect.deleteProperty(globalThis, 'window');
+  const markup = renderToStaticMarkup(
+    createElement(PreviewGuestFrame, {
+      canvasId: CANVAS,
+      designId: 'dsg_hey',
+      revisionId: 'rev_02',
+      showingRevisionId: null,
+      html: '<!doctype html><body>x</body>',
+      diagnostics: [],
+      reportPreview: () => undefined,
+      onResize: undefined,
+    }),
+  );
+
+  assert.match(markup, /Live previews are only available on your laptop\./);
+  assert.doesNotMatch(markup, /Loading this preview/);
+});
+
 test('a zoomed preview submits its untransformed layout viewport for capture', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let mount: (() => void | (() => void)) | undefined;
@@ -134,7 +155,7 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
     configurable: true,
     value: {
       devicePixelRatio: 2,
-      droidControl: {
+      droidex: {
         canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
         canvasPreviewBind: () => Promise.resolve(true),
         canvasPreviewCapture: (submitted: desktop.CanvasPreviewCaptureRequest) => {

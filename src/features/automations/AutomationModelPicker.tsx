@@ -1,20 +1,15 @@
-import { ChevronDown, Search, X } from 'lucide-react';
+import { ChevronDown, Search } from 'lucide-react';
+import { X } from '@droidex/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Field';
+import { Popover } from '../../components/ui/Popover';
 import ModelCatalogList from '../../components/ModelCatalogList';
 import { isDroidCoreModel } from '../../components/modelCategories';
 import { ModelIcon, providerOf } from '../../components/ModelIcon';
 import { listModels } from '../../lib/commands';
 import type { ModelInfo, ReasoningEffort } from '../../types/bridge';
-import { AnchoredPopover } from './AnchoredPopover';
 import { reasoningForModel } from './modelSelection';
-
-const ACCENT = 'var(--droid-accent)';
-const accentMix = (pct: number) =>
-  `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
-
-// Tall enough for the reasoning row, a useful slice of the catalog, and the
-// footer; the popover still clamps it to the room the viewport actually has.
-const PANEL_MAX_HEIGHT = 560;
 
 type ModelCategory = 'core' | 'factory' | 'custom';
 const MODEL_CATEGORIES: readonly ModelCategory[] = ['core', 'factory', 'custom'];
@@ -122,69 +117,59 @@ export function AutomationModelPicker({
           if (open) close();
           else setOpen(true);
         }}
-        className={`inline-flex max-w-[270px] items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:border-droid-border-hover ${
-          open
-            ? 'border-droid-border-hover bg-droid-elevated'
-            : 'border-transparent hover:border-droid-border hover:bg-droid-elevated/70'
+        className={`inline-flex max-w-72 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
+          open ? 'bg-elevated' : 'hover:bg-elevated/70'
         }`}
       >
         <span className="flex h-5 w-5 shrink-0 items-center justify-center">
           <ModelIcon provider={providerOf(selectedModel)} size={17} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-droid-text">{label}</span>
-          <span className="block text-[11px] capitalize text-droid-text-muted">
+          <span className="block truncate text-body-strong text-primary">{label}</span>
+          <span className="block text-caption capitalize text-muted">
             {modelId ? `${selectedReasoning} reasoning` : 'Select from your model catalog'}
           </span>
         </span>
         <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-droid-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`size-icon-sm shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
-      <AnchoredPopover
+      <Popover
         open={open}
         anchorRef={buttonRef}
         onClose={close}
+        label="Select automation model and reasoning"
+        placement="bottom-end"
         width={390}
-        align="end"
-        maximumHeight={PANEL_MAX_HEIGHT}
-        ariaLabel="Select automation model and reasoning"
       >
         {/* `inherit` keeps this column inside the height the popover resolved,
             so the reasoning row, catalog, and Done control stay reachable. */}
         <div className="flex min-h-0 flex-col" style={{ maxHeight: 'inherit' }}>
-          <div className="flex items-start justify-between gap-3 border-b border-droid-border/70 px-4 pb-3 pt-3.5">
+          <div className="flex items-start justify-between gap-3 px-4 pb-3 pt-3.5">
             <div>
-              <div className="text-[11px] font-medium text-droid-text-secondary">
-                Model and reasoning
-              </div>
-              <div className="mt-0.5 text-[11px] text-droid-text-muted">
+              <div className="text-label text-secondary">Model and reasoning</div>
+              <div className="mt-0.5 text-caption text-muted">
                 Uses the same live catalog as the chat composer
               </div>
             </div>
-            <button
-              type="button"
-              onClick={close}
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={X}
               aria-label="Close model selector"
               title="Close model selector"
-              className="rounded-lg p-1.5 text-droid-text-muted transition-colors hover:bg-droid-surface hover:text-droid-text"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+              onClick={close}
+            />
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="px-4 pb-2 pt-3.5">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-droid-text-muted">
-                  Reasoning
-                </span>
-                <span className="text-[11px] font-medium capitalize" style={{ color: ACCENT }}>
-                  {selectedReasoning}
-                </span>
+                <span className="text-label text-muted">Reasoning</span>
+                <span className="text-label capitalize text-primary">{selectedReasoning}</span>
               </div>
-              <div className="flex flex-wrap gap-1 rounded-xl border border-droid-border bg-droid-bg/65 p-1">
+              <div className="flex flex-wrap gap-1 rounded-lg bg-elevated p-1 dark:bg-bg/65">
                 {reasoningOptions.map((reasoning) => {
                   const selected = reasoning === selectedReasoning;
                   return (
@@ -196,17 +181,11 @@ export function AutomationModelPicker({
                         onChange({ modelId: selectedModel.id, reasoningEffort: reasoning });
                       }}
                       disabled={!selectedModel}
-                      className={`relative rounded-lg px-2.5 py-1.5 text-[11px] capitalize outline-none transition-colors focus-visible:ring-1 focus-visible:ring-droid-accent/60 disabled:cursor-not-allowed disabled:opacity-40 ${
-                        selected ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
-                      }`}
-                      style={
+                      className={`rounded-md px-2.5 py-1.5 text-caption capitalize transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                         selected
-                          ? {
-                              backgroundColor: accentMix(13),
-                              boxShadow: `inset 0 0 0 1px ${accentMix(35)}`,
-                            }
-                          : undefined
-                      }
+                          ? 'bg-raised text-primary shadow-sm'
+                          : 'text-muted hover:bg-active hover:text-primary'
+                      }`}
                     >
                       {reasoning}
                     </button>
@@ -216,9 +195,10 @@ export function AutomationModelPicker({
             </div>
 
             <div className="px-4 pb-3 pt-2">
-              <label className="flex h-9 items-center gap-2 rounded-xl border border-droid-border bg-droid-bg/65 px-3 text-droid-text-muted transition-colors focus-within:border-droid-border-hover">
-                <Search className="h-3.5 w-3.5 shrink-0" />
-                <input
+              <div className="flex h-control-lg items-center gap-2 rounded-md bg-field px-3 text-muted">
+                <Search className="size-icon-sm shrink-0" />
+                <Input
+                  variant="embedded"
                   autoFocus
                   value={query}
                   aria-label="Search models"
@@ -226,9 +206,8 @@ export function AutomationModelPicker({
                     setQuery(event.target.value);
                   }}
                   placeholder="Search models"
-                  className="min-w-0 flex-1 bg-transparent text-[12px] text-droid-text outline-none placeholder:text-droid-text-muted/65"
                 />
-              </label>
+              </div>
 
               <div className="mt-2 flex flex-wrap gap-1">
                 <CategoryButton
@@ -268,25 +247,20 @@ export function AutomationModelPicker({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-droid-border/70 px-4 py-3">
-            <span className="min-w-0 truncate text-[11px] text-droid-text-muted">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <span className="min-w-0 truncate text-caption text-muted">
               {selectedModel
                 ? `${selectedModel.displayName} · ${selectedReasoning} reasoning`
                 : modelId
                   ? `${modelId} · ${selectedReasoning} reasoning`
                   : 'Choose a model to continue'}
             </span>
-            <button
-              type="button"
-              onClick={close}
-              disabled={!modelId}
-              className="rounded-lg bg-droid-text px-3 py-1.5 text-[11px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
-            >
+            <Button variant="primary" size="sm" onClick={close} disabled={!modelId}>
               Done
-            </button>
+            </Button>
           </div>
         </div>
-      </AnchoredPopover>
+      </Popover>
     </>
   );
 }
@@ -306,10 +280,8 @@ function CategoryButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg px-2.5 py-1 text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
-        active
-          ? 'bg-droid-surface text-droid-text'
-          : 'text-droid-text-muted hover:bg-droid-surface/60 hover:text-droid-text'
+      className={`rounded-md px-2.5 py-1 text-caption transition-colors ${
+        active ? 'bg-active text-primary' : 'text-muted hover:bg-active hover:text-primary'
       }`}
     >
       {label}

@@ -13,7 +13,7 @@ import { PreviewModeToggle, type PreviewMode } from './PreviewModeToggle';
 import type { CanvasDiagnostic, DesignSystemDetail, DesignSystemSummary } from './protocol';
 
 const ACTION_CLASS =
-  'flex items-center gap-1.5 rounded-lg bg-droid-active px-2.5 py-1.5 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 disabled:cursor-default disabled:opacity-60';
+  'flex items-center gap-1.5 rounded-lg bg-active px-2.5 py-1.5 text-label text-primary transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default disabled:opacity-60';
 const MAX_NOTES_SHOWN = 6;
 
 export function DesignSystemDetailPane({
@@ -39,14 +39,14 @@ export function DesignSystemDetailPane({
   if (read === null) return null;
   if (read.status === 'loading')
     return (
-      <p role="status" className="px-6 pt-6 text-[12px] text-droid-text-muted">
+      <p role="status" className="px-6 pt-6 text-label font-normal text-muted">
         Reading {summary?.name ?? 'the design system'}…
       </p>
     );
   if (read.status === 'failed')
     return (
       <div role="alert" className="flex flex-col items-start gap-3 px-6 pt-6">
-        <p className="text-[12px] text-droid-red">{read.message}</p>
+        <p className="text-label font-normal text-danger">{read.message}</p>
         <button type="button" onClick={onRetry} className={ACTION_CLASS}>
           Try again
         </button>
@@ -139,8 +139,8 @@ function KitDetail({
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-start gap-4 px-6 pb-3 pt-5">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-[15px] font-semibold text-droid-text">{system.name}</h3>
-          <p className="mt-0.5 truncate text-[12px] text-droid-text-muted">
+          <h3 className="truncate text-subheading text-primary">{system.name}</h3>
+          <p className="mt-0.5 truncate text-label font-normal text-muted">
             {kitOrigin(system, isPreset, nameOf)}
           </p>
         </div>
@@ -171,14 +171,14 @@ function KitDetail({
       {(status.state === 'done' || status.state === 'failed') && (
         <p
           role={status.state === 'failed' ? 'alert' : 'status'}
-          className={`px-6 pb-2 text-[12px] ${status.state === 'failed' ? 'text-droid-red' : 'text-droid-text-muted'}`}
+          className={`px-6 pb-2 text-label font-normal ${status.state === 'failed' ? 'text-danger' : 'text-muted'}`}
         >
           {status.message}
         </p>
       )}
       {importNotes && <ImportNotes notes={importNotes} />}
       {system.unmapped.length > 0 && (
-        <p className="px-6 pb-2 text-[12px] leading-5 text-droid-text-muted">
+        <p className="px-6 pb-2 text-label font-normal leading-5 text-muted">
           {system.unmapped.length === 1
             ? 'One token is outside the shared primitives and kept under its own name, marked Unmapped below.'
             : `${String(system.unmapped.length)} tokens are outside the shared primitives and kept under their own names, marked Unmapped below.`}
@@ -190,7 +190,7 @@ function KitDetail({
           role="tablist"
           aria-label="Token groups"
           onKeyDown={moveTab}
-          className="flex items-center gap-0.5 rounded-lg bg-droid-active/60 p-0.5"
+          className="flex items-center gap-0.5 rounded-lg bg-active/60 p-0.5"
         >
           {TOKEN_TABS.map((entry, index) => (
             <button
@@ -207,14 +207,12 @@ function KitDetail({
               onClick={() => {
                 setTab(entry.id);
               }}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 ${
-                tab === entry.id
-                  ? 'bg-droid-accent/15 text-droid-text'
-                  : 'text-droid-text-muted hover:text-droid-text'
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
+                tab === entry.id ? 'bg-accent/15 text-primary' : 'text-muted hover:text-primary'
               }`}
             >
               {entry.label}
-              <span className="tabular-nums text-droid-text-muted">{tabs[entry.id].length}</span>
+              <span className="tabular-nums text-muted">{tabs[entry.id].length}</span>
             </button>
           ))}
         </div>
@@ -261,12 +259,12 @@ function ImportNotes({ notes }: { notes: CanvasDiagnostic[] }) {
   const shown = notes.slice(0, MAX_NOTES_SHOWN);
   return (
     <div className="px-6 pb-3">
-      <div className="rounded-xl bg-droid-orange/5 px-3 py-2 text-[12px] leading-5">
-        <p className="font-medium text-droid-text">
+      <div className="rounded-xl bg-warning/5 px-3 py-2 text-label font-normal leading-5">
+        <p className="font-medium text-primary">
           Created, with {notes.length === 1 ? 'a note' : `${String(notes.length)} notes`} about the
           source:
         </p>
-        <ul className="mt-1 text-droid-text-secondary">
+        <ul className="mt-1 text-secondary">
           {shown.map((note, index) => (
             <li key={index}>
               {note.message}
@@ -275,9 +273,7 @@ function ImportNotes({ notes }: { notes: CanvasDiagnostic[] }) {
           ))}
         </ul>
         {notes.length > shown.length && (
-          <p className="text-droid-text-muted">
-            And {String(notes.length - shown.length)} more like these.
-          </p>
+          <p className="text-muted">And {String(notes.length - shown.length)} more like these.</p>
         )}
       </div>
     </div>

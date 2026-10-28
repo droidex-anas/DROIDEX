@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check } from 'lucide-react';
-import { Copy, WrapText } from '@droidex/icons';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Check, ChevronDown, Copy, WrapText } from '@droidex/icons';
+import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 
 const LANGUAGE_LABELS: Record<string, string> = {
   sh: 'Bash',
@@ -41,7 +42,16 @@ export async function copyMarkdownCode(
   }
 }
 
-function CodeCopyButton({ text }: { text: string }) {
+export function CardHeader({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex h-8 select-none items-center justify-between gap-2 pl-3.5 pr-1.5">
+      <span className="truncate text-label text-muted">{label}</span>
+      <div className="flex shrink-0 items-center gap-0.5">{children}</div>
+    </div>
+  );
+}
+
+export function CodeCopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -51,7 +61,11 @@ function CodeCopyButton({ text }: { text: string }) {
     [],
   );
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={copied ? Check : Copy}
+      aria-live="polite"
       onClick={() => {
         void copyMarkdownCode(navigator.clipboard, text).then((didCopy) => {
           if (!didCopy) return;
@@ -62,20 +76,37 @@ function CodeCopyButton({ text }: { text: string }) {
           }, 1200);
         });
       }}
-      className="flex items-center gap-1 text-[11px] text-droid-text-muted hover:text-droid-text transition-colors"
-      title="Copy"
     >
-      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
       {copied ? 'Copied' : 'Copy'}
-    </button>
+    </Button>
   );
 }
 
-/* ── JSON token highlighting ──
+/* ── Token highlighting ──
    Per-token spans are fine for a snippet and a long task for a dumped payload. */
-export const JSON_HIGHLIGHT_MAX_CHARS = 8_192;
+export const HIGHLIGHT_MAX_CHARS = 8_192;
 
-export function HighlightJson({ code }: { code: string }) {
+// Prism and its grammars stay out of the startup bundle. The plain text holds
+// the same glyphs as the tokens, so highlighting lands without a layout shift.
+const PrismCode = lazy(() => import('./PrismCode'));
+
+/** The highlighted body for a fence, or undefined when it stays plain text. */
+export function highlightFence(className: string | undefined, code: string): ReactNode {
+  if (code.length > HIGHLIGHT_MAX_CHARS) return undefined;
+  const language = className?.match(/language-([\w+#.-]+)/)?.[1].toLowerCase();
+  if (!language) return undefined;
+  if (language === 'json') return <HighlightJson code={code} />;
+  // An SVG fence only reaches a code card when it was refused as an image, and
+  // then it stays verbatim, escaped source.
+  if (language === 'svg') return undefined;
+  return (
+    <Suspense fallback={code}>
+      <PrismCode code={code} language={language} />
+    </Suspense>
+  );
+}
+
+function HighlightJson({ code }: { code: string }) {
   const nodes = useMemo(() => {
     const tokens = code.split(
       /("(?:\\.|[^"\\])*"|:|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[[\]{}!,])/g,
@@ -86,38 +117,38 @@ export function HighlightJson({ code }: { code: string }) {
         // makes this a key is two tokens on, across (at most) whitespace.
         if (tokens[i + 1].trim() === '' && tokens[i + 2] === ':') {
           return (
-            <span key={i} style={{ color: 'var(--droid-code-function)' }}>
+            <span key={i} style={{ color: 'var(--code-function)' }}>
               {token}
             </span>
           );
         }
         return (
-          <span key={i} style={{ color: 'var(--droid-code-string)' }}>
+          <span key={i} style={{ color: 'var(--code-string)' }}>
             {token}
           </span>
         );
       }
       if (token === 'true' || token === 'false')
         return (
-          <span key={i} style={{ color: 'var(--droid-code-number)' }}>
+          <span key={i} style={{ color: 'var(--code-number)' }}>
             {token}
           </span>
         );
       if (token === 'null')
         return (
-          <span key={i} style={{ color: 'var(--droid-code-keyword)' }}>
+          <span key={i} style={{ color: 'var(--code-keyword)' }}>
             {token}
           </span>
         );
       if (/^-?\d/.exec(token))
         return (
-          <span key={i} style={{ color: 'var(--droid-code-number)' }}>
+          <span key={i} style={{ color: 'var(--code-number)' }}>
             {token}
           </span>
         );
       if (/^[{}[\],!]$/.test(token))
         return (
-          <span key={i} style={{ color: 'var(--droid-code-comment)' }}>
+          <span key={i} style={{ color: 'var(--code-comment)' }}>
             {token}
           </span>
         );
@@ -131,18 +162,21 @@ export function HighlightJson({ code }: { code: string }) {
 /* ── Code card chrome ──
    The reader controls the frame: copy stays, soft-wrap tames long lines at the
    cost of the gutter, and blocks past COLLAPSE_LINE_THRESHOLD lines start
-   folded so one giant dump stops eating the transcript. */
+   folded so one giant dump stops eating the transcript. The card separates from
+   the prose by tone alone, so it never draws a box inside a message. */
 
 const COLLAPSE_LINE_THRESHOLD = 24;
 const COLLAPSED_LINES = 12;
 // Numbers earn their place once a block is long enough to be scrolled.
 const GUTTER_MIN_LINES = 4;
+// Matches the `code` type style's 1.5 leading, so the fold cuts between lines.
+const CODE_LINE_HEIGHT = 1.5;
 
-function LineGutter({ count, specMode }: { count: number; specMode: boolean }) {
+function LineGutter({ count }: { count: number }) {
   return (
     <div
       aria-hidden
-      className={`select-none shrink-0 border-r border-droid-border/50 pr-2.5 mr-3 text-right font-mono text-droid-text-muted/70 leading-[1.65] ${specMode ? 'text-[13px]' : 'text-[12px]'}`}
+      className="mr-4 shrink-0 select-none text-right font-mono text-code text-muted"
     >
       {Array.from({ length: count }, (_, i) => (
         <div key={i}>{i + 1}</div>
@@ -151,9 +185,7 @@ function LineGutter({ count, specMode }: { count: number; specMode: boolean }) {
   );
 }
 
-// The header's right-hand cluster: the reader-facing controls over the block's
-// frame. The language label stays with the card; these travel with their state.
-function CardControls({
+function CodeCardControls({
   collapsible,
   collapsed,
   wrapped,
@@ -169,26 +201,24 @@ function CardControls({
   code: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5 shrink-0">
+    <>
       {collapsible && (
-        <button
-          onClick={onToggleCollapse}
-          className="text-[11px] text-droid-text-muted hover:text-droid-text transition-colors"
-          title={collapsed ? 'Expand' : 'Collapse'}
-        >
-          {collapsed ? 'Expand' : 'Collapse'}
-        </button>
+        <Button variant="ghost" size="sm" onClick={onToggleCollapse} aria-expanded={!collapsed}>
+          {collapsed ? 'Show all' : 'Collapse'}
+        </Button>
       )}
-      <button
-        onClick={onToggleWrap}
-        className={`transition-colors ${wrapped ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'}`}
-        title={wrapped ? 'Disable soft wrap' : 'Soft wrap long lines'}
-        aria-pressed={wrapped}
-      >
-        <WrapText className="w-3 h-3" />
-      </button>
+      <Tooltip label={wrapped ? 'Disable soft wrap' : 'Soft wrap long lines'}>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={WrapText}
+          onClick={onToggleWrap}
+          aria-label="Soft wrap long lines"
+          aria-pressed={wrapped}
+        />
+      </Tooltip>
       <CodeCopyButton text={code} />
-    </div>
+    </>
   );
 }
 
@@ -205,59 +235,64 @@ export function CodeCard({
 }) {
   const [wrapped, setWrapped] = useState(false);
   const lines = useMemo(() => code.split('\n'), [code]);
+  const collapsible = lines.length > COLLAPSE_LINE_THRESHOLD;
   // Decided at mount only: a fence that streams past the threshold keeps the
   // reader's expanded view instead of folding under their hands.
-  const [collapsed, setCollapsed] = useState(() => lines.length > COLLAPSE_LINE_THRESHOLD);
+  const [collapsed, setCollapsed] = useState(() => collapsible);
   const showGutter = !wrapped && !collapsed && lines.length >= GUTTER_MIN_LINES;
-  const fontSize = specMode ? 13 : 12;
-  const padding = specMode ? 16 : 14;
-  const collapsedMaxHeight = `calc(${String(fontSize)}px * 1.65 * ${String(COLLAPSED_LINES)} + ${String(padding)}px * 2)`;
-  const toggleWrap = () => {
-    setWrapped((v) => !v);
-  };
-  const toggleCollapse = () => {
-    setCollapsed((v) => !v);
-  };
-  const expand = () => {
-    setCollapsed(false);
-  };
+  // The added 0.25rem is the <pre>'s top padding (pt-1).
+  const collapsedMaxHeight = `calc(var(--code-font-size) * ${String(CODE_LINE_HEIGHT * COLLAPSED_LINES)} + 0.25rem)`;
 
   return (
-    <div
-      className={`rounded-xl border border-droid-border overflow-hidden bg-droid-elevated/40 ${specMode ? 'my-4' : 'my-2.5'}`}
-    >
-      <div className="flex items-center justify-between gap-2 h-7 px-3 bg-droid-surface/60 border-b border-droid-border">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-droid-text-muted truncate">
-          {languageLabel(className)}
-        </span>
-        <CardControls
-          collapsible={lines.length > COLLAPSE_LINE_THRESHOLD}
+    <div className={`overflow-hidden rounded-lg bg-elevated/50 ${specMode ? 'my-4' : 'my-2.5'}`}>
+      <CardHeader label={languageLabel(className)}>
+        <CodeCardControls
+          collapsible={collapsible}
           collapsed={collapsed}
           wrapped={wrapped}
-          onToggleCollapse={toggleCollapse}
-          onToggleWrap={toggleWrap}
+          onToggleCollapse={() => {
+            setCollapsed((v) => !v);
+          }}
+          onToggleWrap={() => {
+            setWrapped((v) => !v);
+          }}
           code={code}
         />
-      </div>
+      </CardHeader>
       <div className="relative">
-        <pre
-          className={`scrollbar-on-hover scroll-fade-x overflow-x-auto flex ${specMode ? 'p-4' : 'p-3.5'}`}
-          style={collapsed ? { maxHeight: collapsedMaxHeight, overflowY: 'hidden' } : undefined}
+        {/* The fold fades out through a mask, so it blends into whatever tone
+            the card sits on instead of painting a gradient of its own. */}
+        <div
+          className={
+            collapsed ? '[mask-image:linear-gradient(to_bottom,#000_45%,transparent)]' : undefined
+          }
         >
-          {showGutter && <LineGutter count={lines.length} specMode={Boolean(specMode)} />}
-          <code
-            className={`font-mono leading-[1.65] text-droid-text-secondary ${wrapped ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'} ${specMode ? 'text-[13px]' : 'text-[12px]'}`}
+          <pre
+            className={`scrollbar-on-hover scroll-fade-x flex overflow-x-auto px-4 pt-1 ${specMode ? 'pb-4' : 'pb-3.5'}`}
+            style={collapsed ? { maxHeight: collapsedMaxHeight, overflowY: 'hidden' } : undefined}
           >
-            {highlighted ?? code}
-          </code>
-        </pre>
+            {showGutter && <LineGutter count={lines.length} />}
+            <code
+              className={`font-mono text-code text-primary ${wrapped ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'}`}
+            >
+              {highlighted ?? code}
+            </code>
+          </pre>
+        </div>
         {collapsed && (
-          <button
-            onClick={expand}
-            className="absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-t from-droid-bg/95 via-droid-bg/70 to-transparent text-[11px] font-medium text-droid-text-secondary hover:text-droid-text transition-colors"
-          >
-            Show all {String(lines.length)} lines
-          </button>
+          <div className="absolute inset-x-0 bottom-2.5 flex justify-center">
+            <Button
+              size="sm"
+              shape="round"
+              icon={ChevronDown}
+              onClick={() => {
+                setCollapsed(false);
+              }}
+              aria-expanded={false}
+            >
+              Show all {String(lines.length)} lines
+            </Button>
+          </div>
         )}
       </div>
     </div>

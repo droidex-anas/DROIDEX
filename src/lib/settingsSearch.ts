@@ -28,6 +28,26 @@ function e(tab: string, label: string, keywords: string[] = []): SettingsSearchE
 const SHORTCUT_KEYWORDS = ['hotkeys', 'keymap', 'bindings', 'shortcuts', 'cmd'];
 
 const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
+  e('Profile', 'Profile and usage', [
+    'username',
+    'name',
+    'tokens',
+    'activity',
+    'heatmap',
+    'harness',
+    'models',
+    'share',
+  ]),
+  e('Remote', 'Remote access', [
+    'phone',
+    'pair',
+    'authenticator',
+    'trusted devices',
+    'relay',
+    'keep awake',
+    'remote control',
+  ]),
+
   // ── Notifications (shared control definitions) ───────────────────────────
   ...FINISH_NOTIFICATION_TOGGLES.map((row) => e('Notifications', row.label, [...row.keywords])),
   e('Notifications', FINISH_NOTIFICATION_TEST_ACTION.label, [

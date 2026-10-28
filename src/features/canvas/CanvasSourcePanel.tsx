@@ -134,7 +134,7 @@ export function CanvasSourcePanel({
   return (
     <section
       aria-label={`Source of ${frame.name}`}
-      className="flex h-full min-h-0 w-full flex-col gap-2.5 rounded-2xl bg-droid-raised p-3 shadow-droid-sm"
+      className="flex h-full min-h-0 w-full flex-col gap-2.5 rounded-2xl bg-raised p-3 shadow-sm"
       onKeyDown={(event) => {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
           event.preventDefault();
@@ -157,14 +157,14 @@ export function CanvasSourcePanel({
         />
       ) : (
         <header className="flex shrink-0 items-center gap-2">
-          <h2 className="min-w-0 flex-1 truncate text-[12px] font-medium text-droid-text">
+          <h2 className="min-w-0 flex-1 truncate text-label text-primary">
             {frame.name}
-            <span className="pl-2 font-normal text-droid-text-muted">
+            <span className="pl-2 font-normal text-muted">
               {frame.revisionId ?? 'no source yet'}
             </span>
           </h2>
           {failure === null ? null : (
-            <p role="alert" className="min-w-0 truncate text-[11px] text-droid-red">
+            <p role="alert" className="min-w-0 truncate text-caption text-danger">
               {failure}
             </p>
           )}
@@ -175,7 +175,7 @@ export function CanvasSourcePanel({
             // A low-alpha accent tint, not `elevated`: on a dark theme `raised`
             // resolves to the elevated rung, and the pane's primary action
             // would read as plain text (05a's note).
-            className={`rounded-lg bg-droid-accent/10 px-2.5 py-1 text-[11px] text-droid-text transition-colors enabled:hover:bg-droid-accent/20 disabled:bg-transparent disabled:text-droid-text-muted ${SOFT_FOCUS}`}
+            className={`rounded-lg bg-accent/10 px-2.5 py-1 text-caption text-primary transition-colors enabled:hover:bg-accent/20 disabled:bg-transparent disabled:text-muted ${SOFT_FOCUS}`}
           >
             {saveLabel(state)}
           </button>
@@ -186,7 +186,7 @@ export function CanvasSourcePanel({
               if (unsaved.length > 0) setConfirmingClose(true);
               else close();
             }}
-            className={`rounded-lg px-2 py-1 text-[11px] text-droid-text-muted transition-colors hover:bg-droid-accent/10 hover:text-droid-text ${SOFT_FOCUS}`}
+            className={`rounded-lg px-2 py-1 text-caption text-muted transition-colors hover:bg-accent/10 hover:text-primary ${SOFT_FOCUS}`}
           >
             Close
           </button>
@@ -236,9 +236,7 @@ export function CanvasSourcePanel({
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
                   {conflict && comparing ? <CompareCaption>Yours · unsaved</CompareCaption> : null}
                   <Suspense
-                    fallback={
-                      <div aria-hidden className="min-h-0 flex-1 rounded-xl bg-droid-code" />
-                    }
+                    fallback={<div aria-hidden className="min-h-0 flex-1 rounded-xl bg-code" />}
                   >
                     <LazyEditor
                       key={`${frame.designId}:${activePath}`}
@@ -305,7 +303,7 @@ function EmptyEditor({ reason }: { reason: EmptyReason }) {
   return (
     <p
       role={reason === 'reading' ? 'status' : undefined}
-      className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-droid-code text-[12px] text-droid-text-secondary"
+      className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-code text-label font-normal text-secondary"
     >
       {EMPTY_MESSAGE[reason]}
     </p>
@@ -329,15 +327,15 @@ function ReadFailure({
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-accent/[0.07] px-3 py-2 text-[11px] text-droid-text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-xl bg-accent/[0.07] px-3 py-2 text-caption text-secondary"
     >
       <span className="min-w-0 flex-1">
-        <span className="text-droid-red">{message}</span>
+        <span className="text-danger">{message}</span>
         {keeping ? ' Your unsaved edits are still here.' : null}
       </span>
       <button
         onClick={onRetry}
-        className={`rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25 ${SOFT_FOCUS}`}
+        className={`rounded-lg bg-accent/15 px-2 py-1 text-primary transition-colors hover:bg-accent/25 ${SOFT_FOCUS}`}
       >
         Try again
       </button>
@@ -369,21 +367,21 @@ function FileList({
               onSelect(path);
             }}
             aria-current={open}
-            className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] transition-colors ${SOFT_FOCUS} ${
+            className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-caption transition-colors ${SOFT_FOCUS} ${
               open
-                ? 'bg-droid-accent/[0.07] font-medium text-droid-text'
-                : 'text-droid-text-secondary hover:bg-droid-accent/5 hover:text-droid-text'
+                ? 'bg-accent/[0.07] font-medium text-primary'
+                : 'text-secondary hover:bg-accent/5 hover:text-primary'
             }`}
           >
             <span className="min-w-0 flex-1 truncate" title={path}>
               {path}
             </span>
-            {faults > 0 ? <span className="text-droid-red">{String(faults)}</span> : null}
+            {faults > 0 ? <span className="text-danger">{String(faults)}</span> : null}
             {isDirty(source, path) ? (
               <span
                 title="Unsaved changes"
                 aria-label="Unsaved changes"
-                className="size-1.5 shrink-0 rounded-full bg-droid-accent"
+                className="size-1.5 shrink-0 rounded-full bg-accent"
               />
             ) : null}
           </button>
@@ -406,7 +404,7 @@ function DiscardBar({
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-droid-accent/[0.07] px-3 py-1.5 text-[11px] text-droid-text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-xl bg-accent/[0.07] px-3 py-1.5 text-caption text-secondary"
     >
       <span className="min-w-0 flex-1">
         {frames === 1
@@ -415,13 +413,13 @@ function DiscardBar({
       </span>
       <button
         onClick={onCancel}
-        className={`rounded-lg bg-droid-accent/15 px-2 py-1 text-droid-text transition-colors hover:bg-droid-accent/25 ${SOFT_FOCUS}`}
+        className={`rounded-lg bg-accent/15 px-2 py-1 text-primary transition-colors hover:bg-accent/25 ${SOFT_FOCUS}`}
       >
         Keep editing
       </button>
       <button
         onClick={onDiscard}
-        className={`rounded-lg px-2 py-1 text-droid-red transition-colors hover:bg-droid-accent/10 ${SOFT_FOCUS}`}
+        className={`rounded-lg px-2 py-1 text-danger transition-colors hover:bg-accent/10 ${SOFT_FOCUS}`}
       >
         Discard
       </button>
@@ -454,9 +452,9 @@ function IssueList({
               onReveal(issue);
             }}
             disabled={issue.path === null}
-            className={`flex w-full gap-2 rounded-lg px-2 py-1 text-left font-mono text-[11px] leading-5 text-droid-text-secondary transition-colors hover:bg-droid-accent/5 disabled:cursor-default disabled:bg-transparent ${SOFT_FOCUS}`}
+            className={`flex w-full gap-2 rounded-lg px-2 py-1 text-left font-mono text-caption leading-5 text-secondary transition-colors hover:bg-accent/5 disabled:cursor-default disabled:bg-transparent ${SOFT_FOCUS}`}
           >
-            <span className="shrink-0 text-droid-red">
+            <span className="shrink-0 text-danger">
               {issue.path === null
                 ? (issue.diagnostic.file ?? 'build')
                 : `${issue.path}${issue.line === null ? '' : `:${String(issue.line)}`}`}

@@ -1,9 +1,12 @@
-import { ArrowUp, Check } from 'lucide-react';
-import { Copy, GitFork } from '@droidex/icons';
-import { HoverTooltip } from '../HoverTooltip';
+import type { ReactNode } from 'react';
+import { ArrowUp, Check, Copy, GitFork, X } from '@droidex/icons';
+import { useRelativeTimeNow } from '../../hooks/useRelativeTimeNow';
+import { Button } from '../ui/Button';
+import { Tooltip } from '../ui/Tooltip';
 import { useCopiedFlash } from './primitives';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: '2-digit',
@@ -37,36 +40,51 @@ function formatResponseTime(ts: number, now: number): string {
   return `${date}, ${time}`;
 }
 
-const buttonClass =
-  'flex h-7 w-7 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:bg-droid-elevated focus-visible:text-droid-text focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50';
-
-function MessageTime({ ts }: { ts: number }) {
+function MessageTime({ ts, label }: { ts: number; label?: string }) {
   return (
     <time
       dateTime={new Date(ts).toISOString()}
       title={detailFormat.format(ts)}
-      className="px-1.5 text-[12px] tabular-nums text-droid-text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
+      className="select-none whitespace-nowrap px-1.5 text-caption tabular-nums text-muted opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100"
     >
-      {formatResponseTime(ts, Date.now())}
+      {label ?? formatResponseTime(ts, Date.now())}
     </time>
   );
+}
+
+// A prompt from the last hour says how long ago the agent took it in: "just
+// now", then "12m ago". Only those keep a clock running. A clock set ahead of
+// this one shows the time instead.
+function isRecent(ago: number): boolean {
+  return ago >= 0 && ago < HOUR_MS;
+}
+
+function PromptTime({ ts }: { ts: number }) {
+  return isRecent(Date.now() - ts) ? <RecentPromptTime ts={ts} /> : <MessageTime ts={ts} />;
+}
+
+function RecentPromptTime({ ts }: { ts: number }) {
+  const now = useRelativeTimeNow(ts + HOUR_MS);
+  const ago = now - ts;
+  if (!isRecent(ago)) return <MessageTime ts={ts} />;
+  const minutes = Math.floor(ago / 60_000);
+  return <MessageTime ts={ts} label={minutes < 1 ? 'just now' : `${String(minutes)}m ago`} />;
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
   const { copied, copy } = useCopiedFlash();
   return (
-    <HoverTooltip label={copied ? 'Copied' : 'Copy'}>
-      <button
-        type="button"
+    <Tooltip label={copied ? 'Copied' : 'Copy'}>
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={copied ? Check : Copy}
         aria-label={label}
         onClick={() => {
           copy(text);
         }}
-        className={buttonClass}
-      >
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
-    </HoverTooltip>
+      />
+    </Tooltip>
   );
 }
 
@@ -77,25 +95,45 @@ export function PromptActions({
   text,
   ts,
   onSendNow,
+  onWithdraw,
 }: {
   text: string;
   ts?: number | undefined;
   onSendNow?: (() => void) | undefined;
+  /** Takes a steer back into the composer, where the harness can still drop it. */
+  onWithdraw?: (() => void) | undefined;
 }) {
   return (
-    <div className="absolute right-0 top-full mt-0.5 flex h-7 items-center">
+    <div className="absolute right-0 top-full mt-0.5 flex h-control-sm items-center">
       <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 delay-300 focus-within:pointer-events-auto focus-within:opacity-100 focus-within:delay-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-hover/msg:delay-0">
-        {ts !== undefined ? <MessageTime ts={ts} /> : null}
+        {ts !== undefined ? <PromptTime ts={ts} /> : null}
         <CopyButton text={text} label="Copy prompt" />
+        {onWithdraw ? (
+          <Tooltip label="Edit before sending">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={X}
+              aria-label="Take back to edit"
+              onClick={onWithdraw}
+            />
+          </Tooltip>
+        ) : null}
         {onSendNow ? (
-          <HoverTooltip label="Send now">
-            <button type="button" aria-label="Send now" onClick={onSendNow} className={buttonClass}>
-              <ArrowUp className="h-3.5 w-3.5" />
-            </button>
-          </HoverTooltip>
+          <Tooltip label="Send now">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ArrowUp}
+              aria-label="Send now"
+              onClick={onSendNow}
+            />
+          </Tooltip>
         ) : null}
       </div>
-      {onSendNow ? <span className="px-1.5 text-[12px] text-droid-text-muted">Unread</span> : null}
+      {onSendNow ? (
+        <span className="select-none px-1.5 text-caption text-muted">Unread</span>
+      ) : null}
     </div>
   );
 }
@@ -107,30 +145,33 @@ export function ResponseActions({
   ts,
   onFork,
   forking = false,
+  children,
 }: {
   text: string;
   ts: number;
   onFork?: () => void;
   forking?: boolean;
+  /** What the chat is doing since this response, ahead of its time. */
+  children?: ReactNode;
 }) {
   return (
     // Pulled left so the first icon lines up with the response text.
-    <div className="-ml-1.5 mt-1.5 flex h-7 items-center gap-0.5">
+    <div className="-ml-1.5 mt-1.5 flex h-control-sm items-center gap-0.5">
       <CopyButton text={text} label="Copy response" />
       {onFork ? (
-        <HoverTooltip label={forking ? 'Forking…' : 'Fork into a new chat'}>
-          <button
-            type="button"
+        <Tooltip label={forking ? 'Forking…' : 'Fork into a new chat'}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={GitFork}
             aria-label="Fork chat"
-            aria-busy={forking}
+            loading={forking}
             disabled={forking}
             onClick={onFork}
-            className={buttonClass}
-          >
-            <GitFork className="h-3.5 w-3.5" />
-          </button>
-        </HoverTooltip>
+          />
+        </Tooltip>
       ) : null}
+      {children}
       <MessageTime ts={ts} />
     </div>
   );

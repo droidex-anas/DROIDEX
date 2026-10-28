@@ -232,7 +232,7 @@ function appendSearchRecords(
       candidate.providerSessionId,
       'primary',
       JSON.parse(raw) as StoredMessageLine | StoredSessionStart,
-      canvas,
+      { textOnly: true, canvas },
     );
   } catch {
     return false;

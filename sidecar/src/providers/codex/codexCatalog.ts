@@ -144,6 +144,7 @@ function skillInfo(value: unknown): SkillInfo {
   const name = requiredString(value.name, 'skill name');
   const path = requiredString(value.path, `path for skill ${name}`);
   const scope = skillScope(value.scope);
+  const pluginScope = optionalString(value.pluginId)?.split('@')[0];
   const identity = isRecord(value.interface) ? value.interface : undefined;
   const icon = catalogIcon(
     identity?.iconSmallUrl,
@@ -162,7 +163,7 @@ function skillInfo(value: unknown): SkillInfo {
     ...(optionalString(identity?.displayName)
       ? { displayName: optionalString(identity?.displayName) }
       : {}),
-    scope: optionalString(value.pluginId)?.split('@')[0] ?? scope,
+    scope: optionalString(pluginScope) ?? scope,
     ...(icon ? { icon } : {}),
     ...(optionalString(identity?.brandColor)
       ? { brandColor: optionalString(identity?.brandColor) }

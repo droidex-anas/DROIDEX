@@ -12,7 +12,7 @@ import { reduceCanvasRemoval, REVIEWING_REMOVAL } from './canvasState';
 import type { CanvasRemovalPreview } from './protocol';
 
 const DELETE_BUTTON_CLASS =
-  'rounded-lg bg-droid-red/10 px-3 py-1.5 text-[12px] font-semibold text-droid-red transition-colors hover:bg-droid-red/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 disabled:cursor-default disabled:opacity-60';
+  'rounded-lg bg-danger/10 px-3 py-1.5 text-label font-semibold text-danger transition-colors hover:bg-danger/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default disabled:opacity-60';
 
 export function DeleteCanvasDialog({
   canvasId,
@@ -71,22 +71,22 @@ export function DeleteCanvasDialog({
       initialFocus={cancelRef}
       className="flex w-full max-w-md flex-col gap-3 p-5"
     >
-      <h2 id={titleId} className="truncate text-[15px] font-semibold text-droid-text">
+      <h2 id={titleId} className="truncate text-heading text-primary">
         {preview ? `Delete “${preview.name}”?` : 'Delete canvas?'}
       </h2>
       {state.status === 'reviewing' && (
-        <p role="status" className="text-[12px] text-droid-text-muted">
+        <p role="status" className="text-label font-normal text-muted">
           Checking what deleting it would end…
         </p>
       )}
       {state.status === 'unavailable' && (
-        <p role="alert" className="text-[12px] text-droid-red">
+        <p role="alert" className="text-label font-normal text-danger">
           {state.message}
         </p>
       )}
       {preview && <RemovalConsequences preview={preview} />}
       {notice && (
-        <p role="alert" className="text-[12px] text-droid-red">
+        <p role="alert" className="text-label font-normal text-danger">
           {notice}
         </p>
       )}
@@ -137,7 +137,7 @@ function RemovalConsequences({ preview }: { preview: CanvasRemovalPreview }) {
   const building = preview.buildingDesignIds.length;
 
   return (
-    <div className="flex flex-col gap-2 text-[12px] leading-5 text-droid-text-secondary">
+    <div className="flex flex-col gap-2 text-label font-normal leading-5 text-secondary">
       <p>Its frames and their history are deleted. Frames saved to the library stay.</p>
       {attached.length > 0 && (
         <ChatList
@@ -183,7 +183,7 @@ function ChatList({ heading, chats }: { heading: string; chats: NamedChat[] }) {
         {chats.map(({ appSessionId, name }) => (
           <li
             key={appSessionId}
-            className="truncate rounded-lg bg-droid-accent/[0.07] px-2.5 py-1 text-droid-text"
+            className="truncate rounded-lg bg-accent/[0.07] px-2.5 py-1 text-primary"
           >
             {name}
           </li>

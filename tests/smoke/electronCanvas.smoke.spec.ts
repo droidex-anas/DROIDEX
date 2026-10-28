@@ -164,9 +164,10 @@ const FLOOD_CALL_BOUND_MS = 30_000;
 
 test('[C2] a webview guest contains ancestor flooding and releases its processes', async () => {
   for (const recovery of ['remove', 'crash'] as const) {
-    await withCanvasHost(async (app) => {
-      const { page, pids } = await mountWebview(
+    await withCanvasHost(async (app, page) => {
+      const pids = await mountWebview(
         app,
+        page,
         `
         addEventListener('message', () => {
           const startedAt = performance.now();

@@ -52,7 +52,7 @@ export function HarnessModelSettings() {
   }, [needsDroidCatalog]);
 
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+    <div className="rounded-xl bg-surface shadow-lg mb-8">
       {HARNESSES.map((provider) => (
         <HarnessModelRow
           key={provider}
@@ -130,12 +130,12 @@ function HarnessModelRow({
   };
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="flex items-center justify-between gap-4 px-4 py-3.5">
       <div className="flex min-w-0 items-center gap-2.5">
         <ModelIcon provider={PROVIDER_MARKS[provider]} size={16} />
         <div className="min-w-0">
-          <div className="text-[13px] text-droid-text">{label}</div>
-          <div className="text-[11px] text-droid-text-muted mt-0.5 truncate">
+          <div className="text-body text-primary">{label}</div>
+          <div className="mt-0.5 truncate text-caption text-muted">
             {unavailable ?? `New ${label} chats start here.`}
           </div>
         </div>

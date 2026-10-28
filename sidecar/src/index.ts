@@ -17,25 +17,60 @@ import {
 } from './automations/AutomationManager.js';
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
+import { createDesktopBrowserChannel } from './browser/desktopBrowserChannel.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
 import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
 import type { ClientCommand } from './protocol.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
+import { UsageWorkerClient } from './usage/UsageWorkerClient.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
-const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const CANVAS_ASSET_SECRET = requiredSecret('CANVAS_ASSET_SECRET');
 const CANVAS_EXPORT_TOKEN = process.env.CANVAS_EXPORT_TOKEN;
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
 
 let automationManager: AutomationManager | null = null;
 let projects: ProjectService | undefined;
+const usage = new UsageWorkerClient({
+  workerUrl: new URL(
+    import.meta.url.endsWith('.ts') ? './usage/usageWorkerLoader.mjs' : './usageWorker.mjs',
+    import.meta.url,
+  ),
+  workerData: { databasePath: join(droidexUserDataDir(), 'usage.sqlite') },
+  onError: (error) => {
+    console.error('Usage ledger failed:', error);
+  },
+});
+const USAGE_SESSION_BATCH_SIZE = 1_000;
+const pendingUsageSessionIds = new Set<string>();
+let usageSessionWriteTail: Promise<void> = Promise.resolve();
+
+function queueUsageSessions(ids: readonly string[]): Promise<void> {
+  for (const id of ids) pendingUsageSessionIds.add(id);
+  const operation = usageSessionWriteTail
+    .catch(() => undefined)
+    .then(async () => {
+      while (pendingUsageSessionIds.size > 0) {
+        const batch: string[] = [];
+        for (const id of pendingUsageSessionIds) {
+          batch.push(id);
+          if (batch.length === USAGE_SESSION_BATCH_SIZE) break;
+        }
+        await usage.recordDroidexSessions(batch);
+        for (const id of batch) pendingUsageSessionIds.delete(id);
+      }
+    });
+  usageSessionWriteTail = operation;
+  void operation.catch((error: unknown) => {
+    console.error('DROIDEX session ledger failed:', error);
+  });
+  return operation;
+}
 
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
-  assetToken: ASSET_TOKEN,
   canvasImages: {
     secret: CANVAS_ASSET_SECRET,
     importImage: async (request) => (await canvasReady).importCanvasImage(request),
@@ -52,6 +87,10 @@ const server = startBridgeServer({
     await manager.handle(command);
   },
   getSnapshot: () => manager.runtimeSnapshot(),
+  getProfileUsage: async () => {
+    await queueUsageSessions([]);
+    return await usage.snapshot();
+  },
 });
 
 // Canvas leases live beside the workspace that checks them: the pane registers
@@ -65,6 +104,7 @@ const canvasTurns = new CanvasTurns(
 
 const manager = new SessionManager(
   (event) => {
+    if (event.type === 'session.created') void queueUsageSessions([event.session.appSessionId]);
     projectSessions.observe(event);
     if (projects) void projects.observe(event).catch(reportProjectError);
     if (automationManager) {
@@ -78,7 +118,10 @@ const manager = new SessionManager(
     canvasTurns,
     canvasWorkspace: () => canvasReady,
     canvasCapture: (canvasId, ref, signal) => canvasBridge.capture(canvasId, ref, signal),
-    assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
+    onUserPrompt: (appSessionId) => {
+      void projects?.userContinued(appSessionId).catch(reportProjectError);
+    },
+    requestBrowser: createDesktopBrowserChannel(),
     beforeFirstTurn: (session, clientRef, canvas, admission): Promise<void> =>
       prepareSessionFirstTurn(
         session,
@@ -104,6 +147,7 @@ const manager = new SessionManager(
     },
   },
 );
+void queueUsageSessions(manager.appSessionIds());
 
 // Declared after the manager it wraps, and reached only from its callbacks,
 // which run long after this module has finished loading.
@@ -261,6 +305,13 @@ async function shutdown(): Promise<void> {
       },
       shutdownCanvas: () =>
         shutdownCanvas(canvasBuilds, canvasScopes, canvasReady, canvasWorkspace),
+      shutdownUsage: async () => {
+        try {
+          await queueUsageSessions([]);
+        } finally {
+          await usage.close();
+        }
+      },
       disableMetrics: () => {
         hotPathMetrics.disable();
       },
@@ -274,9 +325,7 @@ async function shutdown(): Promise<void> {
   process.exit();
 }
 
-function requiredSecret(
-  name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN' | 'CANVAS_ASSET_SECRET',
-): string {
+function requiredSecret(name: 'BRIDGE_TOKEN' | 'CANVAS_ASSET_SECRET'): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;

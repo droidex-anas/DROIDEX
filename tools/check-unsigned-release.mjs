@@ -71,14 +71,15 @@ check('public repository contains only release documentation', () => {
   if (JSON.stringify(names) !== JSON.stringify(['README.md', 'SECURITY.md'])) {
     throw new Error(`unexpected default-branch files: ${names.join(', ')}`);
   }
-  const readme = readJson(
-    'gh',
-    ['api', `repos/${releaseRepository}/contents/README.md`],
-    options,
-  );
+  const readme = readJson('gh', ['api', `repos/${releaseRepository}/contents/README.md`], options);
   const readmeText = Buffer.from(readme.content, 'base64').toString('utf8');
-  if (!readmeText.includes('ad-hoc signed') || !readmeText.includes('not notarized')) {
-    throw new Error('public README does not disclose ad-hoc signing and missing notarization');
+  const signingDisclosure = process.env.DROIDEX_SELF_SIGNED_IDENTITY
+    ? 'self-signed'
+    : 'ad-hoc signed';
+  if (!readmeText.includes(signingDisclosure) || !readmeText.includes('not notarized')) {
+    throw new Error(
+      `public README must disclose ${signingDisclosure} signing and missing notarization`,
+    );
   }
   return names.join(', ');
 });

@@ -267,7 +267,7 @@ test('[C8] captures the kit starter at its rendered size and refuses a released 
     const captured = await bounded(
       page.evaluate(
         ({ guestId, scaleFactor, generation }) =>
-          window.droidControl?.canvasPreviewCapture({
+          window.droidex?.canvasPreviewCapture({
             requestId: 'smoke_capture',
             guestId,
             canvasId: 'cv_smoke',
@@ -290,23 +290,23 @@ test('[C8] captures the kit starter at its rendered size and refuses a released 
     assert.equal(png.readUInt32BE(16), 720 * scaleFactor);
     assert.equal(png.readUInt32BE(20), 720 * scaleFactor);
     const cached = await page.evaluate(() =>
-      window.droidControl?.canvasThumbnailRead('cv_smoke', 'dsg_capture', 'rev_capture'),
+      window.droidex?.canvasThumbnailRead('cv_smoke', 'dsg_capture', 'rev_capture'),
     );
     assert.deepEqual(Buffer.from(cached ?? []), png);
     assert.equal(
       await page.evaluate(() =>
-        window.droidControl?.canvasThumbnailRead('cv_smoke', 'dsg_capture', 'rev_other'),
+        window.droidex?.canvasThumbnailRead('cv_smoke', 'dsg_capture', 'rev_other'),
       ),
       null,
     );
 
     await page.evaluate((id) => {
       document.getElementById('canvas-preview-guest')?.remove();
-      return window.droidControl?.canvasPreviewTerminate(id);
+      return window.droidex?.canvasPreviewTerminate(id);
     }, guestId);
     const unavailable = await page.evaluate(
       (id) =>
-        window.droidControl?.canvasPreviewCapture({
+        window.droidex?.canvasPreviewCapture({
           requestId: 'smoke_released',
           guestId: id,
           canvasId: 'cv_smoke',
@@ -356,7 +356,7 @@ test('a transparent design keeps its alpha in the captured PNG', async () => {
       .toBe(true);
     const alpha = await page.evaluate(
       async ({ guestId, scaleFactor }) => {
-        const captured = await window.droidControl?.canvasPreviewCapture({
+        const captured = await window.droidex?.canvasPreviewCapture({
           requestId: 'smoke_transparent',
           guestId,
           canvasId: 'cv_smoke',
@@ -403,7 +403,7 @@ test('a scale(0.5) board preview captures the full layout viewport and far edge'
       .poll(
         () =>
           page.evaluate(() =>
-            window.droidControl?.canvasThumbnailRead('cv_zoom', 'dsg_zoom', 'rev_zoom'),
+            window.droidex?.canvasThumbnailRead('cv_zoom', 'dsg_zoom', 'rev_zoom'),
           ),
         { timeout: 20_000, intervals: [100] },
       )
@@ -503,7 +503,7 @@ test('[C5] main ends a guest the board asks about, and refuses one it never atta
     const terminatedAt = performance.now();
     assert.equal(
       await bounded(
-        page.evaluate((id) => window.droidControl?.canvasPreviewTerminate(id), guestId),
+        page.evaluate((id) => window.droidex?.canvasPreviewTerminate(id), guestId),
         'terminate request',
       ),
       true,
@@ -517,7 +517,7 @@ test('[C5] main ends a guest the board asks about, and refuses one it never atta
     for (const unknown of [guestId, 999_999]) {
       assert.equal(
         await bounded(
-          page.evaluate((id) => window.droidControl?.canvasPreviewTerminate(id), unknown),
+          page.evaluate((id) => window.droidex?.canvasPreviewTerminate(id), unknown),
           'refused terminate',
         ),
         false,
@@ -771,7 +771,7 @@ export default function Hey() {
     // own poll deadline is for; `previewRuntime.test.ts` owns that half.
     assert.equal(
       await bounded(
-        page.evaluate((id) => window.droidControl?.canvasPreviewTerminate(id), guestId),
+        page.evaluate((id) => window.droidex?.canvasPreviewTerminate(id), guestId),
         'refused terminate',
       ),
       false,

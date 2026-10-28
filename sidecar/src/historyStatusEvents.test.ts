@@ -10,6 +10,7 @@ test('healthy persistence recovers, and failures stay errors that name the cause
   for (const [state, code, recoverable, message] of [
     ['degraded', 'history.persistence_degraded', true, 'disk full'],
     ['search_unavailable', 'history.search_unavailable', false, 'FTS5 missing'],
+    ['unavailable', 'history.unavailable', false, 'cannot open'],
   ] as const) {
     const event = serverEventForHistoryStatus({ state, message });
     assert.equal(event.type, 'error');

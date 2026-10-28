@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import type { FileChange, DiffOp } from '../lib/diff';
 import { displayPath } from '../lib/pathDisplay';
-import { Expand, ToolPanel } from './transcript/primitives';
+import { Caret, Expand, ToolPanel } from './transcript/primitives';
+import { ChangeCount } from './transcript/ChangeCount';
 
 const ADD_FG = 'var(--diff-add-fg)';
 const DEL_FG = 'var(--diff-del-fg)';
@@ -18,7 +18,7 @@ const ROW_TONE: Record<DiffOp['type'], string> = {
 
 export function DiffLines({ ops }: { ops: DiffOp[] }) {
   return (
-    <div className="overflow-x-auto font-mono text-[12px] leading-[1.65]">
+    <div className="overflow-x-auto font-mono text-code">
       {/* Sized to the widest line so row tones cover the whole scroll range. */}
       <div className="review-diff-content">
         {ops.map((o, i) => (
@@ -26,15 +26,12 @@ export function DiffLines({ ops }: { ops: DiffOp[] }) {
             <span
               className="w-5 shrink-0 text-center select-none"
               style={{
-                color:
-                  o.type === 'add' ? ADD_FG : o.type === 'del' ? DEL_FG : 'var(--droid-text-muted)',
+                color: o.type === 'add' ? ADD_FG : o.type === 'del' ? DEL_FG : 'var(--text-muted)',
               }}
             >
               {o.type === 'add' ? '+' : o.type === 'del' ? '−' : ''}
             </span>
-            <span className="whitespace-pre flex-1 px-1 text-droid-text-secondary">
-              {o.text || ' '}
-            </span>
+            <span className="whitespace-pre flex-1 px-1 text-secondary">{o.text || ' '}</span>
           </div>
         ))}
       </div>
@@ -62,9 +59,7 @@ export function DiffPreview({
       <div className="max-h-56 overflow-auto py-1">
         <DiffLines ops={preview} />
         {more > 0 && (
-          <div className="border-t border-droid-border/60 px-3 py-1.5 text-[11px] text-droid-text-muted">
-            +{more} more lines
-          </div>
+          <div className="bg-bg/40 px-3 py-1.5 text-caption text-muted">+{more} more lines</div>
         )}
       </div>
     </ToolPanel>
@@ -79,20 +74,40 @@ const VERB_LABEL: Record<FileChange['verb'], string> = {
   patch: 'Patch',
 };
 
+const LIVE_VERB_LABEL: Record<FileChange['verb'], string> = {
+  edit: 'Editing',
+  create: 'Creating',
+  patch: 'Patching',
+};
+
+// Shimmers in its live form while the edit is written, then settles into the
+// plain verb. Rows that mount settled (history) never animate.
+function ChangeVerb({ verb, running }: { verb: FileChange['verb']; running: boolean }) {
+  const [mountedRunning] = useState(running);
+  if (running) {
+    return <span className="shrink-0 shimmer-text text-body-strong">{LIVE_VERB_LABEL[verb]}</span>;
+  }
+  return (
+    <span
+      className={`shrink-0 text-body-strong text-secondary${mountedRunning ? ' text-swap-enter' : ''}`}
+    >
+      {VERB_LABEL[verb]}
+    </span>
+  );
+}
+
 function DiffHeader({ change, cwd }: { change: FileChange; cwd?: string }) {
   const label = displayPath(change.path, cwd);
   return (
-    <div className="flex items-center gap-2 px-3 h-9 border-b border-droid-border bg-droid-bg/40 shrink-0">
-      <span className="text-[12px] font-medium text-droid-text-secondary shrink-0">
-        {VERB_LABEL[change.verb]}
-      </span>
-      <span title={change.path} className="text-[12px] text-droid-text-muted truncate flex-1">
+    <div className="flex items-center gap-2 px-3 h-9 bg-bg/40 shrink-0">
+      <span className="text-label text-secondary shrink-0">{VERB_LABEL[change.verb]}</span>
+      <span title={change.path} className="text-caption text-muted truncate flex-1">
         {label}
       </span>
-      <span className="text-[11px] tabular-nums" style={{ color: ADD_FG }}>
+      <span className="text-caption tabular-nums" style={{ color: ADD_FG }}>
         +{change.added}
       </span>
-      <span className="text-[11px] tabular-nums" style={{ color: DEL_FG }}>
+      <span className="text-caption tabular-nums" style={{ color: DEL_FG }}>
         −{change.removed}
       </span>
     </div>
@@ -103,52 +118,45 @@ export function DiffCard({
   change,
   cwd,
   onOpen,
+  running = false,
 }: {
   change: FileChange;
   cwd?: string;
   onOpen?: () => void;
+  running?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const label = displayPath(change.path, cwd);
+  const toggle = () => {
+    setOpen((value) => !value);
+  };
 
   return (
     <div>
-      <div className="flex w-full min-w-0 items-center gap-1.5">
+      <div className="group flex w-full min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          aria-expanded={onOpen ? undefined : open}
+          onClick={onOpen ?? toggle}
+          className="flex min-w-0 items-center gap-1.5 text-left"
+        >
+          <ChangeVerb verb={change.verb} running={running} />
+          <span title={change.path} className="min-w-0 truncate text-caption text-muted">
+            {label}
+          </span>
+        </button>
         <button
           type="button"
           aria-label={`Preview ${label}`}
           aria-expanded={open}
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
-          className="group flex shrink-0 items-center justify-center"
+          onClick={toggle}
+          className="flex shrink-0 items-center justify-center"
         >
-          <ChevronRight
-            className={`w-3 h-3 text-droid-text-muted/50 transition-transform duration-200 group-hover:text-droid-text-muted ${open ? 'rotate-90' : ''}`}
-          />
+          <Caret open={open} />
         </button>
-        <button
-          type="button"
-          aria-expanded={onOpen ? undefined : open}
-          onClick={() => {
-            if (onOpen) onOpen();
-            else setOpen((value) => !value);
-          }}
-          className="group flex min-w-0 flex-1 items-center gap-1.5 text-left"
-        >
-          <span className="shrink-0 text-[13px] font-medium text-droid-text-secondary">
-            {VERB_LABEL[change.verb]}
-          </span>
-          <span title={change.path} className="min-w-0 truncate text-[12px] text-droid-text-muted">
-            {label}
-          </span>
-          <span className="ml-auto text-[11px] tabular-nums shrink-0" style={{ color: ADD_FG }}>
-            +{change.added}
-          </span>
-          <span className="text-[11px] tabular-nums shrink-0" style={{ color: DEL_FG }}>
-            −{change.removed}
-          </span>
-        </button>
+        <span className="ml-auto" />
+        <ChangeCount tone="add" value={change.added} />
+        <ChangeCount tone="del" value={change.removed} />
       </div>
       <Expand open={open}>
         {open ? <DiffPreview ops={change.ops} className="mt-1.5" /> : null}

@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Pipette } from 'lucide-react';
-import { pushEscapeLayer } from './environment/usePopover';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { Pipette } from '@droidex/icons';
+import { Input } from './ui/Field';
+import { Popover } from './ui/Popover';
 
 /* ── color math ── */
 interface HSV {
@@ -145,13 +145,13 @@ export function ColorPicker({
   };
 
   return (
-    <div className="w-[236px] select-none touch-none">
+    <div className="select-none touch-none">
       <div
         ref={satRef}
         onPointerDown={drag((x, y) => {
           updateSat(x, y);
         })}
-        className="relative h-[150px] rounded-lg cursor-crosshair overflow-hidden"
+        className="relative h-40 rounded-md cursor-crosshair overflow-hidden"
         style={{ background: `hsl(${h}, 100%, 50%)` }}
       >
         <div
@@ -163,7 +163,8 @@ export function ColorPicker({
           style={{ background: 'linear-gradient(to top, #000, rgba(0,0,0,0))' }}
         />
         <span
-          className="absolute w-3.5 h-3.5 -ml-[7px] -mt-[7px] rounded-full border-2 border-white pointer-events-none"
+          // eslint-disable-next-line design-policy/design-tokens -- colour-position handle: a white ring reads on any picked colour
+          className="absolute size-icon-sm -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white pointer-events-none"
           style={{
             left: `${s * 100}%`,
             top: `${(1 - v) * 100}%`,
@@ -180,15 +181,21 @@ export function ColorPicker({
         style={{ background: HUE_GRADIENT }}
       >
         <span
-          className="absolute top-1/2 -translate-y-1/2 w-4 h-4 -ml-2 rounded-full border-2 border-white pointer-events-none"
+          // eslint-disable-next-line design-policy/design-tokens -- colour-position handle: a white ring reads on any hue
+          className="absolute top-1/2 size-icon-md -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white pointer-events-none"
           style={{ left: `${(h / 360) * 100}%`, boxShadow: '0 0 0 1px rgba(0,0,0,0.5)' }}
         />
       </div>
 
       <div className="mt-3 flex items-center gap-1.5">
         <span
-          className="h-7 w-7 shrink-0 rounded-md border border-droid-border"
-          style={{ backgroundColor: value }}
+          className="size-control-sm shrink-0 rounded-sm"
+          // The chips the picker edits are any colour, so the swatch carries
+          // its own hairline the way the theme editor's pills do.
+          style={{
+            backgroundColor: value,
+            boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.3)',
+          }}
         />
         <input
           value={hexDraft}
@@ -196,15 +203,15 @@ export function ColorPicker({
             commitHex(e.target.value);
           }}
           spellCheck={false}
-          className="h-7 min-w-0 flex-1 rounded-md border border-droid-border bg-droid-bg/60 px-2 font-mono text-[11px] uppercase text-droid-text focus:border-droid-border-hover focus:outline-none"
+          className="h-control-sm min-w-0 flex-1 rounded-sm bg-field px-2 font-mono text-code-sm text-primary"
         />
         {hasEyeDropper && (
           <button
             onClick={pickFromScreen}
             title="Pick color from screen"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-droid-border text-droid-text-muted transition-colors hover:border-droid-border-hover hover:text-droid-text"
+            className="flex size-control-sm shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
           >
-            <Pipette className="h-3.5 w-3.5" />
+            <Pipette className="size-icon-sm" />
           </button>
         )}
       </div>
@@ -212,71 +219,27 @@ export function ColorPicker({
   );
 }
 
-/* ── popover positioned near an anchor ── */
+/* ── the picker, floating against the swatch that opened it ── */
 export function ColorPopover({
-  anchor,
+  anchorRef,
   onClose,
   children,
 }: {
-  anchor: HTMLElement | null;
+  anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  useLayoutEffect(() => {
-    const r = anchor?.getBoundingClientRect();
-    if (!r) return;
-    const width = 260;
-    const height = 268;
-    const left = r.right - width;
-    let top = r.bottom + 8;
-    if (top + height > window.innerHeight) top = r.top - height - 8;
-    setPos({ top: Math.max(8, top), left: Math.max(8, left) });
-  }, [anchor]);
-
-  // The layer must not be re-pushed on parent re-renders (effects flush
-  // child-first, so re-pushing would drop this popover BELOW the theme
-  // editor's layer and let Escape cancel the editor). Push once per anchor
-  // and read the latest onClose through a ref.
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node) && e.target !== anchor)
-        onCloseRef.current();
-    };
-    // Escape goes through the shared LIFO layer stack (see usePopover.ts) so a
-    // single keystroke closes only this innermost popover — a per-instance
-    // window listener would race the theme editor's own Escape handler (which
-    // registered first) and cancel the whole editor, discarding every edit.
-    const pop = pushEscapeLayer(() => {
-      onCloseRef.current();
-    });
-    window.addEventListener('mousedown', onDown);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      pop();
-    };
-  }, [anchor]);
-
-  if (!pos) return null;
-  return createPortal(
-    <div
-      ref={ref}
-      // Portaled to <body>, so modal hosts (the theme editor's Tab trap)
-      // recognize focus inside it via this attribute instead of containment.
-      data-color-popover=""
-      className="fixed z-[70] p-3 rounded-xl border border-droid-border bg-droid-raised shadow-droid"
-      style={{ top: pos.top, left: pos.left }}
+  return (
+    <Popover
+      open
+      onClose={onClose}
+      anchorRef={anchorRef}
+      label="Pick a color"
+      placement="bottom-end"
+      width={260}
     >
-      {children}
-    </div>,
-    document.body,
+      <div className="p-3">{children}</div>
+    </Popover>
   );
 }
 
@@ -309,8 +272,8 @@ export function ColorField({
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
-        <div className="text-[12px] text-droid-text">{label}</div>
-        {description && <div className="text-[11px] text-droid-text-muted">{description}</div>}
+        <div className="text-label text-primary">{label}</div>
+        {description && <div className="text-caption text-muted">{description}</div>}
       </div>
       <div className="flex items-center gap-1.5">
         <button
@@ -318,22 +281,24 @@ export function ColorField({
           onClick={() => {
             setOpen((o) => !o);
           }}
-          className="w-8 h-8 rounded-lg border border-droid-border cursor-pointer hover:border-droid-border-hover transition-colors"
+          // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
+          className="size-control-md rounded-md border border-divider transition-colors hover:border-divider-strong"
           style={{ backgroundColor: value }}
           title="Pick color"
         />
-        <input
-          type="text"
+        <Input
+          variant="compact"
           value={draft}
           onChange={(e) => {
             commit(e.target.value);
           }}
           spellCheck={false}
-          className="w-24 bg-droid-elevated border border-droid-border rounded-lg px-2 py-1.5 font-mono text-[11px] text-droid-text-secondary focus:outline-none focus:border-droid-border-hover"
+          aria-label={`${label} hex value`}
+          className="w-24 font-mono text-code-sm"
         />
         {open && (
           <ColorPopover
-            anchor={swatchRef.current}
+            anchorRef={swatchRef}
             onClose={() => {
               setOpen(false);
             }}

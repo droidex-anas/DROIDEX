@@ -22,13 +22,13 @@ export function CanvasImageChip({
 }) {
   const failed = reference.status === 'failed';
   return (
-    <span className="flex max-w-[260px] items-center gap-2 rounded-xl bg-droid-elevated/50 py-0.5 pl-0.5 pr-3">
+    <span className="flex max-w-64 items-center gap-2 rounded-xl bg-elevated/50 py-0.5 pl-0.5 pr-3">
       <ImageChip src={src} label={reference.name} onOpen={onOpen} onRemove={onRemove} />
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-[12px] text-droid-text">{reference.name}</span>
+        <span className="truncate text-label font-normal text-primary">{reference.name}</span>
         <span
           role={failed ? 'alert' : 'status'}
-          className={`line-clamp-2 text-[11px] leading-snug ${failed ? 'text-droid-red' : 'text-droid-text-muted'}`}
+          className={`line-clamp-2 text-caption leading-snug ${failed ? 'text-danger' : 'text-muted'}`}
         >
           {failed ? reference.message : CAPTION[reference.status]}
         </span>

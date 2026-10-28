@@ -17,13 +17,15 @@ import {
   type PermissionHandler,
 } from '@factory/droid-sdk';
 import { childEnv } from './childEnv.js';
+import { droidHome } from './droidProfiles.js';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
+import { DroidTurn } from './DroidTurn.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
+import type { SteerOutcome } from './providers/session.js';
 
 const EXEC_ARGS = ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'];
-const SESSION_INIT_TIMEOUT_MS = 20_000;
 const ignoreError = (): void => undefined;
 
 export interface RuntimeHandlers {
@@ -33,6 +35,7 @@ export interface RuntimeHandlers {
   cwd?: string;
   /** Process-native context, never part of a user message. */
   systemPromptAppend?: string;
+  droidProfile?: 'alt';
 }
 
 export interface CreateRuntimeSessionOptions extends RuntimeHandlers {
@@ -122,19 +125,90 @@ export type FactorySession = FactorySessionMethods & {
 export interface FactoryRuntime {
   connect(apiKey?: string): void;
   status(): RuntimeStatus;
+  // The key set in DROIDEX's Settings, never one read from the CLI's login.
+  factoryApiKey(session?: FactorySession): string | undefined;
   createSession(options: CreateRuntimeSessionOptions): Promise<FactorySession>;
   loadSession(providerSessionId: string, handlers?: RuntimeHandlers): Promise<FactorySession>;
   readContextBreakdown(session: FactorySession): Promise<unknown>;
   processIdOf(session: FactorySession): number | undefined;
   isProcessAlive(session: FactorySession): boolean;
+  // Hears the process end outside close(), after which every request fails.
+  onProcessExit(session: FactorySession, listener: (error: Error) => void): void;
+  steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome>;
+  streamTurn(
+    session: FactorySession,
+    prompt: string,
+    options: MessageOptions & { includePartialMessages: true },
+  ): AsyncGenerator<DroidStreamEvent, void, undefined>;
+  observeNotification(session: FactorySession, notification: Record<string, unknown>): void;
+  interruptTurn(session: FactorySession): Promise<void>;
+  stopTurn(session: FactorySession): void;
 }
 
 export class DroidRuntime implements FactoryRuntime {
   private explicitApiKey = '';
   private readonly processes = new WeakMap<
     object,
-    { pid: number; transport: ConnectableDroidTransport }
+    { pid: number; transport: ConnectableDroidTransport; client: DroidClient }
   >();
+  private readonly turns = new WeakMap<object, DroidTurn>();
+  private readonly altSessions = new WeakSet<object>();
+  // Aborted when the running turn's process dies: the SDK would otherwise wait
+  // for notices that can no longer come.
+  private readonly turnExits = new WeakMap<object, AbortController>();
+
+  steer(session: FactorySession, text: string, steerId: string): Promise<SteerOutcome> {
+    const client = this.processes.get(session)?.client;
+    const turn = this.turns.get(session);
+    return client && turn ? turn.steer(client, text, steerId) : Promise.resolve(false);
+  }
+
+  observeNotification(session: FactorySession, notification: Record<string, unknown>): void {
+    this.turns.get(session)?.observe(notification);
+  }
+
+  stopTurn(session: FactorySession): void {
+    this.turns.get(session)?.stop();
+  }
+
+  interruptTurn(session: FactorySession): Promise<void> {
+    const turn = this.turns.get(session);
+    return turn ? turn.interrupt(() => session.interrupt()) : session.interrupt();
+  }
+
+  async *streamTurn(
+    session: FactorySession,
+    prompt: string,
+    options: MessageOptions & { includePartialMessages: true },
+  ): AsyncGenerator<DroidStreamEvent, void, undefined> {
+    if (this.turns.has(session)) throw new Error('Droid already has a running turn.');
+    const turn = new DroidTurn(session.sessionId);
+    const exit = new AbortController();
+    this.turns.set(session, turn);
+    this.turnExits.set(session, exit);
+    let result: DroidStreamEvent | undefined;
+    try {
+      for await (const event of session.stream(prompt, { ...options, abortSignal: exit.signal })) {
+        turn.observeMainEvent(event);
+        if (event.type === 'result') result = event;
+        else yield event;
+        // Called once for every SDK event, in order, since it counts idles. At
+        // the idle of a loop the SDK would wait on for good, the tail takes over:
+        // it holds every notice after that idle and settles the turn.
+        if (turn.consumeIdleEndsOpenLoop(event)) break;
+      }
+      yield* turn.streamTail();
+      exit.signal.throwIfAborted();
+      // No steer may join after the settlement event becomes visible.
+      this.turns.delete(session);
+      const final = turn.finalResult(result);
+      if (final) yield final;
+    } finally {
+      turn.stop();
+      if (this.turns.get(session) === turn) this.turns.delete(session);
+      if (this.turnExits.get(session) === exit) this.turnExits.delete(session);
+    }
+  }
 
   connect(apiKey?: string): void {
     if (apiKey) this.explicitApiKey = apiKey;
@@ -146,6 +220,11 @@ export class DroidRuntime implements FactoryRuntime {
       droidPath: this.resolveDroidPath(),
       apiKeyConfigured: this.explicitApiKey.length > 0,
     };
+  }
+
+  factoryApiKey(session?: FactorySession): string | undefined {
+    if (session && this.altSessions.has(session)) return undefined;
+    return this.explicitApiKey || undefined;
   }
 
   async readContextBreakdown(session: FactorySession): Promise<unknown> {
@@ -180,6 +259,10 @@ export class DroidRuntime implements FactoryRuntime {
     return owned !== undefined && owned.transport.processId === owned.pid;
   }
 
+  onProcessExit(session: FactorySession, listener: (error: Error) => void): void {
+    this.processes.get(session)?.transport.onError(listener);
+  }
+
   async createSession(options: CreateRuntimeSessionOptions): Promise<DroidSession> {
     const { client, transport } = await this.createClient(options.cwd, options);
 
@@ -187,18 +270,13 @@ export class DroidRuntime implements FactoryRuntime {
     // the process that just started must go with it.
     try {
       const params = createInitializeSessionParams(options);
-      const init = await withTimeout(
-        client.initializeSession(params),
-        SESSION_INIT_TIMEOUT_MS,
-        'initialize_session',
-      );
+      const init = await client.initializeSession(params);
       const session = new DroidSession(client, init.sessionId, init);
-      const pid = transport.processId;
-      if (pid !== undefined) this.processes.set(session, { pid, transport });
+      this.own(session, transport, client, options.droidProfile);
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
-      throw err;
+      throw explainInitFailure(err);
     }
   }
 
@@ -207,19 +285,32 @@ export class DroidRuntime implements FactoryRuntime {
     const params: LoadSessionRequestParams = { sessionId };
     if (handlers.mcpServers?.length) params.mcpServers = handlers.mcpServers;
     try {
-      const init = await withTimeout(
-        client.loadSession(params),
-        SESSION_INIT_TIMEOUT_MS,
-        'load_session',
-      );
+      const init = await client.loadSession(params);
       const session = new DroidSession(client, sessionId, init);
-      const pid = transport.processId;
-      if (pid !== undefined) this.processes.set(session, { pid, transport });
+      this.own(session, transport, client, handlers.droidProfile);
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
-      throw explainLoadFailure(sessionId, err);
+      throw explainInitFailure(explainLoadFailure(sessionId, err));
     }
+  }
+
+  private own(
+    session: DroidSession,
+    transport: ConnectableDroidTransport,
+    client: DroidClient,
+    droidProfile?: 'alt',
+  ) {
+    if (droidProfile === 'alt') this.altSessions.add(session);
+    const pid = transport.processId;
+    if (pid !== undefined) this.processes.set(session, { pid, transport, client });
+    transport.onError((error) => {
+      this.turnExits.get(session)?.abort(error);
+      this.stopTurn(session);
+    });
+    session.addCleanup(() => {
+      this.stopTurn(session);
+    });
   }
 
   private async createClient(
@@ -236,7 +327,7 @@ export class DroidRuntime implements FactoryRuntime {
       execPath,
       execArgs,
       cwd,
-      env: this.env(),
+      env: this.env(handlers.droidProfile),
     });
     await transport.connect();
     const client = new DroidClient({ transport });
@@ -245,10 +336,14 @@ export class DroidRuntime implements FactoryRuntime {
     return { client, transport };
   }
 
-  private env(): Record<string, string> {
+  private env(droidProfile?: 'alt'): Record<string, string> {
     const env = childEnv();
 
-    if (this.explicitApiKey) env.FACTORY_API_KEY = this.explicitApiKey;
+    if (droidProfile === 'alt') {
+      env.HOME = droidHome(droidProfile);
+      if (process.platform === 'win32') env.USERPROFILE = env.HOME;
+      delete env.FACTORY_API_KEY;
+    } else if (this.explicitApiKey) env.FACTORY_API_KEY = this.explicitApiKey;
     else delete env.FACTORY_API_KEY;
 
     return env;
@@ -383,18 +478,10 @@ function missionSettingsFor(
   };
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`Droid ${label} timed out after ${String(timeoutMs)}ms`));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+function explainInitFailure(error: unknown): unknown {
+  if (!(error instanceof Error) || !/timed?\s*out|timeout/i.test(error.message)) return error;
+  return new Error(
+    'Droid did not finish opening this session within 60 seconds. Send again to retry.',
+    { cause: error },
+  );
 }

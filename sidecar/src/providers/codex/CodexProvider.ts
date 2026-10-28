@@ -12,9 +12,12 @@ import type {
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
+  UsageMetersListener,
+  UsageReading,
 } from '../session.js';
 import { AppServerClient } from './appServer.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { CodexRateLimits } from './codexRateLimits.js';
 import { resolveCodexPath } from './codexExecutable.js';
 import { listModels } from './codexModels.js';
 import { CodexSession, type CodexSessionInput } from './codexSession.js';
@@ -36,7 +39,6 @@ const PROBE_TIMEOUT_MS = 25_000;
 // The probe's catalog has no reader waiting on it, only a process to release.
 const CATALOG_TIMEOUT_MS = 60_000;
 const INSTALL_HINT = 'Codex CLI not found. Install it, then refresh.';
-const LOGIN_HINT = 'Run `codex login` in a terminal and sign in, then refresh.';
 const PROBE_CANCELLED = 'Codex was not checked.';
 
 interface InitializeResponse {
@@ -57,8 +59,12 @@ async function initialize(client: AppServerClient): Promise<InitializeResponse> 
 
 export class CodexProvider implements Provider {
   readonly kind = 'codex' as const;
+  private readonly forkClients = new Map<string, AppServerClient>();
+
+  constructor(private readonly onUsage?: UsageMetersListener) {}
 
   create({
+    appSessionId,
     interactions,
     cwd,
     modelId,
@@ -68,10 +74,9 @@ export class CodexProvider implements Provider {
     sessionPurpose,
     inAppMcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
-    // Codex mints the thread id, so DROIDEX's own identity is minted here and
-    // the thread becomes the session's separate resume handle.
+    // Codex's thread id is the separate resume handle, never the application identity.
     return this.openSession({
-      appSessionId: randomUUID(),
+      appSessionId: appSessionId ?? randomUUID(),
       cwd,
       autonomy,
       sessionPurpose,
@@ -88,6 +93,7 @@ export class CodexProvider implements Provider {
   resume(
     providerSessionId: string,
     {
+      appSessionId,
       interactions,
       cwd,
       modelId,
@@ -101,9 +107,12 @@ export class CodexProvider implements Provider {
   ): Promise<ProviderSession> {
     if (!resumeId)
       throw new Error('This Codex session has no stored thread and cannot be reopened.');
+    const forkClient = this.forkClients.get(providerSessionId);
+    this.forkClients.delete(providerSessionId);
     return this.openSession(
       {
-        appSessionId: providerSessionId,
+        appSessionId,
+        providerSessionId,
         cwd: cwd ?? tmpdir(),
         autonomy: autonomy ?? 'off',
         sessionPurpose,
@@ -116,13 +125,12 @@ export class CodexProvider implements Provider {
         inAppMcpServers,
       },
       resumeId,
+      forkClient,
     );
   }
 
-  // Codex copies a thread from its stored rollout, so a short-lived process
-  // can fork a thread another process holds open. The copy is resumed like
-  // any stored thread, which reloads its history there. A fork point is a turn
-  // id, which the copy keeps.
+  // Native forks keep the full rollout. Retain this client for the copy's
+  // first resume so a side chat needs only one app-server startup.
   async fork({ resumeId, cwd, forkPointId }: ProviderForkSource): Promise<ProviderForkHandle> {
     if (!resumeId) throw new Error('This Codex session has no stored thread to fork.');
     const executable = resolveCodexPath();
@@ -135,9 +143,20 @@ export class CodexProvider implements Provider {
         excludeTurns: true,
         ...(forkPointId ? { lastTurnId: forkPointId } : {}),
       });
-      return { providerSessionId: randomUUID(), resumeId: response.thread.id };
-    } finally {
+      const providerSessionId = randomUUID();
+      this.forkClients.set(providerSessionId, client);
+      return {
+        providerSessionId,
+        resumeId: response.thread.id,
+        release: async () => {
+          if (this.forkClients.get(providerSessionId) !== client) return;
+          this.forkClients.delete(providerSessionId);
+          await client.close();
+        },
+      };
+    } catch (error) {
       await client.close();
+      throw error;
     }
   }
 
@@ -197,18 +216,44 @@ export class CodexProvider implements Provider {
     return status;
   }
 
-  private async openSession(
-    input: Omit<CodexSessionInput, 'client'>,
-    resumeId?: string,
-  ): Promise<ProviderSession> {
+  async readUsage(signal: AbortSignal): Promise<UsageReading> {
     const executable = resolveCodexPath();
     if (!executable) throw new Error(INSTALL_HINT);
-    const client = new AppServerClient(executable, input.cwd);
-    // The session registers its handlers in its constructor, so the handshake
-    // that makes Codex start sending can only follow it.
-    const session = new CodexSession({ ...input, client });
+    signal.throwIfAborted();
+    const client = new AppServerClient(executable, tmpdir());
+    const stop = () => {
+      void client.close();
+    };
+    signal.addEventListener('abort', stop);
     try {
       await initialize(client);
+      return await new CodexRateLimits(client).read();
+    } finally {
+      signal.removeEventListener('abort', stop);
+      await client.close();
+    }
+  }
+
+  private async openSession(
+    input: Omit<CodexSessionInput, 'client' | 'onUsage'>,
+    resumeId?: string,
+    forkClient?: AppServerClient,
+  ): Promise<ProviderSession> {
+    let client = forkClient;
+    if (!client) {
+      const executable = resolveCodexPath();
+      if (!executable) throw new Error(INSTALL_HINT);
+      client = new AppServerClient(executable, input.cwd);
+    }
+    // New clients need handlers before initialize; a fork client has already
+    // initialized and keeps its process for the copy's resume.
+    const session = new CodexSession({
+      ...input,
+      client,
+      ...(this.onUsage ? { onUsage: this.onUsage } : {}),
+    });
+    try {
+      if (!forkClient) await initialize(client);
       if (!input.model.modelId) {
         // Resuming without an override otherwise inherits the thread's last
         // model, not the provider default the picker advertises.
@@ -239,9 +284,9 @@ async function readiness(client: AppServerClient): Promise<ProviderStatus> {
       `Codex ${version} is installed; this build needs ${MINIMUM_VERSION} or newer.`,
       version,
     );
+  // A CLI with no ChatGPT sign-in can still reach a provider its own config
+  // names, and it reports its own auth failures, so sign-in never gates a chat.
   const account = await client.request<AccountResponse>('account/read', {});
-  if (!account.account && account.requiresOpenaiAuth)
-    return unavailable('unauthenticated', LOGIN_HINT);
   const label = accountLabel(account.account);
   const configured = await configuredModel(client);
   const models = await listModels(client, configured);
@@ -273,7 +318,6 @@ type CodexAccount = { type: string; email?: string | null; planType?: string } |
 
 interface AccountResponse {
   account: CodexAccount;
-  requiresOpenaiAuth: boolean;
 }
 
 // Who the CLI is signed in as, for the picker's secondary line.

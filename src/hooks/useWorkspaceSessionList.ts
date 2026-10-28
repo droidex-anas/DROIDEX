@@ -1,17 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { listSessions } from '../lib/commands';
 import type { WorkspaceScope } from '../lib/workspaces';
-
-// Identity is the re-request trigger, so revealing folders that are already
-// revealed must return the same array.
-export function withRevealedCwds(
-  revealed: readonly string[],
-  executionCwds: readonly string[],
-): readonly string[] {
-  const next = new Set(revealed);
-  for (const cwd of executionCwds) next.add(cwd);
-  return next.size === revealed.length ? revealed : [...next];
-}
+import { useStoreDispatch, useStoreSelector } from './useStore';
 
 // Single owner of the sidebar's `sessions.list` request. The sidecar bounds how
 // many pre-existing Droid sessions a freshly opened folder contributes, so the
@@ -21,19 +11,19 @@ export function useWorkspaceSessionList(
   scopes: readonly WorkspaceScope[],
   enabled: boolean,
 ): (executionCwds: readonly string[]) => void {
-  const [revealEarlierCwds, setRevealEarlierCwds] = useState<readonly string[]>([]);
+  const dispatch = useStoreDispatch();
+  const revealEarlierCwds = useStoreSelector((current) => current.revealEarlierCwds);
 
   useEffect(() => {
     if (!enabled) return;
     const workspaceCwds = [...new Set(scopes.flatMap((scope) => scope.executionCwds))];
-    listSessions({
-      workspaceCwds,
-      includePlainChats: true,
-      revealEarlierCwds: [...revealEarlierCwds],
-    });
+    listSessions({ workspaceCwds, includePlainChats: true, revealEarlierCwds });
   }, [enabled, scopes, revealEarlierCwds]);
 
-  return useCallback((executionCwds: readonly string[]) => {
-    setRevealEarlierCwds((revealed) => withRevealedCwds(revealed, executionCwds));
-  }, []);
+  return useCallback(
+    (executionCwds: readonly string[]) => {
+      dispatch({ type: 'REVEAL_EARLIER_SESSIONS', executionCwds });
+    },
+    [dispatch],
+  );
 }

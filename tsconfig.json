@@ -21,7 +21,11 @@
       "@droidex/icons": ["packages/icons/src/index.ts"]
     }
   },
-  "include": ["src", "packages/icons/src"],
+  "include": ["src", "packages/icons/src", "packages/remote/src"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
 }

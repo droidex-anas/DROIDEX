@@ -52,41 +52,52 @@ test('the draft override resets at every draft lifecycle point', () => {
   assert.equal(newChat.draftAutonomy, null);
 });
 
-test('a pending autonomy change settles only on a confirmed level change', () => {
+test('autonomy summaries and older settlements never clear the latest pending request', () => {
   const requested = reducer(
     { ...initialState, sessions: { 'app-1': session } },
     {
       type: 'AUTONOMY_UPDATE_REQUESTED',
       appSessionId: 'app-1',
+      requestId: 'raise-1',
       autonomy: 'high',
     },
   );
-  assert.equal(requested.pendingAutonomy['app-1'], 'high');
+  const latest = { requestId: 'raise-1', autonomy: 'high' };
+  assert.deepEqual(requested.pendingAutonomy['app-1'], latest);
 
-  // An echo of the old confirmed level keeps the change pending.
-  const echo = reducer(requested, { type: 'SESSION_UPDATED', session });
-  assert.equal(echo.pendingAutonomy['app-1'], 'high');
-
-  // The provider confirming the requested level settles it.
-  const confirmed = reducer(requested, {
-    type: 'SESSION_UPDATED',
-    session: { ...session, autonomy: 'high' },
+  // Summaries carry current policy, not the identity of an in-flight write.
+  for (const autonomy of ['medium', 'high', 'off'] as const) {
+    const echo = reducer(requested, { type: 'SESSION_UPDATED', session: { ...session, autonomy } });
+    assert.deepEqual(echo.pendingAutonomy['app-1'], latest);
+    assert.equal(echo.sessions['app-1']?.autonomy, autonomy);
+  }
+  const failure = adaptEvent({
+    type: 'error',
+    code: 'session.autonomy_update_failed',
+    appSessionId: 'app-1',
+    requestId: 'revoke-0',
+    message: 'Could not revoke autonomy',
+    recoverable: true,
   });
+  assert.ok(failure);
+  assert.equal(reducer(requested, failure), requested);
+
+  const applied = adaptEvent({
+    type: 'session.autonomy_update_applied',
+    appSessionId: 'app-1',
+    requestId: 'revoke-0',
+  });
+  assert.ok(applied);
+  assert.equal(reducer(requested, applied), requested);
+  const confirmed = reducer(requested, { ...applied, requestId: 'raise-1' });
   assert.equal(confirmed.pendingAutonomy['app-1'], undefined);
-
-  // A change through another path (e.g. the CLI) also settles: the pending
-  // request is no longer the latest truth.
-  const externallyChanged = reducer(requested, {
-    type: 'SESSION_UPDATED',
-    session: { ...session, autonomy: 'off' },
-  });
-  assert.equal(externallyChanged.pendingAutonomy['app-1'], undefined);
 });
 
 test('closing a session drops its pending autonomy entry', () => {
   const requested = reducer(initialState, {
     type: 'AUTONOMY_UPDATE_REQUESTED',
     appSessionId: 'app-1',
+    requestId: 'raise-1',
     autonomy: 'high',
   });
   const closed = reducer(requested, { type: 'SESSION_CLOSED', appSessionId: 'app-1' });
@@ -98,18 +109,23 @@ test('a failed autonomy update settles its session and toasts; without a session
     type: 'error' as const,
     code: 'session.autonomy_update_failed',
     appSessionId: 'app-1',
+    requestId: 'raise-1',
     message: 'Could not change autonomy: provider rejected the update',
     recoverable: true as const,
   };
 
   assert.equal(toastMessageForEvent(failure), failure.message);
   const action = adaptEvent(failure);
-  assert.deepEqual(action, { type: 'AUTONOMY_UPDATE_SETTLED', appSessionId: 'app-1' });
+  assert.deepEqual(action, {
+    type: 'AUTONOMY_UPDATE_SETTLED',
+    appSessionId: 'app-1',
+    requestId: 'raise-1',
+  });
 
   const state = {
     ...initialState,
     sessions: { 'app-1': session },
-    pendingAutonomy: { 'app-1': 'high' as const },
+    pendingAutonomy: { 'app-1': { requestId: 'raise-1', autonomy: 'high' as const } },
   };
   const next = reducer(state, action!);
   assert.equal(next.pendingAutonomy['app-1'], undefined);
@@ -117,4 +133,23 @@ test('a failed autonomy update settles its session and toasts; without a session
   assert.equal(next.sessions['app-1']?.autonomy, 'medium');
 
   assert.equal(adaptEvent({ ...failure, appSessionId: undefined }), null);
+  assert.equal(adaptEvent({ ...failure, requestId: undefined }), null);
+});
+
+test('a runtime replacement drops lost autonomy writes and keeps requests resent to the new sidecar', () => {
+  let state = initialState;
+  for (const appSessionId of ['lost', 'resent', 'not-adopted']) {
+    state = reducer(state, {
+      type: 'AUTONOMY_UPDATE_REQUESTED',
+      appSessionId,
+      requestId: appSessionId,
+      autonomy: 'high',
+    });
+  }
+  state = reducer(state, {
+    type: 'SETTINGS_UPDATES_UNANSWERED',
+    liveAppSessionIds: new Set(['lost', 'resent']),
+    resentRequestIds: new Set(['resent']),
+  });
+  assert.deepEqual(state.pendingAutonomy, { resent: { requestId: 'resent', autonomy: 'high' } });
 });

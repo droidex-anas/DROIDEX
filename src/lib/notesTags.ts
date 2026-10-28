@@ -20,10 +20,10 @@ export function noteTextWithoutTag(text: string): string {
 // Fully-rounded pill to match the app's soft geometry; usage sites add only
 // padding and text sizing.
 export const NOTE_TAG_CHIP: Record<NoteTag, string> = {
-  bug: 'rounded-full bg-droid-red/15 text-droid-red',
-  next: 'rounded-full bg-droid-orange/15 text-droid-orange',
-  idea: 'rounded-full bg-droid-green/15 text-droid-green',
-  constraint: 'rounded-full bg-droid-accent/15 text-droid-accent',
+  bug: 'rounded-full bg-danger/15 text-danger',
+  next: 'rounded-full bg-warning/15 text-warning',
+  idea: 'rounded-full bg-success/15 text-success',
+  constraint: 'rounded-full bg-accent/15 text-accent',
 };
 
 // One-line hints shown next to each tag in the pad's @ menu.

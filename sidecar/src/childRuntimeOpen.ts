@@ -234,6 +234,9 @@ export async function installChildRuntime(input: {
     const load = host.d.runtime.loadSession(providerSessionId, {
       ...droidInteractionHandlers(ref, host.d.interactions.interactionsFor(ref)),
       cwd: parent.lease.summary.cwd,
+      ...(parent.lease.summary.droidProfile
+        ? { droidProfile: parent.lease.summary.droidProfile }
+        : {}),
       // A child has no turn lease of its own. Never give it the parent's Canvas endpoint.
       mcpServers: parent.lease.mcpConfigs.filter(
         (config) => normalizeMcpServerName(config.name) !== CANVAS_MCP_SERVER_NAME,

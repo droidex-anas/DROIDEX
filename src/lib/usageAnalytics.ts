@@ -74,6 +74,8 @@ let hasStarted = false;
 // this for the rest of the launch; the next launch never starts a client.
 let client: RumApi | null = null;
 let reportingAllowed = true;
+// Read through a call: an opt-out can land while startup awaits.
+const optedOut = () => !reportingAllowed;
 
 export async function startUsageAnalytics(
   deps: UsageAnalyticsDeps = {},
@@ -85,8 +87,14 @@ export async function startUsageAnalytics(
     );
     if (!bootstrap) return 'disabled';
     hasStarted = true;
+    // An opt-out during the bootstrap round trip skips the SDK download too.
+    if (optedOut()) return 'disabled';
 
     const rum = await (deps.loadRum ?? loadRum)();
+    // Opting out while the SDK was still loading has to stop the launch here.
+    // Starting a view emits a view event, and Datadog does not let beforeSend
+    // discard those, so the only way not to send one is never to start it.
+    if (optedOut()) return 'disabled';
     client = rum;
     rum.init(buildRumConfig(bootstrap));
     rum.setUser({ id: bootstrap.installationId });
@@ -229,6 +237,10 @@ export async function getUsageAnalyticsPreference(): Promise<{ enabled: boolean 
 }
 
 export async function setUsageAnalyticsPreference(enabled: boolean): Promise<{ enabled: boolean }> {
+  // An opt-out applies the instant the user acts, not when the round trip that
+  // stores it comes back: a view or event that would otherwise start in between
+  // must not go out. The stored preference confirms it below.
+  if (!enabled) reportingAllowed = false;
   const preference = normalizePreference((await callBridge('setUsageAnalytics', [enabled])) ?? OFF);
   if (!preference.enabled) {
     reportingAllowed = false;
@@ -240,7 +252,7 @@ export async function setUsageAnalyticsPreference(enabled: boolean): Promise<{ e
 // Resolves to null when the desktop bridge or the method is missing, which every
 // caller already treats as "not available".
 function callBridge(name: string, args: unknown[] = []): Promise<unknown> {
-  const bridge = window.droidControl;
+  const bridge = window.droidex;
   const method: unknown = bridge ? Reflect.get(bridge, name) : undefined;
   if (typeof method !== 'function') return Promise.resolve(null);
   return Promise.resolve(Reflect.apply(method, bridge, args) as unknown);

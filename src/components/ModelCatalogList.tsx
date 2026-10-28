@@ -96,7 +96,7 @@ function ModelCatalogList({
   const rowProps = { pick, provider, disabled, reasoningLocked, showReasoning };
 
   return (
-    <div ref={scrollRef} className="mt-2 max-h-[200px] min-h-0 overflow-y-auto -mx-1 px-1">
+    <div ref={scrollRef} className="mt-2 max-h-52 min-h-0 overflow-y-auto -mx-1 px-1">
       <div
         role="listbox"
         aria-label="Models"
@@ -173,7 +173,7 @@ const ModelRow = memo(function ModelRow({
         e.stopPropagation();
         pick(id, stepEffort(efforts, shown, delta));
       }}
-      className={`w-4 shrink-0 text-[11px] text-droid-text-secondary hover:text-droid-text transition-opacity ${
+      className={`w-4 shrink-0 text-caption text-secondary hover:text-primary transition-opacity ${
         selected && canStep ? '' : 'opacity-0 pointer-events-none'
       }`}
     >
@@ -202,12 +202,12 @@ const ModelRow = memo(function ModelRow({
         if (!disabled) pick(id);
       }}
       title={label}
-      className={`relative flex items-center gap-2.5 h-10 px-2.5 rounded-lg select-none ${
+      className={`relative flex items-center gap-2.5 h-10 px-2.5 rounded-md select-none ${
         disabled
           ? 'cursor-not-allowed opacity-50'
           : selected
             ? 'cursor-default'
-            : 'cursor-pointer hover:bg-droid-surface/60'
+            : 'cursor-pointer hover:bg-elevated dark:hover:bg-surface/60'
       }`}
     >
       <span
@@ -220,7 +220,7 @@ const ModelRow = memo(function ModelRow({
           <DroidProxyMark size={13} />
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-droid-text">
+      <span className="min-w-0 flex-1 truncate text-body-strong text-primary">
         {shortModelName(label)}
       </span>
       {offersReasoning && (
@@ -241,7 +241,7 @@ const ModelRow = memo(function ModelRow({
                     e.stopPropagation();
                     pick(id, effort);
                   }}
-                  className={`w-2.5 h-2.5 rounded-[3px] ${dotFill(filled, selected, ultra)} ${
+                  className={`h-2.5 w-2.5 rounded-xs ${dotFill(filled, selected, ultra)} ${
                     disabled || reasoningLocked ? 'cursor-not-allowed' : ''
                   }`}
                   style={{
@@ -257,7 +257,7 @@ const ModelRow = memo(function ModelRow({
           </span>
           {arrow(1)}
           <span
-            className={`w-[62px] shrink-0 text-[12px] capitalize truncate ${effortWordTone(selected, ultra)}`}
+            className={`w-16 shrink-0 text-label capitalize truncate ${effortWordTone(selected, ultra)}`}
           >
             {shown === undefined ? 'Default' : reasoningEffortLabel(shown, provider)}
           </span>
@@ -268,12 +268,12 @@ const ModelRow = memo(function ModelRow({
 });
 
 function dotFill(filled: boolean, selected: boolean, ultra: boolean): string {
-  if (!filled) return 'bg-droid-text-muted/30';
-  if (!selected) return 'bg-droid-text-muted';
-  return ultra ? 'bg-droid-ultra effort-dot-ultra' : 'bg-droid-accent';
+  if (!filled) return 'bg-muted/30';
+  if (!selected) return 'bg-muted';
+  return ultra ? 'bg-ultra effort-dot-ultra' : 'bg-accent';
 }
 
 function effortWordTone(selected: boolean, ultra: boolean): string {
-  if (ultra) return 'text-droid-ultra';
-  return selected ? 'text-droid-text' : 'text-droid-text-secondary';
+  if (ultra) return 'text-ultra';
+  return selected ? 'text-primary' : 'text-secondary';
 }

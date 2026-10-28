@@ -3,7 +3,7 @@
 // selector, and the typography/behavior card. Manual color edits still work
 // directly; they become an unsaved "custom" look until saved as a theme.
 
-import { Check, Monitor, Moon, Sun } from 'lucide-react';
+import { Check, Monitor, Moon, Sun } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ThemeConfig } from '../hooks/persistedThemePreferences';
 import {
@@ -18,6 +18,7 @@ import {
 import { Dropdown, GroupLabel, SectionTitle } from './settingsKit';
 import { ThemePresetCard } from './ThemePresetCard';
 import { SchemePreview } from './ThemePreview';
+import { Switch } from './Switch';
 
 /* ── shared controls ── */
 function ModeButton({
@@ -36,13 +37,11 @@ function ModeButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] transition-colors ${
-        active
-          ? 'bg-droid-elevated text-droid-text border border-droid-border'
-          : 'text-droid-text-muted hover:text-droid-text'
+      className={`flex h-control-sm select-none items-center gap-1.5 rounded-md px-2.5 text-label transition-colors duration-150 ease-out ${
+        active ? 'bg-active text-primary' : 'text-muted hover:bg-elevated hover:text-primary'
       }`}
     >
-      <Icon className="w-3.5 h-3.5" />
+      <Icon aria-hidden="true" className="size-icon-sm" />
       {label}
     </button>
   );
@@ -66,10 +65,10 @@ function Slider({
   suffix?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-droid-border">
+    <div className="flex items-center justify-between gap-3 py-3">
       <div>
-        <div className="text-[13px] text-droid-text">{label}</div>
-        {sub && <div className="text-[11px] text-droid-text-muted">{sub}</div>}
+        <div className="text-body text-primary">{label}</div>
+        {sub && <div className="text-caption text-muted">{sub}</div>}
       </div>
       <div className="flex items-center gap-2">
         <input
@@ -82,48 +81,13 @@ function Slider({
             onChange(Number(e.target.value));
           }}
           className="w-32 h-1 rounded-full cursor-pointer"
-          style={{ accentColor: 'var(--droid-accent)' }}
+          style={{ accentColor: 'var(--accent)' }}
         />
-        <span className="font-mono text-[11px] text-droid-text-muted w-8 text-right">
+        <span className="w-8 text-right text-caption tabular-nums text-muted">
           {value}
           {suffix}
         </span>
       </div>
-    </div>
-  );
-}
-
-function Toggle({
-  label,
-  sub,
-  checked,
-  onChange,
-}: {
-  label: string;
-  sub?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between py-2.5 border-b border-droid-border">
-      <div>
-        <div className="text-[13px] text-droid-text">{label}</div>
-        {sub && <div className="text-[11px] text-droid-text-muted">{sub}</div>}
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={() => {
-          onChange(!checked);
-        }}
-        className={`w-10 h-6 rounded-full transition-colors shrink-0 flex items-center p-0.5 ${checked ? 'bg-droid-accent' : 'bg-droid-border'}`}
-      >
-        <span
-          className={`w-5 h-5 rounded-full shadow-sm transition-transform ${checked ? 'bg-droid-bg translate-x-4' : 'bg-droid-text-secondary translate-x-0'}`}
-        />
-      </button>
     </div>
   );
 }
@@ -145,20 +109,14 @@ function SchemeCard({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`rounded-xl border p-2 text-left transition-colors ${
-        active
-          ? 'border-droid-accent/50 bg-droid-elevated'
-          : 'border-droid-border hover:border-droid-border-hover'
+      className={`select-none rounded-xl p-2 text-left transition-colors duration-150 ease-out ${
+        active ? 'bg-active' : 'bg-surface hover:bg-elevated'
       }`}
     >
-      <div className="h-24 overflow-hidden rounded-lg border border-droid-border">{children}</div>
+      <div className="h-24 overflow-hidden rounded-md shadow-sm">{children}</div>
       <div className="mt-2 flex items-center justify-between px-0.5 pb-0.5">
-        <span className={`text-[12px] ${active ? 'text-droid-text' : 'text-droid-text-secondary'}`}>
-          {label}
-        </span>
-        {active && (
-          <Check className="w-3.5 h-3.5" style={{ color: 'var(--droid-accent)' }} strokeWidth={3} />
-        )}
+        <span className={`text-label ${active ? 'text-primary' : 'text-secondary'}`}>{label}</span>
+        {active && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
       </div>
     </button>
   );
@@ -199,7 +157,7 @@ export function AppearanceSection() {
     <div className="max-w-2xl mx-auto">
       <SectionTitle
         title="Appearance"
-        sub="Choose how Droid Control looks. Use a built-in theme or make your own."
+        sub="Choose how DROIDEX looks. Use a built-in theme or make your own."
       />
 
       {/* Color scheme */}
@@ -224,11 +182,11 @@ export function AppearanceSection() {
       <ThemePresetCard resolvedScheme={resolvedScheme} />
 
       {/* App icon */}
-      <div className="rounded-xl border border-droid-border bg-droid-surface p-4 mb-6">
+      <div className="rounded-xl bg-surface shadow-lg p-4 mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-[13px] text-droid-text">App icon</div>
-            <div className="text-[11px] text-droid-text-muted">
+            <div className="text-body text-primary">App icon</div>
+            <div className="text-caption text-muted">
               Match the system, or pick the light or dark DROIDEX icon
             </div>
           </div>
@@ -263,11 +221,11 @@ export function AppearanceSection() {
 
       {/* Typography + behavior */}
       <GroupLabel>Typography & behavior</GroupLabel>
-      <div className="rounded-xl border border-droid-border bg-droid-surface px-4 [&>*:last-child]:border-b-0">
-        <div className="flex items-center justify-between py-2.5 border-b border-droid-border">
+      <div className="rounded-xl bg-surface px-4 shadow-lg">
+        <div className="flex items-center justify-between py-3">
           <div>
-            <div className="text-[13px] text-droid-text">UI font</div>
-            <div className="text-[11px] text-droid-text-muted">
+            <div className="text-body text-primary">UI font</div>
+            <div className="text-caption text-muted">
               Typeface for the whole app (defaults to your OS font)
             </div>
           </div>
@@ -283,7 +241,7 @@ export function AppearanceSection() {
         </div>
         <Slider
           label="UI font size"
-          sub="Base size used across the Droid Control UI"
+          sub="Base size used across the DROIDEX UI"
           value={theme.uiFontSize}
           min={12}
           max={18}
@@ -313,14 +271,19 @@ export function AppearanceSection() {
             updateTheme({ contrast: v });
           }}
         />
-        <Toggle
-          label="Translucent sidebar"
-          sub="Blur and lighten the sidebar surface"
-          checked={theme.translucentSidebar}
-          onChange={(v) => {
-            updateTheme({ translucentSidebar: v });
-          }}
-        />
+        <div className="flex items-center justify-between gap-3 py-3">
+          <div>
+            <div className="text-body text-primary">Translucent sidebar</div>
+            <div className="text-caption text-muted">Blur and lighten the sidebar surface</div>
+          </div>
+          <Switch
+            label="Translucent sidebar"
+            checked={theme.translucentSidebar}
+            onChange={(v) => {
+              updateTheme({ translucentSidebar: v });
+            }}
+          />
+        </div>
       </div>
     </div>
   );

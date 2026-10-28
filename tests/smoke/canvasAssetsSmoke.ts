@@ -48,14 +48,14 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
           const input = document.getElementById('canvas-image-input') as HTMLInputElement;
           const file = input.files?.[0];
           if (!file) throw new Error('The image was not selected');
-          return window.droidControl!.canvasDropImage(id, file);
+          return window.droidex!.canvasDropImage(id, file);
         }, canvasId);
         await unlink(chosen);
         const missing = await page.evaluate(async (id) => {
           const file = (document.getElementById('canvas-image-input') as HTMLInputElement)
             .files![0]!;
           try {
-            await window.droidControl!.canvasDropImage(id, file);
+            await window.droidex!.canvasDropImage(id, file);
             return null;
           } catch (error) {
             return {
@@ -81,7 +81,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
             const file = (document.getElementById('canvas-image-input') as HTMLInputElement)
               .files![0]!;
             try {
-              await window.droidControl!.canvasDropImage(id, file);
+              await window.droidex!.canvasDropImage(id, file);
               return null;
             } catch (error) {
               return {
@@ -120,7 +120,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
             const file = (document.getElementById('canvas-image-input') as HTMLInputElement)
               .files![0]!;
             try {
-              return { ok: true, asset: await window.droidControl!.canvasDropImage(id, file) };
+              return { ok: true, asset: await window.droidex!.canvasDropImage(id, file) };
             } catch (error) {
               return {
                 ok: false,
@@ -150,7 +150,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
           const file = (document.getElementById('canvas-image-input') as HTMLInputElement)
             .files![0]!;
           try {
-            await window.droidControl!.canvasDropImage(id, file);
+            await window.droidex!.canvasDropImage(id, file);
             return null;
           } catch (error) {
             return {
@@ -257,10 +257,10 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
 
         const guestId = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(
-            ([id, canvas]) => window.droidControl!.canvasPreviewBind(id, canvas),
-            [guestId, canvasId] as const,
-          ),
+          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
+            guestId,
+            canvasId,
+          ] as const),
           true,
         );
         const instance = {
@@ -321,10 +321,10 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         const missingFontUrl = `droidex-canvas-preview://preview/font/${'f'.repeat(64)}`;
         const fallbackGuest = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(
-            ([id, canvas]) => window.droidControl!.canvasPreviewBind(id, canvas),
-            [fallbackGuest, canvasId] as const,
-          ),
+          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
+            fallbackGuest,
+            canvasId,
+          ] as const),
           true,
         );
         assert.equal(
@@ -362,10 +362,10 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         assert.ok(second.kind === 'canvasCreated' && second.canvasId);
         const secondGuest = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(
-            ([id, canvas]) => window.droidControl!.canvasPreviewBind(id, canvas),
-            [secondGuest, second.canvasId] as const,
-          ),
+          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
+            secondGuest,
+            second.canvasId,
+          ] as const),
           true,
         );
         assert.equal(

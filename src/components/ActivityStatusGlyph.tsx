@@ -4,23 +4,33 @@ import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActiv
 // ticket queue does: a dashed ring for nothing pending, a half ring for a
 // turn that needs the user, a clock for a wait on their decision, a check
 // once it is settled. One 14px stroke family, tinted by urgency.
-const TONE: Record<SessionActivityStatus, string> = {
-  working: 'text-droid-text',
-  approval: 'text-droid-orange',
-  input: 'text-droid-orange',
-  plan: 'text-droid-orange',
-  failed: 'text-droid-red',
-  interrupted: 'text-droid-orange',
-  reply: 'text-droid-accent',
-  review: 'text-droid-accent',
-  ship: 'text-droid-orange',
-  ready: 'text-droid-text-muted',
-  settled: 'text-droid-green',
+type GlyphStatus = SessionActivityStatus | 'queued' | 'waiting';
+const LABELS: Record<GlyphStatus, string> = {
+  ...ACTIVITY_LABELS,
+  queued: 'Queued',
+  waiting: 'Waiting',
+};
+const TONE: Record<GlyphStatus, string> = {
+  queued: 'text-muted',
+  waiting: 'text-muted',
+  working: 'text-primary',
+  approval: 'text-warning',
+  input: 'text-warning',
+  plan: 'text-warning',
+  failed: 'text-danger',
+  interrupted: 'text-warning',
+  reply: 'text-accent',
+  review: 'text-accent',
+  ship: 'text-warning',
+  ready: 'text-muted',
+  settled: 'text-success',
 };
 
 type Shape = 'open' | 'active' | 'half' | 'clock' | 'failed' | 'paused' | 'done';
 
-const SHAPE: Record<SessionActivityStatus, Shape> = {
+const SHAPE: Record<GlyphStatus, Shape> = {
+  queued: 'clock',
+  waiting: 'clock',
   working: 'active',
   approval: 'clock',
   input: 'clock',
@@ -77,7 +87,7 @@ function ShapePath({ shape }: { shape: Shape }) {
       return (
         <>
           <circle cx="8" cy="8" r="6" fill="currentColor" stroke="none" />
-          <path d="M5.5 8.2l1.8 1.8L10.7 6.5" stroke="var(--droid-bg)" />
+          <path d="M5.5 8.2l1.8 1.8L10.7 6.5" stroke="var(--bg)" />
         </>
       );
   }
@@ -88,7 +98,7 @@ export function ActivityStatusGlyph({
   className = '',
   decorative = false,
 }: {
-  status: SessionActivityStatus;
+  status: GlyphStatus;
   className?: string;
   // The menu's view icon stands for the view, not a status: no announcement.
   decorative?: boolean;
@@ -105,7 +115,7 @@ export function ActivityStatusGlyph({
       strokeLinejoin="round"
       role={decorative ? undefined : 'img'}
       aria-hidden={decorative || undefined}
-      aria-label={decorative ? undefined : ACTIVITY_LABELS[status]}
+      aria-label={decorative ? undefined : LABELS[status]}
       className={`shrink-0 ${TONE[status]} ${className}`}
     >
       <ShapePath shape={SHAPE[status]} />

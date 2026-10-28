@@ -13,7 +13,7 @@ import {
 } from 'react';
 import { Palette } from 'lucide-react';
 import { Check, Search, X } from '@droidex/icons';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
@@ -109,7 +109,7 @@ export function DesignSystemControl({
 
   return (
     <div
-      className={`flex min-w-0 shrink-0 items-center rounded-full text-[11px] ${value ? 'bg-droid-elevated/60' : ''}`}
+      className={`flex min-w-0 shrink-0 items-center rounded-full text-caption ${value ? 'bg-elevated/60' : ''}`}
     >
       <button
         ref={triggerRef}
@@ -126,11 +126,11 @@ export function DesignSystemControl({
           if (!open) setReads((count) => count + 1);
           setOpen(!open);
         }}
-        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         <Palette aria-hidden className="h-3.5 w-3.5 shrink-0" />
-        <span className="max-w-[160px] truncate">{shown.name}</span>
-        {isUnavailable && <span className="shrink-0 text-droid-orange">· unavailable</span>}
+        <span className="max-w-40 truncate">{shown.name}</span>
+        {isUnavailable && <span className="shrink-0 text-warning">· unavailable</span>}
       </button>
       {value && (
         <button
@@ -140,7 +140,7 @@ export function DesignSystemControl({
           onClick={() => {
             onChange(null);
           }}
-          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           <X aria-hidden className="h-2.5 w-2.5" strokeWidth={3} />
         </button>
@@ -149,10 +149,9 @@ export function DesignSystemControl({
         open={open}
         onClose={close}
         anchorRef={triggerRef}
-        align="left"
+        placement="bottom-start"
         width={PICKER_WIDTH_PX}
         label="Design system"
-        className="!border-transparent !bg-droid-raised"
       >
         <PickerPanel
           list={list}
@@ -234,8 +233,8 @@ function PickerPanel({
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-2.5 pb-1.5 pt-2.5">
-        <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-droid-elevated/60 px-2 py-1">
-          <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+        <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-elevated/60 px-2 py-1">
+          <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-muted" />
           <input
             autoFocus
             role="combobox"
@@ -250,7 +249,7 @@ function PickerPanel({
               setMovedTo(null);
             }}
             onKeyDown={onKeyDown}
-            className="w-full min-w-0 bg-transparent text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+            className="w-full min-w-0 bg-transparent text-label font-normal text-primary placeholder:text-muted focus:outline-none"
           />
         </label>
         <PreviewModeToggle mode={mode} onChange={setMode} />
@@ -265,11 +264,11 @@ function PickerPanel({
         {list.status === 'loading' && <MenuNote role="status">Reading design systems…</MenuNote>}
         {list.status === 'failed' && (
           <div role="alert" className="flex flex-col items-start gap-2 px-2.5 pb-2 pt-1">
-            <p className="text-[12px] text-droid-red">{list.message}</p>
+            <p className="text-label font-normal text-danger">{list.message}</p>
             <button
               type="button"
               onClick={onRetry}
-              className="cursor-pointer rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+              className="cursor-pointer rounded-lg bg-active px-2.5 py-1 text-label text-primary transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             >
               Try again
             </button>
@@ -290,11 +289,11 @@ function PickerPanel({
         )}
       </div>
 
-      <div className="shrink-0 bg-droid-elevated/30 p-1">
+      <div className="shrink-0 bg-elevated/30 p-1">
         <button
           type="button"
           onClick={onManage}
-          className="flex h-8 w-full cursor-pointer items-center rounded-lg px-2.5 text-left text-[12px] text-droid-text transition-colors hover:bg-droid-accent/10 focus-visible:bg-droid-accent/10 focus-visible:outline-none"
+          className="flex h-8 w-full cursor-pointer items-center rounded-lg px-2.5 text-left text-label font-normal text-primary transition-colors hover:bg-accent/10 focus-visible:bg-accent/10 focus-visible:outline-none"
         >
           Manage design systems…
         </button>
@@ -343,17 +342,17 @@ function KitOption({
       }}
       onClick={onPick}
       className={`flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2.5 transition-colors ${
-        isActive ? 'bg-droid-accent/10' : ''
+        isActive ? 'bg-accent/10' : ''
       }`}
     >
       <span
-        className={`min-w-0 flex-1 truncate text-[12px] text-droid-text ${isCurrent ? 'font-medium' : ''}`}
+        className={`min-w-0 flex-1 truncate text-label text-primary ${isCurrent ? 'font-medium' : 'font-normal'}`}
       >
         {kit.name}
       </span>
       <KitSwatches kit={kit} mode={mode} />
       <span className="flex w-3.5 shrink-0 justify-center">
-        {isCurrent && <Check aria-label="Current" className="h-3.5 w-3.5 text-droid-accent" />}
+        {isCurrent && <Check aria-label="Current" className="h-3.5 w-3.5 text-accent" />}
       </span>
     </div>
   );

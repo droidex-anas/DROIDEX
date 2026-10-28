@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import Toaster from '../../../src/components/Toaster';
+import Toaster from '../../../src/components/ui/Toaster';
 import type {
   Annotation,
   AnnotateCanvasInput,

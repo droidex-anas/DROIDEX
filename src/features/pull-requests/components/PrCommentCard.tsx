@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { Octicon } from '../../../components/environment/GithubIcons';
+import { Badge } from '../../../components/ui/Badge';
 import { openExternal } from '../../../lib/onboarding';
 import type { PrComment } from '../../../types/vcs';
 import { prCommentBlocks, prCommentProse } from '../lib/prCommentBody';
@@ -12,42 +13,17 @@ import {
 } from '../lib/prCommentFold';
 import { displayLogin } from '../lib/prIdentity';
 import { prAbsoluteTime, prRelativeTime } from '../lib/prTime';
-import type { PrBadge, PrTone } from '../../../lib/github';
 import { commentActionLabel, inlineLocation, reviewBadge } from '../lib/prTimeline';
 import { PrBody } from './PrBody';
 import { FoldChevron, PrCollapse } from './PrCollapse';
 import { HunkPreview, ReactionChips } from './PrCommentContent';
 
-const TONE_CLASS: Record<PrTone, string> = {
-  neutral: 'text-droid-text-secondary',
-  success: 'text-[var(--diff-add-fg)]',
-  danger: 'text-[var(--diff-del-fg)]',
-  accent: 'text-droid-accent',
-};
-
-function ToneBadge({ badge }: { badge: PrBadge }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full bg-droid-elevated px-2 py-0.5 text-[11px] font-medium ${
-        TONE_CLASS[badge.tone]
-      }`}
-    >
-      {badge.tone === 'success' ? <Octicon name="check" size={11} /> : null}
-      {badge.tone === 'danger' ? <Octicon name="x" size={11} /> : null}
-      {badge.label}
-    </span>
-  );
-}
-
 function ThreadStatusChip({ status }: { status: PrThreadStatus }) {
   return (
-    <span
-      title={status.title}
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-droid-elevated px-2 py-0.5 text-[11px] font-medium text-droid-text-secondary"
-    >
+    <Badge title={status.title}>
       <Octicon name={status.icon} size={11} />
       {status.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -64,11 +40,11 @@ function threadStatuses(comment: PrComment): PrThreadStatus[] {
 function CommentByline({ comment }: { comment: PrComment }) {
   const time = prRelativeTime(comment.createdAt);
   return (
-    <span className="block truncate text-[13px]">
-      <span className="font-semibold text-droid-text">{displayLogin(comment.author)}</span>
-      <span className="text-droid-text-muted"> {commentActionLabel(comment)}</span>
+    <span className="block truncate text-body">
+      <span className="font-medium text-primary">{displayLogin(comment.author)}</span>
+      <span className="text-muted"> {commentActionLabel(comment)}</span>
       {time ? (
-        <span title={prAbsoluteTime(comment.createdAt)} className="text-droid-text-muted">
+        <span title={prAbsoluteTime(comment.createdAt)} className="text-muted">
           {' · '}
           {/* `prRelativeTime` returns either "now" or an age like "3d", and
               only an age reads as "ago". */}
@@ -101,8 +77,8 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
   const previewLine = location && preview ? `${location.label} · ${preview}` : preview;
 
   return (
-    <article className="overflow-hidden rounded-xl border border-droid-border bg-droid-surface">
-      <header className="flex items-start gap-2 border-b border-droid-border bg-droid-elevated/40 px-3 py-2">
+    <article className="overflow-hidden rounded-lg bg-surface">
+      <header className="flex items-start gap-2 bg-elevated/40 px-3 py-2">
         {foldable ? (
           <button
             type="button"
@@ -111,17 +87,15 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
             onClick={() => {
               setOpen((value) => !value);
             }}
-            className="group -my-1 -ml-1 flex min-w-0 flex-1 items-start gap-1.5 rounded-lg px-1 py-1 text-left transition-colors hover:bg-droid-elevated/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/50"
+            className="group -my-1 -ml-1 flex min-w-0 flex-1 items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-elevated/70"
           >
-            <span className="mt-[3px]">
+            <span className="mt-1">
               <FoldChevron open={open} />
             </span>
             <span className="min-w-0 flex-1">
               <CommentByline comment={comment} />
               {!open && previewLine ? (
-                <span className="mt-0.5 block truncate text-[13px] text-droid-text-muted">
-                  {previewLine}
-                </span>
+                <span className="mt-0.5 block truncate text-body text-muted">{previewLine}</span>
               ) : null}
             </span>
           </button>
@@ -134,7 +108,13 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
           {statuses.map((status) => (
             <ThreadStatusChip key={status.label} status={status} />
           ))}
-          {badge ? <ToneBadge badge={badge} /> : null}
+          {badge ? (
+            <Badge tone={badge.tone}>
+              {badge.tone === 'success' ? <Octicon name="check" size={11} /> : null}
+              {badge.tone === 'danger' ? <Octicon name="x" size={11} /> : null}
+              {badge.label}
+            </Badge>
+          ) : null}
           {comment.url ? (
             <button
               type="button"
@@ -142,7 +122,7 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
               onClick={() => {
                 if (comment.url) void openExternal(comment.url);
               }}
-              className="rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text"
+              className="rounded-sm p-1 text-muted transition-colors hover:bg-active hover:text-primary"
             >
               <Octicon name="link-external" size={12} label="Open on GitHub" />
             </button>
@@ -154,7 +134,7 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
           {location ? (
             <p
               title={location.title}
-              className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-droid-elevated/60 px-2 py-0.5 text-[12px] text-droid-text-secondary"
+              className="mb-2 inline-flex items-center gap-1.5 rounded-md bg-elevated/60 px-2 py-0.5 text-label text-secondary"
             >
               <Octicon name="file-diff" size={12} />
               {/* Open cards have room for the full path: two files with the

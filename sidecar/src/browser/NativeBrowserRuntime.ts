@@ -1,13 +1,18 @@
-import type { BrowserNativeRequest, BrowserNativeResult } from '../protocol.js';
+import type { BrowserColorScheme, BrowserNativeRequest, BrowserNativeResult } from '../protocol.js';
 import type { BrowserRuntime } from './BrowserSessionManager.js';
 import type {
-  BrowserBox,
+  BrowserActionResult,
+  BrowserClickOptions,
   BrowserElementInspection,
   BrowserConsoleEvent,
   BrowserNetworkEvent,
+  BrowserReadOptions,
+  BrowserScreenshot,
   BrowserScreenshotOptions,
-  BrowserSnapshot,
+  BrowserTarget,
   BrowserViewport,
+  BrowserViewportMode,
+  BrowserWaitCondition,
   ScrollDirection,
 } from './types.js';
 
@@ -21,122 +26,139 @@ export interface NativeBrowserRuntimeOptions {
 
 export class NativeBrowserRuntime implements BrowserRuntime {
   private viewport: BrowserViewport;
-  private lastSnapshot: BrowserSnapshot = {
-    url: 'about:blank',
-    scroll: { x: 0, y: 0 },
-    refs: [],
-  };
 
   constructor(private readonly options: NativeBrowserRuntimeOptions) {
     this.viewport = options.viewport;
   }
 
-  async open(url: string): Promise<BrowserSnapshot> {
-    return this.snapshotFrom(await this.send({ action: 'open', url }), url);
+  async open(url: string): Promise<BrowserActionResult> {
+    return this.resultFrom(await this.send({ action: 'open', url }), url);
   }
 
-  async reload(): Promise<BrowserSnapshot> {
-    return this.navigationSnapshotFrom(await this.send({ action: 'reload' }));
+  async reload(): Promise<BrowserActionResult> {
+    return this.act({ action: 'reload' });
   }
 
-  async goBack(): Promise<BrowserSnapshot> {
-    return this.navigationSnapshotFrom(await this.send({ action: 'goBack' }));
+  async goBack(): Promise<BrowserActionResult> {
+    return this.act({ action: 'goBack' });
   }
 
-  async goForward(): Promise<BrowserSnapshot> {
-    return this.navigationSnapshotFrom(await this.send({ action: 'goForward' }));
+  async goForward(): Promise<BrowserActionResult> {
+    return this.act({ action: 'goForward' });
   }
 
-  async setViewport(viewport: BrowserViewport): Promise<void> {
-    const result = await this.send({ action: 'resize', viewport });
+  async setViewport(viewport: BrowserViewport, viewportMode: BrowserViewportMode): Promise<void> {
+    const result = await this.send({ action: 'resize', viewport, viewportMode });
     if (!result.ok) throw new Error(result.error ?? 'Native browser resize failed.');
     this.viewport = viewport;
   }
 
-  async screenshot(options: BrowserScreenshotOptions = {}): Promise<string> {
-    return this.capture(undefined, options);
+  async setColorScheme(colorScheme: BrowserColorScheme): Promise<void> {
+    const result = await this.send({ action: 'colorScheme', colorScheme });
+    if (!result.ok) throw new Error(result.error ?? 'Native browser scheme change failed.');
   }
 
-  async capture(box?: BrowserBox, options: BrowserScreenshotOptions = {}): Promise<string> {
-    const result = await this.send({
-      action: 'capture',
-      box,
-      fullPage: options.fullPage,
-      deviceScaleFactor: options.deviceScaleFactor,
-    });
-    if (!result.ok) throw new Error(result.error ?? 'Native browser capture failed.');
-    if (!result.image) throw new Error('Native browser did not return a captured image.');
-    return result.image;
+  async screenshot(options: BrowserScreenshotOptions = {}): Promise<BrowserScreenshot> {
+    const result = await this.send({ action: 'screenshot', ...options });
+    if (!result.ok) throw new Error(result.error ?? 'Native browser screenshot failed.');
+    if (!result.image || !result.mimeType)
+      throw new Error('Native browser did not return a screenshot.');
+    return { image: result.image, mimeType: result.mimeType, text: result.text ?? '' };
   }
 
-  async snapshot(): Promise<BrowserSnapshot> {
-    return this.snapshotFrom(await this.send({ action: 'snapshot' }));
+  async readPage(options: BrowserReadOptions = {}): Promise<string> {
+    return this.textFrom(await this.send({ action: 'readPage', ...options }));
   }
 
-  async click(x: number, y: number, selector?: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'click', x, y, selector });
+  async readText(maxChars?: number): Promise<string> {
+    return this.textFrom(await this.send({ action: 'readText', maxChars }));
   }
 
-  async hover(x: number, y: number, selector?: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'hover', x, y, selector });
+  async find(query: string): Promise<{ text: string; matches: number }> {
+    const result = await this.send({ action: 'find', query });
+    return { text: this.textFrom(result), matches: result.matches ?? 0 };
   }
 
-  async selectOption(selector: string, value: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'selectOption', selector, text: value });
+  async click(
+    target: BrowserTarget,
+    options: BrowserClickOptions = {},
+  ): Promise<BrowserActionResult> {
+    return this.act({ action: 'click', ...target, ...options });
   }
 
-  async type(text: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'type', text });
+  async hover(target: BrowserTarget): Promise<BrowserActionResult> {
+    return this.act({ action: 'hover', ...target });
   }
 
-  async keypress(key: string): Promise<BrowserSnapshot> {
-    return this.action({ action: 'keypress', key });
+  async fill(ref: string, value: string): Promise<BrowserActionResult> {
+    return this.act({ action: 'fill', ref, value });
+  }
+
+  async type(
+    text: string,
+    options: { ref?: string; submit?: boolean } = {},
+  ): Promise<BrowserActionResult> {
+    return this.act({ action: 'type', text, ...options });
+  }
+
+  async press(key: string, repeat?: number): Promise<BrowserActionResult> {
+    return this.act({ action: 'press', key, repeat });
   }
 
   async scroll(
-    direction: ScrollDirection,
-    pixels?: number,
-    x?: number,
-    y?: number,
-  ): Promise<BrowserSnapshot> {
-    return this.action({ action: 'scroll', direction, pixels, x, y });
+    direction: ScrollDirection | undefined,
+    pixels: number | undefined,
+    target: BrowserTarget,
+  ): Promise<BrowserActionResult> {
+    return this.act({ action: 'scroll', direction, pixels, ...target });
   }
 
-  async inspect(selector: string): Promise<BrowserElementInspection> {
-    const result = await this.send({ action: 'inspect', selector });
+  async inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection> {
+    const result = await this.send({ action: 'inspect', ...target });
     if (!result.ok) throw new Error(result.error ?? 'Native browser inspection failed.');
     if (!result.inspection) throw new Error('Native browser returned no element inspection.');
     return result.inspection;
   }
 
-  async network(clear = false): Promise<BrowserNetworkEvent[]> {
-    const result = await this.send({ action: 'network', clearNetworkLog: clear });
+  async network(): Promise<BrowserNetworkEvent[]> {
+    const result = await this.send({ action: 'network' });
     if (!result.ok) throw new Error(result.error ?? 'Native browser network inspection failed.');
     return result.networkEvents ?? [];
   }
 
-  async console(clear = false): Promise<BrowserConsoleEvent[]> {
-    const result = await this.send({ action: 'console', clearConsoleLog: clear });
+  async console(): Promise<BrowserConsoleEvent[]> {
+    const result = await this.send({ action: 'console' });
     if (!result.ok) throw new Error(result.error ?? 'Native browser console inspection failed.');
     return result.consoleEvents ?? [];
   }
 
-  async fillCredentials(): Promise<BrowserSnapshot> {
-    return this.snapshotFrom(await this.send({ action: 'fillCredentials' }));
+  async awaitViewport(viewport: BrowserViewport): Promise<BrowserActionResult> {
+    return this.resultFrom(await this.send({ action: 'awaitViewport', viewport }));
+  }
+
+  async wait(condition: BrowserWaitCondition): Promise<BrowserActionResult> {
+    return this.act({ action: 'wait', ...condition });
+  }
+
+  async evaluate(script: string): Promise<BrowserActionResult> {
+    return this.act({ action: 'evaluate', script });
+  }
+
+  async fillCredentials(): Promise<BrowserActionResult> {
+    return this.act({ action: 'fillCredentials' });
   }
 
   async close(): Promise<void> {
     await this.send({ action: 'close' }).catch(() => {});
   }
 
-  private async action(
+  private async act(
     input: Omit<
       BrowserNativeRequest,
       'requestId' | 'appSessionId' | 'browserSessionId' | 'viewport'
     >,
-  ): Promise<BrowserSnapshot> {
-    const result = await this.send(input);
-    return this.snapshotFrom(result);
+  ): Promise<BrowserActionResult> {
+    return this.resultFrom(await this.send(input));
   }
 
   private send(
@@ -153,31 +175,20 @@ export class NativeBrowserRuntime implements BrowserRuntime {
     });
   }
 
-  private snapshotFrom(result: BrowserNativeResult, fallbackUrl?: string): BrowserSnapshot {
+  private resultFrom(result: BrowserNativeResult, fallbackUrl?: string): BrowserActionResult {
     if (!result.ok) throw new Error(result.error ?? 'Native browser action failed.');
-    if (result.snapshot) {
-      this.lastSnapshot = result.snapshot;
-      return this.lastSnapshot;
-    }
-    if (!fallbackUrl) {
+    const text = result.text ?? '';
+    if (result.snapshot) return { snapshot: result.snapshot, text };
+    if (!fallbackUrl)
       throw new Error('Native browser action completed without a fresh page snapshot.');
-    }
-    this.lastSnapshot = {
-      url: fallbackUrl,
-      scroll: { x: 0, y: 0 },
-      refs: [],
-      canGoBack: false,
-      canGoForward: false,
+    return {
+      snapshot: { url: fallbackUrl, scroll: { x: 0, y: 0 }, canGoBack: false, canGoForward: false },
+      text,
     };
-    return this.lastSnapshot;
   }
 
-  private navigationSnapshotFrom(result: BrowserNativeResult): BrowserSnapshot {
-    if (!result.ok) throw new Error(result.error ?? 'Native browser navigation failed.');
-    if (!result.snapshot) {
-      throw new Error('Native browser navigation completed without a fresh page snapshot.');
-    }
-    this.lastSnapshot = result.snapshot;
-    return this.lastSnapshot;
+  private textFrom(result: BrowserNativeResult): string {
+    if (!result.ok) throw new Error(result.error ?? 'Native browser read failed.');
+    return result.text ?? '';
   }
 }

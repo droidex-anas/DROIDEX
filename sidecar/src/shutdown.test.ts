@@ -31,6 +31,10 @@ test('sidecar shutdown attempts every stage and reports the first failure', asyn
         calls.push('canvas');
         throw new Error('canvas shutdown failed');
       },
+      shutdownUsage: async () => {
+        calls.push('usage');
+        throw new Error('usage shutdown failed');
+      },
       disableMetrics: () => {
         calls.push('metrics');
         throw new Error('metrics shutdown failed');
@@ -42,7 +46,15 @@ test('sidecar shutdown attempts every stage and reports the first failure', asyn
     }),
     (error) => error === firstError,
   );
-  assert.deepEqual(calls, ['admission', 'sessions', 'canvas', 'automations', 'metrics', 'bridge']);
+  assert.deepEqual(calls, [
+    'admission',
+    'sessions',
+    'canvas',
+    'automations',
+    'usage',
+    'metrics',
+    'bridge',
+  ]);
 });
 
 test('shutdown closes Canvas admission and aborts builds before session cleanup settles', async (t) => {
@@ -61,6 +73,7 @@ test('shutdown closes Canvas admission and aborts builds before session cleanup 
       calls.push('automations');
     },
     shutdownCanvas: () => canvas.builds.close(),
+    shutdownUsage: async () => undefined,
     disableMetrics: () => undefined,
     closeBridge: async () => undefined,
   });
@@ -192,6 +205,7 @@ test('shutdown refuses an admitted pane arrange before build storage drains', as
       shutdownCanvas(builds, scopes, ready, workspace).then(() => {
         canvasClosed = true;
       }),
+    shutdownUsage: async () => undefined,
     disableMetrics: () => undefined,
     closeBridge: async () => undefined,
   });

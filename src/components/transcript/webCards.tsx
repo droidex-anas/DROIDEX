@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { TranscriptEvent } from '../../types/bridge';
 import { ProseFileLinks } from './ProseFileLink';
 import { Markdown } from '../Markdown';
+import { TranscriptImage } from '../media/TranscriptImage';
 import {
   stripAnsi,
   parseWebSearch,
@@ -12,18 +13,9 @@ import {
   toolArgString,
   toolArgStringArray,
 } from '../../lib/tools';
-import {
-  Caret,
-  ErrorTag,
-  Expand,
-  httpHref,
-  InterruptedTag,
-  linkify,
-  openLink,
-  RED,
-  RED_TINT,
-} from './primitives';
+import { Caret, ErrorTag, Expand, httpHref, InterruptedTag, linkify, openLink } from './primitives';
 import { LinkBadge } from './LinkBadge';
+import { Badge } from '../ui/Badge';
 import { describeLink } from '../../lib/linkPresentation';
 
 /* ── Shared source-row chrome for web search results + fetched pages ── */
@@ -50,18 +42,14 @@ function WebSourceRow({
             },
           }
         : {})}
-      className={`block rounded-lg px-3 py-2 transition-colors hover:bg-droid-elevated/60 focus-visible:bg-droid-elevated/60 focus-visible:outline-none ${
-        emphasize ? 'bg-droid-elevated/40' : ''
+      className={`block rounded-md px-3 py-2 transition-colors hover:bg-elevated/60 focus-visible:bg-elevated/60 focus-visible:outline-none ${
+        emphasize ? 'bg-elevated/40' : ''
       }`}
     >
-      <div className="truncate text-[13px] font-medium text-droid-text">{title}</div>
-      {snippet && (
-        <div className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-droid-text-muted">
-          {snippet}
-        </div>
-      )}
+      <div className="truncate text-body-strong text-primary">{title}</div>
+      {snippet && <div className="mt-0.5 line-clamp-2 text-body text-muted">{snippet}</div>}
       {url && (
-        <div className="mt-1.5 flex items-center text-[12px] text-droid-text-secondary">
+        <div className="mt-1.5 flex items-center text-caption text-secondary">
           {link && <LinkBadge key={link.host} link={link} />}
           <span className="truncate">{webSourceName(url)}</span>
         </div>
@@ -71,11 +59,7 @@ function WebSourceRow({
 }
 
 function CountBadge({ label }: { label: string }) {
-  return (
-    <span className="ml-auto shrink-0 rounded-md border border-droid-border bg-droid-elevated/60 px-1.5 py-0.5 tabular-nums text-[11px] text-droid-text-secondary">
-      {label}
-    </span>
-  );
+  return <Badge className="ml-auto tabular-nums">{label}</Badge>;
 }
 
 function fetchSnippet(body: string): string {
@@ -98,11 +82,9 @@ export function fetchSizeBadge(chars: number, truncatedChars: number | null): st
 /* ── In-flight web tool row: shimmer label while the call has no result yet ── */
 function WebToolRunningRow({ label, detail }: { label: string; detail?: string }) {
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-relaxed">
-      {/* Caret-width spacer: the settled row gains a caret, never a new indent. */}
-      <span className="w-3 shrink-0" aria-hidden="true" />
+    <div className="flex min-w-0 items-center gap-1.5 text-body">
       <span className="shimmer-text shrink-0 font-medium">{label}</span>
-      {detail ? <span className="min-w-0 truncate text-droid-text-muted">{detail}</span> : null}
+      {detail ? <span className="min-w-0 truncate text-muted">{detail}</span> : null}
     </div>
   );
 }
@@ -125,10 +107,13 @@ export function WebSearchCard({
   error = false,
   interrupted = false,
   running = false,
+  images = [],
   forceOpen = false,
 }: {
   event: TranscriptEvent;
   output?: string;
+  /** The pictures the tool answered with, as saved files, shown in its body. */
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -163,7 +148,7 @@ export function WebSearchCard({
     );
   } else if (expanded && raw) {
     body = (
-      <pre className="mt-1.5 max-h-44 overflow-auto rounded-md bg-droid-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-droid-text-muted/80 whitespace-pre-wrap break-words">
+      <pre className="mt-1.5 max-h-44 overflow-auto rounded-sm bg-bg/50 px-2.5 py-2 font-mono text-code text-muted/80 whitespace-pre-wrap break-words">
         {linkify(raw)}
       </pre>
     );
@@ -175,17 +160,30 @@ export function WebSearchCard({
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-[13px] leading-relaxed"
+        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={expanded}
       >
+        <span className="shrink-0 text-secondary">{isX ? 'Searched X' : 'Searched web'}</span>
+        {query ? <span className="min-w-0 truncate text-muted">{query}</span> : null}
         <Caret open={expanded} />
-        <span className="shrink-0 text-droid-text-secondary">
-          {isX ? 'Searched X' : 'Searched web'}
-        </span>
-        {query ? <span className="min-w-0 truncate text-droid-text-muted">{query}</span> : null}
         {trailing}
       </button>
-      <Expand open={expanded}>{body}</Expand>
+      <Expand open={expanded}>
+        {body}
+        <WebResultImages images={images} />
+      </Expand>
+    </div>
+  );
+}
+
+function WebResultImages({ images }: { images: string[] }) {
+  if (images.length === 0) return null;
+  return (
+    <div className="mt-2">
+      {images.map((image, index) => (
+        // One result can carry the same picture twice.
+        <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
+      ))}
     </div>
   );
 }
@@ -207,10 +205,7 @@ export function WebFetchBody({
 }) {
   if (error && hasBody) {
     return (
-      <pre
-        className="mt-1.5 max-h-56 overflow-auto rounded-md px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words"
-        style={{ backgroundColor: RED_TINT, color: RED }}
-      >
+      <pre className="mt-1.5 max-h-56 overflow-auto rounded-sm px-2.5 py-2 font-mono text-code whitespace-pre-wrap break-words bg-danger-soft text-danger">
         {body}
       </pre>
     );
@@ -225,9 +220,7 @@ export function WebFetchBody({
   const rowSnippet = showBody && snippet.length > 0 ? snippet : undefined;
   const snippetNode =
     !showBody && snippet.length > 0 ? (
-      <div className="line-clamp-2 px-3 text-[12px] leading-relaxed text-droid-text-muted">
-        {linkify(snippet)}
-      </div>
+      <div className="line-clamp-2 px-3 text-body text-muted">{linkify(snippet)}</div>
     ) : null;
   return (
     <div className="mt-2 space-y-1">
@@ -242,13 +235,13 @@ function FetchBodyContent({ body }: { body: string }) {
   // Raw HTML dumps stay mono — they render poorly as markdown.
   if (looksLikeHtml(body)) {
     return (
-      <pre className="max-h-44 overflow-auto rounded-lg bg-droid-elevated/30 px-3 py-2 font-mono text-[12px] leading-relaxed text-droid-text-muted whitespace-pre-wrap break-words">
+      <pre className="max-h-44 overflow-auto rounded-md bg-elevated/30 px-3 py-2 font-mono text-code text-muted whitespace-pre-wrap break-words">
         {linkify(body)}
       </pre>
     );
   }
   return (
-    <div className="max-h-96 overflow-auto rounded-lg bg-droid-elevated/30 px-3.5 py-2.5">
+    <div className="max-h-96 overflow-auto rounded-md bg-elevated/30 px-3.5 py-2.5">
       {/* Fetched pages are untrusted: diagrams must stay off so an ```svg fence
           in the body can never reach SvgCodeBlock's dangerouslySetInnerHTML, and
           a `src/app.ts` in the page must not become a control for a local file. */}
@@ -285,10 +278,13 @@ export function WebFetchCard({
   error = false,
   interrupted = false,
   running = false,
+  images = [],
   forceOpen = false,
 }: {
   event: TranscriptEvent;
   output?: string;
+  /** The pictures the tool answered with, as saved files, shown in its body. */
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -323,14 +319,12 @@ export function WebFetchCard({
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-[13px] leading-relaxed"
+        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={expanded}
       >
+        <span className="shrink-0 text-secondary">Fetched</span>
+        <span className="min-w-0 truncate text-muted">{url.length > 0 ? url : displayTitle}</span>
         <Caret open={expanded} />
-        <span className="shrink-0 text-droid-text-secondary">Fetched</span>
-        <span className="min-w-0 truncate text-droid-text-muted">
-          {url.length > 0 ? url : displayTitle}
-        </span>
         {trailing}
       </button>
       <Expand open={expanded}>
@@ -342,6 +336,7 @@ export function WebFetchCard({
           title={displayTitle}
           snippet={snippet}
         />
+        <WebResultImages images={images} />
       </Expand>
     </div>
   );

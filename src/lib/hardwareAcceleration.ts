@@ -22,9 +22,11 @@ export async function setHardwareAcceleration(
 
 function hardwareAccelerationBridge() {
   if (typeof window === 'undefined') return null;
-  const bridge = window.droidControl;
+  const bridge = window.droidex;
+  // The change applies on relaunch, which a Remote browser cannot do to the laptop's app.
   if (
     !bridge ||
+    bridge.remoteBrowser ||
     typeof bridge.getHardwareAcceleration !== 'function' ||
     typeof bridge.setHardwareAcceleration !== 'function'
   ) {

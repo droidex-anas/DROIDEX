@@ -1,4 +1,5 @@
 import { extractFileChange, type FileChange } from '../lib/diff';
+import { browserToolOf } from '../lib/browserTools';
 import { mergeChildSessionSpawn } from '../lib/childSessions';
 import { classifyEvent } from '../lib/transcript';
 import { hasTodoPayload, isChildSessionTool, isImageGenerationTool } from '../lib/tools';
@@ -25,6 +26,21 @@ export function isSettingsStatus(event: TranscriptEvent): boolean {
   return event.modelSwitch !== undefined;
 }
 
+// A prompt or a settings change opens a new turn of the chat. A switch the
+// harness made by itself can land mid-reply, so only the user's own switch
+// opens a turn.
+export function startsTurn(event: TranscriptEvent): boolean {
+  return (
+    event.author === 'user' || (isSettingsStatus(event) && event.modelSwitch?.cause === undefined)
+  );
+}
+
+// A steer is the user's bubble inside a running turn, not the start of a new
+// one: the work around it is the same live turn.
+export function isSteeredPrompt(event: TranscriptEvent): boolean {
+  return event.author === 'user' && event.steered === true;
+}
+
 // Whether `next` is the tool_result produced by the `call` event. Result events
 // carry no usable `toolName` (the live SDK emits "" and history reads the empty
 // result name), so classification cannot identify them; correlate by toolUseId
@@ -45,14 +61,34 @@ function eventAfter(events: TranscriptEvent[], index: number): TranscriptEvent |
   return index + 1 < events.length ? events[index + 1] : undefined;
 }
 
+// Codex's own retry progress, and nothing else: a failure that merely starts
+// with the word must keep its own row.
+function isReconnectNotice(event: TranscriptEvent): boolean {
+  return (
+    event.kind === 'error' &&
+    /^(error:\s*)?reconnecting\.{3}\s*(\d+\/\d+|waiting for network)\s*$/i.test(
+      event.text?.trim() ?? '',
+    )
+  );
+}
+
 /* ── Feed model ── */
+// `pending` while the edit's call has no result yet, so a live row can say
+// "Editing" until the file is written.
+export interface FeedChange {
+  event: TranscriptEvent;
+  change: FileChange;
+  pending?: boolean;
+}
+
 export type FeedItem =
   | { type: 'message'; key: string; event: TranscriptEvent }
   | { type: 'thinking'; key: string; event: TranscriptEvent; durationMs?: number }
   | { type: 'status'; key: string; event: TranscriptEvent }
-  | { type: 'error'; key: string; event: TranscriptEvent }
-  | { type: 'diff'; key: string; event: TranscriptEvent; change: FileChange }
-  | { type: 'diffs'; key: string; changes: { event: TranscriptEvent; change: FileChange }[] }
+  // attempts counts consecutive connection retries folded into this one row.
+  | { type: 'error'; key: string; event: TranscriptEvent; attempts?: number }
+  | ({ type: 'diff'; key: string } & FeedChange)
+  | { type: 'diffs'; key: string; changes: FeedChange[] }
   | { type: 'child_session'; key: string; event: TranscriptEvent }
   // One contiguous run of Task spawns (a turn's subagent wave); rendered as a
   // single subagents dock card scoped to just these spawns.
@@ -61,6 +97,10 @@ export type FeedItem =
   // folded into the tool run, so the generating state is visible while it runs.
   | { type: 'generated_image'; key: string; event: TranscriptEvent; result?: TranscriptEvent }
   | { type: 'tools'; key: string; events: TranscriptEvent[] }
+  // The page a turn worked on in the browser: one card for the turn, holding
+  // its browser calls and their results. The calls stay in their tool rows.
+  // `ended` once a later turn has begun: the card's work is over then.
+  | { type: 'browser'; key: string; events: TranscriptEvent[]; ended: boolean }
   | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number }
   | CanvasArtifactItem
   | TurnChangesItem;
@@ -97,14 +137,26 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'tools' && b.type === 'tools') {
     return a.events.length === b.events.length && a.events.every((e, i) => e === b.events[i]);
   }
+  if (a.type === 'diff' && b.type === 'diff') {
+    return a.event === b.event && a.pending === b.pending;
+  }
   if (a.type === 'diffs' && b.type === 'diffs') {
     return (
       a.changes.length === b.changes.length &&
-      a.changes.every((c, i) => c.event === b.changes[i].event)
+      a.changes.every(
+        (c, i) => c.event === b.changes[i].event && c.pending === b.changes[i].pending,
+      )
     );
   }
   if (a.type === 'child_sessions' && b.type === 'child_sessions') {
     return a.events.length === b.events.length && a.events.every((e, i) => e === b.events[i]);
+  }
+  if (a.type === 'browser' && b.type === 'browser') {
+    return (
+      a.ended === b.ended &&
+      a.events.length === b.events.length &&
+      a.events.every((e, i) => e === b.events[i])
+    );
   }
   if (a.type === 'worked' && b.type === 'worked') {
     return (
@@ -130,7 +182,11 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'generated_image' && b.type === 'generated_image') {
     return a.event === b.event && a.result === b.result;
   }
-  // message | status | error | diff | child session | canvas artifact each carry one event.
+  // A folded retry row can gain an attempt while keeping its latest event.
+  if (a.type === 'error' && b.type === 'error') {
+    return a.event === b.event && a.attempts === b.attempts;
+  }
+  // message | status | child session | canvas artifact each carry one event.
   return (a as { event: TranscriptEvent }).event === (b as { event: TranscriptEvent }).event;
 }
 
@@ -175,6 +231,12 @@ export interface BuildFeedOptions {
   childSessionCards?: boolean;
   // Group each contiguous run of spawns into one wave item for the dock card.
   groupChildSessions?: boolean;
+}
+
+// A turn's browser calls and their results, and whether a later turn has begun.
+interface BrowserTurn {
+  events: TranscriptEvent[];
+  ended: boolean;
 }
 
 export function buildFeed(
@@ -229,12 +291,40 @@ export function buildFeed(
   // claimed and skipped when iteration later reaches them, instead of rendering
   // as a detached raw "Tool result".
   const resultById = new Map<string, TranscriptEvent>();
+  const answeredToolUseIds = new Set<string>();
   for (const e of events) {
     if (e.kind !== 'tool_result' || !e.toolUseId) continue;
+    answeredToolUseIds.add(e.toolUseId);
     if (imageResultIds.has(e.toolUseId)) imageResults.set(e.toolUseId, e);
     if (!e.isError) resultById.set(e.toolUseId, e);
   }
   const claimed = new Set<TranscriptEvent>();
+  // Each turn's browser calls and their results, in transcript order, under the
+  // turn's first browser call. A result carries no tool name and can land in a
+  // later turn, so it joins its call's turn by id; one with no id belongs to
+  // the call right before it. A model switch ends a turn as a prompt does.
+  const browserTurns = new Map<TranscriptEvent, BrowserTurn>();
+  const browserTurnOfCall = new Map<string, BrowserTurn>();
+  let browserTurn: BrowserTurn | null = null;
+  let previous: TranscriptEvent | undefined;
+  for (const e of events) {
+    if (startsTurn(e)) {
+      if (browserTurn) browserTurn.ended = true;
+      browserTurn = null;
+    } else if (e.kind === 'tool_call' && browserToolOf(e.toolName)) {
+      if (!browserTurn) {
+        browserTurn = { events: [], ended: false };
+        browserTurns.set(e, browserTurn);
+      }
+      browserTurn.events.push(e);
+      if (e.toolUseId) browserTurnOfCall.set(e.toolUseId, browserTurn);
+    } else if (e.kind === 'tool_result') {
+      const idless = previous?.kind === 'tool_call' && browserToolOf(previous.toolName);
+      const turn = e.toolUseId ? browserTurnOfCall.get(e.toolUseId) : idless ? browserTurn : null;
+      turn?.events.push(e);
+    }
+    previous = e;
+  }
   let i = 0;
   while (i < events.length) {
     const ev = events[i];
@@ -283,7 +373,14 @@ export function buildFeed(
     // as a standalone error. An ordinary failed tool result is not diverted here;
     // it flows into its tool group below and folds into the tool card as an error.
     if (ev.kind === 'error' || (ev.isError && isCardResult(ev))) {
-      items.push({ type: 'error', key: ev.id, event: ev });
+      // A harness retrying its connection reports every attempt; one row that
+      // keeps the latest state reads the same and leaves the work visible.
+      const last = items.at(-1);
+      if (last?.type === 'error' && isReconnectNotice(last.event) && isReconnectNotice(ev)) {
+        items[items.length - 1] = { ...last, event: ev, attempts: (last.attempts ?? 1) + 1 };
+      } else {
+        items.push({ type: 'error', key: ev.id, event: ev });
+      }
       i++;
       continue;
     }
@@ -292,17 +389,19 @@ export function buildFeed(
       if (change) {
         // Fold a contiguous run of file edits into one collapsible group so a
         // large multi-file change doesn't bury the chat under dozens of cards.
-        const changes: { event: TranscriptEvent; change: FileChange }[] = [];
+        const changes: FeedChange[] = [];
         // Dedupe by toolUseId: a single edit can arrive as many streaming
         // tool_call snapshots; counting each one inflates the diff stats and
         // floods the group with repeated rows. Keep only the latest per call.
         const byToolUse = new Map<string, number>();
         const addChange = (e: TranscriptEvent, c: FileChange) => {
+          const entry: FeedChange = { event: e, change: c };
+          if (e.toolUseId && !answeredToolUseIds.has(e.toolUseId)) entry.pending = true;
           const at = e.toolUseId ? byToolUse.get(e.toolUseId) : undefined;
-          if (at != null) changes[at] = { event: e, change: c };
+          if (at != null) changes[at] = entry;
           else {
             if (e.toolUseId) byToolUse.set(e.toolUseId, changes.length);
-            changes.push({ event: e, change: c });
+            changes.push(entry);
           }
         };
         addChange(ev, change);
@@ -324,12 +423,7 @@ export function buildFeed(
           i++;
         }
         if (changes.length === 1)
-          items.push({
-            type: 'diff',
-            key: changes[0].event.id,
-            event: changes[0].event,
-            change: changes[0].change,
-          });
+          items.push({ type: 'diff', key: changes[0].event.id, ...changes[0] });
         else items.push({ type: 'diffs', key: `diffs-${ev.id}`, changes });
         continue;
       }
@@ -456,6 +550,11 @@ export function buildFeed(
         }
       }
       items.push({ type: 'tools', key: group[0].id, events: dedupePlanUpdates(group) });
+      // The turn's Browser card appears where the turn first used the browser.
+      for (const call of group) {
+        const turn = browserTurns.get(call);
+        if (turn) items.push({ type: 'browser', key: `browser-${call.id}`, ...turn });
+      }
     } else i++;
     continue;
   }

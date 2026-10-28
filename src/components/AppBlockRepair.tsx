@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { Check, LoaderCircle, Wrench } from 'lucide-react';
+import { Check, Wrench } from 'lucide-react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../hooks/useStore';
 import { useSessionLive } from '../hooks/useSessionLive';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
@@ -10,6 +10,7 @@ import { markGitTurnStart } from '../lib/git';
 import { sessionIsLive } from '../lib/sessions';
 import { requestAppBlockRepair } from './appBlockRepairRequest';
 import { AppBlockRepairSessionContext } from './appBlockRepairContext';
+import { Button } from './ui/Button';
 
 export function AppBlockRepair({ source, message }: { source: string; message: string }) {
   const appSessionId = useContext(AppBlockRepairSessionContext);
@@ -107,38 +108,32 @@ function RepairButton({
   const isBlocked = live || !runtime.canRunAgents || update.downloading;
   if (status === 'sent') {
     return (
-      <p
-        role="status"
-        className="mt-3 flex items-start gap-1.5 text-[12px] leading-5 text-droid-text-secondary"
-      >
-        <Check aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-droid-green" />
+      <p role="status" className="mt-3 flex items-start gap-1.5 text-body text-secondary">
+        <Check aria-hidden="true" className="mt-0.5 size-icon-sm shrink-0 text-success" />
         Fix requested. A revised visualization will appear in the reply.
       </p>
     );
   }
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <button
-        type="button"
+      <Button
+        variant="primary"
+        size="sm"
+        icon={Wrench}
+        loading={status === 'sending'}
         disabled={isBlocked || status === 'sending'}
         onClick={() => {
           void repair();
         }}
-        className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-droid-accent px-3 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/30 focus-visible:ring-offset-1 focus-visible:ring-offset-droid-surface disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {status === 'sending' ? (
-          <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 motion-safe:animate-spin" />
-        ) : (
-          <Wrench aria-hidden="true" className="h-3.5 w-3.5" />
-        )}
         {status === 'sending' ? 'Sending…' : 'Auto-fix'}
-      </button>
+      </Button>
       {error ? (
-        <p role="alert" className="text-[12px] leading-5 text-droid-red">
+        <p role="alert" className="text-caption text-danger">
           {error}
         </p>
       ) : (
-        <p className="text-[12px] leading-5 text-droid-text-muted">
+        <p className="text-caption text-muted">
           {isBlocked
             ? 'Available once the agent is ready.'
             : 'Sends the error and source to the agent.'}

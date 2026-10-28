@@ -13,9 +13,12 @@ import type {
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
+  UsageReading,
 } from '../session.js';
 import { droidInteractionHandlers } from './droidInteractions.js';
+import { readFactoryUsage } from './factoryUsage.js';
 import { DroidProviderSession, droidSessionOf } from './DroidProviderSession.js';
+import { requireAltDroidModel } from './droidModels.js';
 
 export class DroidProvider implements Provider {
   readonly kind = 'droid' as const;
@@ -27,6 +30,7 @@ export class DroidProvider implements Provider {
   ) {}
 
   async create({
+    appSessionId,
     cwd,
     interactionMode,
     autonomy,
@@ -36,11 +40,18 @@ export class DroidProvider implements Provider {
     interactions,
     droidLaunch,
     sessionPurpose,
+    droidProfile,
   }: ProviderOpenInput): Promise<ProviderSession> {
-    // A created session mints the identity DROIDEX adopts as its own, and the
-    // daemon can ask for permission before it is known, so the handlers read it
-    // lazily from this holder.
-    const ref: { id: string; autonomy: Autonomy } = { id: '', autonomy };
+    // Ordinary chats adopt Droid's id; queued threads bring their own. The daemon
+    // can ask for permission before the session exists, so the handlers read its
+    // autonomy lazily from this holder.
+    let providerSession: DroidProviderSession | undefined = undefined;
+    const ref = {
+      id: appSessionId ?? '',
+      get autonomy(): Autonomy {
+        return providerSession?.autonomy ?? autonomy;
+      },
+    };
     const session = await this.runtime.createSession({
       cwd,
       interactionMode,
@@ -50,38 +61,82 @@ export class DroidProvider implements Provider {
       mcpServers,
       ...(sessionPurpose === 'design' ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE } : {}),
       ...droidLaunch,
+      droidProfile,
       ...droidInteractionHandlers(ref, interactions),
     });
-    ref.id = session.sessionId;
-    this.onAvailableModels(session.initResult.availableModels ?? []);
-    return new DroidProviderSession(session.sessionId, session, this.runtime, ref);
+    try {
+      if (droidProfile === 'alt') {
+        for (const model of [
+          modelId ?? session.initResult.settings.modelId,
+          droidLaunch?.specModeModelId,
+          droidLaunch?.compactionModel === 'current-model'
+            ? undefined
+            : droidLaunch?.compactionModel,
+          droidLaunch?.workerModelId,
+          droidLaunch?.validatorModelId,
+        ])
+          if (model) requireAltDroidModel(session, model);
+      } else this.onAvailableModels(session.initResult.availableModels ?? []);
+      ref.id = appSessionId ?? session.sessionId;
+      providerSession = new DroidProviderSession(
+        ref.id,
+        session,
+        this.runtime,
+        autonomy,
+        droidProfile,
+      );
+      return providerSession;
+    } catch (error) {
+      await session.close();
+      throw error;
+    }
   }
 
   async resume(
     providerSessionId: string,
-    { appSessionId, interactions, cwd, mcpServers, autonomy, sessionPurpose }: ProviderResumeInput,
+    {
+      appSessionId,
+      interactions,
+      cwd,
+      mcpServers,
+      autonomy,
+      sessionPurpose,
+      droidProfile,
+    }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // Droid resumes by session id, so the generic resume handle is not needed.
-    const ref: { id: string; autonomy: Autonomy } = {
+    let providerSession: DroidProviderSession | undefined = undefined;
+    const ref = {
       id: appSessionId,
-      autonomy: autonomy ?? 'off',
+      get autonomy(): Autonomy {
+        return providerSession?.autonomy ?? autonomy ?? 'off';
+      },
     };
     const session = await this.runtime.loadSession(providerSessionId, {
       cwd,
       mcpServers,
       ...(sessionPurpose === 'design' ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE } : {}),
+      droidProfile,
       ...droidInteractionHandlers(ref, interactions),
     });
-    this.onAvailableModels(session.initResult.availableModels ?? []);
-    const providerSession = new DroidProviderSession(appSessionId, session, this.runtime, ref);
     try {
+      if (droidProfile === 'alt' && session.initResult.settings.modelId)
+        requireAltDroidModel(session, session.initResult.settings.modelId);
+      if (droidProfile !== 'alt') this.onAvailableModels(session.initResult.availableModels ?? []);
+      providerSession = new DroidProviderSession(
+        appSessionId,
+        session,
+        this.runtime,
+        autonomy ?? 'off',
+        droidProfile,
+      );
       // The SDK's stored level cannot distinguish Supervised from edits-only.
       await providerSession.setAutonomy(
         autonomy ?? normalizeAutonomy(session.initResult.settings.autonomyLevel) ?? 'off',
       );
       return providerSession;
     } catch (error) {
-      await providerSession.close();
+      await (providerSession?.close() ?? session.close());
       throw error;
     }
   }
@@ -95,6 +150,7 @@ export class DroidProvider implements Provider {
     title,
     live,
     forkPointId,
+    droidProfile,
   }: ProviderForkSource): Promise<ProviderForkHandle> {
     const point = forkPointId
       ? findForkPoint(
@@ -106,11 +162,16 @@ export class DroidProvider implements Provider {
       live && point.providerSessionId === providerSessionId ? droidSessionOf(live) : undefined;
     const copiedId = open
       ? await copySession(open, title, point.rewindTo)
-      : await this.copyLoaded(point.providerSessionId, cwd, title, point.rewindTo);
+      : await this.copyLoaded(point.providerSessionId, cwd, title, point.rewindTo, droidProfile);
     // A whole-session fork keeps its source's title in the daemon, which a
     // resume would then show instead of the copy's own.
-    if (!point.rewindTo) await this.rename(copiedId, cwd, title);
+    if (!point.rewindTo) await this.rename(copiedId, cwd, title, droidProfile);
     return { providerSessionId: copiedId };
+  }
+
+  // An HTTP read, never a session: the account's limits live only on Factory.
+  readUsage(signal: AbortSignal): Promise<UsageReading> {
+    return readFactoryUsage(this.runtime.factoryApiKey(), signal);
   }
 
   private async copyLoaded(
@@ -118,8 +179,9 @@ export class DroidProvider implements Provider {
     cwd: string | undefined,
     title: string,
     rewindTo: string | undefined,
+    droidProfile?: 'alt',
   ): Promise<string> {
-    const session = await this.runtime.loadSession(providerSessionId, { cwd });
+    const session = await this.runtime.loadSession(providerSessionId, { cwd, droidProfile });
     try {
       return await copySession(session, title, rewindTo);
     } finally {
@@ -127,8 +189,13 @@ export class DroidProvider implements Provider {
     }
   }
 
-  private async rename(providerSessionId: string, cwd: string | undefined, title: string) {
-    const session = await this.runtime.loadSession(providerSessionId, { cwd });
+  private async rename(
+    providerSessionId: string,
+    cwd: string | undefined,
+    title: string,
+    droidProfile?: 'alt',
+  ) {
+    const session = await this.runtime.loadSession(providerSessionId, { cwd, droidProfile });
     try {
       await session.renameSession({ title });
     } finally {

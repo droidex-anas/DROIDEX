@@ -1,9 +1,12 @@
+import type { UsageLimit } from '../protocol.js';
+import type { ReportedMeter } from './session.js';
+
 export class UsageLimitError extends Error {
   readonly errorKind = 'usage_limit' as const;
 
   constructor(
     message: string,
-    readonly resetsAt?: number,
+    readonly limit: UsageLimit = {},
   ) {
     super(message);
   }
@@ -15,15 +18,37 @@ export function usageLimitDetails(error: unknown): {
   resetsAt?: number;
 } {
   if (!(error instanceof UsageLimitError)) return {};
+  const { resetsAt } = error.limit;
   return {
     errorKind: error.errorKind,
-    ...(error.resetsAt === undefined ? {} : { resetsAt: error.resetsAt }),
+    ...(resetsAt === undefined ? {} : { resetsAt }),
   };
 }
 
-// Claude and Codex image failures report reset timestamps in epoch seconds.
+// Claude and Codex report reset timestamps in epoch seconds. The wire takes
+// whole milliseconds only.
 export function resetAtMillis(seconds: unknown): number | undefined {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return undefined;
-  const millis = seconds * 1000;
+  const millis = Math.round(seconds * 1000);
   return Number.isNaN(new Date(millis).getTime()) ? undefined : millis;
+}
+
+// A reset already behind us says nothing about when the limit lifts, and would
+// release a held queue straight into another refusal.
+export function futureResetAt(seconds: unknown): number | undefined {
+  const millis = resetAtMillis(seconds);
+  return millis !== undefined && millis > Date.now() ? millis : undefined;
+}
+
+// A window whose reset has passed has emptied, whatever figure a cached or
+// late answer still carries for it.
+export function windowUsage(
+  usedPercent: number,
+  resetsAt: number | undefined,
+): Pick<ReportedMeter, 'usedPercent' | 'resetsAt'> {
+  if (resetsAt !== undefined && resetsAt <= Date.now()) return { usedPercent: 0 };
+  return {
+    usedPercent: Math.min(100, Math.max(0, usedPercent)),
+    ...(resetsAt === undefined ? {} : { resetsAt }),
+  };
 }

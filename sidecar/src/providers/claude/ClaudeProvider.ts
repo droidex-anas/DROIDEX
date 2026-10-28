@@ -4,6 +4,7 @@ import {
   query,
   type ModelInfo as ClaudeModelInfo,
   type McpServerConfig as SdkMcpServerConfig,
+  type Query,
   type SDKUserMessage,
   type SessionMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -25,6 +26,8 @@ import type {
   ProviderModelSettings,
   ProviderResumeInput,
   ProviderSession,
+  UsageMetersListener,
+  UsageReading,
 } from '../session.js';
 import { resolveClaudePath } from './claudeExecutable.js';
 import { claudeCatalogItems } from './claudeCatalog.js';
@@ -36,9 +39,11 @@ import {
   claudeModelRows,
   type ClaudeDefaultModel,
 } from './claudeModels.js';
+import { readClaudeUsage } from './claudeRateLimits.js';
 import { ClaudeSession, type ClaudeSessionInput } from './claudeSession.js';
 
 const PROBE_TIMEOUT_MS = 25_000;
+const PROBE_CANCELLED = 'Claude Code was not checked.';
 const INSTALL_HINT = 'Claude Code CLI not found. Install it, then refresh.';
 
 export class ClaudeProvider implements Provider {
@@ -47,6 +52,8 @@ export class ClaudeProvider implements Provider {
   // The model a chat that pins none runs on: the row published for it and the
   // CLI's own name for it, suffix included.
   private defaultModel?: ClaudeDefaultModel;
+
+  constructor(private readonly onUsage?: UsageMetersListener) {}
 
   validateModelSettings(settings: ProviderModelSettings): void {
     claudeLaunchModel(
@@ -58,6 +65,7 @@ export class ClaudeProvider implements Provider {
   }
 
   async create({
+    appSessionId,
     interactions,
     cwd,
     modelId,
@@ -70,10 +78,9 @@ export class ClaudeProvider implements Provider {
     mcpServers,
     canvasScopeForRead,
   }: ProviderOpenInput): Promise<ProviderSession> {
-    // Claude pins the id it is given, so the session mints DROIDEX's identity
-    // here and the two stay the same for the session's whole life.
+    // Claude pins the supplied id for a new conversation.
     return await this.open({
-      appSessionId: randomUUID(),
+      appSessionId: appSessionId ?? randomUUID(),
       cwd: sessionCwd(cwd),
       autonomy,
       interactionMode,
@@ -91,6 +98,7 @@ export class ClaudeProvider implements Provider {
   async resume(
     providerSessionId: string,
     {
+      appSessionId,
       interactions,
       cwd,
       modelId,
@@ -105,7 +113,7 @@ export class ClaudeProvider implements Provider {
     }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     return await this.open({
-      appSessionId: providerSessionId,
+      appSessionId,
       cwd: sessionCwd(cwd),
       autonomy: autonomy ?? 'off',
       interactionMode: interactionMode ?? 'auto',
@@ -117,7 +125,7 @@ export class ClaudeProvider implements Provider {
       mcpServers: sdkMcpServers(mcpServers),
       canvasScopeForRead,
       interactions,
-      resume: true,
+      resumeId: providerSessionId,
     });
   }
 
@@ -146,7 +154,7 @@ export class ClaudeProvider implements Provider {
   }
 
   private async open(
-    input: Omit<ClaudeSessionInput, 'executable' | 'models'>,
+    input: Omit<ClaudeSessionInput, 'executable' | 'models' | 'onUsage'>,
   ): Promise<ProviderSession> {
     const modelId = claudeLaunchModel(
       input.modelId,
@@ -160,6 +168,7 @@ export class ClaudeProvider implements Provider {
       models: this.models,
       ...(this.defaultModel ? { defaultModel: this.defaultModel } : {}),
       executable: this.requireExecutable(),
+      ...(this.onUsage ? { onUsage: this.onUsage } : {}),
     });
     try {
       await session.start();
@@ -177,6 +186,10 @@ export class ClaudeProvider implements Provider {
     const executable = resolveClaudePath();
     if (!executable)
       return { provider: 'claude', readiness: 'missing', message: INSTALL_HINT, models: [] };
+    // A refresh cancelled while this provider loaded must not start the CLI:
+    // the abort it would have listened for has already fired.
+    if (signal.aborted)
+      return { provider: 'claude', readiness: 'error', message: PROBE_CANCELLED, models: [] };
 
     const abort = new AbortController();
     const timer = setTimeout(() => {
@@ -185,31 +198,10 @@ export class ClaudeProvider implements Provider {
     signal.addEventListener('abort', () => {
       abort.abort();
     });
-    const probe = query({
-      prompt: idlePrompt(abort.signal),
-      options: {
-        abortController: abort,
-        cwd: tmpdir(),
-        pathToClaudeCodeExecutable: executable,
-        persistSession: false,
-        env: claudeContextEnv(childEnv(), 1000000),
-        allowedTools: [],
-        mcpServers: {},
-        strictMcpConfig: true,
-        settingSources: ['user'],
-        settings: { disableAllHooks: true },
-      },
-    });
+    const probe = idleQuery(executable, abort, claudeContextEnv(childEnv(), 1000000));
     try {
       const init = await probe.initializationResult();
       const account = accountLabel(init.account);
-      if (!account)
-        return {
-          provider: 'claude',
-          readiness: 'unauthenticated',
-          message: 'Run `claude` in a terminal and sign in, then refresh.',
-          models: [],
-        };
       const [catalog, commands] = await Promise.all([
         probe.supportedModels(),
         probe.supportedCommands(),
@@ -221,7 +213,7 @@ export class ClaudeProvider implements Provider {
       return {
         provider: 'claude',
         readiness: 'ready',
-        accountLabel: account,
+        ...(account ? { accountLabel: account } : {}),
         ...(defaultModel ? { defaultModelId: defaultModel.modelId } : {}),
         ...(defaultModel?.contextWindowTokens !== undefined
           ? { defaultContextWindowTokens: defaultModel.contextWindowTokens }
@@ -237,6 +229,33 @@ export class ClaudeProvider implements Provider {
     }
   }
 
+  // The probe's idle CLI, with the claude.ai connectors and IDE discovery off
+  // too, since it only has to answer the usage call.
+  async readUsage(signal: AbortSignal): Promise<UsageReading> {
+    const executable = this.requireExecutable();
+    signal.throwIfAborted();
+    const abort = new AbortController();
+    const stop = () => {
+      abort.abort();
+    };
+    signal.addEventListener('abort', stop);
+    const probe = idleQuery(executable, abort, {
+      ...childEnv(),
+      ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
+      CLAUDE_CODE_AUTO_CONNECT_IDE: '0',
+      CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: '1',
+    });
+    try {
+      await probe.initializationResult();
+      // The usage call takes no signal, so it must not start once cancelled.
+      signal.throwIfAborted();
+      return await readClaudeUsage(probe);
+    } finally {
+      signal.removeEventListener('abort', stop);
+      abort.abort();
+    }
+  }
+
   private requireExecutable(): string {
     const executable = resolveClaudePath();
     if (!executable) throw new Error(INSTALL_HINT);
@@ -244,9 +263,10 @@ export class ClaudeProvider implements Provider {
   }
 }
 
-// An account the CLI can actually generate with: a signed-in subscription, or a
-// configured key. The CLI reports 'none' for a source it does not have, so a
-// blank or 'none' value is no account at all and the user still has to log in.
+// The claude.ai sign-in or configured key the CLI reports. The CLI reports
+// 'none' for a source it does not have, so a blank or 'none' value is no
+// sign-in. That does not block a session: the CLI may reach its models through
+// a gateway its own settings configure, and it reports its own auth failures.
 function accountLabel(account: {
   email?: string;
   organization?: string;
@@ -347,6 +367,26 @@ function claudeProbeFailure(error: unknown): ProviderStatus {
     ? 'unauthenticated'
     : 'error';
   return { provider: 'claude', readiness, message, models: [] };
+}
+
+// A CLI that starts, answers control requests and is torn down without a turn
+// ever reaching the API: no hooks, no MCP servers, no tools, no session file.
+function idleQuery(executable: string, abort: AbortController, env: NodeJS.ProcessEnv): Query {
+  return query({
+    prompt: idlePrompt(abort.signal),
+    options: {
+      abortController: abort,
+      cwd: tmpdir(),
+      pathToClaudeCodeExecutable: executable,
+      persistSession: false,
+      env,
+      allowedTools: [],
+      mcpServers: {},
+      strictMcpConfig: true,
+      settingSources: ['user'],
+      settings: { disableAllHooks: true },
+    },
+  });
 }
 
 // A prompt that never yields: the CLI initializes and then waits, so the probe

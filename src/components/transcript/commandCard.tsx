@@ -2,7 +2,8 @@ import { useContext, useState } from 'react';
 import { commandLineContains } from '../../lib/commandLineMatch';
 import { LiveProcessesContext } from './liveProcessesContext';
 import { stripAnsi } from '../../lib/tools';
-import { Caret, ErrorTag, Expand, InterruptedTag, linkify, RED, ToolPanel } from './primitives';
+import { TranscriptImage } from '../media/TranscriptImage';
+import { Caret, ErrorTag, Expand, InterruptedTag, linkify, ToolPanel } from './primitives';
 
 // A backgrounded server keeps its card "running" after the turn ends as long
 // as a live agent process still carries the command the agent typed.
@@ -20,6 +21,8 @@ function useCommandStillRunning(command: string): boolean {
   );
 }
 
+const NO_IMAGES: string[] = [];
+
 /* ── Terminal-style body shared by every tool call: what was called, then
    what came back, in the same bordered panel language as expanded diffs. No
    header chrome — the heading (a `$` prompt for a shell call, the arguments
@@ -27,34 +30,37 @@ function useCommandStillRunning(command: string): boolean {
 export function ToolCallCard({
   heading,
   output,
+  images = NO_IMAGES,
   error = false,
   interrupted = false,
   running = false,
 }: {
   heading: React.ReactNode;
   output?: string;
+  /** The pictures the tool answered with, as saved files, shown above its text. */
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
 }) {
   const out = output ? stripAnsi(output).trimEnd() : '';
   return (
-    <ToolPanel
-      className="group relative"
-      style={
-        error
-          ? { borderColor: 'color-mix(in srgb, var(--droid-red) 30%, var(--droid-border))' }
-          : undefined
-      }
-    >
-      <div className="px-3.5 py-2.5 font-mono text-[12px] leading-[1.6]">
+    <ToolPanel className="group relative">
+      <div className="px-3.5 py-2.5 font-mono text-code">
         {heading}
-        {running && <span className="shimmer-text text-[13px] font-medium">Running</span>}
+        {running && <span className="shimmer-text text-body-strong">Running</span>}
         {interrupted && <InterruptedTag />}
+        {images.length > 0 && (
+          <div className="mt-2 first:mt-0">
+            {images.map((image, index) => (
+              // One result can carry the same picture twice.
+              <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
+            ))}
+          </div>
+        )}
         {out && (
           <pre
-            className="mt-2 pt-2 border-t border-droid-border/60 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
-            style={error ? { color: RED } : undefined}
+            className={`mt-2 first:mt-0 max-h-56 overflow-auto whitespace-pre-wrap text-code break-words ${error ? 'text-danger' : 'text-muted'}`}
           >
             {error ? out : linkify(out)}
           </pre>
@@ -67,12 +73,14 @@ export function ToolCallCard({
 export function CommandCard({
   command,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
 }: {
   command: string;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -82,16 +90,12 @@ export function CommandCard({
     <ToolCallCard
       heading={
         <div className="flex gap-2 break-words">
-          <span
-            className="select-none text-droid-text-muted"
-            style={error ? { color: RED } : undefined}
-          >
-            $
-          </span>
-          <span className="whitespace-pre-wrap text-droid-text">{command}</span>
+          <span className={`select-none ${error ? 'text-danger' : 'text-muted'}`}>$</span>
+          <span className="whitespace-pre-wrap text-primary">{command}</span>
         </div>
       }
       output={output}
+      images={images}
       error={error}
       interrupted={interrupted}
       running={running || alive}
@@ -105,6 +109,7 @@ export function CommandCard({
 export function CommandLine({
   command,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
@@ -112,6 +117,7 @@ export function CommandLine({
 }: {
   command: string;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -125,21 +131,16 @@ export function CommandLine({
       {running || alive ? (
         <span className="shimmer-text shrink-0 font-medium">Running</span>
       ) : (
-        <span className="shrink-0 text-droid-text-secondary">Ran</span>
+        <span className="shrink-0 text-secondary">Ran</span>
       )}
-      <span className="min-w-0 truncate text-droid-text-muted">{command}</span>
+      <span className="min-w-0 truncate text-muted">{command}</span>
     </>
   );
   // Only a still-running turn hides the expander: a finished call whose
   // process is still alive already has captured output, and that output must
   // stay reachable. It keeps the Running indicator in place of "Ran".
   if (running) {
-    return (
-      <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-relaxed">
-        <span className="w-3 shrink-0" aria-hidden="true" />
-        {label}
-      </div>
-    );
+    return <div className="flex min-w-0 items-center gap-1.5 text-body">{label}</div>;
   }
   return (
     <div>
@@ -147,16 +148,16 @@ export function CommandLine({
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-[13px] leading-relaxed"
+        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={expanded}
       >
-        <Caret open={expanded} />
         {label}
+        <Caret open={expanded} />
         {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </button>
       <Expand open={expanded}>
-        <div className="mt-1.5 pl-[18px]">
-          <CommandCard command={command} output={output} error={error} />
+        <div className="mt-1.5 pl-5">
+          <CommandCard command={command} output={output} images={images} error={error} />
         </div>
       </Expand>
     </div>

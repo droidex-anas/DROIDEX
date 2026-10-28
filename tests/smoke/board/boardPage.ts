@@ -64,7 +64,7 @@ export async function stubGuests(page: Page) {
     window.boardGuestReady = false;
     window.guestCommands = [];
     window.guestAnswer = () => null;
-    Object.defineProperty(window, 'droidControl', {
+    Object.defineProperty(window, 'droidex', {
       value: {
         canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
         canvasPreviewBind: async (guestId: number, canvasId: string) =>

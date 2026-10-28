@@ -1,7 +1,9 @@
-import { diffPaletteForTheme } from './diffTheme';
+import { deriveThemeTokens, isDarkCanvas } from './themeTokens';
 
-// The five colors every theme is built from; applyTheme derives the rest of
-// the ramp (elevated/active/borders/secondary/muted/shadow) from these.
+// The five colors every theme is built from; deriveThemeTokens builds the
+// token layer from them. `border` no longer feeds the app's dividers, which are
+// translucent text tints; the terminal, theme previews and app blocks still
+// read it.
 export interface ThemeColors {
   bg: string;
   fg: string;
@@ -359,157 +361,6 @@ export function newCustomThemeId(): string {
   return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export const SKILL_COLORS = {
-  dark: '#93c5fd',
-  light: '#1d4ed8',
-} as const;
-
-// The sidebar's update pill is a system signal, not chrome, so it keeps a fixed
-// blue in both schemes the way the status colors do: a monochrome accent must
-// never tint "an update is waiting" into the surrounding UI.
-export const UPDATE_COLORS = {
-  base: '#005fc8',
-  hover: '#0054b2',
-} as const;
-
-// Prompt chip marks keep their own hue beside the blue skill label: rose for a
-// skill's Rosette, pink for the Visualize plugin.
-const MARK_COLORS = {
-  skill: { dark: '#ed4772', light: '#b82950' },
-  visualize: { dark: '#f472b6', light: '#b8307a' },
-} as const;
-
-// The top reasoning level reads by hue on every theme, the way skills and links
-// do: the neutral accent cannot say "this one is different" when it is the same
-// tone the rest of the chrome already uses. Each scheme carries the shade that
-// keeps AA for 12px label text on its composer surface (--droid-elevated).
-export const ULTRA_COLORS = {
-  dark: '#bba6ff',
-  light: '#6d28d9',
-} as const;
-
-// Hyperlinks read by hue, like skills and status do. The neutral accent governs
-// chrome and is near-white in dark themes, which left links looking like plain
-// underlined text everywhere they appeared.
-const LINK_COLORS = {
-  dark: '#7cb2ff',
-  light: '#1d4ed8',
-} as const;
-
-// A design board's selection reads by hue in both schemes, as a design tool's
-// does: the neutral accent is near-white or near-black, so an accent outline
-// around a frame reads as a hard box rather than "this one is selected".
-// `line` draws the outline and handles and fills the size badge, whose `text`
-// keeps AA on it; `label` is the blue a selected name is written in, AA on the
-// board and its raised chrome in every built-in preset. On dark, a blue light
-// enough for that is too light to carry white, so the two part.
-export const SELECTION_COLORS = {
-  dark: { line: '#1d6cff', label: '#7cb2ff', text: '#ffffff' },
-  light: { line: '#1a64dc', label: '#1a64dc', text: '#ffffff' },
-} as const;
-
-// The seven colours a board annotation can be drawn in, by the token names the
-// canvas stores. Muted, so a sketch never shouts over the designs it marks up,
-// yet each keeps AA for text on the board and its raised chrome in every
-// built-in preset, because a text label is drawn in it. A custom board these
-// cannot read on pulls them toward its text colour (see annotationColors).
-const ANNOTATION_STROKES = {
-  dark: {
-    ink: '#d8d4cf',
-    red: '#f49a90',
-    orange: '#e8a46c',
-    yellow: '#d8bd5c',
-    green: '#86c08a',
-    blue: '#92b6f2',
-    violet: '#c8abee',
-  },
-  light: {
-    ink: '#3a3632',
-    red: '#b4362c',
-    orange: '#a34e17',
-    yellow: '#806408',
-    green: '#367339',
-    blue: '#2f62b5',
-    violet: '#7446a8',
-  },
-} as const;
-
-/**
- * Each annotation colour's stroke and the fill a note of that colour sits on:
- * the stroke washed into the board, far enough that body text reads on it.
- * A stroke pulls toward the theme's text until it reads on the harder of the
- * board and its raised chrome, and a fill washes further into the board until
- * the text reads on it. A board whose raised chrome crowds the stroke (mid-grey
- * with light text) admits no colour that reads on both, so the pull keeps to
- * the board, where the marks are drawn.
- */
-export function annotationColors(theme: Pick<ThemeColors, 'bg' | 'surface' | 'fg'>) {
-  const bgIsDark = colorLuminance(theme.bg) < 0.4;
-  const raised = raisedSurfaceColor(theme);
-  return Object.fromEntries(
-    Object.entries(ANNOTATION_STROKES[bgIsDark ? 'dark' : 'light']).map(([name, tuned]) => {
-      const ground =
-        contrastRatio(tuned, theme.bg) < contrastRatio(tuned, raised) ? theme.bg : raised;
-      const stroke = pullToContrast(tuned, theme.fg, ground, AA_NORMAL_TEXT);
-      const wash = mixHex(stroke, theme.bg, bgIsDark ? 0.78 : 0.75);
-      return [name, { stroke, fill: pullToContrast(wash, theme.bg, theme.fg, AA_NORMAL_TEXT) }];
-    }),
-  );
-}
-
-// Code reads in one small, muted palette wherever it is shown: the Canvas
-// source drawer, the files preview and transcript JSON. Four hues and a grey;
-// each hue keeps AA for 12px code on the code ground and on the transcript's
-// code cards in every built-in preset.
-const SYNTAX_COLORS = {
-  dark: { keyword: '#b9a3dc', string: '#9dbf8e', number: '#d6ac78', function: '#8eb3dc' },
-  light: { keyword: '#7b4799', string: '#356842', number: '#895117', function: '#305f95' },
-} as const;
-
-// The ground source sits on, a few percent off the raised drawer that holds it
-// rather than a block of its own. Comments are as quiet as AA allows on the
-// harder of that ground and the transcript's elevated code cards.
-export function codeColors(theme: Pick<ThemeColors, 'bg' | 'surface' | 'fg'>) {
-  const bgIsDark = colorLuminance(theme.bg) < 0.4;
-  const bg = mixHex(raisedSurfaceColor(theme), theme.bg, bgIsDark ? 0.35 : 0.5);
-  const elevated = elevatedSurfaceColor(theme);
-  const ground = contrastRatio(theme.fg, bg) < contrastRatio(theme.fg, elevated) ? bg : elevated;
-  return {
-    bg,
-    comment: mixToContrast(theme.fg, ground, 4.5),
-    ...SYNTAX_COLORS[bgIsDark ? 'dark' : 'light'],
-  };
-}
-
-// One rung of the tint ramp (hover, selection, user bubbles, code blocks),
-// `amount` steps away from the canvas.
-//
-// Dark presets keep headroom above their surface, so each rung lightens it and
-// the ramp reads bg < surface < elevated < active. Light presets put the
-// surface ABOVE the canvas with nothing left above it, so their rungs step
-// darker, measured from the canvas: stepping down from the surface would land
-// the first rung back on the canvas and make every tint vanish.
-export function surfaceStep(theme: Pick<ThemeColors, 'bg' | 'surface'>, amount: number): string {
-  return colorLuminance(theme.bg) < 0.4
-    ? adjustColor(theme.surface, amount)
-    : adjustColor(theme.bg, -amount);
-}
-
-export function elevatedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
-  return surfaceStep(theme, 13);
-}
-
-// Floating layers (composer, menus, popovers, tooltips, toasts) need the
-// opposite direction from the tint ramp on light themes: a darker rung reads as
-// a grey hole in the page, so they lift to near-white and rely on the hairline
-// border and shadow. Dark themes already lighten upward, so they share the
-// elevated rung.
-export function raisedSurfaceColor(theme: Pick<ThemeColors, 'bg' | 'surface'>): string {
-  return colorLuminance(theme.bg) < 0.4
-    ? elevatedSurfaceColor(theme)
-    : mixHex(theme.surface, '#ffffff', 0.6);
-}
-
 const SYSTEM_FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 export const UI_FONTS: { id: string; label: string; stack: string }[] = [
   { id: 'system', label: 'System', stack: SYSTEM_FONT_STACK },
@@ -528,106 +379,14 @@ function uiFontStack(id: string): string {
 /* ── apply CSS variables to document ── */
 export function applyTheme(theme: ThemeSettings) {
   const root = document.documentElement;
-  root.style.setProperty('--droid-bg', theme.bg);
-  root.style.setProperty('--droid-surface', theme.surface);
-  // Build the elevation ramp in the correct direction for the theme (see
-  // surfaceStep), so both modes get the same visible tonal hierarchy.
-  const bgIsDark = colorLuminance(theme.bg) < 0.4;
-  root.style.setProperty('--droid-elevated', elevatedSurfaceColor(theme));
-  // Input fields inside cards share the elevated rung: a raised pad on dark, a
-  // recessed well on light. Both read as a distinct field against the card.
-  root.style.setProperty('--droid-field', surfaceStep(theme, 13));
-  // The most-raised neutral, for selected/active rows.
-  root.style.setProperty('--droid-active', surfaceStep(theme, 26));
-  root.style.setProperty('--droid-raised', raisedSurfaceColor(theme));
-  // Soften resting borders by blending toward the background so panel/section
-  // separators read as gentle hairlines rather than hard lines. Dark themes need
-  // a stronger blend: at low luminance the same edge reads as a harsh outline, so
-  // we push it closer to the background to keep the subtle look light mode has.
-  root.style.setProperty('--droid-border', mixHex(theme.border, theme.bg, bgIsDark ? 0.72 : 0.6));
-  root.style.setProperty(
-    '--droid-border-hover',
-    mixHex(theme.border, theme.bg, bgIsDark ? 0.4 : 0.2),
-  );
-  root.style.setProperty('--droid-text', theme.fg);
-  if (bgIsDark) {
-    root.style.setProperty('--droid-text-secondary', adjustColor(theme.fg, -30));
-    root.style.setProperty('--droid-text-muted', adjustColor(theme.fg, -50));
-  } else {
-    // Light themes have no dark headroom below a near-black fg (darkening would
-    // invert the hierarchy into pure black), so mute by blending toward the
-    // canvas. A fixed blend factor cannot do this: the same 0.42 that reads on
-    // the Default canvas collapses to 2.9:1 on a tinted one, so the ramp is
-    // derived from the contrast it must keep instead — AAA for secondary body
-    // text, AA for muted meta and placeholders.
-    // Muted labels also sit on elevated surfaces, so the ramp is derived
-    // against whichever of the canvas and the elevated tone is harder.
-    const elevated = elevatedSurfaceColor(theme);
-    const ground = colorLuminance(elevated) < colorLuminance(theme.bg) ? elevated : theme.bg;
-    root.style.setProperty('--droid-text-secondary', mixToContrast(theme.fg, ground, 7));
-    root.style.setProperty('--droid-text-muted', mixToContrast(theme.fg, ground, 4.5));
+  for (const [name, value] of Object.entries(deriveThemeTokens(theme))) {
+    root.style.setProperty(name, value);
   }
-  root.style.setProperty('--droid-accent', theme.accent);
-  root.style.setProperty('--droid-skill', bgIsDark ? SKILL_COLORS.dark : SKILL_COLORS.light);
-  root.style.setProperty('--droid-link', bgIsDark ? LINK_COLORS.dark : LINK_COLORS.light);
-  root.style.setProperty('--droid-ultra', bgIsDark ? ULTRA_COLORS.dark : ULTRA_COLORS.light);
-  const markShade = bgIsDark ? 'dark' : 'light';
-  root.style.setProperty('--droid-skill-mark', MARK_COLORS.skill[markShade]);
-  root.style.setProperty('--droid-visualize-mark', MARK_COLORS.visualize[markShade]);
-  const selection = SELECTION_COLORS[markShade];
-  root.style.setProperty('--droid-selection', selection.line);
-  root.style.setProperty('--droid-selection-label', selection.label);
-  root.style.setProperty('--droid-selection-text', selection.text);
-  for (const [name, color] of Object.entries(codeColors(theme))) {
-    root.style.setProperty(`--droid-code-${name}`, color);
-  }
-  for (const [name, { stroke, fill }] of Object.entries(annotationColors(theme))) {
-    root.style.setProperty(`--droid-annotation-${name}`, stroke);
-    root.style.setProperty(`--droid-annotation-${name}-fill`, fill);
-  }
-  // Floating-card shadow: strong and near-black on dark where it separates
-  // surfaces, soft and diffuse on light so cards lift without looking dirty.
-  // Light themes lead with a faint 1px ring: a white card on near-white paper
-  // needs an edge, and the ring gives one without drawing a visible outline.
-  root.style.setProperty(
-    '--droid-shadow',
-    bgIsDark
-      ? '0 10px 40px rgba(0, 0, 0, 0.35)'
-      : '0 0 0 1px rgba(28, 25, 23, 0.04), 0 2px 4px rgba(28, 25, 23, 0.04), 0 12px 32px rgba(28, 25, 23, 0.08)',
-  );
-  root.style.setProperty(
-    '--droid-shadow-sm',
-    bgIsDark
-      ? '0 4px 16px rgba(0, 0, 0, 0.28)'
-      : '0 0 0 1px rgba(28, 25, 23, 0.04), 0 1px 2px rgba(28, 25, 23, 0.04), 0 6px 16px rgba(28, 25, 23, 0.06)',
-  );
-  // Semantic status colors are FIXED, never accent-derived, so success/warning
-  // and diff add/remove always read as green/amber/red even when the accent is a
-  // neutral monochrome tone. The light shades are tuned for the Default canvas
-  // and then darkened per theme only where a cooler or darker canvas would drop
-  // them below AA for 11–13px status text. Red clears AA on every built-in
-  // light canvas, so it always keeps its tuned shade.
-  root.style.setProperty(
-    '--droid-green',
-    bgIsDark ? '#4fae82' : statusColorOnLight('#1f7a4d', theme.bg),
-  );
-  root.style.setProperty(
-    '--droid-orange',
-    bgIsDark ? '#d9913a' : statusColorOnLight('#9a5a0f', theme.bg),
-  );
-  root.style.setProperty('--droid-red', bgIsDark ? '#cf5d54' : '#b3312a');
-  root.style.setProperty('--droid-update', UPDATE_COLORS.base);
-  root.style.setProperty('--droid-update-hover', UPDATE_COLORS.hover);
+  // Drives Tailwind's `dark:` variant, for the few styles that differ by
+  // scheme beyond what the tokens carry (a highlight on the raised layer).
+  root.setAttribute('data-theme', isDarkCanvas(theme.bg) ? 'dark' : 'light');
   root.setAttribute('data-diff-style', theme.diffStyle);
-  const diffPalette = diffPaletteForTheme(bgIsDark, theme.diffStyle);
-  root.style.setProperty('--diff-add-fg', diffPalette.addFg);
-  root.style.setProperty('--diff-add-bg', diffPalette.addBg);
-  root.style.setProperty('--diff-add-gutter', diffPalette.addGutter);
-  root.style.setProperty('--diff-del-fg', diffPalette.delFg);
-  root.style.setProperty('--diff-del-bg', diffPalette.delBg);
-  root.style.setProperty('--diff-del-gutter', diffPalette.delGutter);
-  root.style.setProperty('--diff-hunk-bg', diffPalette.hunkBg);
-  root.style.setProperty('--diff-hunk-fg', diffPalette.hunkFg);
+  root.setAttribute('data-translucent', theme.translucentSidebar ? 'true' : 'false');
 
   root.style.setProperty('--ui-font-family', uiFontStack(theme.uiFont));
   root.style.setProperty('--ui-font-size', `${String(theme.uiFontSize)}px`);
@@ -636,129 +395,9 @@ export function applyTheme(theme: ThemeSettings) {
   root.style.setProperty('--ui-zoom', String(theme.uiFontSize / 14));
   root.style.setProperty('--code-font-size', `${String(theme.codeFontSize)}px`);
 
-  // Dedicated sidebar surface so translucency only affects the sidebar. When
-  // enabled, the window becomes transparent (see index.css + Electron vibrancy)
-  // and the sidebar uses a semi-transparent fill so the wallpaper behind the
-  // window shows through a little — frosted, not fully clear.
-  // Light surfaces sit over a dark macOS vibrancy material, so a low-opacity
-  // fill plus a strong saturation boost lets the wallpaper bleed through as a
-  // muddy tint. Keep light themes mostly opaque with gentle saturation so the
-  // sidebar stays a clean frosted white; dark themes can show more through.
-  root.setAttribute('data-translucent', theme.translucentSidebar ? 'true' : 'false');
-  const sidebarAlpha = bgIsDark ? '99' : 'f2';
-  const sidebarSaturate = bgIsDark ? 'saturate(150%)' : 'saturate(108%)';
-  // A light sidebar sits a shade below the canvas, like paper under a page,
-  // so the near-white reading area stays the brightest region of the window.
-  const sidebarColor = bgIsDark ? theme.surface : adjustColor(theme.bg, -6);
-  root.style.setProperty(
-    '--sidebar-bg',
-    theme.translucentSidebar ? `${sidebarColor}${sidebarAlpha}` : sidebarColor,
-  );
-  root.style.setProperty(
-    '--sidebar-blur',
-    theme.translucentSidebar ? `blur(6px) ${sidebarSaturate}` : 'none',
-  );
-
   // Apply contrast as a filter only below 100% so it never creates a stacking
   // context that would defeat the sidebar's backdrop blur at the default value.
   const rootEl = document.getElementById('root');
   if (rootEl)
     rootEl.style.filter = theme.contrast >= 100 ? '' : `contrast(${String(theme.contrast)}%)`;
-}
-
-/* ── tiny color utils ── */
-// Relative luminance (0 = black, 1 = white) used to tell dark themes from light.
-function colorLuminance(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function adjustColor(hex: string, lighten: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const clamp = (n: number) => Math.max(0, Math.min(255, n + lighten));
-  const toHex = (n: number) => n.toString(16).padStart(2, '0');
-  return `#${toHex(clamp(r))}${toHex(clamp(g))}${toHex(clamp(b))}`;
-}
-
-// Blend `hex` toward `target` by t (0..1).
-function mixHex(hex: string, target: string, t: number): string {
-  const parse = (h: string): [number, number, number] => [
-    parseInt(h.slice(1, 3), 16),
-    parseInt(h.slice(3, 5), 16),
-    parseInt(h.slice(5, 7), 16),
-  ];
-  const [r1, g1, b1] = parse(hex);
-  const [r2, g2, b2] = parse(target);
-  const mix = (a: number, b: number) => Math.round(a * (1 - t) + b * t);
-  const toHex = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
-  return `#${toHex(mix(r1, r2))}${toHex(mix(g1, g2))}${toHex(mix(b1, b2))}`;
-}
-
-// Blend `hex` as far toward `target` as `ratio` contrast against `target`
-// allows. Contrast falls monotonically as the blend approaches the target, so a
-// bisection finds the quietest tone that still reads. Returns `hex` unchanged
-// when even the unblended color cannot reach the ratio.
-function mixToContrast(hex: string, target: string, ratio: number): string {
-  let readable = 0;
-  let faded = 1;
-  for (let i = 0; i < 12; i++) {
-    const middle = (readable + faded) / 2;
-    if (contrastRatio(mixHex(hex, target, middle), target) >= ratio) readable = middle;
-    else faded = middle;
-  }
-  return mixHex(hex, target, readable);
-}
-
-// AA for normal text; status text runs 11–13px, so the large-text 3:1 tier
-// does not apply to it.
-const AA_NORMAL_TEXT = 4.5;
-
-/**
- * A light theme's status shade, darkened toward black only as far as the given
- * canvas demands. A canvas the tuned shade already reads on gets it back
- * unchanged, so only the presets that actually fail AA shift.
- */
-export function statusColorOnLight(hex: string, bg: string): string {
-  return pullToContrast(hex, '#000000', bg, AA_NORMAL_TEXT);
-}
-
-// Blend `hex` toward `pull` only as far as `ratio` contrast against `ground`
-// needs, so a shade that already reads comes back unchanged.
-function pullToContrast(hex: string, pull: string, ground: string, ratio: number): string {
-  if (contrastRatio(hex, ground) >= ratio) return hex;
-  let short = 0;
-  let enough = 1;
-  for (let i = 0; i < 12; i++) {
-    const middle = (short + enough) / 2;
-    if (contrastRatio(mixHex(hex, pull, middle), ground) >= ratio) enough = middle;
-    else short = middle;
-  }
-  return mixHex(hex, pull, enough);
-}
-
-// sRGB channel -> linear-light value, for WCAG contrast checks.
-function linearChannel(hexPair: string): number {
-  const c = parseInt(hexPair, 16) / 255;
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-}
-
-// WCAG relative luminance (0 = black, 1 = white).
-export function relativeLuminance(hex: string): number {
-  return (
-    0.2126 * linearChannel(hex.slice(1, 3)) +
-    0.7152 * linearChannel(hex.slice(3, 5)) +
-    0.0722 * linearChannel(hex.slice(5, 7))
-  );
-}
-
-// WCAG contrast ratio between two hex colors (1..21).
-export function contrastRatio(a: string, b: string): number {
-  const l1 = relativeLuminance(a);
-  const l2 = relativeLuminance(b);
-  const [hi, lo] = l1 >= l2 ? [l1, l2] : [l2, l1];
-  return (hi + 0.05) / (lo + 0.05);
 }

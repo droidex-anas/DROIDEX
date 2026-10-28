@@ -7,18 +7,21 @@ import type {
 import { convertNotificationToStreamMessage } from '@factory/droid-sdk';
 import { automationToolDisplayTitle } from './automations/permissionPolicy.js';
 import { mcpGrantSignature } from './mcpGrant.js';
-import { sessionsToolDisplayTitle } from './sessionsMcpPolicy.js';
+import { sessionsToolDisplay } from './sessionsMcpPolicy.js';
 import { bridgeFeature } from './missionFeatures.js';
 import { droidErrorDetails } from './providers/droid/droidErrors.js';
 import type {
   SessionRole,
   BridgeFeature,
   ChildSpawnLink,
+  ModelSwitch,
   PermissionKind,
   PermissionRequest,
   ProgressEntry,
+  ReasoningEffort,
   TranscriptEvent,
 } from './protocol.js';
+import { toolResultParts } from './toolResultImages.js';
 import { trimmedString as str, uniqueStrings } from './values.js';
 import {
   detectChildSession,
@@ -98,7 +101,15 @@ export interface NormalizedEvent {
     // instead of in its model catalog.
     maxContextTokens?: number;
   };
+  // Only ever the primary conversation's own.
+  harnessModelSwitch?: HarnessModelSwitch;
   done?: boolean;
+}
+
+// A model the harness moved the chat to by itself, with the effort it reported
+// for that model when it reported one.
+export interface HarnessModelSwitch extends Required<ModelSwitch> {
+  reasoningEffort?: ReasoningEffort;
 }
 
 function toolUseIdFrom(...values: unknown[]): string | undefined {
@@ -229,7 +240,7 @@ export function normalizeStreamEvent(
       const resultTranscript = () =>
         transcript(appSessionId, sourceProviderSessionId, role, 'tool_result', {
           toolName: ev.toolName,
-          text: typeof ev.content === 'string' ? ev.content : JSON.stringify(ev.content),
+          ...toolResultParts(ev.content),
           isError: ev.isError,
           ...(toolUseId ? { toolUseId } : {}),
         });
@@ -406,7 +417,7 @@ function backgroundTaskCompletionProviderSessionIdFrom(raw: unknown): string | u
   return backgroundTaskCompletionProviderSessionId(text);
 }
 
-function extractNotification(notification: Record<string, unknown>): unknown {
+export function extractNotification(notification: Record<string, unknown>): unknown {
   const params =
     notification.params &&
     typeof notification.params === 'object' &&
@@ -551,15 +562,15 @@ export function classifyPermission(
       const serverName =
         typeof c.serverName === 'string' && c.serverName ? c.serverName : splitServer;
       const toolName = splitTool;
-      const droidexTitle =
-        automationToolDisplayTitle(serverName, toolName) ??
-        sessionsToolDisplayTitle(serverName, toolName);
+      const input = primaryToolInput(params);
+      const display = sessionsToolDisplay(serverName, toolName, input);
+      const droidexTitle = display?.title ?? automationToolDisplayTitle(serverName, toolName);
       if (droidexTitle) title = droidexTitle;
       else if (toolName && serverName) title = `${serverName} · ${toolName}`;
       else if (toolName) title = toolName;
       else if (serverName) title = `${serverName} tool`;
       else title = 'External tool';
-      detail = mcpToolDetail(c, primaryToolInput(params));
+      detail = display?.detail ?? mcpToolDetail(c, input);
       break;
     }
     default:

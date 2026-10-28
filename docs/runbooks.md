@@ -73,7 +73,9 @@ These runbooks cover local development and release triage for DROIDEX.
 1. Confirm the source version is final and the release branch checks are green.
 2. Confirm the protected `macos-release` GitHub environment contains the public
    Sentry DSN and Sparkle private key documented in
-   `docs/deployment-observability.md`.
+   `docs/deployment-observability.md`, and the signing certificate from the
+   [one-time self-signed certificate setup](releasing.md#one-time-free-signing-setup),
+   which keeps macOS permissions across updates.
 3. Build both architectures with `DROIDEX_UNSIGNED_RELEASE_BUILD=1`, download
    the last three releases' ZIPs as delta bases, generate the two signed
    appcasts and their Sparkle deltas, and write `SHA256SUMS`.
@@ -95,25 +97,41 @@ These runbooks cover local development and release triage for DROIDEX.
 8. For subsequent releases, complete the Sparkle N-1-to-N update smoke before
    treating the release as operationally ready.
 
-The ad-hoc-signed first-launch recovery is: open System Settings, choose Privacy &
+The free release's first-launch recovery is: open System Settings, choose Privacy &
 Security, find the blocked DROIDEX notice, choose Open Anyway, and confirm. Do
 not advise users to disable Gatekeeper globally.
 
-## Local child-session index has an incompatible schema
+## Canonical history cannot open or has an incompatible schema
 
-The local index uses one canonical schema and has no migration or compatibility fallback. If startup reports an incompatible child-session index:
+If startup cannot open or validate canonical history, the sidecar stays running
+with history reads and writes disabled. It does not publish an empty replacement
+catalog. A persistent history banner and an error toast report the failure even
+when the renderer connects after startup. After repairing storage, restart
+DROIDEX to reopen history.
 
 1. Quit DROIDEX.
-2. Remove only the local derived index files:
-   ```bash
-   rm -f "$HOME/.factory/droidex/session-index.sqlite"
-   rm -f "$HOME/.factory/droidex/session-index.sqlite-wal"
-   rm -f "$HOME/.factory/droidex/session-index.sqlite-shm"
-   ```
-3. Restart DROIDEX. The sidecar rebuilds the index from current local Factory session history.
+2. Back up the history directory, including SQLite WAL/SHM files. The default is
+   `~/.factory/droidex`; an explicit `DROIDEX_HISTORY_DIR` selects another location.
+3. Check directory access, available disk space, and the reported SQLite error.
+   For an incompatible schema or damaged database, use a supported repair or
+   restore a known-good backup while DROIDEX is stopped.
+4. Restart DROIDEX and confirm history loads.
 
-These commands do not remove raw Factory session history. Do not delete the broader `~/.factory` directory.
-Do not remove `index.sqlite`; that filename remains reserved for older app/worktree schemas.
+`session-index.sqlite` contains canonical DROIDEX sessions, child relationships,
+metadata, and settings. **Do not delete it as derived state.** Provider transcripts
+cannot reconstruct those records. `session-search.sqlite` also retains the last
+admitted summaries of owned chats whose transcripts are unavailable. Corruption
+fails without deleting search storage. Quit DROIDEX, back it up with its WAL/SHM
+files, then repair it or restore a known-good backup; deleting it to force a
+rebuild loses summaries that missing transcripts cannot reconstruct.
+
+Missing or inaccessible provider transcripts do not remove previously admitted
+owned chats or DROIDEX notices. The catalog retains their DROIDEX titles;
+resuming reports an unavailable transcript until the file is accessible again.
+A header-only restoration keeps the last admitted summary until a completed
+conversation can be read again. Missing files stop search indexing until they
+return; delete/archive tombstones remain in renderer storage so retention cannot
+make hidden chats reappear.
 
 ## Verify child navigation without Factory authentication
 

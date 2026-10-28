@@ -74,14 +74,14 @@ export function SaveToLibraryDialog({
         className="flex flex-col gap-3 p-5"
       >
         <div>
-          <h2 id={titleId} className="text-[15px] font-semibold text-droid-text">
+          <h2 id={titleId} className="text-heading text-primary">
             Save to library
           </h2>
-          <p className="mt-1 text-[12px] leading-5 text-droid-text-muted">
+          <p className="mt-1 text-label font-normal leading-5 text-muted">
             Any canvas can start a frame from it, and it stays if this canvas is deleted.
           </p>
         </div>
-        <label htmlFor={nameId} className="text-[12px] font-medium text-droid-text">
+        <label htmlFor={nameId} className="text-label text-primary">
           Name
         </label>
         <input
@@ -100,7 +100,7 @@ export function SaveToLibraryDialog({
           className={`h-8 ${FIELD_CLASS}`}
         />
         {error && (
-          <p role="alert" className="text-[12px] text-droid-red">
+          <p role="alert" className="text-label font-normal text-danger">
             {error}
           </p>
         )}

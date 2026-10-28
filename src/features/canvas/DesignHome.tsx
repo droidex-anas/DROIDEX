@@ -62,9 +62,9 @@ function NewCanvasHome() {
     >
       <div className="droid-rise mt-12" style={{ animationDelay: '160ms' }}>
         <div className="flex items-center justify-between gap-3 px-1">
-          <h2 className="text-[13px] font-medium text-droid-text">Your canvases</h2>
-          <label className="flex min-w-0 items-center gap-1.5 rounded-lg bg-droid-elevated/50 px-2 py-1">
-            <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-droid-text-muted" />
+          <h2 className="text-body-strong text-primary">Your canvases</h2>
+          <label className="flex min-w-0 items-center gap-1.5 rounded-lg bg-elevated/50 px-2 py-1">
+            <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-muted" />
             <input
               value={query}
               onChange={(event) => {
@@ -72,23 +72,23 @@ function NewCanvasHome() {
               }}
               placeholder="Search canvases"
               aria-label="Search canvases"
-              className="w-32 min-w-0 bg-transparent text-[12px] text-droid-text placeholder:text-droid-text-muted focus:outline-none"
+              className="w-32 min-w-0 bg-transparent text-label font-normal text-primary placeholder:text-muted focus:outline-none"
             />
           </label>
         </div>
 
         {canvases.status === 'loading' && (
-          <p role="status" className="px-1 pt-3 text-[12px] text-droid-text-muted">
+          <p role="status" className="px-1 pt-3 text-label font-normal text-muted">
             Reading your canvases…
           </p>
         )}
         {canvases.status === 'failed' && (
-          <p role="alert" className="px-1 pt-3 text-[12px] text-droid-red">
+          <p role="alert" className="px-1 pt-3 text-label font-normal text-danger">
             {canvases.message}
           </p>
         )}
         {canvases.status === 'listed' && summaries.length === 0 && (
-          <p className="px-1 pt-3 text-[12px] leading-relaxed text-droid-text-muted">
+          <p className="px-1 pt-3 text-label font-normal leading-relaxed text-muted">
             {query
               ? 'No canvas by that name.'
               : 'Nothing designed yet. Your first prompt makes the first one.'}
@@ -150,13 +150,15 @@ function DesignDraftShell({
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
       <div data-electron-drag-region className="h-9 shrink-0" />
-      <div className="mx-auto flex w-full max-w-[calc(42rem+46px)] flex-col px-6 pb-10">
-        <div className="droid-rise flex flex-col items-center pt-[6vh]">
-          <BrandMark size={30} className="text-droid-accent" />
-          <h1 className="mt-5 text-[22px] leading-snug font-semibold tracking-tight text-droid-text">
-            {title}
-          </h1>
-          <p className="mt-2 text-center text-[13px] text-droid-text-muted">{hint}</p>
+      <div
+        // The composer's column (PromptInput) plus this page's own inset.
+        style={{ maxWidth: 'calc(42rem + 46px)' }}
+        className="mx-auto flex w-full flex-col px-6 pb-10"
+      >
+        <div className="droid-rise flex flex-col items-center pt-12">
+          <BrandMark size={30} className="text-accent" />
+          <h1 className="mt-5 text-title text-primary">{title}</h1>
+          <p className="mt-2 text-center text-body text-muted">{hint}</p>
         </div>
 
         <div className="droid-rise mt-7" style={{ animationDelay: '90ms' }}>
@@ -173,7 +175,7 @@ function DesignDraftShell({
                   onClick={() => {
                     dispatch({ type: 'SEED_COMPOSER', text: example, replace: true });
                   }}
-                  className="cursor-pointer rounded-full bg-droid-accent/[0.07] px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-accent/15 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                  className="cursor-pointer rounded-full bg-accent/[0.07] px-3 py-1.5 text-label font-normal text-secondary transition-colors hover:bg-accent/15 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
                 >
                   {example}
                 </button>
@@ -204,7 +206,7 @@ function LibrarySeedChip() {
   );
   return (
     <div
-      className={`flex min-w-0 shrink-0 items-center rounded-full text-[11px] ${armed ? 'bg-droid-elevated/60' : ''}`}
+      className={`flex min-w-0 shrink-0 items-center rounded-full text-caption ${armed ? 'bg-elevated/60' : ''}`}
     >
       <button
         type="button"
@@ -218,10 +220,10 @@ function LibrarySeedChip() {
         onClick={() => {
           setPicking(true);
         }}
-        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         <LibraryBig aria-hidden className="h-3.5 w-3.5 shrink-0" />
-        <span className="max-w-[160px] truncate">{armed ? armed.name : 'From library…'}</span>
+        <span className="max-w-40 truncate">{armed ? armed.name : 'From library…'}</span>
       </button>
       {armed && (
         <button
@@ -231,7 +233,7 @@ function LibrarySeedChip() {
           onClick={() => {
             armLibrarySeed(null);
           }}
-          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-droid-text-muted transition-colors hover:bg-droid-active hover:text-droid-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           <X aria-hidden className="h-2.5 w-2.5" strokeWidth={3} />
         </button>
@@ -257,16 +259,16 @@ function CanvasCard({ summary, onOpen }: { summary: CanvasSummary; onOpen: () =>
     <button
       type="button"
       onClick={onOpen}
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl bg-droid-raised text-left shadow-droid-sm transition-colors hover:bg-droid-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl bg-raised text-left shadow-sm transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
     >
       {/* A real thumbnail arrives with captured frames (Task 5c); until then the
           tile stays a quiet surface rather than a fake preview. */}
-      <span className="flex h-[88px] items-center justify-center bg-droid-elevated/40 text-[11px] text-droid-text-muted">
+      <span className="flex h-20 items-center justify-center bg-elevated/40 text-caption text-muted">
         {summary.designCount === 0 ? 'Empty' : designCountLabel(summary.designCount)}
       </span>
       <span className="flex flex-col gap-0.5 px-3 py-2">
-        <span className="truncate text-[12px] font-medium text-droid-text">{summary.name}</span>
-        <span className="truncate text-[11px] text-droid-text-muted">
+        <span className="truncate text-label text-primary">{summary.name}</span>
+        <span className="truncate text-caption text-muted">
           {formatRelativeTime(summary.updatedAt, Date.now())} ·{' '}
           {chatCountLabel(summary.attachedAppSessionIds.length)}
         </span>

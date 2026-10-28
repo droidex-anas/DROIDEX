@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ListFilter } from 'lucide-react';
 import type { CategoryOption, ModelCategory } from './modelCategories';
 
-const ACCENT = 'var(--droid-accent)';
+const ACCENT = 'var(--accent)';
 
 // The model popover's category filter: a button beside the search bar that
 // opens the catalog counts per category. Controlled — the popover owns open
@@ -47,11 +47,11 @@ export default function ModelCategoryFilter({
         aria-label="Filter models by category"
         title="Filter models by category"
         aria-expanded={open}
-        className={`relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+        className={`relative flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
           open
-            ? 'bg-droid-surface text-droid-text'
-            : 'bg-droid-bg/50 hover:bg-droid-surface/60 hover:text-droid-text'
-        } ${filtered ? 'text-droid-text' : 'text-droid-text-muted'}`}
+            ? 'bg-active text-primary dark:bg-surface'
+            : 'bg-field hover:bg-active dark:bg-bg/50 dark:hover:bg-surface/60 hover:text-primary'
+        } ${filtered ? 'text-primary' : 'text-muted'}`}
       >
         <ListFilter className="h-4 w-4" strokeWidth={1.5} />
         {filtered && (
@@ -69,7 +69,7 @@ export default function ModelCategoryFilter({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border border-droid-border bg-droid-raised p-1 shadow-md"
+            className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-lg bg-raised p-1.5 shadow-lg"
           >
             {options.map((option) => {
               const on = option.value === selected;
@@ -81,10 +81,10 @@ export default function ModelCategoryFilter({
                     onSelect(option.value);
                     onOpenChange(false);
                   }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-colors ${
+                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body transition-colors ${
                     on
-                      ? 'bg-droid-surface text-droid-text'
-                      : 'text-droid-text-secondary hover:bg-droid-surface/60'
+                      ? 'bg-active text-primary dark:bg-surface'
+                      : 'text-secondary hover:bg-elevated dark:hover:bg-surface/60'
                   }`}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
@@ -93,9 +93,7 @@ export default function ModelCategoryFilter({
                     )}
                   </span>
                   <span className="flex-1">{option.label}</span>
-                  <span className="text-[11px] tabular-nums text-droid-text-muted">
-                    {option.count}
-                  </span>
+                  <span className="text-caption tabular-nums text-muted">{option.count}</span>
                 </button>
               );
             })}

@@ -351,8 +351,11 @@ function safeTurnStart(
 
   let boundary = enclosingUserTurn(events, earliest);
   const changedEvent = events.at(firstChangedIndex);
+  // A new prompt settles the turn before it, which then folds; a steer joins
+  // the current turn and leaves the one before untouched.
   if (
     changedEvent?.author === 'user' &&
+    !changedEvent.steered &&
     previous.visibleTranscript[firstChangedIndex] !== changedEvent
   ) {
     boundary = enclosingUserTurn(events, Math.max(0, boundary - 1));
@@ -392,9 +395,12 @@ function earliestCorrelatedIndex(
   return Math.min(current, retainedIndex ?? Infinity, added.get(event.toolUseId) ?? Infinity);
 }
 
+// A steer sits inside the turn it was sent into, so grouping restarts from the
+// prompt that began that turn.
 function enclosingUserTurn(events: readonly TranscriptEvent[], fromIndex: number): number {
   for (let index = Math.min(fromIndex, events.length - 1); index >= 0; index -= 1) {
-    if (events.at(index)?.author === 'user') return index;
+    const event = events.at(index);
+    if (event?.author === 'user' && !event.steered) return index;
   }
   return 0;
 }
@@ -407,7 +413,7 @@ function feedPrefixItemCount(
   if (rewindIndex === 0) return 0;
   const boundary = events.at(rewindIndex);
   if (!boundary) return undefined;
-  if (boundary.author !== 'user') return undefined;
+  if (boundary.author !== 'user' || boundary.steered) return undefined;
   const boundaryId = boundary.id;
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items.at(index);

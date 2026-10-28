@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus } from '@droidex/icons';
-import { usePopover } from '../../components/environment/usePopover';
+import { useDismiss } from '../../components/ui/useDismiss';
 import { paintable } from './designSystemTokenTabs';
 import type { PreviewMode } from './PreviewModeToggle';
 import { sameKit, type KitList } from './designSystemsState';
@@ -32,7 +32,7 @@ export function DesignSystemList({
     newRef.current?.focus();
   }, []);
   // In place rather than portalled: a portalled popover would open beneath the dialog.
-  const menuRef = usePopover(menuOpen, closeMenu);
+  const menuRef = useDismiss(menuOpen, closeMenu);
   useEffect(() => {
     if (menuOpen) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [menuOpen, menuRef]);
@@ -61,12 +61,9 @@ export function DesignSystemList({
       : [];
 
   return (
-    <nav
-      aria-label="Design systems"
-      className="flex w-[248px] shrink-0 flex-col bg-droid-surface/40"
-    >
+    <nav aria-label="Design systems" className="flex w-64 shrink-0 flex-col bg-surface/40">
       <div className="flex items-center gap-2 px-4 pb-2 pt-5">
-        <h2 id="design-systems-title" className="flex-1 text-[14px] font-semibold text-droid-text">
+        <h2 id="design-systems-title" className="flex-1 text-subheading text-primary">
           Design systems
         </h2>
         <div ref={menuRef} className="relative">
@@ -78,7 +75,7 @@ export function DesignSystemList({
             onClick={() => {
               setMenuOpen((open) => !open);
             }}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-label text-primary transition-colors hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             <Plus aria-hidden className="h-3.5 w-3.5" />
             New
@@ -87,7 +84,7 @@ export function DesignSystemList({
             <div
               role="menu"
               aria-label="New design system"
-              className="absolute right-0 top-full z-10 mt-1 w-52 rounded-xl bg-droid-raised p-1 shadow-droid"
+              className="absolute right-0 top-full z-10 mt-1 w-52 rounded-xl bg-raised p-1 shadow-lg"
             >
               <MenuRow
                 label="From DESIGN.md"
@@ -110,11 +107,11 @@ export function DesignSystemList({
         {list.status === 'loading' && <MenuNote role="status">Reading design systems…</MenuNote>}
         {list.status === 'failed' && (
           <div role="alert" className="flex flex-col items-start gap-2 px-2.5 pt-2">
-            <p className="text-[12px] text-droid-red">{list.message}</p>
+            <p className="text-label font-normal text-danger">{list.message}</p>
             <button
               type="button"
               onClick={onRetry}
-              className="rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15"
+              className="rounded-lg bg-active px-2.5 py-1 text-label text-primary transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             >
               Try again
             </button>
@@ -153,11 +150,13 @@ function KitRow({
       type="button"
       aria-current={selected ? 'true' : undefined}
       onClick={onSelect}
-      className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-droid-accent/15 ${
-        selected ? 'bg-droid-active font-medium' : 'hover:bg-droid-accent/10'
+      className={`flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
+        selected ? 'bg-active font-medium' : 'hover:bg-accent/10'
       }`}
     >
-      <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text">{kit.name}</span>
+      <span className="min-w-0 flex-1 truncate text-label font-normal text-primary">
+        {kit.name}
+      </span>
       <KitSwatches kit={kit} mode={mode} />
     </button>
   );
@@ -172,7 +171,8 @@ export function KitSwatches({ kit, mode }: { kit: DesignSystemSummary; mode: Pre
         <span
           key={index}
           aria-hidden
-          className="h-3 w-3 shrink-0 rounded-full ring-1 ring-inset ring-droid-border"
+          // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
+          className="h-3 w-3 shrink-0 rounded-full ring-1 ring-inset ring-divider"
           style={{ background: paintable(color) }}
         />
       ))}

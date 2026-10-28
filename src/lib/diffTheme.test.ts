@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BUILT_IN_THEMES, contrastRatio } from './theme';
+import { BUILT_IN_THEMES } from './theme';
+import { contrastRatio } from './themeTokens';
 import { diffPaletteForTheme } from './diffTheme';
 
 test('diff palettes use distinct readable semantic colors in light and dark themes', () => {

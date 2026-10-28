@@ -137,7 +137,7 @@ test('malformed replacement chains fail with hard-cut index recovery guidance', 
   try {
     assert.throws(
       () => reopened.childSession(parentAppSessionId, childSessionId),
-      /remove .*\.factory\/droidex\/session-index.sqlite.*Raw Factory session history is not removed\./,
+      /back up .*\.factory\/droidex.*Do not delete the canonical database/,
     );
   } finally {
     reopened.close();
@@ -578,7 +578,7 @@ test('a current index with a drifted canonical constraint uses hard-cut recovery
 
       assert.throws(
         () => new HistoryIndex(),
-        /remove .*\.factory\/droidex\/session-index.sqlite.*Raw Factory session history is not removed\./,
+        /back up .*\.factory\/droidex.*Do not delete the canonical database/,
         label,
       );
     } finally {
@@ -606,7 +606,7 @@ test('incompatible local index fails fast with explicit recovery and leaves raw 
   try {
     assert.throws(
       () => new HistoryIndex(),
-      /remove .*\.factory\/droidex\/session-index.sqlite.*Raw Factory session history is not removed\./,
+      /back up .*\.factory\/droidex.*Do not delete the canonical database/,
     );
     assert.equal(readFileSync(rawPath, 'utf8'), raw);
     const reopened = new DatabaseSync(incompatiblePath);

@@ -130,6 +130,7 @@ function createHarness(
       }
     },
     onPrimaryNotification: () => undefined,
+    observeProviderClosure: () => undefined,
   });
   return { calls, compaction, generations, runtime, targets, children, trace };
 }

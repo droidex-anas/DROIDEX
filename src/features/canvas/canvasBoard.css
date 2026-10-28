@@ -10,9 +10,9 @@
 /* ── Frames ─────────────────────────────────────────────────────────────── */
 
 .canvas-frame {
-  /* Not --droid-border: dark themes blend that into the board until it reads
+  /* Not --divider: dark themes blend that into the board until it reads
      1.04:1, which loses the sheet's edge against the board it sits on. */
-  --canvas-sheet-edge: color-mix(in srgb, var(--droid-text) 9%, transparent);
+  --canvas-sheet-edge: color-mix(in srgb, var(--text) 9%, transparent);
   --canvas-chrome-font: var(--ui-font-family, system-ui, sans-serif);
 }
 
@@ -25,23 +25,23 @@
   height: 100%;
   overflow: hidden;
   border-radius: calc(4px / var(--board-scale));
-  background: var(--droid-raised);
+  background: var(--raised);
   box-shadow:
     0 0 0 calc(1px / var(--board-scale)) var(--canvas-sheet-edge),
-    var(--droid-shadow-sm);
+    var(--shadow-sm);
   transition: box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .canvas-frame:hover > .canvas-sheet {
   box-shadow:
-    0 0 0 calc(1px / var(--board-scale)) color-mix(in srgb, var(--droid-selection) 55%, transparent),
-    var(--droid-shadow-sm);
+    0 0 0 calc(1px / var(--board-scale)) color-mix(in srgb, var(--selection) 55%, transparent),
+    var(--shadow-sm);
 }
 
 .canvas-frame[data-selected] > .canvas-sheet {
   box-shadow:
-    0 0 0 calc(1.5px / var(--board-scale)) var(--droid-selection),
-    var(--droid-shadow-sm);
+    0 0 0 calc(1.5px / var(--board-scale)) var(--selection),
+    var(--shadow-sm);
 }
 
 /* Anything drawn at screen size inside a frame: labels, notes, handles. */
@@ -71,35 +71,35 @@
   white-space: nowrap;
   padding: 2px 8px;
   border-radius: 6px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
   font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   transition:
     color 120ms,
     box-shadow 120ms;
 }
 
 .canvas-frame:hover .canvas-frame-name {
-  color: var(--droid-text);
+  color: var(--text);
 }
 
 .canvas-frame[data-selected] .canvas-frame-name {
-  color: var(--droid-selection-label);
+  color: var(--selection-label);
 }
 
 /* The keyboard's place on the board: the selection line around the name, which
    holds 3:1 against every board, where a tint read as nothing on dark ones. */
 .canvas-frame-label:focus-visible .canvas-frame-name {
   box-shadow:
-    0 0 0 1.5px var(--droid-selection),
-    var(--droid-shadow-sm);
+    0 0 0 1.5px var(--selection),
+    var(--shadow-sm);
 }
 
 .canvas-frame-note {
   flex-shrink: 0;
   font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--droid-selection-label);
+  color: var(--selection-label);
 }
 
 /* The selected frame's toolbar, above its label row, starting where the label
@@ -124,8 +124,8 @@
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
 }
 
 .canvas-frame-tool {
@@ -136,7 +136,7 @@
   padding: 0 6px;
   border-radius: 6px;
   font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
   transition:
     background 120ms,
     color 120ms;
@@ -146,8 +146,8 @@
 .canvas-frame-tool:focus-visible,
 .canvas-frame-tool[aria-expanded='true'] {
   outline: none;
-  background: color-mix(in srgb, var(--droid-text) 8%, transparent);
-  color: var(--droid-text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
 }
 
 .canvas-frame-version {
@@ -158,10 +158,10 @@
 .canvas-frame-name-field {
   width: 100%;
   outline: none;
-  color: var(--droid-text);
+  color: var(--text);
   box-shadow:
-    0 0 0 1.5px var(--droid-selection),
-    var(--droid-shadow-sm);
+    0 0 0 1.5px var(--selection),
+    var(--shadow-sm);
 }
 
 /* The selected frame's size, under its bottom edge. The wrapper scales about
@@ -179,8 +179,8 @@
   margin-top: 8px;
   padding: 1px 6px;
   border-radius: 5px;
-  background: var(--droid-selection);
-  color: var(--droid-selection-text);
+  background: var(--selection);
+  color: var(--selection-text);
   font: 500 11px / 16px var(--canvas-chrome-font);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -198,9 +198,9 @@
   top: 100%;
   width: 8px;
   height: 8px;
-  border: 1.5px solid var(--droid-selection);
+  border: 1.5px solid var(--selection);
   border-radius: 2px;
-  background: var(--droid-raised);
+  background: var(--raised);
   transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
   cursor: nwse-resize;
 }
@@ -251,12 +251,12 @@
 
 .canvas-sheet-title {
   font: 500 13px / 20px var(--canvas-chrome-font);
-  color: var(--droid-text);
+  color: var(--text);
 }
 
 .canvas-sheet-detail {
   font: 400 12px / 18px var(--canvas-chrome-font);
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 
 .canvas-sheet-state[data-compact] .canvas-sheet-title {
@@ -280,7 +280,7 @@
 
 .canvas-sheet-detail strong {
   font-weight: 500;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 
 .canvas-sheet-action {
@@ -290,15 +290,15 @@
   padding: 0 10px;
   border-radius: 7px;
   font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--droid-text);
-  background: color-mix(in srgb, var(--droid-text) 7%, transparent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
   transition: background 120ms;
 }
 
 .canvas-sheet-action:hover,
 .canvas-sheet-action:focus-visible {
   outline: none;
-  background: color-mix(in srgb, var(--droid-text) 12%, transparent);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 
 /* A preview's notice across the sheet's bottom edge: full width, screen-size
@@ -313,7 +313,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px;
-  background: color-mix(in srgb, var(--droid-raised) 94%, transparent);
+  background: color-mix(in srgb, var(--raised) 94%, transparent);
   box-shadow: 0 -1px 0 var(--canvas-sheet-edge);
   font-family: var(--canvas-chrome-font);
   text-align: left;
@@ -330,8 +330,8 @@
   z-index: 1;
   padding: 2px 10px;
   border-radius: 6px;
-  background: var(--droid-raised);
-  box-shadow: var(--droid-shadow-sm);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
   transform-origin: 100% 0;
   pointer-events: none;
 }
@@ -353,7 +353,7 @@
 }
 
 .canvas-annotations [data-annotation]:focus-visible {
-  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--droid-selection) 60%, transparent));
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--selection) 60%, transparent));
 }
 
 .canvas-annotation-text {
@@ -371,8 +371,8 @@
 .canvas-annotation-text[data-kind='note'] {
   padding: 0.7em;
   border-radius: calc(4px / var(--board-scale));
-  box-shadow: var(--droid-shadow-sm);
-  color: var(--droid-text);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
 }
 
 .canvas-annotation-editor {
@@ -388,25 +388,25 @@
   color: inherit;
   font: inherit;
   line-height: inherit;
-  caret-color: var(--droid-selection);
+  caret-color: var(--selection);
 }
 
 .canvas-annotation-outline {
   fill: none;
-  stroke: var(--droid-selection);
+  stroke: var(--selection);
   stroke-width: 1.5px;
   pointer-events: none;
 }
 
 .canvas-annotation-handle {
-  fill: var(--droid-raised);
-  stroke: var(--droid-selection);
+  fill: var(--raised);
+  stroke: var(--selection);
   stroke-width: 1.5px;
   pointer-events: all;
 }
 
 .canvas-annotation-glyph {
-  fill: var(--droid-raised);
+  fill: var(--raised);
 }
 
 /* The rubber band, in screen space above the world layer. */
@@ -414,14 +414,14 @@
   position: absolute;
   pointer-events: none;
   border-radius: 2px;
-  border: 1px solid var(--droid-selection);
-  background: color-mix(in srgb, var(--droid-selection) 8%, transparent);
+  border: 1px solid var(--selection);
+  background: color-mix(in srgb, var(--selection) 8%, transparent);
 }
 
 /* The element Edit has picked, outlined over the guest that draws it. */
 .canvas-element-outline {
   position: absolute;
   pointer-events: none;
-  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--droid-selection);
-  background: color-mix(in srgb, var(--droid-selection) 6%, transparent);
+  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
+  background: color-mix(in srgb, var(--selection) 6%, transparent);
 }

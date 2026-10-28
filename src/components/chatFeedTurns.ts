@@ -7,7 +7,8 @@ import {
   collectTurnFiles,
   isCancellationArtifact,
   isCompactionCompleteStatus,
-  isSettingsStatus,
+  isSteeredPrompt,
+  startsTurn,
   type BuildFeedOptions,
   type FeedItem,
 } from './chatFeed';
@@ -15,10 +16,11 @@ import { isAutomationProposalCall } from '../features/automations/toolNames';
 import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
 function isTurnBoundary(item: FeedItem): boolean {
-  return (
-    (item.type === 'message' && item.event.author === 'user') ||
-    (item.type === 'status' && isSettingsStatus(item.event))
-  );
+  return (item.type === 'message' || item.type === 'status') && startsTurn(item.event);
+}
+
+function isHarnessModelSwitch(item: FeedItem): boolean {
+  return item.type === 'status' && item.event.modelSwitch?.cause !== undefined;
 }
 
 // Short preview of a message for the conversation timeline tooltip: whitespace
@@ -32,20 +34,34 @@ function turnLabel(text?: string): string {
   return label.length > 160 ? `${label.slice(0, 160).trimEnd()}…` : label;
 }
 
+// The start of the reply under a prompt in the timeline preview, with Markdown
+// emphasis and code marks dropped so it reads as plain text.
+function replySnippet(text: string): string {
+  const snippet = text.replace(/[`*#]/g, '').replace(/\s+/g, ' ').trim();
+  return snippet.length > 160 ? `${snippet.slice(0, 160).trimEnd()}…` : snippet;
+}
+
 export interface ConversationAnchor {
   id: string;
   label: string;
+  reply?: string;
 }
 
-// One anchor per user prompt for the conversation timeline: the dot previews the
-// prompt text and scrolls that prompt to the top. Anchoring on prompts keeps the
-// dot count exactly equal to the number of prompts (a leading model/spec message
-// no longer adds a stray dot) and lets the hover preview show what was asked.
+// One anchor per user prompt for the conversation timeline: the tick previews the
+// prompt and the first reply message under it, and scrolls that prompt to the
+// top. Anchoring on prompts keeps the tick count exactly equal to the number of
+// prompts (a leading model/spec message no longer adds a stray tick).
 export function promptAnchorsFromItems(items: FeedItem[]): ConversationAnchor[] {
   const out: ConversationAnchor[] = [];
   for (const it of items) {
-    if (it.type === 'message' && it.event.author === 'user') {
+    if (it.type !== 'message') continue;
+    if (it.event.author === 'user') {
       out.push({ id: it.key, label: turnLabel(it.event.text) });
+      continue;
+    }
+    const current = out.at(-1);
+    if (current && current.reply === undefined && it.event.text) {
+      current.reply = replySnippet(it.event.text) || undefined;
     }
   }
   return out;
@@ -124,7 +140,7 @@ export function tailTimestamp(item?: FeedItem): number | undefined {
     const c = item.changes[item.changes.length - 1];
     return c.event.endTs ?? c.event.ts;
   }
-  if (item.type === 'child_sessions') {
+  if (item.type === 'child_sessions' || item.type === 'browser') {
     const e = item.events.at(-1);
     return e?.endTs ?? e?.ts;
   }
@@ -149,7 +165,7 @@ function spanOf(items: FeedItem[]): { start: number; end: number } {
       it.changes.forEach((c) => {
         consider(c.event.ts, c.event.endTs);
       });
-    else if (it.type === 'child_sessions')
+    else if (it.type === 'child_sessions' || it.type === 'browser')
       it.events.forEach((e) => {
         consider(e.ts, e.endTs);
       });
@@ -225,8 +241,8 @@ function isCompactionMarker(it: FeedItem): boolean {
 // response and expanding the fold replays the whole turn (compaction divider
 // included) at the configured density. Keep top-level: the turn's final answer
 // (its last assistant message, plus earlier fragments split off only by
-// todo/plan reconciliation (#19) or by an invisible harness nudge) and errors,
-// so failures remain visible.
+// todo/plan reconciliation (#19) or by an invisible harness nudge), errors, so
+// failures remain visible, and any model switch the harness made.
 // Invariant (#18): the final answer itself is never nested inside a Worked
 // group, no matter what trailing work or status follows it.
 function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
@@ -323,6 +339,13 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       // The image or design is what the turn produced, not a step along the
       // way: folding it would hide the thing that was asked for.
       survivors.push(it);
+    } else if (isHarnessModelSwitch(it)) {
+      // The harness changed the model under the turn, often on a usage limit;
+      // the answer after it ran on the new one.
+      survivors.push(it);
+    } else if (it.type === 'browser') {
+      // The page the turn worked on stays in reach; its steps fold as usual.
+      survivors.push(it);
     } else if (isCompactionMarker(it)) {
       // Provisional: the marker moves into the fold when the run has real work.
       markers.push({ index: i, item: it });
@@ -362,6 +385,19 @@ export function groupTurns(
   changes = false,
 ): FeedItem[] {
   const out: FeedItem[] = [];
+  // While the turn runs, everything after the user's last real prompt is live,
+  // including the work before a steer they sent into it.
+  let liveFrom = items.length;
+  if (pending) {
+    liveFrom = 0;
+    for (let k = items.length - 1; k >= 0; k -= 1) {
+      const item = items[k];
+      if (isTurnBoundary(item) && !(item.type === 'message' && isSteeredPrompt(item.event))) {
+        liveFrom = k + 1;
+        break;
+      }
+    }
+  }
   let i = 0;
   while (i < items.length) {
     if (isTurnBoundary(items[i])) {
@@ -369,13 +405,13 @@ export function groupTurns(
       i++;
       continue;
     }
+    const runStart = i;
     const run: FeedItem[] = [];
     while (i < items.length && !isTurnBoundary(items[i])) {
       run.push(items[i]);
       i++;
     }
-    const isLastRun = i >= items.length;
-    if (isLastRun && pending) {
+    if (pending && runStart >= liveFrom) {
       out.push(...run);
     } else {
       out.push(...collapseRun(run, specContent));

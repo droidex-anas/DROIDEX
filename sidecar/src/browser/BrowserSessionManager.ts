@@ -4,17 +4,21 @@ import { join } from 'node:path';
 import { browserDesignReferenceDir } from './browserPaths.js';
 import { normalizeBrowserUrl } from './browserUrl.js';
 import { formatDesignPrompt, writeDesignPromptPack } from './designPromptPacks.js';
+import type { BrowserColorScheme, ClientCommand } from '../protocol.js';
 import type {
-  BrowserBox,
+  BrowserActionResult,
+  BrowserClickOptions,
   BrowserConsoleEvent,
   BrowserElementInspection,
-  BrowserElementRef,
   BrowserNetworkEvent,
+  BrowserReadOptions,
+  BrowserScreenshot,
   BrowserScreenshotOptions,
-  BrowserSnapshot,
   BrowserState,
+  BrowserTarget,
   BrowserViewport,
   BrowserViewportMode,
+  BrowserWaitCondition,
   DesignAnchor,
   DesignAnchorDetail,
   DesignReference,
@@ -33,36 +37,50 @@ export interface BrowserSessionManagerOptions {
     viewport: BrowserViewport,
     appSessionId: string,
   ) => BrowserRuntime;
-  assetUrlFor?: (path: string) => string;
   writePack?: typeof writeDesignPromptPack;
   browserDataDir?: string;
 }
 
 export interface BrowserRuntime {
-  open(url: string): Promise<BrowserSnapshot>;
-  reload(): Promise<BrowserSnapshot>;
-  goBack(): Promise<BrowserSnapshot>;
-  goForward(): Promise<BrowserSnapshot>;
-  setViewport(viewport: BrowserViewport): Promise<void>;
-  screenshot(options?: BrowserScreenshotOptions): Promise<string>;
-  capture(box?: BrowserBox, options?: BrowserScreenshotOptions): Promise<string>;
-  snapshot(): Promise<BrowserSnapshot>;
-  click(x: number, y: number, selector?: string): Promise<BrowserSnapshot>;
-  hover(x: number, y: number, selector?: string): Promise<BrowserSnapshot>;
-  selectOption(selector: string, value: string): Promise<BrowserSnapshot>;
-  type(text: string): Promise<BrowserSnapshot>;
-  keypress(key: string): Promise<BrowserSnapshot>;
+  open(url: string): Promise<BrowserActionResult>;
+  reload(): Promise<BrowserActionResult>;
+  goBack(): Promise<BrowserActionResult>;
+  goForward(): Promise<BrowserActionResult>;
+  setViewport(viewport: BrowserViewport, mode: BrowserViewportMode): Promise<void>;
+  setColorScheme(colorScheme: BrowserColorScheme): Promise<void>;
+  screenshot(options?: BrowserScreenshotOptions): Promise<BrowserScreenshot>;
+  readPage(options?: BrowserReadOptions): Promise<string>;
+  readText(maxChars?: number): Promise<string>;
+  find(query: string): Promise<{ text: string; matches: number }>;
+  click(target: BrowserTarget, options?: BrowserClickOptions): Promise<BrowserActionResult>;
+  hover(target: BrowserTarget): Promise<BrowserActionResult>;
+  fill(ref: string, value: string): Promise<BrowserActionResult>;
+  type(text: string, options?: { ref?: string; submit?: boolean }): Promise<BrowserActionResult>;
+  press(key: string, repeat?: number): Promise<BrowserActionResult>;
   scroll(
-    direction: ScrollDirection,
-    pixels?: number,
-    x?: number,
-    y?: number,
-  ): Promise<BrowserSnapshot>;
-  inspect(selector: string): Promise<BrowserElementInspection>;
-  network(clear?: boolean): Promise<BrowserNetworkEvent[]>;
-  console(clear?: boolean): Promise<BrowserConsoleEvent[]>;
-  fillCredentials?(): Promise<BrowserSnapshot>;
+    direction: ScrollDirection | undefined,
+    pixels: number | undefined,
+    target: BrowserTarget,
+  ): Promise<BrowserActionResult>;
+  inspect(target: { ref: string } | { selector: string }): Promise<BrowserElementInspection>;
+  wait(condition: BrowserWaitCondition): Promise<BrowserActionResult>;
+  awaitViewport(viewport: BrowserViewport): Promise<BrowserActionResult>;
+  network(): Promise<BrowserNetworkEvent[]>;
+  console(): Promise<BrowserConsoleEvent[]>;
+  evaluate(script: string): Promise<BrowserActionResult>;
+  fillCredentials?(): Promise<BrowserActionResult>;
   close(): Promise<void>;
+}
+
+/** A pick as the app sends it, with the page it was made on when known. */
+interface ReferenceInput {
+  id?: string;
+  anchor: DesignAnchor;
+  detail?: DesignAnchorDetail;
+  url?: string;
+  title?: string;
+  viewport?: BrowserViewport;
+  scroll?: { x: number; y: number };
 }
 
 interface ManagedBrowserSession {
@@ -71,18 +89,42 @@ interface ManagedBrowserSession {
   runtime: BrowserRuntime;
   state: BrowserState;
   references: Map<string, DesignReference>;
+  /** Marks taken away, so a pick still being saved when it went is not brought back. */
+  removed: Set<string>;
+  /** The size change in progress; the next one starts after it. */
+  sizing: Promise<unknown>;
 }
 
-type BrowserInputSource = 'agent' | 'user';
+/** The browser's state after an action, and what the agent reads about it. */
+export interface BrowserOutcome {
+  state: BrowserState;
+  text: string;
+}
 
-const DEFAULT_BROWSER_VIEWPORT: BrowserViewport = {
-  width: 1200,
-  height: 800,
-  deviceScaleFactor: 2,
+// The standard sizes an agent picks from; the renderer has the same ones for
+// the user. Fit follows the user's pane.
+const STANDARD_VIEWPORTS: Record<Exclude<BrowserViewportMode, 'fit'>, BrowserViewport> = {
+  desktop: { width: 1440, height: 900, deviceScaleFactor: 2 },
+  laptop: { width: 1280, height: 800, deviceScaleFactor: 2 },
+  tablet: { width: 820, height: 1180, deviceScaleFactor: 2 },
+  mobile: { width: 390, height: 844, deviceScaleFactor: 2 },
 };
+const DEFAULT_BROWSER_VIEWPORT = STANDARD_VIEWPORTS.desktop;
+// How many sent references each chat keeps for design_reference, and how
+// many all chats keep together, the chat that sent least recently going first.
+const SENT_REFERENCES_KEPT = 50;
+const SENT_REFERENCES_KEPT_IN_ALL = 200;
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, ManagedBrowserSession>();
+  // Browsers closed in this run, by browser session id. A restore sent before
+  // the app heard of the close must not bring one back over its closing page.
+  private readonly closed = new Set<string>();
+  // The references each chat's prompts went with, newest last, so the agent can
+  // still read one the prompt names once its mark is gone or its browser closed.
+  private readonly sent = new Map<string, Map<string, DesignReference>>();
+  // Set when the final cleanup begins, so a prompt still being written keeps nothing.
+  private shutDown = false;
 
   constructor(private readonly options: BrowserSessionManagerOptions = {}) {}
 
@@ -91,94 +133,114 @@ export class BrowserSessionManager {
     url: string;
     viewport?: BrowserViewport;
     viewportMode?: BrowserViewportMode;
-  }): Promise<BrowserState> {
+  }): Promise<BrowserOutcome> {
     const session = this.sessionFor(input.appSessionId, input.viewport, input.viewportMode);
     const url = normalizeBrowserUrl(input.url);
-    if (input.viewport) {
-      await session.runtime.setViewport(input.viewport);
+    if (input.viewport || input.viewportMode) {
+      // The size's name goes too: Tablet and Phone make the page a touch device.
+      await session.runtime.setViewport(session.state.viewport, session.state.viewportMode);
+      this.assertCurrent(session);
     }
     session.state = {
       ...session.state,
       url,
-      refs: [],
       canGoBack: false,
       canGoForward: false,
       viewport: input.viewport ?? session.state.viewport,
       viewportMode: input.viewportMode ?? session.state.viewportMode,
     };
     this.emitUpdated(session.state);
-    const snapshot = await session.runtime.open(url);
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.open(url));
   }
 
-  async reload(appSessionId: string): Promise<BrowserState> {
+  async reload(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot = await session.runtime.reload();
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.reload());
   }
 
-  async goBack(appSessionId: string): Promise<BrowserState> {
-    return this.navigateHistory(appSessionId, 'back');
-  }
-
-  async goForward(appSessionId: string): Promise<BrowserState> {
-    return this.navigateHistory(appSessionId, 'forward');
-  }
-
-  async refresh(appSessionId: string): Promise<BrowserState> {
+  async goBack(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    session.state = await this.captureState(session);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.goBack());
   }
 
-  private async navigateHistory(
-    appSessionId: string,
-    direction: 'back' | 'forward',
-  ): Promise<BrowserState> {
+  async goForward(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot =
-      direction === 'back' ? await session.runtime.goBack() : await session.runtime.goForward();
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.goForward());
   }
 
-  async resizeViewport(input: {
+  resizeViewport(input: {
     appSessionId: string;
     viewport: BrowserViewport;
     viewportMode: BrowserViewportMode;
+    follow?: boolean;
   }): Promise<BrowserState> {
     const session = this.requireSession(input.appSessionId);
-    const nextState = {
+    // One size change at a time, so a Fit report never lands between a
+    // pick's change to the page and its state.
+    const change = session.sizing.then(() => this.resize(session, input));
+    session.sizing = change.catch(() => undefined);
+    return change;
+  }
+
+  private async resize(
+    session: ManagedBrowserSession,
+    input: { viewport: BrowserViewport; viewportMode: BrowserViewportMode; follow?: boolean },
+  ): Promise<BrowserState> {
+    // A change queued behind a close never reaches the closed browser.
+    this.assertCurrent(session);
+    // The pane's size for Fit never undoes a size picked in the meantime.
+    const stale = () => input.follow && session.state.viewportMode !== 'fit';
+    if (stale()) return session.state;
+    await session.runtime.setViewport(input.viewport, input.viewportMode);
+    this.assertCurrent(session);
+    if (stale()) return session.state;
+    session.state = {
       ...session.state,
       viewport: input.viewport,
       viewportMode: input.viewportMode,
-      refs: [],
     };
-    await session.runtime.setViewport(input.viewport);
-    session.state = nextState;
     this.emitUpdated(session.state);
     return session.state;
   }
 
-  async click(input: {
-    appSessionId: string;
-    ref?: string;
-    x?: number;
-    y?: number;
-    source?: BrowserInputSource;
-  }): Promise<BrowserState> {
+  /** Asks the page for its light or dark scheme, or the app's with auto. */
+  async useColorScheme(appSessionId: string, colorScheme: BrowserColorScheme): Promise<void> {
+    const session = this.requireSession(appSessionId);
+    await session.runtime.setColorScheme(colorScheme);
+    this.assertCurrent(session);
+  }
+
+  /** A standard size, or Fit, which keeps the size until the pane sets it. */
+  // A standard size answers once the page has taken it; the pane applies it a
+  // frame or two after the state goes out.
+  async useViewport(appSessionId: string, mode: BrowserViewportMode): Promise<BrowserState> {
+    const session = this.requireSession(appSessionId);
+    if (mode === 'fit')
+      return this.resizeViewport({
+        appSessionId,
+        viewport: session.state.viewport,
+        viewportMode: mode,
+      });
+    const viewport = STANDARD_VIEWPORTS[mode];
+    await this.resizeViewport({ appSessionId, viewport, viewportMode: mode });
+    try {
+      return this.applied(session, await session.runtime.awaitViewport(viewport)).state;
+    } catch (error) {
+      // The user picked another size meanwhile, on this same browser; the
+      // answer says so.
+      if (this.resolveSession(appSessionId) === session && session.state.viewportMode !== mode)
+        return session.state;
+      throw error;
+    }
+  }
+
+  async click(
+    input: { appSessionId: string; ref?: string; x?: number; y?: number } & BrowserClickOptions,
+  ): Promise<BrowserOutcome> {
     const session = this.requireSession(input.appSessionId);
-    const target = input.ref ? this.requireRef(session, input.ref) : undefined;
-    const point = target ? centerOf(target) : pointFrom(input);
-    this.showAgentCursor(session, point, input.source);
-    const snapshot = await session.runtime.click(point.x, point.y, target?.selector);
-    return this.updateFromSnapshot(session, snapshot);
+    const target = targetFrom(input);
+    const { button, count, modifiers } = input;
+    return this.applied(session, await session.runtime.click(target, { button, count, modifiers }));
   }
 
   async hover(input: {
@@ -186,72 +248,68 @@ export class BrowserSessionManager {
     ref?: string;
     x?: number;
     y?: number;
-  }): Promise<BrowserState> {
+  }): Promise<BrowserOutcome> {
     const session = this.requireSession(input.appSessionId);
-    const target = input.ref ? this.requireRef(session, input.ref) : undefined;
-    const point = target ? centerOf(target) : pointFrom(input);
-    this.showAgentCursor(session, point, 'agent');
-    const snapshot = await session.runtime.hover(point.x, point.y, target?.selector);
-    return this.updateFromSnapshot(session, snapshot);
+    const target = targetFrom(input);
+    return this.applied(session, await session.runtime.hover(target));
   }
 
-  async selectOption(appSessionId: string, ref: string, value: string): Promise<BrowserState> {
+  async fill(appSessionId: string, ref: string, value: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const target = this.requireRef(session, ref);
-    const snapshot = await session.runtime.selectOption(target.selector, value);
-    return this.updateFromSnapshot(session, snapshot);
+    return this.applied(session, await session.runtime.fill(ref, value));
   }
 
-  async wait(
+  readPage(appSessionId: string, options: BrowserReadOptions = {}): Promise<string> {
+    return this.requireSession(appSessionId).runtime.readPage(options);
+  }
+
+  async readText(appSessionId: string, maxChars?: number): Promise<string> {
+    return this.requireSession(appSessionId).runtime.readText(maxChars);
+  }
+
+  async find(appSessionId: string, query: string): Promise<string> {
+    return (await this.requireSession(appSessionId).runtime.find(query)).text;
+  }
+
+  // Checked in the desktop app, where the page is, until it holds or the
+  // wait runs out.
+  async wait(appSessionId: string, condition: BrowserWaitCondition): Promise<BrowserOutcome> {
+    const session = this.requireSession(appSessionId);
+    return this.applied(session, await session.runtime.wait(condition));
+  }
+
+  async type(
     appSessionId: string,
-    input: { text?: string; ref?: string; urlIncludes?: string; timeoutMs?: number },
-  ): Promise<BrowserState> {
-    const timeoutMs = Math.min(15_000, Math.max(0, input.timeoutMs ?? 5_000));
-    if (!input.text && !input.ref && !input.urlIncludes) {
-      await delay(timeoutMs);
-      return this.refresh(appSessionId);
-    }
-    const deadline = Date.now() + timeoutMs;
-    let state = await this.refresh(appSessionId);
-    while (!waitConditionMatches(state, input) && Date.now() < deadline) {
-      await delay(Math.min(200, Math.max(0, deadline - Date.now())));
-      state = await this.refresh(appSessionId);
-    }
-    if (!waitConditionMatches(state, input)) {
-      throw new Error('Timed out waiting for the browser condition.');
-    }
-    return state;
-  }
-
-  async type(appSessionId: string, text: string): Promise<BrowserState> {
+    text: string,
+    options: { ref?: string; submit?: boolean } = {},
+  ): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot = await session.runtime.type(text);
-    return this.updateFromSnapshot(session, snapshot);
+    return this.applied(session, await session.runtime.type(text, options));
   }
 
-  async keypress(appSessionId: string, key: string): Promise<BrowserState> {
+  async press(appSessionId: string, key: string, repeat?: number): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const snapshot = await session.runtime.keypress(key);
-    return this.updateFromSnapshot(session, snapshot);
+    return this.applied(session, await session.runtime.press(key, repeat));
   }
 
+  // A direction scrolls the page (at its middle) or the ref; a ref with no
+  // direction is only brought into view.
   async scroll(
     appSessionId: string,
-    direction: ScrollDirection,
-    pixels?: number,
-    source?: BrowserInputSource,
-    ref?: string,
-  ): Promise<BrowserState> {
+    input: { direction?: ScrollDirection; pixels?: number; ref?: string },
+  ): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
-    const point = ref
-      ? centerOf(this.requireRef(session, ref))
+    if (!input.ref && !input.direction) throw new Error('Pass a direction, a ref, or both.');
+    const target: BrowserTarget = input.ref
+      ? { ref: input.ref }
       : {
           x: Math.round(session.state.viewport.width / 2),
           y: Math.round(session.state.viewport.height / 2),
         };
-    this.showAgentCursor(session, point, source);
-    const snapshot = await session.runtime.scroll(direction, pixels, point.x, point.y);
-    return this.updateFromSnapshot(session, snapshot);
+    return this.applied(
+      session,
+      await session.runtime.scroll(input.direction, input.pixels, target),
+    );
   }
 
   async inspect(
@@ -259,114 +317,126 @@ export class BrowserSessionManager {
     input: { ref?: string; selector?: string },
   ): Promise<BrowserElementInspection> {
     const session = this.requireSession(appSessionId);
-    const selector = input.ref
-      ? this.requireRef(session, input.ref).selector
-      : input.selector?.trim();
+    if (input.ref) return session.runtime.inspect({ ref: input.ref });
+    const selector = input.selector?.trim();
     if (!selector) throw new Error('Browser inspection requires a ref or selector.');
-    return session.runtime.inspect(selector);
+    return session.runtime.inspect({ selector });
   }
 
-  async network(appSessionId: string, clear = false): Promise<BrowserNetworkEvent[]> {
-    return this.requireSession(appSessionId).runtime.network(clear);
+  /** The requests that finished since the last read. */
+  async network(appSessionId: string): Promise<BrowserNetworkEvent[]> {
+    return this.requireSession(appSessionId).runtime.network();
   }
 
-  async console(appSessionId: string, clear = false): Promise<BrowserConsoleEvent[]> {
-    return this.requireSession(appSessionId).runtime.console(clear);
+  /** The console messages since the last read. */
+  async console(appSessionId: string): Promise<BrowserConsoleEvent[]> {
+    return this.requireSession(appSessionId).runtime.console();
   }
 
-  async fillCredentials(appSessionId: string): Promise<BrowserState> {
+  /** Runs script in the page, on a site the user allowed for developer tools. */
+  async evaluate(appSessionId: string, script: string): Promise<BrowserOutcome> {
+    const session = this.requireSession(appSessionId);
+    return this.applied(session, await session.runtime.evaluate(script));
+  }
+
+  async fillCredentials(appSessionId: string): Promise<BrowserOutcome> {
     const session = this.requireSession(appSessionId);
     if (!session.runtime.fillCredentials) {
       throw new Error('Credential autofill is only available in the live DROIDEX browser.');
     }
-    const snapshot = await session.runtime.fillCredentials();
-    session.state = this.stateFromSnapshot(session, snapshot);
-    this.emitUpdated(session.state);
-    return session.state;
+    return this.applied(session, await session.runtime.fillCredentials());
   }
 
-  async screenshot(appSessionId: string, options: BrowserScreenshotOptions = {}): Promise<string> {
+  /** The screenshot, also saved for harnesses that drop images. */
+  async screenshot(
+    appSessionId: string,
+    options: BrowserScreenshotOptions = {},
+  ): Promise<BrowserScreenshot & { path: string }> {
     const session = this.requireSession(appSessionId);
-    const base64 = await session.runtime.screenshot(options);
-    const screenshotPath = await this.persistImage(
+    const shot = await session.runtime.screenshot(options);
+    // A picture of a browser closed or replaced while it was taken is not the page's.
+    this.assertCurrent(session);
+    const extension = shot.mimeType === 'image/png' ? 'png' : 'jpg';
+    const path = await this.persistImage(
       appSessionId,
-      `screenshot-${Date.now().toString(36)}.png`,
-      base64,
+      `screenshot-${Date.now().toString(36)}.${extension}`,
+      shot.image,
     );
-    session.state = {
-      ...session.state,
-      screenshotPath,
-      screenshotUrl: this.options.assetUrlFor?.(screenshotPath),
-    };
-    this.emitUpdated(session.state);
-    return screenshotPath;
-  }
-
-  inspectPoint(appSessionId: string, x: number, y: number): BrowserElementRef | undefined {
-    const session = this.requireSession(appSessionId);
-    return session.state.refs.find(
-      (ref) =>
-        x >= ref.box.x &&
-        y >= ref.box.y &&
-        x <= ref.box.x + ref.box.width &&
-        y <= ref.box.y + ref.box.height,
-    );
+    this.assertCurrent(session);
+    return { ...shot, path };
   }
 
   async addReference(
     appSessionId: string,
-    input: { anchor: DesignAnchor; detail?: DesignAnchorDetail; id?: string },
+    input: ReferenceInput,
     screenshot?: DesignSelectionScreenshot,
   ): Promise<DesignReference> {
     const session = this.requireSession(appSessionId);
-    const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
-    const anchor: DesignAnchor = { ...input.anchor, id };
-    const detail = input.detail ? { ...input.detail, id } : undefined;
-    if (!anchor.screenshotPath) {
-      const crop = await this.captureAnchorImage(session, anchor.box).catch(() => undefined);
-      if (crop) anchor.screenshotPath = crop;
-    }
-    const next: DesignReference = {
-      id,
-      anchor,
-      detail,
-      url: session.state.url,
-      title: session.state.title,
-      viewport: session.state.viewport,
-      scroll: session.state.scroll,
-      screenshot,
-      createdAt: new Date().toISOString(),
-    };
-    session.references.set(id, next);
-    return next;
+    const reference = await this.snapshot(appSessionId, session, input, screenshot);
+    // A pick saved as its browser closed or was replaced is not that browser's.
+    this.assertCurrent(session);
+    if (!session.removed.has(reference.id)) session.references.set(reference.id, reference);
+    return reference;
   }
 
+  /** Forgets marks the user took away or picked again; a closed browser has none. */
+  removeReferences(appSessionId: string, ids: string[]): void {
+    const session = this.resolveSession(appSessionId);
+    for (const id of ids) {
+      session?.references.delete(id);
+      session?.removed.add(id);
+    }
+  }
+
+  /** A live mark, or one a prompt of the chat went with. */
   referenceDetail(appSessionId: string, id: string): DesignReference | undefined {
-    return this.resolveSession(appSessionId)?.references.get(id);
+    return (
+      this.resolveSession(appSessionId)?.references.get(id) ?? this.sent.get(appSessionId)?.get(id)
+    );
   }
 
   async designPrompt(input: {
     appSessionId: string;
     instruction: string;
-    referenceIds: string[];
+    references: Extract<ClientCommand, { type: 'browser.design.sendPrompt' }>['references'];
+    /** Frames the instruction as its chat sends text; the pack itself keeps it plain. */
+    frame?: (instruction: string) => string;
   }): Promise<{ path: string; prompt: string }> {
-    const session = this.requireSession(input.appSessionId);
+    // A prompt goes from its own snapshots, so one queued before its browser
+    // closed, or sent as it closes, still goes.
+    const session = this.resolveSession(input.appSessionId);
     const instruction = input.instruction.trim();
     if (!instruction) throw new Error('Browser prompt cannot be empty.');
-    const references = input.referenceIds
-      .map((id) => session.references.get(id))
-      .filter((ref): ref is DesignReference => Boolean(ref));
-    if (references.length === 0)
+    if (input.references.length === 0)
       throw new Error(
         'Select or sketch at least one browser reference before sending a Design Mode prompt.',
       );
+    // Every pick has its own id, so one already here is the same snapshot,
+    // unless the prompt has the crop it is still saving. One that has not
+    // arrived yet, was taken away since, or was lost with a restart comes with
+    // the prompt, which keeps its own copy.
+    const references: DesignReference[] = [];
+    for (const reference of input.references) {
+      const live = session?.references.get(reference.id);
+      references.push(
+        live && (live.screenshot || !reference.screenshot)
+          ? live
+          : await this.snapshot(input.appSessionId, session, reference, reference.screenshot),
+      );
+    }
     const { path } = await (this.options.writePack ?? writeDesignPromptPack)({
       appSessionId: input.appSessionId,
-      browserSessionId: session.id,
+      browserSessionId: session?.id,
       instruction,
       references,
     });
-    return { path, prompt: formatDesignPrompt(path, instruction, references) };
+    // Each reference carries its own page, so a browser closed or replaced
+    // while the pack was written does not stop the prompt the user sent.
+    this.keepSent(input.appSessionId, references);
+    return {
+      path,
+      prompt: formatDesignPrompt(path, input.frame?.(instruction) ?? instruction, references),
+    };
   }
 
   state(appSessionId: string): BrowserState | undefined {
@@ -381,6 +451,30 @@ export class BrowserSessionManager {
     };
   }
 
+  /**
+   * Takes up the browsers the app kept from its last run, each under its own
+   * id and page, so the user's page is neither reloaded nor replaced. A chat
+   * that already has a browser keeps it, and one closed here stays closed:
+   * those chats are returned, so the app can close them too.
+   */
+  restore(browsers: Extract<ClientCommand, { type: 'browser.restore' }>['browsers']): string[] {
+    const closed: string[] = [];
+    for (const browser of browsers) {
+      const { appSessionId, browserSessionId, url } = browser;
+      if (!nonEmpty(appSessionId) || !nonEmpty(browserSessionId) || !nonEmpty(url)) continue;
+      if (this.hasSession(appSessionId)) continue;
+      if (this.closed.has(browserSessionId)) {
+        closed.push(appSessionId);
+        continue;
+      }
+      this.sessionFor(appSessionId, browser.viewport, browser.viewportMode, {
+        browserSessionId,
+        url,
+      });
+    }
+    return closed;
+  }
+
   hasSession(appSessionId: string): boolean {
     return this.resolveSession(appSessionId) !== undefined;
   }
@@ -388,23 +482,28 @@ export class BrowserSessionManager {
   async close(appSessionId: string): Promise<void> {
     const session = this.resolveSession(appSessionId);
     if (!session) return;
+    // Gone before it shuts down, so nothing it answers meanwhile is shown.
+    this.sessions.delete(appSessionId);
+    this.closed.add(session.id);
     await session.runtime.close();
-    this.sessions.delete(keyFor(appSessionId));
   }
 
+  /** The final cleanup: every browser closes and no sent reference is kept. */
   async closeAll(): Promise<void> {
-    await Promise.all(
-      [...this.sessions.values()].map((session) => session.runtime.close().catch(() => {})),
-    );
+    this.shutDown = true;
+    const closing = [...this.sessions.values()];
     this.sessions.clear();
+    this.sent.clear();
+    await Promise.all(closing.map((session) => session.runtime.close().catch(() => {})));
   }
 
   private sessionFor(
     appSessionId: string,
     viewport?: BrowserViewport,
     viewportMode?: BrowserViewportMode,
+    restored?: { browserSessionId: string; url: string },
   ): ManagedBrowserSession {
-    const key = keyFor(appSessionId);
+    const key = appSessionId;
     const existing = this.sessions.get(key);
     if (existing) {
       existing.state = {
@@ -414,9 +513,13 @@ export class BrowserSessionManager {
       };
       return existing;
     }
-    const initialViewport = viewport ?? DEFAULT_BROWSER_VIEWPORT;
     const initialViewportMode = viewportMode ?? 'fit';
-    const id = `browser-${appSessionId}-${Date.now().toString(36)}`;
+    const initialViewport =
+      viewport ??
+      (initialViewportMode === 'fit'
+        ? DEFAULT_BROWSER_VIEWPORT
+        : STANDARD_VIEWPORTS[initialViewportMode]);
+    const id = restored?.browserSessionId ?? `browser-${appSessionId}-${Date.now().toString(36)}`;
     const runtime = this.options.runtimeFactory?.(id, initialViewport, appSessionId);
     if (!runtime) {
       throw new Error('Browser runtime is not configured.');
@@ -426,14 +529,15 @@ export class BrowserSessionManager {
       appSessionId,
       runtime,
       references: new Map(),
+      removed: new Set(),
+      sizing: Promise.resolve(),
       state: {
         browserSessionId: id,
         appSessionId,
-        url: 'about:blank',
+        url: restored?.url ?? 'about:blank',
         viewport: initialViewport,
         viewportMode: initialViewportMode,
         scroll: { x: 0, y: 0 },
-        refs: [],
       },
     };
     this.sessions.set(key, session);
@@ -447,57 +551,80 @@ export class BrowserSessionManager {
   }
 
   private resolveSession(appSessionId: string): ManagedBrowserSession | undefined {
-    return this.sessions.get(keyFor(appSessionId));
+    return this.sessions.get(appSessionId);
   }
 
-  private stateFromSnapshot(
-    session: ManagedBrowserSession,
-    snapshot: BrowserSnapshot,
-  ): BrowserState {
-    return {
-      ...session.state,
-      ...snapshot,
-    };
-  }
-
-  private async captureState(session: ManagedBrowserSession): Promise<BrowserState> {
-    const snapshot = await session.runtime.snapshot();
-    return {
-      ...session.state,
-      ...snapshot,
-    };
-  }
-
-  private updateFromSnapshot(
-    session: ManagedBrowserSession,
-    snapshot: BrowserSnapshot,
-  ): BrowserState {
-    session.state = this.stateFromSnapshot(session, snapshot);
+  // An answer for a browser that was closed, or replaced, while it ran is
+  // never shown: it would bring back the closed one's state.
+  private applied(session: ManagedBrowserSession, result: BrowserActionResult): BrowserOutcome {
+    this.assertCurrent(session);
+    session.state = { ...session.state, ...result.snapshot };
     this.emitUpdated(session.state);
-    return session.state;
+    return { state: session.state, text: result.text };
   }
 
-  private requireRef(session: ManagedBrowserSession, refId: string): BrowserElementRef {
-    const ref = session.state.refs.find((item) => item.ref === refId);
-    if (!ref)
-      throw new Error(
-        `Browser ref ${refId} is not available. Refresh the browser snapshot and try again.`,
-      );
-    return ref;
+  // A pick as the agent reads it: on the page, title and scroll it was made
+  // on, with the crop the app took, sensitive fields painted over, saved
+  // under a name of its own. A pick the app could not crop safely has none.
+  private async snapshot(
+    appSessionId: string,
+    session: ManagedBrowserSession | undefined,
+    input: ReferenceInput,
+    screenshot?: DesignSelectionScreenshot,
+  ): Promise<DesignReference> {
+    const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
+    const anchor: DesignAnchor = { ...input.anchor, id };
+    if (screenshot && !anchor.screenshotPath) {
+      anchor.screenshotPath = await this.persistImage(
+        appSessionId,
+        `anchor-${randomUUID()}.png`,
+        screenshot.base64,
+      ).catch(() => undefined);
+    }
+    return {
+      id,
+      anchor,
+      detail: input.detail ? { ...input.detail, id } : undefined,
+      url: input.url ?? session?.state.url ?? 'about:blank',
+      title: input.title ?? session?.state.title,
+      viewport: input.viewport ?? session?.state.viewport ?? DEFAULT_BROWSER_VIEWPORT,
+      scroll: input.scroll ?? session?.state.scroll ?? { x: 0, y: 0 },
+      screenshot,
+      createdAt: new Date().toISOString(),
+    };
   }
 
-  private async captureAnchorImage(
-    session: ManagedBrowserSession,
-    box?: BrowserBox,
-  ): Promise<string | undefined> {
-    const base64 = await session.runtime.capture(box);
-    if (!base64) return undefined;
-    const tag = box ? `${box.x}-${box.y}-${box.width}-${box.height}` : 'view';
-    return this.persistImage(
-      session.appSessionId,
-      `anchor-${tag}-${Date.now().toString(36)}.png`,
-      base64,
+  private keepSent(appSessionId: string, references: DesignReference[]): void {
+    if (this.shutDown) return;
+    const kept = this.sent.get(appSessionId) ?? new Map<string, DesignReference>();
+    for (const reference of references) {
+      kept.delete(reference.id);
+      kept.set(reference.id, reference);
+    }
+    // The prompt just sent keeps all of its own, up to the cap for every chat.
+    const limit = Math.min(
+      SENT_REFERENCES_KEPT_IN_ALL,
+      Math.max(SENT_REFERENCES_KEPT, references.length),
     );
+    for (const id of kept.keys()) {
+      if (kept.size <= limit) break;
+      kept.delete(id);
+    }
+    // Set again so the chats stay in the order they last sent in.
+    this.sent.delete(appSessionId);
+    this.sent.set(appSessionId, kept);
+    let total = 0;
+    for (const references of this.sent.values()) total += references.size;
+    for (const [chat, references] of this.sent) {
+      if (total <= SENT_REFERENCES_KEPT_IN_ALL || chat === appSessionId) break;
+      this.sent.delete(chat);
+      total -= references.size;
+    }
+  }
+
+  private assertCurrent(session: ManagedBrowserSession): void {
+    if (this.resolveSession(session.appSessionId) !== session)
+      throw new Error('The browser was closed while the action ran.');
   }
 
   private async persistImage(appSessionId: string, name: string, base64: string): Promise<string> {
@@ -511,55 +638,15 @@ export class BrowserSessionManager {
   private emitUpdated(state: BrowserState): void {
     this.options.emit?.({ type: 'browser.updated', state });
   }
-
-  private showAgentCursor(
-    session: ManagedBrowserSession,
-    point: { x: number; y: number },
-    source: BrowserInputSource = 'agent',
-  ): void {
-    if (source === 'user') return;
-    session.state = { ...session.state, agentCursor: point };
-    this.emitUpdated(session.state);
-  }
 }
 
-function keyFor(appSessionId: string): string {
-  return appSessionId;
+function nonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 
-function centerOf(ref: BrowserElementRef): { x: number; y: number } {
-  return {
-    x: Math.round(ref.box.x + ref.box.width / 2),
-    y: Math.round(ref.box.y + ref.box.height / 2),
-  };
-}
-
-function pointFrom(input: { x?: number; y?: number }): { x: number; y: number } {
+function targetFrom(input: { ref?: string; x?: number; y?: number }): BrowserTarget {
+  if (input.ref) return { ref: input.ref };
   if (input.x === undefined || input.y === undefined)
     throw new Error('Browser interaction requires either a ref or x/y coordinates.');
   return { x: input.x, y: input.y };
-}
-
-function waitConditionMatches(
-  state: BrowserState,
-  input: { text?: string; ref?: string; urlIncludes?: string },
-): boolean {
-  if (input.urlIncludes && !state.url.includes(input.urlIncludes)) return false;
-  if (input.ref && !state.refs.some((item) => item.ref === input.ref)) return false;
-  if (input.text) {
-    const expected = input.text.toLocaleLowerCase();
-    if (
-      !state.refs.some(
-        (item) =>
-          item.text?.toLocaleLowerCase().includes(expected) ||
-          item.name?.toLocaleLowerCase().includes(expected),
-      )
-    )
-      return false;
-  }
-  return true;
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

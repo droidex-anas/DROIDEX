@@ -133,6 +133,29 @@ test('the plus menu is reachable by keyboard and on a narrow window', async ({ p
   await expect(trigger).toBeFocused();
 });
 
+test('the autonomy menu opens on the current level and picks one by its number', async ({
+  page,
+}) => {
+  await page.goto(appUrl);
+  const pill = page.getByRole('button', { name: /^Autonomy:/ });
+  await pill.click();
+
+  const levels = page.getByRole('menu', { name: 'Autonomy' }).getByRole('menuitemradio');
+  await expect(levels).toHaveCount(4);
+  const checked = page.getByRole('menuitemradio', { checked: true });
+  await expect(checked).toHaveCount(1);
+  await expect(checked).toBeFocused();
+
+  await page.keyboard.press('4');
+  await expect(levels).toHaveCount(0);
+  await expect(pill).toHaveAccessibleName('Autonomy: Full access');
+
+  // Only the chosen level says what it means on this harness.
+  await pill.click();
+  await expect(page.getByText("Droid's safety checks can still ask.")).toHaveCount(1);
+  await expect(page.getByRole('menuitemradio', { checked: true })).toContainText('Full access');
+});
+
 // Replacing a multi-line draft with a longer single-line one (what recalling a
 // prompt with ArrowUp does) adds characters while removing line breaks, so the
 // editor has to shrink even though the draft grew.

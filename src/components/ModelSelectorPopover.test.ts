@@ -36,7 +36,6 @@ function renderTarget(readiness: ExactChildSettingsTarget['readiness']): string 
       createElement(ModelSelectorPopover, {
         appSessionId: null,
         childTarget: target,
-        onClose: () => undefined,
       }),
     ),
   );
@@ -86,7 +85,6 @@ test('a dangling session id keeps using the visible global defaults', () => {
       createElement(ModelSelectorPopover, {
         appSessionId: 'missing-session',
         singleAgent: true,
-        onClose: () => undefined,
       }),
     ),
   );

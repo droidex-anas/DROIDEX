@@ -6,7 +6,7 @@
 
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Maximize, MousePointer, Play, SlidersHorizontal } from '@droidex/icons';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
@@ -271,7 +271,7 @@ function ZoomReadout({
         }}
         anchorRef={trigger}
         label="Zoom"
-        align="left"
+        placement="bottom-start"
         width={208}
       >
         <div role="menu" aria-label="Zoom" className="p-1">

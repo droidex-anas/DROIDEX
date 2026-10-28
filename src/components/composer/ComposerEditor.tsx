@@ -15,6 +15,8 @@ export interface ComposerHandle {
   focus(): void;
   select(start: number, end?: number): void;
   selection(): { start: number; end: number };
+  // Types text over the selection, as if the user had typed it.
+  insert(text: string): void;
   // The address of the link under a screen point, so a right-click on a link in
   // the draft can offer to open or copy it.
   linkAt(x: number, y: number): string | null;
@@ -160,6 +162,12 @@ const ComposerEditor = forwardRef<ComposerHandle, ComposerEditorProps>(function 
         const head = end === undefined ? anchor : clamp(end);
         view.dispatch({ selection: { anchor, head }, scrollIntoView: true });
       },
+      insert: (text: string) => {
+        const view = viewRef.current;
+        if (!view) return;
+        view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true });
+        view.focus();
+      },
       selection: () => {
         const selection = viewRef.current?.state.selection.main;
         return selection ? { start: selection.from, end: selection.to } : { start: 0, end: 0 };
@@ -174,7 +182,7 @@ const ComposerEditor = forwardRef<ComposerHandle, ComposerEditorProps>(function 
   );
 
   return (
-    <div ref={hostRef} className="w-full text-sm text-droid-text" onContextMenu={onContextMenu} />
+    <div ref={hostRef} className="w-full text-sm text-primary" onContextMenu={onContextMenu} />
   );
 });
 

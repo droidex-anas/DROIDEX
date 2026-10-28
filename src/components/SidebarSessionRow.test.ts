@@ -77,6 +77,7 @@ test('areSessionRowPropsEqual detects every row-visible prop change', () => {
   const changes: [Partial<SessionRowProps>, Partial<SessionRowProps>][] = [
     [{}, { session: makeSession({ appSessionId: 'sess-b' }) }],
     [{}, { session: makeSession({ updatedAt: 2_000 }) }],
+    [{}, { session: makeSession({ droidProfile: 'alt' }) }],
     [{}, { session: makeSession({ reasoningEffort: 'ultra' }) }],
     [{ title: 'Old' }, { title: 'New' }],
     [{ active: false }, { active: true }],

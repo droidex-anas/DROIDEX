@@ -26,7 +26,7 @@ function desktopCapture() {
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
-      droidControl: {
+      droidex: {
         canvasPreviewCapture: (request: CanvasPreviewCaptureRequest) =>
           new Promise<CanvasPreviewCaptureResult>((answer) => pending.push({ request, answer })),
         canvasPreviewCancelCapture: (requestId: string) => {

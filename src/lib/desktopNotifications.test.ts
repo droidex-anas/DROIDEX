@@ -19,9 +19,6 @@ async function notifyWithWindow(window: unknown) {
 
 test('notify returns the desktop bridge delivery result, or unsupported without a bridge', async () => {
   const expected = { shown: false, reason: 'timeout' };
-  assert.deepEqual(
-    await notifyWithWindow({ droidControl: { notify: async () => expected } }),
-    expected,
-  );
+  assert.deepEqual(await notifyWithWindow({ droidex: { notify: async () => expected } }), expected);
   assert.deepEqual(await notifyWithWindow(undefined), { shown: false, reason: 'unsupported' });
 });

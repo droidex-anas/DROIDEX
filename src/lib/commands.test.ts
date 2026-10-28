@@ -6,11 +6,13 @@ import {
   sendToSession,
   setBackgroundWork,
   setHistoryIndexingIdle,
+  withdrawSteer,
 } from './commands';
+import { resetRuntimeHealthForTests, setTransportHealth } from './runtimeHealth';
 import type { ClientCommand, ServerEvent } from '../types/bridge';
 
-// Drives the bridge singleton with an in-memory double; exportSessionMarkdown
-// only touches sendIfConnected and subscribe, and a send uses the ordered lane.
+// Drives request/reply commands through the bridge singleton with an in-memory
+// double; a send uses the ordered lane.
 function fakeBridge(): {
   sent: ClientCommand[];
   emit: (event: ServerEvent) => void;
@@ -77,6 +79,41 @@ test('background work tier samples are ephemeral and use the connected-only lane
     ]);
   } finally {
     fake.restore();
+  }
+});
+
+test('lost withdrawal requests can be reasked and only the current receipt restores the full prompt', async () => {
+  const fake = fakeBridge();
+  try {
+    setTransportHealth('connected');
+    const pending = withdrawSteer('app-1', 'steer-1');
+    const first = fake.sent.at(-1);
+    assert.ok(first?.type === 'session.withdrawSteer');
+    setTransportHealth('disconnected');
+    assert.deepEqual(await pending, { withdrawn: false, lost: true });
+
+    const sendIfConnected = bridge.sendIfConnected;
+    bridge.sendIfConnected = () => false;
+    assert.deepEqual(await withdrawSteer('app-1', 'steer-1'), { withdrawn: false, lost: true });
+    bridge.sendIfConnected = sendIfConnected;
+    setTransportHealth('connected');
+    const retry = withdrawSteer('app-1', 'steer-1');
+    const current = fake.sent.at(-1);
+    assert.ok(current?.type === 'session.withdrawSteer');
+    const receipt = {
+      type: 'session.steerWithdrawn' as const,
+      appSessionId: 'app-1',
+      steerId: 'steer-1',
+      withdrawn: true,
+    };
+    fake.emit({ ...receipt, requestId: first.requestId, text: 'stale' });
+    const text = 'Full prompt\n'.repeat(300);
+    const mentions = [{ kind: 'skill' as const, name: 'review', path: '/skills/review' }];
+    fake.emit({ ...receipt, requestId: current.requestId, text, mentions });
+    assert.deepEqual(await retry, { withdrawn: true, text, mentions });
+  } finally {
+    fake.restore();
+    resetRuntimeHealthForTests();
   }
 });
 

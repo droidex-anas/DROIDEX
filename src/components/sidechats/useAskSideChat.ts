@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
 import { forkSession, newClientRef, sendToSession } from '../../lib/commands';
+import { isChatHidden } from '../../lib/chatMetadata';
 import { sessionIsLive } from '../../lib/sessions';
 import {
   MAX_RUNNING_SIDE_CHATS,
@@ -12,16 +13,20 @@ import {
 } from '../../lib/sideChats';
 import { toast } from '../../lib/toast';
 
-function isSideChatStarting(state: AppState, sourceAppSessionId: string): boolean {
+export function isSideChatStarting(state: AppState, sourceAppSessionId: string): boolean {
   return Object.values(state.pendingForks).some(
     (fork) => fork?.kind === 'side' && fork.sourceAppSessionId === sourceAppSessionId,
   );
 }
 
-// Side chats of a session that are running or still being made.
+// Side chats of a session that are running or still being made. A closed one
+// is deleted and its runtime is closing, so it no longer takes a slot.
 export function runningSideChatCount(state: AppState, sourceAppSessionId: string): number {
   const running = Object.values(state.sessions).filter(
-    (session) => isSideChatOf(session, sourceAppSessionId) && sessionIsLive(session),
+    (session) =>
+      isSideChatOf(session, sourceAppSessionId) &&
+      sessionIsLive(session) &&
+      !isChatHidden(state.chatMetadata[session.appSessionId]),
   ).length;
   return running + (isSideChatStarting(state, sourceAppSessionId) ? 1 : 0);
 }

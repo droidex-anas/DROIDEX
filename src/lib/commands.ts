@@ -1,11 +1,13 @@
 import { bridge } from './bridge';
+import { getRuntimeHealth, subscribeRuntimeHealth } from './runtimeHealth';
 import { isAppUpdateInstalling } from './appUpdate';
 import type { CanvasTurnContext } from '../features/canvas/protocol';
 import type {
   Autonomy,
-  BrowserNativeResult,
+  BrowserState,
   BrowserViewport,
   BrowserViewportMode,
+  ClientCommand,
   ConfigurableSessionRole,
   ContextWindowTokens,
   DesignReference,
@@ -217,6 +219,49 @@ export const sendSteerNow = (appSessionId: string, steerId: string) => {
   bridge.send({ type: 'session.sendNow', appSessionId, steerId });
 };
 
+// Waits for the sidecar's definitive answer: a late "taken back" must still
+// reach the chat, or the steer would vanish without coming back. Only losing
+// the connection, which also loses that answer, ends the wait early.
+export const withdrawSteer = (
+  appSessionId: string,
+  steerId: string,
+): Promise<{ withdrawn: boolean; lost?: true; text?: string; mentions?: ProviderMention[] }> => {
+  const requestId = newClientRef();
+  return new Promise((resolve) => {
+    let stopWatchingHealth: () => void = () => undefined;
+    const stopListening = bridge.subscribe((event) => {
+      if (
+        event.type !== 'session.steerWithdrawn' ||
+        event.requestId !== requestId ||
+        event.appSessionId !== appSessionId ||
+        event.steerId !== steerId
+      )
+        return;
+      stopWatchingHealth();
+      stopListening();
+      resolve({
+        withdrawn: event.withdrawn,
+        ...(event.text !== undefined ? { text: event.text } : {}),
+        ...(event.mentions ? { mentions: event.mentions } : {}),
+      });
+    });
+    // A lost answer must be requested again once the bridge reconnects.
+    stopWatchingHealth = subscribeRuntimeHealth(() => {
+      if (getRuntimeHealth().transport === 'connected') return;
+      stopWatchingHealth();
+      stopListening();
+      resolve({ withdrawn: false, lost: true });
+    });
+    if (
+      !bridge.sendIfConnected({ type: 'session.withdrawSteer', appSessionId, steerId, requestId })
+    ) {
+      stopWatchingHealth();
+      stopListening();
+      resolve({ withdrawn: false, lost: true });
+    }
+  });
+};
+
 export const sendToChild = (
   parentAppSessionId: string,
   childSessionId: string,
@@ -252,6 +297,11 @@ export const respondQuestion = (
 
 export const interruptSession = (appSessionId: string) => {
   bridge.send({ type: 'session.interrupt', appSessionId });
+};
+
+// Stops the session's runtime for good: its turn, processes and provider.
+export const closeSession = (appSessionId: string) => {
+  bridge.send({ type: 'session.close', appSessionId });
 };
 
 export const compactSession = (appSessionId: string, customInstructions?: string) => {
@@ -477,6 +527,20 @@ export const openBrowser = (input: {
   bridge.send({ type: 'browser.open', ...input });
 };
 
+/** The browsers the app kept, keyed by chat, for the sidecar to take up so their panes keep working. */
+export const restoreBrowsersCommand = (
+  browsers: Record<string, BrowserState>,
+): ClientCommand | null => {
+  const kept = Object.entries(browsers).map(([appSessionId, browser]) => ({
+    appSessionId,
+    browserSessionId: browser.browserSessionId,
+    url: browser.url,
+    viewport: browser.viewport,
+    viewportMode: browser.viewportMode,
+  }));
+  return kept.length > 0 ? { type: 'browser.restore', browsers: kept } : null;
+};
+
 export const reloadBrowser = (appSessionId: string) => {
   bridge.send({ type: 'browser.reload', appSessionId });
 };
@@ -485,6 +549,8 @@ export const resizeBrowserViewport = (input: {
   appSessionId: string;
   viewport: BrowserViewport;
   viewportMode: BrowserViewportMode;
+  /** The pane's size for Fit, taken only while the page is on Fit. */
+  follow?: boolean;
 }) => {
   bridge.send({ type: 'browser.resizeViewport', ...input });
 };
@@ -493,21 +559,27 @@ export const addDesignReference = (appSessionId: string, reference: DesignRefere
   bridge.send({ type: 'browser.design.addReference', appSessionId, reference });
 };
 
+export const removeDesignReferences = (appSessionId: string, ids: string[]) => {
+  bridge.send({ type: 'browser.design.removeReferences', appSessionId, ids });
+};
+
+/** Sends a prompt with its marks, as sendToSession sends any other. */
 export const sendDesignPrompt = (
   appSessionId: string,
   instruction: string,
-  referenceIds: string[],
+  references: DesignReference[],
+  responseFormat?: ResponseFormat,
+  mentions?: ProviderMention[],
 ) => {
+  requireAgentWorkAvailable();
   bridge.send({
     type: 'browser.design.sendPrompt',
     appSessionId,
     instruction,
-    referenceIds,
+    references,
+    ...(mentions?.length ? { mentions } : {}),
+    ...(responseFormat ? { responseFormat } : {}),
   });
-};
-
-export const sendNativeBrowserResult = (result: BrowserNativeResult) => {
-  bridge.send({ type: 'browser.native.result', result });
 };
 
 export const sendSidebarResult = (result: SidebarResult) => {

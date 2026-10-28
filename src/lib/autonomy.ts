@@ -31,7 +31,7 @@ export function autonomyConsequence(
   level: Autonomy,
 ): string | undefined {
   if (provider === 'claude' && level === 'medium') return "Auto uses Claude Code's classifier.";
-  if (provider === 'codex') return 'Applies from the next turn.';
+  if (provider === 'codex') return 'Approvals update now; native sandbox changes on the next turn.';
   if (provider === 'droid' && level === 'high') return "Droid's safety checks can still ask.";
   return undefined;
 }

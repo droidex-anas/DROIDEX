@@ -33,7 +33,7 @@ async function submitCaptured(input: Parameters<typeof submitFeedbackReport>[0])
   } = {};
   globalThis.window = {
     ...globalThis.window,
-    droidControl: {
+    droidex: {
       submitFeedbackReport: async (report: typeof captured) => {
         captured = report;
         return { reportId: 'RPT-1', userId: 'USR-1', eventId: 'EVT-1' };
@@ -80,7 +80,7 @@ test('submitFeedbackReport throws outside the desktop app or without its bridge'
       /Feedback is available only in the desktop app/,
     );
     globalThis.window = { ...originalWindow } as unknown as typeof globalThis.window;
-    delete (globalThis.window as Record<string, unknown>).droidControl;
+    delete (globalThis.window as Record<string, unknown>).droidex;
     await assert.rejects(
       () => submitFeedbackReport({ category: 'bug', description: 'test error' }),
       /DROIDEX desktop bridge is unavailable/,

@@ -1,5 +1,6 @@
-import { AlertTriangle, ArrowUpCircle, X } from 'lucide-react';
+import { AlertTriangle, CircleArrowUp, X } from '@droidex/icons';
 import { WINDOW_CONTROLS_INSET_PX } from '../../lib/windowChrome';
+import { Button } from '../ui/Button';
 
 export type SetupBannerKind = 'blocker' | 'update';
 
@@ -16,29 +17,21 @@ export default function SetupBanner({
   onAction: () => void;
   onDismiss?: () => void;
 }) {
-  const Icon = kind === 'blocker' ? AlertTriangle : ArrowUpCircle;
-  const accent = kind === 'blocker' ? 'text-droid-orange' : 'text-droid-accent';
+  const Icon = kind === 'blocker' ? AlertTriangle : CircleArrowUp;
+  const accent = kind === 'blocker' ? 'text-warning' : 'text-accent';
   return (
     <div
-      className="shrink-0 flex items-center gap-2 pr-4 h-9 border-b border-droid-border bg-droid-elevated/60 text-[12px]"
+      className="flex h-9 shrink-0 items-center gap-2 bg-elevated pr-2 text-body"
       style={{ paddingLeft: WINDOW_CONTROLS_INSET_PX }}
     >
-      <Icon className={`w-3.5 h-3.5 ${accent}`} />
-      <span className="text-droid-text">{message}</span>
-      <button
-        onClick={onAction}
-        className="ml-1 px-2 py-0.5 rounded-md bg-droid-accent text-droid-bg text-[11px] font-medium hover:opacity-90 transition-opacity"
-      >
+      <Icon className={`size-icon-sm shrink-0 ${accent}`} />
+      <span className="truncate text-primary">{message}</span>
+      <Button variant="primary" size="sm" onClick={onAction} className="ml-1">
         {actionLabel}
-      </button>
+      </Button>
       <div className="flex-1" />
       {onDismiss && (
-        <button
-          onClick={onDismiss}
-          className="text-droid-text-muted hover:text-droid-text transition-colors"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <Button variant="ghost" size="sm" icon={X} aria-label="Dismiss" onClick={onDismiss} />
       )}
     </div>
   );

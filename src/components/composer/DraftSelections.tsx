@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { X } from 'lucide-react';
 
-const SKILL = 'var(--droid-skill)';
+const SKILL = 'var(--skill)';
 
 // gap-2 between selections, and the space between the last one and the first
 // word of the draft.
@@ -27,7 +27,7 @@ export interface DraftSelection {
 //
 // They cannot be textarea text, since a textarea gives its whole value one
 // colour, so this row floats over the first line and reports the width that line
-// must be indented by. Colour comes from --droid-skill, the blue the transcript
+// must be indented by. Colour comes from --skill, the blue the transcript
 // gives an invoked skill, so a selection looks the same before and after it is
 // sent.
 export function DraftSelections({
@@ -96,7 +96,7 @@ export function DraftSelections({
           <button
             key={item.key}
             onClick={item.onRemove}
-            className="group pointer-events-auto flex min-w-0 items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current"
+            className="group pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-xs"
             title={item.removeLabel}
             aria-label={item.removeLabel}
           >
@@ -104,7 +104,7 @@ export function DraftSelections({
               <Icon className="h-4 w-4 transition-opacity group-hover:opacity-0" />
               <X className="absolute inset-0 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
             </span>
-            <span className="max-w-[16rem] truncate">{item.label}</span>
+            <span className="max-w-64 truncate">{item.label}</span>
           </button>
         );
       })}

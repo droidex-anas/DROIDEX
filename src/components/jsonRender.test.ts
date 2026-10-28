@@ -43,10 +43,10 @@ test('closed json-render blocks interleave with prose; an unclosed one and a bar
 });
 
 test('resolveColor maps themed names, accepts safe literals, and rejects CSS function injection', () => {
-  assert.equal(resolveColor('green'), 'var(--droid-green)');
+  assert.equal(resolveColor('green'), 'var(--success)');
   assert.equal(resolveColor('#ff8800'), '#ff8800');
   assert.equal(resolveColor('rgb(10, 20, 30)'), 'rgb(10, 20, 30)');
-  assert.equal(resolveColor('red'), 'var(--droid-red)');
+  assert.equal(resolveColor('red'), 'var(--danger)');
   assert.equal(resolveColor('teal'), 'teal');
 
   assert.equal(resolveColor('url(https://evil.example/x.png)'), undefined);
@@ -82,12 +82,12 @@ test('render budget caps an exponential shared-child DAG and leaves small specs 
 });
 
 test('statusColor resolves real statuses and falls back for prototype keys', () => {
-  assert.equal(statusColor('success'), 'var(--droid-green)');
-  assert.equal(statusColor('error'), 'var(--droid-red)');
+  assert.equal(statusColor('success'), 'var(--success)');
+  assert.equal(statusColor('error'), 'var(--danger)');
   // A model-supplied prototype key must not resolve through Object.prototype to
   // a truthy value; it falls back to the neutral muted tone.
   for (const key of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
-    assert.equal(statusColor(key), 'var(--droid-text-muted)');
+    assert.equal(statusColor(key), 'var(--text-muted)');
   }
 });
 

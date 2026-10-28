@@ -23,6 +23,38 @@ test('a commit saves only the persisted fields it changed', () => {
   });
 });
 
+test('a changed project list is relayed to other copies, but one they sent is not echoed back', () => {
+  const storage = new Map<string, string>();
+  const relayed: string[] = [];
+  const droidex = {
+    writeSharedStorage: async (_key: string, value: string) => {
+      relayed.push(value);
+    },
+  };
+  try {
+    withLocalStorageMap(storage, () => {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { droidex, localStorage: globalThis.localStorage },
+      });
+      const added = reducer(initialState, { type: 'ADD_WORKSPACE', cwd: '/repo/app' });
+      persistStoreChanges(initialState, added);
+      assert.deepEqual(relayed, ['["/repo/app"]']);
+
+      // Another copy's change arrives stored first, then dispatched.
+      storage.set('droid-workspaces', '["/repo/app","/repo/site"]');
+      const received = reducer(added, {
+        type: 'SET_WORKSPACE_CWDS',
+        cwds: ['/repo/app', '/repo/site'],
+      });
+      persistStoreChanges(added, received);
+      assert.deepEqual(relayed, ['["/repo/app"]']);
+    });
+  } finally {
+    Reflect.deleteProperty(globalThis, 'window');
+  }
+});
+
 test('normalizeDiffStyle accepts current styles and rejects invalid values', () => {
   assert.equal(normalizeDiffStyle('soft'), 'soft');
   assert.equal(normalizeDiffStyle('focused'), 'focused');
@@ -57,7 +89,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
           ],
         },
       },
-      browserOpenKeys: { 'chat-1': true, 'chat-2': false, '': true },
       browsers: {
         'chat-1': {
           browserSessionId: 'browser-chat-1',
@@ -78,6 +109,7 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
       mainView: 'pull-requests',
       prWorkspaceCwd: '/repo',
       prWorkspaceNumber: 42,
+      revealEarlierCwds: ['/repo', 7, '', '/repo', '/repo/.worktrees/a'],
     }),
     () => {
       assert.deepEqual(loadPersistedUiState(), {
@@ -94,7 +126,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
             tabs: [{ id: 'review', tool: 'review', label: 'Review' }],
           },
         },
-        browserOpenKeys: { 'chat-1': true, 'chat-2': false },
         browsers: {
           'chat-1': {
             browserSessionId: 'browser-chat-1',
@@ -104,7 +135,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
             viewport: { width: 1200, height: 800, deviceScaleFactor: 2 },
             viewportMode: 'fit',
             scroll: { x: 3, y: 7 },
-            refs: [],
           },
         },
         selectedFeatureId: 'f1',
@@ -112,6 +142,7 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
         prWorkspaceCwd: '/repo',
         prWorkspaceNumber: 42,
         prBacklogIds: [],
+        revealEarlierCwds: ['/repo', '/repo/.worktrees/a'],
       });
     },
   );

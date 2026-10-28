@@ -42,7 +42,7 @@ function WorkspaceDetail({
   if (cwd == null || number == null) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center px-8">
-        <p className="text-[13px] text-droid-text-muted">Select a pull request</p>
+        <p className="text-body text-muted">Select a pull request</p>
       </div>
     );
   }
@@ -123,7 +123,7 @@ export function PullRequestsView() {
 
   return (
     <PrWorkspace>
-      <div className="flex h-full min-h-0 w-[360px] shrink-0 flex-col">
+      <div className="flex h-full min-h-0 w-pr-inbox shrink-0 flex-col">
         <PrInbox
           prs={list.prs}
           viewerLogin={list.viewerLogin}

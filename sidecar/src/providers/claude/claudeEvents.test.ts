@@ -84,21 +84,20 @@ test('streamed text reaches the transcript once, not again from the snapshot', (
   );
 });
 
-test('a message that streamed nothing is reported from its snapshot', () => {
-  const events = transcripts([
-    message({
-      type: 'assistant',
-      message: { content: [{ type: 'text', text: 'Usage limit reached' }] },
-      parent_tool_use_id: null,
-      error: 'rate_limit',
-    }),
-  ]);
+const failedRequest = (text: string): SDKMessage =>
+  message({
+    type: 'assistant',
+    message: { content: [{ type: 'text', text }] },
+    parent_tool_use_id: null,
+    error: 'rate_limit',
+  });
+
+test('a failed request that streamed nothing is one error row in its own words', () => {
+  const capacity = 'API Error: Request rejected (429) · this may be a temporary capacity issue';
+  const events = transcripts([failedRequest(capacity)]);
   assert.deepEqual(
     events.map((event) => [event.kind, event.text, event.errorKind]),
-    [
-      ['text', 'Usage limit reached', undefined],
-      ['error', 'rate_limit', 'usage_limit'],
-    ],
+    [['error', capacity, undefined]],
   );
 });
 
@@ -235,6 +234,24 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
   );
   assert.equal(events[1].transcript?.isError, true);
   assert.equal(events[1].transcript?.text, 'Tool failed: CANVAS_INTERNAL_GUIDANCE_7E4B');
+});
+
+test('a usage refusal adds no row and fails the turn with the window it hit', () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+  const refused = "You've hit your session limit · resets 7pm";
+  const events = [
+    message({
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt },
+    }),
+    failedRequest(refused),
+  ].flatMap((entry) => mapper.map(entry));
+
+  assert.deepEqual(events, []);
+  const refusal = mapper.takeRefusal();
+  assert.equal(refusal?.message, refused);
+  assert.deepEqual(refusal?.limit, { window: 'five_hour', resetsAt: resetsAt * 1000 });
 });
 
 test('a tool call carries its streamed input and pairs with its result by id', () => {
@@ -588,7 +605,7 @@ test("a subagent's progress reports its own token spend", () => {
 
 // modelUsage is cumulative but counts every subagent and compaction call the
 // query made. The session's own totals are the main loop's, which arrives per
-// turn, so the turns are summed and /clear starts the tally again.
+// turn, so the turns are summed even when /clear resets the context.
 test("the session's totals count the main loop, not its subagents", () => {
   const mapper = new ClaudeEventMapper('app-1');
   const tokens = (entry: SDKMessage) =>
@@ -613,7 +630,7 @@ test("the session's totals count the main loop, not its subagents", () => {
   assert.deepEqual(tokens(turn(100, 20)), [{ tokensIn: 100, tokensOut: 20, contextTokens: 0 }]);
   assert.deepEqual(tokens(turn(50, 10)), [{ tokensIn: 150, tokensOut: 30, contextTokens: 0 }]);
   assert.deepEqual(tokens(message({ type: 'conversation_reset' })), []);
-  assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 7, tokensOut: 3, contextTokens: 0 }]);
+  assert.deepEqual(tokens(turn(7, 3)), [{ tokensIn: 157, tokensOut: 33, contextTokens: 0 }]);
 });
 
 test('requested fast mode reports unavailability once without marking the row as an error', () => {

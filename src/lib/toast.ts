@@ -86,6 +86,9 @@ export function pushToast(
   ttl = DEFAULT_TTL_MS,
   action?: ToastAction,
 ): number {
+  // The same notice raised again while it is still showing stays one toast.
+  const shown = toasts.find((t) => t.message === message && t.variant === variant);
+  if (shown) return shown.id;
   const id = nextId++;
   toasts = [...toasts, { id, message, variant, ttl, ...(action ? { action } : {}) }];
   emit();

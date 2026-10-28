@@ -3,6 +3,7 @@ import { loadDefaultPermissionMode } from './permissionSemantics';
 import assert from 'node:assert/strict';
 
 import {
+  autonomyConsequence,
   AUTONOMY_LEVELS,
   FIRST_RUN_DEFAULT_AUTONOMY,
   loadDefaultAutonomy,
@@ -51,5 +52,18 @@ test('permission semantics reset the saved default once and new installs start s
   withLocalStorageMap({}, () => assert.equal(loadDefaultPermissionMode(), 'off'));
   withLocalStorageMap({ 'droid-permission-semantics-revision': '1' }, () =>
     assert.equal(loadDefaultPermissionMode(), 'off'),
+  );
+});
+
+test('a mode names its consequence only where the harness qualifies it', () => {
+  for (const level of AUTONOMY_LEVELS) assert.ok(autonomyConsequence('codex', level));
+  // Claude only qualifies Auto, and Droid only Full access.
+  assert.deepEqual(
+    AUTONOMY_LEVELS.filter((level) => autonomyConsequence('claude', level)),
+    ['medium'],
+  );
+  assert.deepEqual(
+    AUTONOMY_LEVELS.filter((level) => autonomyConsequence('droid', level)),
+    ['high'],
   );
 });

@@ -7,15 +7,7 @@ test('collector reports injected PTY and WebContents counts with process health'
   const { collect } = createPerformanceMetricsCollector({
     countPtys: () => 3,
     listWebContents: () => [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }],
-    nativeBrowserCounts: () => ({
-      total: 3,
-      live: 2,
-      attached: 1,
-      warm: 1,
-      serialized: 1,
-      maxLive: 2,
-      idleMs: 0,
-    }),
+    nativeBrowserCounts: () => ({ sessions: 3, live: 2 }),
     terminalCounts: () => ({ live: 3, retained: 1, total: 4 }),
     powerTier: () => 'hidden',
   });
@@ -24,7 +16,7 @@ test('collector reports injected PTY and WebContents counts with process health'
   assert.equal(metrics.ptys, 3);
   assert.equal(metrics.webContentsTotal, 4);
   assert.equal(metrics.nativeBrowsers.live, 2);
-  assert.equal(metrics.nativeBrowsers.serialized, 1);
+  assert.equal(metrics.nativeBrowsers.sessions, 3);
   assert.equal(metrics.terminals.retained, 1);
   assert.equal(metrics.powerTier, 'hidden');
   assert.ok(Number.isFinite(metrics.timestamp));

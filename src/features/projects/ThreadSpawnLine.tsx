@@ -55,6 +55,9 @@ export function ThreadSpawnLine({
   // when the conversation does rather than shimmer for good.
   const starting = result === undefined && sessionLive;
   const live = row?.live === true || starting;
+  const isAlt =
+    (row?.droidProfile ?? spawned?.droidProfile) === 'alt' ||
+    (starting && stringArg(call, 'profile') === 'alt');
   // A fork copies a lead's transcript but not its place in the project, so its
   // Threads panel has nothing to show; from there a thread opens on its own.
   const sameProject = useStoreSelector((state) => {
@@ -70,39 +73,52 @@ export function ThreadSpawnLine({
     if (sameProject) dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads', threadId: spawned.id });
     else dispatch({ type: 'SET_ACTIVE_SESSION', id: spawned.id });
   };
+  const toggle = () => {
+    setOpen((value) => !value);
+  };
 
   return (
     <div data-testid="thread-spawn-line">
-      <div className="group flex items-center gap-1.5 text-[13px]">
+      <div className="group flex items-center gap-1.5 text-body">
         <button
           type="button"
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
-          className="-m-0.5 flex items-center rounded p-0.5"
-          aria-label={words.toggle}
+          onClick={toggle}
           aria-expanded={open}
+          title={words.toggle}
+          className={live ? 'shimmer-text font-medium' : 'text-muted'}
         >
-          <Caret open={open} />
-        </button>
-        <span className={live ? 'shimmer-text font-medium' : 'text-droid-text-muted'}>
           {starting ? words.starting : words.started}
-        </span>
+        </button>
         <button
           type="button"
           disabled={!spawned}
           onClick={openSpawned}
-          className="font-semibold text-droid-text underline-offset-2 hover:underline disabled:no-underline"
+          className="inline-link font-semibold text-primary"
           title={words.openTitle}
         >
           {title}
         </button>
+        {isAlt && (
+          <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
+            <span className="sr-only">Factory account: </span>Alt
+          </span>
+        )}
         {row && !live && (
           <>
-            <span className="min-w-0 truncate text-[12px] text-droid-text-muted">{row.detail}</span>
+            <span className="min-w-0 truncate text-caption text-muted">{row.detail}</span>
             <ActivityStatusGlyph status={row.status} />
           </>
         )}
+        {/* The verb is the accessible toggle; the chevron repeats it for the pointer. */}
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={toggle}
+          className="-m-0.5 flex items-center rounded-xs p-0.5"
+        >
+          <Caret open={open} />
+        </button>
       </div>
       <Expand open={open}>
         <SpawnDetail
@@ -136,16 +152,12 @@ function SpawnDetail({
   onOpen: () => void;
 }) {
   return (
-    <div className="mt-2 pl-[18px]">
-      {task !== undefined && (
-        <div className="break-words text-[13px] leading-relaxed text-droid-text-muted/70">
-          {task}
-        </div>
-      )}
+    <div className="mt-2 pl-4">
+      {task !== undefined && <div className="break-words text-body text-muted">{task}</div>}
       {step !== undefined && (
         <div
-          className={`mt-1.5 break-words text-[13px] font-medium leading-relaxed ${
-            live ? 'shimmer-text' : 'text-droid-text-secondary'
+          className={`mt-1.5 break-words text-body font-medium ${
+            live ? 'shimmer-text' : 'text-secondary'
           }`}
         >
           {step}
@@ -155,10 +167,10 @@ function SpawnDetail({
         type="button"
         disabled={!canOpen}
         onClick={onOpen}
-        className="mt-2 inline-flex items-center gap-1 text-[12px] text-droid-text-muted transition-colors hover:text-droid-text disabled:hover:text-droid-text-muted"
+        className="mt-2 inline-flex items-center gap-1 text-label text-muted transition-colors hover:text-primary disabled:hover:text-muted"
       >
         {openLabel}
-        <ChevronRight className="h-3.5 w-3.5" />
+        <ChevronRight className="size-icon-sm" />
       </button>
     </div>
   );

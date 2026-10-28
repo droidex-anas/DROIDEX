@@ -4,7 +4,10 @@
 // they resolve against the wrong root. The desktop app serves them through the
 // droidex-img scheme instead (electron/localImages.cjs).
 
+import { isRemoteClient } from './desktop';
+
 const LOCAL_IMAGE_SCHEME = 'droidex-img';
+const REMOTE_LOCAL_IMAGE_PATH = '/__droidex_remote/local-image';
 
 // Must mirror MIME_BY_EXTENSION in electron/localImages.cjs: a URL for any other
 // type would only ever come back 404.
@@ -84,8 +87,16 @@ export function localImageFilePath(reference: string): string | null {
 export function imageSrc(reference: string): string | null {
   const trimmed = reference.trim();
   if (!trimmed) return null;
-  if (/^(https?:|data:|blob:|droidex-img:)/i.test(trimmed)) return trimmed;
+  if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
+  if (/^droidex-img:/i.test(trimmed)) return loadableLocalImage(trimmed);
   const filePath = localImageFilePath(trimmed);
   if (filePath === null || !isImagePath(filePath)) return null;
-  return `${LOCAL_IMAGE_SCHEME}://local/?p=${encodeURIComponent(filePath)}`;
+  return loadableLocalImage(`${LOCAL_IMAGE_SCHEME}://local/?p=${encodeURIComponent(filePath)}`);
+}
+
+// A Remote browser has no droidex-img scheme; its service worker answers this
+// path with the bytes the laptop sends back (remote-web/public/sw.js).
+function loadableLocalImage(url: string): string {
+  if (!isRemoteClient()) return url;
+  return `${REMOTE_LOCAL_IMAGE_PATH}?src=${encodeURIComponent(url)}`;
 }

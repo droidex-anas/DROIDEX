@@ -64,6 +64,7 @@ function loadApi(invokeResult) {
       // The preview guest's owned source has one owner; the preload reads it
       // from there rather than repeating the URL.
       if (name === './canvasPreview.cjs') return require('./canvasPreview.cjs');
+      if (name === './desktopApi.cjs') return require('./desktopApi.cjs');
       if (name !== 'electron') throw new Error(`Unexpected preload dependency: ${name}`);
       return {
         contextBridge: {
@@ -99,15 +100,10 @@ const invokeContract = [
     { title: 'DROIDEX', body: 'Finished', silent: true, appSessionId: 'app-1' },
   ],
   [
-    'nativeBrowserOpen',
-    ['browser-1', 'https://example.test'],
-    'native-browser-open',
-    {
-      browserSessionId: 'browser-1',
-      url: 'https://example.test',
-      bounds: undefined,
-      viewport: undefined,
-    },
+    'nativeBrowserReserve',
+    ['browser-1', 'https://example.test', 'desktop'],
+    'native-browser-reserve',
+    { browserSessionId: 'browser-1', savedUrl: 'https://example.test', savedMode: 'desktop' },
   ],
   [
     'gitMarkTurnStart',

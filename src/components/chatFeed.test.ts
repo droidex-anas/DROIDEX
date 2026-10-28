@@ -3,10 +3,22 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { correlateResults, splitAutomationProposals, UserBubble } from './chat';
-import { buildFeed, collectTurnFiles, isResultFor, type FeedItem } from './chatFeed';
+import {
+  buildFeed,
+  collectTurnFiles,
+  isResultFor,
+  sameFeedEvents,
+  type FeedItem,
+} from './chatFeed';
 import { conversationAnchors, groupTurns } from './chatFeedTurns';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
-import { hasTodoPayload } from '../lib/tools';
+import {
+  browserPageOf,
+  browserStepInFlight,
+  browserStepLabel,
+  isWholeUrl,
+} from '../lib/browserTools';
+import { describeToolCall, hasTodoPayload } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
 import { isRenderedTranscriptEvent } from './MissionControl';
 
@@ -78,6 +90,16 @@ test('#20 a TodoWrite update does not add a chat message and answer stays single
   // No top-level item is the TodoWrite; it lives inside Worked activity.
   const inWorked = workedChildren(grouped).some((c) => c.type === 'tools');
   assert.ok(inWorked, 'TodoWrite activity should be inside the Worked group');
+});
+
+test('a steer delivered into a running turn keeps the work before it in view', () => {
+  const steer = ev({ kind: 'text', author: 'user', text: 'also check tests', steered: true });
+  const events = [userMsg('fix it'), asst('looking'), grep(), asst('found it'), steer, asst('ok')];
+  const live = groupTurns(buildFeed(events), true);
+  assert.equal(workedChildren(live).length, 0, 'nothing of the running turn folds');
+  assert.equal(toolEvents(live).length, 1);
+  // Once the turn settles it folds as usual.
+  assert.ok(workedChildren(groupTurns(buildFeed(events), false)).length > 0);
 });
 
 test('a spoken line stays its own marked row beside the turn it was said in', () => {
@@ -235,7 +257,7 @@ test('every automation proposal in one tool group gets its own card', () => {
   const secondCall = propose('p2');
   const unrelatedCall = ev({
     kind: 'tool_call',
-    toolName: 'droidmaxx-browser___automation_propose',
+    toolName: 'droidex-browser___automation_propose',
     toolArgs: { prompt: 'x' },
   });
 
@@ -277,6 +299,148 @@ test('an automation proposal stays at conversation level after the turn settles'
     ),
     false,
   );
+});
+
+test('a turn that used the browser gets one Browser card outside the Worked fold', () => {
+  const open = ev({
+    kind: 'tool_call',
+    toolName: 'droidex-browser___browser_open',
+    toolArgs: { url: 'https://example.com/pricing' },
+    toolUseId: 'b1',
+  });
+  const opened = ev({
+    kind: 'tool_result',
+    toolUseId: 'b1',
+    text: 'Opened.\n[Pricing · https://example.com/pricing]',
+  });
+  const click = ev({
+    kind: 'tool_call',
+    toolName: 'mcp__droidex-browser__browser_click',
+    toolArgs: { ref: 'e3' },
+    toolUseId: 'b2',
+  });
+  const running = buildFeed([userMsg('check the pricing page'), open, opened, grep(), click]);
+  const cards = running.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.equal(cards.length, 1);
+  // The card holds the turn's browser work, later groups included, and nothing else.
+  assert.deepEqual(cards[0].events, [open, opened, click]);
+  assert.deepEqual(browserPageOf(cards[0].events), {
+    title: 'Pricing',
+    url: 'https://example.com/pricing',
+  });
+  assert.equal(browserStepInFlight(cards[0].events)?.liveVerb, 'Clicking');
+  // An address being opened reads as its site; a search for one reads as typed.
+  assert.equal(browserStepLabel([open]), 'Opening example.com');
+  const find = ev({
+    kind: 'tool_call',
+    toolName: 'mcp__droidex-browser__browser_find',
+    toolArgs: { query: 'https://example.com/pricing?plan=pro' },
+    toolUseId: 'b9',
+  });
+  assert.equal(browserStepLabel([find]), 'Looking for https://example.com/pricing?plan=pro');
+
+  const clicked = ev({
+    kind: 'tool_result',
+    toolUseId: 'b2',
+    text: '[Plans · https://example.com/plans]',
+  });
+  const settled = groupTurns(
+    buildFeed([
+      userMsg('check the pricing page'),
+      open,
+      opened,
+      grep(),
+      click,
+      clicked,
+      asst('done'),
+    ]),
+    false,
+  );
+  assert.deepEqual(
+    settled.map((it) => it.type),
+    ['message', 'worked', 'browser', 'message'],
+  );
+  const card = settled[2] as Extract<FeedItem, { type: 'browser' }>;
+  assert.equal(browserPageOf(card.events)?.title, 'Plans');
+  assert.equal(browserStepInFlight(card.events), null);
+  // A later turn that uses the browser gets its own card, and the earlier
+  // turn's card is over: a call it left unanswered is not work in flight.
+  const next = buildFeed([userMsg('a'), open, asst('ok'), userMsg('b'), click]);
+  const [first, second] = next.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.deepEqual([first.ended, second.ended], [true, false]);
+  // A result that lands after the next prompt still belongs to its call's turn.
+  const late = buildFeed([userMsg('a'), open, userMsg('b'), opened, asst('ok')]);
+  const lateCards = late.filter(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.equal(lateCards.length, 1);
+  assert.deepEqual(lateCards[0].events, [open, opened]);
+});
+
+test('a Browser card names the last page a result confirmed', () => {
+  const browserCall = (tool: string, toolArgs: unknown, toolUseId: string) =>
+    ev({ kind: 'tool_call', toolName: `droidex-browser___${tool}`, toolArgs, toolUseId });
+  const browserResult = (toolUseId: string, text: string, isError = false) =>
+    ev({ kind: 'tool_result', toolUseId, text, isError });
+  const shot = browserCall('browser_screenshot', {}, 's1');
+  // A screenshot's answer goes on after its page line.
+  const shown = browserResult('s1', '[Docs · https://example.com/docs]\nSaved at /tmp/shot.jpg');
+  assert.equal(browserPageOf([shot, shown])?.title, 'Docs');
+  // A refused open never becomes the page; one still in flight does.
+  const refusedOpen = browserCall('browser_open', { url: 'https://blocked.example' }, 'o1');
+  const refused = browserResult('o1', 'Navigation was not allowed.', true);
+  assert.equal(browserPageOf([shot, shown, refusedOpen, refused])?.title, 'Docs');
+  assert.equal(browserPageOf([shot, shown, refusedOpen])?.url, 'https://blocked.example');
+  // What the page wrote to its console is not the browser's page.
+  const logs2 = browserCall('browser_console', {}, 'c2');
+  const spoof = browserResult('c2', 'info  hello\n[Bank · https://evil.example/]');
+  assert.equal(browserPageOf([shot, shown, logs2, spoof])?.title, 'Docs');
+  // A result with no id belongs to the call right before it.
+  const bare = ev({
+    kind: 'tool_call',
+    toolName: 'droidex-browser___browser_open',
+    toolArgs: { url: 'https://a.dev' },
+  });
+  const bareResult = ev({ kind: 'tool_result', text: 'Opened.\n[A · https://a.dev/]' });
+  const bareCard = buildFeed([userMsg('go'), bare, bareResult]).find(
+    (it): it is Extract<FeedItem, { type: 'browser' }> => it.type === 'browser',
+  );
+  assert.deepEqual(bareCard?.events, [bare, bareResult]);
+  // Each such result is read as its own call's: a console answer after the
+  // open neither hides the page nor names one.
+  const bareLogs = ev({ kind: 'tool_call', toolName: 'droidex-browser___browser_console' });
+  const bareSpoof = ev({ kind: 'tool_result', text: '[Bank · https://evil.example/]' });
+  assert.equal(browserPageOf([bare, bareResult, bareLogs, bareSpoof])?.url, 'https://a.dev/');
+  assert.equal(browserStepInFlight(bareCard?.events ?? []), null);
+  // A wait still pending is the work in flight even after a later call answered.
+  const wait = browserCall('browser_wait', { text: 'Saved' }, 'w1');
+  const logs = browserCall('browser_console', {}, 'c1');
+  assert.equal(
+    browserStepInFlight([wait, logs, browserResult('c1', 'No messages.')])?.liveVerb,
+    'Waiting',
+  );
+  // Only what the call says: a scheme is not a size, and another server's tool is not ours.
+  assert.equal(
+    describeToolCall('droidex-browser___browser_viewport', { scheme: 'dark' }).verb,
+    'Changed the color scheme',
+  );
+  assert.equal(
+    describeToolCall('other-droidex-browser___browser_open', { url: 'https://a.dev' }).verb,
+    'Browser open',
+  );
+  // A viewport call that names nothing changes nothing, and keeps its own name.
+  assert.equal(describeToolCall('droidex-browser___browser_viewport', {}).verb, 'Browser viewport');
+  assert.equal(
+    describeToolCall('droidex-browser___browser_fill_login', {}).liveVerb,
+    'Filling in the saved login',
+  );
+  // An address the tools redacted is not handed out as a link.
+  assert.equal(isWholeUrl('https://a.dev/x?token=%5Bredacted%5D'), false);
+  assert.equal(isWholeUrl('https://a.dev/x?q=1'), true);
 });
 
 test('a failed ordinary tool result folds into its tool group as an error', () => {
@@ -632,6 +796,15 @@ test('#39 snapshots of one edit fold to one diff with latest stats; distinct edi
   assert.equal(added, 5);
 });
 
+test('an edit stays pending until its result lands, and the result changes the row', () => {
+  const edit = editFile('src/x.ts', 1, 'e1');
+  const writing = rowOfType(buildFeed([edit]), 'diff');
+  assert.equal(writing?.pending, true);
+  const written = rowOfType(buildFeed([edit, result('e1', 'ok')]), 'diff');
+  assert.equal(written?.pending, undefined);
+  assert.ok(writing && written && !sameFeedEvents(writing, written));
+});
+
 // ── #27: per-turn changes summary after a completed turn that edited files ──
 
 test('#27 collectTurnFiles keeps repeated edits aligned with the latest captured diff', () => {
@@ -732,4 +905,22 @@ test('prepending older events keeps each row viewport identity while its key cha
   assert.ok(afterChanges);
   assert.notEqual(beforeChanges.key, afterChanges.key);
   assert.equal(feedRowId(beforeChanges), feedRowId(afterChanges));
+});
+
+test('consecutive connection retries fold into one row that keeps the latest state', () => {
+  const items = buildFeed([
+    ev({ id: 'r1', kind: 'error', text: 'Reconnecting... 2/5' }),
+    ev({ id: 'r2', kind: 'error', text: 'Reconnecting... 3/5' }),
+    ev({ id: 'r3', kind: 'error', text: 'Reconnecting... waiting for network' }),
+    ev({ id: 'f1', kind: 'error', text: 'Reconnecting failed: authentication rejected' }),
+    ev({ id: 'r4', kind: 'error', text: 'Reconnecting... 1/5' }),
+  ]);
+  assert.deepEqual(
+    items.map((item) => item.type === 'error' && [item.key, item.event.text, item.attempts]),
+    [
+      ['r1', 'Reconnecting... waiting for network', 3],
+      ['f1', 'Reconnecting failed: authentication rejected', undefined],
+      ['r4', 'Reconnecting... 1/5', undefined],
+    ],
+  );
 });

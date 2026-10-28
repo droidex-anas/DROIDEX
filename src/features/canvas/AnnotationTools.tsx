@@ -147,7 +147,7 @@ export function AnnotationTools({
                 <span
                   aria-hidden
                   className="canvas-swatch"
-                  style={{ background: `var(--droid-annotation-${entry.color})` }}
+                  style={{ background: `var(--annotation-${entry.color})` }}
                 />
               </button>
             ))}

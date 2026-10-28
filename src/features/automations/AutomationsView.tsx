@@ -1,9 +1,12 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { MessageSquareText, Plus, Search } from 'lucide-react';
-import { Clock, Spinner } from '@droidex/icons';
+import { Search } from 'lucide-react';
+import { Clock, MessageSquareText, Plus, Spinner } from '@droidex/icons';
 import { useEffect, useMemo, useState } from 'react';
 import type { WorkspaceScope } from '../../lib/workspaces';
 import { toast } from '../../lib/toast';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Field';
 import type { ModelInfo, ReasoningEffort, SessionSummary } from '../../types/bridge';
 import { AutomationEditor } from './AutomationEditor';
 import { AutomationList } from './AutomationList';
@@ -234,32 +237,28 @@ export function AutomationsView({
   return (
     <div
       data-testid="automations-workspace"
-      className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-droid-bg text-droid-text"
+      className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-bg text-primary"
     >
       <main className="flex min-w-0 flex-1 flex-col">
         {/* Outside the scroller, so the heading never slides under the window
             controls that sit in this strip when the sidebar is collapsed. */}
         <div data-electron-drag-region className="h-9 shrink-0" />
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[980px] px-8 pb-16 pt-3">
+          <div className="mx-auto w-full max-w-5xl px-8 pb-16 pt-3">
             <div className="flex items-start justify-between gap-6">
               <div className="min-w-0">
                 <div className="flex items-center gap-2.5">
-                  <h1 className="text-[22px] font-medium tracking-[-0.03em]">Automations</h1>
-                  {statusSummary && (
-                    <span className="rounded-full border border-droid-border bg-droid-surface/60 px-2 py-1 text-[11px] text-droid-text-muted">
-                      {statusSummary}
-                    </span>
-                  )}
+                  <h1 className="text-title">Automations</h1>
+                  {statusSummary && <Badge tone="neutral">{statusSummary}</Badge>}
                 </div>
-                <p className="mt-1 max-w-[660px] text-[14px] leading-5 text-droid-text-muted">
+                <p className="mt-1 max-w-2xl text-body-lg text-muted">
                   Schedule tasks and automations to run through DROIDEX on the model, workspace, and
                   timezone you choose.
                 </p>
-                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-droid-text-muted/75">
+                <div className="mt-2 flex items-center gap-1.5 text-caption text-muted/75">
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
-                      snapshot.scheduler.ready ? 'bg-droid-accent/70' : 'bg-droid-text-muted/35'
+                      snapshot.scheduler.ready ? 'bg-accent/70' : 'bg-muted/35'
                     }`}
                   />
                   <span>
@@ -268,46 +267,43 @@ export function AutomationsView({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onChatWithDroidex}
-                  className="inline-flex items-center gap-2 rounded-xl border border-droid-border bg-droid-surface/50 px-3.5 py-2 text-[13px] font-medium text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:bg-droid-elevated hover:text-droid-text"
-                >
-                  <MessageSquareText className="h-4 w-4" />
+                <Button variant="secondary" icon={MessageSquareText} onClick={onChatWithDroidex}>
                   Chat with DROIDEX
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="primary"
+                  icon={Plus}
                   onClick={() => {
                     createDraft();
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-droid-text px-3.5 py-2 text-[13px] font-medium text-droid-bg transition-opacity hover:opacity-90"
                 >
-                  <Plus className="h-4 w-4" />
                   Create automation
-                </button>
+                </Button>
               </div>
             </div>
 
             {loadingSnapshot ? (
-              <div className="mt-8 flex items-center gap-2 text-[13px] text-droid-text-muted">
-                <Spinner className="h-4 w-4 motion-safe:animate-spin-slow" />
+              <div className="mt-8 flex items-center gap-2 text-body text-muted">
+                <Spinner className="size-icon-md motion-safe:animate-spin-slow" />
                 Loading automations…
               </div>
             ) : (
               <>
-                <label className="mt-8 flex h-10 items-center gap-2 rounded-xl border border-droid-border bg-droid-surface/40 px-3 text-droid-text-muted transition-colors focus-within:border-droid-border-hover focus-within:bg-droid-surface/55">
-                  <Search className="h-4 w-4 shrink-0" />
-                  <input
+                <div className="relative mt-8">
+                  <Search
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-3 top-1/2 size-icon-sm -translate-y-1/2 text-muted"
+                  />
+                  <Input
                     value={query}
                     aria-label="Search automations"
                     onChange={(event) => {
                       setQuery(event.target.value);
                     }}
                     placeholder="Search automations"
-                    className="min-w-0 flex-1 bg-transparent text-[13px] text-droid-text outline-none placeholder:text-droid-text-muted"
+                    className="pl-8"
                   />
-                </label>
+                </div>
 
                 <div
                   className="mt-5 flex flex-wrap items-center gap-1"
@@ -321,10 +317,10 @@ export function AutomationsView({
                       onClick={() => {
                         setFilter(value);
                       }}
-                      className={`rounded-lg px-3 py-1.5 text-[12px] capitalize transition-colors ${
+                      className={`rounded-md px-3 py-1.5 text-label transition-colors ${
                         filter === value
-                          ? 'bg-droid-elevated text-droid-text'
-                          : 'text-droid-text-muted hover:bg-droid-elevated/50 hover:text-droid-text'
+                          ? 'bg-elevated text-primary'
+                          : 'text-muted hover:bg-elevated/50 hover:text-primary'
                       }`}
                     >
                       {label}
@@ -361,13 +357,13 @@ export function AutomationsView({
                 )}
 
                 {visible.length === 0 && snapshot.automations.length > 0 && (
-                  <div className="py-12 text-center text-[13px] text-droid-text-muted">
+                  <div className="py-12 text-center text-body text-muted">
                     No automations match this view.
                   </div>
                 )}
 
                 {snapshot.automations.length === 0 && (
-                  <p className="mt-8 text-[12px] leading-5 text-droid-text-muted">
+                  <p className="mt-8 text-body text-muted">
                     To continue an existing conversation later, choose Schedule prompt beside its
                     Send button.
                   </p>
@@ -394,7 +390,7 @@ export function AutomationsView({
             animate={{ x: 0, opacity: 1 }}
             exit={reduceMotion ? { opacity: 0 } : { x: 24, opacity: 0 }}
             transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute inset-y-0 right-0 z-20 w-[410px] max-w-full"
+            className="absolute inset-y-0 right-0 z-20 w-full max-w-md"
           >
             <AutomationEditor
               editor={editor}
@@ -416,8 +412,8 @@ export function AutomationsView({
               }}
             />
             {saving && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-droid-bg/30 backdrop-blur-[1px]">
-                <Spinner className="h-5 w-5 motion-safe:animate-spin-slow text-droid-text-muted" />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg/30">
+                <Spinner className="size-icon-lg motion-safe:animate-spin-slow text-muted" />
               </div>
             )}
           </motion.div>
@@ -448,29 +444,25 @@ function isSnapshotLoading(snapshot: AutomationSnapshot): boolean {
 function SuggestionList({ onPick }: { onPick: (draft: AutomationSuggestion['draft']) => void }) {
   return (
     <section className="mt-8">
-      <h2 className="text-[14px] font-medium text-droid-text-secondary">Suggestions</h2>
-      <div className="mt-2 overflow-hidden rounded-2xl border border-droid-border/75 bg-droid-surface/20">
-        {AUTOMATION_SUGGESTIONS.map((suggestion, index) => (
+      <h2 className="text-label text-muted">Suggestions</h2>
+      <div className="mt-2 overflow-hidden rounded-xl bg-surface dark:bg-surface/20">
+        {AUTOMATION_SUGGESTIONS.map((suggestion) => (
           <button
             key={suggestion.title}
             type="button"
             onClick={() => {
               onPick(suggestion.draft);
             }}
-            className={`group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-droid-elevated/45 ${
-              index === AUTOMATION_SUGGESTIONS.length - 1 ? '' : 'border-b border-droid-border/60'
-            }`}
+            className="group flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated dark:hover:bg-elevated/45"
           >
-            <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl border border-droid-border bg-droid-surface text-droid-text-muted transition-colors group-hover:text-droid-text">
-              <Clock className="h-4 w-4" />
+            <span className="mt-0.5 flex size-control-md items-center justify-center rounded-lg bg-bg text-muted transition-colors group-hover:text-primary dark:bg-surface">
+              <Clock className="size-icon-md" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="text-[13px] font-medium text-droid-text">{suggestion.title}</span>
-              <span className="mt-1 block text-[12px] leading-5 text-droid-text-muted">
-                {suggestion.detail}
-              </span>
+              <span className="text-body-strong text-primary">{suggestion.title}</span>
+              <span className="mt-1 block text-body text-muted">{suggestion.detail}</span>
             </span>
-            <Plus className="mt-1 h-4 w-4 text-droid-text-muted/65 transition-colors group-hover:text-droid-text" />
+            <Plus className="mt-1 size-icon-md text-muted/65 transition-colors group-hover:text-primary" />
           </button>
         ))}
       </div>

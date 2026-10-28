@@ -63,7 +63,7 @@ export function writeCompletedOnboarding(userDataDir: string): void {
   mkdirSync(userDataDir, { recursive: true });
   writeFileSync(
     join(userDataDir, 'onboarding.json'),
-    `${JSON.stringify({ completed: true, version: 1, cliAutoUpdate: false, appAutoUpdate: false }, null, 2)}\n`,
+    `${JSON.stringify({ completed: true, version: 1, cliAutoUpdate: false, harnessCliAutoUpdate: false, appAutoUpdate: false }, null, 2)}\n`,
   );
 }
 

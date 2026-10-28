@@ -231,7 +231,6 @@ test('the renderer bridge token cannot invoke host-only export', async (t) => {
   const bridge = startBridgeServer({
     requestedPort: 0,
     token: 'renderer-token',
-    assetToken: 'asset-token',
     canvasExportToken: 'host-token',
     onCommand: async () => undefined,
   });

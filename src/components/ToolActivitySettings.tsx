@@ -5,11 +5,11 @@
 
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { TranscriptEvent } from '../types/bridge';
-import type { FileChange } from '../lib/diff';
 import type { ToolActivityDensity, ToolActivitySettings } from '../lib/toolActivity';
-import { SettingRow } from './settingsKit';
+import { GroupLabel, SettingRow } from './settingsKit';
 import { Switch } from './Switch';
 import { DiffGroup, ToolGroupItem } from './transcript/groups';
+import type { FeedChange } from './chatFeed';
 
 const DENSITY_STOPS: { value: ToolActivityDensity; label: string; hint: string }[] = [
   { value: 'compact', label: 'Compact', hint: 'One line per run; expand it for the tools.' },
@@ -24,33 +24,34 @@ const PREVIEW_BASE = {
   ts: 0,
 };
 
-const PREVIEW_TOOL_EVENTS: TranscriptEvent[] = [
+const previewRead = (id: string, path: string): TranscriptEvent[] => [
   {
-    id: 'preview-read-call',
+    id: `${id}-call`,
     ...PREVIEW_BASE,
     kind: 'tool_call',
     toolName: 'Read',
-    toolArgs: { file_path: 'src/app.tsx' },
+    toolArgs: { file_path: path },
+    toolUseId: id,
   },
   {
-    id: 'preview-read-result',
+    id: `${id}-result`,
     ...PREVIEW_BASE,
     kind: 'tool_result',
-    text: 'export function App() { … }',
+    toolUseId: id,
+    text: `// ${path}`,
   },
-  {
-    id: 'preview-grep-call',
-    ...PREVIEW_BASE,
-    kind: 'tool_call',
-    toolName: 'Grep',
-    toolArgs: { pattern: 'density' },
-  },
-  {
-    id: 'preview-grep-result',
-    ...PREVIEW_BASE,
-    kind: 'tool_result',
-    text: 'src/lib/toolActivity.ts:7',
-  },
+];
+
+const PREVIEW_TOOL_EVENTS: TranscriptEvent[] = [
+  // A burst of reads merges into a single "Read 6 files" row whose chip rail
+  // folds past the first four.
+  ...previewRead('preview-burst-1', 'src/main.tsx'),
+  ...previewRead('preview-burst-2', 'src/lib/store.ts'),
+  ...previewRead('preview-burst-3', 'src/lib/themeTokens.ts'),
+  ...previewRead('preview-burst-4', 'src/components/chat.tsx'),
+  ...previewRead('preview-burst-5', 'src/components/transcript/rows.tsx'),
+  ...previewRead('preview-burst-6', 'src/lib/tools.tsx'),
+  // A command between the burst and the search keeps them as separate rows.
   {
     id: 'preview-exec-call',
     ...PREVIEW_BASE,
@@ -64,9 +65,43 @@ const PREVIEW_TOOL_EVENTS: TranscriptEvent[] = [
     kind: 'tool_result',
     text: '✓ 42 tests passed in 3.2s',
   },
+  {
+    id: 'preview-grep-call',
+    ...PREVIEW_BASE,
+    kind: 'tool_call',
+    toolName: 'Grep',
+    toolArgs: { pattern: 'density' },
+  },
+  {
+    id: 'preview-grep-result',
+    ...PREVIEW_BASE,
+    kind: 'tool_result',
+    text: [
+      'src/lib/toolActivity.ts:7:  density,',
+      'src/components/ToolActivitySettings.tsx:40:  density,',
+      'src/components/transcript/rows.tsx:12:  density,',
+      'src/components/transcript/groups.tsx:31:  density,',
+      'src/components/transcript/toolFilesCard.tsx:58:  density,',
+      'src/lib/themeTokens.ts:103:  density,',
+      'src/hooks/useStore.tsx:912:  density,',
+    ].join('\n'),
+  },
+  {
+    id: 'preview-skill-call',
+    ...PREVIEW_BASE,
+    kind: 'tool_call',
+    toolName: 'Skill',
+    toolArgs: { skill: 'review', args: 'src/auth' },
+  },
+  {
+    id: 'preview-skill-result',
+    ...PREVIEW_BASE,
+    kind: 'tool_result',
+    text: 'Reviewed the changes in src/auth and reported findings.',
+  },
 ];
 
-const PREVIEW_DIFF: { event: TranscriptEvent; change: FileChange }[] = [
+const PREVIEW_DIFF: FeedChange[] = [
   {
     event: { id: 'preview-diff', ...PREVIEW_BASE, kind: 'tool_call', toolName: 'Edit' },
     change: {
@@ -97,10 +132,10 @@ export function ToolActivitySettings() {
   const current = DENSITY_STOPS[stopIndex];
 
   return (
-    <div className="rounded-xl border border-droid-border bg-droid-surface divide-y divide-droid-border mb-8">
+    <div className="rounded-xl bg-surface shadow-lg mb-8">
       <div className="px-4 py-3.5">
-        <div className="text-[13px] text-droid-text">Tool activity</div>
-        <div className="text-[11px] text-droid-text-muted mt-0.5">
+        <div className="text-body text-primary">Tool activity</div>
+        <div className="mt-0.5 text-caption text-muted">
           How much working detail the transcript shows. {current.hint}
         </div>
         <input
@@ -116,7 +151,7 @@ export function ToolActivitySettings() {
             if (stop) update({ density: stop.value });
           }}
           className="mt-3 h-1 w-full cursor-pointer rounded-full"
-          style={{ accentColor: 'var(--droid-accent)' }}
+          style={{ accentColor: 'var(--accent)' }}
         />
         <div className="mt-1 flex justify-between">
           {DENSITY_STOPS.map((stop) => (
@@ -127,10 +162,10 @@ export function ToolActivitySettings() {
                 update({ density: stop.value });
               }}
               aria-pressed={stop.value === settings.density}
-              className={`text-[11px] transition-colors ${
+              className={`text-caption transition-colors ${
                 stop.value === settings.density
-                  ? 'font-medium text-droid-text'
-                  : 'text-droid-text-muted hover:text-droid-text-secondary'
+                  ? 'font-medium text-primary'
+                  : 'text-muted hover:text-secondary'
               }`}
             >
               {stop.label}
@@ -151,14 +186,12 @@ export function ToolActivitySettings() {
         />
       </SettingRow>
       <div className="px-4 py-3.5">
-        <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
-          Preview
-        </div>
+        <GroupLabel>Preview</GroupLabel>
         {/* Remount on any change so disclosure state re-initializes from the
             new defaults and the preview always reflects the pending setting. */}
         <div
           key={`${settings.density}:${String(settings.inlineDiffs)}`}
-          className="space-y-3 rounded-lg border border-droid-border bg-droid-bg/60 p-3"
+          className="space-y-3 rounded-md bg-bg p-3"
         >
           <ToolGroupItem events={PREVIEW_TOOL_EVENTS} density={settings.density} />
           <DiffGroup changes={PREVIEW_DIFF} inlineDiffs={settings.inlineDiffs} />

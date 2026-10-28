@@ -36,6 +36,7 @@ import { DiffGroup, ToolGroupItem, WorkedGroup } from './transcript/groups';
 import { UserBubble } from './transcript/UserBubble';
 import { ChildSessionLine } from './transcript/ChildSessionLine';
 import { AgentWaveCard } from './agents/AgentWaveCard';
+import { BrowserCard } from './browser/BrowserCard';
 import { GeneratedImageCard } from './media/GeneratedImageCard';
 
 // Row chrome and renderers live in the transcript modules; re-export the ones
@@ -63,6 +64,11 @@ export const ThreadReportNotice = lazy(async () => {
 });
 
 const CanvasArtifactCard = lazy(() => import('../features/canvas/CanvasArtifactCard'));
+
+const ThreadsWaiting = lazy(async () => {
+  const module = await import('../features/projects/ThreadsWaiting');
+  return { default: module.ThreadsWaiting };
+});
 
 const ThreadBriefNotice = lazy(async () => {
   const module = await import('../features/projects/ThreadNoticeCards');
@@ -150,7 +156,7 @@ function ToolGroupWithCards({
           key={call.id}
           fallback={
             <div
-              className="rounded-2xl border border-droid-border bg-droid-surface/35 px-4 py-3 text-[11px] text-droid-text-muted"
+              className="rounded-xl bg-surface/35 px-4 py-3 text-caption text-muted"
               aria-busy="true"
             >
               Loading automation proposal…
@@ -190,6 +196,8 @@ export interface FeedItemViewProps {
   liveTiming?: boolean;
   specContent?: string;
   isFinalResponse?: boolean;
+  // The chat's last row while it is idle: its reply says when it waits on threads.
+  waitingOnThreads?: boolean;
   // Set only on a settled final response an idle chat can fork from; the
   // latest response carries no point because it forks the whole chat.
   onFork?: (forkPointId?: string) => void;
@@ -246,6 +254,7 @@ const AssistantMessage = memo(function AssistantMessage({
   cacheId,
   specContent,
   spoken,
+  waitingOnThreads,
 }: {
   text: string;
   ts: number;
@@ -261,6 +270,8 @@ const AssistantMessage = memo(function AssistantMessage({
   specContent?: string;
   /** The reply was said out loud in a voice conversation. */
   spoken?: boolean;
+  /** The chat's latest settled reply: it says when the chat waits on its threads. */
+  waitingOnThreads?: boolean;
 }) {
   const appOwnsLiveStatus = live && hasAppBlock(text);
   // A live echo of the pinned spec shows no caret of its own: the feed's
@@ -292,7 +303,13 @@ const AssistantMessage = memo(function AssistantMessage({
               }
             : {})}
           {...(forking !== undefined ? { forking } : {})}
-        />
+        >
+          {waitingOnThreads ? (
+            <Suspense fallback={null}>
+              <ThreadsWaiting appSessionId={streamId} />
+            </Suspense>
+          ) : null}
+        </ResponseActions>
       ) : null}
     </div>
   );
@@ -344,6 +361,7 @@ export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewPr
     prev.specContent === next.specContent &&
     prev.cwd === next.cwd &&
     prev.isFinalResponse === next.isFinalResponse &&
+    prev.waitingOnThreads === next.waitingOnThreads &&
     prev.onFork === next.onFork &&
     prev.forkPointId === next.forkPointId &&
     prev.forking === next.forking &&
@@ -372,6 +390,7 @@ export const FeedItemView = memo(function FeedItemView({
   liveTiming,
   specContent,
   isFinalResponse,
+  waitingOnThreads,
   onFork,
   forkPointId,
   forking,
@@ -411,6 +430,7 @@ export const FeedItemView = memo(function FeedItemView({
           streamId={item.event.appSessionId}
           live={live}
           isFinalResponse={isFinalResponse}
+          waitingOnThreads={waitingOnThreads}
           {...(onFork !== undefined ? { onFork } : {})}
           {...(forkPointId !== undefined ? { forkPointId } : {})}
           {...(forking !== undefined ? { forking } : {})}
@@ -460,23 +480,22 @@ export const FeedItemView = memo(function FeedItemView({
       if (isCompactionCompleteStatus(text))
         return <CompactionDivider compactType={item.event.compactType} />;
       return live && !isSettingsStatus(item.event) ? (
-        <span className="shimmer-text text-[13px] font-medium">{text}</span>
+        <span className="shimmer-text text-body-strong">{text}</span>
       ) : (
-        <span className="block text-[13px] text-droid-text-muted leading-relaxed break-words">
-          {text}
-        </span>
+        <span className="block text-body text-muted break-words">{text}</span>
       );
     }
     case 'error':
       return item.event.errorKind === 'usage_limit' ? (
         <TranscriptNotice event={item.event} />
       ) : (
-        <ErrorLine text={item.event.text ?? ''} />
+        <ErrorLine text={item.event.text ?? ''} attempts={item.attempts} />
       );
     case 'diff':
       return (
         <DiffCard
           change={item.change}
+          running={(sessionLive ?? live) && item.pending === true}
           cwd={cwd}
           onOpen={openCapturedChange(item.change, onOpenReviewFile, onOpenDiff)}
         />
@@ -489,6 +508,7 @@ export const FeedItemView = memo(function FeedItemView({
           onOpenDiff={onOpenDiff}
           onOpenReviewFile={onOpenReviewFile}
           inlineDiffs={inlineDiffs}
+          live={sessionLive ?? live}
         />
       );
     case 'generated_image':
@@ -504,6 +524,14 @@ export const FeedItemView = memo(function FeedItemView({
         <Suspense fallback={null}>
           <CanvasArtifactCard appSessionId={item.event.appSessionId} activity={item.activity} />
         </Suspense>
+      );
+    case 'browser':
+      return (
+        <BrowserCard
+          cardKey={item.key}
+          events={item.events}
+          working={!item.ended && (sessionLive ?? live)}
+        />
       );
     case 'tools':
       return (

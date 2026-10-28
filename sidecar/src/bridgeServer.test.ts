@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { WebSocket } from 'ws';
 
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { startBridgeServer } from './bridgeServer.js';
-import { droidexUserDataDir } from './droidexPaths.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeRuntimeSnapshot,
@@ -20,7 +17,6 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 interface Harness {
   port: number;
   token: string;
-  assetToken: string;
   broadcast(event: ServerEvent): void;
   close(): Promise<void>;
 }
@@ -30,24 +26,105 @@ async function bridgeServer(
   t: TestContext,
   onCommand: (command: ClientCommand) => Promise<void> = async () => undefined,
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot,
+  getProfileUsage?: () => Promise<unknown> | unknown,
 ): Promise<Harness> {
   const token = 'test-token';
-  const assetToken = 'test-asset-token';
   const server = startBridgeServer({
     requestedPort: 0,
     token,
-    assetToken,
     onCommand,
     ...(getSnapshot ? { getSnapshot } : {}),
+    ...(getProfileUsage ? { getProfileUsage } : {}),
   });
   await server.ready;
   t.after(() => server.close());
   return {
     port: server.port,
     token,
-    assetToken,
     broadcast: server.broadcast,
     close: () => server.close(),
+  };
+}
+
+test('profile usage is available only through the authenticated local route', async (t) => {
+  const profile = usageSnapshot();
+  const harness = await bridgeServer(t, undefined, undefined, () => ({
+    ...profile,
+    sourcePath: '/private/log.jsonl',
+  }));
+  const url = `http://127.0.0.1:${String(harness.port)}/profile/usage`;
+
+  assert.equal((await fetch(url)).status, 401);
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${harness.token}` },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), profile);
+});
+
+function usageSnapshot() {
+  return {
+    sync: {
+      status: 'ready',
+      sources: { jsonl: 'ready', openCode: 'ready', droid: 'ready' },
+    },
+    lifetimeTokens: 42,
+    peakDayTokens: 42,
+    sessions: 1,
+    currentStreak: 1,
+    longestStreak: 1,
+    trackingSince: 1,
+    mostUsedHarness: 'codex',
+    days: [
+      {
+        date: '2026-10-14',
+        tokens: 42,
+        events: 1,
+        tokensComplete: true,
+        costMicrousd: null,
+        costComplete: false,
+      },
+    ],
+    harnesses: [
+      {
+        id: 'codex',
+        name: 'Codex',
+        sessions: 1,
+        turns: 1,
+        events: 1,
+        tokens: 42,
+        tokensComplete: true,
+        costMicrousd: null,
+        costComplete: false,
+      },
+    ],
+    models: [
+      {
+        id: 'gpt-6',
+        name: 'gpt-6',
+        sessions: 1,
+        turns: 1,
+        events: 1,
+        tokens: 42,
+        tokensComplete: true,
+        costMicrousd: null,
+        costComplete: false,
+      },
+    ],
+    totals: {
+      events: 1,
+      inputTokens: 40,
+      outputTokens: 2,
+      cacheWriteTokens: null,
+      cacheReadTokens: null,
+      reasoningTokens: null,
+      providerCostMicrousd: null,
+      estimatedCostMicrousd: null,
+      tokensComplete: true,
+    },
+    coverage: { inputTokens: { known: 1, events: 1 } },
+    timeZone: 'UTC',
   };
 }
 
@@ -75,7 +152,6 @@ test('only Electron main can submit a validated Canvas image import', async (t) 
   const server = startBridgeServer({
     requestedPort: 0,
     token: 'renderer-token',
-    assetToken: 'browser-token',
     canvasImages: {
       secret: 'main-only-secret',
       importImage: async (request) => {
@@ -193,22 +269,6 @@ test('broadcast after close is dropped instead of throwing', async (t) => {
   assert.doesNotThrow(() => harness.broadcast({ type: 'connection', status: 'connected' }));
 });
 
-test('browser assets are served only with the asset token', async (t) => {
-  const harness = await bridgeServer(t);
-  const root = join(droidexUserDataDir(), `bridge-asset-${String(Date.now())}`);
-  mkdirSync(root, { recursive: true });
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const asset = join(root, 'ok.png');
-  writeFileSync(asset, 'png-ok');
-  const assetUrl = (path: string, token = harness.assetToken) =>
-    `http://127.0.0.1:${String(harness.port)}/browser-assets?path=${encodeURIComponent(path)}&token=${token}`;
-
-  assert.equal((await fetch(assetUrl(asset, harness.token))).status, 401);
-  const response = await fetch(assetUrl(asset));
-  assert.equal(response.status, 200);
-  assert.equal(await response.text(), 'png-ok');
-});
-
 test('the socket handshake rejects a wrong token and stale bridge protocols', async (t) => {
   const harness = await bridgeServer(t);
   const wrongToken = new WebSocket(`ws://127.0.0.1:${String(harness.port)}?token=wrong`);
@@ -312,11 +372,14 @@ test('an oversized batch resets a reconnect cursor instead of replaying the payl
   assert.equal(next.lastSeq, 3);
 });
 
-test('a generation change sends a snapshot, delivered before later broadcasts', async (t) => {
+test('a generation change sends a snapshot, delivered before later broadcasts and commands', async (t) => {
   let releaseSnapshot: ((snapshot: BridgeRuntimeSnapshot) => void) | undefined;
+  const commands: string[] = [];
   const harness = await bridgeServer(
     t,
-    async () => undefined,
+    async (command) => {
+      commands.push(command.type);
+    },
     () =>
       new Promise<BridgeRuntimeSnapshot>((resolve) => {
         releaseSnapshot = resolve;
@@ -327,6 +390,13 @@ test('a generation change sends a snapshot, delivered before later broadcasts', 
   socket.on('message', (raw) => received.push(String(raw)));
   t.after(() => closeSocket(socket));
   await waitFor(() => releaseSnapshot !== undefined);
+  // A command the renderer sends while the snapshot is still being read.
+  socket.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
+  // The server answers a ping only after reading the frames before it.
+  await new Promise((resolve) => {
+    socket.once('pong', resolve);
+    socket.ping();
+  });
   harness.broadcast({ type: 'connection', status: 'connected' });
   releaseSnapshot?.({
     runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
@@ -343,6 +413,8 @@ test('a generation change sends a snapshot, delivered before later broadcasts', 
   const batch = JSON.parse(received[1] ?? '') as ServerEventBatch;
   assert.equal(batch.type, 'events.batch');
   assert.equal(batch.firstSeq, 1);
+  await waitFor(() => commands.length > 0);
+  assert.deepEqual(commands, ['voice.stop']);
 });
 
 test('health and perf metrics require the bridge token, and event-loop sampling arms only on demand', async (t) => {

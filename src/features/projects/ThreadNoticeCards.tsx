@@ -1,5 +1,11 @@
+import type { CSSProperties } from 'react';
+import { MessageSquareText } from '@droidex/icons';
 import { MessageBody } from '../../components/MessageBody';
-import type { ThreadBrief, ThreadReport } from './threadNotices';
+import { ModelIcon } from '../../components/ModelIcon';
+import { ClampedBlock } from '../../components/transcript/ClampedBlock';
+import { useStoreSelector } from '../../hooks/useStore';
+import { PROVIDER_LABELS, PROVIDER_MARKS } from '../providers/providerIdentity';
+import type { ThreadBrief, ThreadReport, ThreadSender } from './threadNotices';
 
 export function ThreadBriefNotice({ brief }: { brief: ThreadBrief }) {
   return (
@@ -12,17 +18,78 @@ export function ThreadBriefNotice({ brief }: { brief: ThreadBrief }) {
   );
 }
 
+/* A project reads like a group chat: the user's filled bubbles on the right,
+   the main chat's replies as its own prose, and each thread as a member on
+   the left, its harness's mark for a face and an outlined bubble so it never
+   reads as the user. A message from a chat outside the project stays a
+   notice. */
 export function ThreadReportNotice({ reports }: { reports: readonly ThreadReport[] }) {
   return (
-    <div data-testid="thread-report-notice" className="flex flex-col gap-2">
-      {reports.map((report) => (
-        <NoticeCard
-          key={`${report.lead}:${report.body.slice(0, 40)}`}
-          lead={report.lead}
-          text={report.body}
-          cacheId={`thread-report:${report.lead}`}
-        />
-      ))}
+    <div data-testid="thread-report-notice" className="flex flex-col gap-4">
+      {reports.map((report, index) =>
+        report.from ? (
+          <ThreadMessage
+            key={`${report.from.threadId}:${report.body.slice(0, 40)}`}
+            from={report.from}
+            text={report.body}
+            index={index}
+          />
+        ) : (
+          <NoticeCard
+            key={`${report.lead}:${report.body.slice(0, 40)}`}
+            lead={report.lead}
+            text={report.body}
+            cacheId={`thread-report:${report.lead}`}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
+// MessageBody's markdown uses the text-prose token: 14px on a 22px line.
+const BUBBLE_LINE_PX = 22;
+
+function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string; index: number }) {
+  const provider = useStoreSelector((state) =>
+    Object.hasOwn(state.sessions, from.threadId)
+      ? state.sessions[from.threadId].provider
+      : undefined,
+  );
+  const asks = from.action === 'needs a decision';
+  return (
+    <div
+      data-testid="thread-message"
+      // A row that just arrived pops its bubbles in one after another.
+      style={{ '--bubble-index': index } as CSSProperties}
+      className="thread-bubble flex items-start gap-2.5 pr-12"
+    >
+      <span
+        role="img"
+        aria-label={provider ? `${PROVIDER_LABELS[provider]} thread` : 'Thread'}
+        // eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat report/instruction: marks the speaker
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-divider bg-surface"
+      >
+        {provider ? (
+          <ModelIcon provider={PROVIDER_MARKS[provider]} size={14} />
+        ) : (
+          <MessageSquareText className="size-icon-sm text-muted" />
+        )}
+      </span>
+      <div className="min-w-0">
+        <p className="flex min-w-0 items-baseline gap-1.5 pb-1 pl-1 pt-1 text-label">
+          <span className="truncate text-primary">{from.name}</span>
+          <span className={`shrink-0 ${asks ? 'text-warning' : 'text-muted'}`}>{from.action}</span>
+        </p>
+        <div
+          // eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat report/instruction: marks the speaker
+          className="rounded-xl rounded-tl-sm border border-divider bg-bg px-3.5 py-2.5 text-body text-secondary"
+        >
+          <ClampedBlock lines={8} lineHeightPx={BUBBLE_LINE_PX} fade="from-bg via-bg/90">
+            <MessageBody text={text} live={false} cacheId={`thread-message:${from.threadId}`} />
+          </ClampedBlock>
+        </div>
+      </div>
     </div>
   );
 }
@@ -43,10 +110,11 @@ function NoticeCard({
   return (
     <div
       data-testid={testId}
-      className="rounded-2xl border border-droid-border bg-droid-surface/35 px-4 py-3"
+      // eslint-disable-next-line design-policy/design-tokens -- agent-to-agent project-chat report/instruction: marks the speaker
+      className="rounded-xl border border-divider bg-surface/35 px-4 py-3"
     >
-      <p className="text-[12px] font-medium text-droid-text-muted">{lead}</p>
-      <div className="mt-1.5 text-[13px] leading-6 text-droid-text-secondary">
+      <p className="text-label text-muted">{lead}</p>
+      <div className="mt-1.5 text-body text-secondary">
         <MessageBody text={text} live={false} cacheId={cacheId} />
       </div>
     </div>

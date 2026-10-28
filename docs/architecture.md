@@ -10,6 +10,8 @@ flowchart LR
   Renderer --> Preload[Electron preload API]
   Preload --> Main[Electron main process]
   Main --> Sidecar[Node sidecar WebSocket bridge]
+  Sidecar -. browser requests over private IPC .-> Main
+  Main --> Pages[Browser pages in webview guests]
   Sidecar --> DroidSDK[Factory Droid SDK]
   Sidecar --> DroidCLI[Droid CLI child processes]
   Sidecar --> HistoryWriter[History persistence worker]
@@ -26,7 +28,8 @@ flowchart LR
 | Area | Path | Responsibility |
 | --- | --- | --- |
 | Renderer | `src/` | React UI, local state, settings, onboarding, session and Mission Control views |
-| Electron main | `electron/main.cjs` | Window lifecycle, bridge process management, native browser lifecycle, downloads, update checks |
+| UI primitives | `src/components/ui/` | Shared controls and floating layers built on the design tokens in `src/lib/themeTokens.ts`, `tailwind.config.js` and `src/index.css`; the spec is `docs/design-system/` |
+| Electron main | `electron/main.cjs` | Window lifecycle, bridge process management, browser pages and the agent's browser requests (`electron/nativeBrowser*.cjs`), downloads, update checks |
 | Electron preload | `electron/preload.cjs` | Narrow API boundary between renderer and Electron main process |
 | Native browser preload | `electron/nativeBrowserPreload.cjs` | Browser automation bridge for embedded native browser flows |
 | Sidecar | `sidecar/src/` | Local WebSocket bridge, Droid SDK session lifecycle, Mission Control integration, CLI discovery |
@@ -36,6 +39,7 @@ flowchart LR
 
 - The renderer does not call the Droid SDK directly. It communicates through preload APIs and the sidecar bridge.
 - The Electron main process owns local process lifecycle and injects bridge configuration into the sidecar.
+- Main owns every browser page. The renderer mounts each chat's page as a `<webview>` only with a one-time token main issues, and main binds, hardens and navigates it. The sidecar's browser tools reach main directly over a private IPC channel opened when main spawns it (`sidecar/src/browser/desktopBrowserChannel.ts`, `electron/nativeBrowserRequests.cjs`): each request carries its own id and is answered on the same sidecar run, nothing is replayed after a restart, and while main works on a page it tells the renderer's Browser host to keep that page mounted and awake, pane open or not. A page is laid out at its session's viewport: Fit follows the pane, and a standard size (desktop, laptop, tablet, mobile) keeps its own CSS size in the pane, drawn scaled down with a CSS transform, so the user sees what the agent reads. Agents read pages from Chromium's accessibility tree, cross-site frames included through their own debugger sessions (`electron/browserReading.cjs`, `electron/browserFrames.cjs`), and screenshots have sensitive fields painted over in main before the image leaves (`electron/browserScreenshot.cjs`, `electron/browserMasking.cjs`). Agent actions are trusted CDP input sent from main (`electron/browserActions.cjs`, `electron/browserKeys.cjs`), keys to the frame that holds the focus. Actions that move a page on, and waits, run one at a time per page, in the order they came, while reads run alongside; `browser_wait` is checked in main as the page changes (`electron/browserWait.cjs`). The page script is called only in the preload's isolated world (`electron/browserPageScript.cjs`), never through the page's own world.
 - The sidecar owns Droid SDK calls and child process environment shaping. It removes `FACTORY_API_KEY` unless a key is explicitly configured.
 - Live canonical session state stays in the sidecar. A bounded write-behind queue sends lossless event rows and latest-wins summary/child snapshots to the history worker in ordered transactions.
 - Packaged builds require a bridge token. Development builds may allow local no-token access with `BRIDGE_ALLOW_LOCAL_NO_TOKEN=1`.
@@ -44,9 +48,10 @@ flowchart LR
 
 - `appSessionId` is the stable top-level application identity. `childSessionId` is the stable logical child identity within its `parentAppSessionId`; `providerSessionId` is reserved for the backing Factory session.
 - `SessionManager` is the composition root and public command coordinator. It retains public dispatch, cross-module routing, and shutdown ordering.
-- `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter.
+- `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter. A Droid steer is `add_user_message` with a caller-minted `messageId`, delivered when the user message carrying that id arrives and dropped on discard, acknowledged Stop or close. Slash-command candidates use ordinary delivery. `DroidTurn` keeps the app turn open across Droid's follow-on loops and an in-flight interrupt, observing an active loop through its terminal idle before emitting one final result. The SDK owns main-loop conversion; only late-loop notifications are buffered and converted here. Child sessions still queue.
 - `SessionRegistry` owns top-level sessions only: the live parent map, stable application identity, provider aliases, canonical parent summary persistence, and projected summary reads. Children never enter `SessionRegistry` or `sessions.list`.
-- Ordinary chats enter durable `sessions.list` history only after the provider file contains both a user message and an assistant response. In-progress first turns remain visible through the live registry; abandoned or unanswered provider files never become permanent sidebar rows.
+- Ordinary chats enter durable `sessions.list` history only after the provider file contains both a user message and an assistant response. In-progress first turns remain visible through the live registry; abandoned or unanswered provider files never become permanent sidebar rows. Once admitted, an app-owned primary chat retains its cached summary and DROIDEX title if its transcript becomes unavailable or returns with only a header, including across restarts; file reconciliation never deletes app-owned notices. Missing files are excluded from indexing until they return. Delete/archive tombstones live only in renderer storage, so they survive metadata caps and catalog omissions to keep retained chats hidden.
+- If full-text search initialization fails while cached summaries remain readable, catalog listing and loading remain available and search is disabled. History health carries the cause and repair instructions to a banner and toast, including on connect and snapshot recovery. The shared search database is preserved for repair because missing transcripts cannot reconstruct retained summaries.
 - `ChildSessions` is the one stateful generic owner of parent-child membership, canonical child identity, provider replacement, admission, capacity, queues, turns, settings, cleanup, exact context/compaction targets, and child persistence/hydration. Spawn ownership is indexed during hydration, admission, and link changes so child deltas do not scan historical siblings.
 - `MissionControlPolicy` owns only AGI Mission Control policy and projection: features, progress, worker/validator decisions, spawn correlation, Mission phase, and Mission completion. It may call `ChildSessions`; `ChildSessions` does not import Mission Control.
 - `SessionTimeline` owns history listing and restore, child replay, status entries, and the canonical record-before-emit path for live transcript events. Routed non-Droid child output uses the same provider transcript writer in a separate `provider-sessions/<childSessionId>.jsonl` file. Each coalesced child run is persisted immediately because it has no independent turn-settlement callback. The child header records its parent, keeping it out of top-level history; child replay resolves the stable child identity to that file. Stored tool calls and results retain `pollsChildSessionId` and `interrupted`, preserving hidden child polling and interrupted labels on replay.
@@ -61,6 +66,8 @@ flowchart LR
 - `SessionEventFlow` owns stream and notification normalization, per-app/per-source terminal gating, and transcript-before-side-effect ordering. It has one callback into Manager for the coupled policy that remains there.
 - Canvas tool calls are identified by their reserved MCP server, tool name, and tool-use ID. `SessionEventFlow` projects their arguments and results to `CanvasActivity` before recording or emitting them. App-owned provider files store the projected rows and the live call's occurrence ID, preserving saved frame names and revisions across reload. Droid's native file stays provider-owned, with safe occurrence-specific correlations stored beside the app profile. Backward and oversized eager replay resolve each result against its preceding call, including calls outside the page or byte window, without sharing mutable projection state across pages.
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, pending steers, Send now, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
+- Provider `steer(text, mentions, steerId)` resolves `true` for confirmed consumption, `false` for definitive refusal and report recovery or user-prompt requeue, `withdrawn` for confirmed take-back, or `unconfirmed` when consumption or cancellation cannot be established. Unconfirmed handoffs never replay.
+- `session.withdrawSteer` carries `appSessionId`, `steerId`, and a `requestId`; `session.steerWithdrawn` echoes those identities with `withdrawn` and, on success, the full prompt text and mentions. True means the model cannot see the prompt: app-owned queued prompts are removed immediately; Claude harness-held steers require `cancelAsyncMessage` confirmation or a matching cancelled lifecycle frame. That confirmation survives provider shutdown. Codex and Droid harness-held steers return false. Lifecycle retains the latest 64 withdrawn or delivered outcomes per live session so repeated requests replay the receipt. The renderer keeps a lost withdrawal marked and retries once per bridge reconnect; it never infers withdrawal from the pending list. Pending summary rows publish `canWithdraw`; only listed steers offer Send now or take-back. Send now retains harness ownership until settlement even while the prompt also waits in `pendingSends`. Confirmed withdrawal settles the original steer without delivery or fallback requeue.
 - Workspace sessions pass their selected folder to Factory unchanged. Folder-less sessions remain `workspaceKind: none` in navigation, while their Factory runtime uses the app-owned `chats/` directory under `DROIDEX_USER_DATA_DIR`; DROIDEX creates it before opening the session, resumes the session from it (Claude Code files sessions under the directory they ran from), and never uses the user's home directory as an implicit workspace.
 
 ### Chat preferences
@@ -93,8 +100,11 @@ membership durably before the first goal can execute. `SessionLifecycle`
 remains the sole runtime owner.
 
 Thinking and tool output are never forwarded in a report. Busy recipients wait
-for session availability or capacity events. Interrupted delivery is retained
-as uncertain and requires review, rather than being silently replayed.
+for session availability or capacity events. A steered report settles at the
+provider call and never replays; unread replies survive lost pushes. Scheduled
+turns retain their provider acceptance receipt. On restart, sending claims made
+entirely of reports are dropped with their replies unread; other claims require
+review.
 Permission requests stay with the human. A thread's own question goes to the
 chat that started it, and the human can still answer it in the thread.
 
@@ -108,7 +118,7 @@ sidebar tools never keep a copy of the sidebar: each call sends the window a
 `sidebar.request` and waits up
 to three seconds for its `sidebar.result`, which the app root answers from one
 read of the store, so it works with the sidebar collapsed. See
-[Session tools](session-tools.md) for the eleven tools, and
+[Session tools](session-tools.md) for the twelve tools, and
 [Projects](projects.md) for current capabilities and limitations.
 
 ### Child runtime residency
@@ -127,11 +137,12 @@ read of the store, so it works with the sidebar collapsed. See
 - A session is released after `SESSION_RUNTIME_IDLE_RETIREMENT_MS` (30 minutes) measured from both its last reply and the moment the user last switched away from it, and only when it is fully settled: not on screen, no turn streaming, no unanswered plan or approval, nothing queued, compacting, interrupting, or stopping to send now, no child agent working, no embedded browser open, and no model choice still to reach the provider. The session the renderer reports as on screen is never released, and neither is a session hidden only because the window is minimized.
 - Nothing is retirable until the renderer has reported which session is on screen, and the decision is taken again immediately before each close, so a prompt arriving while an earlier session is being released keeps the sessions behind it alive.
 - Viewing a released session costs nothing: the transcript is served from persisted history in under 10 milliseconds regardless of its length. Selecting it reloads the provider session in the background (`sessionRuntimeWarmUp`, about 0.7 seconds), so the runtime is usually back before the user sends. Neither the release nor the warm-up writes a transcript row. The budget is six times the child budget despite that reload being the cheaper of the two, because of where the cost lands: a child pays behind its own loading state, a session pays when the user comes back to write in it.
-- A sidecar restart applies the same rules before spending anything. `SessionAdoption` resurrects the sessions recorded in `live-runtime.json`, which spawns a provider process each, so it asks `sessionRuntimeRetirement` first and leaves any session already past the budget or over the idle count cap closed and reopenable rather than spawning a process for the first sweep to release. A restart takes every provider process, browser, and pending edit with it, so the journal records when each session was last active and adoption reads the exit phase and journalled child statuses alongside it. Sessions interrupted mid-turn, waiting on the user, or holding unsettled children are resurrected as before.
+- A sidecar restart applies the same rules before spending anything. `SessionAdoption` resurrects the sessions recorded in `live-runtime-v2.json`, which spawns a provider process each, so it asks `sessionRuntimeRetirement` first and leaves any session already past the budget or over the idle count cap closed and reopenable rather than spawning a process for the first sweep to release. A restart takes every provider process, browser, and pending edit with it, so the journal records when each session was last active and adoption reads the exit phase and journalled child statuses alongside it. Sessions interrupted mid-turn, waiting on the user, or holding unsettled children are resurrected as before. The journal names the sidecar that wrote it, and while that sidecar still runs another one on the same profile leaves its sessions and processes alone; the Electron main process also holds a single-instance lock per profile.
 
 ### History persistence
 
 - `HistoryPersistence` is the sidecar-facing history seam. It keeps canonical live summary and child overlays immediately readable while persistence is pending.
+- A synchronous canonical database open/schema failure disables history reads and writes until restart, reports the storage error, and starts neither history worker. The sidecar remains running without publishing an empty catalog or replacing canonical storage. The bridge snapshot and connection carry the unavailable reason; the renderer shows a persistent history banner and a repair toast.
 - `HistoryPersistenceQueue` retains transcript metadata losslessly, collapses pending summaries and child records by stable identity, and enforces explicit row and byte ceilings.
 - Ordinary writes flush on a short debounce or batch limit with SQLite WAL `synchronous=NORMAL`. Reconciliation drains pending transactions for read consistency without forcing a durability checkpoint. Session creation, turn settlement, provider replacement, compaction, child settlement, unregister, and shutdown additionally force a `synchronous=FULL` WAL checkpoint before the corresponding completed state is published. These boundaries await worker replies without blocking the orchestration event loop; owners revalidate the captured session or turn before applying the result.
 - App-owned provider transcripts serialize appends through an asynchronous file-write queue, one per file. A line that fails is reported to the caller that wrote it and is lost; the lines after it are still written, and the head line is retried until a line lands. Turn settlement and close wait for the queue and for every child file, and reject only when the message they closed could not be written. No transcript file or extra worker is opened at session construction. A fork of an open chat reads the source file through the same queue, so the copy holds every line queued before it and none written half-way.
@@ -140,7 +151,7 @@ read of the store, so it works with the sidebar collapsed. See
 - Full-text content indexing is incremental and restartable. Each transaction advances a persisted byte cursor and indexed-tail fingerprint, so appends index only new JSONL records and a restart resumes at the last committed boundary. File replacement, truncation, or a changed indexed tail rebuilds only that provider's derived rows; deletion removes rows through an indexed provider-to-row mapping.
 - Upgrade backfill is deliberately resource-light. Chats updated during the last seven days are processed first in 256 KiB target slices, paced at one slice every two seconds while the desktop is active. After Electron reports at least 60 seconds of operating-system idle time, that recent lane also uses the five-second idle cadence so a quiet machine is not ground by search backfill. An individual JSONL record that exceeds the slice ceiling is skipped so malformed or unbounded lines cannot grow worker memory without limit. Older chats stay unarmed until that same idle sample and then advance one slice every five seconds. Live transcript, streaming-session, running-child, and interactive search work pause the idle lane; the next desktop activity sample resumes it only if the machine remains idle. Large archives may therefore take days to finish without delaying active agent work.
 - Renderer search commands carry a `requestId` and query. Queries of at least three characters run against the persisted FTS5 trigram index, preserve case-insensitive substring/snippet behavior, resolve provider and compaction aliases to canonical app sessions, and discard superseded request results. Results remain useful while backfill is partial and grow as older slices commit.
-- Canonical durability uses `session-index.sqlite`; rebuildable file-summary and FTS5 state uses the separate `session-search.sqlite`. The canonical schema version and user-data rows are unchanged. An absent, old, or corrupt derived database is rebuilt from provider JSONL without modifying canonical sessions, children, or event rows; deleting `session-search.sqlite` plus its WAL/SHM files is the explicit recovery step for derived-index corruption. The worker bundle ships beside `sidecar.mjs` in packaged updates.
+- Canonical durability uses `session-index.sqlite`; the separate `session-search.sqlite` holds cached file summaries and FTS5 state. The canonical schema version and user-data rows are unchanged. An absent search database is initialized from available provider JSONL; FTS schema rebuilds stay within search tables. Corrupt search storage fails without deleting the database because retained summaries for unavailable transcripts cannot be reconstructed from provider files. Quit DROIDEX, back up `session-search.sqlite` and its WAL/SHM files, then repair it or restore a known-good backup. The worker bundle ships beside `sidecar.mjs` in packaged updates.
 - The worker bundle carries no third-party runtime: both worker isolates compile it, so a value import of the Droid SDK from the history graph costs the sidecar tens of MiB of resident memory for code the workers never call. `historyWorkerBundle.test.ts` gates this.
 
 ### Renderer child navigation
@@ -167,13 +178,15 @@ read of the store, so it works with the sidebar collapsed. See
 
 - The canonical levels are `off`, `low`, `medium`, and `high`, shared verbatim by the renderer, the bridge protocol, and the sidecar.
 - Product modes are Supervised (`off`), Auto-accept edits (`low`), Auto (`medium`), and Full access (`high`). Existing provider allow rules and safety checks still apply. Claude uses `default`, `acceptEdits`, a session-start probe of `auto` (one status notice and `default` when unavailable), and `bypassPermissions`; Spec retains `plan`.
-- Codex uses `untrusted/readOnly`, `untrusted/workspaceWrite`, `onRequest/workspaceWrite`, and `never/dangerFullAccess`. Edits-only accepts file-change requests only for the current turn's verified workspace paths, excluding `.git`, `.codex`, `.agents`, outside paths, and symlink escapes. Commands still prompt. Changes apply next turn.
-- Droid maps `off` and `low` to native Off; the low callback accepts only batches consisting entirely of edit/create/patch requests. Medium and High retain native safety checks. Resume reapplies the canonical app selection before any turn.
+- Codex uses `untrusted/readOnly`, `untrusted/workspaceWrite`, `onRequest/workspaceWrite`, and `never/dangerFullAccess`. Approval requests read the current autonomy, including mid-turn: Supervised asks, edits-only and Auto accept verified workspace file changes, and Full access accepts commands and file changes. Workspace checks exclude `.git`, `.codex`, `.agents`, outside paths, symlink escapes, and wider root grants. Auto still asks for command escalations. Native approval policy and sandbox changes reach the next turn. Downgrades below a running turn’s effective containment level stop that turn when its policy bypasses callbacks (`on-request` or `never`); a status row explains that Codex keeps turn permissions until the turn ends. Callback-enforced downgrades continue without interruption when no higher delegated binding is possible. Voice stays live on a downgrade. Realtime handoffs capture thread defaults when creating their turn, but their notifications expose no bound approval policy or sandbox. The adapter retains the highest autonomy that could have bound a handoff in this runtime. Every running turn uses the more permissive of its recorded policy and this ceiling for containment, including typed starts that Codex may steer into an existing handoff. Current and later turns are interrupted whenever this effective policy can bypass callbacks and exceeds the latest choice. Settings acknowledgements and turn completions do not clear this ceiling; until Codex exposes a provable binding, reopen the chat runtime at the lower level to resume work. Callback-enforced voice downgrades continue without interruption. A voice stop that misses its deadline retires the runtime. The next prompt starts at the new level.
+  Codex 0.161.0 does not provide an ordered permission cutoff for live voice. The [submission loop installs settings and emits the applied event](https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/core/src/session/handlers.rs#L543), but a [separate realtime fanout admits handoffs directly](https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/core/src/realtime_conversation.rs#L1743). Admission [captures settings before awaited turn construction](https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/core/src/session/turn_context.rs#L1226), and a [spawned regular task emits the start event](https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/core/src/tasks/regular.rs#L51). An old-binding `turn/started` can therefore follow the new settings notification. The [per-thread listener forwards events sequentially](https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/app-server/src/request_processors/thread_lifecycle.rs#L302) through the [same outgoing queue](https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/app-server/src/outgoing_message.rs#L761); this preserves emission order, not binding order. The [settings notification reads current defaults](https://github.com/openai/codex/blob/rust-v0.161.0/codex-rs/app-server/src/bespoke_event_handling.rs#L1234), discarding the applied event's snapshot. A no-op `turn/settings/update` replies from the submission loop without joining realtime admission, and empty `turn/steer` can report no active task while a turn is being constructed. Neither is a containment fence; neither can change approval policy or sandbox. Clearing containment without reconnecting voice requires an upstream admission fence or turn-bound permission fields on `turn/started`.
+- Claude applies `setPermissionMode` to the live query. Its tool callback also reads current autonomy while the control request is in flight; Spec review and Auto classifier refusals still ask. Automatic callback grants recheck the effective level after awaiting; an intervening revocation asks for approval.
+- Droid applies `updateSettings({ autonomyLevel })` to the live session. It maps `off` and `low` to native Off; the low callback reads current autonomy and accepts only batches consisting entirely of edit/create/patch requests. Medium and High retain native safety checks. Resume reapplies the canonical app selection before any turn.
 - Permission semantics revision 1 upgrades pre-parity state once: Claude low/medium become off, Codex low/medium become medium, Droid values remain unchanged, and the provider-neutral saved default becomes off. Canonical history and app-owned transcript settings carry revision markers so reconciliation cannot restore old meanings. Automation stores in this implementation are Droid-only and retain their levels; their revision is persisted before scheduling. The transition is tracked by parity contract brief 13; remove the old-revision conversion when support for pre-parity stored state ends. No harness-owned files are rewritten.
 - Every `session.create` carries an explicit autonomy snapshot. The sidecar fails fast when it is missing instead of falling back to provider or factory defaults.
 - The application default (Supervised on first run) is persisted by the renderer and edited only in Settings → Configuration. The composer drafts a per-session override from that default; the draft resets whenever the create target changes.
 - Starting a Mission requires High autonomy. The composer blocks a lower draft behind an explicit choice to raise it; autonomy is never elevated silently.
-- Live changes go provider-first through `session.updateSettings`, serialized per session. The renderer shows a pending state and settles only when the confirmed summary arrives; rejections surface as recoverable `session.autonomy_update_failed` errors, and a settlement that lands after close or provider replacement is discarded.
+- Live autonomy changes use `session.updateSettings`, with provider-owned native write ordering independent of turn and model settlement. A combined update starts both changes together, so autonomy does not wait for model settings; Codex serializes all full thread-settings writes to keep a rejected level out of later writes. Downgrades revoke local callback and shared MCP permissions before native acknowledgement and stay at the safer level if the write fails. Each provider session owns the latest autonomy choice and at most one native write. Pending choices coalesce: only the newest choice is dispatched after the current write settles, including after a failure. A refused write retries the current choice once; a finally refused escalation resets the latest choice to the confirmed level so ordinary prompts cannot retry it. A successful obsolete grant interrupts execution before the repair write, closing the runtime if interruption fails. A failed native revocation reapplies the provider’s containment rule; Codex interrupts only turns that may bypass callbacks and keeps voice live. Failed interruption or continued refused revocation closes the provider runtime through ordinary retirement. New turns wait until the native setting matches the latest choice. Escalations grant access only after native acceptance. Shared MCP approvals read the provider’s current local policy and recheck it after checking unattended-session status. Callbacks use the lower of the latest choice and confirmed level, so downgrades revoke access immediately and unconfirmed escalations cannot grant it. Scheduled delivery, Claude turn starts, and runtime retirement account for both changes until they settle. The composer shows the requested level immediately with a pending indicator. Autonomy commands and their `session.autonomy_update_applied` or recoverable `session.autonomy_update_failed` settlements carry a `requestId`; only the latest request settles the indicator. Summary updates and older failures keep newer changes pending. Failures show the safer level after settlement. A settlement that lands after close or provider replacement is discarded. Runtime replacement clears every pending autonomy request that was not resent, including requests for chats absent from the live snapshot. Turn settlement never restores a turn-start autonomy snapshot.
 - A chat's model and effort change through the same command. Each change carries a `requestId`; the renderer shows the choice immediately and keeps it until `session.model_update_applied` or a recoverable `session.model_update_failed` for that request settles it, so rapid follow-up changes are never overwritten by an earlier confirmation.
 - Claude chats may choose `contextWindowTokens` (200000 or 1000000). Omission keeps the provider default. It is distinct from the observed `maxContextTokens`.
 - `[1m]` is how the CLI names a model's extended-context variant. Its catalog spells the suffix inside a row's `resolvedModel` rather than publishing a row for it, so the default model resolves past the suffix to the row the picker lists while the suffixed id is what reaches the CLI. `ProviderStatus.defaultContextWindowTokens` reports the window that default runs on.
@@ -189,7 +202,7 @@ read of the store, so it works with the sidebar collapsed. See
 
 ### Harness CLI updates
 
-- DROIDEX runs the Claude Code and Codex CLIs but does not ship them. The sidecar's `HarnessCliUpdater` (`sidecar/src/providers/harnessCli.ts`) resolves each binary the way its provider does, follows it to the real file, and reads the owning installer from that location: a Homebrew `Caskroom`/`Cellar` path updates with that prefix's `brew upgrade`, a global `lib/node_modules` path with that prefix's `npm install --global <package>@latest`, and anything else with the CLI's own `update` command.
+- DROIDEX runs the Claude Code and Codex CLIs but does not ship them. The sidecar's `HarnessCliUpdater` (`sidecar/src/providers/harnessCli.ts`) resolves each binary the way its provider does, follows it to the real file, and reads the owning installer from that location: a Homebrew `Caskroom`/`Cellar` path updates with that prefix's `brew upgrade`, a global `lib/node_modules` path with that prefix's `npm install --global <package>@latest`, and anything else with the CLI's own `update` command. The Codex CLI bundled inside `ChatGPT.app` is found last, after PATH, and is left to the ChatGPT app to update. An updater writes its output to a temporary file and runs in its own process group, so quitting DROIDEX mid-update cannot leave a package manager half-done.
 - `harness.cli.check` answers with `harness.cli.report` (path, install source, version, and whether an update is running or last failed). `harness.cli.update` runs one update per harness at a time, emits `harness.cli.update.done` with the before and after versions, and then re-probes providers so a newer CLI's models appear without a restart.
 - The renderer updates both CLIs once per launch unless Settings → Setup & updates turns that off (`harnessCliAutoUpdate` in onboarding state), and toasts only a changed version or a failure.
 
@@ -222,9 +235,12 @@ non-replaceable event. Approvals, questions, sidebar requests, errors,
 lifecycle boundaries, history responses, and turn settlement flush immediately.
 Each event is serialized once at enqueue; byte accounting, batch assembly, and replay reuse that snapshot.
 
-Renderers must advertise bridge protocol 8, apply one wire batch as one
-ordered store transition, and reconnect with the last fully applied generation
-and sequence. Same-generation reconnects replay the retained buffer. A new
+Renderers must advertise bridge protocol 9, apply one wire batch as one
+ordered store transition, and reconnect with the last processed generation
+and sequence. Invalid batch envelopes or ordering require a fresh cursor;
+invalid events are dropped with payload-free warnings while valid events apply
+in order and the cursor advances through the entire batch. Same-generation
+reconnects replay the retained buffer. A new
 process generation or a replay gap delivers a compact `bridge.snapshot` of
 live sessions, runtime state, and the authoritative agent-process map instead
 of a hard resync; `bridge.reset` is reserved for an invalid resume cursor.
@@ -575,7 +591,7 @@ from generated CSS through the same preview scheme.
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and
   process memory/CPU; the renderer reads it through
-  `window.droidControl.getPerformanceMetrics()`.
+  `window.droidex.getPerformanceMetrics()`.
 
 ### Replay harness
 
@@ -598,9 +614,119 @@ and warned, not failed, on shared runners. Bundle bytes stay gated by
 `npm run quality:bundle-budgets`. Release numbers live in
 `docs/performance-budgets.md`.
 
+## Remote and local profile
+
+Electron owns the opt-in remote host, OS-keychain-encrypted identity/TOTP/device
+state and keep-awake lease. Its separate `sidecar/dist/remoteHost.mjs` bundle
+connects outbound to the hibernating Cloudflare relay and to the existing local
+bridge. The relay stores public name ownership and forwards bounded opaque
+frames; pinned, signed P-256 handshakes derive separate AES-GCM direction keys.
+Only the laptop verifies authenticator codes and admits devices.
+
+A paired browser runs the same renderer as the Electron window; only its
+transport differs. The Remote web client (`remote-web/`) pairs the browser,
+then installs `window.droidex` from `remoteDesktopApi.ts` before it imports
+`src/App`. Inside the encrypted channel, `packages/remote/src/tunnel.ts` chunks
+and compresses messages, and each authorized browser gets a `PeerSession` in
+the Remote host that owns three things: bridge sockets it opens to the local
+sidecar exactly as the window does, terminal ports, and desktop API calls.
+Desktop calls reach Electron's own handlers through `electron/remoteDesktop.cjs`,
+which binds `electron/desktopApi.cjs` (the method table the preload also
+exposes) to a per-browser sender. `REMOTE_DESKTOP_METHODS` in
+`packages/remote/src/application.ts` lists what a browser may call; methods that
+drive the laptop's own window (native dialogs and browser panes, updates,
+relaunch, Remote pairing) are left out. A trusted browser can therefore do
+what the window can: start and steer agents at any autonomy, answer permission
+requests, run terminals and use Git.
+
+The browser starts from the window's stored projects, theme and agent settings
+(`renderer-storage-read`), so the laptop window must be open. Projects and chat
+organization stay one list: each copy saves locally and relays the value
+through `shared-storage-write`, which Electron forwards to the window and every
+other browser (`useSharedStorage`). A browser re-reads these keys whenever it
+reconnects and drops a save made from its stale copy. Browser identities are non-extractable keys
+in IndexedDB. Generic Web Push is sent directly by the laptop using locally
+generated VAPID keys. There is no cloud agent job, offline message store or
+provider credential in the client.
+
+The sidecar's dedicated usage worker incrementally ingests Claude Code and Codex
+JSONL, Factory Droid's mutable settings metadata, and OpenCode's read-only
+SQLite usage rows into the profile-scoped `usage.sqlite` ledger.
+Normalized events and their cursors commit together; harness-specific dedupe
+keys make replay and rotation idempotent. Each adapter has an independent
+indexing state, so a failed source cannot poison the database or stop other
+sources. Snapshots remain responsive while indexing and are explicitly labeled;
+the renderer does not publish partial totals as a finished profile. Token
+categories remain nullable, daily activity and session/model sets are
+rebuildable caches, and the renderer reads only bounded aggregates through an
+authenticated localhost endpoint. This work stays off both the renderer and
+Remote host event loops.
+
+#### How usage counting works
+
+The usage worker starts with the sidecar, independently of opening Profile.
+Claude/Codex JSONL, Droid settings and OpenCode database/WAL changes wake
+incremental ingest; each source also reconciles every minute. Persisted cursors
+and request identities make scans, file rotation and restarts idempotent.
+Claude uses message ID plus request ID and retains the largest streamed usage
+snapshot. Codex uses per-request usage or consecutive cumulative differences,
+matches response records to their notifications, and skips the dense inherited
+history burst at the start of a fork while retaining its counter baseline.
+Droid settings supply cumulative session counters, so their deltas are stored;
+they cannot supply a reliable request count. OpenCode uses message identities.
+
+Schema v4 stores counts and identifiers in `usage_event`, including provider,
+model, session, workspace, timestamp, cache subsets, reported/estimated cost and
+the applied price version. Only a richer Claude snapshot may update an existing
+request; identities remain immutable. `usage_session` stores observed first/last
+usage timestamps and request counts (unknown for Droid), and
+`usage_session_model` records its models. `usage_daily` is a rebuildable aggregate
+cache. Unsupported schemas fail with backup/remove/restart recovery instructions;
+there is no automatic migration or deletion of a user's ledger.
+
+Estimates use versioned, dated official Anthropic/OpenAI list prices, including
+cache reads, 5-minute/1-hour Claude writes, supported service tiers and context
+thresholds. An aggregate Claude cache write without a TTL breakdown uses the
+default 5-minute rate. Unknown/custom model IDs stay unpriced rather than being
+matched to a similar model. Reported cost takes precedence over an estimate in
+the usage breakdown. Missing core token counters and unpriced requests have
+explicit coverage flags; optional, omitted cache fields do not make a known
+token total uncertain. Days use the machine's IANA timezone, which is included
+in every snapshot. Prompt text and raw log contents are never stored. Nothing
+leaves the machine except the already-published public profile aggregates;
+the authenticated laptop/Remote snapshot also contains only aggregates. Future
+opt-in aggregation can reuse these summaries without paths or session IDs.
+
+Snapshots expose one set of top-level `harnesses` and `models` breakdowns with
+session/request counts, token and cost sums, and independent completeness flags.
+`mostUsedHarness` identifies the first harness, ordered by sessions then tokens.
+Top-level `days` uses the same `tokensComplete`, `costMicrousd`, and `costComplete`
+fields. The strict transport allowlist bounds rows to 32 harnesses, 256 models,
+and 366 days; the authenticated response also has a 256 KiB byte limit.
+Public profiles select only day/date token counts and `tokensComplete`, plus the
+top five harness/model names and session counts. Identifiers, costs, paths, and
+session IDs are excluded from that published subset.
+
+The same ledger has an append-only, ID-only `droidex_session` table for the
+profile headline session count. The sidecar seeds durable top-level
+`app_sessions` from canonical history at startup and records every successful
+create or resume idempotently. Profile reads wait for that worker write tail.
+Child sessions and session metadata never enter the table; harness and model
+rankings continue to count only usage-bearing provider sessions.
+
+Opt-in public profiles use the stable `/public/<username>` route. The laptop
+signs a strictly allowlisted aggregate with its P-256 username-owner key and
+explicitly publishes the bounded payload and signature to the handle's Durable
+Object. The viewer fetches that public bundle, verifies the owner signature, and
+never contacts the laptop. Update and exact-current revoke remain owner-signed;
+private usage events and Remote credentials stay local. The short route trusts
+the relay's username-to-key registry for public-profile authenticity; paired
+Remote sessions independently pin the laptop key. See [Local usage ledger](usage.md)
+and [Remote and Profile](remote.md).
+
 ## Build path
 
-`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus the `historyPersistenceWorker.mjs` and `compilerWorker.mjs` entries beside it; Electron uses the first unless `SIDECAR_ENTRY` is set and packages all three from `sidecar/dist`.
+`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus the `historyPersistenceWorker.mjs`, `compilerWorker.mjs` and `usageWorker.mjs` entries and the Remote host bundle beside it; Electron uses the main sidecar unless `SIDECAR_ENTRY` is set and packages the bundles from `sidecar/dist`.
 
 Packaging adds one more resource beside that bundle. The design compiler loads esbuild, Tailwind, PostCSS, React and Recharts at run time, and a packaged app may not resolve them from a checkout or download them, so `npm run canvas:runtime` stages one complete runtime per architecture under `sidecar/canvas-runtime/<arch>` and `extraResources` copies the matching one to `resources/sidecar/canvas-runtime`. The design allowlist exposes only `recharts`; the compiler resolves its ESM entry through the same runtime anchor so unused chart exports can be removed. `electron/main.cjs` derives that directory from its own resources and hands it to the sidecar as `DROIDEX_CANVAS_RUNTIME_DIR`; `sidecar/src/canvas/canvasRuntime.ts` is the only reader, anchoring the compiler's `require` there and naming the owned `ESBUILD_BINARY_PATH` the forked compiler receives. Without that variable a checkout resolves from `sidecar/node_modules` exactly as it does in development, unless a staged runtime's manifest is sitting beside the compiler, which means a packaged app lost the variable and compiles nothing. A relative value is a malformed host and is refused outright.
 
@@ -612,7 +738,7 @@ Anchoring `require` is not a boundary on its own: node resolution also walks anc
 
 ## Update path
 
-Free, ad-hoc-signed macOS builds use Sparkle against architecture-specific,
+Free macOS builds (self-signed when configured, otherwise ad-hoc) use Sparkle against architecture-specific,
 EdDSA-signed appcasts and ZIPs in the public
 `droidex-anas/droidex-releases` repository. DROIDEX may check for a new
 version in the background, but download and installation always require an

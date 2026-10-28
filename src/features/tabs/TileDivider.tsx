@@ -80,7 +80,7 @@ export function TileDivider({
       }}
     >
       <span
-        className={`rounded-full bg-droid-border transition-colors group-hover:bg-droid-accent/30 group-focus-visible:bg-droid-accent/40 group-active:bg-droid-accent/40 ${
+        className={`rounded-full transition-colors group-hover:bg-accent/30 group-focus-visible:bg-accent/40 group-active:bg-accent/40 ${
           vertical ? 'h-full w-px' : 'h-px w-full'
         }`}
       />

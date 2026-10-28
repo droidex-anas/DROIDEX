@@ -84,7 +84,7 @@ export default function CanvasArtifactCard({
       </button>
       {toolsMissing && frame?.revisionId === null && (
         // A frame this chat reserved and can no longer write.
-        <div className="flex max-w-[320px] flex-col gap-3">
+        <div className="flex max-w-xs flex-col gap-3">
           <CanvasToolsRecovery canvasId={canvasId} />
         </div>
       )}

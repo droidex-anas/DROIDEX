@@ -10,7 +10,6 @@ import {
   useCallback,
   type SetStateAction,
 } from 'react';
-import { AnimatePresence } from 'framer-motion';
 import {
   shallowEqual,
   useStoreApi,
@@ -22,6 +21,7 @@ import { useSessionLive } from '../hooks/useSessionLive';
 import {
   sendToSession,
   sendToChild,
+  sendDesignPrompt,
   createSession,
   interruptVisibleSession,
   compactSession,
@@ -48,7 +48,6 @@ import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
 import { ImageChip } from './composer/ImageChip';
 import { FileChip } from './composer/FileChip';
-import { ImageViewerModal } from './composer/ImageViewerModal';
 import { ImageLightbox } from './media/ImageLightbox';
 import { imageSrc, partitionImagePaths } from '../lib/localImage';
 import ComposerDock from './composer/ComposerDock';
@@ -56,12 +55,27 @@ import { QueuedPrompts } from './composer/QueuedPrompts';
 import { markGitTurnStart } from '../lib/git';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { canRunAgents } from '../lib/runtimeHealth';
+import { activeDraftTileId } from '../features/tabs/tabNavigation';
 import {
   chatWorktreeName,
   prepareChatWorkingDirectory,
   type ChatWorkingDirectoryResult,
 } from '../lib/chatWorkspace';
-import { newQueueId, type QueuedPrompt } from '../lib/promptQueue';
+import {
+  createLocalDesignTranscriptEvent,
+  newQueueId,
+  type QueuedPrompt,
+} from '../lib/promptQueue';
+import { browserTranscriptReferencesFromDesignReferences } from './browser/browserTranscriptReferences';
+import {
+  designMarks as stagedDesignMarks,
+  removeDesignMark,
+  restartDesignMarkNumbers,
+  setDesignMarks,
+  useDesignMarks,
+  withDesignShots,
+} from './browser/designMarks';
+import { DesignMarkChip } from './composer/DesignMarkChip';
 import {
   composePrompt,
   isVisualizeCommand,
@@ -112,11 +126,13 @@ import {
   visibleSessionTarget,
   type VisibleSessionTarget,
 } from '../lib/childSessions';
+import { addLocalSteer, dropLocalSteers } from '../lib/localSteers';
 import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
 import {
   Bug,
   FoldVertical,
+  Gauge,
   ListTodo,
   MessageBubble,
   MessageSquareText,
@@ -126,6 +142,7 @@ import {
 } from '@droidex/icons';
 import { VisualizeIcon } from './icons/VisualizeIcon';
 import { ComposerSendButton } from './composer/ComposerSendButton';
+import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
@@ -144,6 +161,7 @@ import {
   supportsSpecMode,
 } from '../features/providers/providerIdentity';
 import AutonomySelector from './AutonomySelector';
+import { Popover } from './ui/Popover';
 import { AUTONOMY_LABELS, missionStartAllowed } from '../lib/autonomy';
 import {
   buildVisibleChildSettingsTarget,
@@ -159,7 +177,7 @@ import {
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo } from '../types/bridge';
+import type { Autonomy, SkillInfo, ProviderMention } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import { sideChatPromptFromCommand } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
@@ -174,6 +192,15 @@ import { createProject } from '../features/projects/client';
 const ComposerEditor = lazy(() => import('./composer/ComposerEditor'));
 const SchedulePromptPopover = lazy(() => import('../features/automations/SchedulePromptPopover'));
 const ScheduledPrompts = lazy(() => import('../features/automations/ScheduledPrompts'));
+// Usage shows only after /usage, a limit or a pace warning, so its slot is not
+// part of the composer's first frame.
+const UsageTabs = lazy(() =>
+  import('./composer/UsageTabs').then((m) => ({ default: m.UsageTabs })),
+);
+// The attachment viewer and its crop tool open only from a chip click.
+const ImageViewerModal = lazy(() =>
+  import('./composer/ImageViewerModal').then((m) => ({ default: m.ImageViewerModal })),
+);
 // The model pickers open on demand; hovering the chip starts the download so
 // the first open does not wait on it.
 const loadModelSliderPopover = () => import('./ModelSliderPopover');
@@ -199,7 +226,7 @@ const VoiceComposerControls = lazy(() =>
 // Stable identity for a closed menu, so no trigger means no new object.
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
 
-const ACCENT = 'var(--droid-accent)';
+const ACCENT = 'var(--accent)';
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
@@ -211,8 +238,8 @@ const DROID_ONLY_COMMANDS = new Set(['/compact']);
 function travelsWithDesign(state: AppState, appSessionId: string | null): boolean {
   return state.productMode === 'design' && appSessionId === state.activeAppSessionId;
 }
-const accentMix = (pct: number) =>
-  `color-mix(in srgb, var(--droid-accent) ${String(pct)}%, transparent)`;
+// The app reads the account itself, so this never reaches a harness as a prompt.
+const USAGE_COMMAND = '/usage';
 type SubmitMode = 'queue' | 'steer';
 
 export function shouldStopTurnStarting({
@@ -269,13 +296,11 @@ export default function PromptInput({
   appSessionId,
   rightInset = false,
   compact = false,
-  onOverlayChange,
 }: {
   // The chat this composer writes into; null drafts a new chat.
   appSessionId: string | null;
   rightInset?: boolean;
   compact?: boolean;
-  onOverlayChange?: (open: boolean) => void;
 }) {
   const dispatch = useStoreDispatch();
   const askSideChat = useAskSideChat();
@@ -288,8 +313,6 @@ export default function PromptInput({
   const state = useStoreSelector(
     (current) => ({
       activeSession: appSessionId ? current.sessions[appSessionId] : null,
-      // A split tab mounts a composer per tile; the focused one shows the live chat.
-      isFocused: appSessionId === current.activeAppSessionId,
       agentConfig: current.agentConfig,
       harnessModel:
         current.harnessModels[
@@ -300,7 +323,14 @@ export default function PromptInput({
       compactionModel: current.compactionModel,
       compactionTokenLimit: current.compactionTokenLimit,
       compactionTokenLimitPerModel: current.compactionTokenLimitPerModel,
-      composerSeed: appSessionId === current.activeAppSessionId ? current.composerSeed : null,
+      // A split tab mounts a composer per tile, and each takes its own chat's
+      // seeds, oldest first. The draft's composer takes those of its tile.
+      composerSeed:
+        current.composerSeeds.find((seed) =>
+          appSessionId
+            ? seed.appSessionId === appSessionId
+            : seed.draftTileId !== null && seed.draftTileId === activeDraftTileId(current),
+        ) ?? null,
       designComposer: travelsWithDesign(current, appSessionId),
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
@@ -320,7 +350,7 @@ export default function PromptInput({
       missionControlMode: current.missionControlMode,
       modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
-      autonomyPending: appSessionId ? appSessionId in current.pendingAutonomy : false,
+      pendingAutonomy: appSessionId ? current.pendingAutonomy[appSessionId] : undefined,
       pendingActiveModelUpdate: appSessionId
         ? current.pendingModelUpdates[appSessionId]
         : undefined,
@@ -352,6 +382,8 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
+  const modelChipRef = useRef<HTMLButtonElement>(null);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
   // Scheduling lives in the draft's right-click menu; its popover opens from the
@@ -421,14 +453,16 @@ export default function PromptInput({
       composerRevisionRef.current += 1;
     }, []),
   );
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
   // Skills and plugins live on the draft's first line; attachments keep their own
   // row above it. Backspace on an empty draft unwinds both.
   const hasAttachmentChips =
     attachedFiles.length > 0 ||
     imageAttachments.images.length > 0 ||
     fileAttachments.files.length > 0;
-  const hasChips = hasSelection || hasAttachmentChips;
+  // Marks picked in this chat's browser, which go out with the next prompt.
+  // Their chips lead the row, so Backspace takes them last.
+  const designMarks = useDesignMarks(state.activeSession?.appSessionId);
+  const hasChips = hasSelection || hasAttachmentChips || designMarks.length > 0;
 
   const removeLastChip = () => {
     if (references.removeLast()) return;
@@ -441,7 +475,12 @@ export default function PromptInput({
       skillFilePaths: activeSkills.map((skill) => skill.filePath),
       documentPaths: documents,
     });
-    if (removal === null) return;
+    if (removal === null) {
+      const last = designMarks.at(-1);
+      if (last && state.activeSession)
+        removeDesignMark(state.activeSession.appSessionId, last.anchor.id);
+      return;
+    }
     switch (removal.chip) {
       case 'attachment':
         attachedFileSeqRef.current.delete(removal.path);
@@ -474,9 +513,17 @@ export default function PromptInput({
   const turnStartingPendingRegisteredRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const consumedComposerSeedId = useRef<number | null>(null);
+  // The draft a seed that goes out at once makes, sent once it is the draft.
+  const seedToSend = useRef<string | null>(null);
+  // A seed that came while a submit was going out, or a seed was about to be
+  // sent, waits for it to settle, so it is not added to that prompt's text.
+  // The count moves as it settles.
+  const seedWaiting = useRef(false);
+  const [submitSettled, setSubmitSettled] = useState(0);
 
   const activeSession = state.activeSession;
   const primaryIsLive = useSessionLive(appSessionId);
+  const usageLimit = useActiveUsageLimit(activeSession?.usageLimit, primaryIsLive);
 
   // A stored pick this build cannot run falls back to Droid, and the chip shows
   // the fallback rather than a selection the picker would render as disabled.
@@ -705,6 +752,15 @@ export default function PromptInput({
       },
     },
     {
+      cmd: USAGE_COMMAND,
+      desc: 'Show usage limits',
+      icon: Gauge,
+      supersedesHarnessCommand: true,
+      run: () => {
+        setUsageOpen(true);
+      },
+    },
+    {
       cmd: '/fast',
       desc: 'Toggle fast mode',
       icon: Zap,
@@ -737,24 +793,28 @@ export default function PromptInput({
     return droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd);
   });
 
+  // /fast, /fast on or /fast off, when this harness offers fast mode.
+  const appFastCommand = (text: string) =>
+    slashCommands.find((command) => command.cmd.startsWith('/fast') && command.cmd === text);
+
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
     setInput(text);
     setHistoryIndex(null);
   };
   const draftEditing = useDraftEditing({ input, editDraft, editorRef });
+
+  // Writes @N at the caret, so the prompt can say which mark it means.
+  const insertMarkReference = (number: number | undefined) => {
+    const editor = editorRef.current;
+    if (number === undefined || !editor) return;
+    const before = input.slice(0, editor.selection().start);
+    editor.insert(`${before && !/\s$/.test(before) ? ' ' : ''}@${String(number)} `);
+  };
+
   const { applyFormat } = draftEditing;
 
   const trigger = useMemo(() => composerTrigger(input, caret), [input, caret]);
-  const overlayOpen = [
-    trigger,
-    modelsOpen,
-    addMenuOpen,
-    feedbackReport,
-    draftEditing.menu,
-    scheduleTarget !== null && scheduleTarget.appSessionId === activeSession?.appSessionId,
-    sendHintOpen,
-  ].some(Boolean);
 
   // Switching conversations abandons any schedule in progress; the bumped
   // generation also stops an in-flight save from clearing the new draft.
@@ -795,17 +855,6 @@ export default function PromptInput({
       if (turnStartingTimerRef.current) clearTimeout(turnStartingTimerRef.current);
     },
     [],
-  );
-
-  useEffect(() => {
-    onOverlayChange?.(overlayOpen);
-  }, [onOverlayChange, overlayOpen]);
-
-  useEffect(
-    () => () => {
-      onOverlayChange?.(false);
-    },
-    [onOverlayChange],
   );
 
   // Everything the bound harness offers, as far as it has landed. Both menus
@@ -951,23 +1000,34 @@ export default function PromptInput({
   // Welcome-screen suggestion cards and saved notes seed the composer through
   // the store so those surfaces and this input stay decoupled. The pendingCaret
   // effect below focuses the field and moves the caret to the end of the text.
-  // Only the focused tile's composer takes the seed.
-  const composerSeed = state.isFocused ? state.composerSeed : null;
+  const composerSeed = state.composerSeed;
+  const restoreRef = useRef<((prompt: QueuedPrompt) => void) | null>(null);
   useEffect(() => {
     if (!composerSeed || consumedComposerSeedId.current === composerSeed.id) return;
+    if (submittingRef.current || seedToSend.current !== null) {
+      seedWaiting.current = true;
+      return;
+    }
     consumedComposerSeedId.current = composerSeed.id;
     setHistoryIndex(null);
+    // A taken-back steer comes back whole: its chips and replies too.
+    if (composerSeed.prompt) {
+      restoreRef.current?.(composerSeed.prompt);
+      dispatch({ type: 'CONSUME_COMPOSER_SEED', id: composerSeed.id });
+      return;
+    }
     // Notes and suggestion cards append to an in-progress draft. A surface
     // that explicitly starts a fresh chat can replace stale mounted input.
     const text = composerTextAfterSeed(input, composerSeed.text, composerSeed.replace);
     setInput(text);
-    pendingCaret.current = text.length;
+    if (composerSeed.focus) pendingCaret.current = text.length;
+    seedToSend.current = composerSeed.send ? text : null;
     setVisualizeSelected(false);
     // Consume the seed so a later remount (e.g. toggling Mission Control, which
     // unmounts this input) does not re-apply stale text over the user's edits,
     // and guard by seed id so a double-invoked effect cannot duplicate the text.
-    dispatch({ type: 'CLEAR_COMPOSER_SEED' });
-  }, [composerSeed, input, dispatch, setVisualizeSelected]);
+    dispatch({ type: 'CONSUME_COMPOSER_SEED', id: composerSeed.id });
+  }, [composerSeed, input, dispatch, setVisualizeSelected, submitSettled]);
 
   // Restore the caret after a programmatic replacement. The editor syncs the
   // new text in its own effect (child effects run first), so by the time this
@@ -1139,6 +1199,13 @@ export default function PromptInput({
     return result;
   };
 
+  const settleSubmit = () => {
+    submittingRef.current = false;
+    if (!seedWaiting.current) return;
+    seedWaiting.current = false;
+    setSubmitSettled((count) => count + 1);
+  };
+
   // Re-entry guard: submit still awaits in-flight image encodes before the
   // input is cleared, so a second Enter during that window would resend.
   const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
@@ -1150,9 +1217,18 @@ export default function PromptInput({
       await runSubmit(originHoldId, mode, autonomyOverride);
     } finally {
       if (originHoldId) dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
+
+  // The browser's prompt box sends through here, as the composer's own prompt.
+  // Consuming its seed left any child of this chat, so it waits for the render
+  // that shows the chat itself as the target.
+  useEffect(() => {
+    if (seedToSend.current !== input || targetChildSessionId) return;
+    seedToSend.current = null;
+    void handleSubmit();
+  });
 
   // The chat a send creates opens in the place it was sent from, even if the
   // user switches tabs while attachments settle or the folder is prepared. The
@@ -1203,6 +1279,8 @@ export default function PromptInput({
         );
       }
       if (
+        input.trim() === USAGE_COMMAND ||
+        appFastCommand(input.trim()) !== undefined ||
         runsAsCompactCommand(text, {
           visualizeSelected,
           skillCount: skills.length,
@@ -1242,7 +1320,7 @@ export default function PromptInput({
       }
       toast.success('Prompt scheduled.');
     } finally {
-      submittingRef.current = false;
+      settleSubmit();
     }
   };
 
@@ -1251,6 +1329,17 @@ export default function PromptInput({
     mode: SubmitMode,
     autonomyOverride?: Autonomy,
   ) => {
+    const text = input.trim();
+    // The app's own commands run at once, before any attachment settles, and
+    // never reach the harness; anything staged beside them stays for the
+    // next prompt. /usage reads what the app already knows, so it runs even
+    // while the runtime is unavailable.
+    if (text === USAGE_COMMAND) {
+      setUsageOpen(true);
+      setInput('');
+      setHistoryIndex(null);
+      return;
+    }
     const updateInterruptedSubmit = () => {
       if (isAppUpdateInstalling()) {
         toast.info('DROIDEX is installing an update. New turns will resume after restart.');
@@ -1263,7 +1352,15 @@ export default function PromptInput({
       return false;
     };
     if (updateInterruptedSubmit()) return;
-    const text = input.trim();
+    // The app owns fast mode, so a typed /fast runs here instead of reaching
+    // the harness, whose own switch the app would never see.
+    const fastCommand = appFastCommand(text);
+    if (fastCommand) {
+      fastCommand.run();
+      setInput('');
+      setHistoryIndex(null);
+      return;
+    }
     // Snapshot the composer revision before the settle wait: text, files, and
     // skills are render-closure snapshots, so anything typed or staged while
     // images finish encoding is not part of this prompt — and must survive
@@ -1274,7 +1371,17 @@ export default function PromptInput({
     const intakeCutoff = nextIntakeSeqRef.current;
     const readyImagesPromise = imageAttachments.whenReady(intakeCutoff);
     const readyFilesPromise = fileAttachments.whenReady(intakeCutoff);
-    const [readyImages, readyFiles] = await Promise.all([readyImagesPromise, readyFilesPromise]);
+    // The chat's marks make this a design prompt, taken now as its text is: one
+    // picked while it settles is the next prompt's. Crops still being taken of
+    // them are waited for with the attachments.
+    const marksPromise = withDesignShots(
+      activeSession && !targetChildSessionId ? stagedDesignMarks(activeSession.appSessionId) : [],
+    );
+    const [readyImages, readyFiles, marks] = await Promise.all([
+      readyImagesPromise,
+      readyFilesPromise,
+      marksPromise,
+    ]);
     const sentImageSequences = readyImages.map((image) => image.sequence);
     const imageAssetIds = await canvasImages.assetIdsFor(sentImageSequences);
     if (updateInterruptedSubmit()) return;
@@ -1293,16 +1400,6 @@ export default function PromptInput({
       allFiles.length > 0 ||
       sideChatReplies.length > 0;
     if (!hasPayload) return;
-    // The app owns fast mode, so a typed /fast runs here instead of reaching
-    // the harness, whose own switch the app would never see.
-    const fastCommand = slashCommands.find(
-      (command) => command.cmd.startsWith('/fast') && command.cmd === text,
-    );
-    if (fastCommand && activeSkills.length === 0 && allFiles.length === 0) {
-      fastCommand.run();
-      setInput('');
-      return;
-    }
     setHistoryIndex(null);
 
     const clearAfterSubmit = () => {
@@ -1550,6 +1647,84 @@ export default function PromptInput({
       return;
     }
 
+    // A design prompt goes with its marks' reference pack, built by the sidecar
+    // from their own snapshots, so it goes the same way once their browser has
+    // closed. It waits for a running turn like a queued prompt, whichever way
+    // it was sent.
+    const appSessionId = activeSession.appSessionId;
+    if (marks.length > 0) {
+      const design = { browserKey: appSessionId, references: marks };
+      // Only the marks this prompt carries go; one picked while it settles stays.
+      const sent = new Set(marks.map((mark) => mark.id));
+      const clearDesign = () => {
+        clearAfterSubmit();
+        setDesignMarks(
+          appSessionId,
+          stagedDesignMarks(appSessionId).filter((mark) => !sent.has(mark.id)),
+        );
+        dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
+      };
+      if (isLive) {
+        dispatch({
+          type: 'QUEUE_PROMPT',
+          appSessionId,
+          prompt: {
+            id: newQueueId(),
+            text: displayText,
+            skills: skillNames,
+            files: allFiles,
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+            design,
+          },
+        });
+        if (sideChatReplies.length > 0) references.detachReplies();
+        clearDesign();
+        return;
+      }
+      startTurnStarting();
+      const committed = await commitPrimaryPromptAfterBaseline({
+        waitForBaseline: () =>
+          workingDirectory ? markGitTurnStart(workingDirectory, appSessionId) : Promise.resolve(),
+        canCommit: () => !updateInterruptedSubmit(),
+        appendTranscript: () => {
+          dispatch({
+            type: 'SESSION_TRANSCRIPT',
+            event: createLocalDesignTranscriptEvent(
+              appSessionId,
+              displayText,
+              browserTranscriptReferencesFromDesignReferences(design.references),
+              { skills: skillNames, files: allFiles, sideChatReplies },
+            ),
+          });
+          if (sideChatReplies.length > 0) references.detachReplies();
+        },
+        resetComposer: () => {
+          const draftKept = composerRevisionRef.current !== composerRevision;
+          clearDesign();
+          // Numbering starts again once nothing can still say @N: no queued
+          // prompt, and no draft the user went on writing while this one settled.
+          if (
+            !draftKept &&
+            !(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design)
+          )
+            restartDesignMarkNumbers(appSessionId);
+        },
+        sendCommand: () => {
+          try {
+            sendDesignPrompt(appSessionId, composed, design.references, responseFormat, mentions);
+            armTurnStartingTimeout();
+          } catch (err) {
+            stopTurnStarting();
+            console.error('[PromptInput] sendDesignPrompt failed:', err);
+          }
+        },
+      });
+      if (!committed) stopTurnStarting();
+      return;
+    }
+
     // Model is working and the user chose to queue: stage the prompt locally.
     // It is held client-side and delivered automatically when the turn finishes.
     if (isLive && mode === 'queue' && !targetChildSessionId) {
@@ -1578,8 +1753,23 @@ export default function PromptInput({
     const steerId =
       isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
     const appendTranscript = () => {
-      // A steer shows from the sidecar's list of pending steers instead.
-      if (!steerId)
+      // A steer shows as pending at once, until the sidecar's own list of
+      // pending steers takes over.
+      if (steerId)
+        addLocalSteer(
+          activeSession.appSessionId,
+          { id: steerId, text: composed, sentAt: Date.now() },
+          {
+            id: steerId,
+            text: displayText,
+            skills: skillNames,
+            files: allFiles,
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
+            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+          },
+        );
+      else
         dispatch({
           type: 'SESSION_TRANSCRIPT',
           event: {
@@ -1612,6 +1802,7 @@ export default function PromptInput({
         armTurnStartingTimeout();
       } catch (err) {
         stopTurnStarting();
+        if (steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
         console.error('[PromptInput] sendToSession failed:', err);
       }
     };
@@ -1639,6 +1830,8 @@ export default function PromptInput({
     if (showTurnStarting) startTurnStarting();
 
     const committed = await commitPrimaryPromptAfterBaseline({
+      // A steer the turn cannot take runs as the next turn and needs its own
+      // baseline; its bubble already shows, so the wait no longer delays it.
       waitForBaseline: () =>
         workingDirectory
           ? markGitTurnStart(workingDirectory, activeSession.appSessionId)
@@ -1648,6 +1841,7 @@ export default function PromptInput({
       resetComposer: clearAfterSubmit,
       sendCommand,
     });
+    if (!committed && steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
     if (!committed && showTurnStarting) stopTurnStarting();
   };
 
@@ -1657,11 +1851,12 @@ export default function PromptInput({
     appSessionId: activeSession?.appSessionId ?? null,
     cwd: primaryWorkingDirectory,
     isLive: primaryIsLive,
+    usageLimited: usageLimit !== undefined,
     appUpdateInstalling,
     appUpdateInstallResult,
   });
 
-  const editQueuedInComposer = (p: QueuedPrompt) => {
+  const restorePromptToComposer = (p: QueuedPrompt) => {
     if (!activeSession) return;
     // The queued prompt carries its own files; drop anything pasted after it
     // was queued so it doesn't ride along on the edited prompt, and delete
@@ -1686,10 +1881,65 @@ export default function PromptInput({
     // A queued App request already carries /visualize in its text, so the chip
     // would add a second copy of the command.
     setVisualizeSelected(false);
+    // A design prompt's marks come back as chips; anything staged since goes.
+    setDesignMarks(activeSession.appSessionId, p.design?.references ?? []);
     references.restore(p);
-    dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
     requestAnimationFrame(() => editorRef.current?.focus());
   };
+
+  // A steer taken back while the composer already holds a draft joins it
+  // instead of replacing it, so two take-backs in a row both come back.
+  const appendPromptToComposer = (p: QueuedPrompt) => {
+    if (!activeSession) return;
+    setInput((current) => (current.trim() ? `${current}\n\n${p.text}` : p.text));
+    for (const path of p.files)
+      if (!attachedFileSeqRef.current.has(path))
+        attachedFileSeqRef.current.set(path, takeIntakeSeq());
+    setAttachedFiles((current) => [
+      ...current,
+      ...p.files.filter((path) => !current.includes(path)),
+    ]);
+    // Without saved rows, a returned prompt's skills and catalog mentions still
+    // bring their chips back, a mention by its full identity.
+    const rowKeys = new Set(p.rowKeys);
+    const mentionKey = (mention: ProviderMention) =>
+      `${mention.kind}:${mention.name}:${mention.path ?? ''}`;
+    const mentioned = new Set(p.mentions?.map(mentionKey));
+    const added =
+      rowKeys.size > 0
+        ? catalog.filter((row) => rowKeys.has(catalogRowKey(row)))
+        : [
+            ...invocableSkills.filter((skill) => p.skills.includes(skill.name)),
+            ...catalog.filter((row) => {
+              const mention = mentionsForRows(composerProvider, [row]).at(0);
+              return mention !== undefined && mentioned.has(mentionKey(mention));
+            }),
+          ];
+    setActiveSkills((current) => {
+      const have = new Set(current.map(catalogRowKey));
+      const next = [...current];
+      for (const row of added) {
+        if (have.has(catalogRowKey(row))) continue;
+        have.add(catalogRowKey(row));
+        next.push(row);
+      }
+      return next;
+    });
+    references.restore(p);
+    requestAnimationFrame(() => editorRef.current?.focus());
+  };
+
+  const editQueuedInComposer = (p: QueuedPrompt) => {
+    if (!activeSession) return;
+    restorePromptToComposer(p);
+    dispatch({ type: 'REMOVE_QUEUED_PROMPT', appSessionId: activeSession.appSessionId, id: p.id });
+  };
+
+  // The seed effect above runs before this declaration in source order, so it
+  // reaches the restore through a ref.
+  // A taken-back steer only ever adds to the draft: whatever the composer
+  // holds (text, chips, marks, attachments still encoding) stays.
+  restoreRef.current = appendPromptToComposer;
 
   const reorderQueue = (from: number, to: number) => {
     if (activeSession)
@@ -1819,8 +2069,6 @@ export default function PromptInput({
       void handleSubmit(e.metaKey || e.ctrlKey ? otherMode : enterMode);
     }
   };
-
-  const boxBorder = isSpecMode ? 'border-droid-orange/40' : 'border-droid-border';
 
   const viewerImage = imageAttachments.images.find((i) => i.id === viewerImageId) ?? null;
   // Files attached as paths (the @ menu, the picker, or a queued prompt brought
@@ -2079,10 +2327,10 @@ export default function PromptInput({
     >
       <div
         // The composer is the transcript column (42rem) plus its own text inset
-        // on each side (1px border, 16px content padding, 6px editor line
-        // padding = 23px), so the text you type starts on the same edge as the
-        // messages above it.
-        className={`relative mx-auto min-w-0 ${compact ? 'max-w-4xl' : 'max-w-[calc(42rem+46px)]'}`}
+        // on each side (16px content padding, 6px editor line padding = 22px),
+        // so the text you type starts on the same edge as the messages above it.
+        className={`relative mx-auto min-w-0 ${compact ? 'max-w-4xl' : ''}`}
+        style={compact ? undefined : { maxWidth: 'calc(42rem + 44px)' }}
         onDragOver={fileDrop.onDragOver}
         onDrop={fileDrop.onDrop}
       >
@@ -2104,20 +2352,21 @@ export default function PromptInput({
 
         {missionPreview ? (
           <div
-            className="absolute -top-5 left-1 flex items-center gap-1.5 text-[11px] font-medium tracking-wide"
+            className="absolute -top-5 left-1 flex items-center gap-1.5 text-caption font-medium"
             style={{ color: ACCENT }}
           >
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: ACCENT }} />
             Mission preview
           </div>
         ) : isSpecMode ? (
-          <div className="absolute -top-5 left-1 text-[11px] font-medium text-droid-orange tracking-wide">
+          <div className="absolute -top-5 left-1 text-caption font-medium text-warning">
             SPEC MODE
           </div>
         ) : null}
 
         <QueuedPrompts
           queue={queue}
+          usageLimit={usageLimit}
           onReorder={reorderQueue}
           onEdit={editQueuedInComposer}
           onRemove={removeQueued}
@@ -2131,12 +2380,35 @@ export default function PromptInput({
           </Suspense>
         )}
 
-        {showStartIn && (
-          <div
-            className="relative z-0 mx-[6%] -mb-3 min-w-0 border border-droid-border bg-droid-surface px-4 pb-4 pt-1.5"
-            // The composer's own 20px corner, carried onto the tab above it.
-            style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
-          >
+        {/* The usage tabs share this slot with StartInBar, which only shows
+            before a chat exists and steps aside while /usage is open. */}
+        {(Boolean(activeSession) || usageOpen) && (
+          <Suspense fallback={null}>
+            <UsageTabs
+              provider={composerProvider}
+              connected={runtimeReady}
+              panelOpen={usageOpen}
+              onClosePanel={() => {
+                setUsageOpen(false);
+              }}
+              chat={
+                activeSession &&
+                (visibleTarget.kind === 'primary' || activeSession.droidProfile === 'alt')
+                  ? {
+                      usageLimit: visibleTarget.kind === 'primary' ? usageLimit : undefined,
+                      droidProfile: activeSession.droidProfile,
+                    }
+                  : undefined
+              }
+              onSwitchModel={() => {
+                setModelsOpen(true);
+              }}
+            />
+          </Suspense>
+        )}
+        {showStartIn && !usageOpen && (
+          // The composer's own corner, carried onto the tab above it.
+          <div className="relative z-0 mx-10 -mb-3 min-w-0 rounded-t-xl bg-surface px-4 pb-4 pt-1.5 shadow-sm">
             <StartInBar />
           </div>
         )}
@@ -2149,19 +2421,24 @@ export default function PromptInput({
           </Suspense>
         )}
 
-        <div
-          className={`relative z-10 bg-droid-raised border rounded-[20px] shadow-droid-sm transition-colors ${missionPreview ? '' : boxBorder}`}
-          style={
-            missionPreview
-              ? {
-                  borderColor: accentMix(20),
-                  boxShadow: `var(--droid-shadow-sm), 0 0 0 3px ${accentMix(6)}`,
-                }
-              : undefined
-          }
-        >
-          {hasAttachmentChips && (
+        {/* No stroke at rest or in focus: focus lifts the fill a touch with a
+            translucent layer over the elevated rung (raised on light; text on
+            dark, where raised is the elevated rung). */}
+        <div className="relative z-10 rounded-xl bg-elevated focus-within:bg-gradient-to-b focus-within:from-raised/60 focus-within:to-raised/60 dark:focus-within:from-text/5 dark:focus-within:to-text/5">
+          {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
+              {designMarks.map((mark) => (
+                <DesignMarkChip
+                  key={mark.id}
+                  mark={mark}
+                  onInsert={() => {
+                    insertMarkReference(mark.anchor.mark);
+                  }}
+                  onRemove={() => {
+                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
+                  }}
+                />
+              ))}
               {imageAttachments.images.map((img) => {
                 const reference = canvasImages.referenceOf(img.sequence);
                 const open = () => {
@@ -2234,10 +2511,10 @@ export default function PromptInput({
           )}
 
           {missionAutonomyGateOpen && missionPreview && !activeSession && (
-            <div className="mx-3 mt-3 flex items-center gap-3 rounded-xl border border-droid-border bg-droid-bg/60 px-3 py-2.5">
-              <p className="flex-1 min-w-0 text-[11px] text-droid-text-secondary leading-snug">
+            <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg bg-bg/60 px-3 py-2.5">
+              <p className="flex-1 min-w-0 text-caption text-secondary">
                 Missions run unattended, so they need{' '}
-                <span className="text-droid-text font-medium">High autonomy</span> to start.
+                <span className="text-primary font-medium">High autonomy</span> to start.
               </p>
               <button
                 onClick={() => {
@@ -2245,7 +2522,7 @@ export default function PromptInput({
                   setMissionAutonomyGateOpen(false);
                   void handleSubmit('queue', 'high');
                 }}
-                className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-droid-bg transition-opacity hover:opacity-90"
+                className="shrink-0 px-2.5 py-1.5 rounded-md text-label text-bg transition-opacity hover:opacity-90"
                 style={{ background: ACCENT }}
               >
                 Set High and start
@@ -2254,7 +2531,7 @@ export default function PromptInput({
                 onClick={() => {
                   setMissionAutonomyGateOpen(false);
                 }}
-                className="shrink-0 px-2 py-1.5 rounded-lg text-[11px] text-droid-text-muted hover:text-droid-text transition-colors"
+                className="shrink-0 px-2 py-1.5 rounded-md text-label text-muted hover:text-primary transition-colors"
               >
                 Not now
               </button>
@@ -2268,7 +2545,7 @@ export default function PromptInput({
                 seeds, and formatting actions. */}
             <Suspense
               fallback={
-                <div className="min-h-[44px] px-4 pt-3 pb-2 text-sm text-droid-text-muted/50">
+                <div className="min-h-11 px-4 pt-3 pb-2 text-sm text-muted/50">
                   {promptPlaceholder}
                 </div>
               }
@@ -2295,8 +2572,6 @@ export default function PromptInput({
               It wraps on narrow windows rather than pushing controls offscreen. */}
           <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-1">
             <AddMenu
-              open={addMenuOpen}
-              onOpenChange={setAddMenuOpen}
               visualizeSelected={visualizeSelected}
               // Both rows hand focus to the draft, which is where the prompt
               // continues once the menu has added to it.
@@ -2310,11 +2585,17 @@ export default function PromptInput({
               }}
             />
 
+            {activeSession?.droidProfile === 'alt' && (
+              <span className="shrink-0 px-2 text-caption text-muted" title="Alt Factory account">
+                <span className="sr-only">Factory account: </span>Alt
+              </span>
+            )}
+
             {/* Autonomy: read-only for a targeted child, live control for an
                 open session, draft override before a session exists. */}
             {targetChild ? (
               <span
-                className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-droid-text-muted"
+                className="flex h-control-sm shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption text-muted"
                 title={
                   targetChild.autonomy
                     ? `Child session autonomy: ${AUTONOMY_LABELS[targetChild.autonomy]}`
@@ -2329,26 +2610,29 @@ export default function PromptInput({
               </span>
             ) : activeSession ? (
               <AutonomySelector
-                align="start"
+                placement="top-start"
                 scope="session"
                 provider={activeSession.provider}
-                value={activeSession.autonomy}
-                pending={state.autonomyPending}
+                value={state.pendingAutonomy?.autonomy ?? activeSession.autonomy}
+                pending={state.pendingAutonomy !== undefined}
                 onSelect={(level) => {
+                  const requestId = newClientRef();
                   dispatch({
                     type: 'AUTONOMY_UPDATE_REQUESTED',
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                   updateSessionSettings({
                     appSessionId: activeSession.appSessionId,
+                    requestId,
                     autonomy: level,
                   });
                 }}
               />
             ) : (
               <AutonomySelector
-                align="start"
+                placement="top-start"
                 scope="draft"
                 provider={composerProvider}
                 value={draftAutonomy}
@@ -2370,124 +2654,119 @@ export default function PromptInput({
                 right edge instead of dropping it to the row start. flex-auto
                 (not flex-1) so its content width is what triggers the wrap. */}
             <div className="flex min-w-0 flex-auto items-center justify-end gap-1">
-              <div className="relative shrink-0">
-                <button
-                  onPointerEnter={() => {
-                    void (state.modelSelectorStyle === 'slider'
-                      ? loadModelSliderPopover()
-                      : loadModelSelectorPopover());
-                  }}
-                  onClick={() => {
-                    setModelsOpen((v) => !v);
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors max-w-[200px] ${
-                    modelsOpen
-                      ? 'bg-droid-bg/60 text-droid-text'
-                      : 'text-droid-text-secondary hover:text-droid-text hover:bg-droid-bg/40'
-                  }`}
-                  title={
-                    childSettingsTarget
-                      ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
-                      : missionPreview
-                        ? 'Configure orchestrator / worker / validator models'
-                        : 'Select chat model'
-                  }
-                >
-                  {childSettingsTarget ? (
-                    <>
-                      <ModelIcon
-                        provider={providerOf(
-                          state.models.find((model) => model.id === childSettingsTarget.modelId),
-                          childSettingsTarget.modelId,
-                        )}
-                        size={14}
-                      />
-                      <span className="truncate">{childSettingsTarget.label}</span>
-                    </>
-                  ) : missionPreview ? (
-                    <>
-                      <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-                      <span>Models</span>
-                    </>
-                  ) : (
-                    <>
-                      <ModelIcon
-                        provider={resolveModelProvider(
-                          chipModel,
-                          primaryModelId,
-                          PROVIDER_MARKS[composerProvider],
-                        )}
-                        size={14}
-                      />
-                      {isDroidProxyModel(chipModel, primaryModelId) && (
-                        <span className="shrink-0 flex items-center">
-                          <DroidProxyMark size={12} />
-                        </span>
+              <button
+                ref={modelChipRef}
+                onPointerEnter={() => {
+                  void (state.modelSelectorStyle === 'slider'
+                    ? loadModelSliderPopover()
+                    : loadModelSelectorPopover());
+                }}
+                onClick={() => {
+                  setModelsOpen((v) => !v);
+                }}
+                className={`flex h-control-sm max-w-52 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${
+                  modelsOpen
+                    ? 'bg-active text-primary'
+                    : 'text-secondary hover:bg-active/60 hover:text-primary'
+                }`}
+                title={
+                  childSettingsTarget
+                    ? `${childSettingsTarget.label} · ${childSettingsReadinessLabel(childSettingsTarget.readiness)}`
+                    : missionPreview
+                      ? 'Configure orchestrator / worker / validator models'
+                      : 'Select chat model'
+                }
+              >
+                {childSettingsTarget ? (
+                  <>
+                    <ModelIcon
+                      provider={providerOf(
+                        state.models.find((model) => model.id === childSettingsTarget.modelId),
+                        childSettingsTarget.modelId,
                       )}
-                      <span className="truncate font-medium text-droid-text">
-                        {shortModelName(selectedModelLabel)}
+                      size={14}
+                    />
+                    <span className="truncate">{childSettingsTarget.label}</span>
+                  </>
+                ) : missionPreview ? (
+                  <>
+                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                    <span>Models</span>
+                  </>
+                ) : (
+                  <>
+                    <ModelIcon
+                      provider={resolveModelProvider(
+                        chipModel,
+                        primaryModelId,
+                        PROVIDER_MARKS[composerProvider],
+                      )}
+                      size={14}
+                    />
+                    {isDroidProxyModel(chipModel, primaryModelId) && (
+                      <span className="shrink-0 flex items-center">
+                        <DroidProxyMark size={12} />
                       </span>
-                      {fastMode && offersFastMode(composerProvider) && (
-                        <Zap
-                          size={11}
-                          fill="currentColor"
-                          className="shrink-0 text-droid-accent"
-                          aria-label={`Fast mode: ${FAST_MODE_HINT}`}
-                        />
-                      )}
-                      {primaryReasoning && (
-                        <span
-                          className={`shrink-0 capitalize ${
-                            primaryReasoning === 'ultra'
-                              ? 'text-droid-ultra'
-                              : 'text-droid-text-muted'
-                          }`}
-                          title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
-                        >
-                          {reasoningEffortLabel(primaryReasoning, composerProvider)}
-                        </span>
-                      )}
-                      {contextWindowTokens !== undefined &&
-                        offersContextWindow(composerProvider) && (
-                          <span
-                            className="shrink-0 text-droid-text-muted"
-                            title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
-                          >
-                            {primaryReasoning ? '· ' : ''}
-                            {contextWindowLabel(contextWindowTokens)}
-                          </span>
-                        )}
-                    </>
-                  )}
-                </button>
+                    )}
+                    <span className="truncate font-medium text-primary">
+                      {shortModelName(selectedModelLabel)}
+                    </span>
+                    {fastMode && offersFastMode(composerProvider) && (
+                      <Zap
+                        size={11}
+                        fill="currentColor"
+                        className="shrink-0 text-accent"
+                        aria-label={`Fast mode: ${FAST_MODE_HINT}`}
+                      />
+                    )}
+                    {primaryReasoning && (
+                      <span
+                        className={`shrink-0 capitalize ${
+                          primaryReasoning === 'ultra' ? 'text-ultra' : 'text-muted'
+                        }`}
+                        title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
+                      >
+                        {reasoningEffortLabel(primaryReasoning, composerProvider)}
+                      </span>
+                    )}
+                    {contextWindowTokens !== undefined && offersContextWindow(composerProvider) && (
+                      <span
+                        className="shrink-0 text-muted"
+                        title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
+                      >
+                        {primaryReasoning ? '· ' : ''}
+                        {contextWindowLabel(contextWindowTokens)}
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
 
-                <AnimatePresence>
-                  <Suspense fallback={null}>
-                    {modelsOpen &&
-                      // The slider style is a chat-composer picker; Mission Control
-                      // and exact-child editors keep the classic popover's semantics.
-                      (state.modelSelectorStyle === 'slider' &&
-                      !missionPreview &&
-                      !childSettingsTarget ? (
-                        <ModelSliderPopover
-                          appSessionId={appSessionId}
-                          onClose={() => {
-                            setModelsOpen(false);
-                          }}
-                        />
-                      ) : (
-                        <ModelSelectorPopover
-                          appSessionId={appSessionId}
-                          onClose={() => {
-                            setModelsOpen(false);
-                          }}
-                          singleAgent={!missionPreview}
-                          childTarget={childSettingsTarget}
-                        />
-                      ))}
-                  </Suspense>
-                </AnimatePresence>
-              </div>
+              <Popover
+                open={modelsOpen}
+                onClose={() => {
+                  setModelsOpen(false);
+                }}
+                anchorRef={modelChipRef}
+                label={missionPreview ? 'Models' : 'Model'}
+                placement="top-end"
+              >
+                <Suspense fallback={null}>
+                  {/* The slider style is a chat-composer picker; Mission Control
+                        and exact-child editors keep the classic popover's semantics. */}
+                  {state.modelSelectorStyle === 'slider' &&
+                  !missionPreview &&
+                  !childSettingsTarget ? (
+                    <ModelSliderPopover appSessionId={appSessionId} />
+                  ) : (
+                    <ModelSelectorPopover
+                      appSessionId={appSessionId}
+                      singleAgent={!missionPreview}
+                      childTarget={childSettingsTarget}
+                    />
+                  )}
+                </Suspense>
+              </Popover>
 
               <div ref={scheduleAnchorRef} className="shrink-0">
                 {voiceHere ? (
@@ -2528,13 +2807,15 @@ export default function PromptInput({
       </div>
 
       {viewerImage && (
-        <ImageViewerModal
-          image={viewerImage}
-          onClose={() => {
-            setViewerImageId(null);
-          }}
-          onCrop={imageAttachments.applyCrop}
-        />
+        <Suspense fallback={null}>
+          <ImageViewerModal
+            image={viewerImage}
+            onClose={() => {
+              setViewerImageId(null);
+            }}
+            onCrop={imageAttachments.applyCrop}
+          />
+        </Suspense>
       )}
       {viewerPath !== null && viewerSrc !== null && (
         <ImageLightbox

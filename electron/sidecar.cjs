@@ -132,14 +132,12 @@ function createSidecarSupervisor(options) {
     processAlive = true;
     bridgeResponsive = false;
     const token = crypto.randomBytes(32).toString('hex');
-    const assetToken = crypto.randomBytes(32).toString('hex');
     canvasExportToken = crypto.randomBytes(32).toString('hex');
     const env = {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_PORT: process.env.BRIDGE_PORT || '0',
       BRIDGE_TOKEN: token,
-      BROWSER_ASSET_TOKEN: assetToken,
       CANVAS_ASSET_SECRET: canvasAssetSecret,
       CANVAS_EXPORT_TOKEN: canvasExportToken,
       DROIDEX_USER_DATA_DIR: options.userData(),
@@ -158,9 +156,10 @@ function createSidecarSupervisor(options) {
     const canvasRuntimeDir = options.canvasRuntimeDir?.();
     if (canvasRuntimeDir) env.DROIDEX_CANVAS_RUNTIME_DIR = canvasRuntimeDir;
     else delete env.DROIDEX_CANVAS_RUNTIME_DIR;
+    // The 'ipc' channel is main's private line to this run of the sidecar.
     const nextChild = spawnProcess(process.execPath, [options.entryPath()], {
       cwd: options.cwd(),
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       env,
     });
     const run = {
@@ -234,6 +233,18 @@ function createSidecarSupervisor(options) {
       nextChild.stderr.on('data', (chunk) => {
         const text = String(chunk);
         errorOutput.write(text);
+      });
+      // Answers go back to the run that asked, never to a later one, and work
+      // it asked for stops changing pages once it has exited or been stopped.
+      nextChild.on?.('message', (message) => {
+        options.onMessage?.(
+          message,
+          (reply) => {
+            // A sidecar closing as the answer goes out simply never gets it.
+            if (nextChild.connected) nextChild.send(reply, () => undefined);
+          },
+          () => activeRun !== run,
+        );
       });
     });
     const wrappedStart = startPromise.finally(() => {

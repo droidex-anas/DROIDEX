@@ -112,7 +112,10 @@ for (const action of ['cancel', 'close', 'interrupt'] as const) {
         });
       settings.resolve();
       // Nothing was dispatched, and only the caller withdrawing it is a cancellation.
-      assert.equal((await delivery).status, action === 'cancel' ? 'cancelled' : 'unavailable');
+      assert.deepEqual(
+        await delivery,
+        action === 'cancel' ? { status: 'cancelled' } : { status: 'busy', retryOn: 'target' },
+      );
       assert.deepEqual(provider.prompts, ['Initial user prompt']);
       if (action === 'cancel') assert.deepEqual(providerCloses(h), []);
     } finally {
@@ -411,7 +414,10 @@ const appendedTexts = (h: SessionManagerTestContext, appSessionId: string): stri
       : [],
   );
 
-test('a turn, an open browser, or an unapplied model choice keeps a session from retiring', async () => {
+test('a turn, an open browser, or an unapplied model choice keeps a session from retiring', async (t) => {
+  // Only the explicit sweeps below may retire: with a zero budget the real
+  // timer would fire on its own between steps, as soon as the chat settles.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const h = createSessionManagerTestContext({ sessionRuntimeIdleMs: 0 });
   try {
     const session = await openIdleSession(h, 'held');

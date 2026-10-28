@@ -12,6 +12,14 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   codex: 'Codex',
 };
 
+// Where each harness's account usage is managed: the page its own limit
+// message sends people to.
+export const PROVIDER_USAGE_URLS: Record<ProviderKind, string> = {
+  droid: 'https://app.factory.ai/settings/usage',
+  claude: 'https://claude.ai/settings/usage',
+  codex: 'https://chatgpt.com/codex/settings/usage',
+};
+
 // Each provider carries the official mark of the harness it runs, full color
 // and at one size so the three read as one family.
 export const PROVIDER_MARKS: Record<ProviderKind, Provider> = {

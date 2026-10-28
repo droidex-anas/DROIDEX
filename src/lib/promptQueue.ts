@@ -10,7 +10,6 @@ import type {
 interface QueuedDesignContext {
   browserKey: string;
   references: DesignReference[];
-  referenceIds: string[];
 }
 
 export interface QueuedPrompt {
@@ -64,10 +63,12 @@ export function createPromptQueueDeliveryGuard(): PromptQueueDeliveryGuard {
   };
 }
 
+/** A design prompt's bubble: its text, marks, and the skills, files and side-chat replies it carried. */
 export function createLocalDesignTranscriptEvent(
   appSessionId: string,
   text: string,
   browserRefs: BrowserTranscriptReference[],
+  carried: Pick<TranscriptEvent, 'skills' | 'files' | 'sideChatReplies'>,
 ): TranscriptEvent {
   return {
     id: `local-design-${String(Date.now())}`,
@@ -78,6 +79,9 @@ export function createLocalDesignTranscriptEvent(
     kind: 'text',
     text,
     author: 'user',
+    skills: carried.skills,
+    files: carried.files,
+    ...(carried.sideChatReplies?.length ? { sideChatReplies: carried.sideChatReplies } : {}),
     browserRefs: browserRefs.length ? browserRefs : undefined,
   };
 }

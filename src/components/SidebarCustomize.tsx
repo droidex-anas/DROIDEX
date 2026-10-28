@@ -1,6 +1,16 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from 'lucide-react';
-import { Popover } from './environment/Popover';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
+import { Check, ChevronRight, Folder, GitPullRequest, ListFilter } from '@droidex/icons';
+import { Button } from './ui/Button';
+import { Popover } from './ui/Popover';
+import { pushEscapeLayer } from './ui/escapeStack';
+import { Tooltip } from './ui/Tooltip';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import {
   DEFAULT_SIDEBAR_PREFERENCES,
@@ -20,9 +30,9 @@ interface Option<T> {
   icon?: ReactNode;
 }
 
-const ICON = 'h-4 w-4';
+const ICON = 'size-icon-md';
 const VIEWS: Option<SidebarActivityPreferences['view']>[] = [
-  { value: 'workspaces', label: 'Workspace', icon: <Folder className={ICON} strokeWidth={1.5} /> },
+  { value: 'workspaces', label: 'Workspace', icon: <Folder className={ICON} /> },
   {
     value: 'activity',
     label: 'Activity',
@@ -31,7 +41,7 @@ const VIEWS: Option<SidebarActivityPreferences['view']>[] = [
   {
     value: 'pull-requests',
     label: 'Pull request',
-    icon: <GitPullRequest className={ICON} strokeWidth={1.5} />,
+    icon: <GitPullRequest className={ICON} />,
   },
 ];
 const ORDER: Option<SidebarActivityPreferences['order']>[] = [
@@ -53,8 +63,10 @@ const STATUS: Option<SidebarActivityPreferences['filter']>[] = [
   { value: 'settled', label: 'Settled' },
 ];
 
+// The Menu item look; the cascade is hand-rolled because Menu has no submenus.
+const ROW_HIGHLIGHT = 'bg-elevated dark:bg-active';
 const ROW =
-  'flex w-full items-center gap-3 px-3.5 py-2 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/70 focus-visible:bg-droid-elevated/70 focus-visible:outline-none';
+  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body text-primary outline-none transition-colors enabled:hover:bg-elevated enabled:focus-visible:bg-elevated dark:enabled:hover:bg-active dark:enabled:focus-visible:bg-active';
 
 type Submenu = 'view' | 'order' | 'limit' | 'filter';
 
@@ -106,7 +118,7 @@ function FlyoutRow<T extends string | number>({
       }}
     >
       <button
-        className={`${ROW} ${isOpen ? 'bg-droid-elevated/70' : ''}`}
+        className={`${ROW} ${isOpen ? ROW_HIGHLIGHT : ''}`}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={() => {
@@ -114,19 +126,15 @@ function FlyoutRow<T extends string | number>({
         }}
       >
         <span className="flex-1">{label}</span>
-        {showValue && <span className="text-droid-text-muted">{current?.label}</span>}
-        {marked && <span className="h-1.5 w-1.5 rounded-full bg-droid-text-secondary" />}
-        <ChevronRight className="h-4 w-4 text-droid-text-muted" strokeWidth={1.5} />
+        {showValue && <span className="text-muted">{current?.label}</span>}
+        {marked && <span className="h-1.5 w-1.5 rounded-full bg-secondary" />}
+        <ChevronRight className="size-icon-md text-muted" />
       </button>
       {isOpen && (
         // The gap to the flyout is padding on a wrapper, not a margin, so the
         // pointer never leaves the menu while crossing it.
-        <div className="absolute -top-1.5 left-full pl-1.5" onMouseEnter={onSettle}>
-          <div
-            role="menu"
-            aria-label={label}
-            className="w-[220px] rounded-xl border border-droid-border bg-droid-surface py-1.5 shadow-droid"
-          >
+        <div className="absolute -top-1.5 left-full pl-3" onMouseEnter={onSettle}>
+          <div role="menu" aria-label={label} className="w-56 rounded-lg bg-raised p-1.5 shadow-lg">
             {options.map((option) => {
               const selected = option.value === value;
               return (
@@ -140,12 +148,12 @@ function FlyoutRow<T extends string | number>({
                   }}
                 >
                   {option.icon && (
-                    <span className="flex w-4 shrink-0 justify-center text-droid-text-secondary">
+                    <span className="flex w-4 shrink-0 justify-center text-secondary">
                       {option.icon}
                     </span>
                   )}
                   <span className="flex-1">{option.label}</span>
-                  {selected && <Check className="h-4 w-4" strokeWidth={2} />}
+                  {selected && <Check className="size-icon-md" />}
                 </button>
               );
             })}
@@ -164,18 +172,20 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
   const movingRight = useRef(false);
   const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clearTimers = () => {
+  const clearTimers = useCallback(() => {
     if (switchTimer.current) clearTimeout(switchTimer.current);
     if (closeTimer.current) clearTimeout(closeTimer.current);
     switchTimer.current = null;
     closeTimer.current = null;
-  };
-  useEffect(() => clearTimers, []);
-  const close = () => {
+  }, []);
+  useEffect(() => clearTimers, [clearTimers]);
+  // Stable so the popover keeps its place in the Escape stack across
+  // rerenders; a new identity would re-push it above an open flyout.
+  const close = useCallback(() => {
     clearTimers();
     setOpen(false);
     setSubmenu(null);
-  };
+  }, [clearTimers]);
   // Pointer intent for the cascade. The last horizontal movement says whether
   // the pointer is heading for the open flyout (rightward) or browsing rows.
   const hoverRow = (id: Submenu) => {
@@ -206,6 +216,18 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
     switchTimer.current = null;
     setSubmenu(null);
   };
+  // An open flyout is its own Escape layer above the popover's, so Escape
+  // backs out one level and returns focus to the row that opened it.
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (submenu === null) return;
+    return pushEscapeLayer(() => {
+      menuRef.current?.querySelector<HTMLElement>(`[data-submenu="${submenu}"] > button`)?.focus();
+      if (switchTimer.current) clearTimeout(switchTimer.current);
+      switchTimer.current = null;
+      setSubmenu(null);
+    });
+  }, [submenu]);
   const filtered = preferences.filter !== DEFAULT_SIDEBAR_PREFERENCES.filter;
   const customized =
     filtered ||
@@ -247,36 +269,37 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
 
   return (
     <div className="mb-1 ml-5 mr-3 flex items-center justify-between">
-      <span className="text-[13px] font-medium text-droid-text-muted">
+      <span className="text-label text-muted">
         {VIEWS.find((view) => view.value === preferences.view)?.label}
       </span>
-      <button
-        ref={trigger}
-        onClick={() => {
-          if (open) close();
-          else setOpen(true);
-        }}
-        title="View options"
-        aria-label="View options"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={`cursor-pointer rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/40 ${
-          open || customized ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'
-        }`}
-      >
-        <ListFilter className="h-4 w-4" strokeWidth={1.5} />
-      </button>
+      <Tooltip label="View options">
+        <Button
+          ref={trigger}
+          variant="ghost"
+          size="sm"
+          icon={ListFilter}
+          onClick={() => {
+            if (open) close();
+            else setOpen(true);
+          }}
+          aria-label="View options"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          data-selected={customized || undefined}
+        />
+      </Tooltip>
       <Popover
         open={open}
         onClose={close}
         anchorRef={trigger}
-        align="left"
+        placement="bottom-start"
         label="View options"
         width={256}
         className="overflow-visible"
       >
         <div
-          className="py-1.5"
+          ref={menuRef}
+          className="p-1.5"
           onKeyDown={onKeyDown}
           onMouseMove={(event) => {
             movingRight.current = event.clientX > lastX.current;
@@ -335,12 +358,12 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('limit', limit);
             }}
           />
-          <div className="mx-3.5 my-1.5 border-t border-droid-border" />
-          <div className="flex items-center px-3.5 py-1.5 text-[13px] text-droid-text-muted">
+          <div role="separator" className="h-2" />
+          <div className="flex items-center px-2 pb-1 pt-1.5 text-label text-muted">
             <span className="flex-1">Filters</span>
             {customized && (
               <button
-                className="transition-colors hover:text-droid-text"
+                className="rounded-xs transition-colors hover:text-primary"
                 onClick={() => {
                   onChange({
                     ...DEFAULT_SIDEBAR_PREFERENCES,
@@ -369,9 +392,9 @@ export function SidebarCustomize({ preferences, unreadCount, onChange, onMarkAll
               set('filter', filter);
             }}
           />
-          <div className="mx-3.5 my-1.5 border-t border-droid-border" />
+          <div role="separator" className="h-2" />
           <button
-            className={`${ROW} disabled:text-droid-text-muted disabled:hover:bg-transparent`}
+            className={`${ROW} disabled:text-muted`}
             disabled={unreadCount === 0}
             onMouseEnter={closeSubmenu}
             onClick={() => {

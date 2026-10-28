@@ -3,6 +3,7 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { PersistedChildSession } from './history.js';
 import type { PersistedEventMetadata } from './historyPersistenceProtocol.js';
 import type { SessionSummary } from './protocol.js';
+import { DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
 
 export class HistoryWriteStatements {
   private readonly insertEvent: StatementSync;
@@ -10,6 +11,7 @@ export class HistoryWriteStatements {
   private readonly upsertSummary: StatementSync;
   private readonly upsertChild: StatementSync;
   private readonly advanceSearchIdentityRevision: StatementSync;
+  private readonly insertDroidProfile: StatementSync;
 
   constructor(db: DatabaseSync) {
     this.insertEvent = db.prepare(`
@@ -17,9 +19,15 @@ export class HistoryWriteStatements {
       VALUES (?, ?, ?, ?, ?)
     `);
     this.readSearchIdentity = db.prepare(`
-      SELECT provider_session_id, compacted_from_provider_session_ids, updated_at
+      SELECT app_sessions.provider_session_id, compacted_from_provider_session_ids,
+             app_sessions.updated_at, settings.value_json AS droid_profile_json
       FROM app_sessions
+      LEFT JOIN settings ON settings.scope = ? || app_sessions.app_session_id
       WHERE app_session_id = ?
+    `);
+    this.insertDroidProfile = db.prepare(`
+      INSERT OR IGNORE INTO settings (scope, value_json, updated_at)
+      VALUES (?, ?, ?)
     `);
     this.upsertSummary = db.prepare(`
       INSERT INTO app_sessions (
@@ -144,13 +152,24 @@ export class HistoryWriteStatements {
   writeSummary(summary: SessionSummary): boolean {
     const providerSessionId = summary.providerSessionId ?? summary.appSessionId;
     const providerAliases = JSON.stringify(summary.compactedFromProviderSessionIds ?? []);
-    const current = this.readSearchIdentity.get(summary.appSessionId) as
+    const current = this.readSearchIdentity.get(
+      DROID_PROFILE_SCOPE_PREFIX,
+      summary.appSessionId,
+    ) as
       | {
           provider_session_id: unknown;
           compacted_from_provider_session_ids: unknown;
           updated_at: unknown;
+          droid_profile_json: unknown;
         }
       | undefined;
+    if (
+      current &&
+      current.droid_profile_json !==
+        (summary.droidProfile ? JSON.stringify(summary.droidProfile) : null)
+    ) {
+      throw new Error(`Droid profile for session ${summary.appSessionId} cannot change.`);
+    }
     const searchIdentityChanged =
       current?.provider_session_id !== providerSessionId ||
       current.compacted_from_provider_session_ids !== providerAliases ||
@@ -184,6 +203,12 @@ export class HistoryWriteStatements {
       sqlValue(summary.maxContextTokens),
       sqlValue(summary.autoCompactions),
     );
+    if (summary.droidProfile)
+      this.insertDroidProfile.run(
+        `${DROID_PROFILE_SCOPE_PREFIX}${summary.appSessionId}`,
+        JSON.stringify(summary.droidProfile),
+        summary.updatedAt,
+      );
     return searchIdentityChanged;
   }
 

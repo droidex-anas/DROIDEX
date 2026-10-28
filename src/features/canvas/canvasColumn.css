@@ -17,7 +17,7 @@
   border-radius: 7px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
   transition:
     background 120ms,
     color 120ms;
@@ -26,13 +26,13 @@
 .canvas-column-tab:hover,
 .canvas-column-tab:focus-visible {
   outline: none;
-  background: color-mix(in srgb, var(--droid-text) 6%, transparent);
-  color: var(--droid-text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
 }
 
 .canvas-column-tab[aria-selected='true'] {
-  background: var(--droid-elevated);
-  color: var(--droid-text);
+  background: var(--elevated);
+  color: var(--text);
 }
 
 /* Over the transcript, under the tabs; the composer below stays. */
@@ -42,7 +42,7 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  background: var(--droid-bg);
+  background: var(--bg);
 }
 
 .canvas-navigator {
@@ -60,12 +60,12 @@
   margin: 4px 12px 8px;
   padding: 0 10px;
   border-radius: 8px;
-  background: var(--droid-elevated);
-  color: var(--droid-text-muted);
+  background: var(--elevated);
+  color: var(--text-muted);
 }
 
 .canvas-navigator-search:focus-within {
-  background: var(--droid-active);
+  background: var(--active);
 }
 
 .canvas-navigator-search input {
@@ -74,7 +74,7 @@
   background: transparent;
   outline: none;
   font-size: 12px;
-  color: var(--droid-text);
+  color: var(--text);
 }
 
 .canvas-navigator-list {
@@ -95,19 +95,19 @@
   border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--droid-text-secondary);
+  color: var(--text-secondary);
 }
 
 .canvas-navigator-row:hover,
 .canvas-navigator-row[aria-selected='true'] {
-  background: color-mix(in srgb, var(--droid-text) 6%, transparent);
-  color: var(--droid-text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
 }
 
 /* Selected on the board: weight, not a fill, so it reads beside the active row. */
 .canvas-navigator-row[data-picked] {
   font-weight: 500;
-  color: var(--droid-text);
+  color: var(--text);
 }
 
 .canvas-navigator-name {
@@ -121,15 +121,15 @@
 .canvas-navigator-status {
   flex-shrink: 0;
   font-size: 11px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }
 
 .canvas-navigator-status[data-status='failed'] {
-  color: var(--droid-red);
+  color: var(--danger);
 }
 
 .canvas-navigator-note {
   padding: 8px 20px;
   font-size: 12px;
-  color: var(--droid-text-muted);
+  color: var(--text-muted);
 }

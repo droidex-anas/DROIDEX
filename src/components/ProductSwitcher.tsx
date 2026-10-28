@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
 import { Check } from '@droidex/icons';
-import { usePopover } from './environment/usePopover';
+import { useDismiss } from './ui/useDismiss';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ProductMode } from '../hooks/persistedUiPreferences';
 import { BrandMark } from './BrandMark';
@@ -30,7 +30,7 @@ export function ProductSwitcher() {
     setOpen(false);
     triggerRef.current?.focus();
   }, []);
-  const ref = usePopover(open, close);
+  const ref = useDismiss(open, close);
 
   // The store owns what each product opens on: Design its home, Chat the chat
   // it was left on (spec §4).
@@ -64,10 +64,10 @@ export function ProductSwitcher() {
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-droid-text transition-colors hover:bg-droid-elevated/50"
+        className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-primary transition-colors hover:bg-elevated/50"
       >
         <BrandMark size={13} />
-        <span className="text-[11px] font-medium text-droid-text-muted">{label}</span>
+        <span className="text-caption font-medium text-muted">{label}</span>
       </button>
 
       {open && (
@@ -75,7 +75,7 @@ export function ProductSwitcher() {
           role="menu"
           aria-label="Product"
           onKeyDown={walk}
-          className="absolute left-0 top-full z-50 mt-1 w-[220px] rounded-xl bg-droid-raised p-1 shadow-droid"
+          className="absolute left-0 top-full z-50 mt-1 w-56 rounded-xl bg-raised p-1 shadow-lg"
         >
           {MODES.map((entry) => (
             <button
@@ -87,14 +87,14 @@ export function ProductSwitcher() {
               onClick={() => {
                 select(entry.mode);
               }}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-droid-accent/10 focus-visible:bg-droid-accent/10 focus-visible:outline-none"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/10 focus-visible:bg-accent/10 focus-visible:outline-none"
             >
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-medium text-droid-text">{entry.label}</span>
-                <span className="block text-[11px] text-droid-text-muted">{entry.hint}</span>
+                <span className="block text-body-strong text-primary">{entry.label}</span>
+                <span className="block text-caption text-muted">{entry.hint}</span>
               </span>
               {entry.mode === productMode && (
-                <Check aria-hidden className="h-3.5 w-3.5 shrink-0 text-droid-accent" />
+                <Check aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent" />
               )}
             </button>
           ))}

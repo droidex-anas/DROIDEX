@@ -50,7 +50,7 @@ export function AutomationList({
       role="list"
       aria-label="Automations"
       tabIndex={0}
-      className="mt-4 max-h-[60vh] overflow-y-auto rounded-2xl border border-droid-border/80 bg-droid-surface/20 outline-none [container-type:inline-size] focus-visible:border-droid-border-hover"
+      className="mt-4 max-h-96 overflow-y-auto rounded-xl bg-surface/20 outline-none [container-type:inline-size]"
     >
       <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((item) => {
@@ -89,7 +89,6 @@ export function AutomationList({
                 }
                 now={now}
                 deleteArmed={pendingDeleteId === automation.id}
-                last={item.index === automations.length - 1}
                 onEdit={() => {
                   onEdit(automation);
                 }}

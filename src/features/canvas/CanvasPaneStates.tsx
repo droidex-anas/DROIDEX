@@ -34,9 +34,9 @@ export function CanvasInvitation({ children }: { children?: ReactNode }) {
               onClick={() => {
                 dispatch({ type: 'SEED_COMPOSER', text: request });
               }}
-              className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-accent/10 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+              className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-label font-normal text-secondary transition-colors hover:bg-accent/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
             >
-              <span className="shrink-0 text-droid-accent opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100">
                 &gt;
               </span>
               <span className="min-w-0 flex-1">{request}</span>
@@ -170,10 +170,10 @@ function SavedCanvasList({
                     // owing that canvas, which is what its recovery replays.
                     void onChoose(summary.canvasId);
                   }}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-droid-accent/15 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+                  className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-accent/15 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
                 >
-                  <span className="truncate text-[13px] text-droid-text">{summary.name}</span>
-                  <span className="shrink-0 text-[11px] text-droid-text-muted">
+                  <span className="truncate text-body text-primary">{summary.name}</span>
+                  <span className="shrink-0 text-caption text-muted">
                     {designCountLabel(summary.designCount)}
                   </span>
                 </button>
@@ -193,13 +193,13 @@ function SavedCanvasList({
 /** The calm centred card every pane state without a board sits on. */
 export function CanvasPlate({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="flex h-full min-h-0 items-center justify-center px-5 pb-[6vh]">
-      <div className="flex w-full max-w-[320px] flex-col gap-3 rounded-2xl bg-droid-raised px-5 py-5 shadow-droid">
+    <div className="flex h-full min-h-0 items-center justify-center px-5 pb-12">
+      <div className="flex w-full max-w-xs flex-col gap-3 rounded-2xl bg-raised px-5 py-5 shadow-lg">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-droid-accent/10 text-droid-text-muted">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-muted">
             <LayoutTemplate className="h-4 w-4" />
           </span>
-          <h2 className="min-w-0 text-[13px] font-medium text-droid-text">{title}</h2>
+          <h2 className="min-w-0 text-body-strong text-primary">{title}</h2>
         </div>
         {children}
       </div>
@@ -208,12 +208,12 @@ export function CanvasPlate({ title, children }: { title: string; children: Reac
 }
 
 export function CanvasNote({ children }: { children: ReactNode }) {
-  return <p className="text-[12px] leading-relaxed text-droid-text-secondary">{children}</p>;
+  return <p className="text-label font-normal leading-relaxed text-secondary">{children}</p>;
 }
 
 function CanvasFailure({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" className="text-[12px] leading-relaxed text-droid-red">
+    <p role="alert" className="text-label font-normal leading-relaxed text-danger">
       {children}
     </p>
   );
@@ -224,7 +224,7 @@ export function CanvasAction({ label, onClick }: { label: string; onClick: () =>
     <button
       type="button"
       onClick={onClick}
-      className="flex-1 rounded-xl bg-droid-accent/10 px-3 py-2 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-accent/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
+      className="flex-1 rounded-xl bg-accent/10 px-3 py-2 text-label text-primary transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
     >
       {label}
     </button>
@@ -241,7 +241,7 @@ export function CanvasStatus({ label }: { label: string }) {
 
 function CanvasStatusLine({ label }: { label: string }) {
   return (
-    <p role="status" className="flex items-center gap-2 text-[12px] text-droid-text-muted">
+    <p role="status" className="flex items-center gap-2 text-label font-normal text-muted">
       <Spinner size={14} className="shrink-0 motion-safe:animate-spin-slow" />
       {label}
     </p>
