@@ -4,27 +4,7 @@ import { Button } from '../ui/Button';
 import { Popover } from '../ui/Popover';
 import { WorktreeIcon } from '../icons/WorktreeIcon';
 
-// Custom composer-bar glyphs (16x16, currentColor) that replace the stock
-// lucide marks for the Local/machine and branch pills.
-function LocalGlyph({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.4}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <rect x="2.5" y="3.5" width="11" height="8" rx="1.5" />
-      <path d="M5 13h6" />
-      <path d="M8 11.5V13" />
-    </svg>
-  );
-}
-
+// Custom composer-bar glyph (16x16, currentColor) for the branch pill.
 function BranchGlyph({ className }: { className?: string }) {
   return (
     <svg
@@ -45,6 +25,7 @@ function BranchGlyph({ className }: { className?: string }) {
 }
 
 import { StartBranchMenu } from './StartBranchMenu';
+import { LocalGlyph, StartLocationMenu } from './StartLocationMenu';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { useGitEnvironment } from '../../hooks/useGitEnvironment';
 import { pickDirectory } from '../../lib/desktop';
@@ -107,7 +88,6 @@ export function StartInBar({
   const currentWtPath = env?.worktreePath ?? cwd;
   const currentWt = localWorktrees.find((w) => w.path === currentWtPath && w.path !== repoRoot);
   const createsWorktree = draft.executionMode === 'worktree';
-  const onLocal = !createsWorktree && !currentWt && !!mainCheckout;
   let workLocationLabel = 'Local';
   if (createsWorktree) workLocationLabel = 'New worktree';
   else if (currentWt) workLocationLabel = worktreeName(currentWt);
@@ -253,81 +233,21 @@ export function StartInBar({
           >
             {workLocationLabel}
           </Button>
-          <Popover
+          <StartLocationMenu
             open={locOpen}
             onClose={() => {
               setLocOpen(false);
             }}
             anchorRef={locRef}
-            label="Worktrees"
-            placement="bottom-start"
-            width={280}
-          >
-            <div className="max-h-64 overflow-y-auto py-1">
-              <button
-                onClick={() => {
-                  startIn(repoRoot, draft.branch ?? env.branch ?? undefined, 'worktree');
-                  setLocOpen(false);
-                }}
-                aria-pressed={createsWorktree}
-                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${ITEM_HOVER}`}
-              >
-                <WorktreeIcon className="size-icon-sm shrink-0 text-muted" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body text-primary">New worktree</span>
-                  <span className="block truncate text-caption text-muted">
-                    Isolated checkout for this chat
-                  </span>
-                </span>
-                {createsWorktree && (
-                  <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  if (mainCheckout) startIn(mainCheckout.path, mainCheckout.branch, 'local');
-                  setLocOpen(false);
-                }}
-                disabled={!mainCheckout}
-                aria-pressed={onLocal}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-elevated enabled:dark:hover:bg-active disabled:opacity-50"
-              >
-                <LocalGlyph className="size-icon-sm shrink-0 text-muted" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body text-primary">Work locally</span>
-                  <span className="block truncate text-caption text-muted">
-                    {mainCheckout
-                      ? `${mainCheckout.branch ?? 'detached'} · main checkout`
-                      : 'Loading main checkout…'}
-                  </span>
-                </span>
-                {onLocal && (
-                  <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
-                )}
-              </button>
-              {localWorktrees
-                .filter((w) => w.path !== repoRoot)
-                .map((w) => (
-                  <button
-                    key={w.path}
-                    onClick={() => {
-                      if (w.path) startIn(w.path, w.branch ?? undefined, 'local');
-                      setLocOpen(false);
-                    }}
-                    aria-pressed={currentWtPath === w.path}
-                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${ITEM_HOVER}`}
-                  >
-                    <WorktreeIcon className="size-icon-sm shrink-0 text-muted" />
-                    <span className="min-w-0 flex-1 truncate text-body text-secondary">
-                      {worktreeName(w)}
-                    </span>
-                    {currentWtPath === w.path && (
-                      <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />
-                    )}
-                  </button>
-                ))}
-            </div>
-          </Popover>
+            mainCheckout={mainCheckout}
+            worktrees={localWorktrees.filter((w) => w.path !== repoRoot)}
+            currentPath={currentWtPath}
+            createsWorktree={createsWorktree}
+            onNewWorktree={() => {
+              startIn(repoRoot, draft.branch ?? env.branch ?? undefined, 'worktree');
+            }}
+            onStartIn={startIn}
+          />
 
           <Button
             ref={branchRef}

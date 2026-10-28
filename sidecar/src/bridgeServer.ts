@@ -30,6 +30,7 @@ import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
 import { serveCanvasImageImport, type CanvasImages } from './canvas/canvasImageRoute.js';
+import { serveProfileUsage } from './usage/profileRoute.js';
 
 const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
@@ -65,6 +66,7 @@ export function startBridgeServer(options: {
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
+  getProfileUsage?: () => unknown;
 }): BridgeServer {
   const clients = new Set<WebSocket>();
   const pageGoneListeners = new Set<(pageId: string) => void>();
@@ -87,6 +89,7 @@ export function startBridgeServer(options: {
     if (serveCanvasImageImport(req, res, options.canvasImages)) return;
     if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
     if (serveDesignSystemExport(req, res, options.canvasExportToken)) return;
+    if (serveProfileUsage(req, res, options.token, options.getProfileUsage)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;
     res.writeHead(404).end('not found');
@@ -527,6 +530,10 @@ function assertValidChatPreferences(command: object): void {
   const settingsCommand =
     'type' in command &&
     (command.type === 'session.create' || command.type === 'session.updateSettings');
+  if ('droidProfile' in command) {
+    if (!('type' in command) || command.type !== 'session.create' || command.droidProfile !== 'alt')
+      throw new Error('A Droid profile can only be selected when creating a session.');
+  }
   if ('fastMode' in command) {
     if (typeof command.fastMode !== 'boolean') throw new Error('fastMode must be a boolean.');
     if (!settingsCommand) throw new Error('Fast mode only applies to top-level session settings.');

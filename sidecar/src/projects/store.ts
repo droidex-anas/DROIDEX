@@ -46,6 +46,7 @@ export const threadInputSchema = z
     title: z.string().trim().min(1).max(LEDGER_LIMITS.title),
     prompt: text.trim().min(1),
     provider: z.enum(PROVIDER_KINDS),
+    droidProfile: z.literal('alt').optional(),
     modelId: z.string().min(1).max(200).optional(),
     reasoningEffort: z
       .enum(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'dynamic'])

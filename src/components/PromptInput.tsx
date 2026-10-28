@@ -2391,7 +2391,15 @@ export default function PromptInput({
               onClosePanel={() => {
                 setUsageOpen(false);
               }}
-              chat={activeSession && visibleTarget.kind === 'primary' ? { usageLimit } : undefined}
+              chat={
+                activeSession &&
+                (visibleTarget.kind === 'primary' || activeSession.droidProfile === 'alt')
+                  ? {
+                      usageLimit: visibleTarget.kind === 'primary' ? usageLimit : undefined,
+                      droidProfile: activeSession.droidProfile,
+                    }
+                  : undefined
+              }
               onSwitchModel={() => {
                 setModelsOpen(true);
               }}
@@ -2576,6 +2584,12 @@ export default function PromptInput({
                 editorRef.current?.focus();
               }}
             />
+
+            {activeSession?.droidProfile === 'alt' && (
+              <span className="shrink-0 px-2 text-caption text-muted" title="Alt Factory account">
+                <span className="sr-only">Factory account: </span>Alt
+              </span>
+            )}
 
             {/* Autonomy: read-only for a targeted child, live control for an
                 open session, draft override before a session exists. */}

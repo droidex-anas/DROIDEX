@@ -17,6 +17,7 @@ import {
   type PermissionHandler,
 } from '@factory/droid-sdk';
 import { childEnv } from './childEnv.js';
+import { droidHome } from './droidProfiles.js';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
@@ -34,6 +35,7 @@ export interface RuntimeHandlers {
   cwd?: string;
   /** Process-native context, never part of a user message. */
   systemPromptAppend?: string;
+  droidProfile?: 'alt';
 }
 
 export interface CreateRuntimeSessionOptions extends RuntimeHandlers {
@@ -124,7 +126,7 @@ export interface FactoryRuntime {
   connect(apiKey?: string): void;
   status(): RuntimeStatus;
   // The key set in DROIDEX's Settings, never one read from the CLI's login.
-  factoryApiKey(): string | undefined;
+  factoryApiKey(session?: FactorySession): string | undefined;
   createSession(options: CreateRuntimeSessionOptions): Promise<FactorySession>;
   loadSession(providerSessionId: string, handlers?: RuntimeHandlers): Promise<FactorySession>;
   readContextBreakdown(session: FactorySession): Promise<unknown>;
@@ -150,6 +152,7 @@ export class DroidRuntime implements FactoryRuntime {
     { pid: number; transport: ConnectableDroidTransport; client: DroidClient }
   >();
   private readonly turns = new WeakMap<object, DroidTurn>();
+  private readonly altSessions = new WeakSet<object>();
   // Aborted when the running turn's process dies: the SDK would otherwise wait
   // for notices that can no longer come.
   private readonly turnExits = new WeakMap<object, AbortController>();
@@ -219,7 +222,8 @@ export class DroidRuntime implements FactoryRuntime {
     };
   }
 
-  factoryApiKey(): string | undefined {
+  factoryApiKey(session?: FactorySession): string | undefined {
+    if (session && this.altSessions.has(session)) return undefined;
     return this.explicitApiKey || undefined;
   }
 
@@ -268,7 +272,7 @@ export class DroidRuntime implements FactoryRuntime {
       const params = createInitializeSessionParams(options);
       const init = await client.initializeSession(params);
       const session = new DroidSession(client, init.sessionId, init);
-      this.own(session, transport, client);
+      this.own(session, transport, client, options.droidProfile);
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
@@ -283,7 +287,7 @@ export class DroidRuntime implements FactoryRuntime {
     try {
       const init = await client.loadSession(params);
       const session = new DroidSession(client, sessionId, init);
-      this.own(session, transport, client);
+      this.own(session, transport, client, handlers.droidProfile);
       return session;
     } catch (err) {
       await transport.close().catch(ignoreError);
@@ -291,7 +295,13 @@ export class DroidRuntime implements FactoryRuntime {
     }
   }
 
-  private own(session: DroidSession, transport: ConnectableDroidTransport, client: DroidClient) {
+  private own(
+    session: DroidSession,
+    transport: ConnectableDroidTransport,
+    client: DroidClient,
+    droidProfile?: 'alt',
+  ) {
+    if (droidProfile === 'alt') this.altSessions.add(session);
     const pid = transport.processId;
     if (pid !== undefined) this.processes.set(session, { pid, transport, client });
     transport.onError((error) => {
@@ -317,7 +327,7 @@ export class DroidRuntime implements FactoryRuntime {
       execPath,
       execArgs,
       cwd,
-      env: this.env(),
+      env: this.env(handlers.droidProfile),
     });
     await transport.connect();
     const client = new DroidClient({ transport });
@@ -326,10 +336,14 @@ export class DroidRuntime implements FactoryRuntime {
     return { client, transport };
   }
 
-  private env(): Record<string, string> {
+  private env(droidProfile?: 'alt'): Record<string, string> {
     const env = childEnv();
 
-    if (this.explicitApiKey) env.FACTORY_API_KEY = this.explicitApiKey;
+    if (droidProfile === 'alt') {
+      env.HOME = droidHome(droidProfile);
+      if (process.platform === 'win32') env.USERPROFILE = env.HOME;
+      delete env.FACTORY_API_KEY;
+    } else if (this.explicitApiKey) env.FACTORY_API_KEY = this.explicitApiKey;
     else delete env.FACTORY_API_KEY;
 
     return env;

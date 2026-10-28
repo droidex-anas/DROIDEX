@@ -191,6 +191,7 @@ export interface ModelSwitch {
 }
 
 export interface SessionSummary {
+  droidProfile?: 'alt';
   appSessionId: string;
   providerSessionId?: string;
   compactedFromProviderSessionIds?: string[];
@@ -421,6 +422,8 @@ export interface ProviderStatus {
   provider: ProviderKind;
   readiness: ProviderReadiness;
   version?: string;
+  // Who the harness CLI is signed in as. Absent when it reports no sign-in,
+  // which does not block a chat: the CLI may reach its models another way.
   accountLabel?: string;
   message?: string;
   // The model a new chat on this provider starts on when it pins none: what the
@@ -438,8 +441,8 @@ export interface ProviderStatus {
 // The harnesses whose CLI DROIDEX runs but does not ship: Claude Code and Codex.
 export type HarnessCliProvider = Exclude<ProviderKind, 'droid'>;
 // Where a harness CLI was installed from, read off its resolved binary. It
-// decides which updater owns the binary.
-export type HarnessInstallSource = 'homebrew' | 'npm' | 'native';
+// decides which updater owns the binary; the ChatGPT app updates its own copy.
+export type HarnessInstallSource = 'homebrew' | 'npm' | 'native' | 'chatgpt';
 
 export type HarnessCliState =
   | { provider: HarnessCliProvider; installed: false }
@@ -758,6 +761,7 @@ export type ClientCommand =
   | { type: 'settings.defaults' }
   | {
       type: 'session.create';
+      droidProfile?: 'alt';
       clientRef: string;
       // Establishes Design purpose; commit attachment before publication and the first turn.
       canvas?: { canvasId: string | null; name?: string; mutationId: string };
@@ -1146,8 +1150,7 @@ export type ServerEvent =
   | { type: 'event.appended'; event: TranscriptEvent }
   | { type: 'approval.requested'; request: PermissionRequest }
   | { type: 'question.requested'; question: SessionQuestion }
-  // An approval or question the session will never get an answer for, because
-  // the turn that raised it ended first.
+  // Removes a settled or abandoned approval, or an abandoned question.
   | { type: 'interaction.cancelled'; appSessionId: string; requestId: string }
   // A question another chat answered, so the window stops asking it.
   | { type: 'question.answered'; appSessionId: string; requestId: string }

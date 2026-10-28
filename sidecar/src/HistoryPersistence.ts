@@ -186,6 +186,10 @@ export class HistoryPersistence {
       });
   }
 
+  appSessionIds(): string[] {
+    return this.core.appSessionIds();
+  }
+
   async searchSessions(query: string, isStale?: () => boolean): Promise<HistorySearchReply> {
     this.pauseBackgroundIndexing();
     if (isStale?.()) return { results: [], indexingIncomplete: false };

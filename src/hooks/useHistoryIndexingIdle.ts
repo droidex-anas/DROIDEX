@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 import { setHistoryIndexingIdle } from '../lib/commands';
-import { systemIdleTime } from '../lib/desktop';
+import { isRemoteClient, systemIdleTime } from '../lib/desktop';
 
 const INDEXING_IDLE_SECONDS = 60;
 const IDLE_SAMPLE_INTERVAL_MS = 30_000;
@@ -12,6 +12,8 @@ export function shouldRunHistoryBackfill(systemIdleSeconds: number | null): bool
 
 export function useHistoryIndexingIdle(): void {
   useEffect(() => {
+    // Indexing waits for the laptop's own idle time, which its window reports.
+    if (isRemoteClient()) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const sample = async (): Promise<void> => {

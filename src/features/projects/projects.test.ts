@@ -18,13 +18,15 @@ import {
   type AppState,
 } from '../../hooks/useStore';
 import { isServerEvent } from '../../lib/bridgeWireValidation';
-import type { SessionSummary } from '../../types/bridge';
+import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
 import type { ProjectView } from './types';
 import { projectPulse } from './projectBoard';
 import { leadRow, threadCounts, threadGroups, threadRows } from './threadBoard';
 import { threadReports } from './threadNotices';
 import { ProjectPlan } from './ProjectPlan';
 import { ThreadDetail } from './ThreadDetail';
+import { ThreadRow } from './ThreadRow';
+import { ThreadSpawnLine } from './ThreadSpawnLine';
 
 const project: ProjectView = {
   id: 'project',
@@ -231,6 +233,77 @@ test('a streaming thread blocked on an approval shows the block, not the spinner
   });
   assert.equal(worker?.status, 'approval');
   assert.equal(worker?.live, false);
+});
+
+test('Alt account labels remain visible from queued spawn through the live thread', () => {
+  const snapshot = structuredClone(project);
+  snapshot.threads[1].droidProfile = 'alt';
+  snapshot.threads[1].state = 'queued';
+  const signals = { sessions: {}, attention: () => null, digests: {} };
+  const [queued] = threadRows(snapshot, signals);
+  snapshot.threads[1].state = 'working';
+  const [working] = threadRows(snapshot, {
+    ...signals,
+    sessions: { worker: { ...session('worker'), droidProfile: 'alt' } },
+  });
+  assert.equal(queued.droidProfile, 'alt');
+  assert.equal(working.droidProfile, 'alt');
+  assert.equal(working.live, true);
+  const call: TranscriptEvent = {
+    id: 'spawn',
+    appSessionId: 'main',
+    sourceSessionId: 'main',
+    role: 'primary',
+    ts: 1,
+    kind: 'tool_call',
+    toolName: 'thread_spawn',
+    toolArgs: { title: 'Worker', profile: 'alt' },
+  };
+  const surfaces = [
+    createElement(ThreadRow, {
+      row: queued,
+      now: 1,
+      active: false,
+      reduceMotion: true,
+      onOpen: () => undefined,
+    }),
+    createElement(ThreadDetail, {
+      row: working,
+      transcript: [],
+      historyError: '',
+      toolActivity: { density: 'compact', inlineDiffs: false },
+      onBack: () => undefined,
+      onOpenInChat: () => undefined,
+    }),
+    createElement(ThreadSpawnLine, { call, sessionLive: true }),
+    createElement(ThreadSpawnLine, {
+      call,
+      result: {
+        ...call,
+        id: 'result',
+        kind: 'tool_result',
+        text: JSON.stringify({
+          ok: true,
+          threadId: 'worker',
+          title: 'Worker',
+          reportBack: true,
+          droidProfile: 'alt',
+        }),
+      },
+      sessionLive: false,
+    }),
+  ];
+  for (const surface of surfaces) {
+    const rendered = renderToStaticMarkup(
+      createElement(
+        StaticStoreProvider,
+        { state: initialState, dispatch: () => undefined },
+        surface,
+      ),
+    );
+    assert.match(rendered, /title="Alt Factory account"/);
+    assert.match(rendered, /Factory account: <\/span>Alt/);
+  }
 });
 
 test('a project reads its lead: working before any thread, and idle threads are not settled', () => {

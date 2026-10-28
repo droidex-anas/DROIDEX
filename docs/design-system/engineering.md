@@ -58,7 +58,7 @@ In code this is `usePopoverPosition` (`src/components/ui/usePopoverPosition.ts`)
 | Tooltips | max 240px wide, `label` text |
 | Dialogs | 440px (confirm), 560px (form), 720px (content) |
 | Command palette | 576px |
-| Reading column | 60–80 characters of `prose` |
+| Reading column | `max-w-2xl` (672px) transcript rows; replies fill the row |
 
 Truncate single-line labels with an ellipsis and show the full text in a tooltip. Never let a label wrap inside a control.
 

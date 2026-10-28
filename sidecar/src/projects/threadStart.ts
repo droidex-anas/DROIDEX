@@ -1,3 +1,4 @@
+import { droidHome } from '../droidProfiles.js';
 import type { Autonomy, ModelInfo, ProviderStatus, SessionSummary } from '../protocol.js';
 import type { ProviderKind } from '../providers/providerKind.js';
 import { LEDGER_LIMITS } from './store.js';
@@ -69,6 +70,14 @@ export async function spawnSettings(
   catalog: () => Promise<readonly ProviderStatus[]>,
 ): Promise<Omit<ThreadInput, 'cwd'>> {
   const provider = requested.provider ?? owner.provider;
+  if (requested.profile !== undefined && provider !== 'droid')
+    throw new Error('A Factory account profile is only supported for Droid threads.');
+  let droidProfile: SessionSummary['droidProfile'];
+  if (provider === 'droid') {
+    if (requested.profile === 'alt') droidProfile = 'alt';
+    else if (requested.profile === undefined) droidProfile = owner.droidProfile;
+  }
+  if (droidProfile) droidHome(droidProfile);
   const sameHarness = provider === owner.provider;
   const modelId = requested.modelId ?? (sameHarness ? owner.modelId : undefined);
   const reasoningEffort =
@@ -79,8 +88,15 @@ export async function spawnSettings(
     title: requested.title,
     prompt: requested.prompt,
     provider,
+    ...(droidProfile ? { droidProfile } : {}),
     autonomy,
-    ...(modelId ? { modelId: resolveModelId(await catalog(), owner, provider, modelId) } : {}),
+    ...(modelId
+      ? {
+          modelId: droidProfile
+            ? modelId
+            : resolveModelId(await catalog(), owner, provider, modelId),
+        }
+      : {}),
     ...(reasoningEffort ? { reasoningEffort } : {}),
   };
 }

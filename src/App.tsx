@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
@@ -14,8 +14,8 @@ import {
   updateCli,
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
-import { getApiKey, isDesktop, setAppIcon, terminalHasChildren } from './lib/desktop';
-import { forwardNativeBrowserShortcuts } from './lib/nativeBrowser';
+import { getApiKey, isRemoteClient, setAppIcon, terminalHasChildren } from './lib/desktop';
+import { forwardNativeBrowserShortcuts, hasNativeBrowser } from './lib/nativeBrowser';
 import { BrowserHost } from './components/browser/BrowserHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import { shouldOpenSelectedChild } from './lib/childSessions';
@@ -81,6 +81,7 @@ import { listProjects, restoreBrowsersCommand } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
 import { useFirstArtifactPane } from './features/canvas/useFirstArtifactPane';
+import { useSharedStorage } from './hooks/useSharedStorage';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
 import { useWorkspaceSessionList } from './hooks/useWorkspaceSessionList';
 import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
@@ -124,6 +125,12 @@ import {
   utilityToolFallback,
 } from './lib/lazySurfaces';
 import { noteComposerNotApplicable, noteFirstMeaningfulShellPaint } from './lib/rendererPerf';
+
+const LazyRemoteApprovalPanel = lazy(() =>
+  import('./components/RemoteApprovalPanel').then((module) => ({
+    default: module.RemoteApprovalPanel,
+  })),
+);
 
 function ContextListIcon({ className }: { className?: string }) {
   return (
@@ -241,6 +248,7 @@ export default function App() {
   const workingDirectory = useSessionWorkingDirectory(activeSession);
   const repoStatus = useRepoStatus(workingDirectory);
   const documentVisible = useDocumentVisible();
+  useSharedStorage(dispatch, !embedded);
   const setCanonicalWorkspaceCwds = useCallback(
     (cwds: string[]) => {
       dispatch({ type: 'SET_WORKSPACE_CWDS', cwds });
@@ -1240,6 +1248,11 @@ export default function App() {
       )}
       <Toaster />
 
+      {!isRemoteClient() && (
+        <Suspense fallback={null}>
+          <LazyRemoteApprovalPanel />
+        </Suspense>
+      )}
       <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>
 
       <AnimatePresence>
@@ -1255,7 +1268,7 @@ export default function App() {
       </AnimatePresence>
       {/* Every chat's browser page. Last, so the pane's slot is laid out before
           the pages anchored to it. */}
-      {!embedded && isDesktop() && <BrowserHost />}
+      {!embedded && hasNativeBrowser() && <BrowserHost />}
     </div>
   );
 }

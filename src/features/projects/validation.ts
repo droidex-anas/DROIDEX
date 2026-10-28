@@ -75,6 +75,7 @@ function isThreadList(value: unknown): value is ProjectThread[] {
         record(thread) &&
         text(thread.appSessionId, 200) &&
         text(thread.title, 120) &&
+        (thread.droidProfile === undefined || thread.droidProfile === 'alt') &&
         typeof thread.waiting === 'boolean' &&
         (thread.unread === undefined || thread.unread === true) &&
         typeof thread.state === 'string' &&

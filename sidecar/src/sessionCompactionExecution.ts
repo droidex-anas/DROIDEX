@@ -170,6 +170,7 @@ export class SessionCompactionExecution {
       ...(liveSession.summary.sessionPurpose === 'design'
         ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE }
         : {}),
+      droidProfile: liveSession.summary.droidProfile,
     });
     const replacementPid = this.dependencies.runtime.processIdOf(replacement);
     const rawOldPid = oldSession.process?.pid;
@@ -189,6 +190,7 @@ export class SessionCompactionExecution {
         replacement,
         this.dependencies.runtime,
         liveSession.summary.autonomy,
+        liveSession.summary.droidProfile,
       );
       const autonomy = liveSession.summary.autonomy;
       await provider.setAutonomy(autonomy);
@@ -305,6 +307,7 @@ export class SessionCompactionExecution {
         );
       }
       session = await this.dependencies.runtime.loadSession(oldProviderSessionId, {
+        droidProfile: historical?.droidProfile,
         ...(historical?.sessionPurpose === 'design'
           ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE }
           : {}),

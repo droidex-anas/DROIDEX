@@ -21,6 +21,7 @@ Lines are rare. These are the only places one belongs:
 
 - Data tables (Markdown tables, rendered JSON tables, spreadsheet previews) rule their body rows with `divide-y divide-divider` on `<tbody>`, so long rows of cells can be read across.
 - Agent-to-agent reports and instruction messages in project chats keep their hairline: it marks who is speaking.
+- A completed turn's "Worked for" fold sits on a `divider` hairline, which marks where the agent's work ends and its answer begins.
 - A dashed drop-target outline is an interaction cue, only while dragging.
 - A colour swatch keeps a hairline edge, because an arbitrary user colour must read on any surface.
 - Diff lines, gutter markers and the split between a diff's old and new sides encode data.
@@ -157,6 +158,7 @@ panel edge
   - show on row hover *and* on `:focus-within`;
   - fade in over 120ms;
   - are never the only way to do the action (also offer it in the context menu or as a shortcut).
+- **Disclosure chevrons trail the label.** A collapsible transcript row puts its chevron right after the label text, hidden until hover or focus, and keeps it visible and rotated while the row is open. The whole row is the toggle, so the chevron is a cue, not the target. The one exception is a completed turn's "Worked for" fold, whose chevron always shows because it is the only sign the turn's steps are inside.
 - **Press, then act.** Buttons act on release (`click`). Menus also support press, drag and release, as on macOS. A drag only starts after 4px of movement, so a slightly shaky click never becomes a drag.
 - **One action per click.** Disable send, create and merge while they're pending, so a double-click can't fire twice.
 
@@ -179,7 +181,7 @@ panel edge
 | Dialogs | 440 (confirm), 560 (form), 720 (content), `radius-2xl` |
 | Command palette | 576 (`max-w-palette`), `radius-2xl` |
 | Sidebar | 280 (fixed today) |
-| Reading column | 60–80 characters |
+| Reading column | transcript rows 672 (`max-w-2xl`); replies fill the row, edge to edge with cards and the composer |
 
 ## Colour budget
 

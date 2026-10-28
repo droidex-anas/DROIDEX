@@ -26,6 +26,7 @@ export interface ProjectTodo {
 }
 
 export interface ThreadInput {
+  droidProfile?: 'alt';
   title: string;
   prompt: string;
   provider: ProviderKind;
@@ -58,11 +59,12 @@ interface ThreadWorkspaceChoice {
  * model, reasoning and autonomy of the conversation it spawns from, so a thread
  * runs with the same brain and the same limits as the chat that ordered it.
  */
-export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'> &
+export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy' | 'droidProfile'> &
   Partial<Pick<ThreadInput, 'provider' | 'autonomy'>> &
   ThreadWorkspaceChoice & {
     /** The plan step this thread carries, by its number or exact title. */
     step?: string;
+    profile?: 'main' | 'alt';
   };
 
 /** The lead owns step progress independently of a linked conversation. */
@@ -192,6 +194,7 @@ export interface ProjectView {
     ProjectThread,
     'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId' | 'unread'
   > & {
+    droidProfile?: 'alt';
     state: ThreadState;
     wait?: ThreadWait;
     approval?: { requestId: string; summary: string };

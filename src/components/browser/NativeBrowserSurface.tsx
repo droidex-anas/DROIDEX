@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIsPresent } from 'framer-motion';
-import { isDesktop } from '../../lib/desktop';
 import { useBrowserSlot } from '../../lib/browserHost';
 import {
+  hasNativeBrowser,
   onNativeBrowserDesignEvent,
   onNativeBrowserLoadFailed,
   onNativeBrowserLoaded,
@@ -52,7 +52,7 @@ export function NativeBrowserSurface({
   const onLoadedRef = useRef(onLoaded);
   const onDesignKeyRef = useRef(onDesignKey);
   const onLoadFailedRef = useRef(onLoadFailed);
-  const native = isDesktop();
+  const native = hasNativeBrowser();
   // While the pane animates out, the page must not linger over what replaces it.
   const leaving = !useIsPresent();
   const surface = useMemo(

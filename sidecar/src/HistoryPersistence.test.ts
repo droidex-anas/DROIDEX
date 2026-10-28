@@ -131,6 +131,22 @@ function readRow<T>(home: string, sql: string, ...params: string[]): T {
   }
 }
 
+test('app session IDs expose durable top-level sessions without child metadata', async (t) => {
+  const { persistence } = openPersistence(t);
+  persistence.syncSummaries([
+    summary({ appSessionId: 'app-2', providerSessionId: 'provider-2' }),
+    summary({ appSessionId: 'app-1', providerSessionId: 'provider-1' }),
+  ]);
+  persistence.upsertChildSession({
+    ...child('running'),
+    parentAppSessionId: 'app-1',
+    childSessionId: 'private-child-id',
+  });
+  await persistence.flush();
+
+  assert.deepEqual(persistence.appSessionIds(), ['app-1', 'app-2']);
+});
+
 test('a failed settlement is held while live transcript output continues until recovery', async (t) => {
   const { home, persistence } = openPersistence(t);
   persistence.syncSummaries([summary()]);

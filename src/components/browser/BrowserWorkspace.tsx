@@ -23,10 +23,10 @@ import {
 import { Button } from '../ui/Button';
 import { NativeBrowserSurface } from './NativeBrowserSurface';
 import { ViewportMenu } from './ViewportMenu';
-import { isDesktop } from '../../lib/desktop';
 import {
   goBackNativeBrowser,
   goForwardNativeBrowser,
+  hasNativeBrowser,
   type NativeBrowserLoadFailed,
 } from '../../lib/nativeBrowser';
 import { BrowserToolbar } from './BrowserToolbar';
@@ -78,7 +78,7 @@ export default function BrowserWorkspace({
   const designMode = isDesignModeOpen(state.designModes, browserKey);
   const pageCrashed = useBrowserPageCrashed(browser?.browserSessionId);
   const designMarks = useDesignMarks(browserKey);
-  const nativeBrowser = isDesktop();
+  const nativeBrowser = hasNativeBrowser();
   const frameRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);

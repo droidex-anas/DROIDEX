@@ -9,7 +9,13 @@ import {
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 test('cached session summaries accept the complete canonical contract', () => {
-  const value = sessionSummary({ cwd: '/repo', tokensIn: 1, tokensOut: 2, contextTokens: 3 });
+  const value = sessionSummary({
+    cwd: '/repo',
+    tokensIn: 1,
+    tokensOut: 2,
+    contextTokens: 3,
+    droidProfile: 'alt',
+  });
   assert.deepEqual(parseCachedSessionSummary(serializeCachedSessionSummary(value)), value);
 });
 
@@ -20,6 +26,7 @@ test('cached session summaries reject malformed required arrays, discriminants a
     { ...sessionSummary(), reasoningEffort: 'extreme' },
     { ...sessionSummary(), contextAccuracy: 'guessed' },
     { ...sessionSummary(), workspaceKind: 'repository' },
+    { ...sessionSummary(), droidProfile: 'other' },
     // An inherited Object.prototype key is not a reasoning effort.
     { ...sessionSummary(), reasoningEffort: 'toString' },
   ]) {

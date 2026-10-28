@@ -1,4 +1,7 @@
 import { factoryReasoningEffort, type FactoryRuntime } from './DroidRuntime.js';
+import { droidHome } from './droidProfiles.js';
+import { readFactoryDefaults } from './history.js';
+import { requireAltDroidModel } from './providers/droid/droidModels.js';
 import type { LiveSession } from './SessionLifecycle.js';
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { HarnessModelSwitch } from './normalize.js';
@@ -275,9 +278,12 @@ export class SessionModelSettings {
     if (summary.provider !== DEFAULT_PROVIDER) return;
     const session = await this.d.runtime.loadSession(
       summary.providerSessionId ?? summary.appSessionId,
+      { droidProfile: summary.droidProfile },
     );
     try {
-      if (isCurrent()) await session.updateSettings(createSessionSettingsForAgent(agent, settings));
+      if (!isCurrent()) return;
+      if (summary.droidProfile && settings.modelId) requireAltDroidModel(session, settings.modelId);
+      await session.updateSettings(createSessionSettingsForAgent(agent, settings));
     } finally {
       await session.close();
     }
@@ -390,7 +396,9 @@ export class SessionModelSettings {
     if (summary.provider !== DEFAULT_PROVIDER) {
       return { ...settings, modelId: this.d.providerDefaultModelId(summary.provider) ?? null };
     }
-    const defaults = await this.d.getFactoryDefaults();
+    const defaults = summary.droidProfile
+      ? readFactoryDefaults(droidHome(summary.droidProfile))
+      : await this.d.getFactoryDefaults();
     let modelId: string | undefined;
     if (agent === 'worker') modelId = defaults.workerModelId;
     else if (agent === 'validator') modelId = defaults.validatorModelId;
@@ -404,7 +412,10 @@ export class SessionModelSettings {
     if (summary.modelId) return summary.modelId;
     if (summary.provider !== DEFAULT_PROVIDER)
       return this.d.providerDefaultModelId(summary.provider);
-    return modelDefaultForMode(defaultsModeForSummary(summary), await this.d.getFactoryDefaults());
+    const defaults = summary.droidProfile
+      ? readFactoryDefaults(droidHome(summary.droidProfile))
+      : await this.d.getFactoryDefaults();
+    return modelDefaultForMode(defaultsModeForSummary(summary), defaults);
   }
 
   private async applyLive(

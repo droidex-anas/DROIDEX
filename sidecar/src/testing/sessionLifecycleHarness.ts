@@ -213,7 +213,9 @@ export function createHarness(
       delivery?.accepted();
     },
     context: {
-      preserveUsage: () => undefined,
+      preserveUsage: (appSessionId, offset) => {
+        record('provider', 'context.preserveUsage', appSessionId, offset);
+      },
       refresh: (target) => {
         record('provider', 'context.refresh', target.sourceSessionId);
         return Promise.resolve();

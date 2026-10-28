@@ -69,6 +69,11 @@ export function ThreadRow({
       {/* The harness mark the chat list uses, so a thread is identified the
           same way its chat is; Droid, the default, wears none there either. */}
       <span className="ml-2 flex shrink-0 items-center gap-2.5">
+        {row.droidProfile === 'alt' && (
+          <span className="text-caption text-muted" title="Alt Factory account">
+            <span className="sr-only">Factory account: </span>Alt
+          </span>
+        )}
         <span className="flex w-4 justify-center">
           {harness && (
             <span role="img" aria-label={`${PROVIDER_LABELS[harness]} thread`}>

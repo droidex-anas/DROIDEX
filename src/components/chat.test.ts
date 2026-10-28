@@ -86,7 +86,7 @@ test('a pinned spec alone never produces an empty Worked disclosure', () => {
   assert.doesNotMatch(html, /Worked/);
 });
 
-test('Read output is visible in detailed density and expandable in balanced density', () => {
+test('a Read shows its file as a chip, never its contents, at every density', () => {
   const call = ev({
     kind: 'tool_call',
     toolName: 'Read',
@@ -106,9 +106,10 @@ test('Read output is visible in detailed density and expandable in balanced dens
   const balanced = renderToStaticMarkup(
     createElement(FeedItemView, { item, live: false, density: 'balanced' }),
   );
-  assert.match(detailed, /export const inspected = true;/);
-  assert.match(balanced, /aria-expanded="false"/);
-  assert.match(balanced, /inert=""/);
+  for (const html of [detailed, balanced]) {
+    assert.match(html, /title="src\/app\.ts"/);
+    assert.doesNotMatch(html, /export const inspected = true;/);
+  }
 });
 
 // ── #14: spec mode must not capture normal chat responses ──

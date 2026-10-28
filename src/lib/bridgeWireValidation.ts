@@ -416,6 +416,8 @@ function isSessionSummary(value: unknown): boolean {
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
     isOptionalCanvasTools(value.canvasTools) &&
+    (value.droidProfile === undefined ||
+      (value.provider === 'droid' && value.droidProfile === 'alt')) &&
     isOptionalBoolean(value.fastMode) &&
     isOptionalContextWindow(value.contextWindowTokens) &&
     (value.pendingSteers === undefined ||
@@ -628,7 +630,10 @@ function isHarnessCliState(value: unknown): boolean {
   return (
     value.installed === true &&
     typeof value.path === 'string' &&
-    (value.source === 'homebrew' || value.source === 'npm' || value.source === 'native') &&
+    (value.source === 'homebrew' ||
+      value.source === 'npm' ||
+      value.source === 'native' ||
+      value.source === 'chatgpt') &&
     isOptionalString(value.version) &&
     typeof value.updating === 'boolean' &&
     isOptionalString(value.updateError)

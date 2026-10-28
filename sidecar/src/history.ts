@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, sep } from 'node:path';
 import { dateMs, normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
 import { reasoningValue } from './modelCatalog.js';
 import type {
@@ -47,8 +47,15 @@ import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
+import { altDroidHome, DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
 import { sessionNoticesRevision } from './sessionNotices.js';
 import { canvasToolBindingsRevision } from './canvas/canvasToolBindings.js';
+
+const SUMMARY_ROWS_SQL = `
+  SELECT app_sessions.*, settings.value_json AS droid_profile_json
+  FROM app_sessions
+  LEFT JOIN settings ON settings.scope = ? || app_sessions.app_session_id
+`;
 
 interface StoredMissionState {
   missionId?: string;
@@ -420,14 +427,31 @@ export class HistoryIndex {
   }
 
   summaryPatchesAndHidden(): SummaryPatchesAndHidden {
-    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = this.db.prepare(SUMMARY_ROWS_SQL).all(DROID_PROFILE_SCOPE_PREFIX) as Record<
+      string,
+      unknown
+    >[];
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return { patches, hiddenProviderSessionIds: hiddenProviderSessionIdsFromRows(rows) };
   }
 
+  appSessionIds(): string[] {
+    const rows = this.db
+      .prepare('SELECT app_session_id FROM app_sessions ORDER BY app_session_id')
+      .all() as { app_session_id: unknown }[];
+    return rows.map((row) => {
+      const id = stringValue(row.app_session_id);
+      if (!id) throw new Error('Canonical history contains an invalid app session ID.');
+      return id;
+    });
+  }
+
   private summaryPatches(): Map<string, Partial<SessionSummary>> {
-    const rows = this.db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = this.db.prepare(SUMMARY_ROWS_SQL).all(DROID_PROFILE_SCOPE_PREFIX) as Record<
+      string,
+      unknown
+    >[];
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(this.db, patches);
     return patches;
@@ -794,7 +818,10 @@ function readStoredSummaryPatches(): Map<string, Partial<SessionSummary>> {
   const db = new DatabaseSync(path);
   try {
     assertCanonicalHistorySchema(db);
-    const rows = db.prepare('SELECT * FROM app_sessions').all() as Record<string, unknown>[];
+    const rows = db.prepare(SUMMARY_ROWS_SQL).all(DROID_PROFILE_SCOPE_PREFIX) as Record<
+      string,
+      unknown
+    >[];
     const patches = summaryPatchesFromRows(rows);
     applyStoredCompactionGenerations(db, patches);
     return patches;
@@ -857,6 +884,7 @@ function summaryPatchesFromRows(
     const patch: Partial<SessionSummary> = {
       appSessionId,
       providerSessionId,
+      ...storedDroidProfile(row.droid_profile_json),
       compactedFromProviderSessionIds: decodeProviderSessionIdList(
         row.compacted_from_provider_session_ids,
         historySchemaRecovery(),
@@ -890,6 +918,13 @@ function summaryPatchesFromRows(
     patches.set(providerSessionId, patch);
   }
   return patches;
+}
+
+function storedDroidProfile(value: unknown): Pick<SessionSummary, 'droidProfile'> {
+  if (value === null || value === undefined) return {};
+  if (value !== '"alt"')
+    throw new Error('Stored Droid profile binding is invalid. Restore the history database.');
+  return { droidProfile: 'alt' };
 }
 
 function hiddenProviderSessionIdsFromRows(rows: Record<string, unknown>[]): Set<string> {
@@ -1164,8 +1199,8 @@ export function loadOpenTranscriptTail(
   return reader.windowBackward(Math.max(1, limit), 0).events;
 }
 
-export function readFactoryDefaults(): FactoryDefaults {
-  const path = join(homedir(), '.factory', 'settings.json');
+export function readFactoryDefaults(home = homedir()): FactoryDefaults {
+  const path = join(home, '.factory', 'settings.json');
   if (!existsSync(path)) return {};
   const settings = readJson<Record<string, unknown>>(path);
   const session = objectValue(settings.sessionDefaultSettings) ?? {};
@@ -1414,16 +1449,15 @@ function shouldIncludeCwd(
   return workspaceCwds.has(cwd);
 }
 
-// Every reader of stored sessions — enumeration, replay, the file cache, the
-// search index, markdown export — bottoms out here. Droid's own files are the
-// first root; the second holds the transcripts DROIDEX writes for providers
-// that keep no file of their own (ProviderTranscriptFile.ts).
+// Enumeration, replay and search share these roots, including the optional
+// Alt login and transcripts DROIDEX writes for other providers.
 function scanSessionFileTree(): SessionFileScan {
-  const roots = [join(homedir(), '.factory', 'sessions'), providerSessionsDir()];
   const files = new Map<string, SessionFileStat>();
   const settingsMtimes = new Map<string, number>();
   let isComplete = true;
-  const walk = (dir: string, depth: number) => {
+  // Alt is a private extra login, so it never replaces or breaks a Main chat:
+  // its root is walked last and a file whose identity Main already has is skipped.
+  const walk = (dir: string, depth: number, isAlt: boolean) => {
     if (depth > 4) return;
     // A directory can be removed between the root check and this readdir
     // (a parallel Droid CLI run compacting/deleting sessions). Skip a
@@ -1444,9 +1478,11 @@ function scanSessionFileTree(): SessionFileScan {
       } catch {
         continue;
       }
-      if (stat.isDirectory()) walk(path, depth + 1);
+      if (stat.isDirectory()) walk(path, depth + 1, isAlt);
       else if (name.endsWith('.jsonl')) {
-        files.set(name.slice(0, -'.jsonl'.length), {
+        const id = name.slice(0, -'.jsonl'.length);
+        if (isAlt && files.has(id)) continue;
+        files.set(id, {
           path,
           birthtimeMs: stat.birthtimeMs,
           mtimeMs: stat.mtimeMs,
@@ -1454,13 +1490,18 @@ function scanSessionFileTree(): SessionFileScan {
           settingsMtimeMs: null,
         });
       } else if (name.endsWith('.settings.json')) {
-        settingsMtimes.set(name.slice(0, -'.settings.json'.length), stat.mtimeMs);
+        settingsMtimes.set(path, stat.mtimeMs);
       }
     }
   };
-  for (const root of roots) if (existsSync(root)) walk(root, 0);
-  for (const [id, file] of files) {
-    file.settingsMtimeMs = settingsMtimes.get(id) ?? null;
+  for (const root of [join(homedir(), '.factory', 'sessions'), providerSessionsDir()])
+    if (existsSync(root)) walk(root, 0, false);
+  const altHome = altDroidHome();
+  const altRoot = altHome ? join(altHome, '.factory', 'sessions') : undefined;
+  if (altRoot && existsSync(altRoot)) walk(altRoot, 0, true);
+  for (const file of files.values()) {
+    file.settingsMtimeMs =
+      settingsMtimes.get(file.path.replace(/\.jsonl$/, '.settings.json')) ?? null;
   }
   return { files, isComplete };
 }
@@ -1540,12 +1581,18 @@ function summarizeSessionFile(
   const title = start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
   // A Droid file carries no binding, so it reads as Droid without migration.
   const provider = providerKind(start.provider) ?? DEFAULT_PROVIDER;
+  const altHome = altDroidHome();
+  const droidProfile: SessionSummary['droidProfile'] =
+    altHome && file.path.startsWith(`${join(altHome, '.factory', 'sessions')}${sep}`)
+      ? 'alt'
+      : undefined;
   return {
     summary: {
       appSessionId: providerSessionId,
       providerSessionId,
       missionId: classification.missionId,
       provider,
+      ...(droidProfile ? { droidProfile } : {}),
       ...(start.resumeId ? { resumeId: start.resumeId } : {}),
       // A Codex thread stored without the record started before Canvas existed.
       ...(provider === 'codex'

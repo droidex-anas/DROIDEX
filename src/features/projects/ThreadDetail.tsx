@@ -57,6 +57,11 @@ export function ThreadDetail({
         />
         <ActivityStatusGlyph status={row.status} />
         <span className="min-w-0 flex-1 truncate text-body-strong text-primary">{row.title}</span>
+        {row.droidProfile === 'alt' && (
+          <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
+            <span className="sr-only">Factory account: </span>Alt
+          </span>
+        )}
         <Button
           variant="ghost"
           size="sm"

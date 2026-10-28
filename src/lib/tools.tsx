@@ -205,6 +205,12 @@ export function isTodoTool(name?: string): boolean {
   return /todo/i.test(name ?? '');
 }
 
+// A directory listing (LS, list_directory) reads as a read, but its target is
+// the directory and its output the entries — not a file's contents.
+export function isListingTool(name?: string): boolean {
+  return /(^|[^a-z])(ls|list|dir)([^a-z]|$)/i.test(name ?? '');
+}
+
 export interface TodoSnapshot {
   todos: TodoItem[];
   foundPayload: boolean;

@@ -89,6 +89,7 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.attention === next.attention &&
     prev.activityStatus === next.activityStatus &&
     prev.detail === next.detail &&
+    prev.session.droidProfile === next.session.droidProfile &&
     prev.session.reasoningEffort === next.session.reasoningEffort &&
     prev.pr?.kind === next.pr?.kind &&
     prev.pr?.checks === next.pr?.checks &&
@@ -150,6 +151,11 @@ export const SessionRow = memo(function SessionRow({
       provider={PROVIDER_MARKS[session.provider]}
       label={`${PROVIDER_LABELS[session.provider]} chat`}
     />
+  );
+  const accountMark = session.droidProfile === 'alt' && (
+    <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
+      <span className="sr-only">Factory account: </span>Alt
+    </span>
   );
   const timeTone = unread ? 'text-primary font-medium' : 'text-muted';
 
@@ -352,6 +358,7 @@ export const SessionRow = memo(function SessionRow({
           <span className="min-w-0 flex-1">
             <span className="flex h-5 min-w-0 items-center gap-2">
               {titleLine}
+              {accountMark}
               <Suspense fallback={null}>
                 <AutomationSessionBadge appSessionId={session.appSessionId} />
               </Suspense>
@@ -370,6 +377,7 @@ export const SessionRow = memo(function SessionRow({
         ) : (
           <>
             {titleLine}
+            {accountMark}
             <Suspense fallback={null}>
               <AutomationSessionBadge appSessionId={session.appSessionId} />
             </Suspense>

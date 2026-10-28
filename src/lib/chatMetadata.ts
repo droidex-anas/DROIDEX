@@ -34,7 +34,7 @@ export interface ChatMetadata {
 
 export type ChatMetadataMap = Record<string, ChatMetadata>;
 
-const CHAT_METADATA_STORAGE_KEY = 'droid-chat-metadata';
+export const CHAT_METADATA_STORAGE_KEY = 'droid-chat-metadata';
 // Bound expendable preferences; tombstones must outlive retained history rows.
 const MAX_TRACKED_CHATS = 1000;
 export const MAX_CHAT_TITLE_LENGTH = 200;

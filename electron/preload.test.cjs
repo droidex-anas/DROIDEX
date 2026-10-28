@@ -64,6 +64,7 @@ function loadApi(invokeResult) {
       // The preview guest's owned source has one owner; the preload reads it
       // from there rather than repeating the URL.
       if (name === './canvasPreview.cjs') return require('./canvasPreview.cjs');
+      if (name === './desktopApi.cjs') return require('./desktopApi.cjs');
       if (name !== 'electron') throw new Error(`Unexpected preload dependency: ${name}`);
       return {
         contextBridge: {

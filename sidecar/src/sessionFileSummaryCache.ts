@@ -104,6 +104,7 @@ function hasOptionalSummaryFields(summary: Record<string, unknown>): boolean {
     optionalRecordOneOf(summary, 'contextAccuracy', ['exact', 'estimated']) &&
     optionalRecordOneOf(summary, 'workspaceKind', ['folder', 'none']) &&
     optionalRecordOneOf(summary, 'canvasTools', ['at_start', 'none']) &&
+    optionalRecordOneOf(summary, 'droidProfile', ['alt']) &&
     optionalFiniteNumber(summary, [
       'queuedSends',
       'contextRemainingTokens',

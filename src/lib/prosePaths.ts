@@ -60,6 +60,12 @@ function spaceSitsInsideTheFileName(segments: string[]): boolean {
   return segments.slice(0, -1).every((directory) => !directory.includes(' '));
 }
 
+// The last segment names a file on its own: a known extension or a whole-name
+// file (Dockerfile, .gitignore). A bare directory fails it.
+export function namesAFileName(name: string): boolean {
+  return FILE_EXTENSION.test(name) || namesWholeNameFile(name);
+}
+
 /**
  * The file path an inline-code mention names, or null when it names something
  * else. A path either ends in a known file name or extension, or is relative and

@@ -495,6 +495,7 @@ export const FeedItemView = memo(function FeedItemView({
       return (
         <DiffCard
           change={item.change}
+          running={(sessionLive ?? live) && item.pending === true}
           cwd={cwd}
           onOpen={openCapturedChange(item.change, onOpenReviewFile, onOpenDiff)}
         />
@@ -507,6 +508,7 @@ export const FeedItemView = memo(function FeedItemView({
           onOpenDiff={onOpenDiff}
           onOpenReviewFile={onOpenReviewFile}
           inlineDiffs={inlineDiffs}
+          live={sessionLive ?? live}
         />
       );
     case 'generated_image':

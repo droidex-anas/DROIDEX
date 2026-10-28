@@ -147,6 +147,7 @@ export class SessionForks {
     const live = this.d.registry.getLive(source.appSessionId);
     const handle = await this.d.provider(source.provider).fork({
       providerSessionId: source.providerSessionId ?? source.appSessionId,
+      ...(source.droidProfile ? { droidProfile: source.droidProfile } : {}),
       ...(source.resumeId ? { resumeId: source.resumeId } : {}),
       ...(source.compactedFromProviderSessionIds
         ? { compactedFromProviderSessionIds: source.compactedFromProviderSessionIds }
@@ -216,6 +217,9 @@ export class SessionForks {
         goal: request,
         sessionPurpose: 'chat',
         provider,
+        ...(provider === 'droid' && source.provider === 'droid' && source.droidProfile
+          ? { droidProfile: source.droidProfile }
+          : {}),
         interactionMode: source.interactionMode === 'spec' ? 'spec' : 'auto',
         autonomy: source.autonomy,
         ...(provider === source.provider

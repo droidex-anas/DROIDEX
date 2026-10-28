@@ -55,6 +55,9 @@ export function ThreadSpawnLine({
   // when the conversation does rather than shimmer for good.
   const starting = result === undefined && sessionLive;
   const live = row?.live === true || starting;
+  const isAlt =
+    (row?.droidProfile ?? spawned?.droidProfile) === 'alt' ||
+    (starting && stringArg(call, 'profile') === 'alt');
   // A fork copies a lead's transcript but not its place in the project, so its
   // Threads panel has nothing to show; from there a thread opens on its own.
   const sameProject = useStoreSelector((state) => {
@@ -70,24 +73,22 @@ export function ThreadSpawnLine({
     if (sameProject) dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'threads', threadId: spawned.id });
     else dispatch({ type: 'SET_ACTIVE_SESSION', id: spawned.id });
   };
+  const toggle = () => {
+    setOpen((value) => !value);
+  };
 
   return (
     <div data-testid="thread-spawn-line">
       <div className="group flex items-center gap-1.5 text-body">
         <button
           type="button"
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
-          className="-m-0.5 flex items-center rounded-xs p-0.5"
-          aria-label={words.toggle}
+          onClick={toggle}
           aria-expanded={open}
+          title={words.toggle}
+          className={live ? 'shimmer-text font-medium' : 'text-muted'}
         >
-          <Caret open={open} />
-        </button>
-        <span className={live ? 'shimmer-text font-medium' : 'text-muted'}>
           {starting ? words.starting : words.started}
-        </span>
+        </button>
         <button
           type="button"
           disabled={!spawned}
@@ -97,12 +98,27 @@ export function ThreadSpawnLine({
         >
           {title}
         </button>
+        {isAlt && (
+          <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
+            <span className="sr-only">Factory account: </span>Alt
+          </span>
+        )}
         {row && !live && (
           <>
             <span className="min-w-0 truncate text-caption text-muted">{row.detail}</span>
             <ActivityStatusGlyph status={row.status} />
           </>
         )}
+        {/* The verb is the accessible toggle; the chevron repeats it for the pointer. */}
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={toggle}
+          className="-m-0.5 flex items-center rounded-xs p-0.5"
+        >
+          <Caret open={open} />
+        </button>
       </div>
       <Expand open={open}>
         <SpawnDetail

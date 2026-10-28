@@ -159,6 +159,7 @@ type SessionHistoryBase = Pick<
   | 'summaryPatchesAndHidden'
   | 'listHistoricalSessions'
   | 'sessionFileCacheSize'
+  | 'appSessionIds'
   | 'sessionLaunchSettings'
   | 'childSessions'
   | 'childSession'
@@ -364,6 +365,7 @@ export class SessionManager {
         .find(
           (live) =>
             live.summary.provider === provider &&
+            live.summary.droidProfile === undefined &&
             !hasSessionCloseStarted(live) &&
             !live.session.isClosed,
         )?.session,
@@ -981,6 +983,10 @@ export class SessionManager {
       persistence,
       interrupted: [...this.adoption.records()],
     });
+  }
+
+  appSessionIds(): string[] {
+    return this.history.appSessionIds();
   }
 
   // Runs on its own idle timer; exposed so callers can force the sweep.
@@ -1754,7 +1760,8 @@ export class SessionManager {
       liveSession,
       request,
     );
-    this.accountUsage.afterTurn(liveSession.summary.provider);
+    if (!liveSession.summary.droidProfile)
+      this.accountUsage.afterTurn(liveSession.summary.provider);
   }
 
   private isCurrentPrimarySession(liveSession: LiveSession): boolean {
@@ -2203,7 +2210,8 @@ export class SessionManager {
       throw new Error(`This is not supported for sessions on the ${provider} provider.`);
     const providerSessionId =
       this.registry.resolveSummary(appSessionId)?.providerSessionId ?? appSessionId;
-    const session = await this.runtime.loadSession(providerSessionId);
+    const droidProfile = this.registry.resolveSummary(appSessionId)?.droidProfile;
+    const session = await this.runtime.loadSession(providerSessionId, { droidProfile });
     try {
       return await fn(session);
     } finally {
@@ -2216,16 +2224,22 @@ export class SessionManager {
     freshSession = false,
   ): Promise<{ session: FactorySession; close: () => Promise<void> }> {
     if (!freshSession) {
-      const first = this.registry.liveSessionsSnapshot().at(0);
+      const first = this.registry
+        .liveSessionsSnapshot()
+        .find((entry) => entry.summary.droidProfile === undefined);
       const live = providerSessionId
         ? this.registry.getLive(providerSessionId)?.droid
         : first?.droid;
       if (live) return { session: live, close: () => Promise.resolve() };
     }
+    const droidProfile = providerSessionId
+      ? this.registry.resolveSummary(providerSessionId)?.droidProfile
+      : undefined;
     const session = await this.runtime.createSession({
       cwd: tmpdir(),
       interactionMode: 'auto',
       autonomyLevel: 'low',
+      ...(droidProfile ? { droidProfile } : {}),
     });
     return { session, close: () => session.close() };
   }
