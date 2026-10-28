@@ -29,7 +29,7 @@ import type {
   RevisionDiff,
   RevisionPage,
   RevisionSummary,
-  RestoreRevisionInput,
+  SwitchRevisionInput,
   SourceElement,
   WriteFilesInput,
   WriteReceipt,
@@ -79,7 +79,7 @@ type SidecarWire = {
   revision: RevisionSummary;
   diff: RevisionDiff;
   page: RevisionPage;
-  restore: RestoreRevisionInput;
+  switch: SwitchRevisionInput;
   error: CanvasError;
   command: CanvasCommand;
   reply: CanvasReply;
@@ -109,7 +109,7 @@ type RendererWire = {
   revision: Renderer.RevisionSummary;
   diff: Renderer.RevisionDiff;
   page: Renderer.RevisionPage;
-  restore: Renderer.RestoreRevisionInput;
+  switch: Renderer.SwitchRevisionInput;
   error: Renderer.CanvasError;
   command: Renderer.CanvasCommand;
   reply: Renderer.CanvasReply;
@@ -336,7 +336,7 @@ const wire: SidecarWire = {
   revision: {
     state: 'saved',
     revisionId: 'rev_02',
-    restoredFromRevisionId: 'rev_01',
+    version: 2,
     sequence: 7,
     createdAt: 1_767_225_600_000,
     author: { kind: 'agent', scopeRef: 'scope-safe' },
@@ -350,8 +350,8 @@ const wire: SidecarWire = {
     files: [{ path: 'main.tsx', kind: 'modified', diff: '-old\n+new\n', truncated: false }],
   },
   page: { limit: 50, before: 7 },
-  restore: {
-    mutationId: 'restore-hey',
+  switch: {
+    mutationId: 'switch-hey',
     designId: 'dsg_hey',
     revisionId: 'rev_01',
     expectedRevisionId: 'rev_02',
@@ -402,7 +402,7 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
     revision: true,
     diff: true,
     page: true,
-    restore: true,
+    switch: true,
     error: true,
     command: true,
     reply: true,
@@ -650,19 +650,15 @@ test('the renderer accepts a ready element map and rejects incomplete or unbound
   assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
 });
 
-test('the renderer bounds restored-from revision identities in history replies', () => {
-  const event = (restoredFromRevisionId: unknown) => ({
+test('the renderer refuses history replies without a version counted from 1', () => {
+  const event = (version: unknown) => ({
     type: 'canvas.result',
     requestId: 'req_01',
     ok: true,
-    reply: {
-      kind: 'revisions',
-      revisions: [{ ...wire.revision, restoredFromRevisionId }],
-    },
+    reply: { kind: 'revisions', revisions: [{ ...wire.revision, version }] },
   });
-  assert.equal(isCanvasEvent(event('rev_01')), true);
-  assert.equal(isCanvasEvent(event(undefined)), true);
-  for (const invalid of [null, '', 'r'.repeat(129), 1]) {
+  assert.equal(isCanvasEvent(event(1)), true);
+  for (const invalid of [undefined, 0, -1, 1.5, '2']) {
     assert.equal(isCanvasEvent(event(invalid)), false);
   }
 });

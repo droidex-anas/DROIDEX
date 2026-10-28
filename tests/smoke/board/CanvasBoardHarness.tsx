@@ -26,7 +26,7 @@ import type {
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
-  RestoreRevisionInput,
+  SwitchRevisionInput,
   RevisionSummary,
   SourceElement,
   UndoRemovalInput,
@@ -79,9 +79,9 @@ interface BoardHarness {
   answerRename: (index: number) => void;
   /** A manifest commit lands on the frame: a build's, or with `name`, a rename from elsewhere. */
   commitManifest: (designId: string, name?: string) => void;
-  restoreCalls: RestoreRevisionInput[];
-  /** Refuses one Restore because the frame's head moved. */
-  refuseRestore: (index: number) => void;
+  switchCalls: SwitchRevisionInput[];
+  /** Refuses one switch because the frame's head moved. */
+  refuseSwitch: (index: number) => void;
   /** The toolbar's dialogs asked for, as `<kind>:<designId>`. */
   dialogs: string[];
 }
@@ -260,8 +260,8 @@ const historyReads: string[] = [];
 const historyReplies: PromiseWithResolvers<RevisionSummary[]>[] = [];
 const renameCalls: RenameFrameInput[] = [];
 const renameReplies: PromiseWithResolvers<void>[] = [];
-const restoreCalls: RestoreRevisionInput[] = [];
-const restoreReplies: PromiseWithResolvers<void>[] = [];
+const switchCalls: SwitchRevisionInput[] = [];
+const switchReplies: PromiseWithResolvers<void>[] = [];
 const dialogs: string[] = [];
 const frameActions: FrameActions = {
   history: {
@@ -271,10 +271,10 @@ const frameActions: FrameActions = {
       historyReplies.push(reply);
       return reply.promise;
     },
-    restoreRevision: (input) => {
-      restoreCalls.push(input);
+    switchRevision: (input) => {
+      switchCalls.push(input);
       const reply = Promise.withResolvers<void>();
-      restoreReplies.push(reply);
+      switchReplies.push(reply);
       return reply.promise;
     },
   },
@@ -297,6 +297,7 @@ const frameActions: FrameActions = {
 function revision(revisionId: string, sequence: number, author: 'user' | 'agent'): RevisionSummary {
   return {
     revisionId,
+    version: sequence,
     sequence,
     author: author === 'user' ? { kind: 'user' } : { kind: 'agent', scopeRef: 'chat_1' },
     mutationKind: sequence === 1 ? 'create' : 'edit',
@@ -474,9 +475,9 @@ function Harness() {
         }));
       setSnapshot(applyCanvasChange(shown.current, change(committed, [])));
     },
-    restoreCalls,
-    refuseRestore: (index) =>
-      restoreReplies[index].reject(new CanvasRequestError('revision_conflict', 'The head moved.')),
+    switchCalls,
+    refuseSwitch: (index) =>
+      switchReplies[index].reject(new CanvasRequestError('revision_conflict', 'The head moved.')),
     dialogs,
   };
   return (

@@ -1,188 +1,117 @@
-// A frame's revisions in its toolbar's History popover (spec §9): newest
-// first, who made each and when, and Restore behind an inline confirm.
+// A frame's versions in its toolbar menu (spec §9): newest first, numbered
+// from v1, the one on show checked. Choosing another switches the frame to it.
 
-import { useRef } from 'react';
+import type { RefObject } from 'react';
+import { Check } from '@droidex/icons';
+import { Menu } from '../../components/ui/Menu';
+import { cn } from '../../components/ui/cn';
 import { formatRelativeTime } from '../../lib/time';
-import { revisionNumber, type FrameHistory, type HistoryState } from './frameHistory';
-import { MenuHeading, MenuNote, MenuRow } from './menuRows';
+import { toast } from '../../lib/toast';
+import type { FrameHistory, RevisionList } from './frameHistory';
 import type { RevisionSummary } from './protocol';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
-const ACTION_CLASS =
-  'shrink-0 cursor-pointer rounded-md px-1.5 py-0.5 text-label text-primary transition-colors hover:bg-elevated/50 focus-visible:bg-elevated/50 focus-visible:outline-none';
+const MENU_WIDTH_PX = 200;
 
 export function RevisionHistory({
+  open,
+  onClose,
+  anchorRef,
+  frameName,
   history,
-  state,
+  list,
   headRevisionId,
-  canRestore,
+  canSwitch,
 }: {
+  open: boolean;
+  onClose: () => void;
+  anchorRef: RefObject<HTMLElement | null>;
+  frameName: string;
   history: FrameHistory;
-  state: HistoryState;
+  list: RevisionList;
   headRevisionId: string | null;
-  /** False where this chat cannot write the canvas, so its history is read-only. */
-  canRestore: boolean;
+  /** False where this chat cannot write the canvas, so its versions are read-only. */
+  canSwitch: boolean;
 }) {
-  const { list, restore } = state;
-  const nameOf = (revisionId: string) => {
-    const number = revisionNumber(list, revisionId);
-    return number === null ? null : `v${String(number)}`;
+  const switchTo = (revisionId: string) => {
+    void history.switchTo(revisionId).then((refusal) => {
+      if (refusal) toast.error(refusal);
+    });
   };
   return (
-    <div className="min-h-0 overflow-y-auto p-1">
-      <MenuHeading>History</MenuHeading>
-      {restore.status === 'refused' && <MenuNote role="alert">{restore.message}</MenuNote>}
-      {list.status === 'loading' && (
-        <MenuNote role="status">Reading this frame’s history…</MenuNote>
-      )}
+    <Menu
+      open={open}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      placement="bottom-start"
+      width={MENU_WIDTH_PX}
+      label={`Versions of ${frameName}`}
+      className="max-h-72"
+    >
+      {list.status === 'loading' && <Menu.Label role="status">Reading versions…</Menu.Label>}
       {list.status === 'failed' && (
         <>
-          <MenuNote role="alert">{list.message}</MenuNote>
-          <MenuRow
-            label="Try again"
-            onRun={() => {
+          <Menu.Label role="alert" className="text-danger">
+            {list.message}
+          </Menu.Label>
+          <Menu.Item
+            onClick={(event) => {
+              // Keeps the menu open, so the versions appear where the error was.
+              event.preventDefault();
               history.reload();
             }}
-          />
+            onSelect={() => undefined}
+          >
+            Try again
+          </Menu.Item>
         </>
       )}
       {list.status === 'listed' &&
         list.revisions.map((revision) => (
-          <RevisionRow
+          <VersionItem
             key={revision.revisionId}
             revision={revision}
-            name={nameOf(revision.revisionId)}
-            restoredFrom={
-              revision.state === 'saved' && revision.restoredFromRevisionId
-                ? nameOf(revision.restoredFromRevisionId)
-                : null
-            }
-            isHead={revision.revisionId === headRevisionId}
-            canRestore={canRestore}
-            history={history}
-            restore={restore}
+            isCurrent={revision.revisionId === headRevisionId}
+            canSwitch={canSwitch}
+            onSwitch={switchTo}
           />
         ))}
       {list.status === 'listed' && !list.complete && (
-        <MenuNote>{`The newest ${String(MAX_REVISION_PAGE_SIZE)} revisions.`}</MenuNote>
+        <Menu.Label>{`The newest ${String(MAX_REVISION_PAGE_SIZE)} versions`}</Menu.Label>
       )}
-    </div>
+    </Menu>
   );
 }
 
-function RevisionRow({
+function VersionItem({
   revision,
-  name,
-  restoredFrom,
-  isHead,
-  canRestore,
-  history,
-  restore,
+  isCurrent,
+  canSwitch,
+  onSwitch,
 }: {
   revision: RevisionSummary;
-  /** `v3`, or null when the history is longer than one read. */
-  name: string | null;
-  restoredFrom: string | null;
-  isHead: boolean;
-  canRestore: boolean;
-  history: FrameHistory;
-  restore: HistoryState['restore'];
+  isCurrent: boolean;
+  canSwitch: boolean;
+  onSwitch: (revisionId: string) => void;
 }) {
-  const phase =
-    'revisionId' in restore && restore.revisionId === revision.revisionId ? restore.status : 'idle';
-  const called = name ?? 'this revision';
   const saved = revision.state === 'saved' ? revision : null;
   return (
-    <div className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5">
-      <span className="min-w-0 flex-1 truncate text-label font-normal text-primary">
-        {phase === 'confirming' ? `Restore ${called}?` : describe(revision, name, restoredFrom)}
+    <Menu.Item
+      role="menuitemradio"
+      aria-checked={isCurrent}
+      disabled={!saved || (!canSwitch && !isCurrent)}
+      onSelect={() => {
+        if (!isCurrent) onSwitch(revision.revisionId);
+      }}
+    >
+      <span className="min-w-0 flex-1 truncate tabular-nums">{`v${String(revision.version)}`}</span>
+      <span className="shrink-0 text-caption text-muted">
+        {saved ? formatRelativeTime(saved.createdAt) : 'Can’t be read'}
       </span>
-      {phase === 'idle' && saved && (
-        <span className="shrink-0 text-caption text-muted">
-          {isHead ? 'Current' : formatRelativeTime(saved.createdAt)}
-        </span>
-      )}
-      {phase === 'restoring' && (
-        <span role="status" className="shrink-0 text-caption text-muted">
-          Restoring…
-        </span>
-      )}
-      {canRestore && !isHead && saved && phase !== 'restoring' && (
-        <RestoreControls
-          called={called}
-          confirming={phase === 'confirming'}
-          busy={restore.status === 'restoring'}
-          onRestore={() => {
-            if (phase === 'confirming') void history.restore();
-            else history.confirm(revision.revisionId);
-          }}
-          onCancel={() => {
-            history.cancel();
-          }}
-        />
-      )}
-    </div>
+      <Check
+        className={cn('size-icon-sm shrink-0 text-accent', !isCurrent && 'invisible')}
+        aria-hidden="true"
+      />
+    </Menu.Item>
   );
-}
-
-/** Restore…, which asks first: the same button then confirms, beside Cancel. */
-function RestoreControls({
-  called,
-  confirming,
-  busy,
-  onRestore,
-  onCancel,
-}: {
-  called: string;
-  confirming: boolean;
-  /** Another revision is being restored. */
-  busy: boolean;
-  onRestore: () => void;
-  onCancel: () => void;
-}) {
-  const action = useRef<HTMLButtonElement>(null);
-  return (
-    <>
-      <button
-        ref={action}
-        type="button"
-        aria-label={confirming ? `Restore ${called} as the current revision` : `Restore ${called}`}
-        disabled={busy}
-        className={ACTION_CLASS}
-        onClick={onRestore}
-      >
-        {confirming ? 'Restore' : 'Restore…'}
-      </button>
-      {confirming && (
-        <button
-          type="button"
-          className={ACTION_CLASS}
-          onClick={() => {
-            onCancel();
-            action.current?.focus();
-          }}
-        >
-          Cancel
-        </button>
-      )}
-    </>
-  );
-}
-/** "v3 · You edited it": who made the revision and how. */
-function describe(
-  revision: RevisionSummary,
-  name: string | null,
-  restoredFrom: string | null,
-): string {
-  const prefix = name === null ? '' : `${name} · `;
-  if (revision.state === 'damaged') return `${prefix}Can’t be read`;
-  const who = revision.author.kind === 'user' ? 'You' : 'Agent';
-  const what = {
-    create: 'created it',
-    write: 'wrote it',
-    edit: 'edited it',
-    restore: `restored ${restoredFrom ?? 'an earlier one'}`,
-  }[revision.mutationKind];
-  const failed = revision.buildStatus === 'failed' ? ' · didn’t build' : '';
-  return `${prefix}${who} ${what}${failed}`;
 }

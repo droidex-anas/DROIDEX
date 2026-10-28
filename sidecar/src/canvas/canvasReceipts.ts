@@ -31,12 +31,11 @@ export function recordedCreate(
 export function recordedRevision(
   manifest: CanvasManifest,
   mutationId: string,
-  kind: 'write' | 'edit' | 'restore',
+  kind: 'write' | 'edit' | 'switch',
   fingerprint: string,
 ): WriteReceipt | null {
   const record = findMutation(manifest, mutationId, kind, fingerprint);
-  if (record?.kind !== 'write' && record?.kind !== 'edit' && record?.kind !== 'restore')
-    return null;
+  if (record?.kind !== 'write' && record?.kind !== 'edit' && record?.kind !== 'switch') return null;
   return { designId: record.designId, revisionId: record.revisionId, sequence: record.sequence };
 }
 

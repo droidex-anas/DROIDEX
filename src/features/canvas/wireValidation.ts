@@ -305,7 +305,6 @@ function isRevisionSummary(value: unknown): boolean {
   if (value.state === 'damaged') return true;
   return (
     value.state === 'saved' &&
-    (value.restoredFromRevisionId === undefined || id(value.restoredFromRevisionId)) &&
     count(value.createdAt) &&
     isDesignSystem(value.designSystem) &&
     typeof value.buildStatus === 'string' &&
@@ -317,6 +316,8 @@ function isRevisionCommit(value: unknown): value is Record<string, unknown> {
   if (!record(value) || !record(value.author)) return false;
   return (
     id(value.revisionId) &&
+    count(value.version) &&
+    value.version >= 1 &&
     count(value.sequence) &&
     (value.author.kind === 'user' ||
       (value.author.kind === 'agent' && id(value.author.scopeRef))) &&

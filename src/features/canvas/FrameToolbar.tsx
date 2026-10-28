@@ -1,5 +1,4 @@
-// The selected frame's toolbar (spec §4): rename it, read and restore its
-// revisions, run it, read its source, add it to the chat, and the rest behind
+// The selected frame's toolbar (spec §4): rename it, switch its version, run it, read its source, add it to the chat, and the rest behind
 // More. It floats above the frame's label at screen size, so it follows the
 // frame through pan and zoom. It is one tab stop: the arrows move inside it and
 // Escape hands the keyboard back to the label.
@@ -86,14 +85,10 @@ function SelectToolbar({
   const [focusedTool, setFocusedTool] = useState<ToolId>('rename');
   const historyAnchor = useRef<HTMLButtonElement>(null);
   const moreAnchor = useRef<HTMLButtonElement>(null);
-  const { history, state } = useFrameHistory(actions.history, frame);
-  const closeMore = useCallback(() => {
+  const { history, list } = useFrameHistory(actions.history, frame);
+  const close = useCallback(() => {
     setOpen(null);
   }, []);
-  const closeHistory = useCallback(() => {
-    history.cancel();
-    setOpen(null);
-  }, [history]);
 
   const tools = toolsShown({ frame, actions, onOpenSource, onToggleChat });
   const tabStop = tools.includes(focusedTool) ? focusedTool : tools[0];
@@ -122,7 +117,7 @@ function SelectToolbar({
     event.currentTarget.querySelector<HTMLElement>(`[data-tool="${next}"]`)?.focus();
   };
 
-  const version = revisionNumber(state.list, frame.revisionId);
+  const version = revisionNumber(list, frame.revisionId);
   return (
     <ToolbarShell roomRight={roomRight} label={`${frame.name} actions`} onKeyDown={onKeyDown}>
       {actions.canEdit && (
@@ -141,10 +136,10 @@ function SelectToolbar({
           ref={historyAnchor}
           type="button"
           {...tool('history')}
-          aria-haspopup="dialog"
+          aria-haspopup="menu"
           aria-expanded={open === 'history'}
-          aria-label={`History of ${frame.name}${version === null ? '' : `, version ${String(version)}`}`}
-          title="History"
+          aria-label={`Versions of ${frame.name}${version === null ? '' : `, version ${String(version)} on show`}`}
+          title="Versions"
           onClick={() => {
             setOpen(open === 'history' ? null : 'history');
           }}
@@ -213,24 +208,19 @@ function SelectToolbar({
         <Ellipsis className="h-3.5 w-3.5" aria-hidden />
       </button>
 
-      <Popover
+      <RevisionHistory
         open={open === 'history'}
-        onClose={closeHistory}
+        onClose={close}
         anchorRef={historyAnchor}
-        placement="bottom-start"
-        width={MENU_WIDTH_PX}
-        label={`History of ${frame.name}`}
-      >
-        <RevisionHistory
-          history={history}
-          state={state}
-          headRevisionId={frame.revisionId}
-          canRestore={actions.canEdit}
-        />
-      </Popover>
+        frameName={frame.name}
+        history={history}
+        list={list}
+        headRevisionId={frame.revisionId}
+        canSwitch={actions.canEdit}
+      />
       <Popover
         open={open === 'more'}
-        onClose={closeMore}
+        onClose={close}
         anchorRef={moreAnchor}
         placement="bottom-start"
         width={MENU_WIDTH_PX}
@@ -245,7 +235,7 @@ function SelectToolbar({
             label="Make variants…"
             disabled={!actions.canEdit || !frame.revisionId}
             onRun={() => {
-              closeMore();
+              close();
               actions.makeVariants(frame);
             }}
           />
@@ -253,7 +243,7 @@ function SelectToolbar({
             label="Save to library…"
             disabled={!frame.revisionId}
             onRun={() => {
-              closeMore();
+              close();
               actions.saveToLibrary(frame);
             }}
           />
@@ -261,7 +251,7 @@ function SelectToolbar({
             label="Delete frame"
             hint="⌫"
             onRun={() => {
-              closeMore();
+              close();
               onDelete();
             }}
           />
@@ -321,7 +311,7 @@ function ToolbarShell({
   );
 }
 
-/** The frame's history, read again whenever its head moves. */
+/** The frame's versions, read again whenever its head moves. */
 function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
   const history = useMemo(() => new FrameHistory(client), [client]);
   const { designId, revisionId } = frame;
@@ -334,8 +324,8 @@ function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
     },
     [history],
   );
-  const state = useSyncExternalStore(history.subscribe, history.read, history.read);
-  return { history, state };
+  const list = useSyncExternalStore(history.subscribe, history.read, history.read);
+  return { history, list };
 }
 
 /** The bar's tools in order, which is the order the arrows walk. */

@@ -1,5 +1,5 @@
-// The selected frame's toolbar against the harness: rename, the History
-// popover and Restore, Source and More, the keyboard's way through it, and
+// The selected frame's toolbar against the harness: rename, the version
+// menu and switching, Source and More, the keyboard's way through it, and
 // when it steps aside.
 
 import { expect, test } from '@playwright/test';
@@ -7,9 +7,7 @@ import { box, frame, openBoard, serveBoard } from './board/boardPage';
 
 serveBoard();
 
-test('the toolbar renames a frame, restores from its history and opens its source', async ({
-  page,
-}) => {
+test('the toolbar renames a frame, switches its version and opens its source', async ({ page }) => {
   await openBoard(page);
   await page.evaluate(() => window.boardHarness.select(['a']));
   const toolbar = page.getByRole('toolbar', { name: 'Design A actions' });
@@ -28,19 +26,22 @@ test('the toolbar renames a frame, restores from its history and opens its sourc
   await page.evaluate(() => window.boardHarness.answerRename(0));
   await expect(page.getByText('Hero', { exact: true }).locator('..')).toBeFocused();
 
-  // The chip counts the revisions once they are read; Restore asks first.
+  // The chip names the version on show once the versions are read; choosing another switches to it.
   const hero = page.getByRole('toolbar', { name: 'Hero actions' });
   await page.evaluate(() => window.boardHarness.answerHistory(0));
-  const chip = hero.getByRole('button', { name: /^History of Hero/ });
-  await expect(chip).toHaveAccessibleName('History of Hero, version 2');
+  const chip = hero.getByRole('button', { name: /^Versions of Hero/ });
+  await expect(chip).toHaveAccessibleName('Versions of Hero, version 2 on show');
   await chip.click();
-  const popover = page.getByRole('dialog', { name: 'History of Hero' });
-  await expect(popover.getByText('v2 · You edited it')).toBeVisible();
-  await expect(popover.getByText('Current', { exact: true })).toBeVisible();
-  await popover.getByRole('button', { name: 'Restore v1', exact: true }).click();
-  await expect(popover.getByText('Restore v1?')).toBeVisible();
-  await popover.getByRole('button', { name: 'Restore v1 as the current revision' }).click();
-  expect(await page.evaluate(() => window.boardHarness.restoreCalls)).toEqual([
+  const menu = page.getByRole('menu', { name: 'Versions of Hero' });
+  const current = menu.getByRole('menuitemradio', { name: /^v2/ });
+  await expect(current).toHaveAttribute('aria-checked', 'true');
+  await expect(current).toBeFocused();
+  await menu.getByRole('menuitemradio', { name: /^v1/ }).click();
+  // The page clock is paused; let the menu's select blink run out.
+  await page.clock.runFor(200);
+  await expect(menu).toHaveCount(0);
+  await expect(chip).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.switchCalls)).toEqual([
     {
       mutationId: expect.any(String),
       designId: 'a',
@@ -49,15 +50,12 @@ test('the toolbar renames a frame, restores from its history and opens its sourc
     },
   ]);
 
-  // A head that moved meanwhile is said plainly, and the history is read again.
-  await page.evaluate(() => window.boardHarness.refuseRestore(0));
-  await expect(popover.getByRole('alert')).toHaveText(
-    'This frame changed since its history was read. Pick again.',
-  );
+  // A head that moved meanwhile is said plainly, and the versions are read again.
+  await page.evaluate(() => window.boardHarness.refuseSwitch(0));
+  await expect(
+    page.getByText('This frame changed since its versions were read. Pick again.'),
+  ).toBeVisible();
   expect(await page.evaluate(() => window.boardHarness.historyReads)).toEqual(['a', 'a']);
-  await page.keyboard.press('Escape');
-  await expect(popover).toHaveCount(0);
-  await expect(chip).toBeFocused();
 
   await hero.getByRole('button', { name: 'Source of Hero' }).click();
   await expect(page.locator('[data-harness-source="a"]')).toBeVisible();
@@ -109,7 +107,7 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   await page.keyboard.press('Tab');
   await expect(rename).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(toolbar.getByRole('button', { name: 'History of Design B' })).toBeFocused();
+  await expect(toolbar.getByRole('button', { name: 'Versions of Design B' })).toBeFocused();
   await page.keyboard.press('End');
   await expect(more).toBeFocused();
 
