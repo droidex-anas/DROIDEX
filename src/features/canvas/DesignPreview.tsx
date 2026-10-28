@@ -345,6 +345,9 @@ export function PreviewGuestFrame({
 
   const lost = phase !== 'mounting' && phase !== 'ready' ? phase : null;
   const isReady = phase === 'ready';
+  // A Remote browser has no preview source at all (its canvas methods answer
+  // laptop-only), so the sheet says so instead of loading forever.
+  const previewless = canvasPreviewUrl() === null;
   const transition =
     isReady && motion.readyMs > 0
       ? `opacity ${String(motion.readyMs)}ms ${motion.easeCss}`
@@ -360,7 +363,7 @@ export function PreviewGuestFrame({
           transition,
         }}
       />
-      {lost === null && (
+      {lost === null && !previewless && (
         <div
           aria-hidden={isReady}
           className="pointer-events-none absolute inset-0"
@@ -369,6 +372,9 @@ export function PreviewGuestFrame({
           <PreviewPlacard label="Loading this preview…" />
         </div>
       )}
+      {previewless ? (
+        <PreviewPlacard label="Live previews are only available on your laptop." />
+      ) : null}
       {lost ? <PreviewPlacard label={lostLabel(lost)} /> : null}
       {/* Spec §5: a failed revision labels the older working preview it shows. */}
       {showingRevisionId !== null && (
