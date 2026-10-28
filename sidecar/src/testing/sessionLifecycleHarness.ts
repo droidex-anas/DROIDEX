@@ -22,7 +22,7 @@ import {
 import { SessionRegistry } from '../SessionRegistry.js';
 import { FakeFactoryRuntime, FakeFactorySession, type RecordedCall } from './fakeFactoryRuntime.js';
 
-export class TestHistory {
+class TestHistory {
   readonly persisted: SessionSummary[] = [];
   readonly patches = new Map<string, Partial<SessionSummary>>();
   readonly hidden = new Set<string>();
