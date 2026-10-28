@@ -1,40 +1,46 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { cn } from '../ui/cn';
+import { usePopoverPosition } from '../ui/usePopoverPosition';
 
-const GAP_PX = 8;
-const EDGE_PX = 8;
 const SHOW_DELAY_MS = 200;
 
 /**
  * The explanation behind the slider's help button. The button lives in the
  * element's shadow root inside a clipped card, so the explanation floats above
- * that card in a portal, the width of the slider it explains.
+ * that card in a portal, the width of the card it explains.
  */
 export default function EffortHelpCard({
   button,
-  anchor,
+  anchorRef,
 }: {
   /** The help button whose hover or focus opens the card. */
   button: HTMLElement | null;
   /** The surface the card sits above and matches in width. */
-  anchor: HTMLElement | null;
+  anchorRef: RefObject<HTMLElement | null>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [place, setPlace] = useState<{ left: number; bottom: number; width: number }>();
+  // The anchor's width while open, measured when the card shows.
+  const [width, setWidth] = useState<number | null>(null);
+  const open = width !== null;
   const timer = useRef<number | undefined>(undefined);
+  const { setFloating, floatingStyles, side, isPositioned } = usePopoverPosition({
+    open,
+    anchorRef,
+    placement: 'top',
+    offsetPx: 8,
+  });
 
   useEffect(() => {
     if (!button) return;
     const show = (delay: number) => {
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => {
-        setOpen(true);
+        setWidth(anchorRef.current?.offsetWidth ?? null);
       }, delay);
     };
     const hide = () => {
       window.clearTimeout(timer.current);
-      setOpen(false);
+      setWidth(null);
     };
     const onEnter = () => {
       show(SHOW_DELAY_MS);
@@ -53,39 +59,26 @@ export default function EffortHelpCard({
       button.removeEventListener('focus', onFocus);
       button.removeEventListener('blur', hide);
     };
-  }, [button]);
+  }, [button, anchorRef]);
 
-  useLayoutEffect(() => {
-    if (!open || !anchor) return;
-    const rect = anchor.getBoundingClientRect();
-    const width = Math.min(rect.width, window.innerWidth - EDGE_PX * 2);
-    setPlace({
-      left: Math.max(EDGE_PX, Math.min(rect.left, window.innerWidth - width - EDGE_PX)),
-      bottom: window.innerHeight - rect.top + GAP_PX,
-      width,
-    });
-  }, [open, anchor]);
-
+  if (!open) return null;
   return createPortal(
-    <AnimatePresence>
-      {open && place && (
-        <motion.div
-          role="tooltip"
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 4 }}
-          transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-          style={place}
-          className="pointer-events-none fixed z-[200] rounded-xl border border-droid-border/60 bg-droid-raised px-3.5 py-3 shadow-droid"
-        >
-          <div className="text-[13px] font-medium text-droid-text">Effort</div>
-          <p className="mt-1 text-[12px] leading-5 text-droid-text-muted">
-            Higher effort means more thorough responses, but takes longer and uses your limits
-            faster.
-          </p>
-        </motion.div>
-      )}
-    </AnimatePresence>,
+    <div ref={setFloating} style={floatingStyles} className="pointer-events-none z-tooltip">
+      <div
+        role="tooltip"
+        data-side={side}
+        style={{ width }}
+        className={cn(
+          'floating-layer rounded-lg bg-raised px-3.5 py-3 shadow-lg',
+          isPositioned ? 'floating-layer-enter' : 'opacity-0',
+        )}
+      >
+        <div className="text-body-strong text-primary">Effort</div>
+        <p className="mt-1 text-label font-normal text-muted">
+          Higher effort means more thorough responses, but takes longer and uses your limits faster.
+        </p>
+      </div>
+    </div>,
     document.body,
   );
 }

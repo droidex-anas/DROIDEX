@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useStoreApi, useStoreDispatch } from '../../hooks/useStore';
 import { closeSession } from '../../lib/commands';
 import { shownSideChat, sideChatPanel } from '../../lib/sideChats';
@@ -25,10 +25,6 @@ export function useCloseSideChat(onClosed?: () => void): {
   const dispatch = useStoreDispatch();
   const store = useStoreApi();
   const [confirming, setConfirming] = useState<ClosingSideChat | null>(null);
-  // Stable, because the dialog moves focus to Cancel whenever this changes.
-  const cancel = useCallback(() => {
-    setConfirming(null);
-  }, []);
 
   const requestClose = (sourceAppSessionId: string) => {
     const state = store.getState();
@@ -57,7 +53,9 @@ export function useCloseSideChat(onClosed?: () => void): {
 
   const dialog = confirming && (
     <SideChatCloseDialog
-      onCancel={cancel}
+      onCancel={() => {
+        setConfirming(null);
+      }}
       onConfirm={() => {
         setConfirming(null);
         dispatch({ type: 'CLOSE_SIDE_CHAT', ...confirming });

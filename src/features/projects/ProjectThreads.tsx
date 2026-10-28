@@ -1,4 +1,5 @@
 import { ArrowLeft, ExternalLink } from '@droidex/icons';
+import { Button } from '../../components/ui/Button';
 import { ThreadList } from './ThreadList';
 import type { ProjectBoardEntry } from './useProjectBoard';
 
@@ -25,45 +26,33 @@ export function ProjectThreads({
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-6 pb-6">
       <div className="flex shrink-0 items-center gap-2 py-3">
-        <button
-          type="button"
-          onClick={onBack}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={ArrowLeft}
           aria-label="Back to projects"
-          className="rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <h1 className="min-w-0 flex-1 truncate text-[18px] font-semibold tracking-tight">
-          {project.title}
-        </h1>
-        <button
-          type="button"
-          onClick={onOpenChat}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
-        >
+          onClick={onBack}
+        />
+        <h1 className="min-w-0 flex-1 truncate text-heading">{project.title}</h1>
+        <Button variant="ghost" size="sm" icon={ExternalLink} onClick={onOpenChat}>
           Open the chat
-          <ExternalLink className="h-3 w-3" />
-        </button>
+        </Button>
       </div>
 
       {project.paused && (
-        <div className="mb-2 flex items-center gap-3 rounded-xl border border-droid-border px-4 py-3">
-          <p className="flex-1 text-[12px] leading-5 text-droid-text-secondary">
+        <div className="mb-2 flex items-center gap-3 rounded-lg bg-surface px-4 py-3">
+          <p className="flex-1 text-body text-secondary">
             {project.uncertain > 0
               ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
               : 'Paused. Work and queued messages are kept; Resume continues them.'}
           </p>
-          <button
-            type="button"
-            onClick={onResume}
-            className="shrink-0 rounded-lg bg-droid-active px-2.5 py-1 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-elevated"
-          >
+          <Button variant="secondary" size="sm" onClick={onResume}>
             Resume
-          </button>
+          </Button>
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-droid-border bg-droid-surface/30">
+      <div className="flex min-h-0 flex-1 flex-col rounded-xl bg-surface/30">
         <ThreadList
           rows={rows}
           plan={project.plan}

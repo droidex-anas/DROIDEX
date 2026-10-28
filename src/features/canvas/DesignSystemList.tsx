@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus } from '@droidex/icons';
-import { usePopover } from '../../components/environment/usePopover';
+import { useDismiss } from '../../components/ui/useDismiss';
 import { paintable } from './designSystemTokenTabs';
 import type { PreviewMode } from './PreviewModeToggle';
 import { sameKit, type KitList } from './designSystemsState';
@@ -32,7 +32,7 @@ export function DesignSystemList({
     newRef.current?.focus();
   }, []);
   // In place rather than portalled: a portalled popover would open beneath the dialog.
-  const menuRef = usePopover(menuOpen, closeMenu);
+  const menuRef = useDismiss(menuOpen, closeMenu);
   useEffect(() => {
     if (menuOpen) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [menuOpen, menuRef]);

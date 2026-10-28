@@ -7,7 +7,7 @@ The source of truth for how DROIDEX looks, feels and is built. New UI follows it
 | [README.md](README.md) | The brand book: voice, colour, type, spacing, elevation, states, motion, icons, logo |
 | [rules.md](rules.md) | The checkable rulebook: type per element, spacing between things, alignment, hit areas, scrollbars, copy, and a pre-ship checklist |
 | [feel.md](feel.md) | Taste, visual cues, motion timings and feedback |
-| [engineering.md](engineering.md) | How to build it: primitives, popover positioning, dialogs, interaction details |
+| [engineering.md](engineering.md) | How to build it: primitives, popover positioning, dialogs, interaction details, and how the code enforces the tokens |
 | [tokens.json](tokens.json) | Every token, both themes: colour, type, spacing, size, radius, shadow, z-index |
 | [primitives.css](primitives.css) | Reference CSS for the primitives, written only with tokens |
 | [components/](components/) | Guidelines per component: Button, Badge, Input, Card, ToolPanel, PanelRow, Popover, Toast, Alignment, plus a reference implementation of Toast |
@@ -31,19 +31,33 @@ DROIDEX is one desktop app for all your coding agents. The interface is a quiet,
 
 Two themes from the **Default** preset, dark first (the app's default and its `:root`). The values start from what `applyTheme` derives at runtime, with four text colours adjusted so every one reads on every surface.
 
-**Naming.** Tokens have plain semantic names: `bg`, `surface`, `text-muted`, `danger`. Map them in Tailwind so classes read `bg-surface`, `text-muted` and `bg-danger-soft`. The old `--droid-*` names in the code map one to one: drop the `droid-` prefix, except `--droid-border` → `divider`, `--droid-border-hover` → `divider-strong`, `--droid-green`/`orange`/`red` → `success`/`warning`/`danger`, and `--sidebar-bg` → `sidebar`. Brand colours keep the `brand-` prefix.
+**Naming.** Tokens have plain semantic names: `bg`, `surface`, `text-muted`, `danger`. Each one is a CSS variable of the same name (`--surface`), derived in `src/lib/themeTokens.ts`, and a Tailwind colour in `tailwind.config.js`, so classes read `bg-surface`, `text-muted` and `border-divider`. Brand colours keep the `brand-` prefix. The code's former `--droid-*` names map like this:
 
-- **Neutral ramp.** Paint the window `bg`, cards and side panels `surface`, hover fills, chips and the composer `elevated`, inputs `field`, and selected rows and pressed controls `active`. The ramp always reads bg < surface < elevated < active. Floating layers (menus, popovers, tooltips, toasts) use `raised`, which lifts to near-white on light instead of darkening.
+| Former name | CSS variable | Tailwind |
+| --- | --- | --- |
+| `--droid-bg`, `surface`, `elevated`, `field`, `active`, `raised` | `--bg`, `--surface`, `--elevated`, `--field`, `--active`, `--raised` | `bg-surface`, `hover:bg-active`, `ring-offset-bg` … |
+| `--sidebar-bg` | `--sidebar` | `bg-sidebar` |
+| `--droid-text` | `--text` | `text-primary`; `bg-text`, `ring-text` where the text colour is a fill |
+| `--droid-text-secondary`, `text-muted` | `--text-secondary`, `--text-muted` | `text-secondary`, `text-muted`; `bg-secondary`, `bg-muted`, `placeholder-muted` |
+| `--droid-border`, `border-hover` | `--divider`, `--divider-strong` | `border-divider`, `divide-divider`, `bg-divider`, `border-divider-strong` |
+| `--droid-green`, `orange`, `red` | `--success`, `--warning`, `--danger` | `text-success`, `bg-danger/10` … |
+| `--droid-accent`, `link`, `skill`, `skill-mark`, `visualize-mark`, `ultra`, `update`, `update-hover` | the same name without `droid-` | `text-accent`, `bg-update` … |
+| `--droid-shadow`, `--droid-shadow-sm` (`shadow-droid`, `shadow-droid-sm`) | `--shadow-lg`, `--shadow-sm` | `shadow-lg`, `shadow-sm`, which replace Tailwind's defaults |
+| Tailwind `rounded`, `-md`, `-lg`, `-xl`, `-2xl` (4/6/8/12/16px) | — | `rounded-xs`, `-sm`, `-md`, `-lg`, `-xl`; `rounded-2xl` is 24px, `rounded-full` unchanged. Tailwind's 2px `rounded-sm` has no token and is written `rounded-[2px]` |
+
+Text colours use `text-primary` rather than `text-text`; the colour itself is also exposed as `text` for fills. The `diff-*` variables already had their final names.
+
+- **Neutral ramp.** Paint the window `bg`, cards and side panels `surface`, hover fills, chips and the composer `elevated`, inputs `field`, and selected rows and pressed controls `active`. The ramp always reads bg < surface < elevated < active, and each step reads about as strongly in light as in dark (hover about 1.13:1 and selection about 1.3:1 against the sidebar), so light rungs step further from the canvas. Floating layers (menus, popovers, tooltips, toasts) use `raised`, which lifts to near-white on light instead of darkening.
 - **Text.** `text` for primary copy and icons, `text-secondary` for supporting text and resting icons, `text-muted` for meta, timestamps and placeholders. All three, and every status colour, hold at least 4.5:1 on every surface, `active` included, in both themes. Don't go lighter than muted for anything that must be read.
-- **No borders.** Surfaces separate by tone and by shadow. `shadow-sm` and `shadow-lg` each carry a faint ring (white on dark, ink on light) that gives floating things their edge. The only line left is `divider`, a translucent hairline between groups in lists and menus, so it tints whatever it sits on and never reads as a hard dark rule. `divider-strong` is for the rare split that has to survive a busy area.
+- **Space and tone, not lines.** Things separate by space and a tone step, with shadow when floating, never an outline or a divider. State changes use fill. Rows in a grouped card separate by their padding, not a line. `divider` is only for data-table rows and the other meaningful lines in [rule 4](rules.md#lines-that-carry-meaning), such as agent reports and instructions in project chats; `divider-strong` is for the rare split that has to survive a busy area.
 - **Accent is neutral.** `accent` is near-white on dark and ink on light. It drives selection, toggles, sliders and the `focus-ring`, never status.
 - **Hue means something.** Links `link`; skills `skill` with `skill-mark`; the Visualize chip `visualize-mark`; the top reasoning level `ultra`.
 - **Actions with consequences get colour.** `success`, `warning` and `danger` each come with a `-soft` fill. A destructive menu item or button shows `danger` text at rest and a `danger-soft` fill on hover; a danger button fills solid `danger` on hover so the click confirms itself. Approve, merge and accept work the same way in `success`. Status badges pair the soft fill with the text colour. Always pair a status hue with a word or an icon.
 - **Diffs** use the `diff-*` tokens (the default "soft" style): `diff-add-fg` / `diff-add-bg` / `diff-add-gutter`, the same for `diff-del-*`, and `diff-hunk-*` for hunk headers.
-- **Updates** use `update` (white label, 6.0:1) in both themes. It is the one solid blue fill in the UI.
+- **Updates** use `update` with an `on-update` label (white, 6.0:1) in both themes. It is the one solid blue fill in the UI.
 - **Brand colours** `brand-ink`, `brand-paper`, `brand-orange` belong to the mark, the app icon, and marketing surfaces. Don't use them for app chrome or state.
 
-Adjusted from the code to fix contrast: light `text-muted` #6c6966 → #64615e, light `success` #1f7a4d → #1c6f46, light `warning` #9a5a0f → #8f530e, dark `danger` #cf5d54 → #d6766e. Each kept its hue and now reaches 4.5:1 on `active`.
+Muted and status text are tuned in code against `active`, the surface they read worst on: light `text-muted` #5f5c59, light `success` #1b6943, light `warning` #884f0d, light `danger` #ab2f28, dark `danger` #d6766e. Each keeps its hue and reaches 4.5:1 on `active`.
 
 ## Type
 
@@ -87,7 +101,7 @@ The scale is a cleaned-up version of what the code uses today. Sizes 9, 11.5, 12
 
 ## Elevation
 
-Two shadows only. Use `shadow-sm` for tool panels, floating chips and the composer, and `shadow-lg` for cards, popovers, menus and dialogs. Both are tuned per theme: dark gets a deep near-black drop with a 4–5% white ring, and light gets a barely-there lift with a 2.5% ink ring that blends into the paper canvas. That ring is the edge. Don't add a border on top of it. `shadow-focus-update` is only for the update pill's focus halo.
+Two shadows only. Use `shadow-sm` for floating tool panels, chips and the composer, and `shadow-lg` for floating cards, popovers, menus and dialogs. Both are tuned per theme: dark gets a deep near-black drop with a faint highlight. Light layers are already near white and can't lift by tone, so a soft ink ring and drop carry the lift, enough to see a menu over the sidebar without looking dirty. Tone is the surface edge; never add a border or state ring on top. `shadow-focus-update` is only for the update pill's keyboard focus halo.
 
 ## Focus and states
 
@@ -96,12 +110,12 @@ Every interactive thing has the same five states, and none of them adds a line:
 | State | What changes |
 | --- | --- |
 | Rest | Its fill: none for ghost, `elevated` for secondary, `text` for primary, a `-soft` fill for coloured actions |
-| Hover | One rung up the ramp (none → `elevated` → `active`), and the text steps up to `text` |
+| Hover | One rung up the ramp (none → `elevated` → `active`), the text steps up to `text`, and the cursor becomes a pointer on anything clickable |
 | Pressed / selected | `active` |
 | Keyboard focus | A 1.5px `focus-ring`, only on `:focus-visible`. Never show a ring or outline on mouse click. Set `outline: none` on `:focus` and draw the ring only for `:focus-visible` |
 | Disabled | 40% opacity, a not-allowed cursor, no hover |
 
-Invalid fields get a `danger-soft` fill, a 1.5px `danger` ring and a `caption` hint that says how to fix it.
+Invalid fields get a `danger-soft` fill and a `caption` hint that says how to fix it, not a danger ring. The composer changes tone when active; only its individual controls get a keyboard focus ring.
 
 ## Motion
 
@@ -119,5 +133,5 @@ The mark is a pixel **DX** monogram built on an 80px grid. On the light tile (`b
 
 - Only the **Default** preset is here. Midnight, Ember, Ocean and the branded presets in `src/lib/theme.ts` aren't, and neither is the "focused" diff style or the translucent sidebar variant.
 - No font files. Silkscreen, Inter and JetBrains Mono are served by Google Fonts, and SF Pro and SF Mono are system faces.
-- The component guidelines describe of how the app styles its controls (the Tailwind classes on its buttons, rows and menus, plus `src/components/environment/primitives.tsx`), redrawn without borders. The code still has borders, opaque `--droid-border` dividers and dark focus outlines; the migration removes them.
+- The component guidelines were drawn from how the app styled its controls, redrawn without borders. The primitives that implement them live in `src/components/ui/`. Older surfaces still carry borders, raw values and per-component focus rings; the migration moves them onto the primitives one surface at a time, and the token ratchet (see [engineering.md](engineering.md#enforcement)) keeps the count falling.
 - Not brought in: `assets/brand/dmg-background.*` (installer art), motion as tokens (the timings live in feel.md), and the per-component Tailwind one-offs.

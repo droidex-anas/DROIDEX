@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
 import { Check } from '@droidex/icons';
-import { usePopover } from './environment/usePopover';
+import { useDismiss } from './ui/useDismiss';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ProductMode } from '../hooks/persistedUiPreferences';
 import { BrandMark } from './BrandMark';
@@ -30,7 +30,7 @@ export function ProductSwitcher() {
     setOpen(false);
     triggerRef.current?.focus();
   }, []);
-  const ref = usePopover(open, close);
+  const ref = useDismiss(open, close);
 
   // The store owns what each product opens on: Design its home, Chat the chat
   // it was left on (spec §4).

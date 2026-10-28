@@ -192,8 +192,8 @@ export function designMarkLabel(mark: DesignReference): string {
  */
 export function designMarkColor(): string {
   const css = getComputedStyle(document.documentElement);
-  const accent = css.getPropertyValue('--droid-accent').trim();
-  return isNeutral(accent) ? css.getPropertyValue('--droid-link').trim() : accent;
+  const accent = css.getPropertyValue('--accent').trim();
+  return isNeutral(accent) ? css.getPropertyValue('--link').trim() : accent;
 }
 
 function isNeutral(color: string): boolean {

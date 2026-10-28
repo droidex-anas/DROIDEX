@@ -5,7 +5,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { MENU_WIDTH_PX, MenuHeading, MenuNote, MenuRow } from './menuRows';
@@ -65,7 +65,7 @@ export function AttachedChatsMenu({
         open={open}
         onClose={close}
         anchorRef={triggerRef}
-        align="left"
+        placement="bottom-start"
         width={MENU_WIDTH_PX}
         label="Chats on this canvas"
       >

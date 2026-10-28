@@ -426,7 +426,7 @@ test('opening spawns publish queued rows and disable Open until their session is
       ),
     );
   const waiting = render(unregistered);
-  assert.match(waiting, /<button[^>]*disabled=""[^>]*>Open/);
+  assert.match(waiting, /<button[^>]*disabled=""[^>]*>(?:(?!<\/button>)[\s\S])*>Open</);
   assert.doesNotMatch(waiting, /Loading this thread/);
 
   opening.resolve();

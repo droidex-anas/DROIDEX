@@ -1,12 +1,13 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { Search, X } from 'lucide-react';
-import { pushEscapeLayer } from './environment/usePopover';
+import { Search, X } from '@droidex/icons';
+import { Input } from './ui/Field';
+import { pushEscapeLayer } from './ui/escapeStack';
 import { wrapTabFocus } from '../lib/focusTrap';
 
 // Shared chrome for the command-palette overlays (⌘K command palette,
-// sidebar session search): backdrop, animated panel, search input row, and
+// sidebar session search): backdrop, animated dialog, search input row, and
 // the keyboard-hint footer. Consumers own their state, filtering, and result
 // rows (rendered as children) via usePaletteNavigation. The body portal keeps
 // transformed or clipped ancestors from containing the viewport overlay.
@@ -60,7 +61,7 @@ export default function PaletteShell({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-dialog flex items-center justify-center bg-bg/60 p-4"
       onClick={onClose}
     >
       <motion.div
@@ -74,15 +75,18 @@ export default function PaletteShell({
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
         transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[560px] bg-droid-raised rounded-2xl shadow-droid overflow-hidden"
+        // Capped at the room the backdrop's padding leaves, so the dialog
+        // scrolls inside instead of running off the window.
+        className="flex max-h-full w-full max-w-palette flex-col overflow-hidden rounded-2xl bg-raised shadow-lg"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
         <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5">
-          <Search className="w-4 h-4 text-droid-text-muted" />
-          <input
+          <Search className="size-icon-md shrink-0 text-muted" />
+          <Input
             ref={inputRef}
+            variant="embedded"
             value={query}
             onChange={(e) => {
               onQueryChange(e.target.value);
@@ -90,32 +94,34 @@ export default function PaletteShell({
             onKeyDown={onKeyDown}
             placeholder={placeholder}
             aria-label={inputAriaLabel}
-            className="flex-1 bg-transparent text-sm text-droid-text placeholder-droid-text-muted focus:outline-none"
+            className="flex-1"
           />
           <button
             onClick={onClose}
             title="Close"
             aria-label="Close"
-            className="p-1 rounded-md text-droid-text-muted hover:text-droid-text hover:bg-droid-active transition-colors"
+            className="flex size-control-sm shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
           >
-            <X className="w-4 h-4" />
+            <X className="size-icon-md" />
           </button>
         </div>
 
-        <div className="px-1.5 max-h-[400px] overflow-y-auto">{children}</div>
+        {/* A fixed result height keeps the centred dialog, and so the search
+            field, from moving as filtering changes the number of results. */}
+        <div className="h-80 min-h-0 overflow-y-auto px-1.5">{children}</div>
 
-        <div className="flex items-center justify-between px-4 pt-2.5 pb-3">
-          <div className="flex items-center gap-3 text-[11px] text-droid-text-muted">
+        <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-3">
+          <div className="flex items-center gap-3 text-caption text-muted">
             <span className="flex items-center gap-1.5">
-              <kbd className="px-1 py-0.5 rounded bg-droid-active font-sans text-[11px]">↑↓</kbd>
+              <kbd className="rounded-xs bg-active px-1 py-0.5 font-sans text-caption">↑↓</kbd>
               Navigate
             </span>
             <span className="flex items-center gap-1.5">
-              <kbd className="px-1 py-0.5 rounded bg-droid-active font-sans text-[11px]">↵</kbd>
+              <kbd className="rounded-xs bg-active px-1 py-0.5 font-sans text-caption">↵</kbd>
               {enterHint}
             </span>
           </div>
-          {footerRight && <div className="text-[11px] text-droid-text-muted">{footerRight}</div>}
+          {footerRight && <div className="truncate text-caption text-muted">{footerRight}</div>}
         </div>
       </motion.div>
     </motion.div>,

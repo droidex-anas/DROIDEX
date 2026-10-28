@@ -1,7 +1,7 @@
 // The one Prism theme the app highlights code with, in the theme's code tokens
-// (`codeColors` in theme.ts) so it follows light and dark. Every surface that
-// shows source — the files pane preview, the Canvas source editor — reads this,
-// so code never looks like two different products.
+// (`codeColors` in themeTokens.ts) so it follows light and dark. Every surface
+// that shows source (the files pane preview, the Canvas source editor, fenced
+// code in the transcript) reads this, so code never looks like two products.
 
 import type { PrismTheme } from 'prism-react-renderer';
 
@@ -9,27 +9,27 @@ import type { PrismTheme } from 'prism-react-renderer';
 export const HIGHLIGHT_CHAR_LIMIT = 120_000;
 
 export const CODE_THEME: PrismTheme = {
-  plain: { color: 'var(--droid-text-secondary)' },
+  plain: { color: 'var(--text-secondary)' },
   styles: [
     {
       types: ['comment', 'prolog', 'doctype', 'cdata', 'punctuation'],
-      style: { color: 'var(--droid-code-comment)' },
+      style: { color: 'var(--code-comment)' },
     },
     {
       types: ['keyword', 'atrule', 'important', 'selector'],
-      style: { color: 'var(--droid-code-keyword)' },
+      style: { color: 'var(--code-keyword)' },
     },
     {
       types: ['string', 'char', 'attr-value', 'regex', 'url', 'inserted'],
-      style: { color: 'var(--droid-code-string)' },
+      style: { color: 'var(--code-string)' },
     },
     {
       types: ['number', 'boolean', 'constant', 'symbol', 'deleted'],
-      style: { color: 'var(--droid-code-number)' },
+      style: { color: 'var(--code-number)' },
     },
     {
       types: ['function', 'class-name', 'tag', 'property', 'builtin'],
-      style: { color: 'var(--droid-code-function)' },
+      style: { color: 'var(--code-function)' },
     },
   ],
 };

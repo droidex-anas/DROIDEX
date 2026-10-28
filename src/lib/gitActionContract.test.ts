@@ -17,12 +17,12 @@ import {
 
 // These wrappers promise one error contract: IPC-level rejections surface as
 // structured failures, never as rejected promises. Simulate the desktop bridge
-// by installing a fake window.droidControl for the duration of each test.
+// by installing a fake window.droidex for the duration of each test.
 type FakeApi = Record<string, (...args: unknown[]) => Promise<unknown>>;
-const g = globalThis as { window?: { droidControl?: FakeApi } };
+const g = globalThis as { window?: { droidex?: FakeApi } };
 
 function withBridge(api: FakeApi) {
-  g.window = { droidControl: api };
+  g.window = { droidex: api };
 }
 
 afterEach(() => {

@@ -25,8 +25,6 @@ import {
   Expand,
   firstLine,
   linkify,
-  RED,
-  RED_TINT,
   useElapsed,
 } from './primitives';
 import { CommandCard, CommandLine, ToolCallCard } from './commandCard';
@@ -67,15 +65,15 @@ export function ThinkingItem({
       >
         <Caret open={open} />
         {active ? (
-          <span className="shimmer-text text-[13px] font-medium">{label}</span>
+          <span className="shimmer-text text-body-strong">{label}</span>
         ) : (
-          <span className="text-[13px] text-droid-text-muted group-hover:text-droid-text-secondary transition-colors">
+          <span className="text-body text-muted group-hover:text-secondary transition-colors">
             {label}
           </span>
         )}
       </button>
       <Expand open={open}>
-        <div className="mt-2 pl-[18px] text-[13px] text-droid-text-muted/55 leading-[1.7] whitespace-pre-wrap break-words">
+        <div className="mt-2 pl-5 text-body text-muted whitespace-pre-wrap break-words">
           {text}
           {active && <StreamingCaret />}
         </div>
@@ -226,22 +224,17 @@ export function ErrorLine({ text, attempts }: { text: string; attempts?: number 
         onClick={() => {
           setOpen((o) => !o);
         }}
-        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-[13px] leading-relaxed"
+        className="group flex w-full min-w-0 items-center gap-1.5 text-left text-body"
         aria-expanded={open}
       >
         <Caret open={open} />
-        <span className="min-w-0 truncate text-droid-text-secondary">{label}</span>
-        {attempts ? (
-          <span className="shrink-0 text-droid-text-muted">· {attempts} attempts</span>
-        ) : null}
+        <span className="min-w-0 truncate text-secondary">{label}</span>
+        {attempts ? <span className="shrink-0 text-muted">· {attempts} attempts</span> : null}
         <ErrorTag emphasis />
       </button>
       <Expand open={open}>
-        <div className="mt-1.5 pl-[18px]">
-          <pre
-            className="max-h-56 overflow-auto rounded-md px-2.5 py-2 text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words"
-            style={{ backgroundColor: RED_TINT, color: RED }}
-          >
+        <div className="mt-1.5 pl-5">
+          <pre className="max-h-56 overflow-auto rounded-sm px-2.5 py-2 font-mono text-code whitespace-pre-wrap break-words bg-danger-soft text-danger">
             {linkify(body)}
           </pre>
         </div>
@@ -262,7 +255,7 @@ function ToolTarget({
 }) {
   if (call.objectKind === 'none') return null;
   if (call.objectKind !== 'path') {
-    return <span className="min-w-0 truncate text-droid-text-muted">{call.object}</span>;
+    return <span className="min-w-0 truncate text-muted">{call.object}</span>;
   }
   const shown = compactPath(call.object);
   const slash = shown.lastIndexOf('/');
@@ -270,10 +263,8 @@ function ToolTarget({
   const name = slash >= 0 ? shown.slice(slash + 1) : shown;
   const parts = (
     <>
-      {dir && <span className="text-droid-text-muted/50">{dir}</span>}
-      <span className="text-droid-text-muted transition-colors group-hover/path:text-droid-text">
-        {name}
-      </span>
+      {dir && <span className="text-muted/50">{dir}</span>}
+      <span className="text-muted transition-colors group-hover/path:text-primary">{name}</span>
     </>
   );
   if (!onOpenReviewFile) return <span className="min-w-0 truncate">{parts}</span>;
@@ -333,13 +324,13 @@ function ToolLine({
       {running ? (
         <span className="shimmer-text font-medium">{call.liveVerb}</span>
       ) : (
-        <span className="text-droid-text-secondary">{call.verb}</span>
+        <span className="text-secondary">{call.verb}</span>
       )}
     </span>
   );
   return (
     <div>
-      <div className="flex min-w-0 items-center gap-1.5 text-[13px] leading-relaxed">
+      <div className="flex min-w-0 items-center gap-1.5 text-body">
         {collapsible ? (
           <button
             type="button"
@@ -355,23 +346,21 @@ function ToolLine({
         ) : (
           <>
             {/* Caret-width spacer keeps the label flush with the expandable rows. */}
-            <span className="w-3 shrink-0" aria-hidden="true" />
+            <span className="w-icon-sm shrink-0" aria-hidden="true" />
             {verb}
           </>
         )}
         <ToolTarget call={call} onOpenReviewFile={onOpenReviewFile} />
-        {call.source && !mark && (
-          <span className="shrink-0 text-droid-text-muted/60">· {call.source}</span>
-        )}
+        {call.source && !mark && <span className="shrink-0 text-muted/60">· {call.source}</span>}
         {interrupted ? <InterruptedTag /> : error && <ErrorTag />}
       </div>
       {hasBody && (
         <Expand open={expanded}>
-          <div className="mt-1.5 pl-[18px]">
+          <div className="mt-1.5 pl-5">
             <ToolCallCard
               heading={
                 args ? (
-                  <pre className="whitespace-pre-wrap break-words text-droid-text">{args}</pre>
+                  <pre className="whitespace-pre-wrap break-words text-primary">{args}</pre>
                 ) : null
               }
               output={out}
@@ -390,33 +379,34 @@ function ToolLine({
 function TodoMark({ status }: { status: TodoStatus }) {
   if (status === 'completed') {
     return (
-      <span className="mt-[5px] flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-droid-text-muted">
-        <Check className="h-2 w-2 text-droid-bg" strokeWidth={3} />
+      <span className="mt-0.5 flex size-icon-sm shrink-0 items-center justify-center rounded-full bg-muted">
+        <Check className="size-2.5 text-bg" strokeWidth={3} />
       </span>
     );
   }
   return (
-    <span
-      className={`mt-[5px] h-3 w-3 shrink-0 rounded-full border-[1.5px] ${
-        status === 'in_progress' ? 'border-droid-text' : 'border-droid-text-muted/40'
+    <svg
+      viewBox="0 0 14 14"
+      aria-hidden="true"
+      className={`mt-0.5 size-icon-sm shrink-0 ${
+        status === 'in_progress' ? 'text-primary' : 'text-muted/40'
       }`}
-    />
+    >
+      <circle cx="7" cy="7" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 
 function TodoChecklist({ event }: { event: TranscriptEvent }) {
   const todos = parseTodos(event.toolArgs);
-  if (todos.length === 0)
-    return <div className="text-[13px] text-droid-text-secondary">Updated plan</div>;
+  if (todos.length === 0) return <div className="text-body text-secondary">Updated plan</div>;
   return (
     <div className="space-y-1">
       {todos.map((t, i) => (
         <div
           key={i}
-          className={`flex items-start gap-2 text-[13px] leading-relaxed break-words ${
-            t.status === 'completed'
-              ? 'text-droid-text-muted line-through'
-              : 'text-droid-text-secondary'
+          className={`flex items-start gap-2 text-body break-words ${
+            t.status === 'completed' ? 'text-muted line-through' : 'text-secondary'
           }`}
         >
           <TodoMark status={t.status} />
@@ -594,7 +584,7 @@ export function renderToolEvents(
     nodes.push(
       <pre
         key={e.id}
-        className="max-h-48 overflow-auto rounded-md bg-droid-bg/50 px-2.5 py-2 text-[12px] leading-relaxed font-mono text-droid-text-muted/80 whitespace-pre-wrap break-words"
+        className="max-h-48 overflow-auto rounded-sm bg-bg/50 px-2.5 py-2 font-mono text-code text-muted/80 whitespace-pre-wrap break-words"
       >
         {linkify(body)}
       </pre>,

@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Spinner,
   X,
+  type IconComponent,
 } from '@droidex/icons';
 import {
   authorizeFilesRoot,
@@ -20,6 +21,8 @@ import {
 import { pathFileName } from '../../lib/pathDisplay';
 import { toast } from '../../lib/toast';
 import { FileTypeIcon } from '../FileTypeIcon';
+import { Button } from '../ui/Button';
+import { Tooltip } from '../ui/Tooltip';
 import { FilePreviewPane } from './FilePreviewPane';
 
 const FILE_TREE_ID = 'files-workspace-tree';
@@ -175,7 +178,7 @@ export function FilesWorkspace({
   const rootListing = listings[''];
 
   return (
-    <div className="files-workspace flex h-full min-h-0 bg-droid-bg">
+    <div className="files-workspace flex h-full min-h-0 bg-bg">
       {/* Always mounted so the collapse animation can run: while collapsed the
           tree is inert and hidden from assistive technology immediately, not
           only after the exit finishes. */}
@@ -190,34 +193,31 @@ export function FilesWorkspace({
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         inert={treeCollapsed}
         aria-hidden={treeCollapsed}
-        className="flex h-full shrink-0 flex-col overflow-hidden border-r border-droid-border bg-droid-surface/25"
+        className="flex h-full shrink-0 flex-col overflow-hidden bg-surface"
       >
-        <header className="flex h-9 shrink-0 items-center gap-1.5 border-b border-droid-border pl-2.5 pr-1.5">
-          <FileTypeIcon filename={root} isDirectory expanded className="h-3.5 w-3.5" />
-          <span
-            className="min-w-0 flex-1 truncate text-[12px] font-medium text-droid-text-secondary"
-            title={root}
-          >
+        <header className="flex h-9 shrink-0 select-none items-center gap-1.5 pl-3 pr-1">
+          <FileTypeIcon filename={root} isDirectory expanded className="size-icon-sm" />
+          <span className="min-w-0 flex-1 truncate text-label text-secondary" title={root}>
             {rootName}
           </span>
-          <HeaderButton title="Refresh files" onClick={() => void load('', true)}>
-            <RefreshCw className="h-3.5 w-3.5" />
-          </HeaderButton>
+          <HeaderButton
+            label="Refresh files"
+            icon={RefreshCw}
+            onClick={() => void load('', true)}
+          />
         </header>
         <div
-          className="min-h-0 flex-1 overflow-auto px-1 py-1"
+          className="min-h-0 flex-1 overflow-auto px-1 pb-1"
           role="tree"
           aria-label="Session files"
         >
           {!rootListing && !errors[''] && (
-            <div className="flex items-center gap-2 px-2 py-3 text-xs text-droid-text-muted">
-              <Spinner className="h-3.5 w-3.5 motion-safe:animate-spin-slow" />
+            <div className="flex items-center gap-2 px-2 py-3 text-body text-muted">
+              <Spinner className="size-icon-sm motion-safe:animate-spin-slow" />
               Loading files…
             </div>
           )}
-          {errors[''] && (
-            <p className="px-2 py-3 text-xs leading-relaxed text-red-300">{errors['']}</p>
-          )}
+          {errors[''] && <p className="px-2 py-3 text-body text-danger">{errors['']}</p>}
           {visible.map((entry) => (
             <FileTreeRow
               key={entry.relative}
@@ -233,7 +233,7 @@ export function FilesWorkspace({
             />
           ))}
           {rootListing?.capped && (
-            <p className="px-2 py-2 text-[11px] text-amber-300">
+            <p className="px-2 py-2 text-caption text-warning">
               Showing {rootListing.entries.length} of {rootListing.totalSeen} entries.
             </p>
           )}
@@ -241,11 +241,11 @@ export function FilesWorkspace({
       </motion.section>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-9 shrink-0 items-center gap-1 border-b border-droid-border pl-2 pr-1.5">
+        <header className="flex h-9 shrink-0 items-center gap-1 pl-2 pr-1">
           {relative && (
-            <div className="flex h-7 min-w-0 items-center gap-1.5 rounded-lg border border-droid-border/60 bg-droid-elevated/40 pl-2 pr-1">
-              <FileTypeIcon filename={fileName} className="h-3.5 w-3.5" />
-              <span className="min-w-0 truncate text-[12px] text-droid-text">{fileName}</span>
+            <div className="flex h-control-sm min-w-0 items-center gap-1.5 rounded-md bg-elevated pl-2 pr-1">
+              <FileTypeIcon filename={fileName} className="size-icon-sm" />
+              <span className="min-w-0 truncate text-label text-primary">{fileName}</span>
               <button
                 type="button"
                 aria-label="Close file"
@@ -253,7 +253,7 @@ export function FilesWorkspace({
                 onClick={() => {
                   onSelectPath('');
                 }}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text"
+                className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -262,18 +262,22 @@ export function FilesWorkspace({
           <div className="flex-1" />
           {relative && (
             <>
-              <HeaderButton title="Open externally" onClick={handleOpenExternal}>
-                <ExternalLink className="h-3.5 w-3.5" />
-              </HeaderButton>
-              <HeaderButton title="Reveal in Finder / Explorer" onClick={handleReveal}>
-                <FolderSearch className="h-3.5 w-3.5" />
-              </HeaderButton>
+              <HeaderButton
+                label="Open externally"
+                icon={ExternalLink}
+                onClick={handleOpenExternal}
+              />
+              <HeaderButton
+                label="Reveal in Finder / Explorer"
+                icon={FolderSearch}
+                onClick={handleReveal}
+              />
             </>
           )}
         </header>
-        <div className="flex h-7 shrink-0 items-center gap-1 border-b border-droid-border pl-2.5 pr-1.5">
+        <div className="flex h-control-sm shrink-0 items-center gap-1 pl-3 pr-1">
           <nav
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[11px]"
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-caption"
             aria-label="File path"
             title={relative ? fullDisplayPath(root, relative) : root}
           >
@@ -284,37 +288,27 @@ export function FilesWorkspace({
                   key={`${String(index)}-${segment}`}
                   className="flex min-w-0 items-center gap-1"
                 >
-                  {index > 0 && (
-                    <ChevronRight className="h-2.5 w-2.5 shrink-0 text-droid-text-muted/50" />
-                  )}
-                  <span
-                    className={`truncate ${
-                      isLast ? 'text-droid-text' : 'max-w-[120px] text-droid-text-muted'
-                    }`}
-                  >
+                  {index > 0 && <ChevronRight className="h-2.5 w-2.5 shrink-0 text-muted/50" />}
+                  <span className={`truncate ${isLast ? 'text-primary' : 'max-w-32 text-muted'}`}>
                     {segment}
                   </span>
                 </span>
               );
             })}
           </nav>
-          <button
-            type="button"
-            title={treeCollapsed ? 'Show file tree' : 'Hide file tree'}
-            aria-label={treeCollapsed ? 'Show file tree' : 'Hide file tree'}
-            aria-expanded={!treeCollapsed}
-            aria-controls={FILE_TREE_ID}
-            onClick={() => {
-              setTreeCollapsed((current) => !current);
-            }}
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
-              treeCollapsed
-                ? 'bg-droid-active text-droid-text'
-                : 'text-droid-text-muted hover:bg-droid-elevated/60 hover:text-droid-text'
-            }`}
-          >
-            <PanelLeft className="h-3.5 w-3.5" />
-          </button>
+          <Tooltip label={treeCollapsed ? 'Show file tree' : 'Hide file tree'} placement="bottom">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={PanelLeft}
+              aria-label={treeCollapsed ? 'Show file tree' : 'Hide file tree'}
+              aria-expanded={!treeCollapsed}
+              aria-controls={FILE_TREE_ID}
+              onClick={() => {
+                setTreeCollapsed((current) => !current);
+              }}
+            />
+          </Tooltip>
         </div>
         <FilePreviewPane
           accessToken={accessToken}
@@ -328,24 +322,18 @@ export function FilesWorkspace({
 }
 
 function HeaderButton({
-  title,
+  label,
+  icon,
   onClick,
-  children,
 }: {
-  title: string;
+  label: string;
+  icon: IconComponent;
   onClick: () => void;
-  children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-droid-text-muted transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
-    >
-      {children}
-    </button>
+    <Tooltip label={label} placement="bottom">
+      <Button variant="ghost" size="sm" icon={icon} aria-label={label} onClick={onClick} />
+    </Tooltip>
   );
 }
 
@@ -381,10 +369,10 @@ function FileTreeRow({
         aria-expanded={entry.kind === 'directory' ? expanded : undefined}
         onClick={onClick}
         title={entry.relative}
-        className={`file-tree-row flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-[12px] transition-colors ${
+        className={`file-tree-row flex h-control-sm w-full select-none items-center gap-1.5 rounded-md pr-2 text-left text-body transition-colors ${
           selected
-            ? 'bg-droid-active text-droid-text'
-            : 'text-droid-text-secondary hover:bg-droid-elevated/60 hover:text-droid-text'
+            ? 'bg-active text-primary'
+            : 'text-secondary hover:bg-elevated hover:text-primary'
         }`}
         style={{ paddingLeft: `${String(6 + entry.depth * 14)}px` }}
       >
@@ -393,13 +381,13 @@ function FileTreeRow({
           filename={entry.name}
           isDirectory={entry.kind === 'directory'}
           expanded={expanded}
-          className="h-3.5 w-3.5"
+          className="size-icon-sm"
         />
         <span className="min-w-0 flex-1 truncate">{entry.name}</span>
       </button>
       {error && (
         <p
-          className="truncate py-1 pr-2 text-[11px] text-red-300"
+          className="truncate py-1 pr-2 text-caption text-danger"
           style={{ paddingLeft: `${String(26 + entry.depth * 14)}px` }}
           title={error}
         >

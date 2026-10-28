@@ -192,15 +192,15 @@ export function currentAppBlockTheme(): AppBlockTheme {
   const styles = getComputedStyle(document.documentElement);
   const color = (name: string, fallback: string) =>
     safeColor(styles.getPropertyValue(name), fallback);
-  const background = color('--droid-bg', DEFAULT_APP_THEME.background);
+  const background = color('--bg', DEFAULT_APP_THEME.background);
   return {
     colorScheme: appColorScheme(background),
     background,
-    surface: color('--droid-surface', DEFAULT_APP_THEME.surface),
-    foreground: color('--droid-text', DEFAULT_APP_THEME.foreground),
-    muted: color('--droid-text-secondary', DEFAULT_APP_THEME.muted),
-    border: color('--droid-border', DEFAULT_APP_THEME.border),
-    accent: color('--droid-accent', DEFAULT_APP_THEME.accent),
+    surface: color('--surface', DEFAULT_APP_THEME.surface),
+    foreground: color('--text', DEFAULT_APP_THEME.foreground),
+    muted: color('--text-secondary', DEFAULT_APP_THEME.muted),
+    border: color('--divider', DEFAULT_APP_THEME.border),
+    accent: color('--accent', DEFAULT_APP_THEME.accent),
   };
 }
 

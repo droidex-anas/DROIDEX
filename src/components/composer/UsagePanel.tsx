@@ -51,25 +51,25 @@ export function UsagePanel({
       <div
         role="region"
         aria-label={`${PROVIDER_LABELS[provider]} usage`}
-        className="flex min-w-0 flex-col gap-1 text-[11px]"
+        className="flex min-w-0 flex-col gap-1 text-caption"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-4">
           <div className="flex min-w-0 flex-auto items-center gap-1.5 px-1.5 py-1">
-            <span className="shrink-0 text-droid-text-muted">
+            <span className="shrink-0 text-muted">
               <Gauge className="h-3.5 w-3.5" strokeWidth={2} />
             </span>
-            <span className="truncate font-medium text-droid-text">
+            <span className="truncate font-medium text-primary">
               {PROVIDER_LABELS[provider]} usage
             </span>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 tabular-nums">
             {updatedAt !== undefined && (
               <>
-                <span className="pl-1.5 text-droid-text-muted">
+                <span className="pl-1.5 text-muted">
                   {updatedLabel(updatedAt, now)}
                   {usage?.stale && ' · Couldn’t refresh'}
                 </span>
-                <span className="pl-1 text-droid-text-muted">·</span>
+                <span className="pl-1 text-muted">·</span>
               </>
             )}
             <button
@@ -78,7 +78,7 @@ export function UsagePanel({
               onClick={() => {
                 if (refreshUsage(provider, true, true)) setRefreshedFrom({ provider, usage });
               }}
-              className={`${ACTION_CLASS} text-droid-text-secondary disabled:opacity-60`}
+              className={`${ACTION_CLASS} text-secondary disabled:opacity-60`}
             >
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
@@ -86,14 +86,14 @@ export function UsagePanel({
               type="button"
               aria-label="Close usage"
               onClick={onClose}
-              className={`${ACTION_CLASS} text-droid-text-muted`}
+              className={`${ACTION_CLASS} text-muted`}
             >
               <X className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
           </div>
         </div>
         <UsageBody provider={provider} usage={usage} reachable={reachable} now={now} />
-        {extra && <div className="px-1.5 pb-0.5 text-droid-text-muted">{extra}</div>}
+        {extra && <div className="px-1.5 pb-0.5 text-muted">{extra}</div>}
       </div>
     </ComposerTab>
   );
@@ -115,7 +115,7 @@ function UsageBody({
       <Note>
         Droid’s limits need a Factory API key, and DROIDEX has none. Droid’s own /limits shows them.
         {/* Pulled back by its padding, so a wrapped button lines up with the note. */}
-        <ManageUsageButton provider={provider} className="-ml-1.5 text-droid-text-secondary" />
+        <ManageUsageButton provider={provider} className="-ml-1.5 text-secondary" />
       </Note>
     );
   if (usage?.unavailable === 'no_plan_limits')
@@ -144,8 +144,8 @@ function UsageBody({
 function MeterRow({ meter, stale, now }: { meter: UsageMeter; stale: boolean; now: number }) {
   const pace = usagePace(meter, now);
   const urgent = pace !== undefined && pace.kind !== 'lasts';
-  let fill = urgent ? 'bg-droid-orange' : 'bg-droid-text-secondary';
-  if (stale) fill = 'bg-droid-text-muted';
+  let fill = urgent ? 'bg-warning' : 'bg-secondary';
+  if (stale) fill = 'bg-muted';
   const resetsIn =
     meter.resetsAt !== undefined && meter.resetsAt > now
       ? `Resets in ${formatDuration(meter.resetsAt - now)}`
@@ -154,18 +154,16 @@ function MeterRow({ meter, stale, now }: { meter: UsageMeter; stale: boolean; no
     <li className="flex min-w-0 flex-col gap-1">
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 tabular-nums">
         <span className="flex min-w-0 items-baseline gap-1">
-          <span className="truncate text-droid-text-secondary">{meterLabel(meter)}</span>
-          <span className="shrink-0 text-droid-text-muted">·</span>
-          <span className="shrink-0 text-droid-text">{usedLabel(meter.usedPercent)}</span>
+          <span className="truncate text-secondary">{meterLabel(meter)}</span>
+          <span className="shrink-0 text-muted">·</span>
+          <span className="shrink-0 text-primary">{usedLabel(meter.usedPercent)}</span>
         </span>
-        <span className="flex min-w-0 items-baseline gap-1 text-droid-text-muted">
+        <span className="flex min-w-0 items-baseline gap-1 text-muted">
           {resetsIn && meter.resetsAt !== undefined && (
             <span title={`Resets ${formatResetTime(meter.resetsAt, now)}`}>{resetsIn}</span>
           )}
           {resetsIn && pace && <span>·</span>}
-          {pace && (
-            <span className={urgent ? 'text-droid-text-secondary' : ''}>{paceLabel(pace)}</span>
-          )}
+          {pace && <span className={urgent ? 'text-secondary' : ''}>{paceLabel(pace)}</span>}
         </span>
       </div>
       <div
@@ -174,7 +172,7 @@ function MeterRow({ meter, stale, now }: { meter: UsageMeter; stale: boolean; no
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(meter.usedPercent)}
-        className="h-1 w-full overflow-hidden rounded-full bg-droid-elevated"
+        className="h-1 w-full overflow-hidden rounded-full bg-elevated"
       >
         <div
           className={`h-full rounded-full ${fill}`}
@@ -187,8 +185,6 @@ function MeterRow({ meter, stale, now }: { meter: UsageMeter; stale: boolean; no
 
 function Note({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 px-1.5 pb-0.5 text-droid-text-muted">
-      {children}
-    </div>
+    <div className="flex flex-wrap items-center gap-x-2 px-1.5 pb-0.5 text-muted">{children}</div>
   );
 }

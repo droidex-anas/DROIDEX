@@ -182,7 +182,7 @@ const ComposerEditor = forwardRef<ComposerHandle, ComposerEditorProps>(function 
   );
 
   return (
-    <div ref={hostRef} className="w-full text-sm text-droid-text" onContextMenu={onContextMenu} />
+    <div ref={hostRef} className="w-full text-sm text-primary" onContextMenu={onContextMenu} />
   );
 });
 

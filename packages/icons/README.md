@@ -59,7 +59,7 @@ import { Copy, Rosette, RosetteFilled, CircleCheckFilled } from '@droidex/icons'
 </button>;
 
 <Rosette size={20} />;
-<RosetteFilled size={20} color="var(--droid-accent)" />;
+<RosetteFilled size={20} color="var(--accent)" />;
 <CircleCheckFilled size={16} aria-label="Checks passed" />;
 ```
 

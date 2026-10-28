@@ -128,11 +128,10 @@ export function NativeBrowserSurface({
   }, [visibleBrowserSessionId]);
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-droid-bg">
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-bg">
       <div
-        className={`absolute overflow-hidden bg-white ${
-          viewportMode === 'fit' ? '' : 'shadow-droid ring-1 ring-droid-border-hover'
-        }`}
+        // eslint-disable-next-line design-policy/design-tokens -- web page canvas: pages paint on white unless they set their own background
+        className={`absolute overflow-hidden bg-white ${viewportMode === 'fit' ? '' : 'shadow-lg'}`}
         style={{
           borderRadius: radius,
           left: surface.left,
@@ -143,7 +142,7 @@ export function NativeBrowserSurface({
         }}
       />
       {!native && (
-        <div className="absolute inset-0 flex items-center justify-center px-6 text-sm text-droid-text-muted">
+        <div className="absolute inset-0 flex items-center justify-center px-6 text-body text-muted">
           The Browser runs in the DROIDEX desktop app.
         </div>
       )}
@@ -165,12 +164,12 @@ function designOverlayTheme(): DesignOverlayTheme {
   const token = (name: string) => css.getPropertyValue(name).trim();
   return {
     accent: designMarkColor(),
-    onAccent: token('--droid-bg'),
-    surface: token('--droid-raised'),
-    text: token('--droid-text'),
-    muted: token('--droid-text-secondary'),
-    border: token('--droid-border'),
-    shadow: token('--droid-shadow-sm'),
+    onAccent: token('--bg'),
+    surface: token('--raised'),
+    text: token('--text'),
+    muted: token('--text-secondary'),
+    border: token('--divider'),
+    shadow: token('--shadow-sm'),
     font: token('--ui-font-family'),
   };
 }

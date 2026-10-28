@@ -3,12 +3,14 @@
 // parent, which persists the preset and selects it.
 
 import { useEffect, useRef, useState } from 'react';
-import { Moon, Sun, X } from 'lucide-react';
+import { Moon, Sun, X, type IconComponent } from '@droidex/icons';
 import { useStoreSelector } from '../hooks/useStore';
 import { applyTheme, resolveScheme, type ThemeColors } from '../lib/theme';
 import { ColorField } from './ColorPicker';
-import { pushEscapeLayer } from './environment/usePopover';
 import { MiniAppFrame, ThemeSwatches } from './ThemePreview';
+import { Button } from './ui/Button';
+import { Dialog, DialogActions, DialogBody, DialogTitle } from './ui/Dialog';
+import { Field, Input } from './ui/Field';
 
 export interface ThemeDraft {
   name: string;
@@ -67,25 +69,6 @@ export function ThemeEditor({
     };
   }, []);
 
-  // Cancel is an Escape layer (shared LIFO stack, see usePopover.ts): color
-  // popovers opened from this dialog push above it, so Escape always closes
-  // only the innermost layer instead of discarding every edit at once. The
-  // layer is pushed ONCE with a stable callback reading the latest onCancel —
-  // keying the effect on the (inline) onCancel would re-push on every parent
-  // re-render, and effects flush child-first, so the editor would end up
-  // ABOVE an open picker's layer and Escape would cancel the editor.
-  const onCancelRef = useRef(onCancel);
-  useEffect(() => {
-    onCancelRef.current = onCancel;
-  });
-  useEffect(
-    () =>
-      pushEscapeLayer(() => {
-        onCancelRef.current();
-      }),
-    [],
-  );
-
   // While the app is in System mode, keep the edited variant on the one the OS
   // actually shows; otherwise a scheme flip mid-edit leaves the preview on
   // stale colors (App dispatches the new variant, but draft[editing] would
@@ -102,45 +85,7 @@ export function ThemeEditor({
     };
   }, [theme.mode]);
 
-  // aria-modal contract: Tab must cycle inside the dialog. Same
-  // focusable-element query and wrap logic the environment Popover uses for
-  // its Tab trap. The color popover portals to <body>, so its controls are
-  // enumerated too — otherwise Tab from the picker's last control would walk
-  // out to whatever sits behind the modal. Focus restoration is the parent's
-  // job (it captures the opener before this dialog mounts; the auto-focused
-  // name field would otherwise win that read).
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-      const roots = [dialog, ...document.querySelectorAll<HTMLElement>('[data-color-popover]')];
-      const focusables = roots.flatMap((root) =>
-        Array.from(
-          root.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-          ),
-        ),
-      );
-      const first = focusables.at(0);
-      const last = focusables.at(-1);
-      if (!first || !last) return;
-      const active = document.activeElement as HTMLElement | null;
-      const inside = active !== null && roots.some((root) => root.contains(active));
-      if (e.shiftKey && (active === first || !inside)) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && (active === last || !inside)) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-    };
-  }, []);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const setColor = (key: keyof ThemeColors, value: string) => {
     setDraft((d) => ({ ...d, [editing]: { ...d[editing], [key]: value } }));
@@ -156,141 +101,128 @@ export function ThemeEditor({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="theme-editor-title"
-        className="w-[560px] max-w-full rounded-2xl border border-droid-border bg-droid-surface shadow-droid"
-      >
-        <div className="flex items-center justify-between px-5 pt-4 pb-3">
-          <h3 id="theme-editor-title" className="text-[14px] font-semibold text-droid-text">
-            {title}
-          </h3>
-          <button
-            onClick={onCancel}
-            aria-label="Close theme editor"
-            className="rounded-md p-1 text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog size="form" onClose={onCancel} initialFocusRef={nameRef}>
+      <div className="flex items-center justify-between gap-4">
+        <DialogTitle>{title}</DialogTitle>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={X}
+          onClick={onCancel}
+          aria-label="Close theme editor"
+          className="-mr-2"
+        />
+      </div>
 
-        <div className="px-5 pb-4">
-          {/* Live preview: wireframe plus the theme's icon glyph */}
-          <div className="relative h-44 overflow-hidden rounded-xl border border-droid-border">
-            <MiniAppFrame colors={draft[editing]} />
-            <div className="pointer-events-none absolute bottom-3 right-3 rounded-xl border border-droid-border bg-droid-bg/70 p-3 backdrop-blur-sm">
-              <ThemeSwatches
-                preset={{
-                  id: 'draft',
-                  name: draft.name || 'Draft',
-                  light: draft.light,
-                  dark: draft.dark,
-                }}
-                scheme={editing}
-                size={36}
-              />
-            </div>
-            <div className="absolute right-2 top-2 flex gap-1 rounded-lg border border-droid-border bg-droid-bg/80 p-0.5 backdrop-blur-sm">
-              <button
-                type="button"
-                title="Edit light variant"
-                aria-pressed={editing === 'light'}
-                onClick={() => {
-                  setEditing('light');
-                }}
-                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                  editing === 'light'
-                    ? 'bg-droid-elevated text-droid-text'
-                    : 'text-droid-text-muted hover:text-droid-text'
-                }`}
-              >
-                <Sun className="h-3 w-3" />
-                Light
-              </button>
-              <button
-                type="button"
-                title="Edit dark variant"
-                aria-pressed={editing === 'dark'}
-                onClick={() => {
-                  setEditing('dark');
-                }}
-                className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                  editing === 'dark'
-                    ? 'bg-droid-elevated text-droid-text'
-                    : 'text-droid-text-muted hover:text-droid-text'
-                }`}
-              >
-                <Moon className="h-3 w-3" />
-                Dark
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <label className="mb-1.5 block text-[11px] text-droid-text-muted" htmlFor="theme-name">
-              Theme name
-            </label>
-            <input
-              id="theme-name"
-              autoFocus
-              maxLength={60}
-              value={draft.name}
-              onChange={(e) => {
-                setDraft((d) => ({ ...d, name: e.target.value }));
+      <DialogBody>
+        {/* Live preview: wireframe plus the theme's icon glyph */}
+        <div className="relative h-44 overflow-hidden rounded-lg">
+          <MiniAppFrame colors={draft[editing]} />
+          <div className="pointer-events-none absolute bottom-3 right-3 rounded-lg bg-bg/70 p-3 shadow-sm backdrop-blur-sm">
+            <ThemeSwatches
+              preset={{
+                id: 'draft',
+                name: draft.name || 'Draft',
+                light: draft.light,
+                dark: draft.dark,
               }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') save();
-              }}
-              placeholder="My theme"
-              spellCheck={false}
-              className="h-8 w-full rounded-lg border border-droid-border bg-droid-bg/60 px-2.5 text-[13px] text-droid-text placeholder:text-droid-text-muted focus:border-droid-border-hover focus:outline-none"
+              scheme={editing}
+              size={36}
             />
           </div>
-
-          <div className="mt-3 space-y-3">
-            {COLOR_FIELDS.map(({ key, label, description }) => (
-              <ColorField
-                key={`${editing}-${key}`}
-                label={`${label} · ${editing}`}
-                description={description}
-                value={draft[editing][key]}
-                onChange={(v) => {
-                  setColor(key, v);
-                }}
-              />
-            ))}
+          <div className="absolute right-2 top-2 flex gap-0.5 rounded-md bg-bg/80 p-0.5 shadow-sm backdrop-blur-sm">
+            <VariantToggle
+              icon={Sun}
+              label="Light"
+              selected={editing === 'light'}
+              onSelect={() => {
+                setEditing('light');
+              }}
+            />
+            <VariantToggle
+              icon={Moon}
+              label="Dark"
+              selected={editing === 'dark'}
+              onSelect={() => {
+                setEditing('dark');
+              }}
+            />
           </div>
+        </div>
+
+        <Field label="Theme name" className="mt-4">
+          <Input
+            ref={nameRef}
+            maxLength={60}
+            value={draft.name}
+            onChange={(e) => {
+              setDraft((d) => ({ ...d, name: e.target.value }));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) save();
+            }}
+            placeholder="My theme"
+            spellCheck={false}
+          />
+        </Field>
+
+        <div className="mt-4 space-y-3">
+          {COLOR_FIELDS.map(({ key, label, description }) => (
+            <ColorField
+              key={`${editing}-${key}`}
+              label={`${label} · ${editing}`}
+              description={description}
+              value={draft[editing][key]}
+              onChange={(v) => {
+                setColor(key, v);
+              }}
+            />
+          ))}
         </div>
 
         {error && (
-          <p role="alert" className="px-5 pb-2 text-[12px] text-droid-red">
+          <p role="alert" className="mt-3 text-body text-danger">
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2 border-t border-droid-border px-5 py-3">
-          <button
-            onClick={onCancel}
-            className="h-8 rounded-lg border border-droid-border px-3 text-[12px] text-droid-text-secondary transition-colors hover:border-droid-border-hover hover:text-droid-text"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={!name}
-            className="h-8 rounded-lg bg-droid-accent px-3 text-[12px] text-droid-bg transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            Save theme
-          </button>
-        </div>
-      </div>
-    </div>
+      </DialogBody>
+
+      <DialogActions>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={save} disabled={!name}>
+          Save theme
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function VariantToggle({
+  icon,
+  label,
+  selected,
+  onSelect,
+}: {
+  icon: IconComponent;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const Icon = icon;
+  return (
+    <button
+      type="button"
+      title={`Edit ${label.toLowerCase()} variant`}
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={`flex h-control-sm items-center gap-1.5 rounded-sm px-2 text-label transition-colors ${
+        selected ? 'bg-elevated text-primary' : 'text-muted hover:text-primary'
+      }`}
+    >
+      <Icon className="size-icon-sm" aria-hidden="true" />
+      {label}
+    </button>
   );
 }

@@ -13,7 +13,7 @@ import {
 } from 'react';
 import { Palette } from 'lucide-react';
 import { Check, Search, X } from '@droidex/icons';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
@@ -149,10 +149,9 @@ export function DesignSystemControl({
         open={open}
         onClose={close}
         anchorRef={triggerRef}
-        align="left"
+        placement="bottom-start"
         width={PICKER_WIDTH_PX}
         label="Design system"
-        className="!border-transparent !bg-droid-raised"
       >
         <PickerPanel
           list={list}

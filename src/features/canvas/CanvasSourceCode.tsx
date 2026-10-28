@@ -6,7 +6,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { Highlight } from 'prism-react-renderer';
-import { CODE_THEME, HIGHLIGHT_CHAR_LIMIT } from '../../lib/codeTheme';
+import { CODE_THEME, HIGHLIGHT_CHAR_LIMIT } from '../../components/codeTheme';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 import type { SourceIssue } from './canvasSourceIssues';
 

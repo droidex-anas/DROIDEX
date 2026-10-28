@@ -53,7 +53,7 @@ test('comment submit settlement applies only to the pull request it was posted o
 
 test('the code pane keeps its skeleton until a patch arrives, and a refresh error replaces the patch', () => {
   // The loading skeleton is the only element carrying this surface tone.
-  const skeleton = /bg-droid-elevated\/40/;
+  const skeleton = /bg-elevated\/40/;
   const loading = renderCodePane(null, null);
   assert.match(loading, skeleton);
   assert.doesNotMatch(loading, /No file changes\./);

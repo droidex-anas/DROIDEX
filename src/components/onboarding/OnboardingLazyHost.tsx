@@ -15,7 +15,7 @@ export function OnboardingLazyHost({
 }) {
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex flex-col bg-droid-bg text-droid-text"
+      className="fixed inset-0 z-50 flex flex-col bg-bg text-primary"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

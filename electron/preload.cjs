@@ -127,7 +127,7 @@ function canvasDroppedFilePath(file) {
   throw { code: 'invalid_input', message: 'Drop an image from your computer.' };
 }
 
-contextBridge.exposeInMainWorld('droidControl', {
+contextBridge.exposeInMainWorld('droidex', {
   bridgeInfo: () => ipcRenderer.invoke('bridge-info'),
   sidecarStatus: () => ipcRenderer.invoke('sidecar-status'),
   onSidecarStatus: (handler) => on('sidecar-status', handler),

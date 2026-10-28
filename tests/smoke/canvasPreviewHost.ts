@@ -53,7 +53,7 @@ export async function compileDesign(files: SourceFiles): Promise<CompiledDesign>
  */
 export async function mountPreviewGuest(page: Page): Promise<number> {
   const url = await bounded(
-    page.evaluate(() => window.droidControl?.canvasPreviewUrl ?? null),
+    page.evaluate(() => window.droidex?.canvasPreviewUrl ?? null),
     'preview url',
   );
   expect(url).toBe('droidex-canvas-preview://preview/guest');

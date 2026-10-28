@@ -128,8 +128,10 @@ export function useConversationTimeline({
   isTimelinePriming: boolean;
   isAutoPagingOlderHistory: boolean;
 } {
-  // Every loaded prompt gets a dot so the rail mirrors the whole reachable
-  // thread; the rail itself scrolls once the dot list outgrows its gutter.
+  // Every loaded prompt gets a tick so the rail mirrors the whole reachable
+  // thread; the rail itself scrolls once the tick list outgrows its gutter.
+  // The streaming turn keeps the reply preview it had at the last full
+  // projection until the next prompt rebuilds the anchors.
   // Render only reads the projection; the committed ref update happens in the
   // effect below, and a child view commits undefined to clear it.
   const anchorProjectionRef = useRef<TimelineAnchorProjection | undefined>(undefined);

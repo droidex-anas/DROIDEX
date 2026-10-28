@@ -222,7 +222,7 @@ export type NotifyResult =
 
 type SaveImageResult = { saved: true; filePath: string } | { saved: false };
 
-interface DroidControlApi {
+interface DroidexApi {
   bridgeInfo: () => Promise<BridgeInfo>;
   sidecarStatus: () => Promise<SidecarSupervisorSnapshot>;
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;
@@ -384,7 +384,7 @@ interface DroidControlApi {
 
 declare global {
   interface Window {
-    droidControl?: DroidControlApi;
+    droidex?: DroidexApi;
   }
 }
 
@@ -406,8 +406,8 @@ export interface DesktopPowerTierSnapshot {
   onBattery: boolean;
 }
 
-function desktopApi(): DroidControlApi | undefined {
-  return typeof window !== 'undefined' ? window.droidControl : undefined;
+function desktopApi(): DroidexApi | undefined {
+  return typeof window !== 'undefined' ? window.droidex : undefined;
 }
 
 export const isDesktop = () => Boolean(desktopApi());
@@ -443,7 +443,7 @@ export function onDesktopMemoryPressure(handler: (payload: { at: number }) => vo
   return api.onMemoryPressure(handler);
 }
 
-function requireDesktopApi(message: string): DroidControlApi {
+function requireDesktopApi(message: string): DroidexApi {
   const api = desktopApi();
   if (!api) throw new Error(message);
   return api;

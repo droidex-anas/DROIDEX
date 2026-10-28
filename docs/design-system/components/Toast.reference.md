@@ -1,10 +1,20 @@
 # Toast: reference implementation
 
-A working reference for the [Toast](Toast.md) design, for whoever implements it in the app. It replaces two files on `main`, `src/lib/toast.ts` and `src/components/Toaster.tsx`, and adds one test. The code is kept here as Markdown so it doesn't compile, lint or run until someone moves it into `src/`.
+A working reference for the [Toast](Toast.md) design, for whoever implements it in the app. It covers what `src/components/ui/Toaster.tsx` and `src/lib/toast.ts` do not yet:
+
+- warning, update and loading variants;
+- errors that stay until dismissed (today `toast.error` expires after the default 3200ms);
+- per-variant timing;
+- actions and descriptions;
+- repeat counts (×2);
+- a stack capped at five, with up to three peeking behind;
+- in-place changes, progress and swipe to dismiss.
+
+It replaces `src/lib/toast.ts` and `src/components/ui/Toaster.tsx`, and adds one test. The code is kept here as Markdown so it doesn't compile, lint or run until someone moves it into `src/`.
 
 ## What it does
 
-- **Look:** a raised, borderless card (`bg-droid-raised`, `rounded-xl`, `shadow-droid`). Colour lives only in a 16px filled status icon. There are no dots, side bars, tinted fills or countdown bar.
+- **Look:** a raised, borderless card (`bg-raised`, `rounded-lg`, `shadow-lg`). Colour lives only in a 16px filled status icon. There are no dots, side bars, tinted fills or countdown bar.
 - **Variants:** `success`, `error`, `info`, `warning`, `update` and `loading`. Info has no icon.
 - **Timing:**
   - Success and info: 4s, or 6s when the toast has an action.
@@ -19,15 +29,14 @@ A working reference for the [Toast](Toast.md) design, for whoever implements it 
 
 ## Moving it into the app
 
-1. Replace `src/lib/toast.ts` and `src/components/Toaster.tsx` with the code below, and add `src/lib/toast.behaviour.test.ts`.
+1. Replace `src/lib/toast.ts` and `src/components/ui/Toaster.tsx` with the code below, and add `src/lib/toast.behaviour.test.ts`.
 2. The API stays compatible: every existing `toast.success/error/info(message)` and `pushToast(message, variant, ttl)` call keeps working.
 3. **Behaviour change to check:** on `main`, errors disappear after the default timeout. Here they stay until dismissed. Review the 82 `toast.error(...)` calls. Errors that are really transient notices should become `toast.warning` or `toast.info`, or pass `{ ttl: 6000 }`.
-4. Remove the now-unused `.droid-toast-ttl` keyframes and class from `src/index.css`, and the `lucide-react` X import (the reference uses `@droidex/icons`).
-5. Run `npm run typecheck`, `npm run lint` and `npm test`, then check both themes in the running app.
+4. Run `npm run typecheck`, `npm run lint` and `npm test`, then check both themes in the running app.
 
 ## Known follow-ups
 
-- **Arbitrary Tailwind values:** the component uses `text-[13px]`, `z-[1300]` and a few others. Swap them for the named type styles and z-index tokens once the design system tokens are wired into Tailwind.
+- **Arbitrary Tailwind values:** the component uses `text-[13px]`, `z-[1300]` and a few others, which the design-token lint rejects. Swap them for the type styles and size tokens in `tailwind.config.js`, and `z-[1300]` for `z-toast`.
 - **Height cache:** `heights` in `Toaster.tsx` keeps entries for dismissed toasts. It's harmless at five toasts, but prune it when a toast leaves if you touch that code.
 - **Two status icons:** `CircleAlertFilled` and `CircleArrowUpFilled` are defined inline. Move them into `packages/icons` when they're adopted.
 - **Target compatibility:** `Array.prototype.at` was replaced with an index here, because `tsconfig.json` targets ES2020.
@@ -294,7 +303,7 @@ export const toast = {
 };
 ```
 
-## `src/components/Toaster.tsx`
+## `src/components/ui/Toaster.tsx`
 
 ```tsx
 import {
@@ -315,7 +324,7 @@ import {
   subscribeToasts,
   type ToastItem,
   type ToastVariant,
-} from '../lib/toast';
+} from '../../lib/toast';
 
 // Toast (design system): a raised, borderless card. Colour lives only in the
 // 16px status glyph, with no dots, side bars or tinted fills. Errors stay
@@ -353,11 +362,11 @@ function CircleArrowUpFilled(props: SVGProps<SVGSVGElement>) {
 }
 
 const GLYPH: Record<ToastVariant, ReactNode> = {
-  success: <CircleCheckFilled className="h-4 w-4 text-droid-green" />,
-  error: <CircleAlertFilled className="h-4 w-4 text-droid-red" />,
-  warning: <AlertTriangleFilled className="h-4 w-4 text-droid-orange" />,
-  update: <CircleArrowUpFilled className="h-4 w-4 text-droid-link" />,
-  loading: <Spinner className="h-4 w-4 animate-spin text-droid-text-muted" />,
+  success: <CircleCheckFilled className="h-4 w-4 text-success" />,
+  error: <CircleAlertFilled className="h-4 w-4 text-danger" />,
+  warning: <AlertTriangleFilled className="h-4 w-4 text-warning" />,
+  update: <CircleArrowUpFilled className="h-4 w-4" style={{ color: 'var(--link)' }} />,
+  loading: <Spinner className="h-4 w-4 animate-spin text-muted" />,
   info: null,
 };
 
@@ -519,7 +528,7 @@ function Toast({
     <motion.div
       animate={{ height: height ?? 'auto' }}
       transition={SPRING}
-      className="overflow-hidden rounded-xl bg-droid-raised shadow-droid"
+      className="overflow-hidden rounded-lg bg-raised shadow-lg"
     >
       <div
         ref={ref}
@@ -551,29 +560,29 @@ function Toast({
         )}
 
         <div className="min-w-0 flex-1">
-          <p className="flex items-baseline gap-1.5 text-[13px] font-medium leading-[18px] tracking-[-0.08px] text-droid-text">
+          <p className="flex items-baseline gap-1.5 text-[13px] font-medium leading-[18px] tracking-[-0.08px] text-primary">
             <span className="min-w-0 break-words">{t.message}</span>
             {t.count && t.count > 1 ? (
-              <span className="shrink-0 text-[11px] font-normal tabular-nums text-droid-text-muted">
+              <span className="shrink-0 text-[11px] font-normal tabular-nums text-muted">
                 ×{t.count}
               </span>
             ) : null}
           </p>
           {t.description && (
-            <p className="mt-0.5 text-[12px] leading-4 text-droid-text-secondary">
+            <p className="mt-0.5 text-[12px] leading-4 text-secondary">
               {t.description}
             </p>
           )}
           {t.progress !== undefined && (
             <div
-              className="mt-2 h-0.5 overflow-hidden rounded-full bg-droid-text/10"
+              className="mt-2 h-0.5 overflow-hidden rounded-full bg-text/10"
               role="progressbar"
               aria-valuenow={Math.round(t.progress * 100)}
               aria-valuemin={0}
               aria-valuemax={100}
             >
               <div
-                className="h-full rounded-full bg-droid-text/70 transition-[width] duration-300 ease-out"
+                className="h-full rounded-full bg-text/70 transition-[width] duration-300 ease-out"
                 style={{ width: `${String(t.progress * 100)}%` }}
               />
             </div>
@@ -588,7 +597,7 @@ function Toast({
                 t.action?.onClick();
                 dismissToast(t.id);
               }}
-              className="h-6 rounded-md bg-droid-text/[0.06] px-2 text-[12px] font-medium text-droid-text transition-colors hover:bg-droid-text/[0.11] active:scale-[0.97]"
+              className="h-6 rounded-sm bg-text/[0.06] px-2 text-[12px] font-medium text-primary transition-colors hover:bg-text/[0.11] active:scale-[0.97]"
             >
               {t.action.label}
             </button>
@@ -599,7 +608,7 @@ function Toast({
             onClick={() => {
               dismissToast(t.id);
             }}
-            className={`grid h-6 w-6 place-items-center rounded-md text-droid-text-muted transition-[opacity,background-color,color] hover:bg-droid-text/[0.06] hover:text-droid-text focus-visible:opacity-100 ${
+            className={`grid h-6 w-6 place-items-center rounded-sm text-muted transition-[opacity,background-color,color] hover:bg-text/[0.06] hover:text-primary focus-visible:opacity-100 ${
               persistent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
             }`}
           >

@@ -16,7 +16,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Check, Ellipsis, History, MessageThread, Pencil, Play } from '@droidex/icons';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 import { FrameHistory, revisionNumber, type HistoryClient } from './frameHistory';
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
 import type { CanvasFrame } from './protocol';
@@ -217,7 +217,7 @@ function SelectToolbar({
         open={open === 'history'}
         onClose={closeHistory}
         anchorRef={historyAnchor}
-        align="left"
+        placement="bottom-start"
         width={MENU_WIDTH_PX}
         label={`History of ${frame.name}`}
       >
@@ -232,7 +232,7 @@ function SelectToolbar({
         open={open === 'more'}
         onClose={closeMore}
         anchorRef={moreAnchor}
-        align="left"
+        placement="bottom-start"
         width={MENU_WIDTH_PX}
         label={`More for ${frame.name}`}
       >

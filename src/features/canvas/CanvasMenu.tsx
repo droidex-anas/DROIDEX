@@ -8,7 +8,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
-import { Popover } from '../../components/environment/Popover';
+import { Popover } from '../../components/ui/Popover';
 import { useBoardOnScreen, type BoardOnScreen } from './boardOnScreen';
 import { canvasClient, frameRemovals } from './canvasClient';
 import { CanvasRequestError } from './client';
@@ -87,7 +87,7 @@ export function CanvasMenu({
         open={open}
         onClose={close}
         anchorRef={triggerRef}
-        align="right"
+        placement="bottom-end"
         width={MENU_WIDTH_PX}
         label="Canvas"
       >

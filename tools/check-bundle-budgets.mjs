@@ -184,8 +184,15 @@ import { join } from 'node:path';
 // log and app context stay eager; no first-frame Chat surface moved. Canvas
 // feature modules remain outside the entry. The 39_971 bytes of headroom cover
 // the remaining Canvas slices without carrying an optional SDK at startup.
+//
+// Raised from 1_468_000 to 1_486_000 for the design-system primitives: every
+// menu, popover and tooltip now positions through @floating-ui/react (~23.5KB
+// minified for the parts used), replacing the hand-rolled popover maths. The
+// header, sidebar and composer render tooltips and popovers at first frame, so
+// it cannot load lazily. ui/design-system at 350127115 measures 1_457_791, with
+// the primitives 1_482_569, leaving ~3.4KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_468_000,
+  initialRendererJsBytes: 1_486_000,
   initialCssBytes: 106_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,

@@ -115,5 +115,6 @@ test('the PR form cannot target its own head when no other base exists', () => {
   );
 
   assert.match(html, /No base branch available/);
-  assert.match(html, /<button[^>]*disabled=""[^>]*>Open PR<\/button>/);
+  // The submit button is the ui Button primitive, which wraps its label in a span.
+  assert.match(html, /<button[^>]*disabled=""[^>]*><span[^>]*>Open PR<\/span>/);
 });

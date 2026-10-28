@@ -252,7 +252,7 @@ export async function setUsageAnalyticsPreference(enabled: boolean): Promise<{ e
 // Resolves to null when the desktop bridge or the method is missing, which every
 // caller already treats as "not available".
 function callBridge(name: string, args: unknown[] = []): Promise<unknown> {
-  const bridge = window.droidControl;
+  const bridge = window.droidex;
   const method: unknown = bridge ? Reflect.get(bridge, name) : undefined;
   if (typeof method !== 'function') return Promise.resolve(null);
   return Promise.resolve(Reflect.apply(method, bridge, args) as unknown);

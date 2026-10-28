@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, providers/integration, browser/integration, 'integration/**']
+    branches: [main, providers/integration, browser/integration, 'integration/**', ui/design-system]
   push:
     branches: [main]
 
@@ -95,6 +95,7 @@ jobs:
       - run: npm ci --prefix sidecar
       - run: npm run quality:file-size
       - run: npm run quality:tech-debt
+      - run: npm run quality:design-tokens
       - run: npm run lint
       - run: npm run quality:boundaries
       - run: npm run quality:deps

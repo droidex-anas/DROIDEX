@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { pushEscapeLayer } from '../../components/environment/usePopover';
+import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { wrapTabFocus } from '../../lib/focusTrap';
 
 // The controls inside these dialogs: borderless tinted fills on the raised

@@ -10,7 +10,7 @@ const MARK = 'mr-1.5 inline-block h-3.5 w-3.5 shrink-0 align-[-2px]';
 
 // Favicons come from the desktop app's main process; a renderer running without
 // it — the plain dev server, server-side rendering — has nowhere to ask.
-const canLoadIcons = typeof window !== 'undefined' && 'droidControl' in window;
+const canLoadIcons = typeof window !== 'undefined' && 'droidex' in window;
 
 // Hosts whose icon failed this session. A badge that remounts — a virtualized
 // row scrolling back into view — goes straight to the fallback instead of
@@ -37,15 +37,13 @@ export function LinkBadge({
 
   if (link.isGitHub) {
     return (
-      <span className={`${className} text-droid-text-secondary`}>
+      <span className={`${className} text-secondary`}>
         <GitHubMark />
       </span>
     );
   }
   if (missing) {
-    return (
-      <Globe aria-hidden strokeWidth={1.75} className={`${className} text-droid-text-muted`} />
-    );
+    return <Globe aria-hidden strokeWidth={1.75} className={`${className} text-muted`} />;
   }
   return (
     <img
@@ -57,7 +55,7 @@ export function LinkBadge({
       loading="lazy"
       decoding="async"
       draggable={false}
-      className={`${className} rounded-[3px] object-contain`}
+      className={`${className} rounded-xs object-contain`}
       onError={() => {
         missingIcons.add(link.host);
         setMissing(true);

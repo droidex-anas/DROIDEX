@@ -1,4 +1,4 @@
-# Droid Control Frontend Specification
+# DROIDEX Frontend Specification
 
 This document describes the current renderer-to-sidecar contract. The renderer
 is a React application hosted by Electron. The sidecar owns Factory Droid SDK

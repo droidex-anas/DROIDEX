@@ -108,7 +108,7 @@ import type {
   VoiceNarration,
 } from '../types/bridge';
 import { PROVIDER_KINDS } from '../types/bridge';
-import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
+import { addWorkspaceCwd, removeWorkspaceCwd, withRevealedCwds } from '../lib/workspaces';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
@@ -261,6 +261,9 @@ export interface AppState {
   // Pre-existing sessions the sidecar withheld per workspace cwd, so the
   // sidebar can offer to load a folder's older Droid sessions on demand.
   earlierSessionsByCwd: Record<string, number>;
+  // Execution cwds whose withheld sessions the user asked to see. Persisted, so
+  // the first list after a restart covers the chats the last one confirmed.
+  revealEarlierCwds: string[];
   activeAppSessionId: string | null;
   // appSessionId -> last time the user viewed it. A session reads as "unread" when
   // its updatedAt (latest model activity) is newer than this. Internal only:
@@ -771,6 +774,7 @@ export type Action =
   | { type: 'ADD_WORKSPACE'; cwd: string }
   | { type: 'REMOVE_WORKSPACE'; cwd: string }
   | { type: 'SET_WORKSPACE_CWDS'; cwds: string[] }
+  | { type: 'REVEAL_EARLIER_SESSIONS'; executionCwds: readonly string[] }
   | { type: 'TOGGLE_BROWSER' }
   | { type: 'SET_BROWSER_OPEN'; open: boolean }
   | { type: 'BROWSER_UPDATED'; browser: BrowserState }
@@ -870,8 +874,9 @@ export const initialState: AppState = {
   projects: [],
   projectsLoaded: false,
   projectsError: '',
-  listConfirmedSessionIds: sessionSnapshot?.sessionOrder ?? null,
+  listConfirmedSessionIds: sessionSnapshot?.listConfirmedSessionIds ?? null,
   earlierSessionsByCwd: {},
+  revealEarlierCwds: persistedUiState.revealEarlierCwds ?? [],
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
   sessionLastSeen: loadSessionLastSeen(),
   chatMetadata: loadChatMetadata(),
@@ -2615,6 +2620,13 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'SET_WORKSPACE_CWDS':
       return { ...state, workspaceCwds: action.cwds };
 
+    case 'REVEAL_EARLIER_SESSIONS': {
+      const revealEarlierCwds = withRevealedCwds(state.revealEarlierCwds, action.executionCwds);
+      return revealEarlierCwds === state.revealEarlierCwds
+        ? state
+        : { ...state, revealEarlierCwds };
+    }
+
     case 'TOGGLE_BROWSER': {
       const key = activeBrowserKey(state);
       if (!key) return state;
@@ -3282,6 +3294,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     snapshotScheduler.push({
       sessions: state.sessions,
       sessionOrder: state.sessionOrder,
+      listConfirmedSessionIds: state.listConfirmedSessionIds,
       activeTranscript:
         activeId !== null && activeTranscriptEvents !== undefined
           ? { appSessionId: activeId, events: activeTranscriptEvents }
@@ -3291,6 +3304,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     snapshotScheduler,
     state.sessions,
     state.sessionOrder,
+    state.listConfirmedSessionIds,
     state.activeAppSessionId,
     activeTranscriptEvents,
   ]);

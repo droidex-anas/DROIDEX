@@ -77,6 +77,7 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
       mainView: 'pull-requests',
       prWorkspaceCwd: '/repo',
       prWorkspaceNumber: 42,
+      revealEarlierCwds: ['/repo', 7, '', '/repo', '/repo/.worktrees/a'],
     }),
     () => {
       assert.deepEqual(loadPersistedUiState(), {
@@ -109,6 +110,7 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
         prWorkspaceCwd: '/repo',
         prWorkspaceNumber: 42,
         prBacklogIds: [],
+        revealEarlierCwds: ['/repo', '/repo/.worktrees/a'],
       });
     },
   );

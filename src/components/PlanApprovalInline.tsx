@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { ChevronRight } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { respondPermission, sendToSession } from '../lib/commands';
 import type { Autonomy, PermissionOutcome } from '../types/bridge';
 import { AUTONOMY_LABELS } from '../lib/autonomy';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { inlineCardMotion } from './inlineCardMotion';
-
-const ACCENT = 'var(--droid-accent)';
+import { Button } from './ui/Button';
 
 // The same three modes the composer's permission menu names, as the choice
 // that starts implementation.
@@ -103,25 +101,16 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
       <motion.div
         key={req.requestId}
         {...inlineCardMotion(reduceMotion)}
-        className="mb-2.5 overflow-hidden rounded-2xl border border-droid-border bg-droid-raised shadow-droid"
+        className="mb-2.5 overflow-hidden rounded-xl bg-raised shadow-lg"
       >
         <div className="flex items-center gap-2 px-4 pt-3.5 pb-3">
-          <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full"
-            style={{ background: ACCENT }}
-            aria-hidden
-          />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-droid-text">
+          <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-body-strong text-primary">
             {isSpec ? 'Specification ready' : 'Mission plan proposed'}
           </span>
-          <button
-            type="button"
-            onClick={openWiki}
-            className="flex shrink-0 items-center gap-0.5 rounded-full px-2 py-1 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-surface hover:text-droid-text"
-          >
+          <Button variant="ghost" size="sm" onClick={openWiki}>
             {isSpec ? 'Read spec' : 'Read plan'}
-            <ChevronRight className="h-3 w-3" />
-          </button>
+          </Button>
         </div>
 
         <div className="px-4 pb-3">
@@ -145,7 +134,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
                 ? 'Add a comment to guide implementation (optional)…'
                 : 'Add a comment (optional)…'
             }
-            className="w-full resize-none rounded-xl border border-droid-border/70 bg-droid-bg/50 px-3.5 py-2.5 text-[13px] leading-relaxed text-droid-text placeholder:text-droid-text-muted outline-none focus:border-droid-border-hover"
+            className="w-full resize-none rounded-lg bg-bg/50 px-3.5 py-2.5 text-body-lg text-primary placeholder:text-muted outline-none transition-colors focus:bg-bg/80"
           />
         </div>
 
@@ -154,7 +143,7 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
             <div
               role="radiogroup"
               aria-label="Implementation autonomy"
-              className="flex items-center gap-0.5 rounded-full border border-droid-border p-0.5"
+              className="flex items-center gap-0.5 rounded-full bg-elevated p-0.5"
             >
               {AUTONOMY.map((a, i) => {
                 const active = autonomy === a.value;
@@ -175,10 +164,9 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
                       onAutonomyKeyDown(e, i);
                     }}
                     title={`Implement with ${AUTONOMY_LABELS[a.value]}`}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      active ? 'text-droid-bg' : 'text-droid-text-secondary hover:text-droid-text'
+                    className={`rounded-full px-2.5 py-1 text-label transition-colors ${
+                      active ? 'bg-accent text-bg' : 'text-secondary hover:text-primary'
                     }`}
-                    style={active ? { background: ACCENT } : undefined}
                   >
                     {AUTONOMY_LABELS[a.value]}
                   </button>
@@ -187,25 +175,22 @@ export default function PlanApprovalInline({ appSessionId }: { appSessionId: str
             </div>
           )}
           <div className="flex-1" />
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={iterate}
             disabled={appUpdateInstalling}
             title={appUpdateInstalling ? 'Installing DROIDEX update' : undefined}
-            className="rounded-full px-3.5 py-1.5 text-[12px] font-medium text-droid-text-secondary transition-colors enabled:hover:bg-droid-surface enabled:hover:text-droid-text disabled:cursor-not-allowed disabled:opacity-40"
           >
             Keep iterating
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="primary"
             onClick={implement}
             disabled={appUpdateInstalling}
             title={appUpdateInstalling ? 'Installing DROIDEX update' : undefined}
-            className="rounded-full px-4 py-1.5 text-[12px] font-semibold text-droid-bg transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ background: ACCENT }}
           >
             {text ? 'Implement with comment' : 'Implement'}
-          </button>
+          </Button>
         </div>
       </motion.div>
     </AnimatePresence>

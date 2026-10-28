@@ -46,7 +46,7 @@ export async function withCanvasBridge(
   page: Page,
   use: (send: (command: Record<string, unknown>) => Promise<CanvasReply>) => Promise<void>,
 ): Promise<void> {
-  const { port, token } = await page.evaluate(() => window.droidControl!.bridgeInfo());
+  const { port, token } = await page.evaluate(() => window.droidex!.bridgeInfo());
   const socket = new WebSocket(
     `ws://127.0.0.1:${String(port)}?token=${token}&bridgeProtocol=${String(BRIDGE_PROTOCOL_VERSION)}&pageId=asset-smoke`,
   );
@@ -295,8 +295,8 @@ export async function withCanvasHost(
     const page = await app.firstWindow();
     await bounded(
       page.evaluate(async () => {
-        if (!window.droidControl) throw new Error('Missing preload');
-        await window.droidControl.setOnboarding({
+        if (!window.droidex) throw new Error('Missing preload');
+        await window.droidex.setOnboarding({
           completed: true,
           cliAutoUpdate: false,
           appAutoUpdate: false,

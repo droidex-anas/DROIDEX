@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ImageOff } from 'lucide-react';
+import { ImageOff } from '@droidex/icons';
 import { imageSrc, pathBaseName } from '../../lib/localImage';
 import { ImageLightbox } from './ImageLightbox';
 
@@ -36,9 +36,9 @@ export function TranscriptImage({
     return (
       <span
         title={title ?? reference}
-        className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-droid-border bg-droid-elevated/50 px-2 py-1 text-[12px] text-droid-text-muted"
+        className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-md bg-elevated/50 px-2 py-1 text-label text-muted"
       >
-        <ImageOff className="h-3.5 w-3.5 shrink-0" />
+        <ImageOff className="size-icon-sm shrink-0" />
         <span className="truncate">{label}</span>
       </span>
     );
@@ -51,7 +51,7 @@ export function TranscriptImage({
           setOpen(true);
         }}
         title={title ?? `View ${label}`}
-        className="my-1.5 block max-w-full overflow-hidden rounded-xl border border-droid-border bg-droid-bg/40 transition-colors hover:border-droid-border-hover"
+        className="my-1.5 block max-w-full overflow-hidden rounded-lg bg-bg/40 transition-colors duration-150 ease-out hover:bg-elevated/40"
       >
         <img
           src={src}

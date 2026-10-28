@@ -1,0 +1,104 @@
+{
+  "src/components/MissionControl.tsx": {
+    "arbitrary-value": 50,
+    "border-width": 19,
+    "palette-color": 1,
+    "uppercase": 6
+  },
+  "src/components/ProductSwitcher.tsx": {
+    "arbitrary-value": 4
+  },
+  "src/components/composer/CanvasImageChip.tsx": {
+    "arbitrary-value": 3
+  },
+  "src/components/composer/QueuedPrompts.tsx": {
+    "arbitrary-value": 1
+  },
+  "src/features/canvas/AttachedChatsMenu.tsx": {
+    "arbitrary-value": 1
+  },
+  "src/features/canvas/CanvasArtifactCard.tsx": {
+    "arbitrary-value": 1
+  },
+  "src/features/canvas/CanvasBoard.tsx": {
+    "focus-ring": 1
+  },
+  "src/features/canvas/CanvasDialog.tsx": {
+    "arbitrary-value": 1,
+    "palette-color": 1
+  },
+  "src/features/canvas/CanvasHeader.tsx": {
+    "arbitrary-value": 1
+  },
+  "src/features/canvas/CanvasMenu.tsx": {
+    "arbitrary-value": 1
+  },
+  "src/features/canvas/CanvasPaneStates.tsx": {
+    "arbitrary-value": 10,
+    "focus-ring": 3
+  },
+  "src/features/canvas/CanvasSourceCode.tsx": {
+    "arbitrary-value": 2,
+    "focus-ring": 1
+  },
+  "src/features/canvas/CanvasSourceConflict.tsx": {
+    "arbitrary-value": 3
+  },
+  "src/features/canvas/CanvasSourcePanel.tsx": {
+    "arbitrary-value": 9
+  },
+  "src/features/canvas/CanvasVariants.tsx": {
+    "arbitrary-value": 8,
+    "focus-ring": 1
+  },
+  "src/features/canvas/DeleteCanvasDialog.tsx": {
+    "arbitrary-value": 6,
+    "focus-ring": 1
+  },
+  "src/features/canvas/DesignHome.tsx": {
+    "arbitrary-value": 16,
+    "focus-ring": 4
+  },
+  "src/features/canvas/DesignSidebar.tsx": {
+    "arbitrary-value": 7
+  },
+  "src/features/canvas/DesignSystemDetail.tsx": {
+    "arbitrary-value": 11,
+    "focus-ring": 4
+  },
+  "src/features/canvas/DesignSystemList.tsx": {
+    "arbitrary-value": 6,
+    "border-width": 3,
+    "focus-ring": 3
+  },
+  "src/features/canvas/DesignSystemPicker.tsx": {
+    "arbitrary-value": 7,
+    "focus-ring": 3
+  },
+  "src/features/canvas/DesignSystemTokens.tsx": {
+    "arbitrary-value": 5,
+    "border-width": 3
+  },
+  "src/features/canvas/DesignSystemsDialog.tsx": {
+    "focus-ring": 1
+  },
+  "src/features/canvas/LibraryPicker.tsx": {
+    "arbitrary-value": 8
+  },
+  "src/features/canvas/NewDesignSystemForm.tsx": {
+    "arbitrary-value": 5
+  },
+  "src/features/canvas/PreviewModeToggle.tsx": {
+    "arbitrary-value": 1,
+    "focus-ring": 1
+  },
+  "src/features/canvas/RevisionHistory.tsx": {
+    "arbitrary-value": 5
+  },
+  "src/features/canvas/SaveToLibraryDialog.tsx": {
+    "arbitrary-value": 4
+  },
+  "src/features/canvas/menuRows.tsx": {
+    "arbitrary-value": 4
+  }
+}

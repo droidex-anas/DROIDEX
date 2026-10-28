@@ -6,12 +6,10 @@ import { describeLink } from '../../lib/linkPresentation';
 import { openExternal } from '../../lib/onboarding';
 import { toast } from '../../lib/toast';
 import type { TranscriptEvent } from '../../types/bridge';
-import { Popover } from '../environment/Popover';
+import { Button } from '../ui/Button';
+import { Menu } from '../ui/Menu';
 import { LinkBadge } from '../transcript/LinkBadge';
 import { BrowserPreview } from './BrowserPreview';
-
-const MENU_ROW =
-  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-droid-text-secondary transition-colors hover:bg-droid-elevated/60 hover:text-droid-text focus-visible:bg-droid-elevated/60 focus-visible:text-droid-text focus-visible:outline-none';
 
 /**
  * The page a turn worked on in the chat's browser, as one card in the
@@ -49,14 +47,14 @@ export function BrowserCard({
   const { page, link, title, site, doing } = cardText(events, working);
 
   return (
-    <div className="my-1.5 w-[360px] max-w-full overflow-hidden rounded-2xl border border-droid-border bg-droid-surface">
+    <div className="my-1.5 w-chat-card max-w-full overflow-hidden rounded-xl bg-surface">
       <BrowserPreview cardKey={cardKey} browserSessionId={browserSessionId} live={working} />
       <div className="flex items-center gap-1 py-2.5 pl-3.5 pr-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium text-droid-text">{title}</div>
-          <div className="mt-0.5 flex items-center text-[12px] text-droid-text-muted">
+          <div className="truncate text-body-strong text-primary">{title}</div>
+          <div className="mt-0.5 flex items-center text-label text-muted">
             {doing ? (
-              <span className="shimmer-text truncate font-medium">{doing}</span>
+              <span className="shimmer-text truncate">{doing}</span>
             ) : (
               <>
                 {link && <LinkBadge key={link.host} link={link} />}
@@ -66,15 +64,15 @@ export function BrowserCard({
           </div>
         </div>
         {inActiveChat && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'browser' });
             }}
-            className="shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-medium text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60"
           >
             Open
-          </button>
+          </Button>
         )}
         {page && !page.pending && isWholeUrl(page.url) && <PageMenu url={page.url} />}
       </div>
@@ -105,51 +103,47 @@ function PageMenu({ url }: { url: string }) {
   };
   return (
     <>
-      <button
+      <Button
         ref={buttonRef}
-        type="button"
+        variant="ghost"
+        size="sm"
+        shape="round"
+        icon={Ellipsis}
         aria-label="Page options"
+        aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => {
           setOpen((value) => !value);
         }}
-        className={`shrink-0 rounded-lg p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-droid-accent/60 ${
-          open
-            ? 'bg-droid-elevated text-droid-text'
-            : 'text-droid-text-muted hover:bg-droid-elevated hover:text-droid-text'
-        }`}
+      />
+      <Menu
+        open={open}
+        onClose={close}
+        anchorRef={buttonRef}
+        placement="bottom-end"
+        label="Page options"
+        width={220}
       >
-        <Ellipsis className="h-4 w-4" />
-      </button>
-      <Popover open={open} onClose={close} anchorRef={buttonRef} label="Page options" width={220}>
-        <div className="p-1">
-          <button
-            type="button"
-            className={MENU_ROW}
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(url)
-                .then(() => toast.success('Link copied'))
-                .catch(() => toast.error('Could not copy to the clipboard.'));
-              close();
-            }}
-          >
-            <Link className="h-3.5 w-3.5 shrink-0" />
-            Copy link
-          </button>
-          <button
-            type="button"
-            className={MENU_ROW}
-            onClick={() => {
-              void openExternal(url);
-              close();
-            }}
-          >
-            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-            Open in default browser
-          </button>
-        </div>
-      </Popover>
+        <Menu.Item
+          icon={Link}
+          onSelect={() => {
+            void navigator.clipboard
+              .writeText(url)
+              .then(() => toast.success('Link copied'))
+              .catch(() => toast.error('Could not copy to the clipboard.'));
+          }}
+        >
+          Copy link
+        </Menu.Item>
+        <Menu.Item
+          icon={ExternalLink}
+          onSelect={() => {
+            void openExternal(url);
+          }}
+        >
+          Open in default browser
+        </Menu.Item>
+      </Menu>
     </>
   );
 }

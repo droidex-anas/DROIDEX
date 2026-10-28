@@ -1,9 +1,11 @@
 // Local snapshot of the session list and the active session's recent
 // transcript, persisted in localStorage so a reload paints the sidebar and
 // the last conversation before the bridge connects. The sidecar's
-// sessions.list stays authoritative: hydrated rows that the first list after
-// connect does not confirm are pruned by the store, and the restored
+// sessions.list stays authoritative: a hydrated row an earlier list confirmed
+// is pruned when the first list after connect omits it, and the restored
 // transcript is replaced by the authoritative history page when it arrives.
+// Rows no list ever covered, such as chats outside the listed folders, keep
+// that status across a restart, so the first list cannot prune them.
 //
 // Everything loaded here is sanitized and bounded: a corrupt or bloated
 // payload degrades to no snapshot instead of breaking the store. The key is
@@ -11,7 +13,9 @@
 
 import type { BridgeFeature, SessionSummary, TranscriptEvent } from '../types/bridge';
 
-const SESSION_SNAPSHOT_STORAGE_KEY = 'droid-session-snapshot-v1';
+const SESSION_SNAPSHOT_STORAGE_KEY = 'droid-session-snapshot-v2';
+// Nothing reads it; a v2 write clears what earlier builds left behind.
+const OBSOLETE_SESSION_SNAPSHOT_STORAGE_KEY = 'droid-session-snapshot-v1';
 export const MAX_SNAPSHOT_SESSIONS = 200;
 export const MAX_SNAPSHOT_SUMMARY_BYTES = 512 * 1024;
 export const MAX_SNAPSHOT_TRANSCRIPT_EVENTS = 40;
@@ -20,12 +24,14 @@ export const MAX_SNAPSHOT_TRANSCRIPT_BYTES = 256 * 1024;
 export interface SessionSnapshot {
   sessions: Record<string, SessionSummary>;
   sessionOrder: string[];
+  listConfirmedSessionIds: string[];
   transcript?: { appSessionId: string; events: TranscriptEvent[] };
 }
 
 interface SnapshotInput {
   sessions: Record<string, SessionSummary>;
   sessionOrder: string[];
+  listConfirmedSessionIds: string[] | null;
   activeTranscript?: { appSessionId: string; events: TranscriptEvent[] };
 }
 
@@ -167,7 +173,11 @@ export function loadSessionSnapshot(): SessionSnapshot | undefined {
     if (!raw) return undefined;
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return undefined;
-    const stored = parsed as { sessions?: unknown; transcript?: unknown };
+    const stored = parsed as {
+      sessions?: unknown;
+      listConfirmedSessionIds?: unknown;
+      transcript?: unknown;
+    };
     if (!Array.isArray(stored.sessions)) return undefined;
     const seen = new Set<string>();
     let list: SessionSummary[] = [];
@@ -186,7 +196,10 @@ export function loadSessionSnapshot(): SessionSnapshot | undefined {
       sessions[summary.appSessionId] = summary;
       return summary.appSessionId;
     });
-    const snapshot: SessionSnapshot = { sessions, sessionOrder };
+    const listConfirmedSessionIds = isStringArray(stored.listConfirmedSessionIds)
+      ? stored.listConfirmedSessionIds.filter((id) => Object.hasOwn(sessions, id))
+      : [];
+    const snapshot: SessionSnapshot = { sessions, sessionOrder, listConfirmedSessionIds };
     const transcript = sanitizeStoredTranscript(stored.transcript, sessions);
     if (transcript) snapshot.transcript = transcript;
     return snapshot;
@@ -195,11 +208,12 @@ export function loadSessionSnapshot(): SessionSnapshot | undefined {
   }
 }
 
-export function saveSessionSnapshot(
-  sessions: Record<string, SessionSummary>,
-  sessionOrder: string[],
-  activeTranscript?: { appSessionId: string; events: TranscriptEvent[] },
-): void {
+export function saveSessionSnapshot({
+  sessions,
+  sessionOrder,
+  listConfirmedSessionIds,
+  activeTranscript,
+}: SnapshotInput): void {
   try {
     const byId: Partial<Record<string, SessionSummary>> = sessions;
     let list: SessionSummary[] = [];
@@ -210,17 +224,26 @@ export function saveSessionSnapshot(
     // sessionOrder is newest-first, so keeping the front of the list keeps
     // the most recent sessions when a pathological payload exceeds budget.
     list = fitByteBudget(list, MAX_SNAPSHOT_SUMMARY_BYTES, 'start');
+    const confirmed = new Set(listConfirmedSessionIds);
     const payload: {
       sessions: SessionSummary[];
+      listConfirmedSessionIds: string[];
       transcript?: { appSessionId: string; events: TranscriptEvent[] };
-    } = { sessions: list };
+    } = {
+      sessions: list,
+      listConfirmedSessionIds: list
+        .map((summary) => summary.appSessionId)
+        .filter((id) => confirmed.has(id)),
+    };
     if (activeTranscript && activeTranscript.events.length > 0) {
       const events = boundTranscriptEvents(activeTranscript.events);
       if (events.length > 0) {
         payload.transcript = { appSessionId: activeTranscript.appSessionId, events };
       }
     }
-    getLocalStorage()?.setItem(SESSION_SNAPSHOT_STORAGE_KEY, JSON.stringify(payload));
+    const storage = getLocalStorage();
+    storage?.setItem(SESSION_SNAPSHOT_STORAGE_KEY, JSON.stringify(payload));
+    storage?.removeItem(OBSOLETE_SESSION_SNAPSHOT_STORAGE_KEY);
   } catch {
     /* ignore */
   }
@@ -242,6 +265,7 @@ export function createSnapshotScheduler(delayMs: number): SnapshotScheduler {
         const unchanged =
           prevInput.sessions === input.sessions &&
           prevInput.sessionOrder === input.sessionOrder &&
+          prevInput.listConfirmedSessionIds === input.listConfirmedSessionIds &&
           prevInput.activeTranscript?.appSessionId === input.activeTranscript?.appSessionId &&
           prevInput.activeTranscript?.events === input.activeTranscript?.events;
         if (unchanged) return;
@@ -249,7 +273,7 @@ export function createSnapshotScheduler(delayMs: number): SnapshotScheduler {
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = undefined;
-        saveSessionSnapshot(input.sessions, input.sessionOrder, input.activeTranscript);
+        saveSessionSnapshot(input);
       }, delayMs);
     },
     cancel(): void {

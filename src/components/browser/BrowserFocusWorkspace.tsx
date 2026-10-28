@@ -21,7 +21,7 @@ export function BrowserFocusWorkspace({
   const appSessionId = useStoreSelector((state) => state.activeAppSessionId);
 
   return (
-    <div ref={rootRef} className="relative h-full min-h-0 bg-droid-bg">
+    <div ref={rootRef} className="relative h-full min-h-0 bg-bg">
       <BrowserWorkspace
         expanded={expanded}
         onToggleExpanded={onToggleExpanded}

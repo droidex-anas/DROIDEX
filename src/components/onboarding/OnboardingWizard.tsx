@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 
 import type { OnboardingController } from '../../hooks/useOnboarding';
-import { EASE } from './kit';
 import { advancePastRemovedStep, stepsForEnv, type StepId } from './stepFlow';
 import { CoverStep } from './steps/CoverStep';
 import { DoneStep } from './steps/DoneStep';
@@ -11,8 +10,10 @@ import { PreferencesStep } from './steps/PreferencesStep';
 import { SignInStep } from './steps/SignInStep';
 import { SystemStep } from './steps/SystemStep';
 
-// Full-screen first-run flow over the app's own surface. Uses the same droid-*
-// theme tokens as every other screen, so it picks up the active theme's taste
+const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+// Full-screen first-run flow over the app's own surface. Uses the same theme
+// tokens as every other screen, so it picks up the active theme's taste
 // instead of carrying a palette of its own.
 export default function OnboardingWizard({
   controller,
@@ -44,9 +45,9 @@ export default function OnboardingWizard({
       <div className="flex h-full min-h-0 flex-col">
         <header
           data-electron-drag-region
-          className="h-11 shrink-0 flex items-center justify-end px-5 select-none"
+          className="flex h-11 shrink-0 select-none items-center justify-end px-5"
         >
-          <span className="text-[11px] tabular-nums tracking-[0.18em] text-droid-text-muted">
+          <span className="text-caption tabular-nums text-muted">
             {index + 1} / {steps.length}
           </span>
         </header>

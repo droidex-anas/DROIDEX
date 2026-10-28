@@ -22,9 +22,9 @@ const EMPTY_BRANCHES: GitBranchList = { current: null, detached: true, local: []
 // guarded by isDesktop() (and the read wrappers catch), but the type system
 // can't see that — resolve the bridge in one place instead of asserting at
 // every call.
-function bridge(): NonNullable<Window['droidControl']> {
-  const api = window.droidControl;
-  if (!api) throw new Error('droidControl bridge unavailable');
+function bridge(): NonNullable<Window['droidex']> {
+  const api = window.droidex;
+  if (!api) throw new Error('droidex bridge unavailable');
   return api;
 }
 

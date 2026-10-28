@@ -93,6 +93,8 @@ export function useConversationScrollWindow({
   const viewportRestoreGeneration = useRef(0);
   const pendingHistoryPrepend = useRef<PendingHistoryPrepend | null>(null);
   const isPinned = useRef(true);
+  // scrollTop while the primary button is held in the transcript, null otherwise.
+  const heldScrollTop = useRef<number | null>(null);
   const reportedPinned = useRef<{ conversationKey: string; pinned: boolean } | null>(null);
   const isOlderRequestPending = useRef(false);
   const isUserScrolling = useRef(false);
@@ -272,10 +274,37 @@ export function useConversationScrollWindow({
     visibleConversationKey,
   ]);
 
+  // A held button means the reader is selecting text or dragging the scrollbar.
+  // Both scroll in steps smaller than the pin threshold, so any upward step
+  // while held leaves the tail; otherwise streamed output snaps them back.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const press = (event: MouseEvent) => {
+      if (event.button === 0) heldScrollTop.current = element.scrollTop;
+    };
+    const release = () => {
+      heldScrollTop.current = null;
+    };
+    element.addEventListener('mousedown', press);
+    window.addEventListener('mouseup', release);
+    window.addEventListener('blur', release);
+    return () => {
+      release();
+      element.removeEventListener('mousedown', press);
+      window.removeEventListener('mouseup', release);
+      window.removeEventListener('blur', release);
+    };
+  }, [scrollRef]);
+
   const onScroll = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
-    isPinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+    const held = heldScrollTop.current;
+    const isLeavingTail = held !== null && element.scrollTop < held;
+    if (held !== null) heldScrollTop.current = element.scrollTop;
+    isPinned.current =
+      !isLeavingTail && element.scrollHeight - element.scrollTop - element.clientHeight < 80;
     if (
       isRestoringViewport.current &&
       shouldCancelViewportRestore(expectedRestoredScrollTop.current, element.scrollTop)

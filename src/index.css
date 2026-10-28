@@ -17,6 +17,12 @@
   --icon-swap-ease: var(--ease-in-out);
 }
 
+/* The prompt bubble steps one tone above the transcript it sits in; a
+   transcript on a raised layer (the side chat) overrides it. */
+:root {
+  --prompt-bubble-bg: var(--elevated);
+}
+
 /* Icon swap in the inbox row's mark slot: the status mark and the settle
    control share one cell; hovering the row cross-fades them with blur and
    scale (transitions.dev icon swap, hover-driven). The control's own hidden
@@ -46,79 +52,64 @@
   filter: blur(0);
   transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0)) scale(1);
 }
-@media (prefers-reduced-motion: reduce) {
-  .inbox-mark,
-  .inbox-mark-control {
-    transition: none !important;
-  }
-}
 /* ModelIcon paints its own text colour; sidebar marks follow the row's tone. */
 .harness-mark > svg {
   color: inherit !important;
 }
 
 @layer base {
+  /* The Default dark theme exactly as applyTheme writes it (deriveThemeTokens),
+     so the frame before the bundle runs paints the same tokens. */
   :root {
-    --droid-bg: #0a0a0a;
-    --droid-surface: #111111;
-    --droid-elevated: #1e1e1e;
-    /* Input fields inside cards; dark fallback, applyTheme derives per theme. */
-    --droid-field: #1e1e1e;
-    /* One step above elevated: the lightest neutral, for selected/active rows so
-       the surface ramp reads bg < surface < elevated < active. */
-    --droid-active: #292929;
-    /* Floating layers: the elevated rung on dark, near-white on light. */
-    --droid-raised: #1e1e1e;
-    --droid-border: #161616;
-    --droid-border-hover: #222222;
-    --droid-text: #ededed;
-    --droid-text-secondary: #9a9a9a;
-    --droid-text-muted: #5c5c5c;
-    /* Accent defaults to a theme-matched neutral (near-white in dark, near-black
-       in light) so the UI reads as a monochrome tonal scale rather than a fixed
-       hue. applyTheme overrides this from the active theme; users can still pick
-       a colored accent from Appearance. */
-    --droid-accent: #f2f2f2;
-    /* Skill invocations stay blue, with applyTheme selecting the accessible
-       light-theme shade. */
-    --droid-skill: #93c5fd;
-    /* Chip marks beside the skill label: rose Rosette, pink Visualize. */
-    --droid-skill-mark: #ed4772;
-    --droid-visualize-mark: #f472b6;
-    /* Links stay blue for the same reason skills do: the neutral accent is
-       near-white in dark themes, so accent-coloured links read as body text. */
-    --droid-link: #7cb2ff;
-    /* The top reasoning level reads by hue for the same reason; applyTheme
-       selects the accessible light-theme shade. */
-    --droid-ultra: #bba6ff;
-    /* Fixed semantic status colors: success green, warning amber, and danger red
-       stay vivid across every theme (including monochrome) so diffs, status, and
-       callouts always read by hue. The neutral accent governs UI chrome only and
-       must never tint these signals. */
-    --droid-green: #4fae82;
-    --droid-orange: #d9913a;
-    /* Standard diff colors (GitHub-style), shared by every diff surface. */
-    --diff-add-fg: #3fb950;
-    --diff-add-bg: rgba(46, 160, 67, 0.15);
-    --diff-add-gutter: rgba(46, 160, 67, 0.28);
-    --diff-del-fg: #f85149;
-    --diff-del-bg: rgba(248, 81, 73, 0.15);
-    --diff-del-gutter: rgba(248, 81, 73, 0.28);
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --elevated: #1e1e1e;
+    --field: #1e1e1e;
+    --active: #2b2b2b;
+    --raised: #1e1e1e;
+    --sidebar: #111111;
+    --sidebar-blur: none;
+    --divider: rgba(237, 237, 237, 0.07);
+    --divider-strong: rgba(237, 237, 237, 0.12);
+    --text: #ededed;
+    --text-secondary: #cfcfcf;
+    --text-muted: #bbbbbb;
+    --accent: #f2f2f2;
+    --focus-ring: rgba(242, 242, 242, 0.4);
+    --link: #7cb2ff;
+    --skill: #93c5fd;
+    --skill-mark: #ed4772;
+    --visualize-mark: #f472b6;
+    --ultra: #bba6ff;
+    --success: #4fae82;
+    --success-soft: rgba(79, 174, 130, 0.12);
+    --warning: #d9913a;
+    --warning-soft: rgba(217, 145, 58, 0.12);
+    --danger: #d6766e;
+    --danger-soft: rgba(214, 118, 110, 0.12);
+    --update: #005fc8;
+    --update-hover: #0054b2;
+    --on-update: #ffffff;
+    --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.28);
+    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.35);
+    --diff-add-fg: #73c991;
+    --diff-add-bg: rgba(46, 160, 67, 0.14);
+    --diff-add-gutter: rgba(46, 160, 67, 0.26);
+    --diff-del-fg: #ff7b72;
+    --diff-del-bg: rgba(248, 81, 73, 0.14);
+    --diff-del-gutter: rgba(248, 81, 73, 0.26);
     --diff-hunk-bg: rgba(56, 139, 253, 0.1);
     --diff-hunk-fg: #79b8ff;
-    /* Fixed semantic danger color: stays red across accent/monochrome themes so
-       errors and P-level callouts always read as alarming, never accent-tinted. */
-    --droid-red: #cf5d54;
-    /* The sidebar update pill keeps this fixed blue in both schemes, for the same
-       reason the status colors do. */
-    --droid-update: #005fc8;
-    --droid-update-hover: #0054b2;
     --ui-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --ui-font-size: 14px;
     --ui-zoom: 1;
     --code-font-size: 12px;
-    --sidebar-bg: var(--droid-surface);
-    --sidebar-blur: none;
+    /* Theme-independent tokens. Brand colours belong to the mark, the app icon
+       and marketing surfaces, never to app chrome or state. */
+    --shadow-focus-update: 0 0 0 1.5px color-mix(in srgb, var(--update) 60%, transparent);
+    --brand-ink: #141310;
+    --brand-paper: #f2efe9;
+    --brand-orange: #ff4d00;
   }
 
   html,
@@ -129,8 +120,8 @@
   }
 
   body {
-    background-color: var(--droid-bg);
-    color: var(--droid-text);
+    background-color: var(--bg);
+    color: var(--text);
     font-family: var(--ui-font-family);
     font-size: var(--ui-font-size);
     -webkit-font-smoothing: antialiased;
@@ -178,24 +169,85 @@
     -webkit-app-region: no-drag;
   }
 
+  /* Keyboard focus only: a click never draws a ring. Utilities that style
+     their own focus state still win over this base rule. */
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 1.5px solid var(--focus-ring);
+  }
+
+  /* Anything clickable shows a pointer so it reads as clickable; a disabled
+     control shows not-allowed instead. `:where` keeps this at zero
+     specificity so the disabled rule and cursor utilities win. */
+  :where(
+    button,
+    a[href],
+    summary,
+    select,
+    label:has(> input[type='checkbox'], > input[type='radio']),
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='range'],
+    input[type='color'],
+    [role='button'],
+    [role='link'],
+    [role='tab'],
+    [role='option'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='radio'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio']
+  ) {
+    cursor: pointer;
+  }
+
+  :disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
+  /* A button is chrome, not text: a selection across it, such as a tool row's
+     header in the transcript, copies the content around it without its label. */
+  button {
+    user-select: none;
+  }
+
+  /* Scrollbars stay out of sight at rest: no track, and a 6px pill that shows
+     while its scroller moves (`data-scrolling`, set by useScrolling)
+     or is dragged. Only some scrollers report `data-scrolling` so far, so
+     hovering a scroller reveals its pill too; `scrollbar-while-scrolling`
+     opts out of that, for a scroller that ends mid-window (the chat beside an
+     open pane), where a bar would read as a divider the layout does not have. */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  /* Thumbs derive from the theme text color so they stay subtle in both dark
-     (dim white) and light (soft grey) instead of a fixed dark-mode grey. */
-  ::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--droid-text) 16%, transparent);
-    border-radius: 3px;
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--droid-text) 26%, transparent);
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  /* :where() keeps the reveal at the plain thumb's specificity, so the
+     hover and drag emphasis below still wins over it. */
+  :where(:hover:not(.scrollbar-while-scrolling), [data-scrolling])::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text) 16%, transparent);
+  }
+
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--text) 26%, transparent);
   }
 
   .no-scrollbar {
@@ -204,36 +256,6 @@
 
   .no-scrollbar::-webkit-scrollbar {
     display: none;
-  }
-
-  /* Horizontal overflow inside a message (code cards, tables) scrolls quietly:
-     the thumb shows while the reader is over the block, not as a permanent bar
-     under every wide snippet. */
-  .scrollbar-on-hover::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-
-  .scrollbar-on-hover:hover::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--droid-text) 16%, transparent);
-  }
-
-  .scrollbar-on-hover::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--droid-text) 26%, transparent);
-  }
-
-  /* A scroller that ends mid-window (the chat beside an open utility pane)
-     keeps its thumb out of sight until it moves: a permanent bar there reads as
-     a divider the layout does not have. `useScrollingAttribute` sets the flag. */
-  .scrollbar-while-scrolling::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-
-  .scrollbar-while-scrolling[data-scrolling]::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--droid-text) 16%, transparent);
-  }
-
-  .scrollbar-while-scrolling::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--droid-text) 26%, transparent);
   }
 
   /* A block wider than its frame fades at the edge it continues past, so it
@@ -253,7 +275,7 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--droid-accent) 22%, transparent);
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
 
   @keyframes shimmer {
@@ -268,9 +290,9 @@
   .shimmer-text {
     background: linear-gradient(
       90deg,
-      var(--droid-text-muted) 0%,
-      var(--droid-text) 50%,
-      var(--droid-text-muted) 100%
+      var(--text-muted) 0%,
+      var(--text) 50%,
+      var(--text-muted) 100%
     );
     background-size: 200% 100%;
     -webkit-background-clip: text;
@@ -355,7 +377,7 @@
   .image-grid-dots {
     background-image: radial-gradient(
       circle at center,
-      color-mix(in srgb, var(--droid-text) 12%, transparent) 1px,
+      color-mix(in srgb, var(--text) 12%, transparent) 1px,
       transparent 1.6px
     );
     background-size: 9px 9px;
@@ -373,7 +395,7 @@
     background: linear-gradient(
       135deg,
       transparent 34%,
-      color-mix(in srgb, var(--droid-text) 55%, transparent) 50%,
+      color-mix(in srgb, var(--text) 55%, transparent) 50%,
       transparent 66%
     );
     animation: image-grid-sweep 5.5s ease-in-out infinite alternate;
@@ -424,10 +446,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .agent-cursor {
-      transition: opacity 200ms ease-out;
-    }
-
     .agent-cursor-tilt {
       animation: none;
     }
@@ -460,12 +478,6 @@
     .title-marquee {
       animation: none;
     }
-  }
-
-  /* DROIDEX brand pixel font (Silkscreen, loaded from Google Fonts in
-     index.html). Falls back to the mono stack when offline. */
-  .font-pixel {
-    font-family: 'Silkscreen', 'JetBrains Mono', monospace;
   }
 
   /* Gentle rise-in used to stagger the welcome screen elements. */
@@ -580,7 +592,7 @@
     margin-bottom: -0.15em;
     border-radius: 2px;
     vertical-align: baseline;
-    background: var(--droid-accent);
+    background: var(--accent);
     animation: caret-blink 1s ease-in-out infinite;
   }
 
@@ -594,29 +606,6 @@
     .md-typing .md-shell *::after {
       animation: none;
     }
-  }
-
-  /* Toast TTL hairline: drains across the toast's lifetime (duration is set
-     inline per toast). Hovering the toast pauses the drain. */
-  @keyframes droid-toast-ttl {
-    from {
-      transform: scaleX(1);
-    }
-    to {
-      transform: scaleX(0);
-    }
-  }
-
-  .droid-toast-ttl {
-    animation-name: droid-toast-ttl;
-    animation-timing-function: linear;
-    animation-fill-mode: forwards;
-    opacity: 0.45;
-  }
-
-  .group:hover .droid-toast-ttl,
-  .group:focus-within .droid-toast-ttl {
-    animation-play-state: paused;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -640,9 +629,9 @@
   .skeleton-block {
     background: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--droid-text) 6%, var(--droid-surface)) 25%,
-      color-mix(in srgb, var(--droid-text) 13%, var(--droid-surface)) 50%,
-      color-mix(in srgb, var(--droid-text) 6%, var(--droid-surface)) 75%
+      color-mix(in srgb, var(--text) 6%, var(--surface)) 25%,
+      color-mix(in srgb, var(--text) 13%, var(--surface)) 50%,
+      color-mix(in srgb, var(--text) 6%, var(--surface)) 75%
     );
     background-size: 200% 100%;
     animation: skeleton-sweep 1.6s ease-in-out infinite;
@@ -658,7 +647,16 @@
     .review-pane *,
     .files-workspace * {
       scroll-behavior: auto !important;
-      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* Reduced motion removes every transition; infinite animations opt out
+     individually above, so functional spinners keep turning. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
     }
   }
 
@@ -671,6 +669,103 @@
 }
 
 @layer components {
+  /* An inline link inside text: it reads by colour and underlines on hover,
+     like Markdown links. The caller sets the colour (`text-link` for a URL,
+     the entity's own colour for an in-app name). */
+  .inline-link {
+    text-decoration-line: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 2px;
+    transition:
+      color 150ms ease-out,
+      text-decoration-color 150ms ease-out;
+  }
+
+  @media (hover: hover) {
+    .inline-link:hover:not(:disabled) {
+      text-decoration-color: currentColor;
+    }
+  }
+
+  /* Markdown blocks flow one gap apart. The gap rule weighs one element
+     selector: enough to beat Preflight's margin resets, less than any utility,
+     so a block's own margins win. A heading keeps its air above, and the block
+     after a heading tucks under it at the heading's bottom margin; a `space-y`
+     utility would override both. */
+  .md-shell {
+    --md-block-gap: theme('spacing[2.5]');
+  }
+
+  .md-shell-spec {
+    --md-block-gap: theme('spacing.5');
+  }
+
+  :where(.md-shell) > * + :not(template) {
+    margin-top: var(--md-block-gap);
+  }
+
+  :where(.md-shell) > :is(h1, h2, h3, h4, h5, h6) + * {
+    margin-top: 0;
+  }
+
+  /* Inline code in prose. A selection highlights glyphs, never an inline box's
+     padding, so padding would open a gap in the band at every chip and push
+     the following punctuation away. The chip takes no padding; its tint
+     reaches 2px past the text through a shadow, which leaves layout and
+     selection alone. Shadows are sliced like the box, so a wrapped chip still
+     runs off the line end and resumes on the next. */
+  .inline-code {
+    --inline-code-tint: color-mix(in srgb, var(--text) 7%, transparent);
+    background-color: var(--inline-code-tint);
+    box-shadow:
+      -2px 0 0 var(--inline-code-tint),
+      2px 0 0 var(--inline-code-tint);
+    padding-block: 1px;
+  }
+
+  @media (hover: hover) {
+    .inline-code[role='button']:hover {
+      --inline-code-tint: color-mix(in srgb, var(--text) 14%, transparent);
+    }
+  }
+
+  /* The sidebar footer floats over the session list (SidebarFooter). The list
+     reserves the footer's height at its end, and its scrollbar stops above it. */
+  .sidebar-list {
+    padding-bottom: var(--sidebar-footer-height, 0px);
+    scroll-padding-bottom: var(--sidebar-footer-height, 0px);
+  }
+
+  .sidebar-list::-webkit-scrollbar-track {
+    margin-bottom: var(--sidebar-footer-height, 0px);
+  }
+
+  /* While rows sit under the footer they blur and fade into the sidebar tone
+     over its top padding, then disappear behind it. With nothing underneath
+     the layer is invisible, so there is never an edge. The blur sits on its
+     own layer (engineering.md, "Blur on its own layer"). */
+  .sidebar-footer {
+    isolation: isolate;
+  }
+
+  .sidebar-footer::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--sidebar);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 16px);
+    mask-image: linear-gradient(to bottom, transparent, #000 16px);
+    opacity: 0;
+    transition: opacity 150ms ease-out;
+  }
+
+  .sidebar-footer[data-content-under]::before {
+    opacity: 1;
+  }
+
   /* The sidebar update control: a 20px circle that grows leftward into a
      labelled pill while open, with its label sliding out from under a soft mask
      on the edge it is pinned to. The width itself is measured and set in
@@ -683,7 +778,7 @@
 
   .update-pill:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--droid-update) 35%, transparent);
+    box-shadow: var(--shadow-focus-update);
   }
 
   .update-pill-icon {
@@ -697,10 +792,10 @@
     transform: translateX(70%);
     -webkit-mask-image: linear-gradient(
       to right,
-      #000 calc(100% - 9px),
+      #000 calc(100% - 8px),
       transparent calc(100% - 3px)
     );
-    mask-image: linear-gradient(to right, #000 calc(100% - 9px), transparent calc(100% - 3px));
+    mask-image: linear-gradient(to right, #000 calc(100% - 8px), transparent calc(100% - 3px));
     transition:
       opacity 120ms ease-out,
       transform 380ms cubic-bezier(0.32, 0.72, 0, 1);
@@ -722,11 +817,53 @@
     transition: opacity 90ms ease-in;
   }
 
+  /* A floating layer's content box (ui/Popover, ui/Tooltip). It portals to
+     <body>, outside #root's zoom, so it applies the UI zoom itself, and its
+     max height converts the room usePopoverPosition measured in screen
+     pixels into its own zoomed units. */
+  .floating-layer {
+    zoom: var(--ui-zoom);
+    max-height: calc(var(--available-height, 100vh) / var(--ui-zoom));
+  }
+
+  /* Enter from the side the layer actually landed on (data-side): fade in
+     while rising 4px away from the anchor, growing from its edge. */
+  @keyframes floating-layer-enter {
+    from {
+      opacity: 0;
+      transform: translate(var(--enter-x, 0), var(--enter-y, 0)) scale(var(--enter-scale, 0.98));
+    }
+  }
+
+  .floating-layer-enter {
+    animation: floating-layer-enter 140ms var(--ease-smooth-out);
+  }
+
+  .floating-layer-enter[data-side='bottom'] {
+    --enter-y: -4px;
+    transform-origin: top;
+  }
+
+  .floating-layer-enter[data-side='top'] {
+    --enter-y: 4px;
+    transform-origin: bottom;
+  }
+
+  .floating-layer-enter[data-side='left'] {
+    --enter-x: 4px;
+    transform-origin: right;
+  }
+
+  .floating-layer-enter[data-side='right'] {
+    --enter-x: -4px;
+    transform-origin: left;
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .update-pill,
-    .update-pill-icon,
-    .update-pill-label {
-      transition: none;
+    .floating-layer-enter[data-side] {
+      --enter-x: 0;
+      --enter-y: 0;
+      --enter-scale: 1;
     }
   }
 
@@ -829,8 +966,8 @@
       width: min(82%, 280px);
       min-width: 0;
       max-width: none;
-      background: var(--droid-surface);
-      box-shadow: 18px 0 44px color-mix(in srgb, var(--droid-text) 22%, transparent);
+      background: var(--surface);
+      box-shadow: 18px 0 44px color-mix(in srgb, var(--text) 22%, transparent);
     }
 
     .review-diff-scroll {
@@ -874,7 +1011,7 @@
     }
 
     .review-split-left {
-      border-bottom: 1px solid var(--droid-border);
+      border-bottom: 1px solid var(--divider);
     }
   }
 
@@ -894,28 +1031,12 @@
   }
 
   .image-checkerboard {
-    background-color: var(--droid-surface);
+    background-color: var(--surface);
     background-image:
-      linear-gradient(
-        45deg,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 25%,
-        transparent 25%
-      ),
-      linear-gradient(
-        -45deg,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 25%,
-        transparent 25%
-      ),
-      linear-gradient(
-        45deg,
-        transparent 75%,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 75%
-      ),
-      linear-gradient(
-        -45deg,
-        transparent 75%,
-        color-mix(in srgb, var(--droid-text) 7%, transparent) 75%
-      );
+      linear-gradient(45deg, color-mix(in srgb, var(--text) 7%, transparent) 25%, transparent 25%),
+      linear-gradient(-45deg, color-mix(in srgb, var(--text) 7%, transparent) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--text) 7%, transparent) 75%),
+      linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--text) 7%, transparent) 75%);
     background-position:
       0 0,
       0 8px,
@@ -924,50 +1045,36 @@
     background-size: 16px 16px;
   }
 
-  /* Reusable floating card. Used by the right panel and can be applied to any
-     surface (e.g. the left sidebar) that should read as a rounded, elevated
-     card rather than an edge-to-edge rectangle. */
-  .droid-card {
-    @apply flex flex-col rounded-2xl border border-droid-border bg-droid-surface overflow-hidden;
-    /* Theme-derived (see applyTheme): strong on dark, soft and diffuse on light. */
-    box-shadow: var(--droid-shadow, 0 10px 40px rgba(0, 0, 0, 0.35));
+  /* Expand and collapse (feel.md): the grid's single row animates 0fr → 1fr,
+     so the content keeps its natural height without being measured. */
+  .expand-rows {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition:
+      grid-template-rows 240ms var(--ease-smooth-out),
+      opacity 240ms var(--ease-smooth-out);
   }
-
-  .droid-tool-panel {
-    @apply overflow-hidden rounded-xl border border-droid-border bg-droid-elevated/50;
-
-    box-shadow: var(--droid-shadow-sm, 0 4px 16px rgba(0, 0, 0, 0.28));
+  .expand-rows[data-open] {
+    grid-template-rows: 1fr;
   }
-
-  .droid-button {
-    @apply px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150;
-    @apply bg-droid-elevated text-droid-text-secondary hover:text-droid-text hover:bg-droid-active;
-    @apply border border-droid-border;
-  }
-
-  .droid-button-primary {
-    @apply px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-150;
-    @apply bg-droid-text text-droid-bg hover:bg-droid-text-secondary;
-  }
-
-  .droid-input {
-    @apply bg-droid-elevated border border-droid-border rounded-lg px-4 py-2.5 text-sm;
-    @apply text-droid-text placeholder-droid-text-muted focus:outline-none focus:border-droid-border-hover;
-    @apply transition-colors duration-150;
+  @media (prefers-reduced-motion: reduce) {
+    .expand-rows {
+      transition: none;
+    }
   }
 
   .transcript-find-hit {
     border-radius: 0.75rem;
-    outline: 1px solid color-mix(in srgb, var(--droid-accent) 28%, transparent);
+    outline: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   }
 
   .transcript-find-hit-active {
-    outline: 2px solid color-mix(in srgb, var(--droid-accent) 70%, transparent);
-    background-color: color-mix(in srgb, var(--droid-accent) 8%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 8%, transparent);
   }
 
   .transcript-range-bound {
-    outline: 2px dashed color-mix(in srgb, var(--droid-accent) 55%, transparent);
+    outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
   }
 }
 

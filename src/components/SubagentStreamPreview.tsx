@@ -20,15 +20,12 @@ function StreamCaret({ show }: { show: boolean }): ReactNode {
 
 function ObservedPreview({ snapshot }: { snapshot: ChildStreamSnapshot }): ReactNode {
   return (
-    <div className="text-[13px] leading-5">
-      <p
-        data-testid="subagent-working-cue"
-        className="shimmer-text font-medium text-droid-text-secondary"
-      >
+    <div className="text-body">
+      <p data-testid="subagent-working-cue" className="shimmer-text font-medium text-secondary">
         {snapshot.step}…
       </p>
       {snapshot.preview ? (
-        <p className="whitespace-pre-wrap break-words text-droid-text-muted">{snapshot.preview}</p>
+        <p className="whitespace-pre-wrap break-words text-muted">{snapshot.preview}</p>
       ) : null}
     </div>
   );
@@ -45,7 +42,7 @@ function TokenPreview({
 }): ReactNode {
   if (snapshot.previewKind === 'markdown' && snapshot.preview) {
     return (
-      <div className="text-[13px] leading-5 text-droid-text-secondary">
+      <div className="text-body text-secondary">
         <StreamingMarkdown
           source={snapshot.preview}
           live={snapshot.live}
@@ -57,7 +54,7 @@ function TokenPreview({
     );
   }
   return (
-    <p className="whitespace-pre-wrap break-words text-[13px] leading-5 text-droid-text-muted">
+    <p className="whitespace-pre-wrap break-words text-body text-muted">
       {snapshot.preview}
       {caret}
     </p>

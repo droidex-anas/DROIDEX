@@ -1,6 +1,9 @@
 import { useRef, useEffect, useMemo } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X } from '@droidex/icons';
 import { isTranscriptFindShortcut } from '../lib/keyboardShortcuts';
+import { Button } from './ui/Button';
+import { Input } from './ui/Field';
+import { Row } from './ui/Row';
 
 export interface OutlineHeading {
   level: number;
@@ -9,6 +12,10 @@ export interface OutlineHeading {
   content: string;
 }
 
+// extractOutline only reads h1-h3. The wrapper indents deeper headings as
+// layout: level 1 sits at the content edge, each level a step further in.
+const INDENT_BY_LEVEL: Record<number, string> = { 1: '', 2: 'pl-3', 3: 'pl-6' };
+
 function extractOutline(markdown: string): OutlineHeading[] {
   const headings: OutlineHeading[] = [];
   const lines = markdown.split('\n');
@@ -16,7 +23,7 @@ function extractOutline(markdown: string): OutlineHeading[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const match = line.match(/^(#{1,3})\s+(.+)$/);
+    const match = /^(#{1,3})\s+(.+)$/.exec(line);
     if (match) {
       if (currentHeading) {
         headings.push({
@@ -80,7 +87,9 @@ export function SpecOutline({
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   const highlight = (text: string) => {
@@ -90,7 +99,7 @@ export function SpecOutline({
     return (
       <>
         {text.slice(0, idx)}
-        <mark className="bg-transparent text-droid-accent font-medium">
+        <mark className="bg-transparent text-accent font-medium">
           {text.slice(idx, idx + q.length)}
         </mark>
         {text.slice(idx + q.length)}
@@ -99,71 +108,68 @@ export function SpecOutline({
   };
 
   return (
-    <aside
-      data-spec-outline
-      className="w-60 shrink-0 flex flex-col border-l border-droid-border bg-droid-surface/20 select-none"
-    >
+    <aside data-spec-outline className="flex w-60 shrink-0 select-none flex-col bg-bg">
       {/* Search */}
-      <div className="shrink-0 px-3 py-2.5 border-b border-droid-border">
-        <div className="flex items-center gap-2 h-8 px-2.5 rounded-lg bg-droid-bg/50 border border-droid-border focus-within:border-droid-border-hover transition-colors">
-          <Search className="w-3.5 h-3.5 shrink-0 text-droid-text-muted/60" />
-          <input
+      <div className="shrink-0 px-2 py-2.5">
+        <div className="relative">
+          <Input
             ref={searchRef}
             value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => {
+              onSearchChange(e.target.value);
+            }}
             placeholder="Find in outline…"
-            className="flex-1 min-w-0 bg-transparent text-[12px] text-droid-text placeholder-droid-text-muted focus:outline-none"
+            aria-label="Find in outline"
+            spellCheck={false}
+            className="pl-9 pr-9"
+          />
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 size-icon-sm -translate-y-1/2 text-muted"
           />
           {searchQuery && (
-            <button
-              onClick={() => onSearchChange('')}
-              className="p-0.5 rounded text-droid-text-muted/60 hover:text-droid-text transition-colors"
-              title="Clear"
-            >
-              <X className="w-3 h-3" />
-            </button>
+            // The wrapper carries the position: Button always applies
+            // `relative` itself, so the button cannot position itself.
+            <span className="absolute right-1 top-1/2 -translate-y-1/2">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={X}
+                aria-label="Clear search"
+                title="Clear"
+                onClick={() => {
+                  onSearchChange('');
+                }}
+              />
+            </span>
           )}
         </div>
       </div>
 
       {/* Heading list */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2">
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
         {filtered.length === 0 ? (
-          <div className="px-2 py-6 text-center text-[11px] text-droid-text-muted/60">
+          <div className="px-2 py-6 text-center text-caption text-muted">
             {q ? 'No matching sections' : 'No sections'}
           </div>
         ) : (
-          filtered.map((h) => {
-            const isActive = activeId === h.id;
-            return (
-              <button
-                key={h.id}
-                onClick={() => onSelect(h.id)}
-                style={{ paddingLeft: `${(h.level - 1) * 12 + 10}px` }}
-                className={`group w-full flex items-center gap-2 pr-2 py-1.5 rounded-md text-left transition-colors ${
-                  isActive ? 'bg-droid-elevated/60' : 'hover:bg-droid-elevated/30'
-                }`}
-              >
-                <span
-                  className="shrink-0 w-[3px] h-3.5 rounded-full transition-colors"
-                  style={{ background: isActive ? 'var(--droid-accent)' : 'transparent' }}
-                />
-                <span
-                  className={`truncate ${
-                    h.level === 1 ? 'text-[13px]' : 'text-[12px]'
-                  } ${isActive ? 'text-droid-text font-medium' : 'text-droid-text-secondary group-hover:text-droid-text'}`}
-                >
-                  {highlight(h.text)}
-                </span>
-              </button>
-            );
-          })
+          filtered.map((h) => (
+            <div key={h.id} className={INDENT_BY_LEVEL[h.level]}>
+              <Row
+                label={highlight(h.text)}
+                active={activeId === h.id}
+                onClick={() => {
+                  onSelect(h.id);
+                }}
+              />
+            </div>
+          ))
         )}
       </nav>
 
       {/* Footer count */}
-      <div className="shrink-0 h-8 border-t border-droid-border flex items-center justify-center">
-        <span className="text-[11px] font-mono text-droid-text-muted/50">
+      <div className="flex h-8 shrink-0 items-center justify-center">
+        <span className="text-caption tabular-nums text-muted">
           {q ? `${filtered.length}/${headings.length}` : `${headings.length} sections`}
         </span>
       </div>

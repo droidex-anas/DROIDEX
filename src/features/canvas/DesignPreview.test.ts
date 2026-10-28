@@ -134,7 +134,7 @@ test('a zoomed preview submits its untransformed layout viewport for capture', a
     configurable: true,
     value: {
       devicePixelRatio: 2,
-      droidControl: {
+      droidex: {
         canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
         canvasPreviewBind: () => Promise.resolve(true),
         canvasPreviewCapture: (submitted: desktop.CanvasPreviewCaptureRequest) => {

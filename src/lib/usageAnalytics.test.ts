@@ -232,7 +232,7 @@ test('opting out stops a running client for the rest of the launch', async () =>
   const rum = fakeRum();
   await startUsageAnalytics({ bootstrap: async () => ENABLED, loadRum: async () => rum.api });
   Reflect.set(globalThis, 'window', {
-    droidControl: { setUsageAnalytics: async () => ({ enabled: false }) },
+    droidex: { setUsageAnalytics: async () => ({ enabled: false }) },
   });
   try {
     await setUsageAnalyticsPreference(false);
@@ -255,7 +255,7 @@ test('opting out while the SDK is loading never starts a view', async () => {
   // the opt-out has to count from the click, not from the bridge's answer.
   let answerOptOut = (): void => undefined;
   Reflect.set(globalThis, 'window', {
-    droidControl: {
+    droidex: {
       setUsageAnalytics: () =>
         new Promise((resolve) => {
           answerOptOut = () => resolve({ enabled: false });

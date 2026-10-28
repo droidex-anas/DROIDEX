@@ -65,7 +65,7 @@ test('a real capture becomes the item thumbnail the Design home picker shows', a
             () =>
               page.evaluate(
                 ({ canvasId, designId, revisionId }) =>
-                  window.droidControl?.canvasThumbnailRead(canvasId, designId, revisionId),
+                  window.droidex?.canvasThumbnailRead(canvasId, designId, revisionId),
                 { canvasId, ...revision },
               ),
             { timeout: 20_000, intervals: [100] },

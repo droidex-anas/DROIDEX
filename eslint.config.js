@@ -5,10 +5,22 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import prettierConfig from 'eslint-config-prettier';
 import globals from 'globals';
+import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import noSleepInTests from './tools/eslint/no-sleep-in-tests.mjs';
+import designTokensRule, {
+  EXEMPT_FILES as designTokenExemptFiles,
+} from './tools/eslint/design-tokens.mjs';
 
 const SLEEP_MESSAGE = 'No sleeps in tests. Use controlled promises or mocked timers.';
 const TEST_FILES = ['**/*.{test,spec}.{js,jsx,cjs,mjs,ts,tsx,cts,mts}'];
+
+// Committed per-file violation counts for the design-token rule; the rule
+// reports only the excess over them, so lint fails the moment a count rises.
+// npm run quality:design-tokens keeps the baseline itself honest.
+const designTokenBaseline = JSON.parse(
+  readFileSync(join(import.meta.dirname, 'tools/design-token-baseline.json'), 'utf8'),
+);
 
 const electronRestrictedSyntax = [
   {
@@ -34,6 +46,7 @@ export default tseslint.config(
       'benchmark-runs/',
       'benchmarks/',
       'public/',
+      'reports/',
       'tools/**/*',
       '!tools/**/',
       ...TEST_FILES.map((pattern) => `!tools/${pattern}`),
@@ -100,6 +113,25 @@ export default tseslint.config(
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+    },
+  },
+
+  {
+    // Design-token ratchet: className values may only use design-system
+    // tokens (docs/design-system/rules.md). The rule reports only the excess
+    // over tools/design-token-baseline.json, so existing violations keep lint
+    // green while any new one fails it. ModelIcon and GithubIcons carry SVG
+    // art colours and stay exempt by config, not inline disables.
+    files: ['src/**/*.tsx'],
+    ignores: [...designTokenExemptFiles, ...TEST_FILES],
+    plugins: {
+      'design-policy': { rules: { 'design-tokens': designTokensRule } },
+    },
+    rules: {
+      'design-policy/design-tokens': [
+        'error',
+        { baseline: designTokenBaseline, rootDir: import.meta.dirname },
+      ],
     },
   },
 

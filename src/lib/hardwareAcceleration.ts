@@ -22,7 +22,7 @@ export async function setHardwareAcceleration(
 
 function hardwareAccelerationBridge() {
   if (typeof window === 'undefined') return null;
-  const bridge = window.droidControl;
+  const bridge = window.droidex;
   if (
     !bridge ||
     typeof bridge.getHardwareAcceleration !== 'function' ||

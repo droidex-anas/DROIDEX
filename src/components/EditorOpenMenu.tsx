@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, FolderOpen, FileDiff, Check } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, FileDiff, FolderOpen } from 'lucide-react';
 import { listEditors, notify, openProject } from '../lib/desktop';
 import { toast } from '../lib/toast';
 import { EditorIcon } from './EditorIcon';
-import { usePopover } from './environment/usePopover';
+import { Menu } from './ui/Menu';
 import {
   EDITOR_OPTIONS,
   editorLabel,
@@ -48,10 +48,7 @@ export default function EditorOpenMenu({
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<EditorId>(() => getDefaultEditor());
   const [installed, setInstalled] = useState<EditorId[]>([]);
-  const close = useCallback(() => {
-    setOpen(false);
-  }, []);
-  const ref = usePopover(open, close);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const hasCwd = Boolean(cwd);
 
   // Only offer editors that are actually present on this machine. If detection
@@ -76,133 +73,122 @@ export default function EditorOpenMenu({
     };
   }, []);
 
-  const run = (target: EditorTarget) => {
-    setOpen(false);
-    if (!hasCwd) return;
-    void launch(cwd, selected, target);
-  };
-
-  // Picking a default editor only changes the preference — it never launches,
-  // so the menu stays open and the user can then choose an explicit action.
   const chooseDefault = (editor: EditorId) => {
     setDefaultEditor(editor);
     setSelected(editor);
   };
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       {variant === 'toolbar' ? (
-        <div className="flex items-center rounded-md overflow-hidden">
+        <div className="flex items-center rounded-sm overflow-hidden">
           <button
             onClick={() => hasCwd && openCodebase(cwd)}
             disabled={!hasCwd}
             title={
               hasCwd ? `Open codebase with ${editorLabel(selected)}` : 'No folder for this session'
             }
-            className="flex items-center pl-1.5 pr-1 py-1.5 text-droid-text-muted/80 hover:text-droid-text hover:bg-droid-elevated/60 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+            className="flex items-center pl-1.5 pr-1 py-1.5 text-muted/80 hover:text-primary hover:bg-elevated/60 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
           >
             <EditorIcon editor={selected} size={15} />
           </button>
           <button
-            onClick={() => setOpen((v) => !v)}
+            ref={buttonRef}
+            onClick={() => {
+              setOpen((v) => !v);
+            }}
+            aria-haspopup="menu"
+            aria-expanded={open}
             title="Editor actions"
             className={`flex items-center pr-1.5 pl-0.5 py-1.5 transition-colors ${
               open
-                ? 'text-droid-text bg-droid-elevated'
-                : 'text-droid-text-muted/80 hover:text-droid-text hover:bg-droid-elevated/60'
+                ? 'text-primary bg-elevated'
+                : 'text-muted/80 hover:text-primary hover:bg-elevated/60'
             }`}
           >
-            <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+            <ChevronDown
+              className={`size-icon-sm transition-transform ${open ? 'rotate-180' : ''}`}
+            />
           </button>
         </div>
       ) : (
         <button
-          onClick={() => setOpen((v) => !v)}
+          ref={buttonRef}
+          onClick={() => {
+            setOpen((v) => !v);
+          }}
+          aria-haspopup="menu"
+          aria-expanded={open}
           title={`Open with ${editorLabel(selected)}`}
-          className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] transition-colors ${
-            open
-              ? 'text-droid-text bg-droid-elevated'
-              : 'text-droid-text-muted hover:text-droid-text hover:bg-droid-elevated/60'
+          className={`flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-label transition-colors ${
+            open ? 'text-primary bg-elevated' : 'text-muted hover:text-primary hover:bg-elevated/60'
           }`}
         >
           <EditorIcon editor={selected} size={14} />
-          <span className="max-w-[72px] truncate">{editorLabel(selected)}</span>
-          <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <span className="max-w-20 truncate">{editorLabel(selected)}</span>
+          <ChevronDown
+            className={`size-icon-sm transition-transform ${open ? 'rotate-180' : ''}`}
+          />
         </button>
       )}
 
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-52 rounded-xl border border-droid-border bg-droid-surface p-1.5 shadow-droid">
-          <MenuAction
-            icon={<FolderOpen className="w-3.5 h-3.5" />}
-            label="Open codebase"
-            disabled={!hasCwd}
-            onClick={() => run('codebase')}
-          />
-          <MenuAction
-            icon={<FileDiff className="w-3.5 h-3.5" />}
-            label="Open current diff"
-            disabled={!hasCwd || !hasRepo}
-            hint={!hasRepo && hasCwd ? 'No repo' : undefined}
-            onClick={() => run('diff')}
-          />
+      <Menu
+        open={open}
+        onClose={() => {
+          setOpen(false);
+        }}
+        anchorRef={buttonRef}
+        label="Open with"
+        placement="bottom-end"
+        width={208}
+      >
+        <Menu.Item
+          icon={FolderOpen}
+          disabled={!hasCwd}
+          onSelect={() => {
+            void launch(cwd, selected, 'codebase');
+          }}
+        >
+          Open codebase
+        </Menu.Item>
+        <Menu.Item
+          icon={FileDiff}
+          disabled={!hasCwd || !hasRepo}
+          onSelect={() => {
+            void launch(cwd, selected, 'diff');
+          }}
+        >
+          Open current diff
+          {!hasRepo && hasCwd && <span className="ml-auto text-caption text-muted">No repo</span>}
+        </Menu.Item>
 
-          <div className="my-1.5 h-px bg-droid-border/70" />
-          <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-droid-text-muted">
-            Default editor
-          </div>
+        <Menu.Divider />
+        <Menu.Label>Default editor</Menu.Label>
 
-          {options.map((option) => (
-            <button
+        {options.map((option) => {
+          const on = selected === option.id;
+          return (
+            <Menu.Item
               key={option.id}
-              onClick={() => chooseDefault(option.id)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text-secondary hover:bg-droid-elevated/60 hover:text-droid-text transition-colors"
+              role="menuitemradio"
+              aria-checked={on}
+              onSelect={() => {
+                chooseDefault(option.id);
+              }}
             >
-              <EditorIcon editor={option.id} size={15} />
+              <EditorIcon editor={option.id} size={16} />
               <span className="flex-1 truncate">{option.label}</span>
-              {selected === option.id && (
-                <Check
-                  className="w-3.5 h-3.5 shrink-0"
-                  style={{ color: 'var(--droid-accent)' }}
-                  strokeWidth={3}
-                />
+              {on && (
+                <Check className="ml-auto size-icon-sm shrink-0 text-accent" aria-hidden="true" />
               )}
-            </button>
-          ))}
+            </Menu.Item>
+          );
+        })}
 
-          {!hasCwd && (
-            <div className="mt-1 px-2 py-1.5 text-[11px] text-droid-text-muted">
-              This session has no folder yet.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MenuAction({
-  icon,
-  label,
-  hint,
-  disabled,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  hint?: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-droid-text transition-colors hover:bg-droid-elevated/60 disabled:cursor-not-allowed disabled:text-droid-text-muted/60 disabled:hover:bg-transparent"
-    >
-      <span className="shrink-0 text-droid-text-muted">{icon}</span>
-      <span className="flex-1 truncate">{label}</span>
-      {hint && <span className="text-[11px] text-droid-text-muted">{hint}</span>}
-    </button>
+        {!hasCwd && (
+          <div className="px-2 py-1.5 text-caption text-muted">This session has no folder yet.</div>
+        )}
+      </Menu>
+    </>
   );
 }
