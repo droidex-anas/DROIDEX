@@ -296,11 +296,14 @@ export default function PromptInput({
   appSessionId,
   rightInset = false,
   compact = false,
+  placeholder,
 }: {
   // The chat this composer writes into; null drafts a new chat.
   appSessionId: string | null;
   rightInset?: boolean;
   compact?: boolean;
+  /** Replaces the chat prompt's placeholder, for a surface that asks its own question. */
+  placeholder?: string;
 }) {
   const dispatch = useStoreDispatch();
   const askSideChat = useAskSideChat();
@@ -2081,7 +2084,8 @@ export default function PromptInput({
   // new chat; it renders as the top section of the composer card.
   const showStartIn = !activeSession && !missionPreview && (!!cwd || projectDraft);
   const enterSteers = state.liveEnterBehavior === 'steer';
-  let chatPlaceholder = 'What would you like to work on?  (/ for skills, @ for files)';
+  let chatPlaceholder =
+    placeholder ?? 'What would you like to work on?  (/ for skills, @ for files)';
   if (isSpecMode) chatPlaceholder = 'Describe what to build in spec mode...';
   if (projectDraft)
     chatPlaceholder = 'What should this project get done?  (/ for skills, @ for files)';

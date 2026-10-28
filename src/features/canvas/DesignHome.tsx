@@ -7,7 +7,6 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { LibraryBig } from 'lucide-react';
-import { BrandMark } from '../../components/BrandMark';
 import PromptInput from '../../components/PromptInput';
 import { Search, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
@@ -21,13 +20,51 @@ import { useCanvases } from './useCanvases';
 import { useOpenCanvas } from './useOpenCanvas';
 import type { CanvasSummary } from './protocol';
 
+const DESIGN_PLACEHOLDER = 'Describe a screen, a flow, or a component…';
+
 // Each one seeds the composer without sending, so the user keeps typing.
-const EXAMPLES = [
-  'A settings page with a theme toggle',
-  'A pricing card with three tiers',
-  'A dashboard with a usage chart',
-  'A sign-in form with inline errors',
-];
+const STARTERS = [
+  {
+    label: 'Page',
+    hint: 'a settings page with a theme toggle',
+    prompt: 'Design a settings page with a theme toggle',
+  },
+  {
+    label: 'Component',
+    hint: 'a pricing card with three tiers',
+    prompt: 'Design a pricing card with three tiers',
+  },
+  {
+    label: 'Dashboard',
+    hint: 'usage over time with filters',
+    prompt: 'Design a dashboard that shows usage over time, with filters',
+  },
+  {
+    label: 'Form',
+    hint: 'sign-in with inline errors',
+    prompt: 'Design a sign-in form with inline errors',
+  },
+] as const;
+
+// The search field earns its place once the grid is longer than a glance.
+const SEARCH_THRESHOLD = 6;
+
+// The entrance plays on the first visit only; returning to Design is instant.
+let homeEntered = false;
+
+function useEntrance(): boolean {
+  const [animate] = useState(() => !homeEntered);
+  useEffect(() => {
+    homeEntered = true;
+  }, []);
+  return animate;
+}
+
+function rise(animate: boolean, delayMs: number) {
+  return animate
+    ? { className: 'droid-rise', style: { animationDelay: `${String(delayMs)}ms` } }
+    : { className: '', style: undefined };
+}
 
 export function DesignHome() {
   // A canvas the user named by pressing a card, or by New chat with this
@@ -42,11 +79,8 @@ export function DesignHome() {
 
 function NewCanvasHome() {
   const dispatch = useStoreDispatch();
-  const { canvases } = useCanvases();
-  const { openCanvas } = useOpenCanvas();
-  const [query, setQuery] = useState('');
+  const animate = useEntrance();
   const promised = useStoreSelector((current) => current.canvasDraft !== null);
-  const summaries = canvases.status === 'listed' ? searchCanvases(canvases.summaries, query) : [];
 
   // What this home promises its next prompt, on whichever path led here.
   useEffect(() => {
@@ -57,55 +91,11 @@ function NewCanvasHome() {
     <DesignDraftShell
       canvasKey={NEW_CANVAS_KEY}
       title="What should we design?"
-      hint="Every prompt here starts a new canvas and a chat attached to it."
+      animate={animate}
       startingPoint={<LibrarySeedChip />}
+      showStarters
     >
-      <div className="droid-rise mt-12" style={{ animationDelay: '160ms' }}>
-        <div className="flex items-center justify-between gap-3 px-1">
-          <h2 className="text-body-strong text-primary">Your canvases</h2>
-          <label className="flex min-w-0 items-center gap-1.5 rounded-lg bg-elevated/50 px-2 py-1">
-            <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-muted" />
-            <input
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-              }}
-              placeholder="Search canvases"
-              aria-label="Search canvases"
-              className="w-32 min-w-0 bg-transparent text-label font-normal text-primary placeholder:text-muted focus:outline-none"
-            />
-          </label>
-        </div>
-
-        {canvases.status === 'loading' && (
-          <p role="status" className="px-1 pt-3 text-label font-normal text-muted">
-            Reading your canvases…
-          </p>
-        )}
-        {canvases.status === 'failed' && (
-          <p role="alert" className="px-1 pt-3 text-label font-normal text-danger">
-            {canvases.message}
-          </p>
-        )}
-        {canvases.status === 'listed' && summaries.length === 0 && (
-          <p className="px-1 pt-3 text-label font-normal leading-relaxed text-muted">
-            {query
-              ? 'No canvas by that name.'
-              : 'Nothing designed yet. Your first prompt makes the first one.'}
-          </p>
-        )}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {summaries.map((summary) => (
-            <CanvasCard
-              key={summary.canvasId}
-              summary={summary}
-              onOpen={() => {
-                openCanvas(summary);
-              }}
-            />
-          ))}
-        </div>
-      </div>
+      <RecentCanvases animate={animate} />
     </DesignDraftShell>
   );
 }
@@ -125,7 +115,7 @@ function CanvasChatDraft({ canvasId }: { canvasId: string }) {
     <DesignDraftShell
       canvasKey={canvasId}
       title={canvas ? `New chat on ${canvas.name}` : 'New chat on this canvas'}
-      hint="This prompt starts a fresh chat on the canvas you opened; its designs stay as they are."
+      animate={false}
     />
   );
 }
@@ -134,59 +124,154 @@ function CanvasChatDraft({ canvasId }: { canvasId: string }) {
 function DesignDraftShell({
   canvasKey,
   title,
-  hint,
+  animate,
   startingPoint,
+  showStarters = false,
   children,
 }: {
   /** Whose design-system choice the draft's prompt runs under. */
   canvasKey: string;
   title: string;
-  hint: string;
+  animate: boolean;
   /** What a new canvas starts from, beside the design-system chip. */
   startingPoint?: ReactNode;
+  showStarters?: boolean;
   children?: ReactNode;
 }) {
   const dispatch = useStoreDispatch();
+  // A hovered or focused starter shows its whole prompt in the empty composer.
+  const [preview, setPreview] = useState<string | null>(null);
+  const heading = rise(animate, 0);
+  const composer = rise(animate, 70);
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
-      <div data-electron-drag-region className="h-9 shrink-0" />
       <div
         // The composer's column (PromptInput) plus this page's own inset.
         style={{ maxWidth: 'calc(42rem + 46px)' }}
-        className="mx-auto flex w-full flex-col px-6 pb-10"
+        className="mx-auto flex min-h-full w-full flex-col px-6"
       >
-        <div className="droid-rise flex flex-col items-center pt-12">
-          <BrandMark size={30} className="text-accent" />
-          <h1 className="mt-5 text-title text-primary">{title}</h1>
-          <p className="mt-2 text-center text-body text-muted">{hint}</p>
-        </div>
+        <div data-electron-drag-region className="h-9 shrink-0" />
+        <div className="flex flex-1 flex-col justify-center py-12">
+          <h1
+            className={`text-balance text-center text-title text-primary ${heading.className}`}
+            style={heading.style}
+          >
+            {title}
+          </h1>
 
-        <div className="droid-rise mt-7" style={{ animationDelay: '90ms' }}>
-          <div className="mb-2 flex gap-1 px-3">
-            <CanvasDesignSystem canvasKey={canvasKey} appSessionId={null} />
-            {startingPoint}
+          <div className={`mt-8 ${composer.className}`} style={composer.style}>
+            <PromptInput appSessionId={null} compact placeholder={preview ?? DESIGN_PLACEHOLDER} />
+            <div className="flex gap-1 px-3">
+              <CanvasDesignSystem canvasKey={canvasKey} appSessionId={null} />
+              {startingPoint}
+            </div>
           </div>
-          <PromptInput appSessionId={null} compact />
-          <ul className="mt-2 flex flex-wrap gap-1.5 px-3">
-            {EXAMPLES.map((example) => (
-              <li key={example}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch({ type: 'SEED_COMPOSER', text: example, replace: true });
-                  }}
-                  className="cursor-pointer rounded-full bg-accent/[0.07] px-3 py-1.5 text-label font-normal text-secondary transition-colors hover:bg-accent/15 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
-                >
-                  {example}
-                </button>
-              </li>
-            ))}
-          </ul>
+
+          {showStarters && (
+            <ul aria-label="Starting points" className="mt-6 max-w-md px-3">
+              {STARTERS.map((starter, index) => {
+                const entry = rise(animate, 140 + index * 30);
+                return (
+                  <li key={starter.label} className={entry.className} style={entry.style}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreview(null);
+                        dispatch({ type: 'SEED_COMPOSER', text: starter.prompt, replace: true });
+                      }}
+                      onMouseEnter={() => {
+                        setPreview(starter.prompt);
+                      }}
+                      onMouseLeave={() => {
+                        setPreview(null);
+                      }}
+                      onFocus={() => {
+                        setPreview(starter.prompt);
+                      }}
+                      onBlur={() => {
+                        setPreview(null);
+                      }}
+                      className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-elevated/60"
+                    >
+                      <span className="w-20 shrink-0 text-body-strong text-secondary transition-colors group-hover:text-primary">
+                        {starter.label}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-body text-muted transition-colors group-hover:text-secondary">
+                        {starter.hint}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
 
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * The canvases already made, under the composer. A first run has none, so the
+ * section stays out of the way until there is something to reopen.
+ */
+function RecentCanvases({ animate }: { animate: boolean }) {
+  const { canvases } = useCanvases();
+  const { openCanvas } = useOpenCanvas();
+  const [query, setQuery] = useState('');
+  const section = rise(animate, 260);
+
+  if (canvases.status === 'loading') return null;
+  if (canvases.status === 'failed')
+    return (
+      <p role="alert" className="px-3 pb-10 text-caption text-danger">
+        {canvases.message}
+      </p>
+    );
+  if (canvases.summaries.length === 0) return null;
+
+  const summaries = searchCanvases(canvases.summaries, query);
+  return (
+    <section
+      aria-label="Recent canvases"
+      className={`pb-10 ${section.className}`}
+      style={section.style}
+    >
+      <div className="flex h-control-md items-center justify-between gap-3 px-3">
+        <h2 className="text-label text-muted">Recent</h2>
+        {canvases.summaries.length > SEARCH_THRESHOLD && (
+          <label className="flex min-w-0 items-center gap-1.5 rounded-md bg-elevated px-2 py-1">
+            <Search aria-hidden className="size-icon-sm shrink-0 text-muted" />
+            <input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              placeholder="Search canvases"
+              aria-label="Search canvases"
+              className="w-32 min-w-0 bg-transparent text-label font-normal text-primary placeholder:text-muted focus:outline-none"
+            />
+          </label>
+        )}
+      </div>
+      {summaries.length === 0 ? (
+        <p className="px-3 pt-2 text-caption text-muted">No canvas by that name.</p>
+      ) : (
+        <div className="mt-2 grid grid-cols-2 gap-3 px-3 sm:grid-cols-3">
+          {summaries.map((summary) => (
+            <CanvasCard
+              key={summary.canvasId}
+              summary={summary}
+              onOpen={() => {
+                openCanvas(summary);
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -220,9 +305,9 @@ function LibrarySeedChip() {
         onClick={() => {
           setPicking(true);
         }}
-        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-muted transition-colors hover:bg-active hover:text-primary"
       >
-        <LibraryBig aria-hidden className="h-3.5 w-3.5 shrink-0" />
+        <LibraryBig aria-hidden className="size-icon-sm shrink-0" />
         <span className="max-w-40 truncate">{armed ? armed.name : 'From library…'}</span>
       </button>
       {armed && (
@@ -233,7 +318,7 @@ function LibrarySeedChip() {
           onClick={() => {
             armLibrarySeed(null);
           }}
-          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-active hover:text-primary"
         >
           <X aria-hidden className="h-2.5 w-2.5" strokeWidth={3} />
         </button>
@@ -259,15 +344,15 @@ function CanvasCard({ summary, onOpen }: { summary: CanvasSummary; onOpen: () =>
     <button
       type="button"
       onClick={onOpen}
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl bg-raised text-left shadow-sm transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl bg-surface text-left transition-colors hover:bg-elevated"
     >
-      {/* A real thumbnail arrives with captured frames (Task 5c); until then the
-          tile stays a quiet surface rather than a fake preview. */}
-      <span className="flex h-20 items-center justify-center bg-elevated/40 text-caption text-muted">
+      {/* No captured thumbnail yet, so the tile shows the board's dot grid
+          rather than a fake preview. */}
+      <span className="image-grid-dots flex h-24 items-end justify-end bg-elevated/40 p-2 text-caption text-muted">
         {summary.designCount === 0 ? 'Empty' : designCountLabel(summary.designCount)}
       </span>
-      <span className="flex flex-col gap-0.5 px-3 py-2">
-        <span className="truncate text-label text-primary">{summary.name}</span>
+      <span className="flex flex-col gap-0.5 px-3 py-2.5">
+        <span className="truncate text-body-strong text-primary">{summary.name}</span>
         <span className="truncate text-caption text-muted">
           {formatRelativeTime(summary.updatedAt, Date.now())} ·{' '}
           {chatCountLabel(summary.attachedAppSessionIds.length)}
