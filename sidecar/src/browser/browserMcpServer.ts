@@ -1,18 +1,25 @@
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
-import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import type { BrowserSessionManager } from './BrowserSessionManager.js';
-import type { BrowserState, DesignReference } from './types.js';
-import { jsonResult, safeTool, type ToolHandlerResult } from '../mcpToolUtils.js';
+import type { BrowserState, BrowserViewportMode, DesignReference } from './types.js';
+import { redactBrowserUrl } from './browserUrl.js';
+import { jsonResult, safeTool } from '../mcpToolUtils.js';
+import {
+  browserActs,
+  clickShape,
+  fillShape,
+  MAX_BATCH_STEPS,
+  pointShape,
+  pressShape,
+  said,
+  scrollShape,
+  stepSchema,
+  typeShape,
+  waitShape,
+} from './browserActionTools.js';
+import { consoleText, inspectionText, networkText } from './browserDebugText.js';
 
-const viewportSchema = z.object({
-  width: z.number().int().min(240).max(4096),
-  height: z.number().int().min(240).max(4096),
-  deviceScaleFactor: z.number().positive().max(4).optional(),
-});
-
-const viewportModeSchema = z.enum(['fit', 'desktop', 'laptop', 'tablet', 'mobile', 'custom']);
-const scrollDirectionSchema = z.enum(['up', 'down', 'left', 'right']);
+const viewportModeSchema = z.enum(['fit', 'desktop', 'laptop', 'tablet', 'mobile']);
 
 export function createBrowserMcpServer(
   manager: BrowserSessionManager,
@@ -23,308 +30,308 @@ export function createBrowserMcpServer(
     if (!id) throw new Error('Browser tools are not attached to a live DROIDEX session yet.');
     return id;
   };
+  const { act, batch } = browserActs(manager);
+
+  // What browser_viewport says once a size is in place.
+  async function useSize(size: BrowserViewportMode): Promise<string> {
+    const { viewport, viewportMode } = await manager.useViewport(appSessionId(), size);
+    if (viewportMode !== size)
+      return `The user switched the page to ${viewportMode} meanwhile; browser_screenshot states its size.`;
+    if (size === 'fit')
+      return "The page follows the user's pane; browser_screenshot states its size.";
+    const laidOut = `The page is laid out at ${size} size, ${String(viewport.width)} × ${String(viewport.height)} CSS px`;
+    if (size === 'tablet' || size === 'mobile')
+      return `${laidOut}, as a touch device. Reload it if the site picks its version for the device on the server.`;
+    return `${laidOut}.`;
+  }
 
   return createSdkMcpServer({
-    name: 'droidmaxx-browser',
+    name: 'droidex-browser',
     version: '0.1.0',
     tools: [
       tool(
         'browser_open',
         [
-          'Open and show a URL in the live DROIDEX browser pane for this chat session.',
-          'This is the browser the user can see and control in DROIDEX.',
-          'When the user asks to open a site, navigate, click, inspect, or control a browser, call this tool first with the site URL.',
-          'If the user names a domain without a scheme, pass it directly; DROIDEX will load it as https.',
-          'Do not ask the user for a URL when they already named a site or domain.',
+          'Open a URL in the live DROIDEX browser for this chat, the one the user can see, or go back, forward or reload.',
+          'When the user asks to open a site, navigate, click or inspect, start here; a bare domain loads as https.',
+          'Do not ask the user for a URL they already named.',
           'Do not use Read, FetchUrl, curl, or agent-browser as a substitute for browser work.',
+          'Then call browser_read_page to see the page and get refs.',
         ].join(' '),
         {
           url: z
             .string()
             .min(1)
-            .describe(
-              'Absolute URL to open, such as https://example.com or http://127.0.0.1:1421/.',
-            ),
-          viewport: viewportSchema.optional().describe('Optional explicit browser viewport.'),
-          viewportMode: viewportModeSchema.optional().describe('Viewport preset label for the UI.'),
+            .optional()
+            .describe('URL to open, such as https://example.com or http://127.0.0.1:1421/.'),
+          action: z
+            .enum(['back', 'forward', 'reload'])
+            .optional()
+            .describe('Go back, forward or reload instead of opening a URL.'),
         },
         safeTool(async (input) => {
-          const state = await manager.open({
-            appSessionId: appSessionId(),
-            url: input.url,
-            viewport: input.viewport
-              ? { ...input.viewport, deviceScaleFactor: input.viewport.deviceScaleFactor ?? 2 }
-              : undefined,
-            viewportMode: input.viewportMode ?? (input.viewport ? 'custom' : undefined),
-          });
-          return jsonResult({
-            message:
-              'Opened the live DROIDEX browser. The response includes current page refs; use them directly with browser_click, browser_type, and browser_scroll.',
-            ...stateForTool(state),
-          });
+          const id = appSessionId();
+          if (input.action === 'back')
+            return said({ done: 'Went back.', outcome: await manager.goBack(id) });
+          if (input.action === 'forward')
+            return said({ done: 'Went forward.', outcome: await manager.goForward(id) });
+          if (input.action === 'reload')
+            return said({ done: 'Reloaded the page.', outcome: await manager.reload(id) });
+          if (!input.url) throw new Error('Pass a url, or an action: back, forward or reload.');
+          // A browser the agent starts is on Fit, so the page takes the pane's size.
+          const outcome = await manager.open({ appSessionId: id, url: input.url });
+          return said({ done: 'Opened the page.', outcome });
         }),
       ),
       tool(
-        'browser_snapshot',
-        'Refresh compact DOM refs and visible page state when the page changed or current refs became stale.',
-        {},
-        safeTool(async () => {
-          const state = await manager.refresh(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
+        'browser_read_page',
+        [
+          'Read the page as a compact accessibility tree, one element per line, such as - button "Sign in" [ref=e3].',
+          'Use the refs with browser_click, browser_hover, browser_fill, browser_type, browser_scroll and browser_inspect.',
+          'A ref stays valid while its element is on the page; after a navigation, read the page again.',
+          'Ends with [Title · url]. Sensitive field values are masked.',
+        ].join(' '),
+        {
+          ref: z.string().optional().describe('Read only this element and what is inside it.'),
+          filter: z
+            .enum(['interactive', 'all'])
+            .optional()
+            .describe(
+              'interactive lists only controls; all (default) includes text and structure.',
+            ),
+          max_chars: z
+            .number()
+            .int()
+            .min(500)
+            .max(100_000)
+            .optional()
+            .describe('Longest answer to return. Defaults to 12000 characters.'),
+        },
+        safeTool(async (input) =>
+          manager.readPage(appSessionId(), {
+            ref: input.ref,
+            filter: input.filter,
+            maxChars: input.max_chars,
+          }),
+        ),
       ),
       tool(
-        'browser_reload',
-        'Reload the current live DROIDEX browser page. Use browser_snapshot after reload when fresh refs are needed.',
-        {},
-        safeTool(async () => {
-          const state = await manager.reload(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
+        'browser_read_text',
+        [
+          'Read the main content of the page as light markdown: headings, paragraphs, lists, table rows and links.',
+          'Cheaper than browser_read_page for reading; it has no refs, so use browser_read_page to act.',
+          'Field values are left out. Ends with [Title · url].',
+        ].join(' '),
+        {
+          max_chars: z
+            .number()
+            .int()
+            .min(500)
+            .max(100_000)
+            .optional()
+            .describe('Longest answer to return. Defaults to 12000 characters.'),
+        },
+        safeTool(async (input) => manager.readText(appSessionId(), input.max_chars)),
       ),
       tool(
-        'browser_back',
-        'Go back one page in the live DROIDEX browser history and return fresh page refs.',
-        {},
-        safeTool(async () => {
-          const state = await manager.goBack(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
-      ),
-      tool(
-        'browser_forward',
-        'Go forward one page in the live DROIDEX browser history and return fresh page refs.',
-        {},
-        safeTool(async () => {
-          const state = await manager.goForward(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
+        'browser_find',
+        'Find lines of the page tree that contain some text (or match a /regex/), each with the elements around it, up to 20.',
+        {
+          query: z.string().min(1).describe('Text to look for, or a /regex/ with optional flags.'),
+        },
+        safeTool(async (input) => manager.find(appSessionId(), input.query)),
       ),
       tool(
         'browser_screenshot',
-        'Capture the current live DROIDEX browser viewport as a high-detail PNG image for visual inspection. Use browser_snapshot for normal navigation refs.',
+        [
+          'Capture the live DROIDEX browser as a JPEG (a PNG with format: "png"): the viewport, one ref, a region, or the full page.',
+          'One image pixel is one CSS pixel unless the long edge would pass 1568; the result states the scale and origin so image points convert exactly.',
+          'Sensitive fields are masked. Use browser_read_page to read the page and get refs.',
+        ].join(' '),
         {
-          fullPage: z
+          ref: z.string().optional().describe('Crop to this element from browser_read_page.'),
+          region: z
+            .object({
+              x: z.number(),
+              y: z.number(),
+              width: z.number().positive(),
+              height: z.number().positive(),
+            })
+            .optional()
+            .describe('Crop to this region of the viewport, in CSS pixels.'),
+          full_page: z
             .boolean()
             .optional()
-            .describe('Capture the full page instead of only the visible viewport.'),
-          deviceScaleFactor: z
-            .number()
-            .positive()
-            .max(4)
+            .describe('Capture the whole page instead of the viewport.'),
+          format: z
+            .enum(['jpeg', 'png'])
             .optional()
-            .describe(
-              'Temporary screenshot scale. Defaults to the current high-detail viewport scale.',
-            ),
+            .describe('png only for pixel-exact design checks; jpeg (default) is far smaller.'),
         },
         safeTool(async (input) => {
-          const path = await manager.screenshot(appSessionId(), {
-            fullPage: input.fullPage ?? false,
-            deviceScaleFactor: input.deviceScaleFactor,
+          if ([input.ref, input.region, input.full_page].filter(Boolean).length > 1)
+            throw new Error('Pass at most one of ref, region and full_page.');
+          const shot = await manager.screenshot(appSessionId(), {
+            ref: input.ref,
+            region: input.region,
+            fullPage: input.full_page,
+            format: input.format,
           });
-          return imageToolResult(path, { ok: true, screenshotPath: path, mimeType: 'image/png' });
+          return {
+            content: [
+              { type: 'text', text: `${shot.text}\nSaved at ${shot.path}` },
+              { type: 'image', data: shot.image, mimeType: shot.mimeType },
+            ],
+          };
         }),
       ),
       tool(
         'browser_click',
-        'Move the agent cursor and click in the live DROIDEX browser by ref or viewport coordinates. Prefer refs returned by browser_snapshot.',
-        {
-          ref: z
-            .string()
-            .optional()
-            .describe('Element ref returned by browser_snapshot. Preferred when available.'),
-          x: z.number().optional().describe('Viewport x coordinate when clicking by coordinate.'),
-          y: z.number().optional().describe('Viewport y coordinate when clicking by coordinate.'),
-        },
-        safeTool(async (input) => {
-          const state = await manager.click({
-            appSessionId: appSessionId(),
-            ref: input.ref,
-            x: input.x,
-            y: input.y,
-          });
-          return jsonResult(stateForTool(state));
-        }),
+        [
+          'Click in the live DROIDEX browser by ref (preferred) or viewport x and y.',
+          'A click by ref is refused, naming the element in the way, when something covers it.',
+        ].join(' '),
+        clickShape,
+        safeTool(async (input) => said(await act.click(appSessionId(), input))),
       ),
       tool(
         'browser_hover',
-        'Move the trusted browser pointer over an element by ref or viewport coordinates, then return fresh page refs.',
-        {
-          ref: z.string().optional().describe('Element ref returned by browser_snapshot.'),
-          x: z.number().optional().describe('Viewport x coordinate when hovering by coordinate.'),
-          y: z.number().optional().describe('Viewport y coordinate when hovering by coordinate.'),
-        },
-        safeTool(async (input) => {
-          const state = await manager.hover({
-            appSessionId: appSessionId(),
-            ref: input.ref,
-            x: input.x,
-            y: input.y,
-          });
-          return jsonResult(stateForTool(state));
-        }),
+        'Move the pointer over an element by ref or viewport x and y, to open menus or tooltips.',
+        pointShape,
+        safeTool(async (input) => said(await act.hover(appSessionId(), input))),
       ),
       tool(
-        'browser_select',
-        'Choose an option in a native select element by ref. The value may be the option value or visible label.',
-        {
-          ref: z.string().describe('Select element ref returned by browser_snapshot.'),
-          value: z.string().describe('Option value or exact visible label to select.'),
-        },
-        safeTool(async (input) => {
-          const state = await manager.selectOption(appSessionId(), input.ref, input.value);
-          return jsonResult(stateForTool(state));
-        }),
+        'browser_fill',
+        [
+          'Set a field by ref in one step: text, a select option (its value or visible label), a checkbox or radio (true or false), or a date (YYYY-MM-DD).',
+          'Frameworks see the change as typed input. To type into the focused element use browser_type; for keys, browser_press.',
+        ].join(' '),
+        fillShape,
+        safeTool(async (input) => said(await act.fill(appSessionId(), input))),
       ),
       tool(
         'browser_type',
-        'Type text into the currently focused element in the live DROIDEX browser. Click or focus an input first.',
-        {
-          text: z.string().describe('Text to type into the currently focused browser element.'),
-        },
-        safeTool(async (input) => {
-          const state = await manager.type(appSessionId(), input.text);
-          return jsonResult(stateForTool(state));
-        }),
+        'Type text into a field by ref, or into whatever has focus, and optionally press Enter after. The page gets it as text input, not a key event per character; for keys use browser_press.',
+        typeShape,
+        safeTool(async (input) => said(await act.type(appSessionId(), input))),
       ),
       tool(
-        'browser_keypress',
-        'Press a key in the live DROIDEX browser.',
-        {
-          key: z
-            .string()
-            .min(1)
-            .describe('Key name to press, such as Enter, Escape, Tab, ArrowDown.'),
-        },
-        safeTool(async (input) => {
-          const state = await manager.keypress(appSessionId(), input.key);
-          return jsonResult(stateForTool(state));
-        }),
+        'browser_press',
+        'Press a key or chord on whatever has focus, such as Enter, Escape, Tab, ArrowDown, Shift+Tab or Meta+a.',
+        pressShape,
+        safeTool(async (input) => said(await act.press(appSessionId(), input))),
       ),
       tool(
-        'browser_resize',
-        'Resize the viewport of the live DROIDEX browser. Use this to check responsive layouts or to match a specific screen size.',
+        'browser_viewport',
+        [
+          "Lay the page out at a standard size: desktop (1440×900), laptop (1280×800), tablet (820×1180) or mobile (390×844); fit, where a browser you open starts, follows the size of the user's pane.",
+          'The page reflows to it; the user sees the same page scaled to fit their pane. Use it to check a responsive layout.',
+          "Tablet and mobile also tell the page it is a touch device (touch points, a coarse pointer) with Chrome for Android's user agent; your clicks stay mouse clicks. A scheme asks the page for its light or dark look.",
+        ].join(' '),
         {
-          viewport: viewportSchema.describe('New viewport dimensions.'),
-          viewportMode: viewportModeSchema.optional().describe('Viewport preset label.'),
+          size: viewportModeSchema.optional().describe('The size to lay the page out at.'),
+          scheme: z
+            .enum(['light', 'dark', 'auto'])
+            .optional()
+            .describe(
+              "The colour scheme to ask the page for, until the app quits; auto follows the system's setting.",
+            ),
         },
         safeTool(async (input) => {
-          const state = await manager.resizeViewport({
-            appSessionId: appSessionId(),
-            viewport: {
-              ...input.viewport,
-              deviceScaleFactor: input.viewport.deviceScaleFactor ?? 2,
-            },
-            viewportMode: input.viewportMode ?? 'custom',
-          });
-          return jsonResult(stateForTool(state));
+          const answers: string[] = [];
+          if (input.size) answers.push(await useSize(input.size));
+          if (input.scheme) {
+            await manager.useColorScheme(appSessionId(), input.scheme);
+            answers.push(
+              input.scheme === 'auto'
+                ? "The page follows the system's light or dark setting."
+                : `The page is asked for its ${input.scheme} scheme.`,
+            );
+          }
+          return answers.join(' ') || 'Pass a size, a scheme, or both.';
         }),
       ),
       tool(
         'browser_scroll',
-        'Scroll the live DROIDEX browser page, then call browser_snapshot to refresh refs.',
-        {
-          direction: scrollDirectionSchema.describe('Direction to scroll.'),
-          pixels: z.number().positive().max(4000).optional().describe('Scroll amount in pixels.'),
-          ref: z.string().optional().describe('Optional ref inside a nested scroll container.'),
-        },
-        safeTool(async (input) => {
-          const state = await manager.scroll(
-            appSessionId(),
-            input.direction,
-            input.pixels,
-            undefined,
-            input.ref,
-          );
-          return jsonResult(stateForTool(state));
-        }),
+        'Scroll the page, or inside the element a ref names; a ref with no direction is only brought into view. Then read the page again to see what came into view.',
+        scrollShape,
+        safeTool(async (input) => said(await act.scroll(appSessionId(), input))),
       ),
       tool(
         'browser_wait',
-        'Wait for browser text, a ref, or a URL fragment before continuing. With no condition, waits for the requested duration.',
+        [
+          'Wait until text is on the page, text is gone, a ref is on the page, or the address has a fragment; with none of them, wait for the time.',
+          'Checked again as the page changes, so it returns as soon as everything holds.',
+        ].join(' '),
+        waitShape,
+        safeTool(async (input) => said(await act.wait(appSessionId(), input))),
+      ),
+      tool(
+        'browser_batch',
+        [
+          `Run up to ${String(MAX_BATCH_STEPS)} actions in order in one call, such as filling a form, submitting it and waiting for the result.`,
+          'Each step is { action, ...the fields of browser_<action> }. It stops at the first step that fails and answers one line per step, then [Title · url].',
+        ].join(' '),
         {
-          text: z.string().optional().describe('Visible ref text or accessible name to wait for.'),
-          ref: z.string().optional().describe('Element ref to wait for.'),
-          urlIncludes: z.string().optional().describe('URL fragment to wait for.'),
-          timeoutMs: z
-            .number()
-            .int()
-            .min(0)
-            .max(15_000)
-            .optional()
-            .describe('Maximum wait in milliseconds. Defaults to 5000.'),
+          steps: z.array(stepSchema).min(1).max(MAX_BATCH_STEPS).describe('The actions, in order.'),
         },
-        safeTool(async (input) => {
-          const state = await manager.wait(appSessionId(), input);
-          return jsonResult(stateForTool(state));
-        }),
+        safeTool(async (input) => batch(appSessionId(), input.steps)),
       ),
       tool(
         'browser_inspect',
         [
-          'Inspect one element without enabling Design Mode or taking another full-page snapshot.',
-          'Returns bounded HTML, sanitized attributes, geometry, and iframe source/accessibility metadata.',
-          'Use a ref from the latest browser response when possible, or provide a CSS selector.',
-          'Credential values, auth tokens, and sensitive URL parameters are redacted.',
+          'Look at one element: its role and name, box, key attributes, the computed styles that say how it looks (colours, font, display, spacing), its text and its markup.',
+          'Pass a ref from browser_read_page, or a CSS selector. Field values, tokens and sensitive URL parts are redacted.',
         ].join(' '),
         {
-          ref: z.string().optional().describe('Element ref from the latest browser response.'),
+          ref: z.string().optional().describe('Element ref from browser_read_page.'),
           selector: z.string().optional().describe('CSS selector when no ref is available.'),
         },
-        safeTool(async (input) => {
-          const inspection = await manager.inspect(appSessionId(), input);
-          return jsonResult({ ok: true, inspection });
-        }),
+        safeTool(async (input) => inspectionText(await manager.inspect(appSessionId(), input))),
       ),
       tool(
         'browser_network',
         [
-          'Read the latest bounded network diagnostics for this browser session.',
-          'Returns at most 100 completed or failed requests with method, URL, resource type, status, and error.',
-          'Headers and response bodies are never captured; credentials and sensitive URL parameters are redacted.',
+          'The requests the page finished since you last read them, the newest 100 at most: status or failure, method, URL, type, how long each took once it was sent, and its size when the server stated one.',
+          'No headers or bodies; credentials and sensitive URL parts are redacted.',
         ].join(' '),
-        {
-          clear: z
-            .boolean()
-            .optional()
-            .describe('Return the current events and clear the retained buffer afterward.'),
-        },
-        safeTool(async (input) => {
-          const events = await manager.network(appSessionId(), input.clear ?? false);
-          return jsonResult({ ok: true, events });
-        }),
+        {},
+        safeTool(async () => networkText(await manager.network(appSessionId()))),
       ),
       tool(
         'browser_console',
         [
-          'Read the latest bounded JavaScript console diagnostics for this browser session.',
-          'Returns at most 100 entries with level, message, line, and source.',
-          'Messages and source URLs are length-limited and credential-like values are redacted.',
+          'The console messages and uncaught errors since you last read them, the newest 100 at most: level, message and where it came from.',
+          "Messages are length-limited, and the usual shapes of a credential in them (in a URL, or after a name such as token=) are redacted; this is the page's own text, not a guarantee that no secret is in it.",
         ].join(' '),
-        {
-          clear: z
-            .boolean()
-            .optional()
-            .describe('Return the current entries and clear the retained buffer afterward.'),
-        },
-        safeTool(async (input) => {
-          const events = await manager.console(appSessionId(), input.clear ?? false);
-          return jsonResult({ ok: true, events });
-        }),
+        {},
+        safeTool(async () => consoleText(await manager.console(appSessionId()))),
+      ),
+      tool(
+        'browser_evaluate',
+        [
+          'Run JavaScript in the page. The script is the body of an async function: `return` what you want back and `await` as needed. The result comes back as JSON, cut at 4,000 characters, within 5 seconds.',
+          'It works only on a site the user has allowed for developer tools: the first call on a site asks them, and their answer stands until they quit the app.',
+          'Use it for what the other tools cannot reach, such as app state, storage or a computed value. Read and act with the other tools.',
+        ].join(' '),
+        { script: z.string().describe('The function body, such as `return document.title`.') },
+        safeTool(async (input) => (await manager.evaluate(appSessionId(), input.script)).text),
       ),
       tool(
         'browser_fill_login',
         [
           'Fill the saved login for the current site in the live DROIDEX browser.',
-          'You never see the username or password: the values are injected securely in the app and are redacted from every snapshot. This lets you authorize a sign-in without reading the secret.',
-          'Saved logins are strictly opt-in. Use only when a sign-in form is visible and the user has previously enabled saved logins and saved a credential for this site.',
-          'Returns an error if saved logins are disabled or no credential is saved; in that case ask the user to sign in once and accept the save-login prompt. After filling, you may submit the form with browser_click or browser_keypress.',
+          'You never see the username or password: the app writes them into the form, and every read masks them. This lets you authorize a sign-in without reading the secret.',
+          'Saved logins are strictly opt-in. Use only when a sign-in form is visible and the user has enabled saved logins and saved one for this site.',
+          'Returns an error if saved logins are off or none is saved; then ask the user to sign in once and accept the save-login prompt. After filling, submit with browser_click or browser_press.',
         ].join(' '),
         {},
-        safeTool(async () => {
-          const state = await manager.fillCredentials(appSessionId());
-          return jsonResult(stateForTool(state));
-        }),
+        safeTool(async () =>
+          said({
+            done: 'Filled the saved login.',
+            outcome: await manager.fillCredentials(appSessionId()),
+          }),
+        ),
       ),
       tool(
         'design-mode',
@@ -410,24 +417,13 @@ function stateForTool(
 ): Record<string, unknown> {
   return {
     ok: true,
-    url: state.url,
+    url: redactBrowserUrl(state.url),
     title: state.title,
     viewport: state.viewport,
     viewportMode: state.viewportMode,
-    screenshotPath: state.screenshotPath,
     scroll: state.scroll,
     canGoBack: state.canGoBack ?? false,
     canGoForward: state.canGoForward ?? false,
-    refs: state.refs.map((ref) => ({
-      ref: ref.ref,
-      tagName: ref.tagName,
-      role: ref.role,
-      name: ref.name,
-      text: ref.text,
-      selector: ref.selector,
-      attributes: ref.attributes,
-      box: ref.box,
-    })),
     designReferences: designReferences.map(designReferenceSummary),
   };
 }
@@ -447,7 +443,7 @@ function designReferenceSummary(ref: DesignReference): Record<string, unknown> {
     selector: ref.detail?.selector,
     selectorVerified: ref.detail?.selectorVerified,
     screenshotPath: anchor.screenshotPath,
-    url: ref.url,
+    url: redactBrowserUrl(ref.url),
   };
   if (anchor.strokes) out.strokes = anchor.strokes;
   // The annotated screenshot bytes are returned as a separate image block by
@@ -474,14 +470,5 @@ function designReferenceDetail(ref: DesignReference): Record<string, unknown> {
           html: ref.detail.html,
         }
       : undefined,
-  };
-}
-
-async function imageToolResult(path: string, metadata: unknown): Promise<ToolHandlerResult> {
-  return {
-    content: [
-      { type: 'text', text: jsonResult(metadata) },
-      { type: 'image', data: await readFile(path, 'base64'), mimeType: 'image/png' },
-    ],
   };
 }

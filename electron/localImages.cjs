@@ -42,6 +42,14 @@ function imageMimeForPath(filePath) {
   return MIME_BY_EXTENSION.get(ext) ?? null;
 }
 
+// The first extension listed for a MIME type is its canonical one (jpg, not jpeg).
+function imageExtensionForMime(mime) {
+  for (const [ext, candidate] of MIME_BY_EXTENSION) {
+    if (candidate === mime) return ext;
+  }
+  return null;
+}
+
 /**
  * Extracts the absolute file path from a `droidex-img://` URL, or throws when
  * the URL is not one we issued. `~` is expanded so markdown written by an agent
@@ -103,6 +111,7 @@ async function readLocalImage(filePath, { maxBytes = MAX_IMAGE_BYTES, fs = fsp }
 module.exports = {
   LOCAL_IMAGE_SCHEME,
   MAX_IMAGE_BYTES,
+  imageExtensionForMime,
   imageMimeForPath,
   localImageRequestPath,
   readLocalImage,

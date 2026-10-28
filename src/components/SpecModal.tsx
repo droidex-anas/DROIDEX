@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
-import { NativeSurfaceObscurer } from '../hooks/useObscuresNativeSurfaces';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, FileText } from 'lucide-react';
 import { SpecRenderer } from './SpecRenderer';
@@ -82,9 +81,6 @@ export function SpecModal({
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6"
           onClick={onClose}
         >
-          {/* A full-window overlay: the native browser view would paint through
-              it, and it keeps painting through the exit fade. */}
-          <NativeSurfaceObscurer />
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}

@@ -2,6 +2,7 @@ import { useContext, useState } from 'react';
 import { commandLineContains } from '../../lib/commandLineMatch';
 import { LiveProcessesContext } from './liveProcessesContext';
 import { stripAnsi } from '../../lib/tools';
+import { TranscriptImage } from '../media/TranscriptImage';
 import { Caret, ErrorTag, Expand, InterruptedTag, linkify, RED, ToolPanel } from './primitives';
 
 // A backgrounded server keeps its card "running" after the turn ends as long
@@ -20,6 +21,8 @@ function useCommandStillRunning(command: string): boolean {
   );
 }
 
+const NO_IMAGES: string[] = [];
+
 /* ── Terminal-style body shared by every tool call: what was called, then
    what came back, in the same bordered panel language as expanded diffs. No
    header chrome — the heading (a `$` prompt for a shell call, the arguments
@@ -27,12 +30,15 @@ function useCommandStillRunning(command: string): boolean {
 export function ToolCallCard({
   heading,
   output,
+  images = NO_IMAGES,
   error = false,
   interrupted = false,
   running = false,
 }: {
   heading: React.ReactNode;
   output?: string;
+  /** The pictures the tool answered with, as saved files, shown above its text. */
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -51,9 +57,17 @@ export function ToolCallCard({
         {heading}
         {running && <span className="shimmer-text text-[13px] font-medium">Running</span>}
         {interrupted && <InterruptedTag />}
+        {images.length > 0 && (
+          <div className="mt-2 border-t border-droid-border/60 pt-1 first:mt-0 first:border-t-0 first:pt-0">
+            {images.map((image, index) => (
+              // One result can carry the same picture twice.
+              <TranscriptImage key={`${String(index)}-${image}`} reference={image} />
+            ))}
+          </div>
+        )}
         {out && (
           <pre
-            className="mt-2 pt-2 border-t border-droid-border/60 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
+            className="mt-2 pt-2 border-t border-droid-border/60 first:mt-0 first:border-t-0 first:pt-0 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] break-words text-droid-text-muted"
             style={error ? { color: RED } : undefined}
           >
             {error ? out : linkify(out)}
@@ -67,12 +81,14 @@ export function ToolCallCard({
 export function CommandCard({
   command,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
 }: {
   command: string;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -92,6 +108,7 @@ export function CommandCard({
         </div>
       }
       output={output}
+      images={images}
       error={error}
       interrupted={interrupted}
       running={running || alive}
@@ -105,6 +122,7 @@ export function CommandCard({
 export function CommandLine({
   command,
   output,
+  images,
   error = false,
   interrupted = false,
   running = false,
@@ -112,6 +130,7 @@ export function CommandLine({
 }: {
   command: string;
   output?: string;
+  images?: string[];
   error?: boolean;
   interrupted?: boolean;
   running?: boolean;
@@ -156,7 +175,7 @@ export function CommandLine({
       </button>
       <Expand open={expanded}>
         <div className="mt-1.5 pl-[18px]">
-          <CommandCard command={command} output={output} error={error} />
+          <CommandCard command={command} output={output} images={images} error={error} />
         </div>
       </Expand>
     </div>

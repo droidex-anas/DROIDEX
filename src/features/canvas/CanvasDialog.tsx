@@ -1,11 +1,10 @@
 // The Canvas dialogs' shared frame: a quiet raised panel over a scrim that
-// keeps Tab inside, closes on Escape or a click outside, hides the browser's
-// native view beneath it, and hands focus back to whatever opened it.
+// keeps Tab inside, closes on Escape or a click outside, and hands focus back
+// to whatever opened it.
 
 import { useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { pushEscapeLayer } from '../../components/environment/usePopover';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 import { wrapTabFocus } from '../../lib/focusTrap';
 
 // The controls inside these dialogs: borderless tinted fills on the raised
@@ -38,8 +37,6 @@ export function CanvasDialog({
 }) {
   const ownRef = useRef<HTMLDivElement>(null);
   const dialogRef = ref ?? ownRef;
-
-  useObscuresNativeSurfaces();
 
   // A menu that opens this hands focus back to its trigger as it closes, in
   // the same commit, so the opener is read here rather than during render.

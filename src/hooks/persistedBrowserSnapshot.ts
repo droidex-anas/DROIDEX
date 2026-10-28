@@ -6,7 +6,6 @@ const BROWSER_VIEWPORT_MODES = new Set<BrowserViewportMode>([
   'laptop',
   'tablet',
   'mobile',
-  'custom',
 ]);
 
 export function loadPersistedBrowsers(value: unknown): Record<string, BrowserState> {
@@ -15,35 +14,6 @@ export function loadPersistedBrowsers(value: unknown): Record<string, BrowserSta
     .map(([key, browser]) => [key, sanitizePersistedBrowser(key, browser)] as const)
     .filter((entry): entry is readonly [string, BrowserState] => Boolean(entry[1]));
   return Object.fromEntries(entries);
-}
-
-export function loadPersistedBrowserOpenKeys(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  // Preserve both true (open) and false (explicitly hidden) so the "hidden"
-  // decision survives a restart; a dropped `false` would let later updates
-  // re-open a pane the user deliberately hid.
-  const entries = Object.entries(value as Record<string, unknown>).filter(
-    (entry): entry is [string, boolean] =>
-      typeof entry[0] === 'string' && entry[0].length > 0 && typeof entry[1] === 'boolean',
-  );
-  return Object.fromEntries(entries);
-}
-
-export function persistBrowsers(
-  browsers: Record<string, BrowserState>,
-): Record<string, BrowserState> {
-  return Object.fromEntries(
-    Object.entries(browsers).map(([key, browser]) => [
-      key,
-      {
-        ...browser,
-        refs: [],
-        agentCursor: undefined,
-        screenshotPath: undefined,
-        screenshotUrl: undefined,
-      },
-    ]),
-  );
 }
 
 function sanitizePersistedBrowser(key: string, value: unknown): BrowserState | undefined {
@@ -62,7 +32,6 @@ function sanitizePersistedBrowser(key: string, value: unknown): BrowserState | u
     viewport,
     viewportMode: sanitizeBrowserViewportMode(browser.viewportMode),
     scroll: sanitizeBrowserScroll(browser.scroll),
-    refs: [],
     ...(browser.canGoBack === true ? { canGoBack: true } : {}),
     ...(browser.canGoForward === true ? { canGoForward: true } : {}),
   };

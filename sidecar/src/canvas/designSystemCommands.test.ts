@@ -368,7 +368,6 @@ test('only Electron main’s token reaches the export route', async (t) => {
   const bridge = startBridgeServer({
     requestedPort: 0,
     token: 'renderer-token',
-    assetToken: 'asset-token',
     canvasExportToken: 'host-token',
     onCommand: async () => undefined,
   });

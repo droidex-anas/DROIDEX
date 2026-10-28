@@ -15,7 +15,9 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  activeDraftTileId,
   composeOrigin,
+  draftTileIds,
   enteredPlaceNavigation,
   placeCreatedChat,
   showChat,
@@ -97,6 +99,7 @@ import type {
   ModelInfo,
   ProviderKind,
   ProviderStatus,
+  ProviderUsage,
   ChildSessionSummary,
   SkillInfo,
   ReasoningEffort,
@@ -104,6 +107,7 @@ import type {
   BrowserState,
   VoiceNarration,
 } from '../types/bridge';
+import { PROVIDER_KINDS } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd } from '../lib/workspaces';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
@@ -139,6 +143,7 @@ import {
 import {
   archiveChat,
   deleteChat,
+  isChatHidden,
   loadChatMetadata,
   linkChatsPullRequest,
   type ChatPullRequest,
@@ -149,7 +154,7 @@ import {
   type ChatMetadataMap,
 } from '../lib/chatMetadata';
 import { createSnapshotScheduler, loadSessionSnapshot } from '../lib/sessionSnapshot';
-import { createComposerSeed } from '../lib/composerReset';
+import { createComposerSeed, type ComposerSeed } from '../lib/composerReset';
 import { toast } from '../lib/toast';
 import { type DiffScope } from '../types/vcs';
 import {
@@ -404,19 +409,19 @@ export interface AppState {
   // Context window the current unsent draft will be created with. Null means
   // the provider's own, and it resets with the rest of the draft lifecycle.
   draftContextWindowTokens: ContextWindowTokens | null;
-  // Live-session autonomy changes awaiting provider confirmation, keyed by
-  // appSessionId. The UI keeps showing the confirmed value while pending.
-  pendingAutonomy: Record<string, Autonomy>;
+  // Only the latest request can settle the autonomy shown ahead of confirmation.
+  pendingAutonomy: Partial<Record<string, { requestId: string; autonomy: Autonomy }>>;
   // Chat model/effort changes shown ahead of confirmation, keyed by appSessionId.
   pendingModelUpdates: Partial<Record<string, PendingModelUpdate>>;
-  // One-shot text seeded into the composer (welcome-screen suggestion cards,
-  // saved-note clicks). A fresh id per seed lets re-clicking re-arm the effect.
-  composerSeed: { text: string; id: number; replace: boolean } | null;
+  // One-shot text seeded into a composer (welcome-screen suggestion cards,
+  // saved-note clicks, the browser's prompt box), in arrival order. Each seed
+  // belongs to one chat, or one new-chat draft, and waits until its composer
+  // takes it.
+  composerSeeds: ComposerSeed[];
   workspaceCwds: string[];
   // Per-session browser-pane open state, keyed by browser key (the chat/session
   // id). Presence means "open"; absence means "closed". Persisted so a session
   // resumes where it left off after an app restart, unless it was fully closed.
-  browserOpenKeys: Record<string, boolean>;
   browsers: Record<string, BrowserState>;
   browserErrors: Record<string, string>;
   browserGlobalError?: string;
@@ -440,6 +445,8 @@ export interface AppState {
   // pick is sticky: it survives session switches and restarts.
   providerStatuses: ProviderStatus[];
   draftProvider: ProviderKind;
+  // Each harness account's usage, as the sidecar last reported it.
+  usage: Partial<Record<ProviderKind, ProviderUsage>>;
 
   // Global compaction model applied to every session. 'current-model' = use
   // each session's active model; otherwise a specific model id.
@@ -748,8 +755,16 @@ export type Action =
       // ordinary New chat, which starts with no canvas at all (spec §4).
       canvas?: { canvasId: string | null };
     }
-  | { type: 'SEED_COMPOSER'; text: string; replace?: boolean }
-  | { type: 'CLEAR_COMPOSER_SEED' }
+  | {
+      type: 'SEED_COMPOSER';
+      text: string;
+      replace?: boolean;
+      appSessionId?: string;
+      send?: boolean;
+      focus?: boolean;
+      prompt?: QueuedPrompt;
+    }
+  | { type: 'CONSUME_COMPOSER_SEED'; id: number }
   | { type: 'SESSION_NOTE_ADD'; appSessionId: string; text: string }
   | { type: 'SESSION_NOTE_MARK_USED'; appSessionId: string; noteId: string }
   | { type: 'SESSION_NOTE_REMOVE'; appSessionId: string; noteId: string }
@@ -767,7 +782,7 @@ export type Action =
       canGoBack?: boolean;
       canGoForward?: boolean;
     }
-  | { type: 'BROWSER_CLOSED'; appSessionId: string }
+  | { type: 'BROWSER_CLOSED'; appSessionId: string; keepPane?: boolean }
   | { type: 'BROWSER_ERROR'; appSessionId?: string; message: string }
   | { type: 'TOGGLE_DESIGN_MODE'; appSessionId: string }
   | { type: 'SET_DESIGN_MODE'; appSessionId: string; open: boolean }
@@ -780,6 +795,8 @@ export type Action =
   // Models / per-agent config
   | { type: 'MODELS_LIST'; models: ModelInfo[] }
   | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
+  | { type: 'USAGE_UPDATED'; usage: ProviderUsage }
+  | { type: 'BRIDGE_SNAPSHOT' }
   | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
   | {
       type: 'SKILLS_LIST';
@@ -803,15 +820,26 @@ export type Action =
   | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
   | { type: 'SET_DRAFT_FAST_MODE'; fastMode: boolean }
   | { type: 'SET_DRAFT_CONTEXT_WINDOW'; contextWindowTokens: ContextWindowTokens | null }
-  | { type: 'AUTONOMY_UPDATE_REQUESTED'; appSessionId: string; autonomy: Autonomy }
-  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string }
+  | {
+      type: 'AUTONOMY_UPDATE_REQUESTED';
+      appSessionId: string;
+      requestId: string;
+      autonomy: Autonomy;
+    }
+  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string; requestId: string }
   | {
       type: 'MODEL_UPDATE_REQUESTED';
       appSessionId: string;
       requestId: string;
       settings: PendingModelSettings;
     }
-  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string };
+  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string }
+  // The sidecar was replaced: nothing it was working on will be answered.
+  | {
+      type: 'SETTINGS_UPDATES_UNANSWERED';
+      liveAppSessionIds: ReadonlySet<string>;
+      resentRequestIds: ReadonlySet<string>;
+    };
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -906,9 +934,8 @@ export const initialState: AppState = {
   draftContextWindowTokens: null,
   pendingAutonomy: {},
   pendingModelUpdates: {},
-  composerSeed: null,
+  composerSeeds: [],
   workspaceCwds: loadWorkspaceCwds(),
-  browserOpenKeys: persistedUiState.browserOpenKeys ?? {},
   browsers: persistedUiState.browsers ?? {},
   browserErrors: {},
   browserGlobalError: undefined,
@@ -919,6 +946,7 @@ export const initialState: AppState = {
   models: [],
   providerStatuses: [],
   draftProvider: loadDraftProvider(),
+  usage: {},
   compactionModel: loadCompactionModel(),
   compactionTokenLimit: loadCompactionTokenLimit(),
   compactionTokenLimitPerModel: loadCompactionTokenLimitPerModel(),
@@ -958,27 +986,6 @@ function activeBrowserKey(state: AppState): string | undefined {
   // (`appSessionId`), matching the backend; the provider session is swapped by
   // compaction and would desync the open state from the backend's updates.
   return state.sessions[state.activeAppSessionId]?.appSessionId ?? state.activeAppSessionId;
-}
-
-// Record an explicit open (true) or hidden (false) decision for a browser key.
-// Storing `false` (rather than deleting) lets data syncs distinguish a pane the
-// user deliberately hid from one that was never opened.
-function withBrowserOpenKey(
-  keys: Record<string, boolean>,
-  key: string,
-  open: boolean,
-): Record<string, boolean> {
-  if (keys[key] === open) return keys;
-  return { ...keys, [key]: open };
-}
-
-// Forget a browser key entirely (full reset, e.g. session closed). A later
-// update then treats the session as never-opened.
-function clearBrowserOpenKey(keys: Record<string, boolean>, key: string): Record<string, boolean> {
-  if (!(key in keys)) return keys;
-  const next = { ...keys };
-  delete next[key];
-  return next;
 }
 
 function closeActiveUtilityPanel(state: AppState): AppState {
@@ -1131,6 +1138,31 @@ function withoutCanvasRequests(
 }
 
 export function reducer(state: AppState, action: Action): AppState {
+  return withoutLeftDrafts(reduceAction(state, action));
+}
+
+// A draft's seeds and its sent compose wait in its tile. Once the tile closes or
+// shows something else, that draft is gone: its seeds are dropped and its
+// compose forgets the tile, so neither reaches a later draft there.
+function withoutLeftDrafts(state: AppState): AppState {
+  const waiting = [
+    ...state.composerSeeds.map((seed) => seed.draftTileId),
+    ...Object.values(state.pendingCompose).map((compose) => compose?.origin?.tileId),
+    ...Object.values(state.heldComposeOrigins).map((origin) => origin?.tileId),
+  ];
+  if (!waiting.some(Boolean)) return state;
+  const drafts = draftTileIds(state);
+  const left = new Set(waiting.filter((tileId) => tileId && !drafts.includes(tileId)));
+  if (left.size === 0) return state;
+  let next: AppState = {
+    ...state,
+    composerSeeds: state.composerSeeds.filter((seed) => !left.has(seed.draftTileId)),
+  };
+  for (const tileId of left) if (tileId) next = { ...next, ...withComposeTileClosed(next, tileId) };
+  return next;
+}
+
+function reduceAction(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'BATCH':
       return reduceStoreActionBatch(state, action.actions, reducer);
@@ -1208,6 +1240,15 @@ export function reducer(state: AppState, action: Action): AppState {
       }
 
       const pendingCompose = withoutKey(state.pendingCompose, action.clientRef);
+      // Seeds that arrived for the draft while it was sent go to the chat it became.
+      const draftTileId = ownsCreate ? pending.origin?.tileId : undefined;
+      const composerSeeds = draftTileId
+        ? state.composerSeeds.map((pendingSeed) =>
+            pendingSeed.draftTileId === draftTileId
+              ? { ...pendingSeed, appSessionId: action.session.appSessionId, draftTileId: null }
+              : pendingSeed,
+          )
+        : state.composerSeeds;
 
       const next: AppState = {
         ...childReset,
@@ -1233,6 +1274,7 @@ export function reducer(state: AppState, action: Action): AppState {
         childAccess,
         childRuntime,
         pendingCompose,
+        composerSeeds,
         pendingForks: withoutKey(state.pendingForks, action.clientRef),
         sideChats:
           state.pendingForks[action.clientRef]?.kind === 'side'
@@ -1481,19 +1523,6 @@ export function reducer(state: AppState, action: Action): AppState {
               ),
             }
           : state.contextStats;
-      // A pending autonomy change settles when the confirmed summary reaches
-      // the requested level, or when the level changed through another path.
-      const requestedAutonomy =
-        m.appSessionId in state.pendingAutonomy ? state.pendingAutonomy[m.appSessionId] : undefined;
-      const autonomySettled =
-        requestedAutonomy !== undefined &&
-        (m.autonomy === requestedAutonomy ||
-          (m.appSessionId in state.sessions && m.autonomy !== previous.autonomy));
-      const pendingAutonomy = autonomySettled
-        ? Object.fromEntries(
-            Object.entries(state.pendingAutonomy).filter(([id]) => id !== m.appSessionId),
-          )
-        : state.pendingAutonomy;
       const inView = isChatInView(state, m.appSessionId);
       // The active chat is never unread; a tile beside it is read as it changes.
       const seenInTile =
@@ -1504,7 +1533,6 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         sessions: { ...state.sessions, [m.appSessionId]: m },
         contextStats,
-        pendingAutonomy,
         sessionLastSeen: seenInTile
           ? { ...state.sessionLastSeen, [m.appSessionId]: m.updatedAt }
           : state.sessionLastSeen,
@@ -1899,11 +1927,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'SESSION_LIST': {
       const incoming = new Set(action.sessions.map((m) => m.appSessionId));
-      // Every list is a fresh scan of what exists, so it is authoritative for
-      // the rows the previous listing confirmed: drop confirmed rows it no
-      // longer reports (deleted outside the app, or pruned from a hydrated
-      // snapshot). Rows added locally this run are not confirmed yet and
-      // survive.
+      // The catalog retains admitted owned chats with unavailable transcripts.
+      // Only an omitted catalog record can prune a confirmed row; locally
+      // added rows survive until their first catalog listing.
       const confirmed = new Set(state.listConfirmedSessionIds);
       const isConfirmedGone = (id: string) => confirmed.has(id) && !incoming.has(id);
       const map: Record<string, SessionSummary> = {};
@@ -1942,11 +1968,12 @@ export function reducer(state: AppState, action: Action): AppState {
         state.activeAppSessionId !== null && mapById[state.activeAppSessionId] !== undefined
           ? state.activeAppSessionId
           : null;
-      // Prune pin/archive metadata for the same confirmed-gone rows so
-      // localStorage does not accumulate orphans. Metadata for rows added
-      // locally this run (not yet list-confirmed) survives.
+      // Catalog omission cannot prove a hidden chat will never return.
+      // Keep its renderer-only tombstone; prune only orphaned preferences.
       let chatMetadata = state.chatMetadata;
-      const orphaned = Object.keys(chatMetadata).filter(isConfirmedGone);
+      const orphaned = Object.keys(chatMetadata).filter(
+        (id) => isConfirmedGone(id) && !isChatHidden(chatMetadata[id]),
+      );
       if (orphaned.length > 0) {
         const drop = new Set(orphaned);
         chatMetadata = Object.fromEntries(
@@ -2151,10 +2178,6 @@ export function reducer(state: AppState, action: Action): AppState {
         utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
         reviewOpenAppSessionId:
           action.tool === 'review' ? appSessionId : state.reviewOpenAppSessionId,
-        browserOpenKeys:
-          action.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, true)
-            : state.browserOpenKeys,
       };
     }
 
@@ -2174,10 +2197,6 @@ export function reducer(state: AppState, action: Action): AppState {
             : state.reviewOpenAppSessionId,
         reviewFocusPath: closing?.tool === 'review' ? null : state.reviewFocusPath,
         reviewFocusChange: closing?.tool === 'review' ? null : state.reviewFocusChange,
-        browserOpenKeys:
-          closing?.tool === 'browser'
-            ? withBrowserOpenKey(state.browserOpenKeys, appSessionId, false)
-            : state.browserOpenKeys,
       };
     }
 
@@ -2531,12 +2550,33 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SEED_COMPOSER':
-      return { ...state, composerSeed: createComposerSeed(action.text, action.replace) };
-    // The composer consumes the seed once; it must not linger, or remounting
+    // A seed belongs to its chat from the moment it arrives: the one named, or
+    // else the chat focused now, or else the draft in the focused tab.
+    case 'SEED_COMPOSER': {
+      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
+      const draftTileId = appSessionId ? null : activeDraftTileId(state);
+      if (!appSessionId && !draftTileId) return state;
+      const seed = createComposerSeed(action.text, action.replace, {
+        appSessionId,
+        draftTileId,
+        send: action.send,
+        focus: action.focus,
+        prompt: action.prompt,
+      });
+      return { ...state, composerSeeds: [...state.composerSeeds, seed] };
+    }
+    // The composer consumes each seed once; it must not linger, or remounting
     // the composer (e.g. toggling Mission Control) would re-apply stale text.
-    case 'CLEAR_COMPOSER_SEED':
-      return { ...state, composerSeed: null };
+    case 'CONSUME_COMPOSER_SEED': {
+      const seed = state.composerSeeds.find((pending) => pending.id === action.id);
+      if (!seed) return state;
+      const next = { ...state, composerSeeds: state.composerSeeds.filter((s) => s !== seed) };
+      // A prompt sent with a chat's marks goes out as it is consumed, to that
+      // chat and never to a child open in it, which would get it without them.
+      return seed.send && state.selectedChild?.parentAppSessionId === seed.appSessionId
+        ? reduceSelectChild(next, { selection: null })
+        : next;
+    }
 
     case 'SESSION_NOTE_ADD': {
       const sessionNotes = addSessionNote(state.sessionNotes, action.appSessionId, action.text);
@@ -2590,7 +2630,6 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(current, 'browser', () => `browser:${key}`)
             : setUtilityPanelOpen(current, false),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, opening),
       };
     }
 
@@ -2606,36 +2645,19 @@ export function reducer(state: AppState, action: Action): AppState {
             ? openUtilityTool(state.utilityPanels[key], 'browser', () => `browser:${key}`)
             : removeUtilityTool(state.utilityPanels[key], 'browser'),
         },
-        browserOpenKeys: withBrowserOpenKey(state.browserOpenKeys, key, action.open),
       };
     }
 
     case 'BROWSER_UPDATED': {
       if (!action.browser.appSessionId) return state;
       const appSessionId = action.browser.appSessionId;
-      // Surface a freshly opened browser, but never re-open a pane the user hid.
-      // Missing keys differ from explicitly hidden panes.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-      const hidden = state.browserOpenKeys[appSessionId] === false;
+      // Only records the page: agent work never opens or switches the pane.
       return {
         ...state,
         browsers: { ...state.browsers, [appSessionId]: action.browser },
         browserErrors: Object.fromEntries(
           Object.entries(state.browserErrors).filter(([id]) => id !== appSessionId),
         ),
-        browserOpenKeys: hidden
-          ? state.browserOpenKeys
-          : withBrowserOpenKey(state.browserOpenKeys, appSessionId, true),
-        utilityPanels: hidden
-          ? state.utilityPanels
-          : {
-              ...state.utilityPanels,
-              [appSessionId]: openUtilityTool(
-                state.utilityPanels[appSessionId],
-                'browser',
-                () => `browser:${appSessionId}`,
-              ),
-            },
       };
     }
 
@@ -2660,7 +2682,8 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'BROWSER_CLOSED':
       // Full close: drop the session's browser, design mode, and open flag so a
-      // later reopen starts fresh (and it is excluded from persistence).
+      // later reopen starts fresh (and it is excluded from persistence). A
+      // browser closed with its chat's runtime leaves the pane open.
       return {
         ...state,
         browsers: Object.fromEntries(
@@ -2670,14 +2693,15 @@ export function reducer(state: AppState, action: Action): AppState {
           Object.entries(state.browserErrors).filter(([id]) => id !== action.appSessionId),
         ),
         designModes: clearDesignMode(state.designModes, action.appSessionId),
-        browserOpenKeys: clearBrowserOpenKey(state.browserOpenKeys, action.appSessionId),
-        utilityPanels: {
-          ...state.utilityPanels,
-          [action.appSessionId]: removeUtilityTool(
-            state.utilityPanels[action.appSessionId],
-            'browser',
-          ),
-        },
+        utilityPanels: action.keepPane
+          ? state.utilityPanels
+          : {
+              ...state.utilityPanels,
+              [action.appSessionId]: removeUtilityTool(
+                state.utilityPanels[action.appSessionId],
+                'browser',
+              ),
+            },
       };
 
     case 'BROWSER_ERROR':
@@ -2685,13 +2709,6 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         browserErrors: { ...state.browserErrors, [action.appSessionId]: action.message },
-        // Respect an explicit hide; otherwise surface the errored browser.
-        browserOpenKeys:
-          // Missing keys differ from explicitly hidden panes.
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
-          state.browserOpenKeys[action.appSessionId] === false
-            ? state.browserOpenKeys
-            : withBrowserOpenKey(state.browserOpenKeys, action.appSessionId, true),
       };
 
     case 'TOGGLE_DESIGN_MODE':
@@ -2736,6 +2753,20 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_DRAFT_PROVIDER':
       return { ...state, draftProvider: action.provider };
+
+    case 'USAGE_UPDATED':
+      return { ...state, usage: { ...state.usage, [action.usage.provider]: action.usage } };
+
+    // A fresh stream may come from a new sidecar, maybe on another account:
+    // the usage the last one read is unconfirmed until this one answers.
+    case 'BRIDGE_SNAPSHOT': {
+      const usage: AppState['usage'] = {};
+      for (const provider of PROVIDER_KINDS) {
+        const known = state.usage[provider];
+        if (known) usage[provider] = { ...known, stale: true };
+      }
+      return { ...state, usage };
+    }
 
     case 'SKILLS_LIST':
       return {
@@ -2862,11 +2893,14 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'AUTONOMY_UPDATE_REQUESTED':
       return {
         ...state,
-        pendingAutonomy: { ...state.pendingAutonomy, [action.appSessionId]: action.autonomy },
+        pendingAutonomy: {
+          ...state.pendingAutonomy,
+          [action.appSessionId]: { requestId: action.requestId, autonomy: action.autonomy },
+        },
       };
 
     case 'AUTONOMY_UPDATE_SETTLED': {
-      if (!(action.appSessionId in state.pendingAutonomy)) return state;
+      if (state.pendingAutonomy[action.appSessionId]?.requestId !== action.requestId) return state;
       return {
         ...state,
         pendingAutonomy: Object.fromEntries(
@@ -2890,6 +2924,32 @@ export function reducer(state: AppState, action: Action): AppState {
         },
       };
 
+    case 'SETTINGS_UPDATES_UNANSWERED': {
+      // Only a live chat's change the old sidecar took is lost: the snapshot
+      // carries that chat's confirmed settings, which then show. A closed chat
+      // gets no summary here, and a request resent on reconnect is answered by
+      // the new sidecar.
+      const kept = Object.entries(state.pendingModelUpdates).filter(
+        ([appSessionId, pending]) =>
+          !action.liveAppSessionIds.has(appSessionId) ||
+          (pending !== undefined && action.resentRequestIds.has(pending.requestId)),
+      );
+      // Unresent autonomy requests cannot settle in the replacement, even for absent chats.
+      const keptAutonomy = Object.entries(state.pendingAutonomy).filter(
+        ([, pending]) => pending !== undefined && action.resentRequestIds.has(pending.requestId),
+      );
+      if (
+        kept.length === Object.keys(state.pendingModelUpdates).length &&
+        keptAutonomy.length === Object.keys(state.pendingAutonomy).length
+      )
+        return state;
+      return {
+        ...state,
+        pendingModelUpdates: Object.fromEntries(kept),
+        pendingAutonomy: Object.fromEntries(keptAutonomy),
+      };
+    }
+
     case 'MODEL_UPDATE_SETTLED': {
       if (state.pendingModelUpdates[action.appSessionId]?.requestId !== action.requestId)
         return state;
@@ -2908,6 +2968,11 @@ export function reducer(state: AppState, action: Action): AppState {
 
 /* ── Bridge event adapter ── */
 export function toastMessageForEvent(ev: ServerEvent): string | undefined {
+  if (
+    ev.type === 'error' &&
+    (ev.code === 'history.unavailable' || ev.code === 'history.search_unavailable')
+  )
+    return ev.message;
   if (isHistoryStatusError(ev)) return undefined;
   if (
     ev.type === 'error' &&
@@ -2943,6 +3008,12 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return { type: 'SESSION_FORKED', clientRef: ev.clientRef, session: ev.session };
     case 'session.updated':
       return { type: 'SESSION_UPDATED', session: ev.session };
+    case 'session.autonomy_update_applied':
+      return {
+        type: 'AUTONOMY_UPDATE_SETTLED',
+        appSessionId: ev.appSessionId,
+        requestId: ev.requestId,
+      };
     case 'session.model_update_applied':
       return {
         type: 'MODEL_UPDATE_SETTLED',
@@ -3012,12 +3083,13 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       if (ev.code === 'bridge.resync_required' && !ev.recoverable) {
         return { type: 'SET_CONNECTION', status: 'error', message: ev.message };
       }
-      // A failed autonomy change is recoverable: the session keeps its last
-      // confirmed level, the pending state settles, and the toast carries the
-      // message (see toastMessageForEvent).
       if (ev.code === 'session.autonomy_update_failed') {
-        return ev.appSessionId
-          ? { type: 'AUTONOMY_UPDATE_SETTLED', appSessionId: ev.appSessionId }
+        return ev.appSessionId && ev.requestId
+          ? {
+              type: 'AUTONOMY_UPDATE_SETTLED',
+              appSessionId: ev.appSessionId,
+              requestId: ev.requestId,
+            }
           : null;
       }
       if (ev.code === 'session.model_update_failed') {
@@ -3100,12 +3172,14 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       return null;
     case 'provider.status':
       return { type: 'PROVIDER_STATUSES', statuses: ev.statuses };
+    case 'usage.updated':
+      return { type: 'USAGE_UPDATED', usage: ev.usage };
     case 'settings.defaults':
       return { type: 'FACTORY_DEFAULTS', defaults: ev.defaults };
     case 'browser.updated':
       return { type: 'BROWSER_UPDATED', browser: ev.state };
     case 'browser.closed':
-      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId };
+      return { type: 'BROWSER_CLOSED', appSessionId: ev.appSessionId, keepPane: ev.keepPane };
     case 'browser.error':
       return { type: 'BROWSER_ERROR', appSessionId: ev.appSessionId, message: ev.message };
     case 'voice.answer':
@@ -3246,8 +3320,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       delayMs: 16,
     });
     bridgeActionBatcherRef.current = batcher;
-    const unsub = bridge.subscribeBatch((events) => {
-      const actions: Action[] = [];
+    const unsub = bridge.subscribeBatch((events, fromSnapshot) => {
+      const actions: Action[] = fromSnapshot ? [{ type: 'BRIDGE_SNAPSHOT' }] : [];
       for (const ev of events) {
         // Verbose per-event logging runs on every streaming token and eagerly
         // deep-clones + redacts the whole event, so keep it to dev builds only;
@@ -3267,8 +3341,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       batcher.pushBridgeBatch(actions);
     });
+    // Queued ahead of the snapshot's own events, through the same batcher.
+    const unsubReplaced = bridge.subscribeRuntimeReplaced((liveAppSessionIds, resentRequestIds) => {
+      batcher.pushBridgeBatch([
+        { type: 'SETTINGS_UPDATES_UNANSWERED', liveAppSessionIds, resentRequestIds },
+      ]);
+    });
     return () => {
       unsub();
+      unsubReplaced();
       // StrictMode remounts this effect in dev; deliver anything in flight so
       // no event is lost across the resubscribe.
       batcher.dispose();

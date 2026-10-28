@@ -62,8 +62,9 @@ export function projectPrependedFeed({
   );
   if (visibleInsertionIndex !== 0) return undefined;
 
+  // A steer belongs to the turn before it, so it cannot start a reusable turn.
   const reusableEventIndex = previous.visibleTranscript.findIndex(
-    (event) => event.author === 'user',
+    (event) => event.author === 'user' && !event.steered,
   );
   if (reusableEventIndex < 0) return undefined;
   const boundaryEvent = previous.visibleTranscript.at(reusableEventIndex);

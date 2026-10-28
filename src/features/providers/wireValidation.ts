@@ -76,6 +76,53 @@ function validHost(value: unknown): boolean {
   }
 }
 
+// As strict as the sidecar that writes it: windows by the closed set of names,
+// whole-millisecond times, and percentages within 0-100.
+export function isProviderUsage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isOneOf(PROVIDER_KINDS, value.provider) &&
+    Array.isArray(value.meters) &&
+    value.meters.every(isUsageMeter) &&
+    (value.extra === undefined || isUsageExtra(value.extra)) &&
+    (value.unavailable === undefined ||
+      isOneOf(['no_api_key', 'no_plan_limits'] as const, value.unavailable)) &&
+    (value.stale === undefined || typeof value.stale === 'boolean')
+  );
+}
+
+function isUsageMeter(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    nonEmptyString(value.id) &&
+    (value.window === undefined || isOneOf(USAGE_WINDOWS, value.window)) &&
+    (value.model === undefined || nonEmptyString(value.model)) &&
+    isPercent(value.usedPercent) &&
+    (value.resetsAt === undefined || isWholeNumber(value.resetsAt)) &&
+    (value.durationMs === undefined || isWholeNumber(value.durationMs)) &&
+    isWholeNumber(value.updatedAt)
+  );
+}
+
+function isUsageExtra(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.kind === 'limit_resets') return isWholeNumber(value.available);
+  if (value.kind === 'extra_usage')
+    return value.usedPercent === undefined || isPercent(value.usedPercent);
+  return value.kind === 'extra_balance' && isWholeNumber(value.cents);
+}
+
+const USAGE_WINDOWS = ['five_hour', 'daily', 'weekly', 'monthly'] as const;
+
+function isPercent(value: unknown): boolean {
+  return typeof value === 'number' && value >= 0 && value <= 100;
+}
+
+// Epoch and duration milliseconds, and counts.
+function isWholeNumber(value: unknown): boolean {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 // The fields the sidecar's catalog merge always fills, plus the one optional
 // field consumers iterate. The remaining optional hints are read defensively
 // wherever they are used, so they are tolerated rather than policed here.

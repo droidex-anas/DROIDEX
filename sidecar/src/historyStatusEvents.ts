@@ -5,6 +5,15 @@ export function serverEventForHistoryStatus(status: HistoryPersistenceStatus): S
   switch (status.state) {
     case 'healthy':
       return { type: 'history.persistenceRecovered' };
+    case 'unavailable':
+      return {
+        type: 'error',
+        code: 'history.unavailable',
+        message:
+          `Canonical history could not open: ${status.message} ` +
+          'History reads and writes are disabled. Quit DROIDEX, repair storage or restore a backup, then restart. Do not delete the canonical database.',
+        recoverable: false,
+      };
     case 'search_unavailable':
       return {
         type: 'error',

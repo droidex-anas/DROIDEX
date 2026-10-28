@@ -115,6 +115,45 @@ import { join } from 'node:path';
 // tile the user just split. The headroom is again ~9KB; the CSS of 100_623
 // stays under its line.
 //
+// Raised from 1_434_000 to 1_443_000 for usage limits. Against main at
+// b1a4f45c (1_431_240) the entry measures 1_434_484 with the usage slot (/usage,
+// the limit tab, the pace warning: ~6.6KB) already loaded lazily. The ~3.2KB
+// left must paint with the chat: the limit a chat is held on gates its queue,
+// the model-switch divider renders in the transcript, and the composer shows
+// the effort a fallback model actually runs. The headroom is again ~8.5KB.
+//
+// Raised from 1_443_000 to 1_459_000 for the rewritten Browser on top of tabs
+// and tiles. The browser host mounts every chat's <webview> page from the app
+// frame, the composer carries design marks, and the transcript draws the
+// Browser card. Main at 64949712 measures 1_435_466, the rewrite alone
+// 1_452_985 on main at b1a4f45c, and the two together 1_457_268, which leaves
+// ~1.7KB of headroom.
+//
+// initialCssBytes raised from 101_500 to 103_500 for the redesigned Browser
+// pane: its toolbar, omnibox, loading bar and shared compact composer add ~2.3KB
+// of utility classes to the app frame (100_269 before, 102_538 after), leaving
+// ~1KB of headroom as past CSS raises have. On main at 64949712 (100_614) the
+// two together measure 102_602.
+//
+// initialCssBytes raised from 103_500 to 105_000 for the image viewers and code
+// cards: the floating viewer chrome, zoom toolbar, crop controls and the
+// transcript's code and diagram cards add ~1.3KB of utility classes. Tailwind
+// emits them into the one stylesheet even though both viewers load lazily, so
+// main at 1b21548c (102_602) measures 103_872 with them, leaving ~1.1KB. The
+// entry JS stays ~1.3KB under main's.
+//
+// initialCssBytes raised from 105_000 to 106_000 for the Threads panel: its
+// inline approvals and questions and the virtualized thread list add 171 bytes
+// of utility classes. Main at f8948cd9 measures 104_889, with them 105_060,
+// leaving ~0.9KB.
+//
+// Raised from 1_459_000 to 1_468_000 for steers and side chats. A pending
+// steer paints as the user's bubble with its relative time and take-back
+// button (~4.5KB), and a collapsed sidebar keeps the side chat's restore pill
+// and its close path (~3KB); both render with the chat. Main measured
+// 1_457_268, the steer change 1_461_815 and the side chat change 1_460_242, so
+// the two together leave ~3.2KB of headroom.
+//
 // Raised from 1_434_000 to 1_442_000 for Canvas design mode (05e). After
 // merging image imports and the source editor, the entry measures 1_441_307
 // against published canvas/integration a778be89e at 1_433_893: +7_414 bytes.
@@ -146,8 +185,8 @@ import { join } from 'node:path';
 // feature modules remain outside the entry. The 39_971 bytes of headroom cover
 // the remaining Canvas slices without carrying an optional SDK at startup.
 const BUDGETS = {
-  initialRendererJsBytes: 1_388_000,
-  initialCssBytes: 103_200,
+  initialRendererJsBytes: 1_468_000,
+  initialCssBytes: 106_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,
 };

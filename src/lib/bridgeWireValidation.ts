@@ -16,6 +16,7 @@ import {
   isModelInfo,
   isProviderKind,
   isProviderStatus,
+  isProviderUsage,
   isSkillInfo,
 } from '../features/providers/wireValidation';
 
@@ -49,7 +50,7 @@ function eventBatch(value: Record<string, unknown>): ServerEventBatch | null {
 function hasOrderedBatchEntries(events: unknown[], firstSeq: number, lastSeq: number): boolean {
   let previousSeq = firstSeq - 1;
   for (const entry of events) {
-    if (!isRecord(entry) || !positiveSafeInteger(entry.seq) || !isServerEvent(entry.event)) {
+    if (!isRecord(entry) || !positiveSafeInteger(entry.seq)) {
       return false;
     }
     const seq = entry.seq;
@@ -119,7 +120,9 @@ function persistenceRecovery(value: unknown): value is PersistenceRecovery {
     isRecord(value) &&
     typeof value.durable === 'boolean' &&
     typeof value.hadUnflushedWork === 'boolean' &&
-    (value.message === undefined || typeof value.message === 'string')
+    isOptionalString(value.message) &&
+    isOptionalString(value.unavailableReason) &&
+    isOptionalString(value.searchUnavailableReason)
   );
 }
 
@@ -136,7 +139,7 @@ function interruptedRecord(value: unknown): value is InterruptedSessionRecord {
 // The exhaustive discriminant stays centralized so every inbound event takes
 // the same validation path before renderer code can observe it.
 // eslint-disable-next-line complexity
-function isServerEvent(value: unknown): value is ServerEvent {
+export function isServerEvent(value: unknown): value is ServerEvent {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.
   const type = value.type as ServerEvent['type'];
@@ -222,7 +225,22 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return typeof value.clientRef === 'string' && isSessionSummary(value.session);
     case 'session.updated':
       return isSessionSummary(value.session);
+    case 'session.steerWithdrawn':
+      return (
+        hasStrings(value, ['appSessionId', 'steerId', 'requestId']) &&
+        typeof value.withdrawn === 'boolean' &&
+        (value.text === undefined || typeof value.text === 'string') &&
+        (value.mentions === undefined ||
+          (Array.isArray(value.mentions) &&
+            value.mentions.every(
+              (mention: unknown) =>
+                isRecord(mention) &&
+                typeof mention.name === 'string' &&
+                typeof mention.kind === 'string',
+            )))
+      );
     case 'session.model_update_applied':
+    case 'session.autonomy_update_applied':
       return hasStrings(value, ['appSessionId', 'requestId']);
     case 'session.closed':
     case 'browser.closed':
@@ -274,6 +292,8 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return value.catalog === 'tools';
     case 'provider.status':
       return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
+    case 'usage.updated':
+      return isProviderUsage(value.usage);
     case 'settings.defaults':
       return isRecord(value.defaults);
     case 'error':
@@ -323,8 +343,6 @@ function isServerEvent(value: unknown): value is ServerEvent {
       return Array.isArray(value.sessions) && value.sessions.every(isSessionHistoryEntry);
     case 'browser.updated':
       return isBrowserState(value.state);
-    case 'browser.native.request':
-      return isBrowserNativeRequest(value.request);
     case 'sidebar.request':
       return isSidebarRequest(value.request);
     case 'mcp.authRequested':
@@ -403,9 +421,28 @@ function isSessionSummary(value: unknown): boolean {
     (value.pendingSteers === undefined ||
       (Array.isArray(value.pendingSteers) &&
         value.pendingSteers.every(
-          (steer) => isRecord(steer) && hasStrings(steer, ['id', 'text']),
+          (steer) =>
+            isRecord(steer) &&
+            hasStrings(steer, ['id', 'text']) &&
+            typeof steer.canWithdraw === 'boolean',
         ))) &&
-    (value.lineage === undefined || isSessionLineage(value.lineage))
+    (value.lineage === undefined || isSessionLineage(value.lineage)) &&
+    (value.usageLimit === undefined || isUsageLimit(value.usageLimit))
+  );
+}
+
+// As strict as the sidecar that writes it: one bad summary rejects the whole
+// session list.
+function isUsageLimit(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.window === undefined ||
+      value.window === 'five_hour' ||
+      value.window === 'daily' ||
+      value.window === 'weekly' ||
+      value.window === 'monthly') &&
+    isOptionalString(value.model) &&
+    (value.resetsAt === undefined || nonNegativeSafeInteger(value.resetsAt))
   );
 }
 
@@ -441,7 +478,14 @@ function isChildSessionSummary(value: unknown): boolean {
 function isTranscriptEvent(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const switched = value.modelSwitch;
-  if (switched !== undefined && (!isRecord(switched) || !hasStrings(switched, ['from', 'to'])))
+  if (
+    switched !== undefined &&
+    (!isRecord(switched) ||
+      !hasStrings(switched, ['from', 'to']) ||
+      (switched.cause !== undefined &&
+        switched.cause !== 'harness' &&
+        switched.cause !== 'usage_limit'))
+  )
     return false;
   return (
     hasStrings(value, ['id', 'appSessionId', 'sourceSessionId', 'role', 'kind']) &&
@@ -452,6 +496,7 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.interrupted === undefined || value.interrupted === true) &&
     (value.transient === undefined || value.transient === true) &&
     isOptionalString(value.forkPointId) &&
+    isOptionalString(value.steerId) &&
     (value.sideChatReplies === undefined || stringArray(value.sideChatReplies)) &&
     (value.canvasFrames === undefined || stringArray(value.canvasFrames)) &&
     (value.canvasActivity === undefined || isCanvasActivity(value.canvasActivity))
@@ -664,15 +709,7 @@ function isBrowserState(value: unknown): boolean {
     isRecord(value) &&
     hasStrings(value, ['browserSessionId', 'url', 'viewportMode']) &&
     isRecord(value.viewport) &&
-    isRecord(value.scroll) &&
-    recordArray(value.refs)
-  );
-}
-
-function isBrowserNativeRequest(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    hasStrings(value, ['requestId', 'appSessionId', 'browserSessionId', 'action'])
+    isRecord(value.scroll)
   );
 }
 

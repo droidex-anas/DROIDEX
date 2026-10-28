@@ -415,14 +415,14 @@ for (const provider of ['claude', 'codex'] as const) {
   });
 }
 
-test('eager and paged replay hide internal user messages and restore skill activations', () => {
+test('eager and paged replay hide internal user messages, show Droid notices as status, and restore skill activations', () => {
   // Internal skill bodies arrive as ordinary user text, after leading whitespace.
   const notification =
     ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
-    userMessage('user-only prompt', 'user_only'),
+    userMessage('Unable to reach https://api.factory.ai.', 'user_only'),
     userMessage('shared prompt', 'both'),
     userMessage('Skill "review" activated: PR #100', 'user_only'),
     userMessage(notification),
@@ -442,7 +442,7 @@ test('eager and paged replay hide internal user messages and restore skill activ
       ]),
       [
         ['ordinary user prompt', 'user', undefined, 'user'],
-        ['user-only prompt', 'user', undefined, 'user'],
+        ['Unable to reach https://api.factory.ai.', undefined, undefined, 'primary'],
         ['shared prompt', 'user', undefined, 'user'],
         // A user-only skill activation restores the prompt and the harness
         // acknowledgement as separate rows.
@@ -547,6 +547,8 @@ test('a single message larger than MAX_SESSION_BYTES still parses in the reader'
   assert.equal(texts.length, 2);
   assert.match(texts[0]?.text ?? '', /^z+/);
   assert.equal(texts[1]?.text, 'tail');
+  const full = new SessionTranscriptReader('app', 'provider', path, 'primary', true);
+  assert.equal(full.windowBackward(100, 0).events[0]?.text, huge);
 });
 
 test('readSessionRawWindow tail window drops the partial first line', () => {

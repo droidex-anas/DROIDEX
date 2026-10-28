@@ -57,11 +57,11 @@ test('chat-metadata actions write metadata only and keep the state object on a n
   assert.equal(reducer(deleted, { type: 'DELETE_CHAT', appSessionId: 's1' }), deleted);
 });
 
-test('SESSION_LIST prunes metadata only for confirmed sessions it no longer reports', () => {
+test('SESSION_LIST prunes orphaned preferences and preserves hidden-chat tombstones', () => {
   // 'gone' was confirmed by a previous listing and has metadata; 'local' was
   // added this run (never list-confirmed) and must survive.
   const base: AppState = {
-    ...stateWithSessions('gone', 'kept'),
+    ...stateWithSessions('gone', 'deleted', 'unpinned', 'kept'),
     sessions: {
       gone: makeSession('gone'),
       kept: makeSession('kept'),
@@ -70,12 +70,16 @@ test('SESSION_LIST prunes metadata only for confirmed sessions it no longer repo
     sessionOrder: ['gone', 'kept', 'local'],
     chatMetadata: {
       gone: { archivedAt: 100 },
+      deleted: { deletedAt: 100 },
+      unpinned: { pinnedAt: 100 },
       kept: { pinnedAt: 100 },
       local: { pinnedAt: 200 },
     },
   };
   const next = reducer(base, { type: 'SESSION_LIST', sessions: [makeSession('kept', 2)] });
   assert.deepEqual(next.chatMetadata, {
+    gone: { archivedAt: 100 },
+    deleted: { deletedAt: 100 },
     kept: { pinnedAt: 100 },
     local: { pinnedAt: 200 },
   });

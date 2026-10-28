@@ -10,11 +10,12 @@ import type { TranscriptEvent } from '../../protocol.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import type { ProviderModelSettings } from '../session.js';
 import { errMsg } from '../../errors.js';
-import { UsageLimitError, usageLimitDetails } from '../usageLimit.js';
+import { usageLimitDetails } from '../usageLimit.js';
 import type { FileChangeDetail } from './codexApprovals.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from '../../canvas/canvasMcpNames.js';
 import type { ToolProvenance } from '../../canvas/canvasToolPresentation.js';
 import { imageUsageLimit } from './codexImages.js';
+import type { CodexRateLimits } from './codexRateLimits.js';
 import {
   collabChildSignals,
   changesDiff,
@@ -39,11 +40,11 @@ export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export function turnOf(params: unknown): CodexTurn | undefined {
+export function turnOf(params: unknown, rateLimits: CodexRateLimits): CodexTurn | undefined {
   if (!isObject(params) || !isObject(params.turn)) return undefined;
   const { id, status } = params.turn;
   if (typeof id !== 'string') return undefined;
-  const error = turnError(params.turn.error);
+  const error = turnError(params.turn.error, rateLimits);
   return {
     id,
     ...(typeof status === 'string' ? { status } : {}),
@@ -51,9 +52,12 @@ export function turnOf(params: unknown): CodexTurn | undefined {
   };
 }
 
-export function errorOf(params: unknown): { error: Error; willRetry: boolean } | undefined {
+export function errorOf(
+  params: unknown,
+  rateLimits: CodexRateLimits,
+): { error: Error; willRetry: boolean } | undefined {
   if (!isObject(params)) return undefined;
-  const error = turnError(params.error);
+  const error = turnError(params.error, rateLimits);
   return error ? { error, willRetry: params.willRetry === true } : undefined;
 }
 
@@ -92,11 +96,12 @@ function mcpFailureText({ name, detail }: McpServerFailure): string {
   return detail.includes(name) ? detail : `MCP server "${name}" failed to start: ${detail}`;
 }
 
-function turnError(value: unknown): Error | undefined {
+// Only the account's usage limit fails a turn on quota. `rateLimitExceeded` is
+// a throughput limit that Codex often retries by itself.
+function turnError(value: unknown, rateLimits: CodexRateLimits): Error | undefined {
   if (!isObject(value) || typeof value.message !== 'string') return undefined;
-  return value.codexErrorInfo === 'usageLimitExceeded' ||
-    value.codexErrorInfo === 'rateLimitExceeded'
-    ? new UsageLimitError(value.message)
+  return value.codexErrorInfo === 'usageLimitExceeded'
+    ? rateLimits.usageLimitError(value.message)
     : new Error(value.message);
 }
 
@@ -280,6 +285,10 @@ export class CodexEventMapper {
     return [{ transcript: this.transcript('status', { text: mcpFailureText(failure) }) }];
   }
 
+  statusEvent(text: string): NormalizedEvent {
+    return { transcript: this.transcript('status', { text }) };
+  }
+
   errorEvent(error: unknown): NormalizedEvent {
     return {
       transcript: this.transcript('error', {
@@ -369,7 +378,7 @@ export class CodexEventMapper {
         ...(provenance ? { toolProvenance: provenance } : {}),
         transcript: this.transcript('tool_result', {
           toolName: call.name,
-          text: toolOutput(item, open?.output ?? '', this.appSessionId),
+          ...toolOutput(item, open?.output ?? '', this.appSessionId),
           isError: call.failed && !call.interrupted,
           toolUseId: call.id,
           ...(call.interrupted ? { interrupted: true as const } : {}),

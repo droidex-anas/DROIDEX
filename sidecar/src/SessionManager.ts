@@ -1,3 +1,4 @@
+import type { SteeredReportDelivery } from './SessionLifecycle.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
@@ -19,6 +20,7 @@ import type {
   ProviderStatus,
   SessionSummary,
   ModelInfo,
+  ModelSwitch,
   ReasoningEffort,
   ResponseFormat,
   ServerEvent,
@@ -57,6 +59,7 @@ import { buildRuntimeSnapshot } from './runtimeSnapshot.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { SessionBrowser, type SessionBrowsers } from './SessionBrowser.js';
+import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
 import { SidebarRequests } from './sidebar/sidebarRequests.js';
 import { SidebarSessions } from './sidebar/SidebarSessions.js';
 import { requireProjectService } from './projects/service.js';
@@ -115,6 +118,7 @@ import { McpSettings } from './McpSettings.js';
 import { loadFactoryMcpServers } from './FactoryMcpConfig.js';
 import { assertValidResponseFormat, formatAppPrompt, formatAppRepairPrompt } from './appPrompt.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
+import { AccountUsage } from './providers/accountUsage.js';
 import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
@@ -215,7 +219,7 @@ export interface SessionManagerOptions {
   canvasWorkspace?: () => Promise<CanvasWorkspace>;
   // Asks the renderer pages showing a canvas for an inspect screenshot.
   canvasCapture?: CanvasCapture;
-  assetUrlFor?: (path: string) => string;
+  onUserPrompt?: (appSessionId: string) => void;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
   dependencies?: SessionManagerDependencies;
@@ -224,6 +228,8 @@ export interface SessionManagerOptions {
   // writing under $HOME long after the answer arrives. A test that pins $HOME
   // to a temp directory must pass its own probes — usually none at all.
   providerProbes?: ProviderProbeMap;
+  /** The desktop app's browser channel; without one, browser actions fail. */
+  requestBrowser?: RequestBrowser;
 }
 
 const MAX_OPEN_CHILD_SESSIONS = boundedInt(
@@ -316,8 +322,8 @@ export class SessionManager {
   private readonly lineage = new SessionLineageStore(sessionLineagePath(droidexUserDataDir()));
   private readonly forks: SessionForks;
   private shutdownPromise?: Promise<void>;
-  // Per-session autonomy mutation queue: rapid changes settle against the
-  // provider in the order they were requested.
+  // Providers serialize native writes; this tracks outstanding changes so
+  // delivery and retirement cannot outlive them.
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly canvasTurns: CanvasTurns;
@@ -340,11 +346,31 @@ export class SessionManager {
   // Loaded with their first probe or session, after the sidecar is ready.
   private readonly claudeProvider = new LazyProvider('claude', async () => {
     const { ClaudeProvider } = await import('./providers/claude/ClaudeProvider.js');
-    return new ClaudeProvider();
+    return new ClaudeProvider((meters) => {
+      this.accountUsage.pushed('claude', meters);
+    });
   });
   private readonly codexProvider = new LazyProvider('codex', async () => {
     const { CodexProvider } = await import('./providers/codex/CodexProvider.js');
-    return new CodexProvider();
+    return new CodexProvider((meters) => {
+      this.accountUsage.pushed('codex', meters);
+    });
+  });
+  private readonly accountUsage = new AccountUsage({
+    // A chat that has begun closing still holds a connection, but not for long.
+    liveSession: (provider) =>
+      this.registry
+        .liveSessionsSnapshot()
+        .find(
+          (live) =>
+            live.summary.provider === provider &&
+            !hasSessionCloseStarted(live) &&
+            !live.session.isClosed,
+        )?.session,
+    readWithoutSession: (provider, signal) => this.providerFor(provider).readUsage(signal),
+    emit: (event) => {
+      this.emit(event);
+    },
   });
   private readonly providerProbes: ProviderProbes;
   private readonly harnessClis = new HarnessCliUpdater(
@@ -413,7 +439,6 @@ export class SessionManager {
         },
       });
       const browsers = new BrowserSessionManager({
-        assetUrlFor: options.assetUrlFor,
         emit: (event) => {
           this.emit(event);
         },
@@ -548,6 +573,9 @@ export class SessionManager {
       emitError: (error) => {
         this.emitError(error);
       },
+      observeProviderClosure: (liveSession) => {
+        this.lifecycle.observeProviderClosure(liveSession);
+      },
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       getFactoryDefaults: () => this.getFactoryDefaults(),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
@@ -642,6 +670,11 @@ export class SessionManager {
       runtime: this.runtime,
       getFactoryDefaults: () => this.getFactoryDefaults(),
       providerDefaultModelId: (provider) => this.providerProbes.status(provider)?.defaultModelId,
+      knownModel: (provider, modelId) =>
+        (provider === DEFAULT_PROVIDER
+          ? this.droidModels.known()
+          : (this.providerProbes.status(provider)?.models ?? [])
+        ).find((model) => model.id === modelId),
       maxContextTokensForModel: (modelId) => this.maxContextTokensForModel(modelId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       refreshPrimary: async (live, modelChanged) => {
@@ -654,14 +687,12 @@ export class SessionManager {
         const target = this.primaryContextTarget(live);
         if (target) await this.context.refresh(target);
       },
-      onPrimaryModelChanged: (summary, from, to) => {
-        return this.appendSettingsStatus(summary, `Model switched: ${from} → ${to}`, { from, to });
-      },
+      onPrimaryModelChanged: (summary, modelSwitch) => this.appendModelSwitch(summary, modelSwitch),
       onSettled: (appSessionId) => {
         this.runtimeRetirement.arm();
         // A settled write is one of the states that made this session refuse a
         // turn, so a scheduled delivery waiting on it can be rearmed.
-        this.onSessionAvailable?.(appSessionId);
+        if (!this.autonomyMutationTails.has(appSessionId)) this.onSessionAvailable?.(appSessionId);
       },
       emitError: (error) => {
         this.emitError(error);
@@ -684,6 +715,7 @@ export class SessionManager {
     });
     this.lifecycle = new SessionLifecycle({
       whenSessionHistoryReady: () => this.sessionFiles.whenBootReconciled(),
+      onUserPrompt: options.onUserPrompt,
       beforeFirstTurn: options.beforeFirstTurn,
       provider: (kind) => this.providerFor(kind),
       providerDefaultModelId: (kind) => this.providerProbes.status(kind)?.defaultModelId,
@@ -705,13 +737,28 @@ export class SessionManager {
         this.lineage.record(appSessionId, lineage);
       },
       applyPendingSessionSettings: (appSessionId) => this.modelSettings.applyPending(appSessionId),
-      waitForSettingsMutations: (appSessionId) => this.modelSettings.waitForMutations(appSessionId),
+      waitForSettingsMutations: async (appSessionId) => {
+        do {
+          await Promise.all([
+            this.modelSettings.waitForMutations(appSessionId),
+            this.autonomyMutationTails.get(appSessionId),
+          ]);
+        } while (
+          this.modelSettings.hasActiveMutations(appSessionId) ||
+          this.autonomyMutationTails.has(appSessionId)
+        );
+      },
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       canvasTurns: this.canvasTurns,
       eventFlow: this.eventFlow,
+      settleStreaming: (appSessionId, sourceSessionId) =>
+        this.timeline.settleStreaming(appSessionId, sourceSessionId),
+      releaseRuntimeForCapacity: (excludedAppSessionId) =>
+        this.runtimeRetirement.releaseOldestForCapacity(excludedAppSessionId),
       hasPendingInteractions: (appSessionId) => this.interactions.hasPending(appSessionId),
       hasActiveSettingsChanges: (appSessionId) =>
-        this.modelSettings.hasActiveMutations(appSessionId),
+        this.modelSettings.hasActiveMutations(appSessionId) ||
+        this.autonomyMutationTails.has(appSessionId),
       onSessionAvailable: options.onSessionAvailable,
       onScheduledCapacityChanged: options.onScheduledCapacityChanged,
       context: this.context,
@@ -733,7 +780,14 @@ export class SessionManager {
       forgetPendingSettings: (appSessionId) => {
         this.modelSettings.forget(appSessionId);
       },
-      closeBrowserSession: (appSessionId) => this.browsers.close(appSessionId),
+      // A browser closed with its chat's runtime goes from the app too, with
+      // its marks, while its pane stays for a new page. One closed by a
+      // shutdown is kept for the next sidecar to take up.
+      closeBrowserSession: async (appSessionId) => {
+        await this.browsers.close(appSessionId);
+        if (!this.shutdownPromise && !this.browsers.hasSession(appSessionId))
+          this.emit({ type: 'browser.closed', appSessionId, keepPane: true });
+      },
       stopVoiceSession: (appSessionId) => this.sessionVoice.closeSession(appSessionId),
       emit: (event) => {
         this.emit(event);
@@ -744,10 +798,11 @@ export class SessionManager {
       appendProgress: (appSessionId, text) => {
         this.timeline.appendProgress(appSessionId, text);
       },
-      appendError: (appSessionId, message) => {
-        this.timeline.appendError(appSessionId, message);
+      appendError: (appSessionId, message, details) => {
+        this.timeline.appendError(appSessionId, message, details);
       },
-      appendSteer: (appSessionId, text) => this.timeline.announcePrompt(appSessionId, text, true),
+      appendSteer: (appSessionId, text, steerId) =>
+        this.timeline.announcePrompt(appSessionId, text, true, steerId),
       catalogUpdated: (liveSession, items) => {
         if (this.registry.getLive(liveSession.summary.appSessionId) !== liveSession) return;
         this.emit({
@@ -766,7 +821,8 @@ export class SessionManager {
       onScreenAppSessionIds: () => this.context.onScreenSessions(),
       hasUnsettledChildren: (id) => this.childSessions.hasUnsettledChildren(id),
       hasOpenBrowser: (id) => this.browsers.hasSession(id),
-      hasPendingSettings: (id) => this.modelSettings.hasPending(id),
+      hasPendingSettings: (id) =>
+        this.modelSettings.hasPending(id) || this.autonomyMutationTails.has(id),
       hasAgentProcesses: (id) => this.agentProcesses.hasProcesses(id),
       hasLiveVoice: (id) => this.sessionVoice.isLive(id),
       retire: (id) => this.lifecycle.close(id, 'preserve-pending'),
@@ -786,7 +842,7 @@ export class SessionManager {
       whenSessionHistoryReady: () => this.sessionFiles.whenBootReconciled(),
       journal: new LiveRuntimeJournal(liveRuntimeJournalPath(droidexUserDataDir())),
       registry: this.registry,
-      lifecycle: this.lifecycle,
+      lifecycle: { resume: (id) => this.lifecycle.resume(id, true) },
       liveChildren: () =>
         this.childSessions.liveChildSummaries().map((child) => ({
           parentAppSessionId: child.parentAppSessionId,
@@ -819,6 +875,13 @@ export class SessionManager {
         this.timeline.readTranscript(appSessionId) ?? readProviderTranscript(appSessionId),
       updateModel: (appSessionId, settings) =>
         this.modelSettings.update(appSessionId, 'primary', settings),
+      beginForkOpen: (appSessionId) => {
+        this.lifecycle.beginForkOpen(appSessionId);
+      },
+      endForkOpen: (appSessionId) => {
+        this.lifecycle.endForkOpen(appSessionId);
+      },
+      isCloseRequested: (appSessionId) => this.lifecycle.isCloseRequested(appSessionId),
       isShutdownStarted: () => this.shutdownPromise !== undefined,
       create: (command, branch) => this.lifecycle.create(command, branch),
       send: (appSessionId, text) => this.lifecycle.send(appSessionId, text),
@@ -834,7 +897,14 @@ export class SessionManager {
       emit: (event) => {
         this.emit(event);
       },
-      sendPrompt: (appSessionId, prompt) => this.lifecycle.send(appSessionId, prompt),
+      framePrompt: (appSessionId, text, responseFormat) =>
+        this.sessionPrompt(appSessionId, text, responseFormat),
+      sendPrompt: (appSessionId, prompt, mentions) =>
+        this.lifecycle.send(appSessionId, prompt, mentions),
+      requestBrowser:
+        options.requestBrowser ??
+        (() =>
+          Promise.reject(new Error('The browser is only available in the DROIDEX desktop app.'))),
     });
   }
 
@@ -846,12 +916,15 @@ export class SessionManager {
    * Resolves once session history knows every stored conversation. Call it
    * after startSessionFileServing, since it starts that work itself otherwise.
    */
-  whenSessionHistoryReady(): Promise<void> {
-    return this.sessionFiles.whenBootReconciled();
+  async whenSessionHistoryReady(): Promise<void> {
+    await this.sessionFiles.whenBootReconciled();
+    await this.adoption.adopt();
   }
 
   connect(apiKey?: string): void {
+    const factoryApiKey = this.runtime.factoryApiKey();
     this.runtime.connect(apiKey);
+    if (this.runtime.factoryApiKey() !== factoryApiKey) this.accountUsage.factoryKeyChanged();
     this.ready = true;
     void this.adoption.adopt().catch((error: unknown) => {
       this.emit({
@@ -865,6 +938,19 @@ export class SessionManager {
     void this.emitProviderStatus();
     void this.providerProbes.refresh();
     const recovery = this.history.persistenceRecovery?.();
+    if (recovery?.unavailableReason !== undefined) {
+      this.emit(
+        serverEventForHistoryStatus({ state: 'unavailable', message: recovery.unavailableReason }),
+      );
+    }
+    if (recovery?.searchUnavailableReason !== undefined) {
+      this.emit(
+        serverEventForHistoryStatus({
+          state: 'search_unavailable',
+          message: recovery.searchUnavailableReason,
+        }),
+      );
+    }
     if (recovery?.hadUnflushedWork) {
       this.emit({
         type: 'error',
@@ -878,11 +964,15 @@ export class SessionManager {
   }
 
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {
-    await this.adoption.adopt();
-    const persistence = this.history.persistenceRecovery?.() ?? {
+    let persistence = this.history.persistenceRecovery?.() ?? {
       durable: true,
       hadUnflushedWork: false,
     };
+    // Adoption needs canonical history; its failure must not hide storage health.
+    if (persistence.unavailableReason === undefined) {
+      await this.adoption.adopt();
+      persistence = this.history.persistenceRecovery?.() ?? persistence;
+    }
     return buildRuntimeSnapshot({
       runtime: this.runtime.status(),
       sessions: this.registry.liveSessionsSnapshot().map((live) => ({ ...live.summary })),
@@ -987,6 +1077,9 @@ export class SessionManager {
         await this.emitProviderStatus();
         await this.providerProbes.refresh();
         return;
+      case 'usage.refresh':
+        await this.accountUsage.refresh(cmd.provider, cmd);
+        return;
       case 'catalog.tools':
         await this.emitToolCatalog(cmd.providerSessionId);
         return;
@@ -1025,6 +1118,19 @@ export class SessionManager {
       case 'session.sendNow':
         await this.lifecycle.sendNow(cmd.appSessionId, cmd.steerId);
         return;
+      case 'session.withdrawSteer': {
+        const prompt = await this.lifecycle.withdrawSteer(cmd.appSessionId, cmd.steerId);
+        this.emit({
+          type: 'session.steerWithdrawn',
+          appSessionId: cmd.appSessionId,
+          steerId: cmd.steerId,
+          requestId: cmd.requestId,
+          withdrawn: prompt !== undefined,
+          ...(prompt ? { text: prompt.text } : {}),
+          ...(prompt?.mentions ? { mentions: prompt.mentions } : {}),
+        });
+        return;
+      }
       case 'approval.respond':
         await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
         return;
@@ -1072,10 +1178,13 @@ export class SessionManager {
         return;
       case 'session.updateSettings':
         assertProviderUnchanged(cmd);
-        await this.updatePrimaryModel(cmd);
-        if (cmd.autonomy !== undefined) {
-          await this.setAutonomy(cmd.appSessionId, cmd.autonomy);
-        }
+        // Permission decisions cannot wait for a model change to finish the turn.
+        await Promise.all([
+          this.updatePrimaryModel(cmd),
+          cmd.autonomy !== undefined
+            ? this.setAutonomy(cmd.appSessionId, cmd.autonomy, cmd.requestId)
+            : undefined,
+        ]);
         if (cmd.interactionMode !== undefined) {
           await this.setInteractionMode(cmd.appSessionId, cmd.interactionMode);
         }
@@ -1178,41 +1287,23 @@ export class SessionManager {
         // Closing the last resource a session was holding can make it retirable.
         this.runtimeRetirement.arm();
         return;
+      case 'browser.restore':
+        await this.sessionBrowser.restore(cmd);
+        return;
       case 'browser.reload':
         await this.sessionBrowser.reload(cmd);
-        return;
-      case 'browser.refresh':
-        await this.sessionBrowser.refresh(cmd);
         return;
       case 'browser.resizeViewport':
         await this.sessionBrowser.resizeViewport(cmd);
         return;
-      case 'browser.click':
-        await this.sessionBrowser.click(cmd);
-        return;
-      case 'browser.type':
-        await this.sessionBrowser.type(cmd);
-        return;
-      case 'browser.keypress':
-        await this.sessionBrowser.keypress(cmd);
-        return;
-      case 'browser.scroll':
-        await this.sessionBrowser.scroll(cmd);
-        return;
-      case 'browser.screenshot':
-        await this.sessionBrowser.screenshot(cmd);
-        return;
-      case 'browser.inspectPoint':
-        await this.sessionBrowser.inspectPoint(cmd);
-        return;
       case 'browser.design.addReference':
         await this.sessionBrowser.addReference(cmd);
         return;
+      case 'browser.design.removeReferences':
+        this.browsers.removeReferences(cmd.appSessionId, cmd.ids);
+        return;
       case 'browser.design.sendPrompt':
         await this.sessionBrowser.sendDesignPrompt(cmd);
-        return;
-      case 'browser.native.result':
-        this.sessionBrowser.resolveNativeBrowserRequest(cmd.result);
         return;
       case 'sidebar.result':
         this.sidebarRequests.answer(cmd.result);
@@ -1239,12 +1330,38 @@ export class SessionManager {
     }
   }
 
+  automaticRuntimeLoad(): { live: number; limit: number } {
+    return this.lifecycle.runtimeLoad();
+  }
+
+  makeAutomaticRuntimeRoom(appSessionId: string): Promise<boolean> {
+    return this.lifecycle.makeAutomaticRuntimeRoom(appSessionId);
+  }
+
+  createAutomaticSession(
+    command: Extract<ClientCommand, { type: 'session.create' }>,
+    appSessionId?: string,
+  ): Promise<boolean> {
+    return this.lifecycle.createAutomatic(command, appSessionId);
+  }
+
   deliverScheduledMessage(
     appSessionId: string,
     prompt: string,
     isCurrent: () => boolean,
+    wakingProjectLead = false,
   ): Promise<AutomationDeliveryReceipt> {
-    return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent);
+    return this.lifecycle.deliverScheduled(appSessionId, prompt, isCurrent, wakingProjectLead);
+  }
+
+  steerRunningTurn(
+    appSessionId: string,
+    prompt: string,
+    isCurrent: () => boolean,
+    now = false,
+    delivery?: SteeredReportDelivery,
+  ): Promise<boolean> {
+    return this.lifecycle.steerRunningTurn(appSessionId, prompt, isCurrent, now, delivery);
   }
 
   async automationSessionContext(appSessionId: string): Promise<{
@@ -1273,9 +1390,26 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  transcriptTail(appSessionId: string, limit: number, fullText = false) {
+    return this.timeline.tail(appSessionId, limit, fullText);
+  }
+
   /** Whether a question a conversation was asked is still waiting for an answer. */
   isQuestionPending(appSessionId: string, requestId: string): boolean {
     return this.interactions.isQuestionPending(appSessionId, requestId);
+  }
+
+  /** Whether this conversation is stopped on a permission request only the user can answer. */
+  isApprovalPending(appSessionId: string): boolean {
+    return this.interactions.hasPendingApproval(appSessionId);
+  }
+
+  pendingApproval(appSessionId: string, requestId?: string) {
+    return this.interactions.pendingApproval(appSessionId, requestId);
+  }
+
+  approveFor(source: string, target: string, requestId: string, decision: 'allow' | 'deny') {
+    return this.interactions.approveFor(source, target, requestId, decision);
   }
 
   /** Whether this conversation is open right now, rather than merely known. */
@@ -1560,10 +1694,9 @@ export class SessionManager {
     return targets;
   }
 
-  private async appendSettingsStatus(
+  private async appendModelSwitch(
     summary: SessionSummary,
-    text: string,
-    modelSwitch?: TranscriptEvent['modelSwitch'],
+    modelSwitch: ModelSwitch,
   ): Promise<void> {
     const id = summary.appSessionId;
     const closed = !this.registry.getLive(id);
@@ -1576,8 +1709,8 @@ export class SessionManager {
         role: 'primary',
         ts: Date.now(),
         kind: 'status',
-        text,
-        ...(modelSwitch ? { modelSwitch } : {}),
+        text: `Model switched: ${modelSwitch.from} → ${modelSwitch.to}`,
+        modelSwitch,
       });
     } finally {
       if (closed) await this.timeline.releaseTranscript(id);
@@ -1621,6 +1754,7 @@ export class SessionManager {
       liveSession,
       request,
     );
+    this.accountUsage.afterTurn(liveSession.summary.provider);
   }
 
   private isCurrentPrimarySession(liveSession: LiveSession): boolean {
@@ -1738,6 +1872,8 @@ export class SessionManager {
 
   private applyEventSideEffects(appSessionId: string, n: NormalizedSideEffects): void {
     this.missionControlPolicy.apply(appSessionId, n);
+    if (n.harnessModelSwitch)
+      this.modelSettings.adoptHarnessModel(appSessionId, n.harnessModelSwitch);
     if (n.childSession) {
       const { toolUseId, ...childSession } = n.childSession;
       this.childSessions.admitChildObservation({
@@ -1873,23 +2009,31 @@ export class SessionManager {
     });
   }
 
-  private setAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {
-    const tail = this.autonomyMutationTails.get(appSessionId) ?? Promise.resolve();
-    // A rejected predecessor must not drop the changes queued behind it.
-    const next = tail.catch(() => undefined).then(() => this.applyAutonomy(appSessionId, autonomy));
+  private setAutonomy(appSessionId: string, autonomy: Autonomy, requestId?: string): Promise<void> {
+    const tail = this.autonomyMutationTails.get(appSessionId);
+    const applied = this.applyAutonomy(appSessionId, autonomy, requestId);
+    const next = tail ? Promise.all([tail, applied]).then(() => undefined) : applied;
     this.autonomyMutationTails.set(appSessionId, next);
     return next.finally(() => {
       if (this.autonomyMutationTails.get(appSessionId) === next) {
         this.autonomyMutationTails.delete(appSessionId);
+        this.runtimeRetirement.arm();
+        if (!this.modelSettings.hasActiveMutations(appSessionId))
+          this.onSessionAvailable?.(appSessionId);
       }
     });
   }
 
-  private async applyAutonomy(appSessionId: string, autonomy: Autonomy): Promise<void> {
+  private async applyAutonomy(
+    appSessionId: string,
+    autonomy: Autonomy,
+    requestId: string = randomUUID(),
+  ): Promise<void> {
     const liveSession = this.registry.getLive(appSessionId);
     if (!liveSession) {
       this.emitError({
         code: 'session.autonomy_update_failed',
+        requestId,
         appSessionId,
         message: 'Autonomy can only be changed on a live session.',
         recoverable: true,
@@ -1900,54 +2044,50 @@ export class SessionManager {
     if (!nextAutonomy) {
       this.emitError({
         code: 'session.autonomy_update_failed',
+        requestId,
         appSessionId,
         message: `Unsupported autonomy level: ${autonomy}`,
         recoverable: true,
       });
       return;
     }
-    if (liveSession.summary.autonomy === nextAutonomy) return;
     const session = liveSession.session;
+    const isCurrent = () =>
+      !this.shutdownPromise &&
+      this.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session &&
+      !hasSessionCloseStarted(liveSession) &&
+      !session.isClosed;
+    const publishAutonomy = () => {
+      if (liveSession.summary.autonomy === session.autonomy) return;
+      this.registry.updateSummary(appSessionId, { autonomy: session.autonomy });
+    };
     try {
-      await session.setAutonomy(nextAutonomy);
+      const applied = session.setAutonomy(nextAutonomy);
+      // Save revocations before the native acknowledgement, including refusals.
+      try {
+        publishAutonomy();
+      } finally {
+        await applied;
+      }
+      // Native acknowledgements belong only to the runtime that received them.
+      if (!isCurrent()) {
+        throw new Error('Autonomy change was interrupted by a session restart or close.');
+      }
+      publishAutonomy();
+      this.emit({ type: 'session.autonomy_update_applied', appSessionId, requestId });
     } catch (err) {
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: `Could not change autonomy: ${errMsg(err)}`,
-        recoverable: true,
-      });
-      return;
-    }
-    // The provider accepted the change, but the session may have closed or its
-    // provider session may have been swapped (compaction/resume) while the
-    // request was in flight. Publish only when the captured session is still
-    // the live one so a stale settlement cannot clobber its replacement.
-    if (
-      this.shutdownPromise ||
-      this.registry.getLive(appSessionId) !== liveSession ||
-      liveSession.session !== session ||
-      hasSessionCloseStarted(liveSession)
-    ) {
-      // Dropping the confirmation silently would leave the caller's pending
-      // state spinning forever; settle it with a recoverable error instead.
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: 'Autonomy change was interrupted by a session restart or close.',
-        recoverable: true,
-      });
-      return;
-    }
-    try {
-      this.registry.updateSummary(appSessionId, { autonomy: nextAutonomy });
-    } catch (err) {
-      this.emitError({
-        code: 'session.autonomy_update_failed',
-        appSessionId,
-        message: `Could not record the autonomy change: ${errMsg(err)}`,
-        recoverable: true,
-      });
+      try {
+        if (isCurrent()) publishAutonomy();
+      } finally {
+        this.emitError({
+          code: 'session.autonomy_update_failed',
+          requestId,
+          appSessionId,
+          message: `Could not change autonomy: ${errMsg(err)}`,
+          recoverable: true,
+        });
+      }
     }
   }
 
@@ -2186,6 +2326,7 @@ export class SessionManager {
     this.runtimeRetirement.stop();
     this.runtimeWarmUp.stop();
     this.providerProbes.cancel();
+    this.accountUsage.close();
     let firstError: unknown;
     const run = async (action: () => void | Promise<void>): Promise<void> => {
       try {

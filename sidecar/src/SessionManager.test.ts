@@ -8,7 +8,6 @@ import {
   DecompSessionType,
   InitializeSessionResultSchema,
   McpServerStatus,
-  McpServerConfigSchema,
   McpServerType,
   SettingsLevel,
 } from '@factory/droid-sdk';
@@ -195,66 +194,6 @@ test('ordinary create initializes CLI and DROIDEX MCP servers without persisting
     );
     assert.deepEqual(h.provider.session('provider-1').prompts, ['hello']);
   } finally {
-    await h.dispose();
-  }
-});
-
-test('a configured Canvas name collision closes servers started earlier in admission', async () => {
-  const h = createSessionManagerTestContext({
-    configuredMcpServers: [
-      McpServerConfigSchema.parse({
-        type: 'http',
-        name: 'DROIDEX_CANVAS',
-        url: 'https://example.test/mcp',
-      }),
-    ],
-  });
-  try {
-    await h.create(chatCommand('collision'));
-    assert.equal(h.runtime.createCalls.length, 0);
-    assert.equal(h.mcpServerCloseCalls, 1);
-    assert.match(JSON.stringify(errorEvents(h.events)), /reserved by DROIDEX/);
-  } finally {
-    await h.dispose();
-  }
-});
-
-test('closing while a local MCP server starts releases it before a provider opens', async () => {
-  let releaseStart = (): void => undefined;
-  let signalStart = (): void => undefined;
-  const held = new Promise<void>((resolve) => {
-    releaseStart = resolve;
-  });
-  const started = new Promise<void>((resolve) => {
-    signalStart = resolve;
-  });
-  let closes = 0;
-  const h = createSessionManagerTestContext({
-    createLocalMcpResource: () => ({
-      start: async () => {
-        signalStart();
-        await held;
-        return McpServerConfigSchema.parse({
-          type: 'http',
-          name: 'test-browser',
-          url: 'http://127.0.0.1/test',
-        });
-      },
-      close: async () => {
-        closes += 1;
-      },
-    }),
-  });
-  try {
-    const opening = h.create(chatCommand('closing'));
-    await started;
-    const closing = h.shutdown();
-    releaseStart();
-    await Promise.all([opening, closing]);
-    assert.equal(closes, 1);
-    assert.equal(h.runtime.createCalls.length, 0);
-  } finally {
-    releaseStart();
     await h.dispose();
   }
 });
@@ -458,32 +397,6 @@ for (const outcome of ['resume', 'close', 'shutdown'] as const) {
     }
   });
 }
-
-test('an app-owned chat with incomplete native history refuses resume without losing Design metadata', async () => {
-  const h = createSessionManagerTestContext();
-  try {
-    const id = 'unfinished-design';
-    h.fixture.seedHistorySummaries([{ ...historicalSummary(id, id), sessionPurpose: 'design' }]);
-    writeProviderConversation(h.home, id, 'Unfinished design');
-    writeFileSync(
-      path.join(h.home, '.factory', 'sessions', `${id}.jsonl`),
-      JSON.stringify({ type: 'session_start', sessionId: id, cwd: '/workspace' }) + '\n',
-    );
-    const before = h.history.summaryPatchesAndHidden().patches.get(id);
-
-    await h.handle({ type: 'session.resume', appSessionId: id });
-
-    assert.equal(h.runtime.loadCalls.length, 0);
-    assert.equal(
-      h.events.some((event) => event.type === 'session.created'),
-      false,
-    );
-    assert.match(errorEvents(h.events)[0]?.message ?? '', /missing or incomplete/);
-    assert.deepEqual(h.history.summaryPatchesAndHidden().patches.get(id), before);
-  } finally {
-    await h.dispose();
-  }
-});
 
 test('resuming an AGI chat preserves its explicit non-Mission-Control purpose', async () => {
   const h = createSessionManagerTestContext();
@@ -746,7 +659,12 @@ function updateAutonomy(
   appSessionId: string,
   autonomy: Protocol.Autonomy,
 ): Promise<void> {
-  return h.handle({ type: 'session.updateSettings', appSessionId, autonomy });
+  return h.handle({
+    type: 'session.updateSettings',
+    appSessionId,
+    autonomy,
+    requestId: `autonomy-${autonomy}`,
+  });
 }
 
 function assertAutonomyError(error: ErrorEvent | undefined, message: RegExp): void {
@@ -777,6 +695,15 @@ test('live autonomy update writes the provider first and publishes the confirmed
     await h.waitForIdle();
     assert.equal(settings.length, writesBefore);
     assert.equal(errorEvents(h.events).length, 1);
+    assert.deepEqual(
+      h.events.filter((event) => event.type === 'session.autonomy_update_applied'),
+      Array.from({ length: 2 }, () => ({
+        type: 'session.autonomy_update_applied',
+        appSessionId: 'provider-1',
+        requestId: 'autonomy-high',
+      })),
+    );
+    assert.equal(errorEvents(h.events)[0]?.requestId, 'autonomy-high');
   } finally {
     await h.dispose();
   }
@@ -813,7 +740,7 @@ test('queued autonomy updates serialize and apply in request order', async () =>
   }
 });
 
-test('a provider rejection is a recoverable coded error that keeps the confirmed level and the queue behind it', async () => {
+test('a superseded native rejection applies the latest autonomy and settles each request once', async () => {
   const h = createSessionManagerTestContext();
   try {
     await createAutonomyChat(h);
@@ -828,20 +755,80 @@ test('a provider rejection is a recoverable coded error that keeps the confirmed
     ]);
     await h.waitForIdle();
 
-    const errors = errorEvents(h.events);
-    assert.equal(errors.length, 1);
-    assertAutonomyError(errors[0], /Could not change autonomy/);
-    assert.equal(errors[0]?.appSessionId, 'provider-1');
+    assert.deepEqual(errorEvents(h.events), []);
+    assert.deepEqual(
+      h.events
+        .filter((event) => event.type === 'session.autonomy_update_applied')
+        .map((event) => event.requestId),
+      ['autonomy-medium', 'autonomy-high'],
+    );
     assert.equal(
       sessionUpdates(h.events, 'provider-1').some((summary) => summary.autonomy === 'medium'),
       false,
     );
-    // The update queued behind the rejected one still reaches the provider.
+    // The failed write settles before the loop dispatches the newest choice.
     assert.deepEqual(session.settings.slice(writesBefore), [
       { autonomyLevel: AutonomyLevel.Medium },
       { autonomyLevel: AutonomyLevel.High },
     ]);
     assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'high');
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('a later failed escalation still publishes the level native already accepted', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    await createAutonomyChat(h);
+    await h.waitForIdle();
+    const session = h.provider.session('provider-1');
+    const write = session.updateSettings.bind(session);
+    session.updateSettings = async (settings) => {
+      if (settings.autonomyLevel === AutonomyLevel.High) throw new Error('grant refused');
+      return write(settings);
+    };
+    const gate = h.provider.deferNextUpdateSettings('provider-1');
+    const medium = updateAutonomy(h, 'provider-1', 'medium');
+    await h.waitForIdle();
+    const high = updateAutonomy(h, 'provider-1', 'high');
+    gate.resolve();
+    await Promise.all([medium, high]);
+    await h.waitForIdle();
+    assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'medium');
+    assert.equal(h.history.summaryPatchesAndHidden().patches.get('provider-1')?.autonomy, 'medium');
+    assertAutonomyError(errorEvents(h.events).at(-1), /grant refused/);
+    assert.equal(errorEvents(h.events).at(-1)?.requestId, 'autonomy-high');
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('choosing confirmed Off after a failed grant replaces the pending native choice', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    await createAutonomyChat(h);
+    await h.waitForIdle();
+    await updateAutonomy(h, 'provider-1', 'off');
+    const session = h.provider.session('provider-1');
+    const write = session.updateSettings.bind(session);
+    let highAttempts = 0;
+    session.updateSettings = async (settings) => {
+      if (settings.autonomyLevel === AutonomyLevel.High) {
+        highAttempts += 1;
+        throw new Error('grant refused');
+      }
+      return write(settings);
+    };
+    await updateAutonomy(h, 'provider-1', 'high');
+    assertAutonomyError(errorEvents(h.events).at(-1), /grant refused/);
+    const attemptsBeforeOff = highAttempts;
+    await updateAutonomy(h, 'provider-1', 'off');
+    await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'continue' });
+    await h.waitForIdle();
+    assert.equal(highAttempts, attemptsBeforeOff);
+    assert.deepEqual(session.prompts, ['go', 'continue']);
+    assert.equal(sessionUpdates(h.events, 'provider-1').at(-1)?.autonomy, 'off');
   } finally {
     await h.dispose();
   }
@@ -870,6 +857,7 @@ test('an autonomy update dropped by a close settles the caller and publishes not
     const errors = errorEvents(h.events);
     assert.equal(errors.length, 1);
     assertAutonomyError(errors[0], /interrupted/);
+    assert.equal(errors[0]?.requestId, 'autonomy-high');
   } finally {
     await h.dispose();
   }

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { McpServerConfigSchema } from '@factory/droid-sdk';
 import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
@@ -453,4 +456,90 @@ test('cancelling a queued Canvas create releases cleanup before an unrelated wri
   }
   assert.equal(workspace.listCanvases().length, 1);
   assert.equal(workspace.attachedCanvasId('queued-chat'), null);
+});
+
+test('a configured Canvas name collision closes servers started earlier in admission', async () => {
+  const h = createSessionManagerTestContext({
+    configuredMcpServers: [
+      McpServerConfigSchema.parse({
+        type: 'http',
+        name: 'DROIDEX_CANVAS',
+        url: 'https://example.test/mcp',
+      }),
+    ],
+  });
+  try {
+    await h.create(chatCommand('collision'));
+    assert.equal(h.runtime.createCalls.length, 0);
+    assert.equal(h.mcpServerCloseCalls, 1);
+    assert.match(JSON.stringify(errorEvents(h.events)), /reserved by DROIDEX/);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test('closing while a local MCP server starts releases it before a provider opens', async () => {
+  let releaseStart = (): void => undefined;
+  let signalStart = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    releaseStart = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    signalStart = resolve;
+  });
+  let closes = 0;
+  const h = createSessionManagerTestContext({
+    createLocalMcpResource: () => ({
+      start: async () => {
+        signalStart();
+        await held;
+        return McpServerConfigSchema.parse({
+          type: 'http',
+          name: 'test-browser',
+          url: 'http://127.0.0.1/test',
+        });
+      },
+      close: async () => {
+        closes += 1;
+      },
+    }),
+  });
+  try {
+    const opening = h.create(chatCommand('closing'));
+    await started;
+    const closing = h.shutdown();
+    releaseStart();
+    await Promise.all([opening, closing]);
+    assert.equal(closes, 1);
+    assert.equal(h.runtime.createCalls.length, 0);
+  } finally {
+    releaseStart();
+    await h.dispose();
+  }
+});
+
+test('an app-owned chat with incomplete native history refuses resume without losing Design metadata', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    const id = 'unfinished-design';
+    h.fixture.seedHistorySummaries([{ ...historicalSummary(id, id), sessionPurpose: 'design' }]);
+    writeProviderConversation(h.home, id, 'Unfinished design');
+    writeFileSync(
+      path.join(h.home, '.factory', 'sessions', `${id}.jsonl`),
+      JSON.stringify({ type: 'session_start', sessionId: id, cwd: '/workspace' }) + '\n',
+    );
+    const before = h.history.summaryPatchesAndHidden().patches.get(id);
+
+    await h.handle({ type: 'session.resume', appSessionId: id });
+
+    assert.equal(h.runtime.loadCalls.length, 0);
+    assert.equal(
+      h.events.some((event) => event.type === 'session.created'),
+      false,
+    );
+    assert.match(errorEvents(h.events)[0]?.message ?? '', /missing or incomplete/);
+    assert.deepEqual(h.history.summaryPatchesAndHidden().patches.get(id), before);
+  } finally {
+    await h.dispose();
+  }
 });

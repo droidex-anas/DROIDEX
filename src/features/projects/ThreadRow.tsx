@@ -76,7 +76,7 @@ export function ThreadRow({
           )}
         </span>
         <span className="text-right text-[12px] tabular-nums text-droid-text-muted">
-          {formatRelativeTime(row.updatedAt, now)}
+          {row.updatedAt > 0 ? formatRelativeTime(row.updatedAt, now) : ''}
         </span>
       </span>
     </motion.button>

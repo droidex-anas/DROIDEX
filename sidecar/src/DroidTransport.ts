@@ -17,7 +17,20 @@ export type ConnectableDroidTransport = DroidClientTransport & {
 };
 
 export function createDroidTransport(options: ProcessTransportOptions): ConnectableDroidTransport {
-  return wrapDroidTransport(new ProcessTransport(options));
+  const env = options.env && exactEnv(options.env);
+  return wrapDroidTransport(new ProcessTransport({ ...options, env }));
+}
+
+// ProcessTransport spawns with { ...process.env, ...env }, so a variable left out
+// of env still reaches Droid and every shell its agent runs: the app's profile
+// path there let an agent's perf run reap all live sessions. spawn drops
+// undefined values, which is the only way to remove one through the SDK.
+function exactEnv(env: Record<string, string>): Record<string, string> {
+  const exact: Record<string, string | undefined> = { ...env };
+  for (const key of Object.keys(process.env)) {
+    if (!Object.hasOwn(env, key)) exact[key] = undefined;
+  }
+  return exact as Record<string, string>;
 }
 
 export function wrapDroidTransport(inner: DroidClientTransport): ConnectableDroidTransport {
@@ -107,6 +120,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 class PermissionNormalizingTransport implements ConnectableDroidTransport {
   private childProcess: ChildProcess | undefined;
+  private readonly errorListeners: ((error: Error) => void)[] = [];
 
   constructor(private readonly inner: DroidClientTransport) {}
 
@@ -138,8 +152,13 @@ class PermissionNormalizingTransport implements ConnectableDroidTransport {
     });
   }
 
+  // The SDK keeps a single error handler, which its client takes; the session
+  // also needs to hear that its process is gone.
   onError(callback: (error: Error) => void): void {
-    this.inner.onError(callback);
+    if (this.errorListeners.push(callback) > 1) return;
+    this.inner.onError((error) => {
+      for (const listener of this.errorListeners) listener(error);
+    });
   }
 
   close(): Promise<void> {

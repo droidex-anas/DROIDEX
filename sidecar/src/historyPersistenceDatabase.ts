@@ -6,6 +6,7 @@ import type {
   HistoryWriterLease,
 } from './historyPersistenceProtocol.js';
 import { HistoryWriteStatements } from './historyWriteStatements.js';
+import { isProcessAlive } from './processes/isProcessAlive.js';
 
 export class HistoryPersistenceDatabase {
   private readonly db: DatabaseSync;
@@ -150,20 +151,6 @@ function parseWriterLease(value: unknown): HistoryWriterLease | null {
 
 function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
-}
-
-function isProcessAlive(processId: number): boolean {
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    return !(
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'ESRCH'
-    );
-  }
 }
 
 function rollback(db: DatabaseSync): void {

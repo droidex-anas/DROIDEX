@@ -35,9 +35,10 @@ These are license obligations, not requests.
 - **Do not imply endorsement.** Your fork is not official, supported, affiliated
   with, or approved by DROIDEX or its maintainer unless you have written
   permission.
-- **Do not present the work as originally yours.** Removing the notices, the
-  history, or the credit is both a license violation and the thing this policy
-  exists to prevent.
+- **Do not present the work as originally yours.** Removing the copyright,
+  patent, trademark, or attribution notices the license requires you to keep is
+  a license violation, and presenting the work as though you wrote it from
+  scratch is what the fork disclosure above exists to prevent.
 
 ## What you may do without asking
 

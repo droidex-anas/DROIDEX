@@ -30,6 +30,7 @@ Record these values with each release candidate:
 | `DROIDEX_UNSIGNED_RELEASE_BUILD` | Enables the fail-closed unsigned website release configuration |
 | `DROIDEX_RELEASE_BUILD` | Enables the fail-closed signed/notarized release configuration |
 | `CSC_LINK` | Developer ID Application certificate supplied through CI secrets |
+| `DROIDEX_SIGNING_CERT_P12_BASE64` / `DROIDEX_SIGNING_CERT_PASSWORD` | Stable self-signed certificate and its export password in protected release secrets |
 | `APPLE_API_KEY_P8_BASE64` | Base64-encoded App Store Connect key materialized as a temporary `.p8` file in CI |
 | `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` / `APPLE_TEAM_ID` | Apple identities used for notarization and signature verification |
 | `SENTRY_DSN` | Public client DSN embedded for crash and `/bug` reporting |
@@ -68,8 +69,10 @@ failure blocks tagging.
 
 ## Canonical release path
 
-The current website release is ad-hoc signed, but it has no trusted Developer ID
-signature and is not notarized. It does not require an Apple Developer Program subscription. Build with
+The website release is self-signed when the certificate secrets are configured,
+otherwise ad-hoc signed. It has no trusted Developer ID signature and is not
+notarized. See [the one-time signing setup](releasing.md#one-time-free-signing-setup).
+It does not require an Apple Developer Program subscription. Build with
 `DROIDEX_UNSIGNED_RELEASE_BUILD=1`, inject `SENTRY_DSN` from protected release
 configuration, generate both Sparkle appcasts with `npm run sparkle:appcast`,
 and run the unsigned preflight. Publish only these immutable public assets:
@@ -101,7 +104,7 @@ Keep the private key only in the macOS Keychain and the protected
 
 `.github/workflows/release-macos.yml` is the only production publisher. A tag
 whose name exactly matches the source package version and is already
-contained in `main` runs all release gates, builds the ad-hoc-signed Intel and
+contained in `main` runs all release gates, builds the Intel and
 Apple silicon packages, signs both Sparkle appcasts, verifies the artifacts,
 and generates `SHA256SUMS`.
 
@@ -236,30 +239,36 @@ If a deployment causes user impact:
 ## Anonymous installation analytics
 
 DROIDEX counts installations through Datadog RUM. The goal is a defensible
-answer to "how many people run this?", not product analytics. Only two events
-exist, and both are emitted by `src/lib/usageAnalytics.ts`:
+answer to "how many installations run this?". Nothing here observes features,
+funnels, or content: no feature screen, click, command, setting, harness,
+prompt, or DROID session content is recorded. What is sent is one generic `app`
+view with the RUM session metadata Datadog keeps for it, and two events, both
+emitted by `src/lib/usageAnalytics.ts`:
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `app_opened` | Every launch of a packaged build | `app_version`, `platform`, `architecture`, `distribution_channel` |
-| `install_first_launch` | Once per installation ID | the same four, plus `install_origin` |
+| `app_opened` | Every launch of a packaged, configured build whose user has not opted out, and where `DROIDEX_DISABLE_USAGE_ANALYTICS` is not `1` or `true` | `app_version`, `platform`, `architecture`, `distribution_channel` |
+| `install_first_launch` | Once per installation ID, under the same conditions | the same four, plus `install_origin` |
 
 ### The installation identifier
 
 `electron/usageAnalytics.cjs` mints a `crypto.randomUUID()` on the first launch
 that reaches it and stores it at `<userData>/usage-analytics.json`. Because
 `userData` is outside the app bundle, the identifier survives restarts and
-in-place updates, so one installation stays one row forever. It is never derived
-from hardware, serial numbers, MAC addresses, usernames, emails, IP addresses,
-or any account. Two installations therefore share nothing, and the identifier
-cannot be reversed into a person.
+in-place updates, so an installation keeps counting as one installation for as
+long as that file is there. It is never derived from hardware, serial numbers,
+MAC addresses, usernames, emails, IP addresses, or any account, so it carries
+nothing that can be reversed into a person or matched against another
+installation. Opting out deletes it and opting back in mints a new one, so the
+count is of installations over time and not of people.
 
 `install_origin` separates the two populations that appear the first time an
 instrumented build runs:
 
-- `new_install` — nothing else was in `userData`, so this is a genuinely new user.
+- `new_install` — nothing else was in `userData`, so this is a first run of the
+  app against a fresh profile.
 - `existing_install` — an older DROIDEX had already written to `userData`, so
-  this is an existing user whose app updated into an instrumented build.
+  this is an installation that updated into an instrumented build.
 
 Without that flag, the day an instrumented release ships, the entire existing
 user base would look like new installs.
@@ -330,6 +339,11 @@ the packaged `package.json` under `datadog`, which `readBuildMetadata()` in
 | `DATADOG_SITE` | variable | Datadog site — `us5.datadoghq.com` for this project |
 | `DROIDEX_DISTRIBUTION_CHANNEL` | literal | `release`, set by the workflow only |
 
+`Kind` says where the release environment holds the value, not how sensitive it
+is. The application id and client token are stored as environment secrets so
+they are not editable from a fork, but both are embedded in the packaged app and
+are public once it ships.
+
 A Datadog **API key** must never be added. It is a server-side credential; a
 desktop app ships to users' machines, so anything embedded in it is public. The
 RUM client token is designed for exactly this exposure: it can only submit RUM
@@ -347,8 +361,10 @@ prescribes. Datadog's dedicated Electron SDK is alpha, requires Electron 39 or
 newer, and does not replace the Browser SDK — it still needs it in every
 renderer and only bridges the telemetry through the main process.
 
-[electron-guide]: https://docs.datadoghq.com/real_user_monitoring/guide/monitor-electron-applications-using-browser-sdk/ The app sets `service: droidex` and `env: production` itself, so no
-further configuration is needed in Datadog.
+The app sets `service: droidex` and `env: production` itself, so no further
+configuration is needed in Datadog.
+
+[electron-guide]: https://docs.datadoghq.com/real_user_monitoring/guide/monitor-electron-applications-using-browser-sdk/
 
 ### Reading the numbers
 
@@ -370,8 +386,8 @@ are excluded, and count `@usr.id`, which is the installation ID.
       @action.name:install_first_launch @context.distribution_channel:release @context.install_origin:new_install
       → unique count of @usr.id, 1-day rollup
 
-  Splitting by `@context.install_origin` separates genuinely new users from the
-  existing base migrating onto an instrumented build.
+  Splitting by `@context.install_origin` separates first runs against a fresh
+  profile from the existing base migrating onto an instrumented build.
 
 - **Breakdown by version, platform, and architecture** — the total-installations
   query grouped by `@context.app_version`, `@context.platform`, and

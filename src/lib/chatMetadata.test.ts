@@ -208,7 +208,7 @@ test('chat metadata round-trips through localStorage and loads sanitize corrupt 
   assert.deepEqual(loadStored('[1,2]'), {});
 });
 
-test('loadChatMetadata caps the payload at MAX_TRACKED_CHATS, evicting old preferences before tombstones', () => {
+test('loadChatMetadata caps preferences without evicting hidden-chat tombstones', () => {
   const pins: Record<string, { pinnedAt: number }> = {};
   for (let i = 0; i < 1001; i += 1) pins[`s${String(i)}`] = { pinnedAt: i };
   const loaded = loadStored(pins);
@@ -228,15 +228,19 @@ test('loadChatMetadata caps the payload at MAX_TRACKED_CHATS, evicting old prefe
   };
   for (let i = 0; i < 1000; i += 1) withTombstones[`s${String(i)}`] = { pinnedAt: i };
   const kept = loadStored(withTombstones);
-  assert.equal(Object.keys(kept).length, 1000);
-  // The overflow (2) comes out of the oldest preference entries instead.
-  assert.equal(kept.s0, undefined);
-  assert.equal(kept.s1, undefined);
+  assert.equal(Object.keys(kept).length, 1002);
+  assert.equal(kept.s0?.pinnedAt, 0);
+  assert.equal(kept.s1?.pinnedAt, 1);
   assert.equal(kept['old-archive']?.archivedAt, 1);
   assert.equal(kept['old-delete']?.deletedAt, 2);
+
+  const tombstones = Object.fromEntries(
+    Array.from({ length: 1001 }, (_, index) => [`hidden-${index}`, { deletedAt: index }]),
+  );
+  assert.deepEqual(loadStored(tombstones), tombstones);
 });
 
-test('runtime updates cap the map at MAX_TRACKED_CHATS, dropping the oldest and evicting tombstones last', () => {
+test('runtime updates cap preferences without evicting hidden-chat tombstones', () => {
   // The load-time cap alone left a gap: metadata created after startup grew
   // the map (and the stored payload) past the bound until the next restart.
   let map: ChatMetadataMap = {};
@@ -257,40 +261,59 @@ test('runtime updates cap the map at MAX_TRACKED_CHATS, dropping the oldest and 
 
   // Forgetting a pin or rename is harmless; forgetting an archived/deleted
   // tombstone would resurface a chat the user explicitly hid.
-  map = {};
-  for (let i = 0; i < 1000; i += 1) map = pinChat(map, `s${String(i)}`, i) ?? map;
-
-  // Adding tombstones to a full map overflows it: the oldest pins drop first.
+  // Tombstones do not consume the visible-preference budget.
   map = archiveChat(map, 'hidden-1', 2000) ?? {};
   map = deleteChat(map, 'hidden-2', 2001) ?? {};
-  assert.equal(Object.keys(map).length, 1000);
-  assert.equal(map.s0, undefined);
-  assert.equal(map.s1, undefined);
+  assert.equal(Object.keys(map).length, 1002);
+  assert.equal(map.s0?.pinnedAt, 0);
+  assert.equal(map.s1?.pinnedAt, 1);
   assert.equal(map['hidden-1']?.archivedAt, 2000);
   assert.equal(map['hidden-2']?.deletedAt, 2001);
 
+  const tombstones: ChatMetadataMap = Object.fromEntries(
+    Array.from({ length: 1001 }, (_, index) => [`hidden-${index}`, { deletedAt: index }]),
+  );
+  const archived = archiveChat(tombstones, 'old-archive', 2003);
+  assert.ok(archived);
+  assert.equal(Object.keys(archived).length, 1002);
+  assert.deepEqual(archived['hidden-0'], tombstones['hidden-0']);
+  assert.equal(archived['old-archive']?.archivedAt, 2003);
+
+  const organized = pinChat(
+    renameChat(archived, 'visible', 'Still visible') ?? {},
+    'visible',
+    2004,
+  );
+  assert.ok(organized);
+  assert.deepEqual(organized.visible, { displayTitle: 'Still visible', pinnedAt: 2004 });
+  assert.deepEqual(loadStored(organized), organized);
+
   // One more preference entry still evicts a pin, never the tombstones.
   map = pinChat(map, 's1001', 2002) ?? {};
-  assert.equal(Object.keys(map).length, 1000);
-  assert.equal(map.s2, undefined);
+  assert.equal(Object.keys(map).length, 1002);
+  assert.equal(map.s0, undefined);
+  assert.equal(map.s1?.pinnedAt, 1);
   assert.equal(map['hidden-1']?.archivedAt, 2000);
   assert.equal(map['hidden-2']?.deletedAt, 2001);
 });
 
 test('automatic PR discovery preserves names and pins and does not churn a full cache', () => {
   const pr = { ...pullRequest(42, 'Sidebar'), headRefName: 'sidebar' };
-  const original: ChatMetadataMap = { important: { displayTitle: 'Keep this name', pinnedAt: 1 } };
+  const original: ChatMetadataMap = {
+    important: { displayTitle: 'Keep this name', pinnedAt: 1 },
+    hidden: { deletedAt: 2 },
+  };
   const ids = Array.from({ length: 1100 }, (_, index) => `chat-${String(index)}`);
   const linked = linkChatsPullRequest(original, ids, pr);
   assert.ok(linked);
-  assert.equal(Object.keys(linked).length, 1000);
+  assert.equal(Object.keys(linked).length, 1001);
   assert.deepEqual(linked.important, original.important);
   assert.equal(linkChatsPullRequest(linked, ids, pr), null);
   const renamed = renameChat(linked, 'another', 'Explicit name');
   assert.ok(renamed);
   assert.deepEqual(renamed.important, original.important);
   assert.equal(renamed.another.displayTitle, 'Explicit name');
-  assert.equal(Object.keys(renamed).length, 1000);
+  assert.equal(Object.keys(renamed).length, 1001);
 });
 
 test('PR history and titles stay bounded at runtime and on reload, deduplicating stored links', () => {
@@ -321,11 +344,11 @@ test('PR history and titles stay bounded at runtime and on reload, deduplicating
 test('opening a chat can replace passive PR metadata at capacity without evicting user organization', () => {
   const pr = pullRequest(1);
   const full: ChatMetadataMap = { pinned: { pinnedAt: 1 }, hidden: { deletedAt: 2 } };
-  for (let i = 0; i < 998; i++) full[`cached-${i}`] = { pullRequests: [pr] };
+  for (let i = 0; i < 999; i++) full[`cached-${i}`] = { pullRequests: [pr] };
   assert.equal(linkChatsPullRequest(full, ['active'], pr), null);
   const next = linkChatsPullRequest(full, ['active'], pr, 'active');
   assert.ok(next);
-  assert.equal(Object.keys(next).length, 1000);
+  assert.equal(Object.keys(next).length, 1001);
   assert.deepEqual(next.active.pullRequests, [pr]);
   assert.deepEqual(next.pinned, full.pinned);
   assert.deepEqual(next.hidden, full.hidden);

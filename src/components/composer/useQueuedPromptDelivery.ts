@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
 import { promptWithFramePins } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
@@ -22,12 +22,15 @@ export function useQueuedPromptDelivery({
   appSessionId,
   cwd,
   isLive,
+  usageLimited,
   appUpdateInstalling,
   appUpdateInstallResult,
 }: {
   appSessionId: string | null;
   cwd: string | null;
   isLive: boolean;
+  // The chat is held on a usage limit: its queue waits until the limit lifts.
+  usageLimited: boolean;
   appUpdateInstalling: boolean;
   appUpdateInstallResult: 'downloaded' | 'presented' | null;
 }): void {
@@ -35,11 +38,18 @@ export function useQueuedPromptDelivery({
   const dispatch = useStoreDispatch();
   const guard = useMemo(createPromptQueueDeliveryGuard, []);
   const generation = useRef(0);
-  const previous = useRef<{ appSessionId: string | null; live: boolean }>({
+  const previous = useRef<{ appSessionId: string | null; live: boolean; limited: boolean }>({
     appSessionId: null,
     live: false,
+    limited: false,
   });
   const previousInstalling = useRef(appUpdateInstalling);
+  // Committed limit state only: a render React drops must not open or shut
+  // the gate a delivery in flight reads.
+  const limited = useRef(usageLimited);
+  useLayoutEffect(() => {
+    limited.current = usageLimited;
+  }, [usageLimited]);
 
   useEffect(
     () => () => {
@@ -57,7 +67,7 @@ export function useQueuedPromptDelivery({
       return session !== undefined && !sessionIsLive(session);
     };
     if (!(store.getState().promptQueue[appSessionId] ?? []).length) return;
-    if (!isSessionIdle()) return;
+    if (!isSessionIdle() || limited.current) return;
     const capturedGeneration = generation.current;
     try {
       await guard.run(async () => {
@@ -69,6 +79,7 @@ export function useQueuedPromptDelivery({
         if (
           isAppUpdateInstalling() ||
           !isSessionIdle() ||
+          limited.current ||
           generation.current !== capturedGeneration
         )
           return;
@@ -76,19 +87,28 @@ export function useQueuedPromptDelivery({
         // head can be sent, and a failed send leaves it intact.
         const head = (store.getState().promptQueue[appSessionId] ?? []).at(0);
         if (!head) return;
+        const transcript = store.getState().transcripts[appSessionId] ?? [];
+        const { text, options } = queuedSend(head, hasAppContextForTranscript(transcript, null));
+        // A design prompt goes with its own snapshots of its marks, which hold
+        // all it needs even once the browser they were picked in has closed.
         if (head.design) {
-          sendDesignPrompt(head.design.browserKey, head.text, head.design.referenceIds);
+          sendDesignPrompt(
+            head.design.browserKey,
+            text,
+            head.design.references,
+            options.responseFormat,
+            options.mentions,
+          );
           dispatch({
             type: 'SESSION_TRANSCRIPT',
             event: createLocalDesignTranscriptEvent(
               appSessionId,
               head.text,
               browserTranscriptReferencesFromDesignReferences(head.design.references),
+              { skills: head.skills, files: head.files, sideChatReplies: head.sideChatReplies },
             ),
           });
         } else {
-          const transcript = store.getState().transcripts[appSessionId] ?? [];
-          const { text, options } = queuedSend(head, hasAppContextForTranscript(transcript, null));
           sendToSession(appSessionId, text, options);
           dispatch({
             type: 'SESSION_TRANSCRIPT',
@@ -117,15 +137,18 @@ export function useQueuedPromptDelivery({
 
   useEffect(() => {
     const was = previous.current;
-    // Either this session just settled, or the user came back to one that
-    // settled while they were away; both leave its queue to drain here.
-    const settled = was.live && !isLive && was.appSessionId === appSessionId;
-    const returned = was.appSessionId !== appSessionId && !isLive;
-    previous.current = { appSessionId, live: isLive };
-    if (!settled && !returned) return;
+    // This session just settled, the user came back to one that settled while
+    // they were away, or the limit an idle one was held on lifted; each leaves
+    // its queue to drain here.
+    const sameSession = was.appSessionId === appSessionId;
+    const settled = was.live && !isLive && sameSession;
+    const returned = !sameSession && !isLive;
+    const lifted = was.limited && !usageLimited && !isLive && sameSession;
+    previous.current = { appSessionId, live: isLive, limited: usageLimited };
+    if (!settled && !returned && !lifted) return;
     if (appSessionId && (store.getState().promptQueue[appSessionId] ?? []).length)
       void deliverPrompt();
-  }, [appSessionId, deliverPrompt, isLive, store]);
+  }, [appSessionId, deliverPrompt, isLive, store, usageLimited]);
 
   useEffect(() => {
     const hasQueued = Boolean(
@@ -149,7 +172,7 @@ export function useQueuedPromptDelivery({
 export function queuedSend(
   head: QueuedPrompt,
   hasAppContext: boolean,
-): { text: string; options: Parameters<typeof sendToSession>[2] } {
+): { text: string; options: NonNullable<Parameters<typeof sendToSession>[2]> } {
   // Rows queued as mentions kept their place in the chip list for the
   // preview; the text they are sent with must still leave them out.
   const mentioned = new Set(head.mentions?.map((mention) => mention.name));

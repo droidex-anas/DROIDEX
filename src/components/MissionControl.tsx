@@ -2,8 +2,7 @@ import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ChildAccess, ChildRuntimeState } from '../hooks/storeChildSession';
 import { useRepoStatus } from '../hooks/useRepoStatus';
-import { useObscuresNativeSurfaces } from '../hooks/useObscuresNativeSurfaces';
-import { interruptVisibleSession, updateSessionSettings } from '../lib/commands';
+import { interruptVisibleSession, newClientRef, updateSessionSettings } from '../lib/commands';
 import { utilityPanelForSession } from '../lib/utilityPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -440,12 +439,18 @@ function AgentsSection({
           pending={pendingAutonomy}
           placement="down"
           onSelect={(level) => {
+            const requestId = newClientRef();
             dispatch({
               type: 'AUTONOMY_UPDATE_REQUESTED',
               appSessionId: mission.appSessionId,
+              requestId,
               autonomy: level,
             });
-            updateSessionSettings({ appSessionId: mission.appSessionId, autonomy: level });
+            updateSessionSettings({
+              appSessionId: mission.appSessionId,
+              requestId,
+              autonomy: level,
+            });
           }}
         />
       </div>
@@ -619,8 +624,6 @@ function ExpandModal({
   children: React.ReactNode;
   headerExtra?: React.ReactNode;
 }) {
-  // A full-window overlay: the native browser view would paint through it.
-  useObscuresNativeSurfaces();
   return (
     <motion.div
       initial={{ opacity: 0 }}

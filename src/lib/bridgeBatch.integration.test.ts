@@ -123,7 +123,7 @@ async function startBridge() {
 }
 
 test('a full offline queue flushes whole and in order on the next socket', async () => {
-  // The sidecar admits strictly more frames than this (MAX_HELD_CLIENT_MESSAGES
+  // The sidecar admits strictly more frames than this (MAX_EARLY_COMMANDS
   // in sidecar/src/bridgeServer.ts), so a full flush is never a flood.
   const QUEUE_CAP = 256;
   const { bridge, socket: first, reconnect } = await startBridge();
@@ -200,7 +200,7 @@ test('bridge refreshes sidecar identity before reconnecting', async () => {
   await bridge.start();
   const first = FakeWebSocket.instances.at(-1);
   assert.ok(first);
-  assert.equal(withoutPageId(first.url), 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=8');
+  assert.equal(withoutPageId(first.url), 'ws://127.0.0.1:43001?token=first-token&bridgeProtocol=9');
   assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), false);
   assert.deepEqual(first.sent, []);
   first.close();
@@ -213,7 +213,7 @@ test('bridge refreshes sidecar identity before reconnecting', async () => {
   assert.ok(second);
   assert.equal(
     withoutPageId(second.url),
-    'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=8',
+    'ws://127.0.0.1:43002?token=second-token&bridgeProtocol=9',
   );
   second.open();
   assert.equal(bridge.sendIfConnected({ type: 'runtime.status' }), true);
@@ -274,7 +274,7 @@ test('[R1] Renderer command round trip', async () => {
     socket.message(batch('test-generation', seq, seq, [event]));
   };
 
-  assert.equal(withoutPageId(socket.url), 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=8');
+  assert.equal(withoutPageId(socket.url), 'ws://127.0.0.1:43123?token=r1-token&bridgeProtocol=9');
   assert.deepEqual(socket.sent, []);
   socket.open();
   assert.equal(socket.sent.length, 6);
@@ -394,7 +394,7 @@ test('reconnect carries the last fully applied generation and sequence', async (
   const second = await reconnect();
   const url = new URL(second.url);
   const pageId = new URL(first.url).searchParams.get('pageId');
-  assert.equal(url.searchParams.get('bridgeProtocol'), '8');
+  assert.equal(url.searchParams.get('bridgeProtocol'), '9');
   assert.ok(pageId);
   assert.equal(url.searchParams.get('pageId'), pageId);
   assert.deepEqual(resumeCursor(second), { generation: 'generation-1', seq: '1' });
@@ -454,10 +454,20 @@ test('coalesced sequence gaps inside one batch advance the resume cursor safely'
 });
 
 test('a generation-changed snapshot restores the cursor without a hard resync error', async () => {
-  const { socket: first, seenTypes, reconnect } = await startBridge();
+  const { bridge, socket: first, seenTypes, reconnect } = await startBridge();
+  // The store drops pending setting changes here: the process that would have
+  // answered them is gone.
+  const eventsWhenReplaced: string[][] = [];
+  bridge.subscribeRuntimeReplaced(() => eventsWhenReplaced.push(seenTypes()));
   first.message(snapshotMessage('generation-2', 42, 'generation_changed'));
 
-  assert.deepEqual(seenTypes(), ['connection', 'runtime.updated', 'sessions.processes']);
+  assert.deepEqual(eventsWhenReplaced, [[]]);
+  assert.deepEqual(seenTypes(), [
+    'connection',
+    'runtime.updated',
+    'sessions.processes',
+    'history.persistenceRecovered',
+  ]);
   first.close();
   assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-2', seq: '42' });
 });
@@ -475,6 +485,11 @@ test('late messages from a replaced socket are ignored', async () => {
 
 test('recovery snapshots replace process lists, including sessions that disappeared', async () => {
   const { bridge, socket } = await startBridge();
+  // A snapshot from the same sidecar abandons nothing; one from a new one does.
+  let replaced = 0;
+  bridge.subscribeRuntimeReplaced(() => {
+    replaced += 1;
+  });
   let state = initialState;
   bridge.subscribe((event) => {
     const action = adaptEvent(event);
@@ -500,8 +515,10 @@ test('recovery snapshots replace process lists, including sessions that disappea
     }),
   );
   assert.deepEqual(state.agentProcesses, { 'live-session': [process] });
+  assert.equal(replaced, 0);
   socket.message(snapshotMessage('generation-2', 42, 'generation_changed'));
   assert.deepEqual(state.agentProcesses, {});
+  assert.equal(replaced, 1);
 });
 
 test('duplicate replay batches are ignored and sequence gaps reconnect', async () => {
@@ -537,21 +554,64 @@ test('malformed batches reset the cursor and reconnect without publishing payloa
   assert.deepEqual(resumeCursor(await reconnect()), { generation: null, seq: null });
 });
 
-test('known events with missing payloads are rejected as malformed batches', async () => {
-  const { socket, seen } = await startBridge();
-  socket.message({
+test('an entirely invalid batch warns once and advances the cursor without reconnecting', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const { socket, seen, reconnect } = await startBridge();
+  const invalidBatch = {
     type: 'events.batch',
     generation: 'generation-1',
     firstSeq: 1,
     lastSeq: 1,
     events: [{ seq: 1, event: { type: 'session.updated' } }],
+  };
+  socket.message(invalidBatch);
+  socket.message(invalidBatch);
+
+  assert.equal(socket.closeArgs, null);
+  assert.deepEqual(seen, []);
+  assert.equal(warn.mock.calls.length, 1);
+  assert.deepEqual(warn.mock.calls[0].arguments, [
+    'Dropped bridge event: isServerEvent check failed',
+    { type: 'session.updated', seq: 1 },
+  ]);
+  socket.close();
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-1', seq: '1' });
+});
+
+test('a mixed batch preserves valid events and advances past an invalid last event', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const { bridge, socket, seen, reconnect } = await startBridge();
+  const batches: ServerEvent[][] = [];
+  bridge.subscribeBatch((events) => batches.push([...events]));
+  const runtime: ServerEvent = { type: 'runtime.updated', status: RUNTIME };
+  socket.message({
+    type: 'events.batch',
+    generation: 'generation-1',
+    firstSeq: 1,
+    lastSeq: 4,
+    events: [
+      { seq: 1, event: CONNECTED },
+      { seq: 2, event: { type: 'projects.snapshot', projects: [{ secret: 'private payload' }] } },
+      { seq: 3, event: runtime },
+      { seq: 4, event: { type: 'session.updated' } },
+    ],
   });
 
-  assert.deepEqual(socket.closeArgs, [4002, 'malformed bridge message']);
+  assert.equal(socket.closeArgs, null);
+  assert.deepEqual(seen, [CONNECTED, runtime]);
+  assert.deepEqual(batches, [[CONNECTED, runtime]]);
   assert.deepEqual(
-    seen.flatMap((event) => (event.type === 'error' ? [event.code] : [])),
-    ['bridge.resync_required'],
+    warn.mock.calls.map((call) => call.arguments),
+    [
+      ['Dropped bridge event: isServerEvent check failed', { type: 'projects.snapshot', seq: 2 }],
+      ['Dropped bridge event: isServerEvent check failed', { type: 'session.updated', seq: 4 }],
+    ],
   );
+  socket.message(batch('generation-1', 5, 5, [CONNECTED]));
+  assert.equal(socket.closeArgs, null);
+  assert.deepEqual(seen, [CONNECTED, runtime, CONNECTED]);
+  socket.close();
+  assert.deepEqual(resumeCursor(await reconnect()), { generation: 'generation-1', seq: '5' });
 });
 
 test('empty reset generations cannot replace a valid resume cursor', async () => {
@@ -564,7 +624,7 @@ test('empty reset generations cannot replace a valid resume cursor', async () =>
   assert.deepEqual(seenTypes(), ['connection']);
 });
 
-test('unflushed persistence in a snapshot is reported rather than treated as durable', async () => {
+test('snapshot storage failures reach clients without an earlier error event', async () => {
   const { socket, seen, seenTypes } = await startBridge();
   socket.message(
     snapshotMessage('generation-9', 8, 'generation_changed', {
@@ -582,6 +642,7 @@ test('unflushed persistence in a snapshot is reported rather than treated as dur
     'connection',
     'runtime.updated',
     'sessions.processes',
+    'history.persistenceRecovered',
     'error',
     'connection',
   ]);
@@ -589,6 +650,39 @@ test('unflushed persistence in a snapshot is reported rather than treated as dur
     seen.flatMap((event) => (event.type === 'error' ? [event.code] : [])),
     ['history.unflushed_work'],
   );
+  socket.message(
+    snapshotMessage('generation-10', 0, 'generation_changed', {
+      persistence: {
+        durable: false,
+        hadUnflushedWork: false,
+        unavailableReason: 'Cannot open history.',
+      },
+    }),
+  );
+  const unavailable = seen.find(
+    (event) => event.type === 'error' && event.code === 'history.unavailable',
+  );
+  assert.ok(unavailable);
+  assert.equal(unavailable.type, 'error');
+  if (unavailable.type === 'error') assert.match(unavailable.message, /Cannot open history/);
+  const repairInstructions =
+    'Search storage is corrupt. Quit DROIDEX, back up storage, then repair.';
+  socket.message(
+    snapshotMessage('generation-11', 0, 'generation_changed', {
+      persistence: {
+        durable: true,
+        hadUnflushedWork: false,
+        searchUnavailableReason: repairInstructions,
+      },
+    }),
+  );
+  const searchUnavailable = seen.find(
+    (event) => event.type === 'error' && event.code === 'history.search_unavailable',
+  );
+  assert.ok(searchUnavailable);
+  if (searchUnavailable.type === 'error') {
+    assert.ok(searchUnavailable.message.includes(repairInstructions));
+  }
 });
 
 function required<T>(value: T | undefined): T {

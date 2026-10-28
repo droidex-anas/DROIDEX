@@ -1,4 +1,5 @@
 import {
+  type AutonomyLevel,
   ContextStatsAccuracy,
   dispatchNotification,
   InitializeSessionResultSchema,
@@ -15,6 +16,7 @@ import {
 } from '@factory/droid-sdk';
 
 import type { Autonomy, ReasoningEffort } from '../protocol.js';
+import { mapAutonomy } from '../DroidRuntime.js';
 import type {
   CreateRuntimeSessionOptions,
   FactoryRuntime,
@@ -51,7 +53,7 @@ export interface FakeFactorySessionInit {
     modelId?: string;
     reasoningEffort?: ReasoningEffort;
     interactionMode?: 'auto' | 'spec' | 'agi';
-    autonomyLevel?: Autonomy;
+    autonomyLevel?: Autonomy | AutonomyLevel;
   };
   mission?: {
     state?: string;
@@ -435,6 +437,36 @@ export class FakeFactoryRuntime implements FactoryRuntime {
     return { mode: 'cli_auth', droidPath: '/test/droid', apiKeyConfigured: this.apiKey.length > 0 };
   }
 
+  // Never the test key: a Droid turn would otherwise read usage from Factory.
+  factoryApiKey(): undefined {
+    return undefined;
+  }
+
+  steer(session: FactorySession, text: string): Promise<boolean> {
+    this.calls.push({ target: 'runtime', method: 'steer', args: [session.sessionId, text] });
+    return Promise.resolve(false);
+  }
+
+  streamTurn(
+    session: FactorySession,
+    prompt: string,
+    options: MessageOptions & { includePartialMessages: true },
+  ): AsyncGenerator<DroidStreamEvent, void, undefined> {
+    return session.stream(prompt, options);
+  }
+
+  observeNotification(): void {
+    // Scripted streams have no raw notification tail.
+  }
+
+  stopTurn(): void {
+    // Scripted iterators settle through their session interrupt/close.
+  }
+
+  interruptTurn(session: FactorySession): Promise<void> {
+    return session.interrupt();
+  }
+
   readContextBreakdown(session: FactorySession): Promise<unknown> {
     const error = this.contextBreakdownErrors.get(session.sessionId);
     if (error) return Promise.reject(error);
@@ -447,6 +479,10 @@ export class FakeFactoryRuntime implements FactoryRuntime {
 
   isProcessAlive(session: FactorySession): boolean {
     return this.processIdOf(session) !== undefined;
+  }
+
+  onProcessExit(): void {
+    // Scripted sessions have no process to lose.
   }
 
   createSession(options: CreateRuntimeSessionOptions): Promise<FakeFactorySession> {
@@ -463,7 +499,9 @@ export class FakeFactoryRuntime implements FactoryRuntime {
           interactionMode: options.interactionMode,
           // Mirror the real runtime: an explicit create-time autonomy level
           // shows up in the session's init result.
-          ...(options.autonomyLevel === undefined ? {} : { autonomyLevel: options.autonomyLevel }),
+          ...(options.autonomyLevel === undefined
+            ? {}
+            : { autonomyLevel: mapAutonomy(options.autonomyLevel) }),
         },
       });
     if (next instanceof Error) return Promise.reject(next);
@@ -585,5 +623,12 @@ export function fakeProviderSession(
   return new DroidProviderSession(appSessionId, session, {
     processIdOf: () => undefined,
     isProcessAlive: () => false,
+    onProcessExit: () => undefined,
+    factoryApiKey: () => undefined,
+    steer: () => Promise.resolve(false),
+    streamTurn: (droid, prompt, options) => droid.stream(prompt, options),
+    observeNotification: () => undefined,
+    interruptTurn: (droid) => droid.interrupt(),
+    stopTurn: () => undefined,
   });
 }

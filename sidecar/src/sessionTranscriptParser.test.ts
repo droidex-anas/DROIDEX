@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSessionLineEvents } from './sessionTranscriptParser.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
-import { storedNoticeLine } from './sessionNotices.js';
+import { parseStoredNotice, storedNoticeLine } from './sessionNotices.js';
 import { formatBranchPrompt } from './branchPrompt.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
 
@@ -219,4 +219,31 @@ test('a stored model-switch or usage-limit notice replays exactly as it was writ
       [original],
     );
   }
+});
+
+test('a stored tool result keeps the pictures it was saved with', () => {
+  // The app's own transcript files hold the saved paths beside the text.
+  const result = replay({
+    role: 'user',
+    content: [
+      { type: 'tool_result', tool_use_id: 't9', content: 'Saved.', images: ['/p/tool-a.jpg'] },
+    ],
+  }).find((event) => event.kind === 'tool_result');
+  assert.equal(result?.text, 'Saved.');
+  assert.deepEqual(result?.images, ['/p/tool-a.jpg']);
+});
+
+test('stored idle-runtime release notices are hidden on both transcript and Droid notice replay', () => {
+  const line = {
+    type: 'status',
+    id: 'release',
+    timestamp: new Date(1).toISOString(),
+    text: 'Session runtime released after 30 minutes idle to free memory. Sending a message restores it.',
+  };
+  assert.deepEqual(parseSessionLineEvents('app', 'provider', 'primary', line), []);
+  assert.equal(parseStoredNotice('app', 'provider', 'primary', line), undefined);
+  assert.equal(
+    parseStoredNotice('app', 'provider', 'primary', { ...line, text: 'Current status' })?.text,
+    'Current status',
+  );
 });

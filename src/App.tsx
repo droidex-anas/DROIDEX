@@ -1,12 +1,4 @@
-import {
-  Suspense,
-  useMemo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useLayoutEffect,
-} from 'react';
+import { Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
@@ -16,21 +8,16 @@ import {
   connect,
   listFactoryDefaults,
   listModels,
-  sendNativeBrowserResult,
   sendSidebarResult,
   openChild,
   newChildOpenRequestId,
   updateCli,
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
-import { getApiKey, setAppIcon, terminalHasChildren } from './lib/desktop';
+import { getApiKey, isDesktop, setAppIcon, terminalHasChildren } from './lib/desktop';
 import { forwardNativeBrowserShortcuts } from './lib/nativeBrowser';
-import { performNativeBrowserRequest } from './lib/nativeBrowserAgent';
+import { BrowserHost } from './components/browser/BrowserHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
-import {
-  browserKeyForSession,
-  nativeBrowserRequestTargetsActiveSession,
-} from './lib/browserSessionIdentity';
 import { shouldOpenSelectedChild } from './lib/childSessions';
 import type { ChildAccess } from './hooks/storeChildSession';
 import Sidebar from './components/Sidebar';
@@ -45,7 +32,6 @@ import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/us
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
-import { addNativeSurfaceObscurer } from './hooks/useObscuresNativeSurfaces';
 import {
   TOP_ROW_HEIGHT_PX,
   WINDOW_CONTROLS_INSET_PX,
@@ -89,7 +75,7 @@ import {
 } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
-import { listProjects } from './lib/commands';
+import { listProjects, restoreBrowsersCommand } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
 import { useFirstArtifactPane } from './features/canvas/useFirstArtifactPane';
@@ -99,6 +85,7 @@ import { useHistoryIndexingIdle } from './hooks/useHistoryIndexingIdle';
 import { useBackgroundWorkTier } from './hooks/useBackgroundWorkTier';
 import { useSessionHistory } from './hooks/useSessionHistory';
 import { sideChatPanel } from './lib/sideChats';
+import { useCloseSideChat } from './components/sidechats/useCloseSideChat';
 import {
   bindLazySurfaceIntent,
   scheduleIdleLazyWarmup,
@@ -306,6 +293,12 @@ export default function App() {
   const canvasRequests = Object.entries(state.canvasChatRequests).filter(
     (entry): entry is [string, { appSessionId: string }] => entry[1].appSessionId !== null,
   );
+  // An expanded browser keeps the chat's one composer: the chat column becomes
+  // an overlay layer so the same composer moves under the page instead of a
+  // second one mounting there (which lost the draft on every switch). Mission
+  // Control owns its own composer and keeps the browser's for now.
+  const browserExpanded =
+    paneExpanded && activeUtilityTab?.tool === 'browser' && !isMissionControlView;
   const focused = isMissionControlView;
   // A normal/spec session only has something worth showing once a message has
   // been sent (the first transcript is seeded from the opening prompt).
@@ -321,6 +314,10 @@ export default function App() {
   const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
   const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
+  // The side tab leaving the pane must not hand its expansion to the next tab.
+  const sideChatClose = useCloseSideChat(() => {
+    setExpandedPaneAppSessionId(null);
+  });
   // A late busy-check must not restore a dialog in a hidden or replaced pane.
   const visibleUtilityPanelRef = useRef(showUtilityPane ? utilityPanel : null);
   visibleUtilityPanelRef.current = showUtilityPane ? utilityPanel : null;
@@ -516,6 +513,10 @@ export default function App() {
 
   useEffect(() => {
     if (embedded) return;
+    // A sidecar that just started has none of the browsers the app kept, so
+    // every pane action would fail until the agent opened a page again. Each
+    // new connection hands them over before any queued pane command.
+    bridge.sendFirstOnOpen(() => restoreBrowsersCommand(store.getState().browsers));
     void (async () => {
       // Bridge info and the saved API key are independent IPCs; fetch them
       // together so the connect command reaches the sidecar one round-trip
@@ -527,7 +528,7 @@ export default function App() {
       // without it a custom model shows as its raw id until the selector opens.
       listModels();
     })();
-  }, [embedded]);
+  }, [embedded, store]);
 
   // The chat list hides a project's threads, so it waits to have been answered
   // about them before it draws. Asking on every connection rather than once at
@@ -579,31 +580,6 @@ export default function App() {
     if (onboard.lastResult.ok) toast.success('Droid CLI is up to date.');
   }, [onboard.lastResult]);
 
-  // The native browser is a separate Electron layer that floats above the DOM,
-  // so close it while the full-screen wizard is up or it paints over the tour,
-  // and bring the pane back once the tour is done. The wizard also registers
-  // as an overlay, so the view stays hidden through its exit fade.
-  const paneClosedForWizard = useRef(false);
-  useEffect(() => {
-    if (showWizard) {
-      if (!utilityPanel.open) return;
-      paneClosedForWizard.current = true;
-      dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
-    } else if (paneClosedForWizard.current) {
-      paneClosedForWizard.current = false;
-      dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: true });
-    }
-  }, [showWizard, utilityPanel.open, dispatch]);
-
-  // The pane animates out of a full-content route for 180ms, and the native
-  // browser inside it would stay painted and clickable over the new route for
-  // that long. Treat the route as an overlay so the view hides at once: a
-  // layout effect, so it is gone in the commit that paints the new route.
-  useLayoutEffect(() => {
-    if (!fullContentRoute) return;
-    return addNativeSurfaceObscurer();
-  }, [fullContentRoute]);
-
   // "Run setup again" from Settings re-opens the tour.
   useEffect(() => {
     const onOpen = () => {
@@ -627,30 +603,6 @@ export default function App() {
         if (result) sendSidebarResult(result);
         return;
       }
-      if (event.type !== 'browser.native.request') return;
-      const current = store.getState();
-      const activeBrowserKey = browserKeyForSession(
-        current.activeAppSessionId ? current.sessions[current.activeAppSessionId] : undefined,
-      );
-      const requestIsForActiveChat = nativeBrowserRequestTargetsActiveSession(
-        activeBrowserKey,
-        event.request.appSessionId,
-      );
-      if (event.request.action === 'open' && requestIsForActiveChat) {
-        dispatch({ type: 'SET_RIGHT_PANEL', open: false });
-        dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'browser' });
-      }
-      void performNativeBrowserRequest(event.request)
-        .then(sendNativeBrowserResult)
-        .catch((err: unknown) => {
-          sendNativeBrowserResult({
-            requestId: event.request.requestId,
-            appSessionId: event.request.appSessionId,
-            browserSessionId: event.request.browserSessionId,
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
     });
     return () => {
       unsub();
@@ -888,10 +840,16 @@ export default function App() {
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
-              aria-hidden={chatObscured}
+              aria-hidden={chatObscured && !browserExpanded}
+              // Behind an expanded side chat or agent the column is hidden, and
+              // a few composer controls turn pointer events back on; inert
+              // keeps the whole column out of reach.
+              inert={chatObscured && !browserExpanded}
               style={canvasExpanded ? { flex: `0 0 ${String(DESIGN_CHAT_COLUMN)}px` } : undefined}
-              className={`relative flex min-w-0 flex-1 flex-col overflow-hidden ${
-                chatObscured ? 'pointer-events-none' : ''
+              className={`flex min-w-0 flex-col overflow-hidden ${
+                browserExpanded
+                  ? 'pointer-events-none absolute inset-0 z-20'
+                  : `relative flex-1 ${chatObscured ? 'pointer-events-none' : ''}`
               }`}
             >
               {!embedded && state.mainView === 'projects' ? (
@@ -936,15 +894,26 @@ export default function App() {
                     rightInset={rightPanelVisible}
                     isObscured={chatObscured}
                     besidePane={showUtilityPane}
+                    underBrowser={browserExpanded}
+                    composerHost={contentRowRef}
                   />
                   {activeSession && state.sideChatPlacement === 'floating' ? (
-                    <Suspense fallback={null}>
-                      <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
-                    </Suspense>
+                    <div
+                      aria-hidden={browserExpanded || undefined}
+                      className={browserExpanded ? 'invisible' : 'contents'}
+                    >
+                      <Suspense fallback={null}>
+                        <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
+                      </Suspense>
+                    </div>
                   ) : null}
                 </>
               )}
             </section>
+            {/* Holds the chat column's place while it floats, so the pane stays
+                anchored on the right as it widens. */}
+            {browserExpanded && <div className="min-w-0 flex-1" />}
+            {sideChatClose.dialog}
 
             <AnimatePresence initial={false}>
               {showUtilityPane && (
@@ -1039,6 +1008,13 @@ export default function App() {
                           });
                         return;
                       }
+                      // The tab's Close is the side chat's own Close; hiding
+                      // the tab alone would bring the same chat back on the
+                      // next `/btw`. Minimize is the way to put it away.
+                      if (tab.tool === 'side') {
+                        sideChatClose.requestClose(activeSession.appSessionId);
+                        return;
+                      }
                       if (isExpandableTool(tab.tool)) setExpandedPaneAppSessionId(null);
                       dispatch({ type: 'CLOSE_UTILITY_TAB', tabId: tab.id });
                     }}
@@ -1046,7 +1022,7 @@ export default function App() {
                       setExpandedPaneAppSessionId(null);
                       dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
                     }}
-                    renderTab={(tab, { overlayOpen }) => {
+                    renderTab={(tab) => {
                       if (tab.tool === 'side') {
                         return (
                           <Suspense fallback={utilityToolFallback('side')}>
@@ -1115,7 +1091,7 @@ export default function App() {
                           <Suspense fallback={utilityToolFallback('browser')}>
                             <LazyBrowserFocusWorkspace
                               expanded={paneExpanded}
-                              externalObscured={overlayOpen}
+                              ownComposer={paneExpanded && isMissionControlView}
                               onToggleExpanded={() => {
                                 setExpandedPaneAppSessionId(
                                   paneExpanded ? null : activeSession.appSessionId,
@@ -1268,6 +1244,9 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+      {/* Every chat's browser page. Last, so the pane's slot is laid out before
+          the pages anchored to it. */}
+      {!embedded && isDesktop() && <BrowserHost />}
     </div>
   );
 }

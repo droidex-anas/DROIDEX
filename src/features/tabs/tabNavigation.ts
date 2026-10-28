@@ -14,9 +14,12 @@ import {
   livePage,
   openTab,
   pageShowsChat,
+  tabPage,
   withTabPage,
   type FocusedPage,
   type LivePageSource,
+  type Tab,
+  type TabPage,
   type TabStrip,
   type TabStripSource,
   type ViewPage,
@@ -116,6 +119,26 @@ export function composeOrigin(strip: TabStrip): ComposeOrigin | null {
   if (!tab) return null;
   const tileId = tab.page.kind === 'tiles' ? tab.page.grid.focusedTileId : tab.tileId;
   return { tabId: tab.id, tileId };
+}
+
+// A grid holds at most one new chat, so its tile names the draft.
+function pageDraftTileId(tab: Tab, page: TabPage): string | null {
+  if (page.kind === 'tiles') return newChatTile(page.grid)?.id ?? null;
+  return page.kind === 'new-chat' ? tab.tileId : null;
+}
+
+/** The tile of the new chat the active tab shows, if it shows one. */
+export function activeDraftTileId(state: LivePageSource): string | null {
+  const tab = activeTab(state.tabStrip);
+  return tab ? pageDraftTileId(tab, livePage(state)) : null;
+}
+
+/** The tiles of every new chat the tabs show. */
+export function draftTileIds(state: LivePageSource): string[] {
+  const live = livePage(state);
+  return state.tabStrip.tabs.flatMap(
+    (tab) => pageDraftTileId(tab, tabPage(state.tabStrip, tab, live)) ?? [],
+  );
 }
 
 type ComposeOrigins = Pick<AppState, 'pendingCompose' | 'heldComposeOrigins'>;

@@ -1,6 +1,5 @@
 import { Suspense } from 'react';
 import { motion } from 'framer-motion';
-import { NativeSurfaceObscurer } from '../hooks/useObscuresNativeSurfaces';
 import { SettingsPanelSkeleton } from './skeletons/WorkspaceSkeletons';
 import { LazySettingsPanel } from '../lib/lazySurfaces';
 
@@ -15,7 +14,6 @@ export function SettingsLazyHost() {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.16 }}
     >
-      <NativeSurfaceObscurer />
       <Suspense fallback={<SettingsPanelSkeleton />}>
         <LazySettingsPanel />
       </Suspense>

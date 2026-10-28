@@ -4,7 +4,6 @@ const {
   Menu,
   clipboard,
   Notification,
-  WebContentsView,
   dialog,
   ipcMain,
   nativeImage,
@@ -28,12 +27,13 @@ const githubPrConversation = require('./githubPrConversation.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
 const { createTerminalSubscriptionRegistry } = require('./terminalPort.cjs');
 const { createPerformanceMetricsCollector } = require('./performanceMetrics.cjs');
-const { createNativeBrowserBudget } = require('./nativeBrowserBudget.cjs');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
+const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
+const imageSave = require('./imageSave.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
@@ -106,6 +106,8 @@ const sidecarSupervisor = createSidecarSupervisor({
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
+  onMessage: (message, reply, runEnded) =>
+    void nativeBrowserRequests.handle(message, reply, runEnded),
 });
 const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
 // subscribe() replays the current status synchronously, so mainWindow must
@@ -146,23 +148,14 @@ let appIconMode = 'system';
 /** @type {{ appSessionId: string, expiresAt: number } | null } */
 let pendingNotificationOpen = null;
 const PENDING_NOTIFICATION_OPEN_MS = 30_000;
-// Keep hidden browser sessions warm by default so authenticated pages and
-// compositor state survive while the Browser pane is closed.
-const HIDDEN_BROWSER_IDLE_MS = Number(process.env.DROID_NATIVE_BROWSER_IDLE_MS ?? 0);
-const nativeBrowserBudget = createNativeBrowserBudget({
-  maxLive: process.env.DROID_NATIVE_BROWSER_MAX_LIVE,
-  idleMs: HIDDEN_BROWSER_IDLE_MS,
-});
 const nativeBrowserShortcuts = createNativeBrowserShortcuts({ getMainWindow: () => mainWindow });
 const nativeBrowserManager = createNativeBrowserManager({
   app,
   appName: APP_NAME,
-  BrowserWindow,
-  WebContentsView,
   session,
+  nativeImage,
   dialog,
   safeStorage,
-  budget: nativeBrowserBudget,
   getMainWindow: () => mainWindow,
   onBrowserInput: nativeBrowserShortcuts.handleInput,
   preloadPath: path.join(__dirname, 'nativeBrowserPreload.cjs'),
@@ -171,6 +164,26 @@ const nativeBrowserManager = createNativeBrowserManager({
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
   },
 });
+// Claims each <webview> guest in the same dispatch that creates it: a Canvas
+// preview whose attach was just hardened, or a Browser page for the session
+// main reserved it for (see installWebviewAttachment).
+let attachingCanvasPreview = false;
+const canvasPreviewGuests = new WeakSet();
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() === 'webview' && attachingCanvasPreview) {
+    attachingCanvasPreview = false;
+    canvasPreviewGuests.add(contents);
+    return;
+  }
+  nativeBrowserManager.handleCreated(contents);
+});
+const nativeBrowserRequests = createNativeBrowserRequests({
+  manager: nativeBrowserManager,
+  notifyRenderer: (channel, payload) => {
+    if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
+  },
+});
+
 const MEMORY_PRESSURE_RSS_BYTES = Number(
   process.env.DROID_MEMORY_PRESSURE_RSS_BYTES ?? 1.5 * 1024 * 1024 * 1024,
 );
@@ -213,6 +226,17 @@ try {
   );
 }
 app.setPath('userData', userDataPath);
+// One app per profile. A second copy on the same profile, such as a dev build
+// an agent launches without its own DROIDEX_USER_DATA_DIR, would boot a sidecar
+// that reaps every agent process this one recorded.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+  return;
+}
+// Startup makes the first window; one made here before it would be a second.
+app.on('second-instance', () => {
+  if (mainWindow) focusMainWindow();
+});
 const hardwareAccelerationPreferencePath = hardwareAccelerationPreferenceFilePath(
   app.getPath('userData'),
 );
@@ -251,7 +275,7 @@ app.whenReady().then(async () => {
     app,
     appName: APP_NAME,
     appUpdater,
-    reload: reloadShell,
+    reload: reloadFromMenu,
     shell,
     logError: (message) => console.error('[menu] %s', message),
   });
@@ -268,7 +292,6 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('power-tier', { ...powerTier.snapshot(), tier });
   });
   powerTier.onMemoryPressure(() => {
-    nativeBrowserManager.evictUnattached();
     terminalManager.trimReplay();
     if (isWindowUsable(mainWindow))
       mainWindow.webContents.send('memory-pressure', { at: Date.now() });
@@ -333,14 +356,13 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // Canvas live previews are `<webview>` guests in the board's DOM flow
-      // (spec §6). Only this window may create one, and only under the
-      // hardening installed below, before any renderer content loads.
+      // Browser pages and Canvas live previews are <webview> guests. Only this
+      // window may create one, and only through the attachment routing
+      // installed below, before any renderer content loads.
       webviewTag: true,
     },
   });
-
-  installCanvasPreviewAttachment(mainWindow.webContents);
+  installWebviewAttachment(mainWindow.webContents);
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
   );
@@ -383,43 +405,53 @@ function createMainWindow() {
 }
 
 /**
- * The attachment boundary for Canvas preview guests (spec §6). It is installed
- * before the window loads anything, so renderer content can never create a guest
- * that was not hardened here: only the owned source is allowed, any requested
+ * Routes each <webview> attachment to its one owner by the source it asks for:
+ * the owned Canvas preview source gets the preview hardening, and every other
+ * guest must carry a Browser reservation. Guests are created synchronously after
+ * the attach is accepted, so the created guest is claimed in the same dispatch.
+ */
+function installWebviewAttachment(contents) {
+  contents.on('will-attach-webview', (event, preferences, params) => {
+    if (params.src !== canvasPreview.CANVAS_PREVIEW_URL) {
+      attachingCanvasPreview = false;
+      nativeBrowserManager.handleWillAttach(event, preferences, params, contents);
+      return;
+    }
+    attachingCanvasPreview = hardenCanvasPreviewGuest(event, preferences, params);
+  });
+  contents.on('did-attach-webview', (_event, guest) => {
+    if (canvasPreviewGuests.has(guest)) canvasPreviewHosts.attach(guest);
+    else nativeBrowserManager.handleAttached(guest);
+  });
+}
+
+/**
+ * The attachment boundary for Canvas preview guests (spec §6): any requested
  * preload is deleted, and Node, nested Node and nested guests stay off while
  * context isolation, the guest sandbox and web security stay on.
  */
-function installCanvasPreviewAttachment(contents) {
-  contents.on('will-attach-webview', (event, preferences, params) => {
-    // Before the guest session is configured it routes DIRECT, so a guest that
-    // attached then would have a live network however correct its partition is.
-    if (!canvasPreview.canvasPreviewSessionReady(previewGuestSession())) {
-      console.warn('[canvas-preview] Refused a guest before its session was configured');
-      event.preventDefault();
-      return;
-    }
-    if (params.src !== canvasPreview.CANVAS_PREVIEW_URL) {
-      console.warn('[canvas-preview] Refused a guest for %s', params.src);
-      event.preventDefault();
-      return;
-    }
-    delete preferences.preload;
-    delete params.preload;
-    // The guest's own in-memory session: no storage, every TCP connection to a
-    // dead proxy, no permissions. A `<webview>` may name any partition, so this
-    // is forced here rather than trusted from the element.
-    params.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
-    preferences.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
-    preferences.nodeIntegration = false;
-    preferences.nodeIntegrationInSubFrames = false;
-    preferences.contextIsolation = true;
-    preferences.sandbox = true;
-    preferences.webSecurity = true;
-    preferences.webviewTag = false;
-  });
-  contents.on('did-attach-webview', (_event, guest) => {
-    canvasPreviewHosts.attach(guest);
-  });
+function hardenCanvasPreviewGuest(event, preferences, params) {
+  // Before the guest session is configured it routes DIRECT, so a guest that
+  // attached then would have a live network however correct its partition is.
+  if (!canvasPreview.canvasPreviewSessionReady(previewGuestSession())) {
+    console.warn('[canvas-preview] Refused a guest before its session was configured');
+    event.preventDefault();
+    return false;
+  }
+  delete preferences.preload;
+  delete params.preload;
+  // The guest's own in-memory session: no storage, every TCP connection to a
+  // dead proxy, no permissions. A `<webview>` may name any partition, so this
+  // is forced here rather than trusted from the element.
+  params.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+  preferences.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+  preferences.nodeIntegration = false;
+  preferences.nodeIntegrationInSubFrames = false;
+  preferences.contextIsolation = true;
+  preferences.sandbox = true;
+  preferences.webSecurity = true;
+  preferences.webviewTag = false;
+  return true;
 }
 
 // Voice mode records only while the user holds a conversation open, and only
@@ -659,6 +691,21 @@ function registerIpc() {
   ipcMain.handle('discard-image', (event, { path: target }) => {
     assertMainRenderer(event);
     return attachments.discard(attachmentsDir, target);
+  });
+  ipcMain.handle('save-image-as', async (event, { url, name }) => {
+    assertMainRenderer(event);
+    // Node's fetch decodes data: URLs; only the session's fetch reaches droidex-img.
+    const signal = AbortSignal.timeout(30_000);
+    const response =
+      imageSave.saveableImageProtocol(url) === 'data:'
+        ? await fetch(url, { signal })
+        : await session.defaultSession.fetch(url, { signal });
+    const { mime, data } = await imageSave.readImageResponse(response);
+    const defaultPath = path.join(app.getPath('downloads'), imageSave.imageSaveName(name, mime));
+    const result = await dialog.showSaveDialog({ defaultPath });
+    if (result.canceled || !result.filePath) return { saved: false };
+    await fsp.writeFile(result.filePath, data);
+    return { saved: true, filePath: result.filePath };
   });
   // OS finish/status banners. silent=false plays the system notification sound.
   // Foreground suppress is owned by the renderer; click opens the finished
@@ -1126,33 +1173,30 @@ function registerIpc() {
     return files.revealInFolder(filesRootAccess.resolve(accessToken), relative, shell);
   });
 
-  ipcMain.handle('native-browser-open', (event, { browserSessionId, url, bounds, viewport }) => {
+  ipcMain.handle('native-browser-reserve', (event, { browserSessionId, savedUrl, savedMode }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.open(browserSessionId, url, bounds, viewport);
+    return nativeBrowserManager.reserve(
+      browserSessionId,
+      mainWindow.webContents,
+      savedUrl,
+      savedMode,
+    );
   });
-  ipcMain.handle('native-browser-attach', (event, { browserSessionId, bounds, url }) => {
+  ipcMain.handle('native-browser-release', (event, { browserSessionId }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.attach(browserSessionId, bounds, { restoreUrl: url });
+    return nativeBrowserManager.release(browserSessionId);
   });
-  ipcMain.handle('native-browser-detach', (event, { browserSessionId }) => {
+  ipcMain.handle('native-browser-working-sessions', (event) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.detach(browserSessionId);
+    return nativeBrowserRequests.workingSessions();
   });
-  ipcMain.handle('native-browser-set-bounds', (event, { browserSessionId, bounds }) => {
+  ipcMain.handle('native-browser-shown', (event, { browserSessionId, shown }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.setBounds(browserSessionId, bounds);
+    return nativeBrowserManager.setShown(browserSessionId, shown);
   });
-  ipcMain.handle('native-browser-visible', (event, { browserSessionId, visible }) => {
+  ipcMain.handle('native-browser-watch', (event, { browserSessionId, watching }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.setVisible(browserSessionId, visible);
-  });
-  ipcMain.handle('native-browser-close', (event, { browserSessionId }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.close(browserSessionId);
-  });
-  ipcMain.handle('native-browser-reload', (event, { browserSessionId }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.reload(browserSessionId);
+    return nativeBrowserManager.watch(browserSessionId, watching);
   });
   ipcMain.handle('native-browser-go-back', (event, { browserSessionId }) => {
     assertMainRenderer(event);
@@ -1162,50 +1206,36 @@ function registerIpc() {
     assertMainRenderer(event);
     return nativeBrowserManager.goForward(browserSessionId);
   });
-  ipcMain.handle('native-browser-set-design-mode', (event, { browserSessionId, active }) => {
+  ipcMain.handle('native-browser-set-design-state', (event, { browserSessionId, state }) => {
     assertMainRenderer(event);
-    return nativeBrowserManager.setDesignMode(browserSessionId, active);
-  });
-  ipcMain.handle('native-browser-set-pencil-mode', (event, { browserSessionId, active }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.setPencilMode(browserSessionId, active);
-  });
-  ipcMain.handle('native-browser-agent-action', (event, { request }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.runAgentAction(request);
-  });
-  ipcMain.handle('native-browser-capture', (event, { browserSessionId, box, options }) => {
-    assertMainRenderer(event);
-    return nativeBrowserManager.capture(browserSessionId, box, options);
+    return nativeBrowserManager.setDesignState(browserSessionId, state);
   });
   ipcMain.handle('native-browser-set-shortcuts', (event, { chords }) => {
     assertMainRenderer(event);
     nativeBrowserShortcuts.setChords(chords);
   });
 
-  ipcMain.on('native-browser-selection', (event, selection) => {
-    mainWindow?.webContents.send(
-      'native-browser-selection',
-      nativeBrowserManager.withSession(event, selection),
-    );
-  });
-  ipcMain.on('native-browser-design-prompt', async (event, payload) => {
+  // A page in design mode reports what the user picked, where its marks are
+  // as it scrolls, and the keys meant for the app, passed on at once. A pick's
+  // crop, taken while its mark shows, follows as a shot for that pick, so
+  // Escape and an unselect never wait on a capture.
+  let designPicks = 0;
+  ipcMain.on('native-browser-design-event', (event, payload) => {
     const browserSessionId = nativeBrowserManager.sessionIdForWebContents(event.sender);
-    let selection = { ...payload.selection, browserSessionId };
-    // Capture the annotated region (pencil strokes, highlights) while it is
-    // still on screen so the agent receives the marked screenshot, not a
-    // clean page that lost the user's annotations.
-    const screenshot = await nativeBrowserManager
-      .captureDesignSelection(event.sender, selection)
-      .catch(() => undefined);
-    if (screenshot) selection = { ...selection, screenshot };
-    mainWindow?.webContents.send('native-browser-design-prompt', { ...payload, selection });
-    // Echo the capture id so the preload only clears the matching pending
-    // capture and ignores acks from superseded prompts.
-    event.sender.send('native-browser-design-prompt-sent', { captureId: payload.captureId });
-  });
-  ipcMain.on('native-browser-agent-result', (_event, result) => {
-    mainWindow?.webContents.send('native-browser-agent-result', result);
+    const types = ['select', 'unselect', 'boxes', 'key'];
+    if (!browserSessionId || !types.includes(payload?.type)) return;
+    const send = (next) =>
+      mainWindow?.webContents.send('native-browser-design-event', { ...next, browserSessionId });
+    if (payload.type !== 'select') {
+      send(payload);
+      return;
+    }
+    const pick = ++designPicks;
+    send({ ...payload, pick });
+    void nativeBrowserManager
+      .captureDesignSelection(event.sender, payload.selection)
+      .catch(() => undefined)
+      .then((screenshot) => send({ type: 'shot', pick, screenshot }));
   });
   ipcMain.on('native-browser-credential-capture', (event, payload) => {
     void nativeBrowserManager.handleCredentialCapture(event.sender, payload);
@@ -1298,8 +1328,15 @@ function setAppIcon(mode) {
   return mode;
 }
 
+// With a browser page focused, Reload from the menu means that page;
+// reloading the shell would destroy every mounted page.
+function reloadFromMenu(ignoreCache) {
+  if (!ignoreCache && nativeBrowserManager.reloadFocused(webContents.getFocusedWebContents()))
+    return;
+  reloadShell(ignoreCache);
+}
+
 function reloadShell(ignoreCache) {
-  nativeBrowserManager.detach();
   if (!isWindowUsable(mainWindow)) return;
   closeRendererOwnedTerminals();
   if (ignoreCache) mainWindow.webContents.reloadIgnoringCache();
@@ -1315,6 +1352,7 @@ function installMainRendererLifecycle(contents) {
     cleanedForNavigation = true;
     githubVcs.cancelSetup();
     closeRendererOwnedTerminals();
+    nativeBrowserManager.forgetWatchers();
   };
 
   contents.on('did-finish-load', () => {

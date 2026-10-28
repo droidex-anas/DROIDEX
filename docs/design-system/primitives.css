@@ -1,0 +1,440 @@
+/* DROIDEX primitives. Borderless: surfaces separate by tone and by the
+   soft edge built into shadow-sm / shadow-lg; the only line is `divider`.
+   Every value is a token. */
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dx-stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.dx-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+/* Focus: keyboard only, soft 1.5px ring. Never a dark outline on click. */
+:focus {
+  outline: none;
+}
+.dx-focusable:focus-visible,
+.dx-btn:focus-visible,
+.dx-input:focus-visible,
+.dx-row:focus-visible,
+.is-focus {
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--focus-ring);
+}
+
+/* Button */
+.dx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1\.5);
+  height: var(--control-md);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  font: 500 13px/18px var(--font-sans);
+  letter-spacing: -0.08px;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    color 150ms,
+    opacity 150ms;
+}
+.dx-btn svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
+  flex: none;
+}
+.dx-btn-primary {
+  background: var(--text);
+  color: var(--bg);
+}
+.dx-btn-primary:hover,
+.dx-btn-primary.is-hover {
+  opacity: 0.9;
+}
+.dx-btn-secondary {
+  background: var(--elevated);
+  color: var(--text-secondary);
+}
+.dx-btn-secondary:hover,
+.dx-btn-secondary.is-hover {
+  background: var(--active);
+  color: var(--text);
+}
+.dx-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.dx-btn-ghost:hover,
+.dx-btn-ghost.is-hover {
+  background: var(--elevated);
+  color: var(--text-secondary);
+}
+.dx-btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.dx-btn-danger:hover,
+.dx-btn-danger.is-hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+.dx-btn-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.dx-btn-success:hover,
+.dx-btn-success.is-hover {
+  background: var(--success);
+  color: var(--bg);
+}
+.dx-btn-sm {
+  height: var(--control-sm);
+  padding: 0 var(--space-2\.5);
+  font: 500 12px/16px var(--font-sans);
+  letter-spacing: 0;
+}
+.dx-btn-icon {
+  width: var(--control-md);
+  padding: 0;
+}
+.dx-btn-icon.dx-btn-sm {
+  width: var(--control-sm);
+}
+.dx-btn-round {
+  border-radius: var(--radius-full);
+}
+.dx-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Input: filled, never outlined */
+.dx-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-lg);
+  background: var(--field);
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  font: 400 14px/20px var(--font-sans);
+  letter-spacing: -0.15px;
+  color: var(--text);
+  transition:
+    background-color 150ms,
+    box-shadow 150ms;
+}
+.dx-input::placeholder {
+  color: var(--text-muted);
+}
+.dx-input:hover {
+  background: var(--active);
+}
+.dx-input.is-invalid {
+  background: var(--danger-soft);
+  box-shadow: 0 0 0 1.5px var(--danger);
+}
+.dx-field-hint {
+  margin-top: var(--space-1\.5);
+  font: 400 11px/16px var(--font-sans);
+  letter-spacing: 0.06px;
+  color: var(--text-muted);
+}
+.dx-field-hint.is-error {
+  color: var(--danger);
+}
+.dx-field-label {
+  display: block;
+  margin-bottom: var(--space-1\.5);
+  font: 500 12px/16px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+/* Card: tone + shadow edge, no border */
+.dx-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Tool panel */
+.dx-tool-panel {
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Panel rows: SectionHeader / Row / Divider */
+.dx-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3) var(--space-1);
+  font: 500 12px/16px var(--font-sans);
+  color: var(--text-muted);
+}
+.dx-row {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2\.5);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: 400 13px/18px var(--font-sans);
+  letter-spacing: -0.08px;
+  color: var(--text);
+}
+.dx-row:hover,
+.dx-row.is-hover {
+  background: var(--elevated);
+}
+.dx-row.is-active {
+  background: var(--active);
+}
+.dx-row-icon {
+  width: var(--icon-md);
+  height: var(--icon-md);
+  flex: none;
+  color: var(--text-muted);
+}
+.dx-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dx-row-meta {
+  flex: none;
+  font: 400 12px/1 var(--font-sans);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.dx-divider {
+  height: 1px;
+  margin: var(--space-1\.5) var(--space-3);
+  background: var(--divider);
+}
+
+/* Popover / menu: raised layer, edge from shadow-lg, 8px items */
+.dx-popover {
+  display: inline-flex;
+  width: 240px;
+  box-sizing: border-box;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  padding: var(--space-1\.5);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+}
+.dx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1\.5) var(--space-2);
+  border-radius: var(--radius-md);
+  font: 400 13px/18px var(--font-sans);
+  letter-spacing: -0.08px;
+  color: var(--text);
+}
+.dx-menu-item .dx-row-icon {
+  color: var(--text-muted);
+}
+.dx-menu-item.is-hover {
+  background: var(--elevated);
+}
+/* On dark the raised layer IS the elevated rung, so the highlight steps one more rung up. */
+[data-theme='dark'] .dx-menu-item.is-hover {
+  background: var(--active);
+}
+.dx-menu-item.is-danger,
+.dx-menu-item.is-danger .dx-row-icon {
+  color: var(--danger);
+}
+.dx-menu-item.is-danger.is-hover,
+[data-theme='dark'] .dx-menu-item.is-danger.is-hover {
+  background: var(--danger-soft);
+}
+.dx-menu-divider {
+  height: 1px;
+  margin: var(--space-1) var(--space-2);
+  background: var(--divider);
+}
+.dx-menu-item .dx-kbd {
+  margin-left: auto;
+  padding: var(--space-0\.5) var(--space-1\.5);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  font: 400 11px/14px var(--font-sans);
+  letter-spacing: 0.06px;
+  color: var(--text-secondary);
+}
+
+/* Status */
+.dx-mark {
+  color: var(--success);
+}
+.dx-mark-warn {
+  color: var(--warning);
+}
+.dx-mark-danger {
+  color: var(--danger);
+}
+.dx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 20px;
+  box-sizing: border-box;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font: 500 11px/16px var(--font-sans);
+  letter-spacing: 0.06px;
+}
+.dx-badge-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.dx-badge-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.dx-badge-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.dx-badge-neutral {
+  background: var(--elevated);
+  color: var(--text-secondary);
+}
+
+/* Toast: a raised, borderless card. Colour lives only in the 16px status glyph:
+   no dots, no side bars, no tinted fills. */
+.dx-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2\.5);
+  width: 356px;
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-2\.5) var(--space-3) 14px;
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+}
+.dx-toast-glyph {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+}
+.dx-toast-body {
+  flex: 1;
+  min-width: 0;
+}
+.dx-toast-title {
+  margin: 0;
+  font: 500 13px/18px var(--font-sans);
+  letter-spacing: -0.08px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.dx-toast-title .dx-toast-count {
+  margin-left: var(--space-1\.5);
+  font: 400 11px/16px var(--font-sans);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.dx-toast-desc {
+  margin: 2px 0 0;
+  font: 400 12px/16px var(--font-sans);
+  color: var(--text-secondary);
+}
+.dx-toast-progress {
+  margin-top: var(--space-2);
+  height: 2px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  overflow: hidden;
+}
+.dx-toast-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--text) 70%, transparent);
+}
+.dx-toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: -2px 0;
+  flex: none;
+}
+.dx-toast-action {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+  font: 500 12px/16px var(--font-sans);
+}
+.dx-toast-action:hover {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+}
+.dx-toast-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+}
+.dx-toast-close svg {
+  width: 14px;
+  height: 14px;
+}
+.dx-toast-close:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.dx-spin {
+  animation: dx-spin 0.9s linear infinite;
+}
+@keyframes dx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

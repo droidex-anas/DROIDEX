@@ -2,117 +2,38 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  RequestPermissionRequestSchema,
   ToolConfirmationOutcome,
   ToolConfirmationType,
   type AskUserRequestParams,
   type RequestPermissionRequestParams,
 } from '@factory/droid-sdk';
 
-import { normalizeDroidTransportMessage } from './DroidTransport.js';
-
 import { claudeCanUseTool } from './providers/claude/claudePermissions.js';
 import type { ServerEvent } from './protocol.js';
-import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
-import { SessionInteractions, type InteractionLiveSession } from './SessionInteractions.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
+import {
+  harness as projectHarness,
+  input as projectInput,
+  drain,
+  deferred,
+} from './testing/projectServiceHarness.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
-
-interface HarnessOptions {
-  rejectProviderUpdate?: boolean;
-  throwSummaryUpdate?: boolean;
-}
-
-function createHarness(options: HarnessOptions = {}) {
-  const emitted: ServerEvent[] = [];
-  const errors: Array<Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>> = [];
-  const trace: string[] = [];
-  const liveSessions = new Map<string, InteractionLiveSession>();
-
-  const addLiveSession = (appSessionId: string, providerSessionId = appSessionId) => {
-    const liveSession: InteractionLiveSession = {
-      summary: sessionSummary({
-        appSessionId,
-        providerSessionId,
-        cwd: '/workspace',
-        workspaceKind: 'folder',
-      }),
-    };
-    liveSessions.set(appSessionId, liveSession);
-    return liveSession;
-  };
-  const interactions = new SessionInteractions({
-    getLiveSession: (id) =>
-      [...liveSessions.values()].find(
-        (liveSession) =>
-          liveSession.summary.appSessionId === id || liveSession.summary.providerSessionId === id,
-      ),
-    setProviderSpecMode: (_id, spec) => {
-      trace.push(spec ? 'provider:spec' : 'provider:auto');
-      return !spec && options.rejectProviderUpdate
-        ? Promise.reject(new Error('provider rejected'))
-        : Promise.resolve();
-    },
-    updateSummary: (id, patch) => {
-      const liveSession = liveSessions.get(id);
-      if (!liveSession) return;
-      trace.push(`publish:${String(patch.interactionMode ?? patch.phase ?? '')}`);
-      if (options.throwSummaryUpdate) throw new Error('summary persistence failed');
-      Object.assign(liveSession.summary, patch);
-    },
-    emit: (event) => {
-      emitted.push(event);
-    },
-    emitError: (error) => {
-      trace.push(`error:${error.code ?? ''}`);
-      errors.push(error);
-    },
-  });
-  const handlers = (ref: { id: string }) =>
-    droidInteractionHandlers(ref, interactions.interactionsFor(ref));
-  return {
-    addLiveSession,
-    askUserHandler: (ref: { id: string }) => handlers(ref).askUserHandler,
-    emitted,
-    errors,
-    interactions,
-    liveSessions,
-    permissionHandler: (ref: { id: string }) => handlers(ref).permissionHandler,
-    trace,
-  };
-}
+import {
+  approvalRequests,
+  createInteractionsHarness,
+  latestApprovalRequest,
+  permissionInput,
+} from './testing/sessionInteractionsSupport.js';
 
 test('provider interactions stop admitting work when session close begins', () => {
-  const h = createHarness();
+  const h = createInteractionsHarness();
   const live = h.addLiveSession('chat-one');
   const interactions = h.interactions.interactionsFor({ id: 'chat-one' });
   assert.equal(interactions.isActive(), true);
   live.closePromise = new Promise<void>(() => undefined);
   assert.equal(interactions.isActive(), false);
 });
-
-function permissionInput(toolUseId: string, command = 'pwd'): RequestPermissionRequestParams {
-  return {
-    toolUses: [
-      {
-        toolUse: {
-          type: 'tool_use',
-          id: toolUseId,
-          name: 'Bash',
-          input: { command },
-        },
-        confirmationType: ToolConfirmationType.Execute,
-        details: {
-          type: ToolConfirmationType.Execute,
-          fullCommand: command,
-          command,
-        },
-      },
-    ],
-    options: [],
-  };
-}
 
 function specApprovalInput(toolUseId: string): RequestPermissionRequestParams {
   return {
@@ -135,24 +56,11 @@ function specApprovalInput(toolUseId: string): RequestPermissionRequestParams {
   };
 }
 
-function approvalRequests(events: ServerEvent[]) {
-  return events.filter(
-    (event): event is Extract<ServerEvent, { type: 'approval.requested' }> =>
-      event.type === 'approval.requested',
-  );
-}
-
 function questionRequests(events: ServerEvent[]) {
   return events.filter(
     (event): event is Extract<ServerEvent, { type: 'question.requested' }> =>
       event.type === 'question.requested',
   );
-}
-
-function latestApprovalRequest(events: ServerEvent[]) {
-  const event = approvalRequests(events).at(-1);
-  assert.ok(event);
-  return event.request;
 }
 
 function latestQuestionRequest(events: ServerEvent[]) {
@@ -162,7 +70,7 @@ function latestQuestionRequest(events: ServerEvent[]) {
 }
 
 test('ProceedAlways bypasses only an equivalent later permission signature', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('app-1');
   const handler = harness.permissionHandler({ id: 'app-1' });
   const first = Promise.resolve(handler(permissionInput('tool-1', 'pwd')));
@@ -184,7 +92,7 @@ test('ProceedAlways bypasses only an equivalent later permission signature', asy
 });
 
 test('invalid outcomes emit an error, settle Cancel once, and create no grant', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('app-1');
   const handler = harness.permissionHandler({ id: 'app-1' });
   let settlements = 0;
@@ -208,7 +116,7 @@ test('invalid outcomes emit an error, settle Cancel once, and create no grant', 
 });
 
 test('unknown, duplicate, late, and wrong-session approvals settle at most once', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('app-1');
   harness.addLiveSession('app-2');
   const handler = harness.permissionHandler({ id: 'app-1' });
@@ -232,7 +140,7 @@ test('unknown, duplicate, late, and wrong-session approvals settle at most once'
 });
 
 test('Spec approval switches the provider, publishes, then settles the callback', async () => {
-  const success = createHarness();
+  const success = createInteractionsHarness();
   const liveSession = success.addLiveSession('app-spec');
   liveSession.summary.interactionMode = 'spec';
   const handler = success.permissionHandler({ id: 'app-spec' });
@@ -248,7 +156,7 @@ test('Spec approval switches the provider, publishes, then settles the callback'
   assert.deepEqual(success.trace, ['provider:auto', 'publish:auto', 'callback']);
   assert.equal(liveSession.summary.phase, 'running');
 
-  const rejected = createHarness({ rejectProviderUpdate: true });
+  const rejected = createInteractionsHarness({ rejectProviderUpdate: true });
   rejected.addLiveSession('app-spec');
   const rejectedHandler = rejected.permissionHandler({ id: 'app-spec' });
   const rejectedPending = Promise.resolve(rejectedHandler(specApprovalInput('tool-spec'))).then(
@@ -266,7 +174,7 @@ test('Spec approval switches the provider, publishes, then settles the callback'
 });
 
 test('Spec approval declines on a summary failure and settles the callback once', async () => {
-  const harness = createHarness({ throwSummaryUpdate: true });
+  const harness = createInteractionsHarness({ throwSummaryUpdate: true });
   harness.addLiveSession('app-spec');
   const handler = harness.permissionHandler({ id: 'app-spec' });
   let settlements = 0;
@@ -296,7 +204,7 @@ test('Spec approval declines on a summary failure and settles the callback once'
 });
 
 test('ask-user normalizes omitted values and preserves identities and answers', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('app-1');
   const handler = harness.askUserHandler({ id: 'app-1' });
   const input = {
@@ -326,7 +234,7 @@ test('ask-user normalizes omitted values and preserves identities and answers', 
 });
 
 test('question answers, cancellation, duplicate, late, and wrong-session responses settle once', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('app-1');
   harness.addLiveSession('app-2');
   const handler = harness.askUserHandler({ id: 'app-1' });
@@ -352,7 +260,7 @@ test('question answers, cancellation, duplicate, late, and wrong-session respons
 });
 
 test('forgetSession is protocol-silent, resolves nothing, and discards owned state', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('app-1');
   const handler = harness.permissionHandler({ id: 'app-1' });
   const granted = Promise.resolve(handler(permissionInput('grant')));
@@ -385,12 +293,13 @@ test('forgetSession is protocol-silent, resolves nothing, and discards owned sta
 });
 
 test('Claude answers allow the tool with original question keys and structured selections', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('claude');
   const callback = claudeCanUseTool(
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const input = {
     questions: [
@@ -432,12 +341,13 @@ test('Claude answers allow the tool with original question keys and structured s
 });
 
 test('Claude always-allow suppression prevents grant reuse, caching, and SDK rule updates', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('claude');
   const callback = claudeCanUseTool(
     'claude',
     harness.interactions.interactionsFor({ id: 'claude' }),
     () => false,
+    () => 'off',
   );
   const options = {
     signal: new AbortController().signal,
@@ -481,48 +391,8 @@ test('Claude always-allow suppression prevents grant reuse, caching, and SDK rul
   });
 });
 
-test('Droid edits-only approves a pure edit batch and asks for commands or mixed batches', async () => {
-  let asked = 0;
-  const ref = { id: 'app-1', autonomy: 'low' as const };
-  const { permissionHandler } = droidInteractionHandlers(ref, {
-    requestApproval: async () => {
-      asked += 1;
-      return 'cancel';
-    },
-    requestQuestion: async () => ({ cancelled: true, answers: [] }),
-    isActive: () => true,
-    cancelPending: () => undefined,
-  });
-  const edit: RequestPermissionRequestParams = {
-    toolUses: [
-      {
-        toolUse: {
-          type: 'tool_use',
-          id: 'edit-1',
-          name: 'Edit',
-          input: { file_path: '/workspace/a' },
-        },
-        confirmationType: ToolConfirmationType.Edit,
-        details: { type: ToolConfirmationType.Edit, filePath: '/workspace/a', fileName: 'a' },
-      },
-    ],
-    options: [],
-  };
-  assert.equal(await permissionHandler(edit), ToolConfirmationOutcome.ProceedOnce);
-  assert.equal(asked, 0);
-  assert.equal(await permissionHandler(permissionInput('exec-1')), ToolConfirmationOutcome.Cancel);
-  assert.equal(
-    await permissionHandler({
-      ...edit,
-      toolUses: [...edit.toolUses, ...permissionInput('exec-2').toolUses],
-    }),
-    ToolConfirmationOutcome.Cancel,
-  );
-  assert.equal(asked, 2);
-});
-
 test('Canvas tools proceed without a card at autonomy off under either harness naming', async () => {
-  const harness = createHarness();
+  const harness = createInteractionsHarness();
   harness.addLiveSession('design').summary.autonomy = 'off';
   const interactions = harness.interactions.interactionsFor({ id: 'design' });
   for (const mcpTool of [
@@ -547,143 +417,6 @@ test('Canvas tools proceed without a card at autonomy off under either harness n
   assert.equal(approvalRequests(harness.emitted).length, 0);
 });
 
-function canvasWriteUse(toolUseId: string): RequestPermissionRequestParams['toolUses'][number] {
-  return {
-    toolUse: {
-      type: 'tool_use',
-      id: toolUseId,
-      name: 'droidex-canvas___canvas_write',
-      input: { mutationId: toolUseId },
-    },
-    confirmationType: ToolConfirmationType.McpTool,
-    details: {
-      type: ToolConfirmationType.McpTool,
-      toolName: 'canvas_write',
-      serverName: 'droidex-canvas',
-      impactLevel: 'low',
-    },
-  };
-}
-
-test('a Droid bundle of only Canvas tools proceeds without a card at autonomy off', async () => {
-  const harness = createHarness();
-  harness.addLiveSession('design').summary.autonomy = 'off';
-  const bundle: RequestPermissionRequestParams = {
-    toolUses: ['write-light', 'write-dark', 'write-hero', 'write-footer'].map(canvasWriteUse),
-    options: [],
-  };
-  assert.equal(
-    await harness.permissionHandler({ id: 'design' })(bundle),
-    ToolConfirmationOutcome.ProceedOnce,
-  );
-  assert.equal(approvalRequests(harness.emitted).length, 0);
-});
-
-test('a Droid bundle led by a Canvas tool still asks for the whole request', async () => {
-  const harness = createHarness();
-  harness.addLiveSession('design').summary.autonomy = 'off';
-  const bundle: RequestPermissionRequestParams = {
-    toolUses: [canvasWriteUse('write-light'), ...permissionInput('exec-1').toolUses],
-    options: [],
-  };
-  const pending = Promise.resolve(harness.permissionHandler({ id: 'design' })(bundle));
-  const request = latestApprovalRequest(harness.emitted);
-  assert.equal(request.title, 'droidex-canvas · canvas_write, Run command');
-  assert.equal(request.canAlwaysAllow, false);
-  await harness.interactions.respondToApproval('design', request.requestId, 'refuse');
-  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
-  assert.equal(approvalRequests(harness.emitted).length, 1);
-});
-
-function foreignMcpUse(toolUseId: string): RequestPermissionRequestParams['toolUses'][number] {
-  return {
-    toolUse: {
-      type: 'tool_use',
-      id: toolUseId,
-      name: 'acme-fs___read_file',
-      input: { path: '/tmp/notes' },
-    },
-    confirmationType: ToolConfirmationType.McpTool,
-    details: {
-      type: ToolConfirmationType.McpTool,
-      toolName: 'acme-fs___read_file',
-      impactLevel: 'low',
-    },
-  };
-}
-
-test('a Droid bundle of Canvas and a foreign MCP tool asks for the whole request', async () => {
-  const harness = createHarness();
-  harness.addLiveSession('design').summary.autonomy = 'off';
-  const bundle: RequestPermissionRequestParams = {
-    toolUses: [canvasWriteUse('write-light'), foreignMcpUse('read-1')],
-    options: [],
-  };
-  const pending = Promise.resolve(harness.permissionHandler({ id: 'design' })(bundle));
-  const request = latestApprovalRequest(harness.emitted);
-  assert.equal(request.title, 'droidex-canvas · canvas_write, acme-fs · read_file');
-  assert.equal(request.canAlwaysAllow, false);
-  await harness.interactions.respondToApproval('design', request.requestId, 'refuse');
-  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
-  assert.equal(approvalRequests(harness.emitted).length, 1);
-});
-
-function droidScriptPermission(calls: unknown[]): RequestPermissionRequestParams {
-  const message = normalizeDroidTransportMessage({
-    jsonrpc: '2.0',
-    factoryApiVersion: '1.0.0',
-    type: 'request',
-    id: 'permission-script',
-    method: 'droid.request_permission',
-    params: {
-      toolUses: [
-        {
-          toolUse: { type: 'tool_use', id: 'script-1', name: 'Script', input: { script: '…' } },
-          confirmationType: 'script',
-          details: { type: 'script', impactLevel: 'high', calls },
-        },
-      ],
-      options: [],
-    },
-  });
-  return RequestPermissionRequestSchema.parse(message).params;
-}
-
-function scriptCall(toolName: string, confirmation: Record<string, unknown>) {
-  return { toolName, toolInput: {}, confirmation };
-}
-
-const scriptCanvasWrite = scriptCall('droidex-canvas___canvas_write', {
-  type: 'mcp_tool',
-  toolName: 'droidex-canvas___canvas_write',
-  serverName: 'droidex-canvas',
-  impactLevel: 'high',
-});
-
-test('a Droid script of Canvas calls proceeds, and one with a command asks once', async () => {
-  const harness = createHarness();
-  harness.addLiveSession('design').summary.autonomy = 'off';
-  const ask = harness.permissionHandler({ id: 'design' });
-
-  const canvasOnly = droidScriptPermission([scriptCanvasWrite, scriptCanvasWrite]);
-  assert.equal(await ask(canvasOnly), ToolConfirmationOutcome.ProceedOnce);
-  assert.equal(approvalRequests(harness.emitted).length, 0);
-
-  const command = scriptCall('Execute', { type: 'exec', fullCommand: 'ls', command: 'ls' });
-  for (const calls of [[scriptCanvasWrite, command], [command]]) {
-    const pending = Promise.resolve(ask(droidScriptPermission(calls)));
-    const request = latestApprovalRequest(harness.emitted);
-    assert.equal(
-      request.title,
-      calls.length === 2 ? 'droidex-canvas · canvas_write, Run command' : 'Run command',
-    );
-    // "Always" on a script grants every command of its impact level.
-    assert.equal(request.canAlwaysAllow, false);
-    await harness.interactions.respondToApproval('design', request.requestId, 'refuse');
-    assert.equal(await pending, ToolConfirmationOutcome.Cancel);
-  }
-  assert.equal(approvalRequests(harness.emitted).length, 2);
-});
 // SessionManager wiring: the module tests above own settlement rules; these
 // prove the facade routes provider callbacks to the right app session and
 // applies a Spec exit to the real provider.
@@ -848,4 +581,151 @@ test('close preserves current interaction lifetime and forgets unresolved state 
     releaseClose();
     await h.dispose();
   }
+});
+
+test('an owner can decide a native permitted action once, but cannot approve a safety prompt or elevate autonomy', async () => {
+  const h = createInteractionsHarness();
+  const owner = h.addLiveSession('lead');
+  owner.summary.autonomy = 'medium';
+  h.addLiveSession('worker');
+  const handler = h.permissionHandler({ id: 'worker' });
+  const request = permissionInput('safe');
+  const action = request.toolUses[0].details;
+  if (action.type !== 'exec') throw new Error('Expected command fixture');
+  action.impactLevel = 'low';
+  const safe = Promise.resolve(handler(request));
+  const first = latestApprovalRequest(h.emitted);
+  assert.equal(h.interactions.pendingApproval('worker')?.requestId, first.requestId);
+  assert.equal(await h.interactions.approveFor('lead', 'worker', first.requestId, 'allow'), true);
+  assert.equal(await safe, ToolConfirmationOutcome.ProceedOnce);
+  assert.equal(owner.summary.autonomy, 'medium');
+  assert.equal(await h.interactions.approveFor('lead', 'worker', first.requestId, 'allow'), false);
+  const dangerous = Promise.resolve(handler(permissionInput('dangerous', 'rm -rf /important')));
+  const second = latestApprovalRequest(h.emitted);
+  owner.summary.autonomy = 'high';
+  await assert.rejects(
+    h.interactions.approveFor('lead', 'worker', second.requestId, 'allow'),
+    /Ask the user one question/,
+  );
+  assert.equal(h.interactions.pendingApproval('worker')?.requestId, second.requestId);
+  assert.equal(await h.interactions.approveFor('lead', 'worker', second.requestId, 'deny'), true);
+  assert.equal(await dangerous, ToolConfirmationOutcome.Cancel);
+});
+
+test("a project lead's approval targets the provider request and publishes its blocked state", async (t) => {
+  const h = await projectHarness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, projectInput);
+  const interactions = createInteractionsHarness();
+  const actor = interactions.addLiveSession(main);
+  actor.summary.autonomy = 'high';
+  interactions.addLiveSession(child.appSessionId);
+  h.port.pendingApproval = interactions.interactions.pendingApproval.bind(
+    interactions.interactions,
+  );
+  h.port.approveFor = interactions.interactions.approveFor.bind(interactions.interactions);
+  const pending = Promise.resolve(
+    interactions.permissionHandler({ id: child.appSessionId })(permissionInput('edit-request')),
+  );
+  const request = latestApprovalRequest(interactions.emitted);
+  await h.projects.observe({ type: 'approval.requested', request });
+  await drain();
+  const view = h.projects
+    .list()[0]
+    .threads.find((thread) => thread.appSessionId === child.appSessionId);
+  assert.equal(view?.state, 'approval');
+  assert.deepEqual(view?.approval, { requestId: request.requestId, summary: 'pwd' });
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].prompt, /needs approval/);
+  await assert.rejects(
+    h.projects.approve(main, child.appSessionId, 'old-request', 'allow'),
+    /no longer waiting/,
+  );
+  assert.equal(
+    (await h.projects.approve(main, child.appSessionId, request.requestId, 'deny')).state,
+    'working',
+  );
+  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
+  await drain();
+  assert.equal(h.sent.length, 1);
+  const gate = deferred();
+  h.state.gate = gate.promise;
+  const second = Promise.resolve(
+    interactions.permissionHandler({ id: child.appSessionId })(permissionInput('another')),
+  );
+  const nextRequest = latestApprovalRequest(interactions.emitted);
+  await h.projects.observe({ type: 'approval.requested', request: nextRequest });
+  await drain();
+  await interactions.interactions.respondToApproval(
+    child.appSessionId,
+    nextRequest.requestId,
+    'refuse',
+  );
+  gate.resolve();
+  assert.equal(await second, ToolConfirmationOutcome.Cancel);
+  await drain();
+  assert.equal(
+    h.steered.length,
+    0,
+    'a request answered during admission cannot wake the lead again',
+  );
+  assert.equal(h.state.saved[0].pending.length, 0);
+});
+
+test('lead approvals cannot disable a worker sandbox', async () => {
+  const h = createInteractionsHarness();
+  const lead = h.addLiveSession('lead');
+  lead.summary.provider = 'claude';
+  lead.summary.autonomy = 'high';
+  h.addLiveSession('worker').summary.provider = 'claude';
+  const callback = claudeCanUseTool(
+    'worker',
+    h.interactions.interactionsFor({ id: 'worker' }),
+    () => false,
+    () => 'off',
+  );
+  const pending = callback(
+    'Bash',
+    { command: 'pwd', dangerouslyDisableSandbox: true },
+    {
+      signal: new AbortController().signal,
+      requestId: 'sandbox-request',
+      toolUseID: 'sandbox-tool',
+    },
+  );
+  const request = latestApprovalRequest(h.emitted);
+  await assert.rejects(
+    h.interactions.approveFor('lead', 'worker', request.requestId, 'allow'),
+    /Ask the user one question/,
+  );
+  await h.interactions.approveFor('lead', 'worker', request.requestId, 'deny');
+  const result = await pending;
+  assert.ok(result);
+  assert.equal(result.behavior, 'deny');
+});
+
+test('Stop on a lead discards an approval follow-up still awaiting its provider', async (t) => {
+  const h = await projectHarness(t);
+  const { main } = await h.root();
+  const child = await h.projects.spawn(main, projectInput);
+  const request = {
+    appSessionId: child.appSessionId,
+    requestId: 'request',
+    kind: 'exec' as const,
+    title: 'pwd',
+    detail: 'pwd',
+    canAlwaysAllow: false,
+    raw: {},
+  };
+  h.state.approvals.set(child.appSessionId, request);
+  const gate = deferred();
+  h.port.approveFor = async () => {
+    await gate.promise;
+    return true;
+  };
+  const deciding = h.projects.approve(main, child.appSessionId, 'request', 'deny', 'Do this next');
+  await h.projects.userStopped(main);
+  gate.resolve();
+  assert.deepEqual(await deciding, { state: 'stopped' });
+  assert.equal(h.state.saved[0].pending.length, 0);
 });

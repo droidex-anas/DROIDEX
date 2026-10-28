@@ -21,11 +21,7 @@ import {
   sanitizeUtilityPanels,
   type UtilityPanelState,
 } from '../lib/utilityPanel';
-import {
-  loadPersistedBrowserOpenKeys,
-  loadPersistedBrowsers,
-  persistBrowsers,
-} from './persistedBrowserSnapshot';
+import { loadPersistedBrowsers } from './persistedBrowserSnapshot';
 
 export type MissionRole = 'worker' | 'validator';
 export type AgentKind = 'primary' | MissionRole;
@@ -160,7 +156,6 @@ interface PersistedUiState {
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
-  browserOpenKeys: Record<string, boolean>;
   selectedFeatureId: string | null;
   mainView?: MainView;
   prWorkspaceCwd?: string | null;
@@ -357,7 +352,6 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
       missionControlMode:
         typeof parsed.missionControlMode === 'boolean' ? parsed.missionControlMode : undefined,
       browsers: loadPersistedBrowsers(parsed.browsers),
-      browserOpenKeys: loadPersistedBrowserOpenKeys(parsed.browserOpenKeys),
       selectedFeatureId:
         typeof parsed.selectedFeatureId === 'string' ? parsed.selectedFeatureId : null,
       mainView:
@@ -382,7 +376,6 @@ export interface PersistedUiStateSource {
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
-  browserOpenKeys: Record<string, boolean>;
   selectedFeatureId: string | null;
   mainView: MainView;
   prWorkspaceCwd: string | null;
@@ -399,8 +392,7 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     productMode: state.productMode,
     specMode: state.specMode,
     missionControlMode: state.missionControlMode,
-    browsers: persistBrowsers(state.browsers),
-    browserOpenKeys: state.browserOpenKeys,
+    browsers: state.browsers,
     selectedFeatureId: state.selectedFeatureId,
     mainView: state.mainView,
     prWorkspaceCwd: state.prWorkspaceCwd,

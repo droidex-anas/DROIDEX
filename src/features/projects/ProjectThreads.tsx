@@ -1,6 +1,5 @@
 import { ArrowLeft, ExternalLink } from '@droidex/icons';
 import { ThreadList } from './ThreadList';
-import { threadSubtitle } from './threadGreeting';
 import type { ProjectBoardEntry } from './useProjectBoard';
 
 /* One project: what it is, whether its coordination is held, and the threads it
@@ -52,7 +51,7 @@ export function ProjectThreads({
           <p className="flex-1 text-[12px] leading-5 text-droid-text-secondary">
             {project.uncertain > 0
               ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
-              : 'Coordination is held: reports and queued messages wait until this project resumes.'}
+              : 'Paused. Work and queued messages are kept; Resume continues them.'}
           </p>
           <button
             type="button"
@@ -68,9 +67,12 @@ export function ProjectThreads({
         <ThreadList
           rows={rows}
           plan={project.plan}
-          subtitle={threadSubtitle(undefined, project.cwd, rows.length)}
+          cwd={project.cwd}
+          startedAt={project.startedAt}
+          done={project.done}
           // This view carries its own held banner, with the control to resume.
           held={false}
+          leadStopped={project.leadStopped === true}
           now={now}
           error={project.error ?? ''}
           onOpenThread={onOpenThread}

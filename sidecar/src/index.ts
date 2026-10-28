@@ -17,6 +17,7 @@ import {
 } from './automations/AutomationManager.js';
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
+import { createDesktopBrowserChannel } from './browser/desktopBrowserChannel.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
 import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
 import type { ClientCommand } from './protocol.js';
@@ -24,7 +25,6 @@ import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 const REQUESTED_PORT = bridgePort(process.env.BRIDGE_PORT ?? '0');
 const TOKEN = requiredSecret('BRIDGE_TOKEN');
-const ASSET_TOKEN = requiredSecret('BROWSER_ASSET_TOKEN');
 const CANVAS_ASSET_SECRET = requiredSecret('CANVAS_ASSET_SECRET');
 const CANVAS_EXPORT_TOKEN = process.env.CANVAS_EXPORT_TOKEN;
 const EXIT_ON_STDIN_CLOSE = process.env.BRIDGE_EXIT_ON_STDIN_CLOSE !== '0';
@@ -35,7 +35,6 @@ let projects: ProjectService | undefined;
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
-  assetToken: ASSET_TOKEN,
   canvasImages: {
     secret: CANVAS_ASSET_SECRET,
     importImage: async (request) => (await canvasReady).importCanvasImage(request),
@@ -78,7 +77,10 @@ const manager = new SessionManager(
     canvasTurns,
     canvasWorkspace: () => canvasReady,
     canvasCapture: (canvasId, ref, signal) => canvasBridge.capture(canvasId, ref, signal),
-    assetUrlFor: (filePath) => server.browserAssetUrl(filePath),
+    onUserPrompt: (appSessionId) => {
+      void projects?.userContinued(appSessionId).catch(reportProjectError);
+    },
+    requestBrowser: createDesktopBrowserChannel(),
     beforeFirstTurn: (session, clientRef, canvas, admission): Promise<void> =>
       prepareSessionFirstTurn(
         session,
@@ -274,9 +276,7 @@ async function shutdown(): Promise<void> {
   process.exit();
 }
 
-function requiredSecret(
-  name: 'BRIDGE_TOKEN' | 'BROWSER_ASSET_TOKEN' | 'CANVAS_ASSET_SECRET',
-): string {
+function requiredSecret(name: 'BRIDGE_TOKEN' | 'CANVAS_ASSET_SECRET'): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;

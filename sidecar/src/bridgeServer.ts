@@ -3,10 +3,7 @@
 // entry and perf harness both use this exact transport path.
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
-import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { pipeline } from 'node:stream/promises';
 
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
@@ -16,7 +13,6 @@ import { assertCanvasTurnContext } from './canvas/canvasTurnContext.js';
 import { sessionCanvasIntentSchema } from './canvas/schema.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
-import { resolveBrowserAssetPath } from './browser/browserPaths.js';
 import { serveCanvasSourceExport } from './canvas/canvasExport.js';
 import { serveDesignSystemExport } from './canvas/designSystemExport.js';
 import {
@@ -29,6 +25,7 @@ import {
   type ServerEventBatch,
   type ServerWireMessage,
 } from './protocol.js';
+import { providerKind } from './providers/providerKind.js';
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
@@ -38,20 +35,18 @@ const HOST = '127.0.0.1';
 const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
 const HARD_CLIENT_BUFFER_BYTES = 8 * 1024 * 1024;
 const CLIENT_CLOSE_DRAIN_MS = 250;
-/**
- * Frames one socket may send while it is still being admitted. A renderer
- * flushes at most `MAX_QUEUED_COMMANDS` (256, in `src/lib/bridge.ts`) the moment
- * its socket opens, so this is that cap plus room for the commands a reconnect
- * sends live, such as re-watching each open canvas. Keep the two coupled:
- * nothing a well-behaved renderer does may reach this bound.
- */
-const MAX_HELD_CLIENT_MESSAGES = 320;
+// Commands a client may send before it is caught up and let in, by count and
+// by size. A renderer flushes at most `MAX_QUEUED_COMMANDS` (256, in
+// `src/lib/bridge.ts`) the moment its socket opens, so the count is that cap
+// plus room for the commands a reconnect sends live, such as re-watching each
+// open canvas. Keep the two coupled: no well-behaved renderer may reach it.
+const MAX_EARLY_COMMANDS = 320;
+const MAX_EARLY_BYTES = 8 * 1024 * 1024;
 
 export interface BridgeServer {
   readonly port: number;
   readonly ready: Promise<void>;
   broadcast(event: ServerEvent): void;
-  browserAssetUrl(filePath: string): string;
   /**
    * Notified when a renderer page's socket goes away, so an owner holding
    * per-page state can release it. A client that connected without a page ID
@@ -64,7 +59,6 @@ export interface BridgeServer {
 export function startBridgeServer(options: {
   requestedPort: number;
   token: string;
-  assetToken: string;
   canvasImages?: CanvasImages;
   canvasExportToken?: string;
   // `pageId` identifies the renderer page the command came from, when it sent
@@ -93,7 +87,6 @@ export function startBridgeServer(options: {
     if (serveCanvasImageImport(req, res, options.canvasImages)) return;
     if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
     if (serveDesignSystemExport(req, res, options.canvasExportToken)) return;
-    if (serveBrowserAsset(req, res, options.assetToken)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;
     res.writeHead(404).end('not found');
@@ -180,7 +173,11 @@ export function startBridgeServer(options: {
 
   async function admitClient(ws: WebSocket, url: URL): Promise<void> {
     const pageId = url.searchParams.get('pageId');
+    // Commands sent while the client is caught up (the app sends its first ones
+    // the moment the socket opens) wait here and run in order once it is in.
+    let early: RawData[] | null = [];
     const disconnect = () => {
+      early = null;
       clients.delete(ws);
       voiceOwners.disconnected(ws);
       if (pageId) reportPageGone(pageId);
@@ -188,33 +185,32 @@ export function startBridgeServer(options: {
     ws.on('close', disconnect);
     ws.on('error', disconnect);
     if (pageId) voiceOwners.connected(pageId, ws);
-    // Admission can await a runtime snapshot, and a renderer that reconnects
-    // sends its queued commands the moment its socket opens. The listener is
-    // installed before that await and holds what arrives, because a socket with
-    // no listener drops its messages and the renderer has no way to know: a
-    // clean replay resume sends it nothing it could wait for.
-    const held: RawData[] = [];
-    let admitting = true;
+    let inside = false;
+    let earlyBytes = 0;
     ws.on('message', (raw) => {
-      if (!admitting) {
+      if (inside) {
         void handleMessage(ws, raw, pageId);
         return;
       }
-      // No renderer can reach this bound, so a client that does is misbehaving
-      // rather than unlucky: 1008 says so, where a retry code would invite it to
-      // send the same flood again.
-      if (held.length >= MAX_HELD_CLIENT_MESSAGES) {
-        held.length = 0;
-        ws.close(1008, 'too many commands during admission');
-        return;
-      }
-      held.push(raw);
+      if (!early) return;
+      // A client that keeps sending while it is not yet in is cut off; it
+      // reconnects and sends its first commands again.
+      earlyBytes += rawSize(raw);
+      if (early.length >= MAX_EARLY_COMMANDS || earlyBytes > MAX_EARLY_BYTES) {
+        early = null;
+        ws.close(1008, 'too many commands before ready');
+      } else early.push(raw);
     });
     const admitted = await resumeClient(ws, url);
-    if (!admitted || ws.readyState !== ws.OPEN) return;
+    if (!admitted || ws.readyState !== ws.OPEN) {
+      early = null;
+      return;
+    }
     clients.add(ws);
-    admitting = false;
-    for (const raw of held.splice(0)) void handleMessage(ws, raw, pageId);
+    const waiting = early;
+    early = null;
+    inside = true;
+    for (const raw of waiting) void handleMessage(ws, raw, pageId);
   }
 
   async function resumeClient(ws: WebSocket, url: URL): Promise<boolean> {
@@ -338,6 +334,7 @@ export function startBridgeServer(options: {
           parsed.canvas = intent.data;
         }
         if ('canvasContext' in parsed) assertCanvasTurnContext(parsed.canvasContext);
+        assertValidUsageRefresh(parsed);
       }
       const command = parsed as ClientCommand;
       if (command.type === 'voice.start' || command.type === 'voice.stop')
@@ -398,13 +395,6 @@ export function startBridgeServer(options: {
     return Buffer.concat(raw).toString('utf8');
   }
 
-  function browserAssetUrl(filePath: string): string {
-    const url = new URL(`http://${HOST}:${String(boundPort)}/browser-assets`);
-    url.searchParams.set('path', filePath);
-    url.searchParams.set('token', options.assetToken);
-    return url.toString();
-  }
-
   function serveHealth(req: IncomingMessage, res: ServerResponse, token: string): boolean {
     const url = new URL(req.url ?? '/', `http://${HOST}:${String(boundPort)}`);
     if (url.pathname !== '/health') return false;
@@ -448,56 +438,6 @@ export function startBridgeServer(options: {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify(hotPathMetrics.snapshot()));
     return true;
-  }
-
-  function serveBrowserAsset(
-    req: IncomingMessage,
-    res: ServerResponse,
-    assetToken: string,
-  ): boolean {
-    const url = new URL(req.url ?? '/', `http://${HOST}:${String(boundPort)}`);
-    if (url.pathname !== '/browser-assets') return false;
-    if (url.searchParams.get('token') !== assetToken) {
-      res.writeHead(401).end('unauthorized');
-      return true;
-    }
-    const filePath = url.searchParams.get('path');
-    if (!filePath) {
-      res.writeHead(403).end('forbidden');
-      return true;
-    }
-    void resolveBrowserAssetPath(filePath)
-      .then(async (resolvedPath) => {
-        if (!resolvedPath) {
-          res.writeHead(403).end('forbidden');
-          return;
-        }
-        const info = await stat(resolvedPath);
-        if (!info.isFile()) {
-          res.writeHead(404).end('not found');
-          return;
-        }
-        res.writeHead(200, {
-          'content-type': contentType(resolvedPath),
-          'cache-control': 'no-store',
-        });
-        await pipeline(createReadStream(resolvedPath), res);
-      })
-      .catch(() => {
-        if (res.headersSent) {
-          res.destroy();
-          return;
-        }
-        res.writeHead(404).end('not found');
-      });
-    return true;
-  }
-
-  function contentType(filePath: string): string {
-    if (filePath.endsWith('.png')) return 'image/png';
-    if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) return 'image/jpeg';
-    if (filePath.endsWith('.json')) return 'application/json';
-    return 'application/octet-stream';
   }
 
   function close(): Promise<void> {
@@ -552,7 +492,6 @@ export function startBridgeServer(options: {
     },
     ready,
     broadcast,
-    browserAssetUrl,
     onPageGone,
     close,
   };
@@ -565,12 +504,23 @@ function commandFailure(error: unknown): { code?: string; message: string } {
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
-// Optional on a send; Send now names the steer it is for.
+// Optional on a send; queue actions name the steer they are for.
 function assertValidSteerId(command: object): void {
-  const required = 'type' in command && command.type === 'session.sendNow';
+  const withdrawing = 'type' in command && command.type === 'session.withdrawSteer';
+  const required = withdrawing || ('type' in command && command.type === 'session.sendNow');
   if (!required && !('steerId' in command)) return;
   const steerId = 'steerId' in command ? command.steerId : undefined;
   if (typeof steerId !== 'string' || !steerId) throw new Error('Invalid steer id.');
+  if (withdrawing) {
+    if (
+      !('appSessionId' in command) ||
+      typeof command.appSessionId !== 'string' ||
+      !command.appSessionId
+    )
+      throw new Error('Invalid app session id.');
+    if (!('requestId' in command) || typeof command.requestId !== 'string' || !command.requestId)
+      throw new Error('Invalid withdrawal request id.');
+  }
 }
 
 function assertValidChatPreferences(command: object): void {
@@ -589,6 +539,16 @@ function assertValidChatPreferences(command: object): void {
   }
 }
 
+// A read of a harness account can start that harness's process, so the
+// harness and both switches must be exactly what the sidecar expects.
+function assertValidUsageRefresh(command: object): void {
+  if (!('type' in command) || command.type !== 'usage.refresh') return;
+  const { provider, panelOpen, immediate } = command as Record<string, unknown>;
+  if (!providerKind(provider)) throw new Error('usage.refresh needs a known harness.');
+  if (typeof panelOpen !== 'boolean' || typeof immediate !== 'boolean')
+    throw new Error('usage.refresh needs panelOpen and immediate as booleans.');
+}
+
 function maxBufferedAmount(clients: Iterable<WebSocket>): number {
   let max = 0;
   for (const ws of clients) max = Math.max(max, ws.bufferedAmount);
@@ -599,4 +559,9 @@ function nonNegativeInteger(value: string | null): number | null {
   if (value === null || value.trim() === '') return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function rawSize(raw: RawData): number {
+  if (Array.isArray(raw)) return raw.reduce((total, chunk) => total + chunk.length, 0);
+  return raw instanceof ArrayBuffer ? raw.byteLength : raw.length;
 }

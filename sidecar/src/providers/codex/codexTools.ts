@@ -4,7 +4,7 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import { automationToolDisplayTitle } from '../../automations/permissionPolicy.js';
 import { mcpGrantSignature } from '../../mcpGrant.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
-import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplayTitle } from '../../sessionsMcpPolicy.js';
+import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplay } from '../../sessionsMcpPolicy.js';
 import { objectValue } from '../../values.js';
 import { invalidCanvasArguments } from '../../canvas/canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpNames.js';
@@ -26,10 +26,7 @@ interface CodexNamespace {
 }
 
 interface ToolReply {
-  contentItems: [
-    { type: 'inputText'; text: string },
-    ...{ type: 'inputImage'; imageUrl: string }[],
-  ];
+  contentItems: ({ type: 'inputText'; text: string } | { type: 'inputImage'; imageUrl: string })[];
   success: boolean;
 }
 
@@ -49,6 +46,9 @@ const TOOL_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export class CodexToolBridge {
   readonly declarations: CodexNamespace[];
+  /** Names the deferred namespaces up front; without it a chat outside a
+      project never looks them up and says DROIDEX gave it no tools. */
+  readonly instructions: string | undefined;
   private readonly tools = new Map<
     string,
     { serverName: string; tool: DroidTool; input: z.ZodObject<Record<string, z.ZodTypeAny>> }
@@ -94,6 +94,12 @@ export class CodexToolBridge {
         tools,
       };
     });
+    this.instructions = this.declarations.length
+      ? [
+          "This chat runs inside DROIDEX, the user's desktop app for coding agents, and DROIDEX has given it these tools. They are available now; only their full definitions load when you look them up. Use them whenever the user asks about DROIDEX, its chats, threads, projects, sidebar or automations:",
+          ...this.declarations.map(({ name, description }) => `- ${name}: ${description}`),
+        ].join('\n')
+      : undefined;
   }
 
   async call(params: unknown): Promise<ToolReply> {
@@ -106,6 +112,7 @@ export class CodexToolBridge {
       return reply('This DROIDEX turn is no longer active.', false);
     const { serverName, tool, input } = found;
     const signature = mcpGrantSignature(serverName, tool.name, input);
+    const display = sessionsToolDisplay(serverName, tool.name, input);
     const outcome = await this.session.prompts.ask(() =>
       this.session.interactions.requestApproval({
         request: {
@@ -113,11 +120,8 @@ export class CodexToolBridge {
           requestId: nextInteractionRequestId(),
           kind: 'mcp',
           canAlwaysAllow: Boolean(signature),
-          title:
-            sessionsToolDisplayTitle(serverName, tool.name) ??
-            automationToolDisplayTitle(serverName, tool.name) ??
-            tool.name,
-          detail: JSON.stringify(input),
+          title: display?.title ?? automationToolDisplayTitle(serverName, tool.name) ?? tool.name,
+          detail: display?.detail ?? JSON.stringify(input),
           raw: { toolName: `mcp__${serverName}__${tool.name}`, input },
         },
         confirmationType: 'mcp_tool',
@@ -171,18 +175,18 @@ async function run(tool: DroidTool, input: Record<string, unknown>): Promise<Too
   try {
     const result = await tool.handler(input);
     if (typeof result === 'string') return reply(result, true);
-    const texts: string[] = [];
-    const images: { type: 'inputImage'; imageUrl: string }[] = [];
+    // A picture goes to Codex as a picture: a screenshot it cannot see is no answer.
+    const contentItems: ToolReply['contentItems'] = [];
     for (const item of result.content) {
-      if (item.type === 'text') texts.push(item.text);
+      if (item.type === 'text') contentItems.push({ type: 'inputText', text: item.text });
       else if (item.type === 'image')
-        images.push({ type: 'inputImage', imageUrl: `data:${item.mimeType};base64,${item.data}` });
+        contentItems.push({
+          type: 'inputImage',
+          imageUrl: `data:${item.mimeType};base64,${item.data}`,
+        });
       else return reply('This tool returned content Codex cannot display.', false);
     }
-    return {
-      contentItems: [{ type: 'inputText', text: texts.join('\n') }, ...images],
-      success: result.isError !== true,
-    };
+    return { contentItems, success: result.isError !== true };
   } catch (error) {
     return reply(message(error), false);
   }

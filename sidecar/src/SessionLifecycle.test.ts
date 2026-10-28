@@ -1,64 +1,49 @@
 import assert from 'node:assert/strict';
-import { CanvasScopes } from './canvas/canvasScopes.js';
 import type { CanvasTurnContext } from './canvas/protocol.js';
-import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
-import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
-import { SessionVoice } from './providers/SessionVoice.js';
 import { DEFAULT_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
-import { canvasRoot, deferred, quietBuilds } from './testing/canvasStorageSupport.js';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { canvasRoot, quietBuilds } from './testing/canvasStorageSupport.js';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { ReasoningEffort, type McpServerConfig } from '@factory/droid-sdk';
-import type { HistoricalSession } from './history.js';
-import type {
-  FactoryDefaultSettings,
-  PermissionOutcome,
-  ServerEvent,
-  SessionSummary,
-} from './protocol.js';
+import { ReasoningEffort } from '@factory/droid-sdk';
+import type { ProviderMention, ServerEvent, SessionSummary, TranscriptEvent } from './protocol.js';
+import {
+  harness as projectHarness,
+  drain,
+  input as projectInput,
+  summary as projectSummary,
+  wakeProject,
+  queuedThread,
+} from './testing/projectServiceHarness.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
-import type { Provider, ProviderResumeInput } from './providers/session.js';
+import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
+import { runPrimaryTurn } from './providers/primaryTurn.js';
+import { SessionEventFlow } from './SessionEventFlow.js';
+import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
+import { CodexProvider } from './providers/codex/CodexProvider.js';
+import { providerIdentityCli } from './testing/providerIdentityCli.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
-import type { ProviderQuestionAnswers } from './providers/interactions.js';
+import { ClaudeSession } from './providers/claude/claudeSession.js';
+import { MessageQueue } from './providers/claude/claudeMessages.js';
 import {
-  SessionLifecycle,
-  type LiveSession,
-  type SessionCreateCommand,
-  type SessionLifecycleDependencies,
-} from './SessionLifecycle.js';
-import { SessionRegistry } from './SessionRegistry.js';
-import {
-  FakeFactoryRuntime,
+  assistantTextDelta,
   FakeFactorySession,
   type RecordedCall,
 } from './testing/fakeFactoryRuntime.js';
-
-class TestHistory {
-  readonly persisted: SessionSummary[] = [];
-  readonly patches = new Map<string, Partial<SessionSummary>>();
-  readonly hidden = new Set<string>();
-  nextSyncError?: Error;
-  constructor(private readonly calls: RecordedCall[]) {}
-  syncSummaries(summaries: SessionSummary[]): boolean | undefined {
-    const error = this.nextSyncError;
-    delete this.nextSyncError;
-    if (error) throw error;
-    this.persisted.push(...summaries.map((summary) => ({ ...summary })));
-    this.calls.push({ target: 'history', method: 'syncSummaries', args: summaries });
-    return undefined;
-  }
-  summaryPatchesAndHidden(): {
-    patches: Map<string, Partial<SessionSummary>>;
-    hiddenProviderSessionIds: Set<string>;
-  } {
-    return { patches: this.patches, hiddenProviderSessionIds: this.hidden };
-  }
-}
-
+import {
+  createCommand,
+  createHarness,
+  delegatingProvider,
+  queueCreate,
+  queueLoad,
+  requireLive,
+  summary,
+  turnLease,
+  type Harness,
+} from './testing/sessionLifecycleHarness.js';
 class RejectingInterruptSession extends FakeFactorySession {
   override interrupt(): Promise<void> {
     return super.interrupt().then(() => {
@@ -89,324 +74,6 @@ class RejectingCloseSession extends FakeFactorySession {
   }
 }
 
-function createHarness(
-  ordinarySummaries: SessionSummary[] = [],
-  beforeFirstTurn?: SessionLifecycleDependencies['beforeFirstTurn'],
-  attachedCanvasId: (appSessionId: string) => string | null = () => null,
-) {
-  const calls: RecordedCall[] = [];
-  const events: ServerEvent[] = [];
-  const publicationRegistration: boolean[] = [];
-  const forgettingAfterUnregister: boolean[] = [];
-  const eventFlowForgettingAfterUnregister: boolean[] = [];
-  const missionForgettingAfterUnregister: boolean[] = [];
-  const history = new TestHistory(calls);
-  const runtime = new FakeFactoryRuntime(calls);
-  let provider: Provider = new DroidProvider(runtime, () => undefined);
-  let projection: Partial<SessionSummary> = {};
-  let waitForSettings = (): Promise<void> => Promise.resolve();
-  let waitForHistory = (): Promise<void> => Promise.resolve();
-  let applyPending: (appSessionId: string) => Promise<boolean> = () => Promise.resolve(true);
-  let enableAutoCompaction = (): Promise<boolean> => Promise.resolve(true);
-  let compactionLimit = (): Promise<number> => Promise.resolve(800);
-  let shutdownStarted = false;
-  let pendingInteractions = false;
-  let capacityReleases = 0;
-  let closeChildren: (appSessionId: string) => Promise<void> = () => Promise.resolve();
-  let killProcesses: (appSessionId: string) => Promise<void> = () => Promise.resolve();
-  let emitSessionList: (closedProviderSessionId: string) => void | Promise<void> = () =>
-    recordEvent({ type: 'sessions.list', ...registry.listSummaries() });
-  let nextEmitFailure: { type: ServerEvent['type']; error: Error } | undefined;
-  let now = 10_000;
-  let mcpId = 0;
-  let mcpConfigs: McpServerConfig[] = [];
-  const historical = (): HistoricalSession[] =>
-    ordinarySummaries.map((item) => ({ summary: { ...item }, progress: [] }));
-  const recordEvent = (event: ServerEvent): void => {
-    if (nextEmitFailure?.type === event.type) {
-      const error = nextEmitFailure.error;
-      nextEmitFailure = undefined;
-      throw error;
-    }
-    events.push(event);
-    calls.push({ target: 'protocol', method: event.type, args: [event] });
-    if (event.type === 'session.created' || event.type === 'session.updated') {
-      publicationRegistration.push(registry.getLive(event.session.appSessionId) !== undefined);
-    }
-  };
-  const registry = new SessionRegistry<LiveSession>({
-    history,
-    loadOrdinarySessions: historical,
-    loadMissionControlSessions: () => [],
-    projectSummary: (item) => ({ ...item, ...projection }),
-    onSummaryUpdated: (session) => recordEvent({ type: 'session.updated', session }),
-    now: () => {
-      now += 1;
-      return now;
-    },
-  });
-  const defaults: FactoryDefaultSettings = {
-    modelId: 'model-default',
-    reasoningEffort: ReasoningEffort.Low,
-    autonomy: 'low',
-    interactionMode: 'auto',
-  };
-  const record = (target: RecordedCall['target'], method: string, ...args: unknown[]): void => {
-    calls.push({ target, method, args });
-  };
-  // Most lifecycle cases have no attached Canvas workspace.
-  const canvasScopes = new CanvasScopes();
-  const canvasTurns = new CanvasTurns(canvasScopes, attachedCanvasId);
-  const lifecycle = new SessionLifecycle({
-    whenSessionHistoryReady: () => waitForHistory(),
-    beforeFirstTurn,
-    eventFlow: { apply: () => undefined, beginTurn: () => undefined },
-    provider: () => provider,
-    canvasTurns,
-    registry,
-    ensureConnected: () => record('runtime', 'ensureConnected'),
-    getFactoryDefaults: () => Promise.resolve(defaults),
-    maxContextTokensForModel: () => 1_000,
-    childSessions: {
-      retryAgentWave: (appSessionId) => record('cleanup', 'children.retryWave', appSessionId),
-      attachParent: (appSessionId) => record('cleanup', 'children.attach', appSessionId),
-      closeParent: (appSessionId) => closeChildren(appSessionId),
-    },
-    startLocalMcpServers: () => {
-      const resourceId = ++mcpId;
-      record('runtime', 'mcp.start', resourceId);
-      const close = () => {
-        record('cleanup', 'mcp.close', `mcp-${resourceId}`);
-        return Promise.resolve();
-      };
-      return Promise.resolve({ servers: [{ close }], configs: mcpConfigs });
-    },
-    interactionsFor: () => ({
-      requestApproval: () => new Promise<PermissionOutcome>(() => undefined),
-      requestQuestion: () => new Promise<ProviderQuestionAnswers>(() => undefined),
-      cancelPending: () => undefined,
-      isActive: () => true,
-    }),
-    compaction: {
-      resolveLimit: () => compactionLimit(),
-      arm: async (target, limit) => {
-        if (!target.isCurrent()) return false;
-        record('provider', 'autoCompaction.arm', target.session.sessionId, limit);
-        const armed = await enableAutoCompaction();
-        return target.isCurrent() && armed;
-      },
-      subscribePrimary: (target) => {
-        target.liveSession.unsubscribe = target.session.onNotification(() => undefined);
-      },
-      afterTurn: (target) => record('cleanup', 'autoCompaction.settled', target.appSessionId),
-      cancel: (target) => {
-        if (target.kind === 'primary') target.liveSession.autoCompacting = false;
-        else target.setAutoCompacting(false);
-        const id = target.kind === 'primary' ? target.appSessionId : target.childSessionId;
-        record('cleanup', 'watchdog.clear', id);
-      },
-      forgetSession: (appSessionId) => record('cleanup', 'compaction.forgetSession', appSessionId),
-    },
-    isShutdownStarted: () => shutdownStarted,
-    agentProcesses: {
-      setIgnoredCommands: (appSessionId, patterns) =>
-        record('runtime', 'processes.setIgnoredCommands', appSessionId, ...patterns),
-      track: (appSessionId, pid) => record('runtime', 'processes.track', appSessionId, pid),
-      untrack: (pid) => record('cleanup', 'processes.untrack', pid),
-      killSession: (appSessionId) => {
-        record('cleanup', 'processes.killSession', appSessionId);
-        return killProcesses(appSessionId);
-      },
-    },
-    hasActiveSettingsChanges: () => false,
-    waitForSettingsMutations: () => waitForSettings(),
-    applyPendingSettingsToSummary: (item) => ({ ...item, ...projection }),
-    recordLineage: () => undefined,
-    applyPendingSessionSettings: (appSessionId) => applyPending(appSessionId),
-    runPrimaryTurn: async (live, { prompt, delivery }) => {
-      if (delivery && !delivery.isCurrent()) return;
-      for await (const event of live.session.stream(prompt)) {
-        delivery?.accepted();
-        void event;
-      }
-      delivery?.accepted();
-    },
-    context: {
-      preserveUsage: () => undefined,
-      refresh: (target) => {
-        record('provider', 'context.refresh', target.sourceSessionId);
-        return Promise.resolve();
-      },
-      stopPolling: (sourceSessionId) => record('cleanup', 'poll.stop', sourceSessionId),
-      stopSession: (live) => {
-        record('cleanup', 'poll.stop', live.summary.appSessionId);
-        if (live.summary.providerSessionId)
-          record('cleanup', 'poll.stop', live.summary.providerSessionId);
-      },
-      forgetSession: (live) => record('cleanup', 'runtimeCaches.clear', live.summary.appSessionId),
-    },
-    openProviderTranscript: () => {},
-    forgetProviderTranscript: () => {},
-    hasPendingInteractions: () => pendingInteractions,
-    onScheduledCapacityChanged: () => {
-      capacityReleases += 1;
-    },
-    forgetInteractions: (appSessionId) => {
-      forgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      record('cleanup', 'interactions.forget', appSessionId);
-    },
-    forgetEventFlow: (appSessionId) => {
-      eventFlowForgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      record('cleanup', 'eventFlow.forget', appSessionId);
-    },
-    forgetMissionControl: (appSessionId) => {
-      missionForgettingAfterUnregister.push(registry.getLive(appSessionId) === undefined);
-      record('cleanup', 'missionControl.forget', appSessionId);
-    },
-    forgetPendingSettings: (appSessionId) =>
-      record('cleanup', 'pendingSettings.forget', appSessionId),
-    closeBrowserSession: (appSessionId) => {
-      record('browser', 'browser.close', appSessionId);
-      return Promise.resolve();
-    },
-    stopVoiceSession: (appSessionId) => {
-      record('cleanup', 'voice.stop', appSessionId);
-      return Promise.resolve();
-    },
-    emit: recordEvent,
-    emitError: (error) => recordEvent({ type: 'error', ...error }),
-    appendProgress: (appSessionId, text) => record('protocol', 'progress', appSessionId, text),
-    appendError: (appSessionId, message) => record('protocol', 'error', appSessionId, message),
-    appendSteer: (appSessionId, text) => record('protocol', 'appendSteer', appSessionId, text),
-    catalogUpdated: () => undefined,
-    emitSessionList: (closedProviderSessionId) => emitSessionList(closedProviderSessionId),
-  });
-
-  return {
-    calls,
-    events,
-    history,
-    runtime,
-    registry,
-    lifecycle,
-    canvasTurns,
-    canvasScopes,
-    publicationRegistration,
-    forgettingAfterUnregister,
-    eventFlowForgettingAfterUnregister,
-    missionForgettingAfterUnregister,
-    capacityReleases: () => capacityReleases,
-    setPendingInteractions: (pending: boolean) => {
-      pendingInteractions = pending;
-    },
-    setProjection: (patch: Partial<SessionSummary>) => {
-      projection = { ...patch };
-    },
-    setProvider: (next: Provider) => {
-      provider = next;
-    },
-    setSettingsWait: (wait: () => Promise<void>) => {
-      waitForSettings = wait;
-    },
-    setHistoryWait: (wait: () => Promise<void>) => {
-      waitForHistory = wait;
-    },
-    setPendingApply: (action: (appSessionId: string) => Promise<boolean>) => {
-      applyPending = action;
-    },
-    setEnableAutoCompaction: (action: () => Promise<boolean>) => {
-      enableAutoCompaction = action;
-    },
-    setCompactionLimit: (action: () => Promise<number>) => {
-      compactionLimit = action;
-    },
-    setEmitSessionList: (action: (closedProviderSessionId: string) => void | Promise<void>) => {
-      emitSessionList = action;
-    },
-    setShutdownStarted: (started: boolean) => {
-      shutdownStarted = started;
-    },
-    setChildCloser: (action: (appSessionId: string) => Promise<void>) => {
-      closeChildren = action;
-    },
-    setProcessKiller: (action: (appSessionId: string) => Promise<void>) => {
-      killProcesses = action;
-    },
-    setMcpConfigs: (configs: McpServerConfig[]) => {
-      mcpConfigs = configs;
-    },
-    failNextEmit: (type: ServerEvent['type'], error: Error) => {
-      nextEmitFailure = { type, error };
-    },
-  };
-}
-
-type Harness = ReturnType<typeof createHarness>;
-
-function summary(
-  appSessionId: string,
-  providerSessionId = appSessionId,
-  patch: Partial<SessionSummary> = {},
-): SessionSummary {
-  return {
-    appSessionId,
-    providerSessionId,
-    provider: 'droid',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    role: 'user',
-    title: appSessionId,
-    goal: 'test',
-    cwd: '/workspace',
-    workspaceKind: 'folder',
-    modelId: 'model-default',
-    reasoningEffort: ReasoningEffort.Low,
-    autonomy: 'low',
-    phase: 'paused',
-    features: [],
-    tokensIn: 0,
-    tokensOut: 0,
-    contextTokens: 0,
-    createdAt: 1,
-    updatedAt: 1,
-    ...patch,
-  };
-}
-
-function createCommand(goal = 'first'): SessionCreateCommand {
-  return {
-    type: 'session.create',
-    clientRef: 'client-1',
-    title: 'Test session',
-    goal,
-    cwd: '/workspace',
-    sessionPurpose: 'chat',
-    interactionMode: 'auto',
-    autonomy: 'low',
-  };
-}
-
-function queueCreate(harness: Harness, sessionId: string): FakeFactorySession {
-  const session = new FakeFactorySession(sessionId, {}, harness.calls);
-  harness.runtime.createQueue.push(session);
-  return session;
-}
-
-function queueLoad(
-  harness: Harness,
-  providerSessionId: string,
-  session: FakeFactorySession = new FakeFactorySession(providerSessionId, {}, harness.calls),
-): FakeFactorySession {
-  harness.runtime.loadQueue.set(providerSessionId, [session]);
-  return session;
-}
-
-function requireLive(harness: Harness, id: string): LiveSession {
-  const live = harness.registry.getLive(id);
-  assert.ok(live);
-  return live;
-}
-
 /** A composed prompt's pinned references, as the Canvas pane would supply them. */
 function pinned(designId: string): CanvasTurnContext {
   return {
@@ -416,16 +83,17 @@ function pinned(designId: string): CanvasTurnContext {
   };
 }
 
-/** The lease the chat's running turn holds, which these cases always expect. */
-function turnLease(harness: Harness, appSessionId: string) {
-  const scope = harness.canvasTurns.activeScope(appSessionId);
-  assert.ok(scope?.origin === 'turn');
-  return scope;
-}
-
 function interruptCount(harness: Harness): number {
   return harness.calls.filter((call) => call.target === 'provider' && call.method === 'interrupt')
     .length;
+}
+
+function turnGate() {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve: () => resolve() };
 }
 
 test('create and cold resume publish only after registration', async () => {
@@ -450,7 +118,8 @@ test('create and cold resume publish only after registration', async () => {
     resumeTrace.filter((method) =>
       ['loadSession', 'autoCompaction.arm', 'onNotification', 'syncSummaries'].includes(method),
     ),
-    ['loadSession', 'autoCompaction.arm', 'onNotification', 'syncSummaries'],
+    // The Droid session's own listener, then the compaction subscription.
+    ['loadSession', 'onNotification', 'autoCompaction.arm', 'onNotification', 'syncSummaries'],
   );
   assert.deepEqual(
     resumed.events.slice(-2).map((event) => event.type),
@@ -640,6 +309,8 @@ test('post-registration failures retain cleanup ownership through a process outa
     [
       ['unsubscribe', 'failed-create-publication'],
       ['mcp.close', 'mcp-1'],
+      // The Droid session's own listener goes as the session closes.
+      ['unsubscribe', 'failed-create-publication'],
       ['session.close', 'failed-create-publication'],
     ],
   );
@@ -666,6 +337,7 @@ test('post-registration failures retain cleanup ownership through a process outa
     [
       ['unsubscribe', 'failed-resume-publication-provider'],
       ['mcp.close', 'mcp-1'],
+      ['unsubscribe', 'failed-resume-publication-provider'],
       ['session.close', 'failed-resume-publication-provider'],
     ],
   );
@@ -750,8 +422,8 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
   await steered.lifecycle.send('steered', 'steer one', undefined, 'steer-1');
   await steered.lifecycle.send('steered', 'steer two', undefined, 'steer-2');
   assert.deepEqual(steered.registry.getCanonicalSummary('steered')?.pendingSteers, [
-    { id: 'steer-1', text: 'steer one' },
-    { id: 'steer-2', text: 'steer two' },
+    { id: 'steer-1', text: 'steer one', canWithdraw: true },
+    { id: 'steer-2', text: 'steer two', canWithdraw: true },
   ]);
   await steered.lifecycle.sendNow('steered', 'steer-2');
   await steered.lifecycle.sendNow('steered', 'steer-1');
@@ -762,6 +434,212 @@ test('queued sends stay FIFO, and send-now moves a pending steer to the front', 
   // reorders the queue instead of interrupting the turn that sends it; the
   // rest keeps the order it was sent in.
   assert.equal(interruptCount(steered), 1);
+});
+
+test('withdrawal requires harness confirmation, including during Send now, and never resends', async () => {
+  let cancelAsyncMessage = () => Promise.resolve(false);
+  // Exercise Claude's cancellation owner without its constructor launching a CLI.
+  const claude = Object.create(ClaudeSession.prototype) as ClaudeSession;
+  Object.assign(claude, {
+    abort: new AbortController(),
+    initialized: Promise.resolve(),
+    activeTurnId: 'turn',
+    steerable: true,
+    steerDeliveries: new Map<string, unknown>(),
+    prompts: new MessageQueue<unknown>(),
+    query: {
+      cancelAsyncMessage: () => cancelAsyncMessage(),
+      interrupt: () => Promise.resolve({ cancelled: ['held'] }),
+    },
+  });
+  for (const cancellation of [false, new Error('cancel rejected')]) {
+    cancelAsyncMessage = () =>
+      cancellation instanceof Error ? Promise.reject(cancellation) : Promise.resolve(cancellation);
+    const delivery = claude.steer('held', undefined, 'held');
+    assert.equal(await claude.withdrawSteer('held'), false);
+    await claude.interrupt();
+    assert.equal(await delivery, false);
+  }
+  let confirmCancellation: (cancelled: boolean) => void = () => undefined;
+  const confirmation = new Promise<boolean>((resolve) => {
+    confirmCancellation = resolve;
+  });
+  cancelAsyncMessage = () => confirmation;
+  const delivery = claude.steer('held', undefined, 'held');
+  const withdrawing = claude.withdrawSteer('held');
+  const overlapping = claude.withdrawSteer('held');
+  confirmCancellation(true);
+  assert.deepEqual(await Promise.all([withdrawing, overlapping]), [true, true]);
+  assert.equal(await delivery, 'withdrawn');
+
+  for (const provider of ['droid', 'codex', 'claude'] as const) {
+    const h = createHarness();
+    const backend = queueCreate(h, provider);
+    const turn = backend.deferNextStream();
+    await h.lifecycle.create(createCommand('first'));
+    await backend.waitForPrompts(1);
+    const live = requireLive(h, provider);
+    let settleDelivery: (outcome: boolean | 'withdrawn') => void = () => undefined;
+    const handedOver = turnGate();
+    live.session = {
+      provider,
+      providerSessionId: provider,
+      autonomy: live.session.autonomy,
+      stream: live.session.stream.bind(live.session),
+      setModel: live.session.setModel.bind(live.session),
+      setAutonomy: live.session.setAutonomy.bind(live.session),
+      interrupt: live.session.interrupt.bind(live.session),
+      close: live.session.close.bind(live.session),
+      steer: (_text, _mentions, steerId) => {
+        assert.equal(steerId, 'held');
+        return new Promise((resolve) => {
+          settleDelivery = resolve;
+          handedOver.resolve();
+        });
+      },
+    };
+    let confirmed = false;
+    if (provider === 'claude')
+      live.session.withdrawSteer = (steerId) => {
+        assert.equal(steerId, 'held');
+        if (confirmed) settleDelivery('withdrawn');
+        return Promise.resolve(confirmed);
+      };
+    const pending = () => h.registry.getCanonicalSummary(provider)?.pendingSteers;
+
+    live.compacting = true;
+    await h.lifecycle.send(provider, 'queued', undefined, 'queued');
+    assert.deepEqual(pending(), [{ id: 'queued', text: 'queued', canWithdraw: true }]);
+    live.closeMode = 'preserve-pending';
+    assert.equal((await h.lifecycle.withdrawSteer(provider, 'queued'))?.text, 'queued');
+    assert.deepEqual(pending(), []);
+    delete live.closeMode;
+    live.compacting = false;
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'unknown'), undefined);
+
+    const sending = h.lifecycle.send(provider, 'held', undefined, 'held');
+    await handedOver.promise;
+    assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: provider === 'claude' }]);
+    assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), undefined);
+    assert.equal(pending()?.length, 1);
+    if (provider === 'claude') {
+      confirmed = true;
+      assert.equal((await h.lifecycle.withdrawSteer(provider, 'held'))?.text, 'held');
+      await sending;
+    } else {
+      const interrupt = backend.deferNextInterrupt();
+      const stopping = h.lifecycle.sendNow(provider, 'held');
+      assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: false }]);
+      assert.equal(await h.lifecycle.withdrawSteer(provider, 'held'), undefined);
+      settleDelivery(false);
+      await sending;
+      interrupt.resolve();
+      await stopping;
+      assert.deepEqual(pending(), [{ id: 'held', text: 'held', canWithdraw: true }]);
+      assert.equal((await h.lifecycle.withdrawSteer(provider, 'held'))?.text, 'held');
+    }
+    assert.deepEqual(pending(), []);
+    turn.resolve();
+    await live.turnPromise;
+    assert.deepEqual(backend.prompts, ['first']);
+    assert.equal(
+      h.calls.some((call) => call.method === 'appendSteer'),
+      false,
+    );
+  }
+});
+
+test('a confirmed withdrawal returns the prompt and records its receipt while closing', async () => {
+  const closeGate = turnGate();
+  const h = createHarness([], undefined, { stopVoiceSession: () => closeGate.promise });
+  const backend = queueCreate(h, 'closing-withdrawal');
+  const turn = backend.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await backend.waitForPrompts(1);
+  const live = requireLive(h, 'closing-withdrawal');
+  const text = 'Give this full prompt back\nwith its second line';
+  const mentions: ProviderMention[] = [{ kind: 'skill', name: 'review', path: '/skills/review' }];
+  const handedOver = turnGate();
+  let settleDelivery: (outcome: boolean | 'withdrawn') => void = () => undefined;
+  live.session.steer = () =>
+    new Promise((resolve) => {
+      settleDelivery = resolve;
+      handedOver.resolve();
+    });
+  let confirmCancellation: (confirmed: boolean) => void = () => undefined;
+  live.session.withdrawSteer = () =>
+    new Promise((resolve) => {
+      confirmCancellation = resolve;
+    });
+  const sending = h.lifecycle.send('closing-withdrawal', text, mentions, 'held');
+  await handedOver.promise;
+  const withdrawing = h.lifecycle.withdrawSteer('closing-withdrawal', 'held');
+  const closing = h.lifecycle.close('closing-withdrawal');
+  try {
+    confirmCancellation(true);
+    const prompt = await withdrawing;
+    assert.equal(prompt?.text, text);
+    assert.deepEqual(prompt?.mentions, mentions);
+    assert.deepEqual(await h.lifecycle.withdrawSteer('closing-withdrawal', 'held'), {
+      text,
+      mentions,
+    });
+  } finally {
+    settleDelivery('withdrawn');
+    await sending;
+    turn.resolve();
+    await live.turnPromise;
+    closeGate.resolve();
+    await closing;
+  }
+  assert.deepEqual(backend.prompts, ['first']);
+  assert.equal(
+    h.calls.some((call) => call.method === 'appendSteer'),
+    false,
+  );
+});
+
+test('withdrawal retries replay full queued and harness receipts, never a delivered prompt', async () => {
+  const h = createHarness();
+  const backend = queueCreate(h, 'receipts');
+  const turn = backend.deferNextStream();
+  await h.lifecycle.create(createCommand());
+  await backend.waitForPrompts(1);
+  const live = requireLive(h, 'receipts');
+  const text = 'Full prompt\n'.repeat(300);
+  const mentions: ProviderMention[] = [{ kind: 'skill', name: 'review', path: '/skills/review' }];
+  const expected = { text, mentions };
+
+  live.compacting = true;
+  await h.lifecycle.send('receipts', text, mentions, 'queued');
+  assert.ok(await h.lifecycle.withdrawSteer('receipts', 'queued'));
+  assert.deepEqual(await h.lifecycle.withdrawSteer('receipts', 'queued'), expected);
+  live.compacting = false;
+
+  const handedOver = turnGate();
+  let confirm: () => void = () => undefined;
+  live.session.steer = () =>
+    new Promise((resolve) => {
+      confirm = () => resolve('withdrawn');
+      handedOver.resolve();
+    });
+  live.session.withdrawSteer = async () => {
+    confirm();
+    return true;
+  };
+  const sending = h.lifecycle.send('receipts', text, mentions, 'held');
+  await handedOver.promise;
+  assert.ok(await h.lifecycle.withdrawSteer('receipts', 'held'));
+  await sending;
+  assert.deepEqual(await h.lifecycle.withdrawSteer('receipts', 'held'), expected);
+
+  live.session.steer = async () => true;
+  await h.lifecycle.send('receipts', 'delivered', undefined, 'delivered');
+  assert.equal(await h.lifecycle.withdrawSteer('receipts', 'delivered'), undefined);
+  assert.deepEqual(h.registry.getCanonicalSummary('receipts')?.pendingSteers, []);
+  turn.resolve();
+  await live.turnPromise;
+  assert.deepEqual(backend.prompts, ['first']);
 });
 
 test('a prompt from another chat steers the running turn without waiting for it', async () => {
@@ -858,6 +736,48 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await rejectingProvider.waitForPrompts(2);
 });
 
+test('a turn that ends while send-now is stopping it waits for the interrupt before the next prompt', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'racing');
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  await h.lifecycle.send('racing', 'urgent', undefined, 'urgent');
+  const interrupt = provider.deferNextInterrupt();
+  const sending = h.lifecycle.sendNow('racing', 'urgent');
+  // The turn finishes on its own before the harness acknowledges the
+  // interrupt, which would otherwise land on the turn started next.
+  turn.resolve();
+  for (let tick = 0; tick < 20; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(provider.prompts, ['first']);
+  interrupt.resolve();
+  await sending;
+  await provider.waitForPrompts(2);
+  assert.deepEqual(provider.prompts, ['first', 'urgent']);
+});
+
+test('a Stop acknowledged after a newer turn started leaves that turn running', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'late-stop');
+  const first = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('first'));
+  await provider.waitForPrompts(1);
+  const interrupt = provider.deferNextInterrupt();
+  const stopping = h.lifecycle.interrupt('late-stop');
+  first.resolve();
+  const live = requireLive(h, 'late-stop');
+  while (live.streaming) await new Promise((resolve) => setImmediate(resolve));
+  const second = provider.deferNextStream();
+  const sending = h.lifecycle.send('late-stop', 'second');
+  await provider.waitForPrompts(2);
+  interrupt.resolve();
+  await stopping;
+  assert.equal(live.streaming, true);
+  assert.equal(h.registry.getCanonicalSummary('late-stop')?.streaming, true);
+  second.resolve();
+  await sending;
+});
+
 test('a steer is pending until the harness delivers it, and one refused late still runs', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'steer');
@@ -877,13 +797,13 @@ test('a steer is pending until the harness delivers it, and one refused late sti
 
   const delivered = h.lifecycle.send('steer', 'delivered', undefined, 'steer-1');
   await harnessHas(1);
-  assert.deepEqual(pendingSteers(), [{ id: 'steer-1', text: 'delivered' }]);
+  assert.deepEqual(pendingSteers(), [{ id: 'steer-1', text: 'delivered', canWithdraw: false }]);
   deliveries[0](true);
   await delivered;
   assert.deepEqual(pendingSteers(), []);
   assert.deepEqual(
     h.calls.filter((call) => call.method === 'appendSteer').map((call) => call.args),
-    [['steer', 'delivered']],
+    [['steer', 'delivered', 'steer-1']],
   );
 
   // A refusal that lands after the turn settled still runs as the next turn.
@@ -908,6 +828,46 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   assert.equal(interruptCount(h), 1);
   nextGate.resolve();
   await late;
+});
+
+test('a provider swap during compaction preserves a pending steer outcome', async () => {
+  for (const outcome of [false, true, 'withdrawn'] as const) {
+    const h = createHarness();
+    const provider = queueCreate(h, 'steer');
+    const turn = provider.deferNextStream();
+    await h.lifecycle.create(createCommand('first'));
+    await provider.waitForPrompts(1);
+    const live = requireLive(h, 'steer');
+    const handedOver = turnGate();
+    let settleDelivery: (outcome: boolean | 'withdrawn') => void = () => undefined;
+    live.session.steer = () =>
+      new Promise((resolve) => {
+        settleDelivery = resolve;
+        handedOver.resolve();
+      });
+
+    const sending = h.lifecycle.send('steer', 'held', undefined, 'held');
+    await handedOver.promise;
+    live.compacting = true;
+    const replacement = new FakeFactorySession('replacement', {}, h.calls);
+    live.session = new DroidProviderSession('steer', replacement, h.runtime, 'low');
+    settleDelivery(outcome);
+    await sending;
+
+    assert.deepEqual(
+      h.registry.getCanonicalSummary('steer')?.pendingSteers,
+      outcome === false ? [{ id: 'held', text: 'held', canWithdraw: true }] : [],
+    );
+    assert.deepEqual(
+      h.calls.filter((call) => call.method === 'appendSteer').map((call) => call.args),
+      outcome === true ? [['steer', 'held', 'held']] : [],
+    );
+    live.compacting = false;
+    turn.resolve();
+    await live.turnPromise;
+    if (outcome === false) await replacement.waitForPrompts(1);
+    assert.deepEqual(replacement.prompts, outcome === false ? ['held'] : []);
+  }
 });
 
 test('a turn persists recent activity at start and completion while queued sends leave it alone', async () => {
@@ -1182,6 +1142,7 @@ test('close follows ownership order and closeAll closes its initial snapshot', a
     'compaction.forgetSession:owner',
     'unsubscribe:owner',
     'mcp.close:mcp-1',
+    'unsubscribe:owner',
     'session.close:owner',
     'browser.close:owner',
     'runtimeCaches.clear:owner',
@@ -1570,8 +1531,11 @@ test('scheduled delivery resumes the exact historical provider and waits for a r
 });
 
 test('scheduled delivery waits outside pendingSends for turns, compaction, interactions and ready user sends', async () => {
-  const harness = createHarness([summary('scheduled-busy')]);
-  const provider = queueLoad(harness, 'scheduled-busy');
+  const harness = createHarness([
+    summary('scheduled-busy', 'scheduled-busy', { provider: 'claude' }),
+  ]);
+  const provider = new FakeFactorySession('scheduled-busy', {}, harness.calls);
+  harness.setProvider(claudeResumeProvider(harness, provider));
   await harness.lifecycle.resume('scheduled-busy');
   const live = requireLive(harness, 'scheduled-busy');
   const busy = async () => {
@@ -1599,7 +1563,186 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
     live.pendingSends.map((pending) => pending.text),
     ['user prompt'],
   );
+  live.pendingSends = [];
+  harness.setSettingsWait(() => {
+    live.streaming = true;
+    return Promise.resolve();
+  });
+  await busy();
+  assert.deepEqual(live.pendingSends, [], 'a settings race must not detach the delivery receipt');
+  live.streaming = false;
+  let current = true;
+  harness.setSettingsWait(() => {
+    current = false;
+    live.streaming = true;
+    return Promise.resolve();
+  });
+  assert.deepEqual(
+    await harness.lifecycle.deliverScheduled('scheduled-busy', 'withdrawn', () => current),
+    { status: 'cancelled' },
+  );
+  assert.deepEqual(live.pendingSends, []);
   await harness.lifecycle.closeAll();
+});
+
+test('an old typed turn cannot close the replacement runtime event source', async () => {
+  const rows: TranscriptEvent[] = [];
+  const flow = new SessionEventFlow({
+    appendTranscript: (event) => rows.push(event),
+    flushTranscript: () => undefined,
+    applySideEffects: () => undefined,
+    resolveChildScope: () => undefined,
+    recordUsage: () => undefined,
+  });
+  const oldTurn = turnGate();
+  const replacementTurn = turnGate();
+  let waiting = oldTurn.promise;
+  const h = createHarness([summary('replaced')], undefined, {
+    eventFlow: flow,
+    forgetEventFlow: (id) => flow.forgetSession(id),
+    runPrimaryTurn: (live) => {
+      flow.beginTurn(live.summary.appSessionId, live.summary.appSessionId);
+      return waiting;
+    },
+  });
+  queueLoad(h, 'replaced');
+  await h.lifecycle.resume('replaced');
+  const oldSend = h.lifecycle.send('replaced', 'old');
+  await new Promise((resolve) => setImmediate(resolve));
+  await h.lifecycle.close('replaced');
+  queueLoad(h, 'replaced');
+  await h.lifecycle.resume('replaced');
+  waiting = replacementTurn.promise;
+  const newSend = h.lifecycle.send('replaced', 'replacement');
+  await new Promise((resolve) => setImmediate(resolve));
+  oldTurn.resolve();
+  await oldSend;
+  flow.apply('replaced', 'replaced', 'primary', {
+    transcript: {
+      id: 'replacement-reply',
+      appSessionId: 'replaced',
+      sourceSessionId: 'replaced',
+      role: 'primary',
+      ts: 1,
+      kind: 'text',
+      text: 'replacement reply',
+    },
+  });
+  assert.deepEqual(
+    rows.map((row) => row.text),
+    ['replacement reply'],
+  );
+  assert.equal(requireLive(h, 'replaced').streaming, true);
+  replacementTurn.resolve();
+  await newSend;
+  await h.lifecycle.closeAll();
+});
+
+test('typed preparation waits for delegated flush without losing its prompt or draining concurrently', async () => {
+  const stored = turnGate();
+  const flushed = turnGate();
+  const rows: string[] = [];
+  const recordPrompt = (_id: string, prompt: string) => {
+    rows.push(prompt);
+    return stored.promise;
+  };
+  let providerRunning = false;
+  let delegated: (running: boolean, end?: DelegatedTurnEnd) => void = () =>
+    assert.fail('no listener');
+  const h = createHarness([summary('overlap', 'overlap', { provider: 'claude' })], undefined, {
+    settleStreaming: () => flushed.promise,
+    runPrimaryTurn: (live, request) =>
+      runPrimaryTurn(
+        {
+          eventFlow: { beginTurn: () => undefined, apply: () => undefined },
+          context: {
+            beginTurn: () => undefined,
+            startPolling: () => undefined,
+            stopPolling: () => undefined,
+            refresh: () => Promise.resolve(),
+          },
+          timeline: {
+            recordPrompt,
+            announcePrompt: recordPrompt,
+            settleStreaming: () => Promise.resolve(),
+            appendStatus: () => undefined,
+            appendError: () => undefined,
+          },
+          contextTarget: () => undefined,
+          isCurrent: (current) => h.registry.getLive('overlap') === current && !current.closeMode,
+          applyDesignToolPolicy: () => Promise.resolve(true),
+          updateSummary: (id, patch) => {
+            h.registry.updateSummary(id, patch);
+          },
+          emitError: () => assert.fail('unexpected turn error'),
+        },
+        live,
+        request,
+      ),
+  });
+  const fake = new FakeFactorySession('overlap', {}, h.calls);
+  const typed = fake.deferNextStream();
+  const base = claudeResumeProvider(h, fake);
+  h.setProvider({
+    ...base,
+    resume: async (id, input) => {
+      const resumed = await base.resume(id, input);
+      return {
+        ...resumed,
+        onDelegatedTurn: (listener) => {
+          delegated = listener;
+          return () => undefined;
+        },
+        stream: async function* (prompt, mentions) {
+          if (providerRunning) throw new Error('provider turn still running');
+          yield* resumed.stream(prompt, mentions);
+        },
+      };
+    },
+  });
+  await h.lifecycle.resume('overlap');
+  const sending = h.lifecycle.send('overlap', 'typed');
+  await new Promise((resolve) => setImmediate(resolve));
+  providerRunning = true;
+  delegated(true);
+  await h.lifecycle.send('overlap', 'queued', undefined, 'queued');
+  stored.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(fake.prompts, []);
+  providerRunning = false;
+  delegated(false, { status: 'completed' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requireLive(h, 'overlap').streaming, true);
+  assert.deepEqual(fake.prompts, []);
+  flushed.resolve();
+  await fake.waitForPrompts(1);
+  assert.deepEqual(fake.prompts, ['typed']);
+  assert.deepEqual(
+    requireLive(h, 'overlap').pendingSends.map((prompt) => prompt.text),
+    ['queued'],
+  );
+  await h.lifecycle.send('overlap', 'second');
+  await h.lifecycle.send('overlap', 'third');
+  const next = fake.deferNextStream();
+  const interrupt = fake.deferNextInterrupt();
+  const sendingNow = h.lifecycle.sendNow('overlap', 'queued');
+  delegated(true);
+  delegated(false, { status: 'interrupted' });
+  typed.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(fake.prompts, ['typed']);
+  interrupt.resolve();
+  await sendingNow;
+  await sending;
+  await fake.waitForPrompts(2);
+  assert.deepEqual(fake.prompts, ['typed', 'queued']);
+  next.resolve();
+  await fake.waitForPrompts(4);
+  await requireLive(h, 'overlap').turnPromise;
+  assert.deepEqual(fake.prompts, ['typed', 'queued', 'second', 'third']);
+  assert.deepEqual(rows, ['typed', 'queued', 'second', 'third']);
+  assert.equal(requireLive(h, 'overlap').streaming, false);
+  await h.lifecycle.closeAll();
 });
 
 test('scheduled delivery rejects unknown IDs and discards settings results after cancellation or provider replacement', async () => {
@@ -1637,17 +1780,17 @@ test('scheduled delivery rejects unknown IDs and discards settings results after
 });
 
 test('scheduled historical resumes honor the runtime cap without restricting live targets', async () => {
-  const summaries = Array.from({ length: 10 }, (_, index) => summary(`bounded-${index}`));
+  const summaries = Array.from({ length: 22 }, (_, index) => summary(`bounded-${index}`));
   const harness = createHarness(summaries);
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 20; index += 1) {
     queueLoad(harness, `bounded-${index}`);
     await harness.lifecycle.resume(`bounded-${index}`);
   }
   assert.deepEqual(
-    await harness.lifecycle.deliverScheduled('bounded-8', 'wait for capacity', () => true),
+    await harness.lifecycle.deliverScheduled('bounded-20', 'wait for capacity', () => true),
     { status: 'busy', retryOn: 'capacity' },
   );
-  assert.equal(harness.runtime.loadCalls.length, 8);
+  assert.equal(harness.runtime.loadCalls.length, 20);
   const live = await harness.lifecycle.deliverScheduled(
     'bounded-0',
     'already resident',
@@ -1656,14 +1799,14 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
   assert.equal(live.status, 'accepted');
   if (live.status === 'accepted') await live.settled;
   await harness.lifecycle.close('bounded-0');
-  const provider = queueLoad(harness, 'bounded-8');
+  const provider = queueLoad(harness, 'bounded-20');
   let release: () => void = () => undefined;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
   harness.setHistoryWait(() => held);
-  const delivery = harness.lifecycle.deliverScheduled('bounded-8', 'capacity freed', () => true);
-  const extra = harness.lifecycle.deliverScheduled('bounded-9', 'must wait', () => true);
+  const delivery = harness.lifecycle.deliverScheduled('bounded-20', 'capacity freed', () => true);
+  const extra = harness.lifecycle.deliverScheduled('bounded-21', 'must wait', () => true);
   release();
   try {
     assert.deepEqual(await extra, { status: 'busy', retryOn: 'capacity' });
@@ -1672,7 +1815,7 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
     if (receipt.status === 'accepted') await receipt.settled;
     assert.deepEqual(provider.prompts, ['capacity freed']);
     assert.equal(
-      harness.runtime.loadCalls.some((call) => call.sessionId === 'bounded-9'),
+      harness.runtime.loadCalls.some((call) => call.sessionId === 'bounded-21'),
       false,
     );
   } finally {
@@ -1683,17 +1826,17 @@ test('scheduled historical resumes honor the runtime cap without restricting liv
 
 test('a resume that fails hands its scheduled runtime slot back without a session closing', async () => {
   const harness = createHarness([
-    ...Array.from({ length: 7 }, (_, index) => summary(`held-${index}`)),
+    ...Array.from({ length: 19 }, (_, index) => summary(`held-${index}`)),
     summary('doomed'),
     summary('waiting'),
   ]);
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < 19; index += 1) {
     queueLoad(harness, `held-${index}`);
     await harness.lifecycle.resume(`held-${index}`);
   }
   assert.equal(harness.capacityReleases(), 0);
 
-  // Seven resident plus one resume in flight is the whole scheduled budget.
+  // Nineteen resident plus one resume in flight is the whole scheduled budget.
   harness.runtime.loadQueue.set('doomed', [new Error('provider is gone')]);
   const gate = harness.runtime.deferNextLoad();
   const doomed = harness.lifecycle.resume('doomed');
@@ -1726,6 +1869,38 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   assert.ok(
     harness.calls.some((call) => call.method === 'session.close' && call.args[0] === 'cold-close'),
   );
+
+  queueLoad(harness, 'cold-close');
+  assert.equal(await harness.lifecycle.resume('cold-close'), true);
+  await harness.lifecycle.close('cold-close');
+  await harness.lifecycle.close('cold-close');
+  queueLoad(harness, 'cold-close');
+  assert.equal(await harness.lifecycle.resume('cold-close'), true);
+  await harness.lifecycle.closeAll();
+});
+
+test('closing a pending fork refuses its first open but permits a later resume', async (t) => {
+  const harness = createHarness([summary('unopened-copy', 'provider-copy')]);
+  t.after(() => harness.lifecycle.closeAll());
+  const provider = queueLoad(harness, 'provider-copy');
+
+  harness.lifecycle.beginForkOpen('provider-copy');
+  await harness.lifecycle.close('provider-copy');
+  await harness.lifecycle.send('unopened-copy', 'Do not reopen');
+  assert.equal(await harness.lifecycle.resume('provider-copy'), false);
+
+  assert.equal(harness.registry.getLive('unopened-copy'), undefined);
+  assert.equal(harness.runtime.loadCalls.length, 0);
+  assert.deepEqual(provider.prompts, []);
+
+  harness.lifecycle.endForkOpen('provider-copy');
+  assert.equal(await harness.lifecycle.resume('provider-copy'), true);
+
+  harness.lifecycle.beginForkOpen('provider-copy');
+  await harness.lifecycle.close('provider-copy');
+  await harness.lifecycle.closeAll();
+  queueLoad(harness, 'provider-copy');
+  assert.equal(await harness.lifecycle.resume('provider-copy'), true);
 });
 
 test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {
@@ -1830,13 +2005,18 @@ function claudeResumeProvider(
     kind: 'claude',
     create: () => Promise.reject(new Error('unexpected create')),
     fork: () => Promise.reject(new Error('unexpected fork')),
+    readUsage: () => Promise.reject(new Error('unexpected usage read')),
     resume: async (id, input) => {
       await beforeResume(id, input);
       return {
         provider: 'claude',
+        get autonomy() {
+          return resumed.autonomy;
+        },
         providerSessionId: id,
         ...(setInteractionMode ? { setInteractionMode } : {}),
         stream: resumed.stream.bind(resumed),
+        steer: () => Promise.resolve(false),
         setModel: resumed.setModel.bind(resumed),
         setAutonomy: resumed.setAutonomy.bind(resumed),
         interrupt: resumed.interrupt.bind(resumed),
@@ -1877,13 +2057,14 @@ test('a context switch waits for the turn and resumes the same chat before queue
     runtime: h.runtime,
     getFactoryDefaults: async () => ({}),
     providerDefaultModelId: () => 'model-default',
+    knownModel: () => undefined,
     validateModelSettings: async (_summary, selection) => {
       if (selection.modelId === 'unavailable') throw new Error('1M context unavailable');
     },
     maxContextTokensForModel: () => undefined,
     isShutdownStarted: () => false,
     refreshPrimary: async () => undefined,
-    onPrimaryModelChanged: () => undefined,
+    onPrimaryModelChanged: () => Promise.resolve(),
     onSettled: () => {
       stored.splice(0, stored.length, { ...live.summary });
     },
@@ -2290,222 +2471,6 @@ test('a steer pending across provider adoption cannot lease the replacement turn
   await sending;
 });
 
-/** A provider that starts turns of its own beside a typed one, as Codex does. */
-function delegatingProvider(
-  harness: Harness,
-  session: FakeFactorySession,
-  onDelegated: (notify: (running: boolean) => void) => void,
-): Provider {
-  const created = new DroidProviderSession(session.sessionId, session, harness.runtime);
-  return {
-    kind: 'codex',
-    fork: () => Promise.reject(new Error('unexpected fork')),
-    resume: () => Promise.reject(new Error('unexpected resume')),
-    create: () =>
-      Promise.resolve({
-        provider: 'codex',
-        providerSessionId: session.sessionId,
-        onDelegatedTurn: (notify: (running: boolean) => void) => {
-          onDelegated(notify);
-          return () => undefined;
-        },
-        stream: created.stream.bind(created),
-        setModel: created.setModel.bind(created),
-        setAutonomy: created.setAutonomy.bind(created),
-        interrupt: created.interrupt.bind(created),
-        close: created.close.bind(created),
-      }),
-  };
-}
-
-test('voice and delegated turns wait for the captured Canvas create before leasing', async (t) => {
-  const entered = deferred();
-  const binding = deferred();
-  const h = createHarness(
-    [],
-    (session, clientRef, canvas, admission) =>
-      prepareSessionFirstTurn(
-        session,
-        { clientRef, canvas },
-        {
-          beforeFirstTurn: async () => {
-            entered.resolve();
-            await binding.promise;
-          },
-        },
-        Promise.resolve(workspace),
-        (event) => h.events.push(event),
-        admission,
-      ),
-    (id) => workspace.attachedCanvasId(id),
-  );
-  const workspace = await CanvasWorkspace.open(await canvasRoot(t), quietBuilds(), {
-    isChatKnown: () => true,
-    isScopeActive: (id) => h.canvasScopes.isScopeActive(id),
-    bindScopeCanvas: (id, canvasId) => h.canvasScopes.bindScopeCanvas(id, canvasId),
-  });
-  t.after(() => workspace.close());
-  const session = new FakeFactorySession('spoken', {}, h.calls);
-  let notify: (running: boolean) => void = () => undefined;
-  let starts = 0;
-  const provider = delegatingProvider(h, session, (listener) => {
-    notify = listener;
-  });
-  const create = provider.create.bind(provider);
-  h.setProvider({
-    ...provider,
-    create: async (input) => ({
-      ...(await create(input)),
-      voice: {
-        isLive: () => starts > 0,
-        listVoices: async () => ({ voices: [] }),
-        onEvent: () => () => undefined,
-        start: async () => {
-          starts += 1;
-        },
-        stop: async () => {
-          notify(false);
-        },
-      },
-    }),
-  });
-  const voice = new SessionVoice({
-    liveSession: (id) => h.registry.getLive(id)?.session,
-    ensureRunning: async (id) => (await h.lifecycle.prepareTurn(id))?.session,
-    emit: (event) => h.events.push(event),
-    appendTranscript: () => undefined,
-    liveChanged: () => undefined,
-  });
-  const creating = h.lifecycle.create({
-    ...createCommand(),
-    goal: '',
-    canvas: { canvasId: null, mutationId: 'spoken-canvas' },
-  });
-  await entered.promise;
-  const starting = voice.handle({
-    type: 'voice.start',
-    appSessionId: 'spoken',
-    sdp: 'offer',
-    attempt: 'attempt-1',
-  });
-  try {
-    notify(true);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(starts, 0);
-    assert.equal(h.canvasTurns.activeScope('spoken'), undefined);
-    assert.equal(
-      h.events.some((event) => event.type === 'session.created'),
-      false,
-    );
-    binding.resolve();
-    await Promise.all([creating, starting]);
-    const scope = h.canvasTurns.activeScope('spoken');
-    assert.ok(scope?.canvasId);
-    const created = await workspace.create(scope, {
-      mutationId: 'spoken-model-create',
-      frames: [
-        { name: 'Spoken', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF },
-      ],
-    });
-    assert.equal(created.canvasId, workspace.attachedCanvasId('spoken'));
-    assert.equal(workspace.listCanvases().length, 1);
-    notify(false);
-    assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
-    assert.equal(h.canvasTurns.activeScope('spoken'), undefined);
-  } finally {
-    binding.resolve();
-    await Promise.all([creating, starting]);
-    await h.lifecycle.closeAll();
-  }
-});
-
-for (const pendingRunning of [false, true]) {
-  test(`pending delegated running=${String(pendingRunning)} is reconciled before typed turns start`, async () => {
-    const entered = deferred();
-    const binding = deferred();
-    const h = createHarness([], async () => {
-      entered.resolve();
-      await binding.promise;
-    });
-    const session = new FakeFactorySession('pending-delegated', {}, h.calls);
-    let notify: (running: boolean) => void = () => undefined;
-    h.setProvider(
-      delegatingProvider(h, session, (listener) => {
-        notify = listener;
-      }),
-    );
-    const first = session.deferNextStream();
-    const second = session.deferNextStream();
-    const third = session.deferNextStream();
-    const creating = h.lifecycle.create(createCommand('initial'));
-    await entered.promise;
-    notify(true);
-    if (!pendingRunning) notify(false);
-    try {
-      assert.equal(h.canvasTurns.activeScope('pending-delegated'), undefined);
-      binding.resolve();
-      await creating;
-      if (pendingRunning) {
-        assert.deepEqual(session.prompts, []);
-        const delegated = turnLease(h, 'pending-delegated');
-        notify(false);
-        assert.throws(() => h.canvasTurns.requireScope(delegated.scopeId), {
-          code: 'scope_expired',
-        });
-      }
-      await session.waitForPrompts(1);
-      await new Promise((resolve) => setImmediate(resolve));
-      const firstTurn = requireLive(h, 'pending-delegated').turnPromise;
-      const firstScope = turnLease(h, 'pending-delegated');
-      assert.equal(requireLive(h, 'pending-delegated').streaming, true);
-      notify(true);
-      notify(false);
-      assert.equal(requireLive(h, 'pending-delegated').streaming, true);
-      await h.lifecycle.send('pending-delegated', 'second');
-      assert.deepEqual(session.prompts, ['initial']);
-      assert.equal(h.canvasTurns.requireScope(firstScope.scopeId), firstScope);
-
-      first.resolve();
-      await firstTurn;
-      await session.waitForPrompts(2);
-      const secondTurn = requireLive(h, 'pending-delegated').turnPromise;
-      const secondScope = turnLease(h, 'pending-delegated');
-      assert.throws(() => h.canvasTurns.requireScope(firstScope.scopeId), {
-        code: 'scope_expired',
-      });
-      assert.equal(h.canvasTurns.requireScope(secondScope.scopeId), secondScope);
-      notify(true);
-      notify(false);
-      await h.lifecycle.send('pending-delegated', 'third');
-      assert.deepEqual(session.prompts, ['initial', 'second']);
-
-      second.resolve();
-      await secondTurn;
-      await session.waitForPrompts(3);
-      const thirdTurn = requireLive(h, 'pending-delegated').turnPromise;
-      const thirdScope = turnLease(h, 'pending-delegated');
-      assert.throws(() => h.canvasTurns.requireScope(secondScope.scopeId), {
-        code: 'scope_expired',
-      });
-      assert.equal(h.canvasTurns.requireScope(thirdScope.scopeId), thirdScope);
-      third.resolve();
-      await thirdTurn;
-      assert.deepEqual(session.prompts, ['initial', 'second', 'third']);
-      assert.equal(h.canvasTurns.activeScope('pending-delegated'), undefined);
-      assert.throws(() => h.canvasTurns.requireScope(thirdScope.scopeId), {
-        code: 'scope_expired',
-      });
-    } finally {
-      binding.resolve();
-      first.resolve();
-      second.resolve();
-      third.resolve();
-      await creating;
-      await h.lifecycle.closeAll();
-    }
-  });
-}
-
 test("delegated notifications preserve a running typed turn's leases and interrupt state", async () => {
   const h = createHarness();
   const session = new FakeFactorySession('delegated', {}, h.calls);
@@ -2541,4 +2506,481 @@ test("delegated notifications preserve a running typed turn's leases and interru
   await requireLive(h, 'delegated').turnPromise;
   assert.equal(h.canvasTurns.activeScope('delegated'), undefined);
   assert.throws(() => h.canvasTurns.requireScope(typed.scopeId), { code: 'scope_expired' });
+});
+
+test('automatic creates and resumes reserve the same twenty slots while user starts remain open', async () => {
+  const h = createHarness([summary('cold'), summary('other-cold')]);
+  for (let index = 0; index < 18; index += 1) {
+    queueCreate(h, `resident-${index}`);
+    await h.lifecycle.createAutomatic(createCommand(), `thread-${index}`);
+  }
+  let releaseCreate: () => void = () => undefined;
+  const compactionReady = new Promise<number>((resolve) => {
+    releaseCreate = () => resolve(1000);
+  });
+  h.setCompactionLimit(() => compactionReady);
+  queueCreate(h, 'new-provider');
+  const opening = h.lifecycle.createAutomatic(createCommand(), 'queued-identity');
+  const resumeGate = h.runtime.deferNextLoad();
+  queueLoad(h, 'cold');
+  const resuming = h.lifecycle.resume('cold', true);
+  await h.runtime.waitForLoad('cold');
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
+  assert.equal(await h.lifecycle.createAutomatic(createCommand(), 'excess'), false);
+  assert.deepEqual(await h.lifecycle.deliverScheduled('other-cold', 'wait', () => true), {
+    status: 'busy',
+    retryOn: 'capacity',
+  });
+  releaseCreate();
+  resumeGate.resolve();
+  assert.equal(await opening, true);
+  assert.equal(await resuming, true);
+  assert.equal(
+    h.registry.getCanonicalSummary('queued-identity')?.providerSessionId,
+    'new-provider',
+  );
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
+  h.setCompactionLimit(() => Promise.resolve(1000));
+  queueCreate(h, 'user-chat');
+  await h.lifecycle.create(createCommand());
+  assert.ok(h.registry.getLive('user-chat'));
+  await h.lifecycle.closeAll();
+});
+
+test('a retired project lead wakes at the runtime cap when all twenty workers need answers', async (t) => {
+  const saved = wakeProject();
+  saved.pending = [];
+  saved.threads = [
+    saved.threads[0],
+    ...Array.from({ length: 20 }, (_, index) => ({
+      appSessionId: `worker-${index}`,
+      ownerAppSessionId: 'main',
+      title: `Worker ${index}`,
+      reply: '',
+      waiting: false,
+    })),
+  ];
+  const project = await projectHarness(t, [saved], false);
+  const h = createHarness([summary('main'), summary('cold-worker')]);
+  t.after(() => h.lifecycle.closeAll());
+  for (const thread of saved.threads.slice(1)) {
+    const provider = queueCreate(h, thread.appSessionId);
+    provider.deferNextStream();
+    assert.equal(await h.lifecycle.createAutomatic(createCommand(), thread.appSessionId), true);
+    await provider.waitForPrompts(1);
+    project.sessions.set(thread.appSessionId, { ...requireLive(h, thread.appSessionId).summary });
+    await project.streaming(thread.appSessionId, true);
+    await project.ask(thread.appSessionId, `ask-${thread.appSessionId}`);
+  }
+  project.port.get = (id) => h.registry.getCanonicalSummary(id);
+  project.port.isLive = (id) => h.registry.getLive(id) !== undefined;
+  project.port.runtimeLoad = () => h.lifecycle.runtimeLoad();
+  project.port.makeRoom = h.lifecycle.makeAutomaticRuntimeRoom.bind(h.lifecycle);
+  project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
+  const lead = queueLoad(h, 'main');
+  lead.deferNextStream();
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
+  assert.equal(await h.lifecycle.makeAutomaticRuntimeRoom('main'), false);
+
+  project.projects.historyReady();
+  await drain();
+  assert.equal(lead.prompts.length, 1, 'the lead resumes to answer its blocked workers');
+  assert.match(lead.prompts[0], /Which format/);
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 21, limit: 20 });
+  assert.equal(await h.lifecycle.createAutomatic(createCommand(), 'queued-worker'), false);
+  assert.deepEqual(await h.lifecycle.deliverScheduled('cold-worker', 'continue', () => true), {
+    status: 'busy',
+    retryOn: 'capacity',
+  });
+});
+
+test('registration publishes each runtime without double-counting its create reservation', async () => {
+  const h = createHarness();
+  for (let index = 0; index < 20; index += 1) {
+    queueCreate(h, `provider-${index}`);
+    assert.equal(await h.lifecycle.createAutomatic(createCommand(''), `queued-${index}`), true);
+  }
+  assert.deepEqual(
+    h.runtimeLoads,
+    Array.from({ length: 20 }, (_, index) => index + 1),
+  );
+  assert.deepEqual(h.lifecycle.runtimeLoad(), { live: 20, limit: 20 });
+  await h.lifecycle.closeAll();
+});
+
+test('Send now and Stop after report handoff never replay it and leave its reply unread', async (t) => {
+  const project = await projectHarness(t);
+  const { id, main } = await project.root();
+  const child = await project.projects.spawn(main, { ...projectInput, title: 'Parser' });
+  const h = createHarness();
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, main);
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, main);
+  const consumed = turnGate();
+  const reports: string[] = [];
+  live.session.steer = (text) => {
+    if (!text.startsWith('Project update — lead action required')) return Promise.resolve(false);
+    reports.push(text);
+    return consumed.promise.then(() => true);
+  };
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  await project.streaming(main, true);
+  await project.finish(child.appSessionId, 'Parsed the config.');
+  await drain();
+  await project.projects.flush();
+  assert.equal(project.state.saved[0]?.delivery, undefined);
+  assert.equal(project.state.saved[0]?.pending.length, 0);
+  assert.equal(live.steers.length, 0);
+  await h.lifecycle.send(main, 'send-now instruction', undefined, 'send-now');
+  await h.lifecycle.sendNow(main, 'send-now');
+  await h.lifecycle.interrupt(main);
+  await project.projects.userStopped(main);
+  turn.resolve();
+  await live.turnPromise;
+  consumed.resolve();
+  await drain();
+  project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
+  await project.projects.setPaused(id, false);
+  await h.lifecycle.send(main, 'resume work');
+  await drain();
+  await project.projects.flush();
+  assert.equal(reports.length, 1);
+  assert.deepEqual(provider.prompts.slice(0, 2), ['working', 'resume work']);
+  assert.equal(provider.prompts.length, 3);
+  assert.match(provider.prompts[2], /Unread threads: Parser\. Read them with thread_read\./);
+  assert.doesNotMatch(provider.prompts[2], /Parsed the config/);
+  assert.equal(project.state.saved[0]?.pending.length, 0);
+  assert.equal(project.projects.listThreads(main).threads[0]?.unread, true);
+});
+
+test('a late report refusal cannot restart its stopped nested owner', async (t) => {
+  const project = await projectHarness(t);
+  const { main } = await project.root();
+  const owner = await project.projects.spawn(main, projectInput);
+  const child = await project.projects.spawn(owner.appSessionId, projectInput);
+  const h = createHarness();
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, owner.appSessionId);
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, owner.appSessionId);
+  const refusal = turnGate();
+  live.session.steer = () => refusal.promise.then(() => false);
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  project.port.interrupt = async (id) => {
+    await h.lifecycle.interrupt(id);
+    await project.streaming(id, false);
+  };
+  await project.finish(child.appSessionId, 'Nested report.');
+  await drain();
+  assert.equal(project.state.saved[0].pending.length, 0);
+  assert.equal(project.state.saved[0].delivery, undefined);
+
+  await project.projects.stop(main, owner.appSessionId);
+  turn.resolve();
+  await live.turnPromise;
+  refusal.resolve();
+  await drain();
+  assert.equal(project.sessions.get(owner.appSessionId)?.streaming, false);
+  const stopped = project.state.saved[0].threads.find(
+    (thread) => thread.appSessionId === owner.appSessionId,
+  );
+  assert.equal(stopped?.stopped, true);
+  assert.equal(
+    project.state.saved[0].pending.some((message) => message.to === owner.appSessionId),
+    false,
+  );
+  assert.equal(
+    project.sent.some(({ id }) => id === owner.appSessionId),
+    false,
+  );
+  assert.deepEqual(provider.prompts, ['working']);
+});
+
+test('Claude withdrawal rejection after Stop leaves a handed-off report unread', async (t) => {
+  const project = await projectHarness(t);
+  const { main } = await project.root();
+  const child = await project.projects.spawn(main, { ...projectInput, title: 'Parser' });
+  const cwd = await mkdtemp(join(tmpdir(), 'claude-report-stop-'));
+  const executable = join(cwd, 'cli.mjs');
+  await writeFile(
+    executable,
+    String.raw`#!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
+import { createInterface } from 'node:readline';
+const send = (message) => process.stdout.write(JSON.stringify(message) + '\n');
+let turn;
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line);
+  if (message.type === 'user') {
+    turn ??= message;
+    send({ type: 'assistant', uuid: randomUUID(), session_id: message.session_id,
+      parent_tool_use_id: null, message: { id: randomUUID(), role: 'assistant',
+        content: [{ type: 'text', text: message.message.content }] } });
+    return;
+  }
+  if (message.type !== 'control_request') return;
+  const subtype = message.request.subtype;
+  send({ type: 'control_response', response: subtype === 'cancel_async_message'
+    ? { subtype: 'error', request_id: message.request_id, error: 'Cancellation failed' }
+    : { subtype: 'success', request_id: message.request_id, response: { models: [], commands: [] } } });
+  if (subtype === 'interrupt') send({ type: 'result', subtype: 'error_during_execution',
+    session_id: turn.session_id, user_message_uuid: turn.uuid, errors: ['Stopped'],
+    usage: { input_tokens: 0, output_tokens: 0 }, modelUsage: {}, permission_denials: [] });
+});
+`,
+    { mode: 0o755 },
+  );
+  const priorPath = process.env.CLAUDE_PATH;
+  process.env.CLAUDE_PATH = executable;
+  t.after(async () => {
+    if (priorPath === undefined) delete process.env.CLAUDE_PATH;
+    else process.env.CLAUDE_PATH = priorPath;
+    await rm(cwd, { recursive: true, force: true });
+  });
+  const started = turnGate();
+  const handedOff = turnGate();
+  const h = createHarness([], undefined, {
+    runPrimaryTurn: async (live, { prompt }) => {
+      for await (const event of live.session.stream(prompt)) {
+        if (event.transcript?.text === 'working') started.resolve();
+        if (event.transcript?.text?.startsWith('Project update — lead action required'))
+          handedOff.resolve();
+      }
+    },
+  });
+  h.setProvider(new ClaudeProvider());
+  t.after(() => h.lifecycle.closeAll());
+  await h.lifecycle.createAutomatic({ ...createCommand('working'), provider: 'claude', cwd }, main);
+  await started.promise;
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  await project.streaming(main, true);
+  await project.finish(child.appSessionId, 'Parsed the config.');
+  await handedOff.promise;
+  await drain();
+  assert.equal(project.state.saved[0]?.pending.length, 0);
+  assert.equal(project.state.saved[0]?.delivery, undefined);
+  await project.projects.userStopped(main);
+  await h.lifecycle.interrupt(main);
+  await requireLive(h, main).turnPromise;
+  await drain();
+  assert.equal(project.state.saved[0]?.threads[1]?.unread, true);
+  assert.equal(project.projects.listThreads(main).threads[0]?.unread, true);
+  assert.equal(project.state.saved[0]?.pending.length, 0, 'handoff stays settled');
+});
+
+test('queued identities reach real Droid, Claude and Codex mappers on creation and resume', async (t) => {
+  const { cwd, executable } = await providerIdentityCli(t);
+  const paths = { CLAUDE_PATH: process.env.CLAUDE_PATH, CODEX_PATH: process.env.CODEX_PATH };
+  process.env.CLAUDE_PATH = executable;
+  process.env.CODEX_PATH = executable;
+  t.after(() => {
+    for (const [key, value] of Object.entries(paths)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  for (const kind of ['droid', 'claude', 'codex'] as const) {
+    const stored: SessionSummary[] = [];
+    const replies: TranscriptEvent[] = [];
+    const h = createHarness(stored, undefined, {
+      runPrimaryTurn: async (live, { prompt, delivery }) => {
+        for await (const event of live.session.stream(prompt)) {
+          delivery?.accepted();
+          if (event.transcript) replies.push(event.transcript);
+        }
+      },
+    });
+    t.after(() => h.lifecycle.closeAll());
+    h.setProvider(
+      kind === 'droid'
+        ? new DroidProvider(h.runtime, () => undefined)
+        : kind === 'claude'
+          ? new ClaudeProvider()
+          : new CodexProvider(),
+    );
+    const original = queueCreate(h, 'provider-id');
+    original.queueStreamEvents([assistantTextDelta('Mapped reply.')]);
+    const appSessionId = `queued-${kind}`;
+    await h.lifecycle.createAutomatic({ ...createCommand(''), provider: kind, cwd }, appSessionId);
+    await h.lifecycle.send(appSessionId, 'First reply');
+    const created = requireLive(h, appSessionId).summary;
+    // Resume with a distinct backend identity even on providers that pin the requested id at creation.
+    const providerSessionId =
+      kind === 'droid' ? created.providerSessionId : 'different-provider-id';
+    assert.ok(providerSessionId);
+    stored.push({ ...created, providerSessionId });
+    await h.lifecycle.close(appSessionId);
+    queueLoad(h, providerSessionId).queueStreamEvents([assistantTextDelta('Mapped reply.')]);
+    const receipt = await h.lifecycle.deliverScheduled(appSessionId, 'Follow-up', () => true);
+    assert.equal(receipt.status, 'accepted');
+    if (receipt.status === 'accepted') await receipt.settled;
+    assert.equal(h.registry.getLive(appSessionId)?.summary.providerSessionId, providerSessionId);
+    assert.deepEqual(
+      replies
+        .filter((event) => event.kind === 'text')
+        .map((event) => [event.appSessionId, event.text]),
+      [
+        [appSessionId, 'Mapped reply.'],
+        [appSessionId, 'Mapped reply.'],
+      ],
+    );
+    assert.ok(
+      h.events
+        .filter((event) => event.type === 'session.created')
+        .every((event) => event.session.appSessionId === appSessionId),
+    );
+    await h.lifecycle.closeAll();
+  }
+});
+
+test('a report arriving while Stop interrupts its owner cannot start another turn', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'owner');
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  const interruption = provider.deferNextInterrupt();
+  const stopping = h.lifecycle.interrupt('owner');
+  const settlements: string[] = [];
+  const admitted = await h.lifecycle.steerRunningTurn(
+    'owner',
+    'report during Stop',
+    () => true,
+    false,
+    {
+      accepted: () => settlements.push('accepted'),
+      declined: (reason) => settlements.push(reason),
+    },
+  );
+  interruption.resolve();
+  await stopping;
+  turn.resolve();
+  await requireLive(h, 'owner').turnPromise;
+  assert.equal(admitted, false);
+  assert.deepEqual(settlements, ['stale']);
+  assert.deepEqual(provider.prompts, ['working']);
+  assert.equal(requireLive(h, 'owner').pendingSends.length, 0);
+  await h.lifecycle.closeAll();
+});
+
+test('a report refused during a context relaunch never joins the typed prompt queue', async () => {
+  const h = createHarness();
+  const provider = queueCreate(h, 'owner');
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, 'owner');
+  live.summary.provider = 'claude';
+  live.restartBeforeNextTurn = true;
+  await h.lifecycle.send('owner', 'typed follow-up');
+  const resuming = turnGate();
+  const entered = turnGate();
+  const replacement = new FakeFactorySession('owner', {}, h.calls);
+  h.setProvider(
+    claudeResumeProvider(h, replacement, async () => {
+      entered.resolve();
+      await resuming.promise;
+    }),
+  );
+  turn.resolve();
+  await entered.promise;
+  const settlements: string[] = [];
+  await h.lifecycle.steerRunningTurn('owner', 'thread report', () => true, false, {
+    accepted: () => settlements.push('accepted'),
+    declined: (reason) => settlements.push(reason),
+  });
+  assert.equal(live.pendingSends.length, 0);
+  await h.lifecycle.interrupt('owner');
+  resuming.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(settlements, ['stale']);
+  assert.deepEqual(replacement.prompts, []);
+  await h.lifecycle.closeAll();
+});
+
+test('a report refused after lead Stop restores its ids and delivers once when the user continues', async (t) => {
+  const project = await projectHarness(t);
+  const { main } = await project.root();
+  const child = await project.projects.spawn(main, { ...projectInput, title: 'Listing' });
+  const h = createHarness();
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, main);
+  const turn = provider.deferNextStream();
+  await h.lifecycle.create(createCommand('working'));
+  await provider.waitForPrompts(1);
+  const live = requireLive(h, main);
+  const refusal = turnGate();
+  let attempts = 0;
+  live.session.steer = async () => {
+    attempts += 1;
+    await refusal.promise;
+    return false;
+  };
+  project.port.steer = h.lifecycle.steerRunningTurn.bind(h.lifecycle);
+  project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
+  await project.streaming(main, true);
+  await project.finish(child.appSessionId, 'I ran `ls /` and listed the folders.');
+  await drain();
+  assert.equal(project.state.saved[0].pending.length, 0);
+  assert.equal(project.state.saved[0].delivery, undefined);
+  await h.lifecycle.interrupt(main);
+  await project.projects.userStopped(main);
+  turn.resolve();
+  await live.turnPromise;
+  await project.streaming(main, false);
+  refusal.resolve();
+  await drain();
+  const pending = structuredClone(project.state.saved[0].pending);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].replyId, project.state.saved[0].threads[1].replyId);
+  assert.equal(project.state.saved[0].threads[1].unread, true);
+  project.projects.capacityChanged();
+  await drain();
+  assert.equal(attempts, 1);
+  assert.deepEqual(project.state.saved[0].pending, pending);
+  assert.deepEqual(provider.prompts, ['working']);
+  await project.projects.userContinued(main);
+  await drain();
+  assert.equal(provider.prompts.length, 2);
+  assert.match(provider.prompts[1], /I ran `ls \/`/);
+  assert.equal(project.state.saved[0].pending.length, 0);
+  assert.equal(project.state.saved[0].threads[1].unread, undefined);
+  project.projects.sessionAvailable(main);
+  await drain();
+  assert.equal(provider.prompts.length, 2);
+});
+
+test('recovering a bound queued thread uses its adopted provider for the original task', async (t) => {
+  const saved = wakeProject();
+  saved.pending = [];
+  saved.threads[1] = queuedThread('worker', 1);
+  const h = createHarness();
+  t.after(() => h.lifecycle.closeAll());
+  const provider = queueCreate(h, 'adopted-provider');
+  await h.lifecycle.createAutomatic(createCommand(''), 'worker');
+  const adopted = requireLive(h, 'worker');
+  h.registry.updateSummary('worker', { phase: 'paused', streaming: false });
+  const project = await projectHarness(t, [saved], false);
+  project.sessions.set('main', projectSummary('main'));
+  project.port.get = (id) => h.registry.getCanonicalSummary(id) ?? project.sessions.get(id);
+  project.port.isLive = (id) => h.registry.getLive(id) !== undefined;
+  project.port.deliver = async (...args) => {
+    const receipt = await h.lifecycle.deliverScheduled(...args);
+    if (receipt.status === 'accepted') await project.streaming('worker', true);
+    return receipt;
+  };
+  project.sessions.set('worker', { ...adopted.summary });
+  project.projects.historyReady();
+  await drain();
+  assert.equal(project.launched.length, 0, 'no second provider is created');
+  assert.equal(requireLive(h, 'worker'), adopted);
+  assert.equal(h.lifecycle.runtimeLoad().live, 1);
+  assert.equal(provider.prompts.length, 1);
+  assert.match(provider.prompts[0], /Build the feature/);
+  assert.equal(project.state.saved[0].threads[1].queuedSpawn, undefined);
 });

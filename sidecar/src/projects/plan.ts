@@ -1,25 +1,37 @@
 import { LEDGER_LIMITS } from './store.js';
 import type { ProjectStep } from './types.js';
 
-/**
- * The plan a lead writes, as the ledger stores it: numbered in order and cut to
- * the lengths the ledger loads. A step that names a thread must name a member,
- * so the table can follow that conversation's real state instead of a claim.
- */
+/** Retains existing identities through reordering; explicit ids also survive renaming. */
 export function planFromSteps(
-  steps: readonly Omit<ProjectStep, 'id'>[],
+  steps: readonly (Omit<ProjectStep, 'id'> & { id?: string })[],
   isMember: (appSessionId: string) => boolean,
+  previous: readonly ProjectStep[],
+  lastStepId = 0,
 ): ProjectStep[] {
-  return steps.map((step, index) => {
+  const used = new Set<string>();
+  const reserved = new Set(steps.flatMap((step) => (step.id ? [step.id] : [])));
+  let nextId = Math.max(lastStepId, ...previous.map((step) => stepNumber(step.id)));
+  return steps.map((step) => {
     if (step.threadAppSessionId && !isMember(step.threadAppSessionId))
       throw new Error('Thread is outside this project.');
+    const existing = step.id
+      ? previous.find((candidate) => candidate.id === step.id)
+      : previous.find((candidate) => candidate.title === step.title && !used.has(candidate.id));
+    let id = step.id ?? existing?.id;
+    if (!id) {
+      do {
+        id = String(++nextId);
+      } while (reserved.has(id) || used.has(id));
+    }
+    if (used.has(id)) throw new Error(`Plan step id "${id}" appears more than once.`);
+    used.add(id);
     return {
-      id: String(index + 1),
+      id,
       title: step.title.slice(0, LEDGER_LIMITS.stepTitle),
+      state: step.state ?? existing?.state ?? 'planned',
       ...(step.milestone
         ? { milestone: step.milestone.slice(0, LEDGER_LIMITS.stepMilestone) }
         : {}),
-      ...(step.state ? { state: step.state } : {}),
       ...(step.threadAppSessionId ? { threadAppSessionId: step.threadAppSessionId } : {}),
       ...(step.note ? { note: step.note.slice(0, LEDGER_LIMITS.stepNote) } : {}),
     };
@@ -38,4 +50,9 @@ export function findPlanStep(plan: readonly ProjectStep[], step: string): Projec
     );
   }
   return found;
+}
+
+/** A step id's place in the numbering when it is a whole number up to a million, else 0. */
+export function stepNumber(id: string): number {
+  return /^[1-9]\d{0,5}$/.test(id) ? Number(id) : 0;
 }

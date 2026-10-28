@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { Frame, MousePointer2, PenLine } from 'lucide-react';
 import { MessageThread } from '@droidex/icons';
 import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
@@ -14,6 +14,7 @@ import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { Markdown } from '../Markdown';
 import { SpokenMark } from './primitives';
 import { PromptActions } from './ResponseActions';
+import { ClampedBlock } from './ClampedBlock';
 
 function BrowserReferenceChip({ reference }: { reference: BrowserTranscriptReference }) {
   const Icon = reference.kind === 'element' ? MousePointer2 : PenLine;
@@ -60,117 +61,26 @@ function PromptChip({
   );
 }
 
-// The clamp is measured in whole rendered lines so it never slices through the
-// middle of one, and it only engages when there is a meaningful amount to hide.
-const PROMPT_LINE_PX = 22.4; // 14px text at 1.6 leading, matching the markdown shell
-const PROMPT_CLAMP_LINES = 16;
-const PROMPT_CLAMP_PX = PROMPT_LINE_PX * PROMPT_CLAMP_LINES;
-
-function Chevron({ up }: { up: boolean }) {
-  return (
-    <svg
-      className={`h-3 w-3 transition-transform duration-200 ${up ? 'rotate-180' : ''}`}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4 6l4 4 4-4" />
-    </svg>
-  );
-}
-
-function ExpandButton({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-expanded={expanded}
-      className="flex items-center gap-1 rounded-full border border-droid-border bg-droid-surface px-2.5 py-1 text-[11px] font-medium text-droid-text-secondary shadow-sm transition-colors hover:border-droid-border-hover hover:text-droid-text"
-    >
-      {expanded ? 'Show less' : 'Show more'}
-      <Chevron up={expanded} />
-    </button>
-  );
-}
+// 14px text at 1.6 leading, matching the markdown shell.
+const PROMPT_LINE_PX = 22.4;
 
 function ClampedPrompt({ source, chips }: { source: string; chips: ReactNode }) {
-  const [expanded, setExpanded] = useState(false);
-  const [contentHeight, setContentHeight] = useState<number | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  // The cap lives on the outer box, so the inner box always reports the real
-  // content height, including when an image or code card settles later. The
-  // observer hands over a height the browser has already laid out, so a
-  // transcript mounting many prompts never forces a synchronous layout for
-  // each one. `flow-root` keeps the last child's margin inside that height: a
-  // reading even a pixel short would slice the final line once expanded.
-  useEffect(() => {
-    const content = contentRef.current;
-    if (!content) return;
-    const observer = new ResizeObserver(([entry]) => {
-      setContentHeight(Math.ceil(entry.contentRect.height));
-    });
-    observer.observe(content);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  // Capped until measured, so a long prompt is short from its first paint
-  // instead of drawn at full height and then collapsed. Once measured, one line
-  // of slack: a prompt that only just overflows shows in full rather than
-  // hiding a single line behind a control.
-  const clamped = contentHeight !== null && contentHeight > PROMPT_CLAMP_PX + PROMPT_LINE_PX;
-  let maxHeight: number | undefined;
-  if (contentHeight === null) maxHeight = PROMPT_CLAMP_PX;
-  else if (clamped) maxHeight = expanded ? contentHeight : PROMPT_CLAMP_PX;
-
   return (
-    <div className="relative w-full min-w-0">
-      <div
-        className="overflow-hidden transition-[max-height] duration-300 ease-out motion-reduce:transition-none"
-        style={maxHeight === undefined ? undefined : { maxHeight }}
-      >
-        <div
-          ref={contentRef}
-          className={
-            chips
-              ? // The first paragraph runs inline after the chips, as it does in the
-                // composer draft, so a short prompt shares their line.
-                'flow-root [&>.md-shell>p:first-child]:inline [&>.md-shell]:inline'
-              : 'flow-root'
-          }
-        >
-          {chips}
-          <Markdown authored>{source}</Markdown>
-        </div>
-      </div>
-      {clamped && !expanded && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center bg-gradient-to-t from-droid-elevated via-droid-elevated/90 to-transparent">
-          <div className="pointer-events-auto">
-            <ExpandButton
-              expanded={false}
-              onClick={() => {
-                setExpanded(true);
-              }}
-            />
-          </div>
-        </div>
-      )}
-      {clamped && expanded && (
-        <div className="mt-2 flex justify-center">
-          <ExpandButton
-            expanded
-            onClick={() => {
-              setExpanded(false);
-            }}
-          />
-        </div>
-      )}
-    </div>
+    <ClampedBlock
+      lines={16}
+      lineHeightPx={PROMPT_LINE_PX}
+      fade="from-droid-elevated via-droid-elevated/90"
+      contentClassName={
+        chips
+          ? // The first paragraph runs inline after the chips, as it does in the
+            // composer draft, so a short prompt shares their line.
+            'flow-root [&>.md-shell>p:first-child]:inline [&>.md-shell]:inline'
+          : 'flow-root'
+      }
+    >
+      {chips}
+      <Markdown authored>{source}</Markdown>
+    </ClampedBlock>
   );
 }
 
@@ -180,23 +90,18 @@ export function UserBubble({
   event,
   onOpenReviewFile,
   onSendNow,
+  onWithdraw,
 }: {
   event: Pick<
     TranscriptEvent,
-    | 'text'
-    | 'skills'
-    | 'files'
-    | 'browserRefs'
-    | 'steered'
-    | 'spoken'
-    | 'sideChatReplies'
-    | 'canvasFrames'
+    'text' | 'skills' | 'files' | 'browserRefs' | 'spoken' | 'sideChatReplies' | 'canvasFrames'
   > & {
     ts?: number;
   };
   onOpenReviewFile?: OpenReviewFileHandler;
   // Set on a steer the model has not taken in yet.
   onSendNow?: () => void;
+  onWithdraw?: (() => void) | undefined;
 }) {
   const browserRefs = event.browserRefs ?? [];
   // A replayed message has no files metadata, only the composed text it was sent
@@ -233,22 +138,6 @@ export function UserBubble({
   return (
     <div className="group/msg flex flex-col items-end gap-1.5">
       {event.spoken && <SpokenMark />}
-      {event.steered && (
-        <span className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-droid-text-muted">
-          <svg
-            className="h-3 w-3"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 8h10M9 4l4 4-4 4" />
-          </svg>
-          Steered the conversation
-        </span>
-      )}
       {hasAttachments && (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
           {browserRefs.map((reference) => (
@@ -281,7 +170,12 @@ export function UserBubble({
           {/* The pending preview of a first message has no ts, and no actions yet;
               a pending steer has actions but no time. */}
           {message.text && (event.ts !== undefined || onSendNow) ? (
-            <PromptActions text={message.text} ts={event.ts} onSendNow={onSendNow} />
+            <PromptActions
+              text={message.text}
+              ts={event.ts}
+              onSendNow={onSendNow}
+              onWithdraw={onWithdraw}
+            />
           ) : null}
         </div>
       )}

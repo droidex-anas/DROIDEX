@@ -195,3 +195,38 @@ test('unreadable state never throws at startup', async () => {
   assert.deepEqual(await analytics.bootstrap(), { enabled: false });
   assert.deepEqual(await analytics.markFirstLaunchReported(), { recorded: false });
 });
+
+test('opting out while the id is being written leaves nothing behind', async () => {
+  const fs = memoryFs();
+  const rename = fs.rename;
+  // Holds the installation write open until the opt-out overlaps it.
+  let releaseWrite = () => undefined;
+  const writeHeld = new Promise((resolve) => {
+    releaseWrite = resolve;
+  });
+  fs.rename = async (from, to) => {
+    await writeHeld;
+    return rename(from, to);
+  };
+  const analytics = createUsageAnalytics(options({ fs }));
+
+  const launch = analytics.bootstrap();
+  for (let tick = 0; tick < 3; tick += 1) await new Promise(setImmediate);
+  const optingOut = analytics.setEnabled(false);
+  releaseWrite();
+  await optingOut;
+
+  assert.equal(fs.files.has(installationPath), false);
+  assert.deepEqual(await launch, { enabled: false });
+  assert.equal(fs.files.has(installationPath), false);
+});
+
+test('recording a first launch after an opt-out does not write the id back', async () => {
+  const fs = memoryFs();
+  const analytics = createUsageAnalytics(options({ fs }));
+  await analytics.bootstrap();
+
+  await analytics.setEnabled(false);
+  assert.deepEqual(await analytics.markFirstLaunchReported(), { recorded: false });
+  assert.equal(fs.files.has(installationPath), false);
+});

@@ -33,11 +33,25 @@ export interface SessionCompactionExecutionDependencies {
   >;
   context: Pick<SessionContext, 'refresh' | 'preserveUsage' | 'recordCompaction'>;
   timeline: Pick<SessionTimeline, 'appendCompaction' | 'appendStatus'>;
-  runtime: Pick<FactoryRuntime, 'loadSession' | 'processIdOf' | 'isProcessAlive'>;
+  runtime: Pick<
+    FactoryRuntime,
+    | 'loadSession'
+    | 'processIdOf'
+    | 'isProcessAlive'
+    | 'onProcessExit'
+    | 'factoryApiKey'
+    | 'steer'
+    | 'streamTurn'
+    | 'observeNotification'
+    | 'interruptTurn'
+    | 'stopTurn'
+  >;
   agentProcesses: Pick<AgentProcessMonitor, 'track' | 'untrack' | 'adoptDescendantsAsRoots'>;
   canvasTurns: Pick<CanvasTurns, 'endSession'>;
   interactionsFor(ref: { id: string }): ProviderInteractions;
   emitError(error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>): void;
+  // The replacement provider's runtime can die like the one it replaced.
+  observeProviderClosure(liveSession: LiveSession): void;
 }
 
 interface SessionCompactionExecutionEffects {
@@ -140,7 +154,13 @@ export class SessionCompactionExecution {
   ): Promise<void> {
     liveSession.createAdmission?.requireProviderChange();
     const appSessionId = liveSession.summary.appSessionId;
-    const ref = { id: appSessionId, autonomy: liveSession.summary.autonomy };
+    let provider: DroidProviderSession | undefined;
+    const ref = {
+      id: appSessionId,
+      get autonomy() {
+        return provider?.autonomy ?? liveSession.summary.autonomy;
+      },
+    };
     const oldSession = liveSession.session;
     const target = this.effects.primaryTarget(liveSession);
     const replacement = await this.dependencies.runtime.loadSession(providerSessionId, {
@@ -164,11 +184,11 @@ export class SessionCompactionExecution {
           () => this.dependencies.runtime.isProcessAlive(replacement),
           'provisional',
         );
-      const provider = new DroidProviderSession(
+      provider = new DroidProviderSession(
         appSessionId,
         replacement,
         this.dependencies.runtime,
-        ref,
+        liveSession.summary.autonomy,
       );
       const autonomy = liveSession.summary.autonomy;
       await provider.setAutonomy(autonomy);
@@ -197,6 +217,7 @@ export class SessionCompactionExecution {
       liveSession.session = provider;
       liveSession.droid = replacement;
       installed = true;
+      this.dependencies.observeProviderClosure(liveSession);
       if (replacementPid !== undefined)
         this.dependencies.agentProcesses.track(appSessionId, replacementPid, () =>
           this.dependencies.runtime.isProcessAlive(replacement),

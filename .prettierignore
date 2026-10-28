@@ -16,3 +16,5 @@ sidecar/package-lock.json
 *.png
 *.md
 eslint-suppressions.json
+# Single-file demo page; Prettier expands it past the file-size limit
+docs/design-system/showcase.html

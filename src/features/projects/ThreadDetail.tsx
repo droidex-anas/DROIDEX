@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, ExternalLink } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
+import InlineInteractions from '../../components/InlineInteractions';
 import { buildFeed } from '../../components/chatFeed';
 import { MessageFeed } from '../../components/MessageFeed';
 import { loadSessionHistory } from '../../lib/commands';
@@ -11,7 +12,9 @@ import type { ThreadRow } from './threadBoard';
 /* One thread, read in place: its own conversation exactly as the chat renders
    it. There is no composer here on purpose: the chat that started the thread
    steers it with its own tools, and opening the thread gives the user the real
-   composer with its model, autonomy and every other session control. */
+   composer with its model, autonomy and every other session control. What the
+   thread is blocked on (an approval, a question, a plan) is answered right
+   here, with the same cards the chat shows. */
 
 export function ThreadDetail({
   row,
@@ -37,8 +40,9 @@ export function ThreadDetail({
   // same way the chat loads one. A load that failed is not retried on its own:
   // it would spin against the same failure.
   useEffect(() => {
+    if (row.status === 'queued') return;
     if (transcript === undefined && !historyError) loadSessionHistory(row.appSessionId);
-  }, [transcript, historyError, row.appSessionId]);
+  }, [transcript, historyError, row.appSessionId, row.status]);
 
   return (
     <div data-testid="thread-detail" className="flex min-h-0 flex-1 flex-col">
@@ -58,6 +62,7 @@ export function ThreadDetail({
         <button
           type="button"
           onClick={onOpenInChat}
+          disabled={row.status === 'queued'}
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-droid-text-muted transition-colors hover:bg-droid-elevated hover:text-droid-text"
         >
           Open
@@ -78,10 +83,16 @@ export function ThreadDetail({
             />
           ) : (
             <p className="text-[12px] leading-5 text-droid-text-muted">
-              {historyError || (transcript === undefined ? 'Loading this thread…' : row.detail)}
+              {row.status === 'queued'
+                ? row.detail
+                : historyError || (transcript === undefined ? 'Loading this thread…' : row.detail)}
             </p>
           )}
         </div>
+      </div>
+
+      <div className="shrink-0 px-3 pb-3 empty:hidden">
+        <InlineInteractions appSessionId={row.appSessionId} plans asks />
       </div>
     </div>
   );

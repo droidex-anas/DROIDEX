@@ -16,7 +16,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 
 1. **React Renderer** (`src/`) - The user-facing UI rendered in the Electron BrowserWindow. Contains the conversation view, mission management, onboarding, and the mission-scoped utility pane (Review/Browser/Files/Terminal tabs). Communicates with the main process exclusively through the preload bridge and with the sidecar over a loopback WebSocket.
 
-2. **Electron Main Process** (`electron/main.cjs`) - Owns window lifecycle, the bridge (sidecar) child process, native browser automation via `WebContentsView`, credential encryption via `safeStorage`, file access registries, terminal PTY management, git/GitHub CLI orchestration, and the app update flow. Exposes ~60 IPC handlers to the renderer.
+2. **Electron Main Process** (`electron/main.cjs`) - Owns window lifecycle, the bridge (sidecar) child process, native browser automation of the `<webview>` pages the renderer mounts (each bound to a chat by a one-time token main issues), credential encryption via `safeStorage`, file access registries, terminal PTY management, git/GitHub CLI orchestration, and the app update flow. Exposes ~60 IPC handlers to the renderer.
 
 3. **Electron Preload Scripts** (`electron/preload.cjs`, `electron/nativeBrowserPreload.cjs`) - Narrow `contextBridge` boundaries. The main preload exposes `window.droidControl` with ~50 IPC-backed methods. The native browser preload runs inside arbitrary untrusted web pages loaded in the browser pane and exposes three functions for agent actions, credential fill, and design-state application.
 
@@ -29,7 +29,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 | Component | Purpose | Security Criticality | Attack Surface |
 | --- | --- | --- | --- |
 | React Renderer | UI, state, utility pane tabs | HIGH | Markdown/SVG rendering, URL bar input, mission IDs, free-text prompts |
-| Electron Main (`main.cjs`) | IPC handlers, window/browser/terminal lifecycle, credentials | HIGH | ~60 IPC channels, `WebContentsView` navigation, `executeJavaScript`, child process spawn |
+| Electron Main (`main.cjs`) | IPC handlers, window/browser/terminal lifecycle, credentials | HIGH | ~60 IPC channels, `<webview>` guest binding and navigation, `executeJavaScript`, child process spawn |
 | Main Preload (`preload.cjs`) | contextBridge API for renderer | MEDIUM | ~50 exposed methods, IPC message construction |
 | Native Browser Preload (`nativeBrowserPreload.cjs`) | Agent bridge inside untrusted pages | HIGH | Runs in arbitrary web page context with full Node access (sandbox:false) |
 | Files Module (`electron/files.cjs`) | Root-confined file preview/open/reveal | HIGH | Path traversal, symlink escape, TOCTOU, binary parsing |
@@ -44,7 +44,7 @@ Droid Control is an Electron desktop application that allows users to run Factor
 
 ### Data Flow
 
-When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the WebSocket back to the Electron main process, which drives a `WebContentsView` with `executeJavaScript` calls into the native browser preload. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model injects values via `executeJavaScript` and returns only `{ filled: true }`.
+When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the private IPC channel the main process spawned it with, and the Electron main process drives that chat's `<webview>` guest: agent input goes through CDP (the guest's debugger), and the native browser preload's helpers run through `executeJavaScriptInIsolatedWorld` (`electron/browserPageScript.cjs`), out of reach of the page's own scripts. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model passes values to the preload's fill helper through `executeJavaScriptInIsolatedWorld`, and the agent gets back only the page's usual outcome, never the credential.
 
 ---
 
@@ -57,7 +57,8 @@ The system has **5 trust zones**:
 1. **Untrusted Web Zone** - Arbitrary web pages loaded in the native browser pane
 
    - Assumes: Fully malicious content, XSS payloads, prompt-injection embedded in page DOM
-   - Entry Points: `nativeBrowserOpen(url)`, `nativeBrowserAttach`, agent `browser.open` tool, user-typed URL bar
+   - Entry Points: `nativeBrowserOpen(url)`, agent `browser.open` tool, user-typed URL bar
+   - Guest binding: the renderer can only mount a `<webview>` carrying a one-time token from `nativeBrowserReserve`; `will-attach-webview` rejects unknown, used or wrong-host tokens and replaces the guest's `webPreferences` and parameters wholesale, and main navigates the guest itself
    - Validated by: `validateUrl` (scheme allowlist: http/https/file/about), `rejectHostAppUrl` (self-origin block), `setWindowOpenHandler` (popup deny)
    - Risk: The `nativeBrowserPreload.cjs` runs in this zone with `sandbox: false` and full Node access
 
@@ -78,7 +79,7 @@ The system has **5 trust zones**:
 4. **Loopback WebSocket Zone** - Sidecar bridge on `127.0.0.1`
 
    - Assumes: Only the Electron app should connect, but any local process can attempt connection
-   - Entry Points: WebSocket upgrade at `ws://127.0.0.1:{BRIDGE_PORT}`, `/browser-assets` HTTP endpoint
+   - Entry Points: WebSocket upgrade at `ws://127.0.0.1:{BRIDGE_PORT}`
    - Validated by: `BRIDGE_TOKEN` query-string comparison (non-constant-time)
    - Risk: No Origin/CSRF check, token in URL, `BRIDGE_TOKEN=''` or `BRIDGE_ALLOW_LOCAL_NO_TOKEN=1` disables auth entirely, no `maxPayload`
 
@@ -98,6 +99,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 - **Main -> Sidecar:** The token is injected into the sidecar's env via `BRIDGE_TOKEN`. In dev mode, `BRIDGE_ALLOW_LOCAL_NO_TOKEN='1'` bypasses the check entirely.
 - **Files root access:** `createRootAccessRegistry` issues a 32-byte random token per authorized root; all subsequent file operations require this token.
 - **Credential consent:** Browser credential autofill requires explicit user consent (`browser-credentials.consent` state machine: `unset` -> `enabled`/`disabled`).
+- **Developer-tools consent:** The agent tool `browser_evaluate` runs script in a browser page only on an origin the user allowed for it (`browserDevTools.cjs`): the exact origin, asked for by name in a native dialog, kept in memory until the app quits, never the app's own pages. The origin is checked inside the same evaluated step as the script. On an allowed origin script can read what the other browser tools mask, including field values; the dialog says so.
 
 **Critical Security Controls:**
 
@@ -105,7 +107,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 - `safeStorage` encryption for FACTORY_API_KEY and browser credentials (OS keychain)
 - Multi-layer path confinement in `files.cjs` (lexical + realpath + symlink-walk + TOCTOU + token gate)
 - Array-form `execFile`/`spawn` everywhere (no shell-form `exec`)
-- Agent-blind credential model (values injected via `executeJavaScript`, only `{ filled: true }` returned)
+- Agent-blind credential model (values injected in the preload's isolated world; the agent gets only the page's usual outcome)
 - `setDevicePermissionHandler(() => false)` blocks WebHID/WebUSB
 - `validateUrl` blocks `javascript:`, `data:`, `chrome-extension:` schemes in browser pane
 - `openExternal` validates `http(s)` only
@@ -117,7 +119,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 
 ### External Interfaces
 
-#### Native Browser Pane (WebContentsView)
+#### Native Browser Pane (`<webview>` guests)
 
 - **URL navigation** - User-typed or agent-specified URLs loaded into a shared `persist:droid-control-browser` partition
   - **Input:** URL strings (http, https, file, about schemes)
@@ -150,10 +152,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 - **`ws://127.0.0.1:{BRIDGE_PORT}`** - Command channel (~50 ClientCommand types)
   - **Input:** JSON messages with `type` discriminator and payload fields
   - **Validation:** TypeScript types only; no runtime schema validation (Zod available but unused on ingress)
-  - **Risk:** Any JSON shape dispatched; `connect` accepts API key; `browser.native.result` lets any client resolve another's pending request
-- **`GET /browser-assets?path=...&token=...`** - Serves browser design assets
-  - **Validation:** Token check + `isBrowserAssetPath` confinement
-  - **Risk:** Token in URL query string
+  - **Risk:** Any JSON shape dispatched; `connect` accepts API key
 
 ### Data Input Vectors
 
@@ -191,7 +190,7 @@ The system accepts untrusted input from:
 - **BRIDGE_TOKEN** - Per-session WebSocket auth token (16 random bytes hex)
   - **Protection:** Generated in-process via `crypto.randomBytes(16)`, not persisted. Passed to sidecar via env. Re-exposed to renderer via `bridgeInfo()` for WebSocket URL construction. Appears in URL query strings (logs, process listings).
 - **Browser credentials** - Saved login username/password pairs for autofill
-  - **Protection:** Encrypted via `safeStorage` at `userData/browser-credentials.enc` with mode 0o600. Consent-gated (explicit user opt-in). Agent-blind: values injected via `executeJavaScript`, only `{ filled: true }` returned. Never sent to the sidecar.
+  - **Protection:** Encrypted via `safeStorage` at `userData/browser-credentials.enc` with mode 0o600. Consent-gated (explicit user opt-in). Agent-blind: values injected in the preload's isolated world; the agent gets only the page's usual outcome, never the credential. Never sent to the sidecar.
 - **Files root access tokens** - 32-byte random tokens per authorized directory root
   - **Protection:** Generated via `crypto.randomBytes(32).toString('base64url')`. Required for all `files-*` operations. Not persisted; lost on app restart.
 - **Droid auth state** - `~/.factory/auth.v2.file` (OAuth token from `droid login`)
@@ -974,13 +973,13 @@ Gaining higher privileges than intended. In this system, the critical escalation
 
 **Vulnerable Components:**
 
-- `electron/nativeBrowserPreload.cjs` (49KB, runs in untrusted page context, `sandbox: false`)
+- `electron/nativeBrowserPreload.cjs` (about 47 KB, runs in untrusted page context, `sandbox: false`)
 - `electron/main.cjs` (line 671: `sandbox: false` on WebContentsView)
 
 **Attack Vector:**
 
 1. Agent navigates to an attacker-controlled web page (or a legitimate page with a compromised ad/script)
-2. The page's JavaScript interacts with the exposed `__DROIDMAXX_AGENT_ACTION`, `__DROIDMAXX_APPLY_DESIGN_STATE`, or `__DROIDMAXX_FILL_CREDENTIALS` functions
+2. The page's JavaScript reaches preload code. The preload exposes nothing to the page's world: main calls its functions (design state, inspect, saved-login fill) in the preload's isolated world (`electron/browserPageScript.cjs`), and agent input goes through CDP, so the remaining surface is the preload's own DOM listeners. Design mode's listeners act only on trusted input, so the page's scripts cannot make marks or drive design mode, and a mark's crop is masked in main as agent screenshots are
 3. A bug in the preload's DOM processing (snapshot extraction, hover/click resolution, credential capture) allows prototype pollution or similar
 4. The preload runs with full Node access (`sandbox: false`), so the attacker gains `require('child_process')`, `require('fs')`, etc.
 5. Attacker executes arbitrary commands on the host
@@ -1016,13 +1015,13 @@ const view = new WebContentsView({
 **Existing Mitigations:**
 
 - `contextIsolation: true` isolates preload context from page context (the page cannot directly access preload's globals)
-- Only 3 functions exposed via `contextBridge`
-- `executeJavaScript` calls use `JSON.stringify()` for parameter interpolation
+- The preload exposes nothing to the page: main calls its functions in the preload's isolated world (`executeJavaScriptInIsolatedWorld`, `electron/browserPageScript.cjs`), and agent input is CDP input from main, not page-script events
+- Arguments to those calls are interpolated with `JSON.stringify()`
 
 **Gaps:**
 
-- `sandbox: false` means any contextBridge bypass or prototype pollution in the preload grants full Node access
-- The preload is 49KB of DOM-processing code -- a large attack surface
+- `sandbox: false` means any isolated-world escape or prototype pollution in the preload grants full Node access
+- The preload is about 47 KB of DOM-processing code -- a large attack surface
 - `sandbox: true` would eliminate this risk but requires refactoring all Node-API usage to IPC
 
 **Severity:** HIGH | **Likelihood:** MEDIUM

@@ -8,6 +8,7 @@ import type {
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
+  UsageReading,
 } from './session.js';
 
 // A provider whose module loads with its first probe or session, never at
@@ -43,6 +44,10 @@ export class LazyProvider implements ProbedProvider {
     publishItems: (items: SkillInfo[]) => void,
   ): Promise<ProviderStatus> {
     return (await this.provider()).probe(signal, publishItems);
+  }
+
+  async readUsage(signal: AbortSignal): Promise<UsageReading> {
+    return (await this.provider()).readUsage(signal);
   }
 
   private provider(): Promise<ProbedProvider> {

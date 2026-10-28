@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { Copy, WrapText } from '@droidex/icons';
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -41,7 +41,21 @@ export async function copyMarkdownCode(
   }
 }
 
-function CodeCopyButton({ text }: { text: string }) {
+// One look for every control in a code or diagram card header: a quiet label
+// that gains a soft tint under the pointer or keyboard focus.
+export const CARD_CONTROL_CLASS =
+  'flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-droid-text-muted transition-colors duration-150 hover:bg-droid-active hover:text-droid-text focus-visible:bg-droid-active focus-visible:text-droid-text focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40';
+
+export function CardHeader({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex h-8 items-center justify-between gap-2 pl-3.5 pr-1.5">
+      <span className="truncate text-[11.5px] font-medium text-droid-text-muted">{label}</span>
+      <div className="flex shrink-0 items-center gap-0.5">{children}</div>
+    </div>
+  );
+}
+
+export function CodeCopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -62,11 +76,11 @@ function CodeCopyButton({ text }: { text: string }) {
           }, 1200);
         });
       }}
-      className="flex items-center gap-1 text-[11px] text-droid-text-muted hover:text-droid-text transition-colors"
+      className={CARD_CONTROL_CLASS}
       title="Copy"
     >
-      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-      {copied ? 'Copied' : 'Copy'}
+      {copied ? <Check className="h-3 w-3 text-droid-green" /> : <Copy className="h-3 w-3" />}
+      <span aria-live="polite">{copied ? 'Copied' : 'Copy'}</span>
     </button>
   );
 }
@@ -131,18 +145,21 @@ export function HighlightJson({ code }: { code: string }) {
 /* ── Code card chrome ──
    The reader controls the frame: copy stays, soft-wrap tames long lines at the
    cost of the gutter, and blocks past COLLAPSE_LINE_THRESHOLD lines start
-   folded so one giant dump stops eating the transcript. */
+   folded so one giant dump stops eating the transcript. The card separates from
+   the prose by tone alone, so it never draws a box inside a message. */
 
 const COLLAPSE_LINE_THRESHOLD = 24;
 const COLLAPSED_LINES = 12;
 // Numbers earn their place once a block is long enough to be scrolled.
 const GUTTER_MIN_LINES = 4;
+// Code follows the reader's code font size setting; a spec reads one step up.
+const SPEC_CODE_SIZE_CLASS = 'text-[length:calc(var(--code-font-size)+1px)]';
 
-function LineGutter({ count, specMode }: { count: number; specMode: boolean }) {
+function LineGutter({ count, sizeClass }: { count: number; sizeClass: string }) {
   return (
     <div
       aria-hidden
-      className={`select-none shrink-0 border-r border-droid-border/50 pr-2.5 mr-3 text-right font-mono text-droid-text-muted/70 leading-[1.65] ${specMode ? 'text-[13px]' : 'text-[12px]'}`}
+      className={`mr-4 shrink-0 select-none text-right font-mono leading-[1.65] text-droid-text-muted/55 ${sizeClass}`}
     >
       {Array.from({ length: count }, (_, i) => (
         <div key={i}>{i + 1}</div>
@@ -151,9 +168,7 @@ function LineGutter({ count, specMode }: { count: number; specMode: boolean }) {
   );
 }
 
-// The header's right-hand cluster: the reader-facing controls over the block's
-// frame. The language label stays with the card; these travel with their state.
-function CardControls({
+function CodeCardControls({
   collapsible,
   collapsed,
   wrapped,
@@ -169,26 +184,26 @@ function CardControls({
   code: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5 shrink-0">
+    <>
       {collapsible && (
         <button
           onClick={onToggleCollapse}
-          className="text-[11px] text-droid-text-muted hover:text-droid-text transition-colors"
-          title={collapsed ? 'Expand' : 'Collapse'}
+          className={CARD_CONTROL_CLASS}
+          aria-expanded={!collapsed}
         >
-          {collapsed ? 'Expand' : 'Collapse'}
+          {collapsed ? 'Show all' : 'Collapse'}
         </button>
       )}
       <button
         onClick={onToggleWrap}
-        className={`transition-colors ${wrapped ? 'text-droid-text' : 'text-droid-text-muted hover:text-droid-text'}`}
+        className={`${CARD_CONTROL_CLASS} ${wrapped ? 'bg-droid-active text-droid-text' : ''}`}
         title={wrapped ? 'Disable soft wrap' : 'Soft wrap long lines'}
         aria-pressed={wrapped}
       >
-        <WrapText className="w-3 h-3" />
+        <WrapText className="h-3 w-3" />
       </button>
       <CodeCopyButton text={code} />
-    </div>
+    </>
   );
 }
 
@@ -205,59 +220,66 @@ export function CodeCard({
 }) {
   const [wrapped, setWrapped] = useState(false);
   const lines = useMemo(() => code.split('\n'), [code]);
+  const collapsible = lines.length > COLLAPSE_LINE_THRESHOLD;
   // Decided at mount only: a fence that streams past the threshold keeps the
   // reader's expanded view instead of folding under their hands.
-  const [collapsed, setCollapsed] = useState(() => lines.length > COLLAPSE_LINE_THRESHOLD);
+  const [collapsed, setCollapsed] = useState(() => collapsible);
   const showGutter = !wrapped && !collapsed && lines.length >= GUTTER_MIN_LINES;
-  const fontSize = specMode ? 13 : 12;
-  const padding = specMode ? 16 : 14;
-  const collapsedMaxHeight = `calc(${String(fontSize)}px * 1.65 * ${String(COLLAPSED_LINES)} + ${String(padding)}px * 2)`;
-  const toggleWrap = () => {
-    setWrapped((v) => !v);
-  };
-  const toggleCollapse = () => {
-    setCollapsed((v) => !v);
-  };
-  const expand = () => {
-    setCollapsed(false);
-  };
+  const sizeClass = specMode ? SPEC_CODE_SIZE_CLASS : '';
+  // The added 0.25rem is the <pre>'s top padding (pt-1).
+  const collapsedMaxHeight = `calc((var(--code-font-size) + ${specMode ? '1px' : '0px'}) * 1.65 * ${String(COLLAPSED_LINES)} + 0.25rem)`;
 
   return (
     <div
-      className={`rounded-xl border border-droid-border overflow-hidden bg-droid-elevated/40 ${specMode ? 'my-4' : 'my-2.5'}`}
+      className={`overflow-hidden rounded-xl bg-droid-elevated/50 ${specMode ? 'my-4' : 'my-2.5'}`}
     >
-      <div className="flex items-center justify-between gap-2 h-7 px-3 bg-droid-surface/60 border-b border-droid-border">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-droid-text-muted truncate">
-          {languageLabel(className)}
-        </span>
-        <CardControls
-          collapsible={lines.length > COLLAPSE_LINE_THRESHOLD}
+      <CardHeader label={languageLabel(className)}>
+        <CodeCardControls
+          collapsible={collapsible}
           collapsed={collapsed}
           wrapped={wrapped}
-          onToggleCollapse={toggleCollapse}
-          onToggleWrap={toggleWrap}
+          onToggleCollapse={() => {
+            setCollapsed((v) => !v);
+          }}
+          onToggleWrap={() => {
+            setWrapped((v) => !v);
+          }}
           code={code}
         />
-      </div>
+      </CardHeader>
       <div className="relative">
-        <pre
-          className={`scrollbar-on-hover scroll-fade-x overflow-x-auto flex ${specMode ? 'p-4' : 'p-3.5'}`}
-          style={collapsed ? { maxHeight: collapsedMaxHeight, overflowY: 'hidden' } : undefined}
+        {/* The fold fades out through a mask, so it blends into whatever tone
+            the card sits on instead of painting a gradient of its own. */}
+        <div
+          className={
+            collapsed ? '[mask-image:linear-gradient(to_bottom,#000_45%,transparent)]' : undefined
+          }
         >
-          {showGutter && <LineGutter count={lines.length} specMode={Boolean(specMode)} />}
-          <code
-            className={`font-mono leading-[1.65] text-droid-text-secondary ${wrapped ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'} ${specMode ? 'text-[13px]' : 'text-[12px]'}`}
+          <pre
+            className={`scrollbar-on-hover scroll-fade-x flex overflow-x-auto px-4 pt-1 ${specMode ? 'pb-4' : 'pb-3.5'}`}
+            style={collapsed ? { maxHeight: collapsedMaxHeight, overflowY: 'hidden' } : undefined}
           >
-            {highlighted ?? code}
-          </code>
-        </pre>
+            {showGutter && <LineGutter count={lines.length} sizeClass={sizeClass} />}
+            <code
+              className={`font-mono leading-[1.65] text-droid-text/90 ${wrapped ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'} ${sizeClass}`}
+            >
+              {highlighted ?? code}
+            </code>
+          </pre>
+        </div>
         {collapsed && (
-          <button
-            onClick={expand}
-            className="absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-t from-droid-bg/95 via-droid-bg/70 to-transparent text-[11px] font-medium text-droid-text-secondary hover:text-droid-text transition-colors"
-          >
-            Show all {String(lines.length)} lines
-          </button>
+          <div className="absolute inset-x-0 bottom-2.5 flex justify-center">
+            <button
+              onClick={() => {
+                setCollapsed(false);
+              }}
+              aria-expanded={false}
+              className="flex h-7 items-center gap-1 rounded-full bg-droid-raised px-3 text-[11.5px] font-medium text-droid-text-secondary shadow-droid-sm transition-colors duration-150 hover:text-droid-text focus-visible:text-droid-text focus-visible:outline-none"
+            >
+              <ChevronDown className="h-3 w-3" />
+              Show all {String(lines.length)} lines
+            </button>
+          </div>
         )}
       </div>
     </div>

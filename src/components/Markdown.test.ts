@@ -70,7 +70,10 @@ test('plain fenced blocks preserve preformatted multiline layout', () => {
   );
 
   assert.match(html, /<pre[^>]*>/);
-  assert.match(html, /first line\nsecond line/);
+  // A fence without a language is still a code card, not an inline pill on
+  // every line, and it does not gain the parser's trailing newline.
+  assert.match(html, /title="Copy"/);
+  assert.match(html, /first line\nsecond line<\/code>/);
 });
 
 test('formatted spec headings keep a usable text slug', () => {

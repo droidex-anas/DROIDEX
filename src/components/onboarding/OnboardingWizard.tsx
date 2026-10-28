@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
 
 import type { OnboardingController } from '../../hooks/useOnboarding';
 import { EASE } from './kit';
@@ -39,10 +38,6 @@ export default function OnboardingWizard({
     if (steps.includes(stepId)) return;
     setStepId(advancePastRemovedStep(steps, stepId));
   }, [steps, stepId]);
-  // The tour covers the window, and keeps covering it through its exit fade
-  // after the pane it closed has already reopened: hide the native browser
-  // view for exactly as long as this is mounted.
-  useObscuresNativeSurfaces();
 
   return (
     <MotionConfig reducedMotion="user">

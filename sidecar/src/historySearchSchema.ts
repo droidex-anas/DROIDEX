@@ -7,11 +7,12 @@ const SEARCH_INDEX_VERSION = 4;
 export class HistorySearchUnavailableError extends Error {
   readonly code = 'history.search_unavailable' as const;
 
-  constructor() {
-    super(
-      'This host SQLite build does not include FTS5, so derived history search cannot start. ' +
-        'Canonical session history is stored and durable. Rebuild Node with SQLite FTS5 enabled to restore search.',
-    );
+  constructor(
+    message = 'This host SQLite build does not include FTS5, so derived history search cannot start. ' +
+      'Canonical session history is stored and durable. Rebuild Node with SQLite FTS5 enabled to restore search.',
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
     this.name = 'HistorySearchUnavailableError';
   }
 }
@@ -20,7 +21,9 @@ function isMissingFts5Module(error: unknown): boolean {
   return error instanceof Error && /no such module:\s*fts5/i.test(error.message);
 }
 
-export function isHistorySearchUnavailableError(error: unknown): boolean {
+export function isHistorySearchUnavailableError(
+  error: unknown,
+): error is HistorySearchUnavailableError {
   return (
     error instanceof HistorySearchUnavailableError ||
     (error instanceof Error && error.name === 'HistorySearchUnavailableError')
@@ -29,7 +32,7 @@ export function isHistorySearchUnavailableError(error: unknown): boolean {
 
 const SQLITE_FTS5_UNAVAILABLE_REASON = 'SQLite FTS5 is unavailable on this host';
 
-export function sqliteSupportsFts5(): boolean {
+function sqliteSupportsFts5(): boolean {
   const db = new DatabaseSync(':memory:');
   try {
     probeFts5(db);

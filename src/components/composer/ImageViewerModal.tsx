@@ -2,9 +2,15 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Check, Crop, X } from 'lucide-react';
-import { useObscuresNativeSurfaces } from '../../hooks/useObscuresNativeSurfaces';
+import { Check, Crop, Download } from 'lucide-react';
+import { downloadImage } from '../media/downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from '../media/imageViewerMotion';
+import {
+  ViewerCloseButton,
+  ViewerToolbar,
+  ViewerToolbarButton,
+  ViewerToolbarDivider,
+} from '../media/viewerChrome';
 import type { AttachedImage } from '../../hooks/useImageAttachments';
 import { displayedToNaturalRect, isFullImageRect, type CropRect } from '../../lib/images';
 import { toast } from '../../lib/toast';
@@ -41,10 +47,6 @@ function ImageViewerModalContent({
   const dialogRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
 
-  // The browser pane's native view is painted above the DOM by the OS; hide it
-  // while this covers the window, or it shows straight through the image.
-  useObscuresNativeSurfaces();
-
   // Modal focus boundary: without it, keyboard and AT users keep reaching the
   // composer controls behind this full-screen overlay. Move focus inside on
   // open and hand it back to the opener on close.
@@ -68,12 +70,16 @@ function ImageViewerModalContent({
     wrapTabFocus(e, dialogRef.current);
   };
 
+  const cancelCrop = () => {
+    setCropping(false);
+    setRect(null);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (cropping) {
-        setCropping(false);
-        setRect(null);
+        cancelCrop();
       } else {
         onClose();
       }
@@ -119,74 +125,66 @@ function ImageViewerModalContent({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={IMAGE_VIEWER_TRANSITION}
-      className="fixed inset-0 z-[1200] flex flex-col bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[1200] flex items-center justify-center overflow-hidden bg-black/75 px-8 pb-24 pt-16 backdrop-blur-md focus:outline-none"
       onClick={cropping ? undefined : onClose}
     >
-      <div
-        className="flex items-center gap-3 border-b border-droid-border/60 bg-droid-bg/80 px-5 py-3"
+      <motion.div
+        {...imageViewerContentMotion(reduceMotion)}
+        className="relative max-h-full"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
-        <span className="min-w-0 flex-1 truncate text-[12px] text-droid-text-muted">
-          {cropping ? 'Drag across the image to choose a crop' : image.path}
-        </span>
+        <img
+          ref={imgRef}
+          src={image.preview}
+          alt="Attached image preview"
+          draggable={false}
+          className="block max-h-[calc(100vh-10rem)] max-w-[calc(100vw-4rem)] select-none rounded-lg object-contain shadow-droid"
+        />
+        {cropping && <CropOverlay rect={rect} onChange={setRect} />}
+      </motion.div>
+      <ViewerCloseButton onClose={onClose} />
+      <ViewerToolbar label="Image controls">
         {cropping ? (
           <>
-            <button
-              onClick={() => {
-                setCropping(false);
-                setRect(null);
-              }}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text"
-            >
-              <X className="h-3.5 w-3.5" /> Cancel
-            </button>
-            <button
-              onClick={() => void applyCrop()}
+            <span className="px-2.5 text-[12.5px] text-droid-text-muted">
+              Drag to choose a crop
+            </span>
+            <ViewerToolbarDivider />
+            <ViewerToolbarButton label="Cancel crop" onClick={cancelCrop}>
+              Cancel
+            </ViewerToolbarButton>
+            <ViewerToolbarButton
+              label="Apply crop"
+              primary
               disabled={!rect || saving}
-              className="flex items-center gap-1.5 rounded-lg bg-droid-accent px-3 py-1.5 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+              onClick={() => void applyCrop()}
             >
-              <Check className="h-3.5 w-3.5" strokeWidth={3} /> {saving ? 'Saving…' : 'Apply crop'}
-            </button>
+              <Check className="h-3.5 w-3.5" strokeWidth={3} />
+              <span className="pr-1">{saving ? 'Saving…' : 'Apply crop'}</span>
+            </ViewerToolbarButton>
           </>
         ) : (
           <>
-            <button
+            <ViewerToolbarButton
+              label="Crop"
               onClick={() => {
                 setCropping(true);
               }}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] text-droid-text-secondary transition-colors hover:bg-droid-elevated hover:text-droid-text"
             >
-              <Crop className="h-3.5 w-3.5" /> Crop
-            </button>
-            <button
-              onClick={onClose}
-              className="flex items-center gap-1.5 rounded-lg bg-droid-accent px-3 py-1.5 text-[12px] font-medium text-droid-bg transition-opacity hover:opacity-90"
+              <Crop className="h-4 w-4" />
+              <span className="pr-1">Crop</span>
+            </ViewerToolbarButton>
+            <ViewerToolbarButton
+              label="Download"
+              onClick={() => void downloadImage(image.preview, image.path)}
             >
-              <Check className="h-3.5 w-3.5" strokeWidth={3} /> Done
-            </button>
+              <Download className="h-4 w-4" />
+            </ViewerToolbarButton>
           </>
         )}
-      </div>
-      <div className="flex flex-1 items-center justify-center overflow-hidden p-8">
-        <motion.div
-          {...imageViewerContentMotion(reduceMotion)}
-          className="relative max-h-full"
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        >
-          <img
-            ref={imgRef}
-            src={image.preview}
-            alt="Attached image preview"
-            draggable={false}
-            className="block max-h-[75vh] max-w-[88vw] select-none rounded-lg border border-droid-border object-contain"
-          />
-          {cropping && <CropOverlay rect={rect} onChange={setRect} />}
-        </motion.div>
-      </div>
+      </ViewerToolbar>
     </motion.div>
   );
 }

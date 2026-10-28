@@ -2,97 +2,83 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
-const { createNativeBrowserBudget } = require('./nativeBrowserBudget.cjs');
 
-const BOUNDS = { x: 0, y: 0, width: 800, height: 600 };
 const ERROR_PAGE = 'chrome-error://chromewebdata/';
+const HOST = { id: 1 };
 
-function createHostWindow() {
-  return {
-    isDestroyed: () => false,
-    contentView: { addChildView() {}, removeChildView() {} },
-    setIgnoreMouseEvents() {},
-    setContentSize() {},
-    on() {},
-    close() {},
-  };
-}
-
-// Each view gets fresh web contents; loading a URL listed in `unreachable`
-// lands on Chromium's error page, as an unreachable host does.
+// Guests are the <webview> contents the renderer mounts; loading a URL listed
+// in `unreachable` lands on Chromium's error page, as an unreachable host does.
 function createBrowser() {
   const unreachable = new Set();
   const loads = [];
   const loadFailures = [];
-  const views = [];
   const sessions = new Map();
-  class WebContentsView {
-    constructor(options) {
-      this.options = options;
-      const contents = new EventEmitter();
-      Object.assign(contents, {
-        url: 'about:blank',
-        destroyed: false,
-        isDestroyed: () => contents.destroyed,
-        close: () => (contents.destroyed = true),
-        getURL: () => contents.url,
-        loadURL: async (url) => {
-          loads.push(url);
-          contents.url = unreachable.has(url) ? ERROR_PAGE : url;
-        },
-        setWindowOpenHandler() {},
-        setBackgroundThrottling() {},
-        executeJavaScript: async () => ({ x: 0, y: 0 }),
-        capturePage: async () => null,
-      });
-      this.webContents = contents;
-      views.push(this);
-    }
-    setBounds() {}
-    getBounds() {
-      return BOUNDS;
-    }
-    setVisible() {}
-  }
   const session = {
     fromPartition(partition) {
       const ses = {
         setDevicePermissionHandler: (handler) => (ses.device = handler),
         setPermissionCheckHandler: (handler) => (ses.check = handler),
         setPermissionRequestHandler: (handler) => (ses.request = handler),
-        webRequest: { onCompleted() {}, onErrorOccurred() {} },
+        webRequest: { onSendHeaders() {}, onCompleted() {}, onErrorOccurred() {} },
       };
       sessions.set(partition, ses);
       return ses;
     },
   };
-  const mainWindow = createHostWindow();
   const manager = createNativeBrowserManager({
     app: {},
     appName: 'DROIDEX',
-    BrowserWindow: createHostWindow,
-    WebContentsView,
     session,
     dialog: {},
     safeStorage: {},
-    budget: createNativeBrowserBudget(),
-    getMainWindow: () => mainWindow,
+    getMainWindow: () => ({ isDestroyed: () => false }),
     onBrowserInput() {},
-    preloadPath: 'nativeBrowserPreload.cjs',
+    preloadPath: '/app/nativeBrowserPreload.cjs',
     getHostAppUrl: () => 'http://localhost:5173/',
     sendToRenderer: (channel, payload) => {
       if (channel === 'native-browser-load-failed') loadFailures.push(payload.error);
     },
   });
-  const contents = () => views.at(-1).webContents;
-  return { manager, unreachable, loads, loadFailures, views, sessions, contents };
+
+  // What the renderer and Electron do when the pane mounts a page.
+  function mountGuest(browserSessionId) {
+    const { src } = manager.reserve(browserSessionId, HOST);
+    const webPreferences = {};
+    manager.handleWillAttach({ preventDefault() {} }, webPreferences, { src }, HOST);
+    const guest = new EventEmitter();
+    Object.assign(guest, {
+      url: 'about:blank',
+      webPreferences,
+      getType: () => 'webview',
+      isDestroyed: () => false,
+      getURL: () => guest.url,
+      navigationHistory: {
+        getActiveIndex: () => 0,
+        canGoBack: () => false,
+        canGoForward: () => false,
+      },
+      loadURL: async (url) => {
+        loads.push(url);
+        guest.url = unreachable.has(url) ? ERROR_PAGE : url;
+      },
+      reload: () => loads.push(`reload:${guest.url}`),
+      setWindowOpenHandler() {},
+      setBackgroundThrottling() {},
+    });
+    manager.handleCreated(guest);
+    manager.handleAttached(guest);
+    return guest;
+  }
+
+  return { manager, mountGuest, unreachable, loads, loadFailures, sessions };
 }
 
 test('browser pages use their own persistent partition and are denied every permission', async () => {
-  const { manager, views, sessions } = createBrowser();
-  await manager.open('tab', 'https://example.test/', BOUNDS);
+  const { manager, mountGuest, sessions } = createBrowser();
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://example.test/');
 
-  assert.equal(views[0].options.webPreferences.partition, 'persist:droidex-browser');
+  assert.equal(guest.webPreferences.partition, 'persist:droidex-browser');
   const ses = sessions.get('persist:droidex-browser');
   assert.equal(ses.device({ deviceType: 'hid' }), false);
   assert.equal(ses.check(null, 'media'), false);
@@ -101,51 +87,65 @@ test('browser pages use their own persistent partition and are denied every perm
   assert.equal(granted, false);
 });
 
-test('a URL that failed to load is not reopened on restore until it is retried', async () => {
-  const { manager, unreachable, loads, loadFailures, contents } = createBrowser();
+test('a remounted page reopens its URL, but not one that failed until it is retried', async () => {
+  const { manager, mountGuest, unreachable, loads, loadFailures } = createBrowser();
   const url = 'https://down.test/';
-  const restore = async () => {
-    manager.detach('tab');
-    await manager.attach('tab', BOUNDS, { restoreUrl: url });
+  const remount = () => {
+    manager.release('tab');
+    return mountGuest('tab');
   };
   unreachable.add(url);
-  await manager.open('tab', url, BOUNDS);
-  contents().emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', url, true);
+  let guest = mountGuest('tab');
+  await manager.open('tab', url);
+  guest.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', url, true);
   assert.deepEqual(loadFailures, ['ERR_NAME_NOT_RESOLVED']);
 
-  await restore();
+  guest = remount();
   assert.deepEqual(loads, [url]);
   await manager.reload('tab');
   assert.deepEqual(loads, [url, url]);
 
-  contents().emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', url, true);
-  await restore();
-  assert.deepEqual(loads, [url, url]);
-  contents().emit('did-navigate', {}, url);
-  await restore();
+  unreachable.clear();
+  guest.emit('did-navigate', {}, url);
+  remount();
+  await new Promise(setImmediate);
   assert.deepEqual(loads, [url, url, url]);
 });
 
-test('an evicted browser keeps its snapshot until a restore actually loads the page', async (t) => {
+test('a crashed page reports the crash and blocks actions until it is reloaded', async (t) => {
   t.mock.method(console, 'error', () => {});
-  const { manager, unreachable, loads, loadFailures, contents } = createBrowser();
-  const url = 'https://app.test/';
-  await manager.open('tab', url);
+  const { manager, mountGuest, loads, loadFailures } = createBrowser();
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://app.test/');
 
-  manager.evictUnattached();
-  // The renderer can die while the snapshot is captured; that is not a crash to recover.
-  contents().emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 });
+  guest.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 });
+  assert.deepEqual(loadFailures, ['crashed']);
+  await assert.rejects(manager.open('tab', 'https://app.test/next'), /crashed/);
+
+  await manager.reload('tab');
+  await manager.open('tab', 'https://app.test/next');
+  assert.deepEqual(loads, [
+    'https://app.test/',
+    'reload:https://app.test/',
+    'https://app.test/next',
+  ]);
+});
+
+test('a page action still waiting on a load does nothing once the browser closes', async () => {
+  const { manager, mountGuest } = createBrowser();
+  const guest = mountGuest('tab');
+  await manager.open('tab', 'https://app.test/');
+  let finishLoad;
+  guest.loadURL = () => new Promise((resolve) => (finishLoad = resolve));
+  guest.navigationHistory.canGoBack = () => true;
+  guest.navigationHistory.goBack = () => assert.fail('went back after the browser closed');
+  const opening = manager.open('tab', 'https://app.test/next');
   await new Promise(setImmediate);
-  assert.deepEqual(loadFailures, []);
-  assert.equal(manager.resourceCounts().serialized, 1);
 
-  unreachable.add(url);
-  await assert.rejects(manager.attach('tab', BOUNDS), /browser is not open/);
-  assert.deepEqual(loadFailures, ['Navigation failed']);
-  assert.equal(manager.resourceCounts().serialized, 1);
-
-  unreachable.clear();
-  await manager.attach('tab', BOUNDS);
-  assert.equal(manager.resourceCounts().serialized, 0);
-  assert.deepEqual(loads, [url, url, url]);
+  const back = manager.goBack('tab');
+  await new Promise(setImmediate);
+  manager.close('tab');
+  finishLoad();
+  await assert.rejects(back, /browser is not open/);
+  await opening;
 });

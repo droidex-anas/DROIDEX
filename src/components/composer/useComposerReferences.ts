@@ -100,6 +100,8 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
       ...(framePins.length > 0 ? { canvasFrames: framePins.map((pin) => pin.name) } : {}),
     },
+    /** Takes only the side chat answers off, for a design prompt that carries no frames. */
+    detachReplies,
     /** Takes them off the draft once its prompt has gone. */
     detach: () => {
       detachReplies();
