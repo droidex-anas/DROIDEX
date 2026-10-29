@@ -313,9 +313,9 @@ function CanvasCard({ summary, onOpen }: { summary: CanvasSummary; onOpen: () =>
       onClick={onOpen}
       className="group flex cursor-pointer flex-col overflow-hidden rounded-xl bg-surface text-left transition-colors hover:bg-elevated"
     >
-      {/* No captured thumbnail yet, so the tile shows the board's dot grid
-          rather than a fake preview. */}
-      <span className="image-grid-dots flex h-24 items-end justify-end bg-elevated/40 p-2 text-caption text-muted">
+      {/* No captured thumbnail yet, so the tile stays plain rather than
+          showing a fake preview. */}
+      <span className="flex h-24 items-end justify-end bg-elevated/40 p-2 text-caption text-muted">
         {summary.designCount === 0 ? 'Empty' : designCountLabel(summary.designCount)}
       </span>
       <span className="flex flex-col gap-0.5 px-3 py-2.5">

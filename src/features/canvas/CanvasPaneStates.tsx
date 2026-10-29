@@ -16,7 +16,7 @@ import { DESIGN_STARTERS, StarterSketch } from './designStarters';
 export function CanvasInvitation({ children }: { children?: ReactNode }) {
   const dispatch = useStoreDispatch();
   return (
-    <div className="image-grid-dots flex h-full min-h-0 overflow-y-auto px-6">
+    <div className="flex h-full min-h-0 overflow-y-auto px-6">
       <div className="m-auto flex w-full max-w-md flex-col items-center gap-6 py-10">
         <div className="flex flex-col items-center gap-1 text-center">
           <h2 className="text-body-strong text-primary">Ask your agent to design something</h2>
