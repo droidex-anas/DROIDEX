@@ -11,8 +11,6 @@ import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { formatRelativeTime } from '../../lib/time';
 import { searchCanvases } from './canvasChats';
 import { DESIGN_STARTERS } from './designStarters';
-import { NEW_CANVAS_KEY } from './designSystemChoices';
-import { CanvasDesignSystem } from './DesignSystemPicker';
 import { LibraryPicker } from './LibraryPicker';
 import { armLibrarySeed, useArmedLibrarySeed } from './librarySeed';
 import { useCanvases } from './useCanvases';
@@ -56,7 +54,6 @@ function NewCanvasHome() {
   const animate = useEntrance();
   return (
     <DesignDraftShell
-      canvasKey={NEW_CANVAS_KEY}
       title="What should we design?"
       animate={animate}
       startingPoint={<LibrarySeedChip />}
@@ -80,7 +77,6 @@ function CanvasChatDraft({ canvasId }: { canvasId: string }) {
       : null;
   return (
     <DesignDraftShell
-      canvasKey={canvasId}
       title={canvas ? `New chat on ${canvas.name}` : 'New chat on this canvas'}
       animate={false}
     />
@@ -89,18 +85,15 @@ function CanvasChatDraft({ canvasId }: { canvasId: string }) {
 
 /** The centred composer both design drafts are sent from. */
 function DesignDraftShell({
-  canvasKey,
   title,
   animate,
   startingPoint,
   showStarters = false,
   children,
 }: {
-  /** Whose design-system choice the draft's prompt runs under. */
-  canvasKey: string;
   title: string;
   animate: boolean;
-  /** What a new canvas starts from, beside the design-system chip. */
+  /** What a new canvas starts from, in the composer's row beside the design system. */
   startingPoint?: ReactNode;
   showStarters?: boolean;
   children?: ReactNode;
@@ -127,11 +120,12 @@ function DesignDraftShell({
           </h1>
 
           <div className={`mt-8 ${composer.className}`} style={composer.style}>
-            <PromptInput appSessionId={null} compact placeholder={preview ?? DESIGN_PLACEHOLDER} />
-            <div className="flex gap-1 px-3">
-              <CanvasDesignSystem canvasKey={canvasKey} appSessionId={null} />
-              {startingPoint}
-            </div>
+            <PromptInput
+              appSessionId={null}
+              compact
+              placeholder={preview ?? DESIGN_PLACEHOLDER}
+              designTools={startingPoint}
+            />
           </div>
 
           {showStarters && (
@@ -258,7 +252,7 @@ function LibrarySeedChip() {
   );
   return (
     <div
-      className={`flex min-w-0 shrink-0 items-center rounded-full text-caption ${armed ? 'bg-elevated/60' : ''}`}
+      className={`flex h-control-sm min-w-0 items-center rounded-md ${armed ? 'bg-active/60' : ''}`}
     >
       <button
         type="button"
@@ -272,7 +266,7 @@ function LibrarySeedChip() {
         onClick={() => {
           setPicking(true);
         }}
-        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-muted transition-colors hover:bg-active hover:text-primary"
+        className="flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted transition-colors hover:bg-active/60 hover:text-primary"
       >
         <LibraryBig aria-hidden className="size-icon-sm shrink-0" />
         <span className="max-w-40 truncate">{armed ? armed.name : 'From library…'}</span>
