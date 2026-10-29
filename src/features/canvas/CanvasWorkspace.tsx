@@ -235,11 +235,11 @@ export function CanvasWorkspace({
     // The source panel takes a column at the right, so the board beside it
     // narrows instead of losing half its height.
     <div data-testid="canvas-workspace" className="flex h-full min-h-0 bg-bg">
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="canvas-pane-column relative flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Expanded, the window's top row carries the canvas name and the
             Chat | Canvas control instead (`CanvasHeader`). */}
         {!isExpanded && (
-          <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-raised px-1 shadow-sm">
+          <div className="canvas-pane-corner absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-raised px-1 shadow-sm">
             {watched !== null && <CanvasMenu appSessionId={appSessionId} canvasId={watched} />}
             <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
           </div>

@@ -480,3 +480,11 @@
   box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
   background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
+
+/* ── Pane ───────────────────────────────────────────────────────────────── */
+
+/* The element panel docks inside the board's column, so the side pane's corner
+   controls step left of it instead of covering its header. */
+.canvas-pane-column:has(.canvas-element-panel) > .canvas-pane-corner {
+  right: calc(theme('width.80') + theme('spacing.4'));
+}

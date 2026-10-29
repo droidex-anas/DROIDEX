@@ -153,7 +153,7 @@ export function ElementPanel({
       ref={ref}
       role="region"
       aria-label={`Styles of the selected ${draft.site.tagName}`}
-      className="my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
+      className="canvas-element-panel my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
     >
       <header className="shrink-0 px-3 pb-2 pt-3">
         <h2 className="flex min-w-0 items-baseline gap-2">
