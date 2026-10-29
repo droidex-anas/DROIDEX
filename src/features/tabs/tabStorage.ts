@@ -49,7 +49,14 @@ function sanitizeDraft(value: unknown): NewChatDraft | null {
     executionMode: value.executionMode,
     ...(typeof value.branch === 'string' ? { branch: value.branch } : {}),
     ...(value.project === true ? { project: true as const } : {}),
+    ...(isRecord(value.canvas) && isCanvasId(value.canvas.canvasId)
+      ? { canvas: { canvasId: value.canvas.canvasId } }
+      : {}),
   };
+}
+
+function isCanvasId(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && value.length > 0);
 }
 
 function sanitizeTilePage(value: Record<string, unknown>): TilePage | null {

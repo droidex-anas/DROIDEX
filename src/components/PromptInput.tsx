@@ -16,6 +16,7 @@ import {
   useStoreDispatch,
   useStoreSelector,
   type AppState,
+  type CanvasDraft,
 } from '../hooks/useStore';
 import { useSessionLive } from '../hooks/useSessionLive';
 import {
@@ -56,6 +57,7 @@ import { markGitTurnStart } from '../lib/git';
 import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
 import { canRunAgents } from '../lib/runtimeHealth';
 import { activeDraftTileId } from '../features/tabs/tabNavigation';
+import { activeProduct } from '../features/tabs/tabStrip';
 import {
   chatWorktreeName,
   prepareChatWorkingDirectory,
@@ -236,7 +238,7 @@ const DROID_ONLY_COMMANDS = new Set(['/compact']);
  * canvas workspace: the live one, never a background tile's (spec §4).
  */
 function travelsWithDesign(state: AppState, appSessionId: string | null): boolean {
-  return state.productMode === 'design' && appSessionId === state.activeAppSessionId;
+  return activeProduct(state) === 'design' && appSessionId === state.activeAppSessionId;
 }
 // The app reads the account itself, so this never reaches a harness as a prompt.
 const USAGE_COMMAND = '/usage';
@@ -338,7 +340,6 @@ export default function PromptInput({
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
-      canvasDraft: current.canvasDraft,
       draftContextWindowTokens: current.draftContextWindowTokens,
       draftFastMode: current.draftFastMode,
       draftProvider: current.draftProvider,
@@ -1481,7 +1482,7 @@ export default function PromptInput({
       ),
     );
     const canvasContext = references.canvasContext(imageAssetIds);
-    const registerPending = (ref: string, canvas?: { canvasId: string | null }) => {
+    const registerPending = (ref: string, canvas?: CanvasDraft) => {
       if (turnStartingClientRef.current === ref) {
         turnStartingPendingRegisteredRef.current = true;
       }
@@ -1584,7 +1585,7 @@ export default function PromptInput({
         releaseProjectStart(clientRef);
         return;
       }
-      registerPending(clientRef, state.canvasDraft ?? undefined);
+      registerPending(clientRef, state.draftChat?.canvas);
       // Whether this send empties the composer: an edit made while it was
       // preparing is kept, and a failure must not replace it.
       const clearsDraft = composerRevisionRef.current === composerRevision;
@@ -1629,7 +1630,7 @@ export default function PromptInput({
           cwd: dir,
           title,
           goal: composed,
-          canvas: canvasIntentForDraft(state.canvasDraft, displayText, clientRef),
+          canvas: canvasIntentForDraft(state.draftChat?.canvas ?? null, displayText, clientRef),
           ...(mentions.length > 0 ? { mentions } : {}),
           ...(canvasContext ? { canvasContext } : {}),
           sessionPurpose: 'chat',
@@ -2208,7 +2209,7 @@ export default function PromptInput({
         skills: [],
         files: [],
         originHoldId,
-        canvas: state.canvasDraft ?? undefined,
+        canvas: state.draftChat?.canvas,
       });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {
@@ -2238,7 +2239,7 @@ export default function PromptInput({
         cwd: preparation.path,
         title: placeholder,
         goal: '',
-        canvas: canvasIntentForDraft(state.canvasDraft, '', clientRef),
+        canvas: canvasIntentForDraft(state.draftChat?.canvas ?? null, '', clientRef),
         sessionPurpose: 'chat',
         provider: draftProvider,
         interactionMode: isSpecMode ? 'spec' : 'auto',

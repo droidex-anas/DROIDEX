@@ -96,7 +96,7 @@ test("a draft's seeds wait in its tile and go to the chat it becomes", () => {
   assert.equal(draft(state).length, 1);
 
   // Another tab's draft does not take it.
-  assert.deepEqual(draft(reducer(state, { type: 'OPEN_NEW_CHAT_TAB' })), []);
+  assert.deepEqual(draft(reducer(state, { type: 'OPEN_NEW_TAB', product: 'chat' })), []);
 
   // The chat the draft becomes does.
   const session = { appSessionId: 'n', sessionPurpose: 'chat', updatedAt: 1 } as SessionSummary;

@@ -180,7 +180,7 @@ test('closing the last tab leaves a new chat in the same workspace', () => {
 test('a chat sent from a tab the user has left opens in that tab', () => {
   const sending = reduce(
     withChats('a'),
-    { type: 'OPEN_NEW_CHAT_TAB' },
+    { type: 'OPEN_NEW_TAB', product: 'chat' },
     { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'h1' },
   );
   const sendingTabId = sending.tabStrip.activeTabId;
@@ -425,7 +425,11 @@ test('a chat sent from a tile opens nowhere once the tile is gone or shows anoth
 });
 
 test('a chat sent from a tab that now shows another chat opens nowhere', () => {
-  const sent = reduce(withChats('a', 'b'), { type: 'OPEN_NEW_CHAT_TAB' }, ...send('c1'));
+  const sent = reduce(
+    withChats('a', 'b'),
+    { type: 'OPEN_NEW_TAB', product: 'chat' },
+    ...send('c1'),
+  );
   const created = reduce(
     sent,
     { type: 'SET_ACTIVE_SESSION', id: 'b' },

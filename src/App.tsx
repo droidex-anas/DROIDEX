@@ -49,6 +49,7 @@ import { RunningProcessesMenu } from './components/RunningProcessesMenu';
 import { ChatTiles } from './features/tabs/ChatTiles';
 import {
   activeGrid,
+  activeProduct,
   adjacentTabId,
   mainRowLeadPx,
   numberedTabId,
@@ -220,7 +221,8 @@ export default function App() {
         : 'docked',
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
-      productMode: current.productMode,
+      productMode: activeProduct(current),
+      mainRowLeadPx: mainRowLeadPx(current),
       // A design draft's canvas lands only once its chat exists.
       canvasChatRequests: current.canvasChatRequests,
       tabStripShown: showsTabStrip(current),
@@ -711,7 +713,7 @@ export default function App() {
       },
       toggleUtilityPane,
       toggleProduct: () => {
-        const mode = store.getState().productMode === 'chat' ? 'design' : 'chat';
+        const mode = activeProduct(store.getState()) === 'chat' ? 'design' : 'chat';
         dispatch({ type: 'SET_PRODUCT_MODE', mode });
       },
       openCommandPalette: () => {
@@ -720,7 +722,8 @@ export default function App() {
       openSettings: () => {
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
-      newTab: tabAction(() => ({ type: 'OPEN_NEW_CHAT_TAB' })),
+      newTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) })),
+      newDesignTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: 'design' })),
       closeTab: tabAction(() => ({ type: 'CLOSE_TAB', tabId: tabStrip().activeTabId })),
       reopenClosedTab: tabAction(() => ({ type: 'REOPEN_CLOSED_TAB' })),
       nextTab: tabAction(() => ({ type: 'ACTIVATE_TAB', tabId: adjacentTabId(tabStrip(), 1) })),
@@ -889,7 +892,7 @@ export default function App() {
             second tab open, the tab strip stacks above and takes that role. */}
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
           {state.tabStripShown && (
-            <HeaderTabs leadPx={mainRowLeadPx(state) ?? 16} controls={sessionControls} />
+            <HeaderTabs leadPx={state.mainRowLeadPx ?? 16} controls={sessionControls} />
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section

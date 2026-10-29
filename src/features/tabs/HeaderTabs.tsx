@@ -1,10 +1,11 @@
-import { memo, useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { memo, Suspense, useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { Reorder } from 'framer-motion';
-import { Clock, Columns, Plus, Spinner, SquarePen, X } from '@droidex/icons';
+import { Clock, Columns, Plus, Sketch, Spinner, SquarePen, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
-import { chatDisplayTitle } from '../../lib/chatMetadata';
+import { chatDisplayTitle, isDesignChat } from '../../lib/chatMetadata';
+import { LazyCanvasTabName } from '../../lib/lazySurfaces';
 import { sessionIsLive } from '../../lib/sessions';
-import { formatChord } from '../../lib/shortcuts';
+import { PRIMARY_MODIFIER_LABEL, formatChord, hasPrimaryModifier } from '../../lib/shortcuts';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { Button } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
@@ -12,7 +13,14 @@ import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
 import { PROVIDER_MARKS } from '../providers/providerIdentity';
 import type { ProviderKind, SessionSummary } from '../../types/bridge';
-import { livePage, tabPage, type FocusedPage, type TabPage } from './tabStrip';
+import {
+  activeProduct,
+  livePage,
+  tabPage,
+  type FocusedPage,
+  type ProductMode,
+  type TabPage,
+} from './tabStrip';
 import { focusedTile, gridTiles } from './tileGrid';
 
 interface TabItem {
@@ -22,6 +30,9 @@ interface TabItem {
   // Chat tabs only: the harness mark, and whether a turn is running.
   provider: ProviderKind | null;
   live: boolean;
+  design: boolean;
+  // The canvas a design tab is named after, once it is known.
+  canvasId: string | null;
   // A split tab names every tile in its tooltip and shows its tile count.
   title: string;
   tileCount: number;
@@ -59,14 +70,25 @@ function tabIndexForKey(key: string, index: number, count: number): number | nul
 }
 
 const VIEW_LABELS = {
-  'new-chat': 'New chat',
   projects: 'Projects',
   'pull-requests': 'Pull requests',
   automations: 'Automations',
 } as const;
 
 function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
-  const item = { id, provider: null, live: false, tileCount: 1 };
+  const item = { id, provider: null, live: false, design: false, canvasId: null, tileCount: 1 };
+  if (page.kind === 'new-chat') {
+    const canvas = page.draft?.canvas;
+    const label = canvas ? 'New design' : 'New chat';
+    return {
+      ...item,
+      kind: 'new-chat',
+      label,
+      title: label,
+      design: canvas !== undefined,
+      canvasId: canvas?.canvasId ?? null,
+    };
+  }
   if (page.kind !== 'chat') {
     const label = VIEW_LABELS[page.kind];
     return { ...item, kind: page.kind, label, title: label };
@@ -75,7 +97,9 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
   const sessions: Partial<Record<string, SessionSummary>> = state.sessions;
   const session = sessions[page.appSessionId];
   if (!session) return { ...item, kind: 'chat', label: 'Chat', title: 'Chat' };
-  const label = chatDisplayTitle(session, state.chatMetadata[page.appSessionId]);
+  const meta = state.chatMetadata[page.appSessionId];
+  const label = chatDisplayTitle(session, meta);
+  const design = isDesignChat(meta);
   return {
     ...item,
     kind: 'chat',
@@ -83,6 +107,8 @@ function pageItem(state: AppState, id: string, page: FocusedPage): TabItem {
     title: label,
     provider: session.provider,
     live: sessionIsLive(session),
+    design,
+    canvasId: design ? (state.canvasAttachments[page.appSessionId] ?? null) : null,
   };
 }
 
@@ -116,6 +142,8 @@ function equalTabItems(previous: TabItem[], next: TabItem[]): boolean {
         item.label === other.label &&
         item.provider === other.provider &&
         item.live === other.live &&
+        item.design === other.design &&
+        item.canvasId === other.canvasId &&
         item.title === other.title &&
         item.tileCount === other.tileCount
       );
@@ -127,11 +155,16 @@ function TabGlyph({ item }: { item: TabItem }) {
   switch (item.kind) {
     case 'chat':
       if (item.live) return <Spinner size={13} className="motion-safe:animate-spin-slow" />;
+      if (item.design) return <Sketch className="h-3.5 w-3.5" />;
       return item.provider ? (
         <ModelIcon provider={PROVIDER_MARKS[item.provider]} size={13} />
       ) : null;
     case 'new-chat':
-      return <SquarePen className="h-3.5 w-3.5" />;
+      return item.design ? (
+        <Sketch className="h-3.5 w-3.5" />
+      ) : (
+        <SquarePen className="h-3.5 w-3.5" />
+      );
     case 'projects':
       return <ActivityStatusGlyph status="ready" decorative />;
     case 'pull-requests':
@@ -161,7 +194,6 @@ const TabList = memo(function TabList() {
   const dispatch = useStoreDispatch();
   const items = useStoreSelector(selectTabItems, equalTabItems);
   const activeTabId = useStoreSelector((state) => state.tabStrip.activeTabId);
-  const newTabChord = useStoreSelector((state) => state.shortcutBindings.newTab);
   const closeTabChord = useStoreSelector((state) => state.shortcutBindings.closeTab);
   const stripRef = useRef<HTMLDivElement>(null);
   // A press activates its tab and may start a drag, so the strip must not
@@ -287,7 +319,13 @@ const TabList = memo(function TabList() {
                     <TabGlyph item={item} />
                   </span>
                   <span className={`truncate ${active ? 'text-body-strong' : 'text-body'}`}>
-                    {item.label}
+                    {item.canvasId === null ? (
+                      item.label
+                    ) : (
+                      <Suspense fallback={item.label}>
+                        <LazyCanvasTabName canvasId={item.canvasId} fallback={item.label} />
+                      </Suspense>
+                    )}
                   </span>
                   {item.tileCount > 1 && (
                     <span className="ml-auto flex shrink-0 items-center gap-0.5 text-caption text-muted">
@@ -327,17 +365,32 @@ const TabList = memo(function TabList() {
           );
         })}
       </Reorder.Group>
-      <Tooltip label={`New tab (${formatChord(newTabChord)})`} placement="bottom">
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={Plus}
-          aria-label="New tab"
-          onClick={() => {
-            dispatch({ type: 'OPEN_NEW_CHAT_TAB' });
-          }}
-        />
-      </Tooltip>
+      <NewTabButton />
     </>
   );
 });
+
+// The strip's "+" opens the focused product's kind of tab; a primary-modifier
+// click opens the other one.
+function NewTabButton() {
+  const dispatch = useStoreDispatch();
+  const product = useStoreSelector(activeProduct);
+  const chord = useStoreSelector((state) => state.shortcutBindings.newTab);
+  const other: ProductMode = product === 'chat' ? 'design' : 'chat';
+  return (
+    <Tooltip
+      label={`New ${product} (${formatChord(chord)}) · ${PRIMARY_MODIFIER_LABEL}-click for a ${other}`}
+      placement="bottom"
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={Plus}
+        aria-label={`New ${product} tab`}
+        onClick={(event) => {
+          dispatch({ type: 'OPEN_NEW_TAB', product: hasPrimaryModifier(event) ? other : product });
+        }}
+      />
+    </Tooltip>
+  );
+}

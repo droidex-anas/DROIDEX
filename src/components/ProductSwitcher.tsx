@@ -2,7 +2,7 @@ import { useRef, type KeyboardEvent } from 'react';
 import { motion } from 'framer-motion';
 import { MessageBubble, Sketch } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import type { ProductMode } from '../hooks/persistedUiPreferences';
+import { activeProduct, type ProductMode } from '../features/tabs/tabStrip';
 import { formatChord } from '../lib/shortcuts';
 import { Tooltip } from './ui/Tooltip';
 
@@ -14,12 +14,12 @@ const PRODUCTS = [
 const ARROW_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
 /**
- * The Chat | Design segmented switch beside the window controls (spec §4).
- * The store owns what each product opens on: Design its home, Chat the chat it
- * was left on.
+ * The Chat | Design segmented switch beside the window controls (spec §4). It
+ * shows the focused tab's product; the store owns what switching opens: Design
+ * its home, Chat the chat it was left on.
  */
 export function ProductSwitcher() {
-  const productMode = useStoreSelector((current) => current.productMode);
+  const productMode = useStoreSelector(activeProduct);
   const chord = useStoreSelector((current) => current.shortcutBindings.toggleProduct);
   const dispatch = useStoreDispatch();
   const segments = useRef<Partial<Record<ProductMode, HTMLButtonElement | null>>>({});

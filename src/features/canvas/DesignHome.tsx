@@ -1,9 +1,7 @@
 // The Design draft area (spec §4). Two surfaces share its centred composer:
 // the Design home, where every prompt makes a new canvas, and the draft a
-// chosen canvas pins, where the prompt joins that canvas instead. They are
-// deliberately separate: the home promises a canvas it has not got yet, so it
-// declares that promise itself rather than trusting whoever navigated here —
-// a restored window and a new tab reach this home with no draft of their own.
+// chosen canvas pins, where the prompt joins that canvas instead. The draft on
+// screen carries which one it is.
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { LibraryBig } from 'lucide-react';
@@ -69,7 +67,7 @@ function rise(animate: boolean, delayMs: number) {
 export function DesignHome() {
   // A canvas the user named by pressing a card, or by New chat with this
   // canvas, is already chosen; anything else here makes a new one.
-  const pinnedCanvasId = useStoreSelector((current) => current.canvasDraft?.canvasId ?? null);
+  const pinnedCanvasId = useStoreSelector((current) => current.draftChat?.canvas?.canvasId ?? null);
   return pinnedCanvasId === null ? (
     <NewCanvasHome />
   ) : (
@@ -78,15 +76,7 @@ export function DesignHome() {
 }
 
 function NewCanvasHome() {
-  const dispatch = useStoreDispatch();
   const animate = useEntrance();
-  const promised = useStoreSelector((current) => current.canvasDraft !== null);
-
-  // What this home promises its next prompt, on whichever path led here.
-  useEffect(() => {
-    if (!promised) dispatch({ type: 'SET_CANVAS_DRAFT', canvasId: null });
-  }, [dispatch, promised]);
-
   return (
     <DesignDraftShell
       canvasKey={NEW_CANVAS_KEY}
