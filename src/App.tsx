@@ -222,7 +222,6 @@ export default function App() {
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
       productMode: activeProduct(current),
-      mainRowLeadPx: mainRowLeadPx(current),
       // A design draft's canvas lands only once its chat exists.
       canvasChatRequests: current.canvasChatRequests,
       tabStripShown: showsTabStrip(current),
@@ -868,7 +867,7 @@ export default function App() {
       <div className="flex-1 flex min-h-0 relative">
         {/* Sidebar with collapse animation */}
         <AnimatePresence initial={false}>
-          {!state.sidebarCollapsed && state.productMode !== 'design' && (
+          {!state.sidebarCollapsed && (
             <motion.div
               key="sidebar"
               initial={{ width: 0, opacity: 0 }}
@@ -892,7 +891,7 @@ export default function App() {
             second tab open, the tab strip stacks above and takes that role. */}
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
           {state.tabStripShown && (
-            <HeaderTabs leadPx={state.mainRowLeadPx ?? 16} controls={sessionControls} />
+            <HeaderTabs leadPx={mainRowLeadPx(state) ?? 16} controls={sessionControls} />
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
@@ -1243,34 +1242,22 @@ export default function App() {
         className="absolute h-9 z-40 flex items-center gap-1.5"
         style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
       >
-        {/* The switch leads, so it stays under the pointer across products;
-            Design has no sidebar to toggle. */}
+        {/* The switch leads, so it stays under the pointer across products. */}
         <ProductSwitcher />
-        <AnimatePresence initial={false}>
-          {state.productMode === 'chat' && (
-            <motion.div
-              key="sidebar-toggle"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: { duration: 0.15, ease: 'easeOut' } }}
-              exit={{ opacity: 0, transition: { duration: 0.08, ease: 'easeIn' } }}
-            >
-              <Tooltip
-                label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
-                placement="bottom"
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={PanelLeft}
-                  onClick={() => {
-                    dispatch({ type: 'TOGGLE_SIDEBAR' });
-                  }}
-                  aria-label="Toggle sidebar"
-                />
-              </Tooltip>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Tooltip
+          label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
+          placement="bottom"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={PanelLeft}
+            onClick={() => {
+              dispatch({ type: 'TOGGLE_SIDEBAR' });
+            }}
+            aria-label="Toggle sidebar"
+          />
+        </Tooltip>
       </div>
 
       {/* Without tabs, the session's controls float at the end of the view's own top row. */}

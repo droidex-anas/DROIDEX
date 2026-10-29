@@ -25,6 +25,7 @@ import {
   chatDisplayTitle,
   isChatHidden,
   isChatPinned,
+  isDesignChat,
   linkedPr,
   type ChatPullRequest,
   pinnedChats,
@@ -282,6 +283,7 @@ export default function Sidebar({
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
         pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}
+        design={isDesignChat(chatMetadata[m.appSessionId])}
         attention={sessionAttention(
           m.appSessionId,
           state.pendingPermissions,

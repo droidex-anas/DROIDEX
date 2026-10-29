@@ -561,6 +561,8 @@ export type Action =
   | { type: 'RENAME_CHAT'; appSessionId: string; title: string }
   | { type: 'SET_CHAT_METADATA'; chatMetadata: ChatMetadataMap }
   | { type: 'PIN_CHAT'; appSessionId: string }
+  // A chat shown through Design opens as a design from then on.
+  | { type: 'MARK_DESIGN_CHAT'; appSessionId: string }
   | { type: 'UNPIN_CHAT'; appSessionId: string }
   | { type: 'ARCHIVE_CHAT'; appSessionId: string }
   | { type: 'RESTORE_CHAT'; appSessionId: string }
@@ -1639,6 +1641,11 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'PIN_CHAT': {
       const chatMetadata = pinChat(state.chatMetadata, action.appSessionId, Date.now());
+      return chatMetadata ? { ...state, chatMetadata } : state;
+    }
+
+    case 'MARK_DESIGN_CHAT': {
+      const chatMetadata = markDesignChat(state.chatMetadata, action.appSessionId);
       return chatMetadata ? { ...state, chatMetadata } : state;
     }
 

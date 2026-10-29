@@ -52,6 +52,7 @@ export function useOpenCanvas(): {
   // same chat's pane, or the user lands on whatever tool it last showed.
   const showCanvasInChat = useCallback(
     (appSessionId: string, canvasId: string) => {
+      dispatch({ type: 'MARK_DESIGN_CHAT', appSessionId });
       if (appSessionId !== activeAppSessionId)
         dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
       openPane({ appSessionId, canvasId });

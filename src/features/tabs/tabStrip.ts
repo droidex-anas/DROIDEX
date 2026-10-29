@@ -9,7 +9,7 @@
 import type { AppState } from '../../hooks/useStore';
 import { isDesignChat } from '../../lib/chatMetadata';
 import { isEmbedded } from '../../lib/embed';
-import { DESIGN_WINDOW_CONTROLS_LEAD_PX, WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
+import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
 import { resolveNewChatCwd } from '../../lib/workspaces';
 import {
   canSplit,
@@ -206,21 +206,15 @@ export function showsTabStrip(state: Pick<AppState, 'tabStrip'>): boolean {
   return state.tabStrip.tabs.length > 1 && !isEmbedded();
 }
 
-/**
- * Where main's top row starts when the window controls sit in it, or null while
- * the sidebar holds them. Design has no sidebar, so its controls are always there.
- */
-export function mainRowLeadPx(
-  state: ProductSource & Pick<AppState, 'sidebarCollapsed'>,
-): number | null {
-  if (activeProduct(state) === 'design') return DESIGN_WINDOW_CONTROLS_LEAD_PX;
+/** Where main's top row starts when the window controls sit in it, or null while the sidebar holds them. */
+export function mainRowLeadPx(state: Pick<AppState, 'sidebarCollapsed'>): number | null {
   return state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : null;
 }
 
 // The window controls land in the tab strip when it shows, otherwise in the
 // view's own header.
 export function viewRowLeadPx(
-  state: ProductSource & Pick<AppState, 'sidebarCollapsed'>,
+  state: Pick<AppState, 'sidebarCollapsed' | 'tabStrip'>,
 ): number | null {
   return showsTabStrip(state) ? null : mainRowLeadPx(state);
 }
