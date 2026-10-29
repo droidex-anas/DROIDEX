@@ -43,6 +43,7 @@ import {
 } from './messageFeedState';
 import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
+import { designWorkingLabel } from './chatFeedClean';
 import { isSpecEcho } from './chat';
 import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
@@ -134,6 +135,7 @@ export function MessageFeed({
   density = DEFAULT_TOOL_ACTIVITY.density,
   inlineDiffs = DEFAULT_TOOL_ACTIVITY.inlineDiffs,
   pendingSteers,
+  clean = false,
 }: {
   events: TranscriptEvent[];
   items?: FeedItem[];
@@ -169,6 +171,9 @@ export function MessageFeed({
   inlineDiffs?: boolean;
   // Steers the model has not taken in yet; they follow the transcript.
   pendingSteers?: ReactNode;
+  // A design chat's `items` hold no work rows, so the live cue names the
+  // design step instead.
+  clean?: boolean;
 }) {
   // Child session cards, waiting label, and live timers are enabled only for the
   // chat/spec feed (which supplies onOpenChildSession). Per-turn change summaries
@@ -330,13 +335,9 @@ export function MessageFeed({
   // with its own pills, timers and total, so the poll cue would only repeat it.
   const showWorking =
     pending && !tailTyping && (subagentPoll ? !lastDockRunning : !tailSelfIndicates);
-  const workingLabel = subagentPoll
-    ? 'Checking subagents'
-    : last?.type === 'tools'
-      ? 'Running'
-      : last?.type === 'diff' || last?.type === 'diffs'
-        ? 'Updating files'
-        : 'Working';
+  const workingLabel = clean
+    ? designWorkingLabel(events)
+    : feedWorkingLabel(last, subagentPoll !== undefined);
   // Time the check from the poll itself; the visible tail can be minutes old.
   const workingStart = rich ? (subagentPoll?.ts ?? tailTimestamp(last)) : undefined;
 
@@ -415,6 +416,13 @@ export function MessageFeed({
       </div>
     </ProseFileLinks>
   );
+}
+
+function feedWorkingLabel(last: FeedItem | undefined, pollingSubagents: boolean): string {
+  if (pollingSubagents) return 'Checking subagents';
+  if (last?.type === 'tools') return 'Running';
+  if (last?.type === 'diff' || last?.type === 'diffs') return 'Updating files';
+  return 'Working';
 }
 
 function isOwnReply(item: FeedItem): boolean {
