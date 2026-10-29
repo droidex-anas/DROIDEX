@@ -6,46 +6,50 @@ import { canvasMessage } from './client';
 import { outdatedCanvasMessage } from './canvasState';
 import type { CanvasSummary } from './protocol';
 import { useOpenCanvas } from './useOpenCanvas';
-
-// Starting points for a canvas with nothing on it. Each one seeds the chat's
-// own composer; nothing is sent, so the user can keep typing or press Enter.
-const EXAMPLE_REQUESTS = [
-  'Design a settings page with a theme toggle',
-  'Design a pricing card with three tiers',
-  'Design a dashboard with a usage chart',
-];
+import { DESIGN_STARTERS, StarterSketch } from './designStarters';
 
 /**
- * The empty state from spec §4: the agent does the designing, so the example
- * requests lead and anything the user can do by hand follows them.
+ * The empty state from spec §4: the agent does the designing, so the starting
+ * points lead and anything the user can do by hand follows them. Each one
+ * seeds the chat's composer; nothing is sent, so the user can keep typing.
  */
 export function CanvasInvitation({ children }: { children?: ReactNode }) {
   const dispatch = useStoreDispatch();
   return (
-    <CanvasPlate title="Ask your agent to design something">
-      <CanvasNote>
-        Describe a screen, a component or a small app and it is designed on this canvas.
-      </CanvasNote>
-      <ul className="-mx-1.5 flex flex-col gap-0.5">
-        {EXAMPLE_REQUESTS.map((request) => (
-          <li key={request}>
-            <button
-              type="button"
-              onClick={() => {
-                dispatch({ type: 'SEED_COMPOSER', text: request });
-              }}
-              className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-label font-normal text-secondary transition-colors hover:bg-accent/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
-            >
-              <span className="shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100">
-                &gt;
-              </span>
-              <span className="min-w-0 flex-1">{request}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {children}
-    </CanvasPlate>
+    <div className="image-grid-dots flex h-full min-h-0 overflow-y-auto px-6">
+      <div className="m-auto flex w-full max-w-md flex-col items-center gap-6 py-10">
+        <div className="flex flex-col items-center gap-1 text-center">
+          <h2 className="text-body-strong text-primary">Ask your agent to design something</h2>
+          <p className="text-label font-normal text-secondary">
+            Describe it in the chat, or start from one of these.
+          </p>
+        </div>
+        <ul aria-label="Starting points" className="grid w-full grid-cols-2 gap-3">
+          {DESIGN_STARTERS.map((starter) => (
+            <li key={starter.label}>
+              <button
+                type="button"
+                onClick={() => {
+                  dispatch({ type: 'SEED_COMPOSER', text: starter.prompt, replace: true });
+                }}
+                className="group flex w-full cursor-pointer flex-col gap-1 rounded-xl bg-raised p-1.5 text-left shadow-sm transition-shadow duration-200 hover:shadow-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+              >
+                <span className="flex h-24 items-center justify-center rounded-lg bg-text/5 transition-colors duration-200 group-hover:bg-text/10">
+                  <span className="transition-transform duration-200 motion-safe:group-hover:-translate-y-0.5">
+                    <StarterSketch kind={starter.sketch} />
+                  </span>
+                </span>
+                <span className="flex flex-col px-1.5 pb-1">
+                  <span className="text-body-strong text-primary">{starter.label}</span>
+                  <span className="truncate text-caption text-muted">{starter.hint}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {children && <div className="flex w-full max-w-xs flex-col gap-3">{children}</div>}
+      </div>
+    </div>
   );
 }
 

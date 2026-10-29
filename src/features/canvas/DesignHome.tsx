@@ -10,6 +10,7 @@ import { Search, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { formatRelativeTime } from '../../lib/time';
 import { searchCanvases } from './canvasChats';
+import { DESIGN_STARTERS } from './designStarters';
 import { NEW_CANVAS_KEY } from './designSystemChoices';
 import { CanvasDesignSystem } from './DesignSystemPicker';
 import { LibraryPicker } from './LibraryPicker';
@@ -19,30 +20,6 @@ import { useOpenCanvas } from './useOpenCanvas';
 import type { CanvasSummary } from './protocol';
 
 const DESIGN_PLACEHOLDER = 'Describe a screen, a flow, or a component…';
-
-// Each one seeds the composer without sending, so the user keeps typing.
-const STARTERS = [
-  {
-    label: 'Page',
-    hint: 'a settings page with a theme toggle',
-    prompt: 'Design a settings page with a theme toggle',
-  },
-  {
-    label: 'Component',
-    hint: 'a pricing card with three tiers',
-    prompt: 'Design a pricing card with three tiers',
-  },
-  {
-    label: 'Dashboard',
-    hint: 'usage over time with filters',
-    prompt: 'Design a dashboard that shows usage over time, with filters',
-  },
-  {
-    label: 'Form',
-    hint: 'sign-in with inline errors',
-    prompt: 'Design a sign-in form with inline errors',
-  },
-] as const;
 
 // The search field earns its place once the grid is longer than a glance.
 const SEARCH_THRESHOLD = 6;
@@ -159,7 +136,7 @@ function DesignDraftShell({
 
           {showStarters && (
             <ul aria-label="Starting points" className="mt-6 max-w-md px-3">
-              {STARTERS.map((starter, index) => {
+              {DESIGN_STARTERS.map((starter, index) => {
                 const entry = rise(animate, 140 + index * 30);
                 return (
                   <li key={starter.label} className={entry.className} style={entry.style}>
