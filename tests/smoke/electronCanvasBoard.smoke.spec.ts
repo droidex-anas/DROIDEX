@@ -470,8 +470,8 @@ test('the public focusFrame entry point centers acknowledged geometry and takes 
   const focused = await box(frame(page, 'B'));
   expect(focused.width).toBeCloseTo(400, 1);
   expect(focused.x + 200).toBeCloseTo(board.x + board.width / 2, 1);
-  // Its label and toolbar are framed with it, half their 66 px below centre.
-  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2 + 33, 1);
+  // Its label and toolbar are framed with it, half their 74 px below centre.
+  expect(focused.y + 150).toBeCloseTo(board.y + board.height / 2 + 37, 1);
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
 

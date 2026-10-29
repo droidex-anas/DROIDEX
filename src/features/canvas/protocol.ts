@@ -305,16 +305,18 @@ export type RevisionAuthor = { kind: 'user' } | { kind: 'agent'; scopeRef: strin
 /** What the manifest's commit index holds for every committed revision. */
 interface RevisionCommit {
   revisionId: string;
+  /** 1 for the design's first revision; it never changes. */
+  version: number;
   /** Canvas commit sequence, also used as the exclusive pagination cursor. */
   sequence: number;
   author: RevisionAuthor;
+  /** `restore` only on revisions an earlier DROIDEX's Restore wrote. */
   mutationKind: 'create' | 'write' | 'edit' | 'restore';
 }
 
 export type RevisionSummary =
   | (RevisionCommit & {
       state: 'saved';
-      restoredFromRevisionId?: string;
       createdAt: number;
       designSystem: DesignSystemRef;
       /** Only the head is `building`; an older revision without a build is never built. */
@@ -340,7 +342,7 @@ export interface RevisionPage {
   before?: number;
 }
 
-export interface RestoreRevisionInput {
+export interface SwitchRevisionInput {
   mutationId: string;
   designId: string;
   revisionId: string;
@@ -478,11 +480,11 @@ export type CanvasCommand =
       input: EditElementInput;
     }
   | {
-      type: 'canvas.restoreRevision';
+      type: 'canvas.switchRevision';
       requestId: string;
       appSessionId: string;
       canvasId: string;
-      input: RestoreRevisionInput;
+      input: SwitchRevisionInput;
     }
   | {
       type: 'canvas.arrange';

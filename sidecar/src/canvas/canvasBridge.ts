@@ -20,7 +20,6 @@ import {
 import { editCanvasElement } from './canvasElementEdit.js';
 import { answerLibraryCommand, isLibraryCommand } from './canvasLibrary.js';
 import { answerRemovalCommand, isRemovalCommand } from './canvasRemoval.js';
-import { restoreRevision } from './canvasRevisionHistory.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import type {
@@ -277,11 +276,8 @@ class CanvasDispatch {
             kind: 'edited',
             ...(await editCanvasElement(workspace, this.builds, scope, command.input)),
           };
-        case 'canvas.restoreRevision':
-          return {
-            kind: 'written',
-            receipt: await restoreRevision(workspace, scope, command.input),
-          };
+        case 'canvas.switchRevision':
+          return { kind: 'written', receipt: await workspace.switchRevision(scope, command.input) };
         case 'canvas.arrange':
           return { kind: 'arranged', change: await workspace.arrange(scope, command.input) };
         case 'canvas.remove':

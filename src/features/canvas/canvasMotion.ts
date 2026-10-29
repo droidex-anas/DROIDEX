@@ -4,6 +4,8 @@
 // conditional in every component. Pan, drag and resize are absent on purpose:
 // direct pointer input follows the hand 1:1 and never passes through a token.
 
+import type { CSSProperties } from 'react';
+
 /** Stages that come from real session events. There is no "verifying" stage. */
 export type CanvasActivityStage =
   | 'queued'
@@ -91,4 +93,17 @@ const reducedCanvasMotion: CanvasMotion = Object.freeze({
 
 export function motionFor(reducedMotion: boolean): CanvasMotion {
   return reducedMotion ? reducedCanvasMotion : canvasMotion;
+}
+
+/**
+ * Spec §11: a toolbar or popover reveal is `popoverMs` and at most
+ * `popoverTravelPx`, drawn by the `canvas-popover-reveal` class.
+ */
+export function revealStyle(motion: CanvasMotion): CSSProperties | undefined {
+  if (motion.popoverMs === 0) return undefined;
+  return {
+    animationDuration: `${String(motion.popoverMs)}ms`,
+    animationTimingFunction: motion.easeCss,
+    '--canvas-popover-travel': `${String(motion.popoverTravelPx)}px`,
+  } as CSSProperties;
 }

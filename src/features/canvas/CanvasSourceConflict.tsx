@@ -6,7 +6,8 @@
 // on top of that revision as an ordinary CAS save.
 
 import type { ReactNode } from 'react';
-import { SOFT_FOCUS, SourceCode, SourceScroller } from './CanvasSourceCode';
+import { Button } from '../../components/ui/Button';
+import { SourceCode, SourceScroller } from './CanvasSourceCode';
 import type { SourceIssue } from './canvasSourceIssues';
 
 /** Spec §4: a conflict preserves the buffer and never silently overwrites it. */
@@ -24,37 +25,23 @@ export function ConflictBar({
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-accent/[0.07] px-3 py-2 text-caption text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-lg bg-elevated py-1 pl-3 pr-1 text-caption text-secondary"
     >
       <span className="min-w-0 flex-1">
         Updated by agent. Your edits are still here, and so is their version.
       </span>
-      <button
-        onClick={onCompare}
-        aria-pressed={comparing}
-        className={`rounded-lg px-2 py-1 transition-colors hover:bg-accent/10 hover:text-primary ${SOFT_FOCUS} ${
-          comparing ? 'bg-accent/10 text-primary' : ''
-        }`}
-      >
+      <Button variant="ghost" size="sm" onClick={onCompare} aria-pressed={comparing}>
         {comparing ? 'Hide theirs' : 'Compare'}
-      </button>
-      <button
-        onClick={onKeepMine}
-        title="Reapply your edits on top of their revision"
-        className={`rounded-lg bg-accent/15 px-2 py-1 text-primary transition-colors hover:bg-accent/25 ${SOFT_FOCUS}`}
-      >
+      </Button>
+      <Button size="sm" onClick={onKeepMine} title="Reapply your edits on top of their revision">
         Keep mine
-      </button>
-      <button
-        onClick={onTakeTheirs}
-        className={`rounded-lg px-2 py-1 transition-colors hover:bg-accent/10 hover:text-primary ${SOFT_FOCUS}`}
-      >
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onTakeTheirs}>
         Take theirs
-      </button>
+      </Button>
     </div>
   );
 }
-
 /**
  * The agent's version of one file, to read before choosing. It is the revision's
  * own text, so the build's diagnostics for that revision belong on these lines.
@@ -78,7 +65,7 @@ export function ConflictCompare({
     >
       <CompareCaption>Theirs · {revisionId} · read only</CompareCaption>
       {text === null ? (
-        <p className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-code px-3 text-center text-label font-normal text-secondary">
+        <p className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-code px-3 text-center text-body text-secondary">
           Their revision deleted this file. Keep mine writes it back.
         </p>
       ) : (

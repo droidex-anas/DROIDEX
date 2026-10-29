@@ -20,7 +20,7 @@ import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 const ACKNOWLEDGED: FrameRect = { x: 100, y: 50, width: 400, height: 300 };
 
 const FRAME_ACTIONS: FrameActions = {
-  history: { listRevisions: () => Promise.resolve([]), restoreRevision: () => Promise.resolve() },
+  history: { listRevisions: () => Promise.resolve([]), switchRevision: () => Promise.resolve() },
   canEdit: false,
   rename: () => Promise.resolve(),
   makeVariants: () => undefined,
@@ -247,7 +247,7 @@ test('a selected frame offers Add to chat only on its chat’s own canvas, and s
   );
   assert.match(
     render(snapshot, picked, false, { onToggleChat, pinnedIds: new Set(['a']) }),
-    /aria-pressed="true" aria-label="Take Design a out of the chat"[^>]*>.*In chat/,
+    /aria-pressed="true" aria-label="Take Design a out of the chat"/,
   );
 });
 

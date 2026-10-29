@@ -16,6 +16,7 @@ export const revisionMetadataSchema = z
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
     parentRevisionId: canvasIdentifierSchema.nullable(),
+    // Written by the Restore that copied a revision; read so those revisions still open.
     restoredFromRevisionId: canvasIdentifierSchema.optional(),
     designSystem: designSystemRefSchema,
     createdAt: z.number().int().nonnegative(),
@@ -31,8 +32,9 @@ export interface SavedRevision {
   designSystem: RevisionMetadata['designSystem'];
 }
 
-// One manifest commit-index entry; the author never exposes a raw scope ID. Restore
-// provenance lives only in the immutable revision metadata above.
+// One manifest commit-index entry; the author never exposes a raw scope ID.
+// `restore` marks a revision the earlier Restore wrote; switching versions
+// adds no entry, so nothing new is recorded with it.
 export const revisionRecordSchema = z
   .object({
     designId: canvasIdentifierSchema,

@@ -5,18 +5,14 @@ import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import { requireDesign, type CanvasManifest } from './canvasManifest.js';
 import type { RevisionMetadata } from './canvasRevisionMetadata.js';
-import type {
-  CanvasScope,
-  RestoreRevisionInput,
-  RevisionDiff,
-  RevisionPage,
-  RevisionSummary,
-  SourceFiles,
-  WriteReceipt,
-} from './protocol.js';
+import type { RevisionDiff, RevisionPage, RevisionSummary, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
-type RevisionRecord = CanvasManifest['revisions'][number];
+/** A commit-index entry and its place among the design's revisions, counted from 1. */
+interface VersionedRecord {
+  record: CanvasManifest['revisions'][number];
+  version: number;
+}
 
 /** Reads the canonical commit index and source; it owns no separate history state. */
 export class CanvasRevisionHistory {
@@ -37,18 +33,17 @@ export class CanvasRevisionHistory {
   ): Promise<RevisionSummary[]> {
     const manifest = this.manifest(canvasId);
     const design = requireDesign(manifest, designId);
-    const history = manifest.revisions;
-    const records: RevisionRecord[] = [];
-    for (let index = history.length - 1; index >= 0 && records.length < page.limit; index -= 1) {
+    const history = manifest.revisions.filter((record) => record.designId === designId);
+    const versions: VersionedRecord[] = [];
+    for (let index = history.length - 1; index >= 0 && versions.length < page.limit; index -= 1) {
       const record = history[index];
-      if (record.designId !== designId) continue;
       if (page.before !== undefined && record.sequence >= page.before) continue;
-      records.push(record);
+      versions.push({ record, version: index + 1 });
     }
     // An unreadable cache holds nothing to show; the heads rebuild it.
     const outputs = await this.files.listBuildOutputs(canvasId).catch(() => new Set<string>());
     return Promise.all(
-      records.map((record) => this.summary(canvasId, design.revisionId, record, outputs)),
+      versions.map((entry) => this.summary(canvasId, design.revisionId, entry, outputs)),
     );
   }
 
@@ -107,11 +102,12 @@ export class CanvasRevisionHistory {
   private async summary(
     canvasId: string,
     headRevisionId: string | null,
-    record: RevisionRecord,
+    { record, version }: VersionedRecord,
     outputs: ReadonlySet<string>,
   ): Promise<RevisionSummary> {
     const commit = {
       revisionId: record.revisionId,
+      version,
       sequence: record.sequence,
       author: { ...record.author },
       mutationKind: record.mutationKind,
@@ -130,7 +126,6 @@ export class CanvasRevisionHistory {
     return {
       ...commit,
       state: 'saved',
-      restoredFromRevisionId: metadata.restoredFromRevisionId,
       createdAt: metadata.createdAt,
       designSystem: metadata.designSystem,
       buildStatus: result ?? pending,
@@ -153,50 +148,6 @@ export class CanvasRevisionHistory {
     )
       throw canvasError('invalid_input', 'That revision is not in this design’s saved history.');
   }
-}
-
-/** Restore is a normal source commit, including scope validation, CAS and retry receipts. */
-export async function restoreRevision(
-  workspace: CanvasWorkspace,
-  scope: Extract<CanvasScope, { origin: 'user' }>,
-  input: RestoreRevisionInput,
-): Promise<WriteReceipt> {
-  const canvasId = scope.canvasId;
-  const mutation = { kind: 'restore', input } as const;
-  const recorded = workspace.recordedRestore(scope, input);
-  if (recorded) return recorded;
-  const target = workspace.buildTarget(canvasId, input.designId);
-  if (!target)
-    throw canvasError('not_found', 'That frame is not on this canvas. Use Undo if it was removed.');
-  const selected = await workspace.history.readRevisionMetadata(
-    canvasId,
-    input.designId,
-    input.revisionId,
-  );
-  const source = await workspace.history.readRevisionFiles(
-    canvasId,
-    input.designId,
-    input.revisionId,
-  );
-  const current =
-    target.frame.revisionId === null
-      ? {}
-      : await workspace.readFiles(canvasId, {
-          designId: input.designId,
-          revisionId: target.frame.revisionId,
-        });
-  return workspace.write(
-    scope,
-    {
-      mutationId: input.mutationId,
-      designId: input.designId,
-      expectedRevisionId: input.expectedRevisionId,
-      files: source,
-      deletedPaths: Object.keys(current).filter((path) => !Object.hasOwn(source, path)),
-      designSystem: selected.designSystem,
-    },
-    { mutation },
-  );
 }
 
 // One exact replacement hunk with shared prefix/suffix context. Linear work avoids

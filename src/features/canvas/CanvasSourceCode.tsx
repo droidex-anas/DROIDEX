@@ -16,10 +16,6 @@ const TEXT_METRICS = 'font-mono text-code';
 const PADDING = 'py-3 pr-4';
 const GUTTER_PADDING = 'py-3 px-4';
 
-/** The drawer's focus cue: a faint ring, never the platform's hard outline. */
-export const SOFT_FOCUS =
-  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring';
-
 /** The one element a file's layers scroll inside, so they scroll together. */
 export function SourceScroller({ children, label }: { children: ReactNode; label?: string }) {
   return (
@@ -28,7 +24,7 @@ export function SourceScroller({ children, label }: { children: ReactNode; label
       tabIndex={label ? 0 : undefined}
       role={label ? 'region' : undefined}
       aria-label={label}
-      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-xl bg-code focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring"
+      className="scrollbar-on-hover min-h-0 flex-1 overflow-auto rounded-lg bg-code"
     >
       <div className="flex min-h-full w-max min-w-full">{children}</div>
     </div>

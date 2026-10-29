@@ -4,11 +4,11 @@
 // a multiple selection gives them work (spec §4). Every control works on the
 // board behind it, and each names its keyboard shortcut.
 
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Maximize, MousePointer, Play, SlidersHorizontal } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
-import type { CanvasMotion } from './canvasMotion';
+import { revealStyle, type CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
 import { MenuRow } from './menuRows';
 
@@ -190,7 +190,7 @@ export function BoardControls({
 
       {selectedCount >= 2 && (
         <div
-          style={reveal(motion)}
+          style={revealStyle(motion)}
           className={`canvas-selection-bar ${motion.popoverMs > 0 ? 'canvas-popover-reveal' : ''}`}
         >
           {ALIGN_ACTIONS.map(({ edge, label, glyph }) => (
@@ -291,16 +291,6 @@ function ZoomReadout({
       </Popover>
     </div>
   );
-}
-
-/** Spec §11: a toolbar reveal is `popoverMs` and at most `popoverTravelPx`. */
-function reveal(motion: CanvasMotion): CSSProperties | undefined {
-  if (motion.popoverMs === 0) return undefined;
-  return {
-    animationDuration: `${String(motion.popoverMs)}ms`,
-    animationTimingFunction: motion.easeCss,
-    '--canvas-popover-travel': `${String(motion.popoverTravelPx)}px`,
-  } as CSSProperties;
 }
 
 /** One rail tool: its accessible name is the plain label, its tip adds the key. */

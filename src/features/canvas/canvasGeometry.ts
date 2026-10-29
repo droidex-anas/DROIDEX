@@ -32,7 +32,7 @@ const FIT_PADDING_PX = 72;
  * (`.canvas-frame-tools` in canvasBoard.css). Fit keeps its padding above them
  * too, so a focused frame's toolbar clears the pane's own controls.
  */
-const FRAME_CHROME_PX = 66;
+const FRAME_CHROME_PX = 74;
 
 /**
  * Fit never magnifies past 100%: one small frame focused into a wide pane should

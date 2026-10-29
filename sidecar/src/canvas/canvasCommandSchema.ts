@@ -18,7 +18,7 @@ import {
   editElementInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
-  restoreRevisionInputSchema,
+  switchRevisionInputSchema,
   revisionPageSchema,
   revisionRefSchema,
   undoRemovalInputSchema,
@@ -163,10 +163,10 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
-      type: z.literal('canvas.restoreRevision'),
+      type: z.literal('canvas.switchRevision'),
       ...request,
       ...target,
-      input: restoreRevisionInputSchema,
+      input: switchRevisionInputSchema,
     })
     .strict(),
   z
@@ -302,7 +302,7 @@ export type CanvasMutation = Extract<
       | 'create'
       | 'write'
       | 'editElement'
-      | 'restoreRevision'
+      | 'switchRevision'
       | 'arrange'
       | 'remove'
       | 'undoRemoval'
