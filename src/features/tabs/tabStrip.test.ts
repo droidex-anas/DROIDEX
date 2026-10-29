@@ -324,6 +324,18 @@ test('a chat dropped on a place shows there and leaves the tab that showed it', 
   assert.equal(onTile.activeAppSessionId, 'c');
 });
 
+test('a design never shares a tab: no split takes it in or splits it, and tiles open it in a tab', () => {
+  const chats = reduce(withChats('a', 'b', 'd'), { type: 'MARK_DESIGN_CHAT', appSessionId: 'd' });
+  assert.deepEqual(strip(reduce(chats, splitWith('d'))), ['[a]']);
+
+  const onDesign = reduce(chats, { type: 'SET_ACTIVE_SESSION', id: 'd' });
+  assert.deepEqual(strip(reduce(onDesign, splitWith('b'))), ['[d]']);
+  assert.deepEqual(strip(reduce(onDesign, splitWith(null))), ['[d]']);
+
+  const chosen = reduce(chats, splitWith('b'), { type: 'SET_ACTIVE_SESSION', id: 'd' });
+  assert.deepEqual(strip(chosen), ['a|b*', '[d]']);
+});
+
 test('a split tab holds one new chat, and a chat sent from it opens in its tile', () => {
   const split = reduce(withChats('a'), splitWith(null));
   assert.deepEqual(strip(split), ['[a|new-chat*]']);

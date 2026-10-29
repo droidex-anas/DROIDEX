@@ -191,10 +191,14 @@ export function activeProduct(state: ProductSource): ProductMode {
   return pageProduct(liveFocusedPage(state), state);
 }
 
-// Mission Control owns the whole content area, so a mission never shares a tab.
-export function isMission(state: TabStripSource, appSessionId: string): boolean {
+// Mission Control owns the whole content area, and a design shares it only
+// with its board, so neither ever shares a tab.
+export function fillsTab(state: TabStripSource, appSessionId: string): boolean {
   const sessions: Partial<AppState['sessions']> = state.sessions;
-  return sessions[appSessionId]?.sessionPurpose === 'mission-control';
+  return (
+    sessions[appSessionId]?.sessionPurpose === 'mission-control' ||
+    isDesignChat(state.chatMetadata[appSessionId])
+  );
 }
 
 export function tabPage(strip: TabStrip, tab: Tab, live: TabPage): TabPage {
@@ -410,7 +414,9 @@ function reorderTabs(strip: TabStrip, tabIds: string[]): TabStrip {
 function splittableGrid(state: TabStripSource, live: TabPage): TileGrid | null {
   if (live.kind === 'tiles') return live.grid;
   if (live.kind !== 'chat' && live.kind !== 'new-chat') return null;
-  if (live.kind === 'chat' && isMission(state, live.appSessionId)) return null;
+  if (live.kind === 'chat' && fillsTab(state, live.appSessionId)) return null;
+  // A design draft fills its tab like the design it becomes.
+  if (live.kind === 'new-chat' && live.draft?.canvas) return null;
   const tab = activeTab(state.tabStrip);
   return tab ? singleTileGrid({ id: tab.tileId, page: live }) : null;
 }
@@ -448,7 +454,7 @@ function splitTab(
     return next === grid ? strip : withActiveGrid(strip, next);
   }
   if (!canSplit(grid, targetTileId, edge)) return strip;
-  if (appSessionId !== null && isMission(state, appSessionId)) return strip;
+  if (appSessionId !== null && fillsTab(state, appSessionId)) return strip;
   const tile: Tile = {
     id: crypto.randomUUID(),
     page: appSessionId === null ? newPage(state, 'chat') : { kind: 'chat', appSessionId },

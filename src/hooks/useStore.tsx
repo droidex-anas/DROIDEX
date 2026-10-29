@@ -30,8 +30,8 @@ import { activeTabDraft, loadTabStrip } from '../features/tabs/tabStorage';
 import {
   activeProduct,
   chatsBesideFocus,
+  fillsTab,
   isChatInView,
-  isMission,
   livePage,
   newDraft,
   reduceTabStrip,
@@ -2499,9 +2499,9 @@ function reduceAction(state: AppState, action: Action): AppState {
     }
 
     // The chat leaves any other tab first, so showing it lands here instead
-    // of switching to that tab. A mission keeps a tab of its own.
+    // of switching to that tab. A mission or a design keeps a tab of its own.
     case 'DROP_CHAT': {
-      const tabStrip = isMission(state, action.appSessionId)
+      const tabStrip = fillsTab(state, action.appSessionId)
         ? state.tabStrip
         : withoutOtherTabsShowing(state.tabStrip, action.appSessionId);
       const moved: AppState = { ...state, tabStrip };

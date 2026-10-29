@@ -1,6 +1,6 @@
 // The chat area: the active tab's chat, or its tiles side by side, each with
 // its own transcript and composer. A chat or a tile dragged over a tile can
-// split it, take its place or swap with it.
+// split it, take its place or swap with it; a design opens in a tab instead.
 
 import {
   memo,
@@ -22,7 +22,7 @@ import {
 } from '../../hooks/useStore';
 import { useSessionHistory } from '../../hooks/useSessionHistory';
 import { isEmbedded } from '../../lib/embed';
-import { activeGrid } from './tabStrip';
+import { activeGrid, activeProduct } from './tabStrip';
 import type { TileChrome } from './TileChrome';
 import { TileDivider } from './TileDivider';
 import { endPlaceDrag, usePlaceDrag } from './tileDrag';
@@ -50,6 +50,8 @@ function selectTileSource(state: AppState) {
     grid: isEmbedded() ? null : activeGrid(state.tabStrip),
     activeAppSessionId: state.activeAppSessionId,
     tabId: state.tabStrip.activeTabId,
+    // Design takes drops over its whole area; its chat never splits.
+    takesDrops: activeProduct(state) === 'chat',
   };
 }
 
@@ -262,6 +264,9 @@ export function ChatTiles({
         return;
       case 'show':
         dispatch({ type: 'DROP_CHAT', tileId: target, appSessionId: result.appSessionId });
+        return;
+      case 'tab':
+        dispatch({ type: 'OPEN_TAB', page: { kind: 'chat', appSessionId: result.appSessionId } });
     }
   };
 
@@ -300,7 +305,7 @@ export function ChatTiles({
               underBrowser={underBrowser && focused}
               composerHost={focused ? composerHost : null}
             />
-            {drag && !isObscured && (
+            {drag && source.takesDrops && !isObscured && (
               <TileDropTarget
                 grid={grid}
                 drag={drag}

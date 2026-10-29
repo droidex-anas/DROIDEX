@@ -322,7 +322,7 @@ export const SessionRow = memo(function SessionRow({
         // Mission Control fills the whole area, so a mission never tiles.
         draggable={!isEmbedded() && session.sessionPurpose !== 'mission-control'}
         onDragStart={(e) => {
-          startPlaceDrag(e, { kind: 'chat', appSessionId: session.appSessionId });
+          startPlaceDrag(e, { kind: 'chat', appSessionId: session.appSessionId, design });
         }}
         onDragEnd={endPlaceDrag}
         onClick={(e) => {

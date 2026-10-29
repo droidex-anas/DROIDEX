@@ -47,6 +47,7 @@ import { TOP_ROW_HEIGHT_PX, WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome'
 import { HeaderTabs } from './features/tabs/HeaderTabs';
 import { RunningProcessesMenu } from './components/RunningProcessesMenu';
 import { ChatTiles } from './features/tabs/ChatTiles';
+import { DesignDropTarget } from './features/tabs/DesignDropTarget';
 import {
   activeGrid,
   activeProduct,
@@ -1222,6 +1223,7 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {state.productMode === 'design' && !embedded && <DesignDropTarget />}
           </div>
         </main>
 

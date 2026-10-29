@@ -7,10 +7,10 @@ import type { Action, AppState } from '../../hooks/useStore';
 import {
   activeGrid,
   activeTab,
+  fillsTab,
   focusChatTile,
   focusTabShowing,
   focusedPage,
-  isMission,
   livePage,
   openTab,
   pageShowsChat,
@@ -76,7 +76,8 @@ export function enteredPlaceNavigation(state: LivePageSource, next: TabStrip): A
 
 /**
  * Where choosing a chat lands: the tile or tab already showing it, or its own
- * tab for a mission chosen from a split tab. Otherwise the focused place.
+ * tab for a mission or a design chosen from a split tab. Otherwise the focused
+ * place.
  */
 export function showChat(state: TabStripSource, appSessionId: string): TabStrip {
   const strip = state.tabStrip;
@@ -84,7 +85,7 @@ export function showChat(state: TabStripSource, appSessionId: string): TabStrip 
   if (pageShowsChat(live, appSessionId)) return focusChatTile(strip, live, appSessionId);
   const chat: FocusedPage = { kind: 'chat', appSessionId };
   const focused = focusTabShowing(strip, chat, live);
-  if (focused !== strip || live.kind !== 'tiles' || !isMission(state, appSessionId)) return focused;
+  if (focused !== strip || live.kind !== 'tiles' || !fillsTab(state, appSessionId)) return focused;
   return openTab(strip, chat, live);
 }
 
@@ -192,7 +193,7 @@ export function placeCreatedChat(
     (entry) => entry.id === origin.tileId && entry.page.kind === 'new-chat',
   );
   if (!tile) return unplaced;
-  if (isMission(state, appSessionId)) {
+  if (fillsTab(state, appSessionId)) {
     return isActive ? { tabStrip: openTab(strip, chat, live), focus: true } : unplaced;
   }
   if (isActive && tile.id === page.grid.focusedTileId) return { tabStrip: strip, focus: true };
