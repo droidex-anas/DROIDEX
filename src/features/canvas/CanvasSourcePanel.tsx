@@ -1,4 +1,4 @@
-// The source drawer (spec §4): the files of one frame, edited and saved as a
+// The source panel (spec §4): the files of one frame, edited and saved as a
 // normal source revision. The sidecar owns the revisions; `canvasSourceStore.ts`
 // owns the buffers, and this panel never loses one — not to a save that races the
 // typing, not to a revision the agent commits underneath it, not to a frame
@@ -10,9 +10,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
+import { Spinner, X } from '@droidex/icons';
+import { CodeCopyButton } from '../../components/MarkdownCode';
+import { Button } from '../../components/ui/Button';
+import { cn } from '../../components/ui/cn';
 import {
   dirtyPaths,
   isDirty,
@@ -40,8 +45,8 @@ import {
   placeIssues,
   type SourceIssue,
 } from './canvasSourceIssues';
-import { SOFT_FOCUS } from './CanvasSourceCode';
 import { CompareCaption, ConflictBar, ConflictCompare } from './CanvasSourceConflict';
+import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import type { CanvasFrame, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
 // Prism and the editor's chrome load with the first file the user opens, not
@@ -57,6 +62,8 @@ export interface CanvasSourcePanelProps {
   readSource: (canvasId: string, designId: string, revisionId: string) => Promise<SourceFiles>;
   /** Sends one submitted write exactly as the store minted it. */
   writeSource: (canvasId: string, write: WriteFilesInput) => Promise<WriteReceipt>;
+  /** Where the header reads which version of the frame is open. */
+  history: HistoryClient;
   onClose: () => void;
 }
 
@@ -65,6 +72,7 @@ export function CanvasSourcePanel({
   frame,
   readSource,
   writeSource,
+  history,
   onClose,
 }: CanvasSourcePanelProps) {
   const state = useSyncExternalStore(
@@ -80,10 +88,15 @@ export function CanvasSourcePanel({
   const [reveal, setReveal] = useState<{ line: number; nonce: number } | null>(null);
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [comparing, setComparing] = useState(false);
+  const panel = useRef<HTMLElement>(null);
   const diagnostics = buildDiagnostics(frame.build);
+  const version = revisionNumber(useFrameHistory(history, frame).list, frame.revisionId);
 
+  // Opening the panel from a frame hands it the keyboard, so Tab and Escape
+  // work here straight away.
   useEffect(() => {
     dispatch({ type: 'openSourcePanel', designId: frame.designId });
+    panel.current?.focus({ preventScroll: true });
   }, [dispatch, frame.designId]);
 
   const source = openFrameSource(state);
@@ -131,10 +144,19 @@ export function CanvasSourcePanel({
     onClose();
   }, [canvasId, onClose]);
 
+  // Spec §4: the buffers are the one piece of state nothing else holds a copy
+  // of, so closing with unsaved work asks first.
+  const requestClose = () => {
+    if (unsaved.length > 0) setConfirmingClose(true);
+    else close();
+  };
+
   return (
     <section
+      ref={panel}
+      tabIndex={-1}
       aria-label={`Source of ${frame.name}`}
-      className="flex h-full min-h-0 w-full flex-col gap-2.5 rounded-2xl bg-raised p-3 shadow-sm"
+      className="flex h-full min-h-0 w-full flex-col gap-2 rounded-xl bg-surface p-3 focus:outline-none"
       onKeyDown={(event) => {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
           event.preventDefault();
@@ -144,7 +166,7 @@ export function CanvasSourcePanel({
         if (event.key !== 'Escape') return;
         event.preventDefault();
         if (confirmingClose) setConfirmingClose(false);
-        else if (unsaved.length === 0) close();
+        else requestClose();
       }}
     >
       {confirmingClose ? (
@@ -156,124 +178,121 @@ export function CanvasSourcePanel({
           }}
         />
       ) : (
-        <header className="flex shrink-0 items-center gap-2">
-          <h2 className="min-w-0 flex-1 truncate text-label text-primary">
-            {frame.name}
-            <span className="pl-2 font-normal text-muted">
-              {frame.revisionId ?? 'no source yet'}
+        <header className="flex shrink-0 items-center gap-1">
+          <h2 className="flex min-w-0 flex-1 items-baseline gap-2">
+            <span className="truncate text-body-strong text-primary">{frame.name}</span>
+            <span className="shrink-0 text-caption tabular-nums text-muted">
+              {versionLabel(frame.revisionId, version)}
             </span>
           </h2>
-          {failure === null ? null : (
-            <p role="alert" className="min-w-0 truncate text-caption text-danger">
-              {failure}
-            </p>
-          )}
-          <button
+          {activePath !== null && <CodeCopyButton text={sourceText(source, activePath)} />}
+          <Button
+            variant="primary"
+            size="sm"
             onClick={save}
             disabled={!canSubmit}
             title="Save and rebuild (⌘S)"
-            // A low-alpha accent tint, not `elevated`: on a dark theme `raised`
-            // resolves to the elevated rung, and the pane's primary action
-            // would read as plain text (05a's note).
-            className={`rounded-lg bg-accent/10 px-2.5 py-1 text-caption text-primary transition-colors enabled:hover:bg-accent/20 disabled:bg-transparent disabled:text-muted ${SOFT_FOCUS}`}
           >
             {saveLabel(state)}
-          </button>
-          <button
-            onClick={() => {
-              // Spec §4: the buffers are the one piece of state nothing else
-              // holds a copy of, so closing with unsaved work asks first.
-              if (unsaved.length > 0) setConfirmingClose(true);
-              else close();
-            }}
-            className={`rounded-lg px-2 py-1 text-caption text-muted transition-colors hover:bg-accent/10 hover:text-primary ${SOFT_FOCUS}`}
-          >
-            Close
-          </button>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={X}
+            aria-label="Close source"
+            title="Close (Escape)"
+            onClick={requestClose}
+          />
         </header>
       )}
+      {failure === null ? null : (
+        <p role="alert" className="shrink-0 text-caption text-danger">
+          {failure}
+        </p>
+      )}
 
-      <div className="flex min-h-0 flex-1 gap-2.5">
-        <FileList
-          paths={paths}
-          source={source}
-          issues={issues}
-          onSelect={(path) => {
-            dispatch({ type: 'selectFile', path });
+      <FileTabs
+        paths={paths}
+        source={source}
+        issues={issues}
+        onSelect={(path) => {
+          dispatch({ type: 'selectFile', path });
+        }}
+      />
+      {read?.status === 'failed' ? (
+        <ReadFailure
+          message={read.message}
+          keeping={dirtyPaths(source).length > 0}
+          onRetry={() => {
+            dispatch({ type: 'retryRead' });
           }}
         />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {read?.status === 'failed' ? (
-            <ReadFailure
-              message={read.message}
-              keeping={dirtyPaths(source).length > 0}
-              onRetry={() => {
-                dispatch({ type: 'retryRead' });
+      ) : null}
+      {activePath === null ? (
+        <EmptyEditor reason={emptyReason(frame.revisionId, source)} />
+      ) : (
+        <>
+          {conflict ? (
+            <ConflictBar
+              comparing={comparing}
+              onCompare={() => {
+                setComparing((open) => !open);
+              }}
+              onKeepMine={() => {
+                setComparing(false);
+                dispatch({ type: 'keepMine', path: activePath });
+              }}
+              onTakeTheirs={() => {
+                setComparing(false);
+                dispatch({ type: 'takeTheirs', path: activePath });
               }}
             />
           ) : null}
-          {activePath === null ? (
-            <EmptyEditor reason={emptyReason(frame.revisionId, source)} />
-          ) : (
-            <>
-              {conflict ? (
-                <ConflictBar
-                  comparing={comparing}
-                  onCompare={() => {
-                    setComparing((open) => !open);
+          <div className="flex min-h-0 flex-1 gap-2">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
+              {conflict && comparing ? <CompareCaption>Yours · unsaved</CompareCaption> : null}
+              <Suspense
+                fallback={<div aria-hidden className="min-h-0 flex-1 rounded-lg bg-code" />}
+              >
+                <LazyEditor
+                  key={`${frame.designId}:${activePath}`}
+                  path={activePath}
+                  text={sourceText(source, activePath)}
+                  issues={issuesByLine(issues, activePath)}
+                  reveal={reveal}
+                  onChange={(text) => {
+                    dispatch({ type: 'edit', path: activePath, text });
                   }}
-                  onKeepMine={() => {
-                    setComparing(false);
-                    dispatch({ type: 'keepMine', path: activePath });
-                  }}
-                  onTakeTheirs={() => {
-                    setComparing(false);
-                    dispatch({ type: 'takeTheirs', path: activePath });
-                  }}
+                  onSave={save}
                 />
-              ) : null}
-              <div className="flex min-h-0 flex-1 gap-2">
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
-                  {conflict && comparing ? <CompareCaption>Yours · unsaved</CompareCaption> : null}
-                  <Suspense
-                    fallback={<div aria-hidden className="min-h-0 flex-1 rounded-xl bg-code" />}
-                  >
-                    <LazyEditor
-                      key={`${frame.designId}:${activePath}`}
-                      path={activePath}
-                      text={sourceText(source, activePath)}
-                      issues={issuesByLine(issues, activePath)}
-                      reveal={reveal}
-                      onChange={(text) => {
-                        dispatch({ type: 'edit', path: activePath, text });
-                      }}
-                      onSave={save}
-                    />
-                  </Suspense>
-                </div>
-                {conflict && comparing ? (
-                  <ConflictCompare
-                    path={activePath}
-                    revisionId={conflict.revisionId}
-                    text={conflict.text}
-                    issues={issuesByLine(issues, activePath)}
-                  />
-                ) : null}
-              </div>
-            </>
-          )}
-          <IssueList
-            issues={issues}
-            onReveal={(issue) => {
-              if (issue.path !== null) dispatch({ type: 'selectFile', path: issue.path });
-              const line = issue.line;
-              if (line !== null) setReveal((held) => ({ line, nonce: (held?.nonce ?? 0) + 1 }));
-            }}
-          />
-        </div>
-      </div>
+              </Suspense>
+            </div>
+            {conflict && comparing ? (
+              <ConflictCompare
+                path={activePath}
+                revisionId={conflict.revisionId}
+                text={conflict.text}
+                issues={issuesByLine(issues, activePath)}
+              />
+            ) : null}
+          </div>
+        </>
+      )}
+      <IssueList
+        issues={issues}
+        onReveal={(issue) => {
+          if (issue.path !== null) dispatch({ type: 'selectFile', path: issue.path });
+          const line = issue.line;
+          if (line !== null) setReveal((held) => ({ line, nonce: (held?.nonce ?? 0) + 1 }));
+        }}
+      />
     </section>
   );
+}
+
+function versionLabel(revisionId: string | null, version: number | null): string {
+  if (revisionId === null) return 'No source yet';
+  return version === null ? '' : `v${String(version)}`;
 }
 
 /** Why the editor area has no file to show. */
@@ -281,7 +300,7 @@ type EmptyReason = 'noRevision' | 'reading' | 'readFailed' | 'noFiles';
 
 /**
  * "No source yet" belongs only to a frame that has never built a revision. A
- * revision the drawer does not hold yet is still arriving — including the render
+ * revision the panel does not hold yet is still arriving — including the render
  * before the read starts, and every render while a save is in flight against a
  * revision this frame has — and a failed read says so beside its own Retry.
  */
@@ -294,17 +313,20 @@ function emptyReason(revisionId: string | null, source: FrameSource): EmptyReaso
 
 const EMPTY_MESSAGE: Record<EmptyReason, string> = {
   noRevision: 'This frame has no source yet.',
-  reading: 'Reading this revision’s source…',
+  reading: 'Reading this version’s source…',
   readFailed: 'Source could not be read.',
-  noFiles: 'This revision has no source files.',
+  noFiles: 'This version has no source files.',
 };
 
 function EmptyEditor({ reason }: { reason: EmptyReason }) {
   return (
     <p
       role={reason === 'reading' ? 'status' : undefined}
-      className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-code text-label font-normal text-secondary"
+      className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-lg bg-code text-body text-secondary"
     >
+      {reason === 'reading' && (
+        <Spinner className="size-icon-md shrink-0 animate-spin text-muted" aria-hidden />
+      )}
       {EMPTY_MESSAGE[reason]}
     </p>
   );
@@ -312,7 +334,7 @@ function EmptyEditor({ reason }: { reason: EmptyReason }) {
 
 /**
  * A read that failed. Retry asks for the same revision again; nothing here
- * touches a buffer, because reopening the drawer to force a read is exactly how
+ * touches a buffer, because reopening the panel to force a read is exactly how
  * the user would lose the draft they are trying to keep.
  */
 function ReadFailure({
@@ -327,23 +349,21 @@ function ReadFailure({
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-accent/[0.07] px-3 py-2 text-caption text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-lg bg-elevated py-1 pl-3 pr-1 text-caption text-secondary"
     >
       <span className="min-w-0 flex-1">
         <span className="text-danger">{message}</span>
         {keeping ? ' Your unsaved edits are still here.' : null}
       </span>
-      <button
-        onClick={onRetry}
-        className={`rounded-lg bg-accent/15 px-2 py-1 text-primary transition-colors hover:bg-accent/25 ${SOFT_FOCUS}`}
-      >
+      <Button size="sm" onClick={onRetry}>
         Try again
-      </button>
+      </Button>
     </div>
   );
 }
 
-function FileList({
+/** One tab per file; a file shares its name with another only by showing its path. */
+function FileTabs({
   paths,
   source,
   issues,
@@ -355,35 +375,42 @@ function FileList({
   onSelect: (path: string) => void;
 }) {
   if (paths.length === 0) return null;
+  const names = paths.map(fileName);
   return (
-    <nav aria-label="Source files" className="scrollbar-on-hover w-44 shrink-0 overflow-y-auto">
-      {paths.map((path) => {
+    <nav
+      aria-label="Source files"
+      className="scrollbar-on-hover -mx-1 flex shrink-0 gap-1 overflow-x-auto px-1"
+    >
+      {paths.map((path, index) => {
+        const name = names[index];
+        const shared = names.indexOf(name) !== names.lastIndexOf(name);
         const faults = issues.filter((issue) => issue.path === path).length;
         const open = path === source.activePath;
         return (
           <button
             key={path}
+            type="button"
+            title={path}
+            aria-current={open}
             onClick={() => {
               onSelect(path);
             }}
-            aria-current={open}
-            className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-caption transition-colors ${SOFT_FOCUS} ${
+            className={cn(
+              'flex h-control-sm max-w-56 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-label transition-colors',
               open
-                ? 'bg-accent/[0.07] font-medium text-primary'
-                : 'text-secondary hover:bg-accent/5 hover:text-primary'
-            }`}
+                ? 'bg-elevated text-primary'
+                : 'text-muted hover:bg-elevated hover:text-secondary',
+            )}
           >
-            <span className="min-w-0 flex-1 truncate" title={path}>
-              {path}
-            </span>
-            {faults > 0 ? <span className="text-danger">{String(faults)}</span> : null}
-            {isDirty(source, path) ? (
+            <span className="min-w-0 truncate">{shared ? path : name}</span>
+            {faults > 0 && <span className="tabular-nums text-danger">{String(faults)}</span>}
+            {isDirty(source, path) && (
               <span
                 title="Unsaved changes"
                 aria-label="Unsaved changes"
                 className="size-1.5 shrink-0 rounded-full bg-accent"
               />
-            ) : null}
+            )}
           </button>
         );
       })}
@@ -401,28 +428,26 @@ function DiscardBar({
   onDiscard: () => void;
   onCancel: () => void;
 }) {
+  const keep = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    keep.current?.focus();
+  }, []);
   return (
     <div
       role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-xl bg-accent/[0.07] px-3 py-1.5 text-caption text-secondary"
+      className="flex shrink-0 items-center gap-2 rounded-lg bg-elevated py-1 pl-3 pr-1 text-caption text-secondary"
     >
       <span className="min-w-0 flex-1">
         {frames === 1
           ? 'This frame has unsaved source. Close and discard it?'
           : `${String(frames)} frames have unsaved source. Close and discard it?`}
       </span>
-      <button
-        onClick={onCancel}
-        className={`rounded-lg bg-accent/15 px-2 py-1 text-primary transition-colors hover:bg-accent/25 ${SOFT_FOCUS}`}
-      >
+      <Button ref={keep} size="sm" onClick={onCancel}>
         Keep editing
-      </button>
-      <button
-        onClick={onDiscard}
-        className={`rounded-lg px-2 py-1 text-danger transition-colors hover:bg-accent/10 ${SOFT_FOCUS}`}
-      >
+      </Button>
+      <Button variant="danger" size="sm" onClick={onDiscard}>
         Discard
-      </button>
+      </Button>
     </div>
   );
 }
@@ -443,16 +468,17 @@ function IssueList({
   return (
     <ul
       aria-label="Build problems"
-      className="scrollbar-on-hover max-h-28 shrink-0 overflow-y-auto"
+      className="scrollbar-on-hover -mx-1 max-h-28 shrink-0 overflow-y-auto px-1"
     >
       {issues.map((issue, index) => (
         <li key={`${issue.diagnostic.code}-${String(index)}`}>
           <button
+            type="button"
             onClick={() => {
               onReveal(issue);
             }}
             disabled={issue.path === null}
-            className={`flex w-full gap-2 rounded-lg px-2 py-1 text-left font-mono text-caption leading-5 text-secondary transition-colors hover:bg-accent/5 disabled:cursor-default disabled:bg-transparent ${SOFT_FOCUS}`}
+            className="flex w-full gap-2 rounded-md px-2 py-1 text-left font-mono text-code-sm text-secondary transition-colors enabled:hover:bg-elevated disabled:cursor-default"
           >
             <span className="shrink-0 text-danger">
               {issue.path === null
@@ -477,5 +503,9 @@ function saveLabel(state: CanvasSourceState): string {
 function readMessage(error: unknown): string {
   return error instanceof Error && error.message.length > 0
     ? error.message
-    : 'This revision’s source could not be read.';
+    : 'This version’s source could not be read.';
+}
+
+function fileName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
 }

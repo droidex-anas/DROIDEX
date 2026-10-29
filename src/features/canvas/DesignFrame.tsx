@@ -210,11 +210,17 @@ export function DesignFrame(props: DesignFrameProps) {
               width: elementBox.width,
               height: elementBox.height,
             }}
-          />
+          >
+            <div className="canvas-frame-size canvas-chrome">
+              <span>
+                {Math.round(elementBox.width)} × {Math.round(elementBox.height)}
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
-      {selected && (
+      {selected && !elementBox && (
         <div className="canvas-frame-size canvas-chrome">
           <span>
             {Math.round(rect.width)} × {Math.round(rect.height)}

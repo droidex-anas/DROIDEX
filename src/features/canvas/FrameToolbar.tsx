@@ -5,18 +5,15 @@
 
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
 import { Check, Ellipsis, History, MessageThread, Pencil, Play } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
-import { FrameHistory, revisionNumber, type HistoryClient } from './frameHistory';
+import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
 import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
@@ -309,23 +306,6 @@ function ToolbarShell({
       </div>
     </div>
   );
-}
-
-/** The frame's versions, read again whenever its head moves. */
-function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
-  const history = useMemo(() => new FrameHistory(client), [client]);
-  const { designId, revisionId } = frame;
-  useEffect(() => {
-    if (revisionId) history.show({ designId, headRevisionId: revisionId });
-  }, [history, designId, revisionId]);
-  useEffect(
-    () => () => {
-      history.dispose();
-    },
-    [history],
-  );
-  const list = useSyncExternalStore(history.subscribe, history.read, history.read);
-  return { history, list };
 }
 
 /** The bar's tools in order, which is the order the arrows walk. */

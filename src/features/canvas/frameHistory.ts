@@ -2,8 +2,9 @@
 // to show one of them. A read or a switch answers only the frame it was asked
 // for, so a late reply never lands on a frame the toolbar has moved on from.
 
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { CanvasRequestError, canvasMessage } from './client';
-import type { RevisionSummary, SwitchRevisionInput } from './protocol';
+import type { CanvasFrame, RevisionSummary, SwitchRevisionInput } from './protocol';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 export interface HistoryClient {
@@ -122,4 +123,21 @@ export class FrameHistory {
     this.list = next;
     for (const listener of this.listeners) listener();
   }
+}
+
+/** One frame's versions, read again whenever its head moves. */
+export function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
+  const history = useMemo(() => new FrameHistory(client), [client]);
+  const { designId, revisionId } = frame;
+  useEffect(() => {
+    if (revisionId) history.show({ designId, headRevisionId: revisionId });
+  }, [history, designId, revisionId]);
+  useEffect(
+    () => () => {
+      history.dispose();
+    },
+    [history],
+  );
+  const list = useSyncExternalStore(history.subscribe, history.read, history.read);
+  return { history, list };
 }
