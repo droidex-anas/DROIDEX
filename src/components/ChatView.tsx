@@ -4,7 +4,11 @@ import { Square } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
-import { LazyAttachedChatsMenu, LazyCanvasColumnTabs } from '../lib/lazySurfaces';
+import {
+  LazyAttachedChatsMenu,
+  LazyCanvasColumnTabs,
+  LazyDesignColumnHeader,
+} from '../lib/lazySurfaces';
 import { utilityPanelForSession } from '../lib/utilityPanel';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
@@ -58,7 +62,7 @@ import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
-import { showsTabStrip, viewRowLeadPx } from '../features/tabs/tabStrip';
+import { activeProduct, showsTabStrip, viewRowLeadPx } from '../features/tabs/tabStrip';
 import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
 import { tileHandleProps } from '../features/tabs/tileDrag';
 
@@ -328,6 +332,7 @@ export default function ChatView({
   const rowLeadPx = useStoreSelector(viewRowLeadPx);
   const tabStripShown = useStoreSelector(showsTabStrip);
   const boardCanvasId = useStoreSelector((current) => canvasOnBoard(current, appSessionId));
+  const inDesign = useStoreSelector((current) => activeProduct(current) === 'design');
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -894,7 +899,17 @@ export default function ChatView({
   // on its board, whose chats this column's header owns (spec §4).
   const namedByTab = tabStripShown && !tile;
   let header: ReactNode = null;
-  if (activeSession && (!namedByTab || chatHeaderSub || boardCanvasId !== null)) {
+  if (activeSession && inDesign && boardCanvasId !== null && !chatHeaderSub && !tile) {
+    header = (
+      <Suspense fallback={<div data-electron-drag-region className="h-9 shrink-0" />}>
+        <LazyDesignColumnHeader
+          appSessionId={activeSession.appSessionId}
+          canvasId={boardCanvasId}
+          leadPx={leadPx}
+        />
+      </Suspense>
+    );
+  } else if (activeSession && (!namedByTab || chatHeaderSub || boardCanvasId !== null)) {
     header = (
       <ChatHeader
         title={

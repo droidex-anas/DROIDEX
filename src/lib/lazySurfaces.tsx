@@ -55,6 +55,10 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../features/canvas/AttachedChatsMenu');
     return { default: module.AttachedChatsMenu };
   },
+  designColumnHeader: async () => {
+    const module = await import('../features/canvas/DesignColumnHeader');
+    return { default: module.DesignColumnHeader };
+  },
   canvasColumnTabs: async () => {
     const module = await import('../features/canvas/CanvasColumnTabs');
     return { default: module.CanvasColumnTabs };
@@ -104,6 +108,7 @@ export const LazyCanvasWorkspace = lazy(LAZY_SURFACE_LOADERS.canvas);
 export const LazyDesignHome = lazy(LAZY_SURFACE_LOADERS.designHome);
 export const LazyCanvasHeader = lazy(LAZY_SURFACE_LOADERS.canvasHeader);
 export const LazyAttachedChatsMenu = lazy(LAZY_SURFACE_LOADERS.attachedChatsMenu);
+export const LazyDesignColumnHeader = lazy(LAZY_SURFACE_LOADERS.designColumnHeader);
 export const LazyCanvasColumnTabs = lazy(LAZY_SURFACE_LOADERS.canvasColumnTabs);
 export const LazyCanvasChatBootstrap = lazy(LAZY_SURFACE_LOADERS.canvasChatBootstrap);
 export const LazyCanvasTabName = lazy(LAZY_SURFACE_LOADERS.canvasTabName);
