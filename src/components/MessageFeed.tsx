@@ -43,9 +43,9 @@ import {
 } from './messageFeedState';
 import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
-import { designWorkingLabel } from './chatFeedClean';
+import { designWorkingStatus } from './chatFeedClean';
 import { isSpecEcho } from './chat';
-import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
+import { DesignStatusLine, ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
 
 /* ── Collapsed spec card shown inline in chat (chevron to expand) ── */
@@ -267,12 +267,16 @@ export function MessageFeed({
   const forkDividerAfter = forkedFrom ? lastInheritedItemIndex(items, forkedFrom.forkedAt) : -1;
 
   const lastIdx = items.length - 1;
+  // A design chat sets each turn's designs under its answer, so the row that
+  // streams and carries the live cue is the last one above them.
+  let tailIdx = lastIdx;
+  if (clean) while (tailIdx >= 0 && items[tailIdx].type === 'canvas_artifact') tailIdx -= 1;
   // The chat's own latest reply: a changes row can follow it, and a native
   // subagent's replies share the chat's id but are not the chat speaking.
   let lastReplyIdx = lastIdx;
   while (lastReplyIdx >= 0 && !isOwnReply(items[lastReplyIdx])) lastReplyIdx -= 1;
   // Empty feeds are real (a fresh session), so the tail is genuinely optional.
-  const last: FeedItem | undefined = items.length > 0 ? items[lastIdx] : undefined;
+  const last: FeedItem | undefined = tailIdx >= 0 ? items[tailIdx] : undefined;
   // Tool rows wear their MCP server's mark; the catalog follows this
   // transcript's workspace.
   useToolMarkCatalog(cwd);
@@ -335,9 +339,6 @@ export function MessageFeed({
   // with its own pills, timers and total, so the poll cue would only repeat it.
   const showWorking =
     pending && !tailTyping && (subagentPoll ? !lastDockRunning : !tailSelfIndicates);
-  const workingLabel = clean
-    ? designWorkingLabel(events)
-    : feedWorkingLabel(last, subagentPoll !== undefined);
   // Time the check from the poll itself; the visible tail can be minutes old.
   const workingStart = rich ? (subagentPoll?.ts ?? tailTimestamp(last)) : undefined;
 
@@ -372,9 +373,9 @@ export function MessageFeed({
                   item={item}
                   animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
                   onEnter={recordEntrance}
-                  live={pending && index === lastIdx && !subagentPoll}
+                  live={pending && index === tailIdx && !subagentPoll}
                   sessionLive={pending}
-                  compacting={compacting && index === lastIdx}
+                  compacting={compacting && index === tailIdx}
                   cwd={cwd}
                   onOpenDiff={onOpenDiff ? callbacks.onOpenDiff : undefined}
                   onOpenReviewFile={stableOnOpenReviewFile}
@@ -409,7 +410,14 @@ export function MessageFeed({
 
         {showWorking && (
           <div className="mx-auto min-w-0 max-w-2xl">
-            <WorkingIndicator label={workingLabel} startTs={workingStart} />
+            {clean ? (
+              <DesignStatusLine status={designWorkingStatus(events)} startTs={workingStart} />
+            ) : (
+              <WorkingIndicator
+                label={feedWorkingLabel(last, subagentPoll !== undefined)}
+                startTs={workingStart}
+              />
+            )}
           </div>
         )}
         {pendingSteers}
