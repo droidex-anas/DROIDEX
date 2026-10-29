@@ -63,6 +63,17 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   const fontSize = panel.getByLabel('Font size', { exact: true });
   await expect(fontSize).toHaveValue('24px');
 
+  // The panel is a column beside the board: a wheel over it scrolls its fields
+  // and leaves the board where it was.
+  const placed = await box(frame(page, 'A'));
+  const column = await box(panel);
+  await page.mouse.move(column.x + column.width / 2, column.y + column.height / 2);
+  await page.mouse.wheel(0, 400);
+  await expect
+    .poll(() => panel.locator('.overflow-y-auto').evaluate((fields) => fields.scrollTop))
+    .toBeGreaterThan(0);
+  expect(await box(frame(page, 'A'))).toEqual(placed);
+
   // Typing previews in the guest; Enter sends the canonical value, once.
   await fontSize.fill(' 28PX ');
   await page.clock.runFor(100);

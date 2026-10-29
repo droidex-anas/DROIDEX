@@ -1,4 +1,4 @@
-// The selected element's styles while Edit has one, docked at the board's
+// The selected element's styles while Edit has one, in a column at the board's
 // right: the values its preview computes, one field per property the edit
 // whitelist allows, grouped the way a designer reads them, and what the last
 // commit wrote. Typing previews in the guest; Enter commits one property and
@@ -151,13 +151,9 @@ export function ElementPanel({
   return (
     <div
       ref={ref}
-      data-element-panel
       role="region"
       aria-label={`Styles of the selected ${draft.site.tagName}`}
-      className="absolute bottom-2 right-2 top-12 z-10 flex w-80 flex-col rounded-xl bg-surface shadow-sm"
-      onPointerDown={(event) => {
-        event.stopPropagation();
-      }}
+      className="my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
     >
       <header className="shrink-0 px-3 pb-2 pt-3">
         <h2 className="flex min-w-0 items-baseline gap-2">
