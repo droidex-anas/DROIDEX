@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 // Spec §4: the canvas workspace's docked chat column. Narrower than the utility
 // pane's own minimum, because here the board takes the rest of the row.
-const DESIGN_CHAT_COLUMN_DEFAULT = 360;
+const DESIGN_CHAT_COLUMN_DEFAULT = 400;
 const DESIGN_CHAT_COLUMN_MIN = 320;
 const DESIGN_CHAT_COLUMN_MAX = 720;
 // The board keeps at least this much of the row however wide the chat grows.
