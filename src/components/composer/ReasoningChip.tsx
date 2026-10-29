@@ -1,4 +1,4 @@
-import { Suspense, lazy, useRef, useState } from 'react';
+import { Suspense, lazy, startTransition, useRef, useState } from 'react';
 import { Brain } from '@droidex/icons';
 import { offersReasoningEffort, reasoningEffortLabel } from '../../lib/reasoningEffort';
 import type { ModelInfo, ProviderKind, ReasoningEffort } from '../../types/bridge';
@@ -48,7 +48,12 @@ export function ReasoningChip({
           if (canPick) void loadReasoningPanel();
         }}
         onClick={() => {
-          if (canPick) setOpen((value) => !value);
+          if (!canPick) return;
+          // A transition lets the code-split panel render before the layer
+          // shows, instead of Suspense holding its content back for 300ms.
+          startTransition(() => {
+            setOpen((value) => !value);
+          });
         }}
         className={`flex h-control-sm shrink-0 items-center gap-1.5 rounded-md px-1.5 transition-colors ${tone}`}
       >
@@ -57,19 +62,19 @@ export function ReasoningChip({
           <span className={`capitalize ${effort === 'ultra' ? 'text-ultra' : ''}`}>{label}</span>
         )}
       </button>
-      <Popover
-        open={open && canPick}
-        onClose={() => {
-          setOpen(false);
-        }}
-        anchorRef={chipRef}
-        label="Reasoning"
-        placement="top-end"
-      >
-        <Suspense fallback={null}>
+      <Suspense fallback={null}>
+        <Popover
+          open={open && canPick}
+          onClose={() => {
+            setOpen(false);
+          }}
+          anchorRef={chipRef}
+          label="Reasoning"
+          placement="top-end"
+        >
           <ReasoningPanel appSessionId={appSessionId} />
-        </Suspense>
-      </Popover>
+        </Popover>
+      </Suspense>
     </>
   );
 }

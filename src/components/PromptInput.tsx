@@ -2,6 +2,7 @@ import { canvasIntentForDraft } from '../features/canvas/canvasChatIntent';
 import {
   Suspense,
   lazy,
+  startTransition,
   useState,
   useRef,
   useEffect,
@@ -392,6 +393,14 @@ export default function PromptInput({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistory = useRef('');
   const [modelsOpen, setModelsOpen] = useState(false);
+  // The picker is code-split, so it opens in a transition: React finishes its
+  // first render before the layer shows, rather than painting an empty layer
+  // and holding the content back for Suspense's 300ms reveal throttle.
+  const showModels = (open: SetStateAction<boolean>) => {
+    startTransition(() => {
+      setModelsOpen(open);
+    });
+  };
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
@@ -734,7 +743,7 @@ export default function PromptInput({
       desc: 'Open model selector',
       icon: Models,
       run: () => {
-        setModelsOpen(true);
+        showModels(true);
       },
     },
     {
@@ -2405,7 +2414,7 @@ export default function PromptInput({
             : loadModelSelectorPopover());
         }}
         onClick={() => {
-          setModelsOpen((v) => !v);
+          showModels((open) => !open);
         }}
         className={`flex h-control-sm items-center gap-1.5 transition-colors ${
           designComposer ? 'max-w-40 rounded-md px-1.5' : 'max-w-52 shrink-0 rounded-full px-2.5'
@@ -2495,16 +2504,17 @@ export default function PromptInput({
         )}
       </button>
 
-      <Popover
-        open={modelsOpen}
-        onClose={() => {
-          setModelsOpen(false);
-        }}
-        anchorRef={modelChipRef}
-        label={missionPreview ? 'Models' : 'Model'}
-        placement="top-end"
-      >
-        <Suspense fallback={null}>
+      {/* Outside the layer, so an opening transition waits for the picker. */}
+      <Suspense fallback={null}>
+        <Popover
+          open={modelsOpen}
+          onClose={() => {
+            setModelsOpen(false);
+          }}
+          anchorRef={modelChipRef}
+          label={missionPreview ? 'Models' : 'Model'}
+          placement="top-end"
+        >
           {/* The slider style is a chat-composer picker; Mission Control
               and exact-child editors keep the classic popover's semantics. */}
           {state.modelSelectorStyle === 'slider' && !missionPreview && !childSettingsTarget ? (
@@ -2517,8 +2527,8 @@ export default function PromptInput({
               pickEffort={!designComposer}
             />
           )}
-        </Suspense>
-      </Popover>
+        </Popover>
+      </Suspense>
     </>
   );
   const actionSlot = (
@@ -2641,7 +2651,7 @@ export default function PromptInput({
                   : undefined
               }
               onSwitchModel={() => {
-                setModelsOpen(true);
+                showModels(true);
               }}
             />
           </Suspense>
