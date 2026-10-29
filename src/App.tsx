@@ -60,6 +60,7 @@ import { adjacentTileId, nextSplit, type TileEdge } from './features/tabs/tileGr
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
+import { PaneResizeHandle } from './components/utility/PaneResizeHandle';
 import { UtilityPane } from './components/utility/UtilityPane';
 import { ProductSwitcher } from './components/ProductSwitcher';
 import { terminalInstances, releaseTerminalInstancesExcept } from './lib/terminalInstanceRegistry';
@@ -88,6 +89,7 @@ import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { listProjects, restoreBrowsersCommand } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
+import { useDesignChatColumn } from './features/canvas/designChatColumn';
 import { useFirstArtifactPane } from './features/canvas/useFirstArtifactPane';
 import { useSharedStorage } from './hooks/useSharedStorage';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
@@ -160,23 +162,18 @@ function ContextListIcon({ className }: { className?: string }) {
 }
 
 const UTILITY_PANE_MIN = 420;
-// Spec §4: the canvas workspace's docked chat column. Narrower than the pane's
-// own minimum, because here the board takes the rest of the row.
-const DESIGN_CHAT_COLUMN = 360;
-const EXPANDED_CANVAS_CHAT_STYLE: CSSProperties = { flex: `0 0 ${String(DESIGN_CHAT_COLUMN)}px` };
 // Design's chat column is a side panel a tone off the board; scoping `--bg`
 // carries that tone to everything in it that paints the page background.
-const DESIGN_CHAT_COLUMN_STYLE = {
-  ...EXPANDED_CANVAS_CHAT_STYLE,
+const DESIGN_CHAT_TONE = {
   backgroundColor: 'var(--sidebar)',
   '--bg': 'var(--sidebar)',
 } as CSSProperties;
 
 /** How wide an expanded pane is: the whole row, or the row beside the board's
  * chat column. */
-function expandedPaneWidth(contentRowWidth: number, besideChatColumn: boolean): number {
-  if (!besideChatColumn) return contentRowWidth;
-  return Math.max(contentRowWidth - DESIGN_CHAT_COLUMN, Math.round(contentRowWidth / 2));
+function expandedPaneWidth(contentRowWidth: number, chatColumnWidth: number | null): number {
+  if (chatColumnWidth === null) return contentRowWidth;
+  return Math.max(contentRowWidth - chatColumnWidth, Math.round(contentRowWidth / 2));
 }
 const UTILITY_PANE_MAX = 980;
 const UTILITY_PANE_DEFAULT = 560;
@@ -322,9 +319,6 @@ export default function App() {
   const canvasExpanded =
     designCanvasTab !== null || (paneExpanded && activeUtilityTab?.tool === 'canvas');
   const chatObscured = paneExpanded && !canvasExpanded;
-  let chatColumnStyle: CSSProperties | undefined;
-  if (designCanvasTab) chatColumnStyle = DESIGN_CHAT_COLUMN_STYLE;
-  else if (canvasExpanded) chatColumnStyle = EXPANDED_CANVAS_CHAT_STYLE;
   // Only a request whose create has replied has a canvas pane to open.
   const canvasRequests = Object.entries(state.canvasChatRequests).filter(
     (entry): entry is [string, { appSessionId: string }] => entry[1].appSessionId !== null,
@@ -360,6 +354,11 @@ export default function App() {
   const confirmingTab = utilityPanel.tabs.find((tab) => tab.id === confirmCloseTabId) ?? null;
   const contentRowRef = useRef<HTMLDivElement>(null);
   const [contentRowWidth, setContentRowWidth] = useState(0);
+  const chatBesideBoard = useDesignChatColumn(contentRowWidth);
+  const chatBesideBoardFlex = `0 0 ${String(chatBesideBoard.width)}px`;
+  let chatColumnStyle: CSSProperties | undefined;
+  if (designCanvasTab) chatColumnStyle = { ...DESIGN_CHAT_TONE, flex: chatBesideBoardFlex };
+  else if (canvasExpanded) chatColumnStyle = { flex: chatBesideBoardFlex };
   // The toggle moves between the tab row and the chat header, so its preload
   // listeners follow the button itself.
   const bindUtilityToggleIntent = useCallback((toggle: HTMLButtonElement) => {
@@ -964,6 +963,17 @@ export default function App() {
                   ) : null}
                 </>
               )}
+              {canvasExpanded && (
+                <PaneResizeHandle
+                  label="Resize chat"
+                  edge="right"
+                  width={chatBesideBoard.width}
+                  min={chatBesideBoard.min}
+                  max={chatBesideBoard.max}
+                  onResize={chatBesideBoard.resize}
+                  onResizeEnd={chatBesideBoard.commit}
+                />
+              )}
             </section>
             {/* Holds the chat column's place while it floats, so the pane stays
                 anchored on the right as it widens. */}
@@ -998,7 +1008,10 @@ export default function App() {
                   animate={{
                     width:
                       paneExpanded && contentRowWidth > 0
-                        ? expandedPaneWidth(contentRowWidth, canvasExpanded)
+                        ? expandedPaneWidth(
+                            contentRowWidth,
+                            canvasExpanded ? chatBesideBoard.width : null,
+                          )
                         : utilityPaneWidth,
                     opacity: 1,
                   }}

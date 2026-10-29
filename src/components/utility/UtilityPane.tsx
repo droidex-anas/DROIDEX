@@ -66,6 +66,7 @@ export function UtilityPane({
     >
       {!expanded && (
         <PaneResizeHandle
+          label="Resize utility pane"
           width={width}
           min={minWidth}
           max={maxWidth}
