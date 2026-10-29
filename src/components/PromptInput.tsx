@@ -2508,12 +2508,13 @@ export default function PromptInput({
           {/* The slider style is a chat-composer picker; Mission Control
               and exact-child editors keep the classic popover's semantics. */}
           {state.modelSelectorStyle === 'slider' && !missionPreview && !childSettingsTarget ? (
-            <ModelSliderPopover appSessionId={appSessionId} />
+            <ModelSliderPopover appSessionId={appSessionId} pickEffort={!designComposer} />
           ) : (
             <ModelSelectorPopover
               appSessionId={appSessionId}
               singleAgent={!missionPreview}
               childTarget={childSettingsTarget}
+              pickEffort={!designComposer}
             />
           )}
         </Suspense>
@@ -2869,19 +2870,21 @@ export default function PromptInput({
             </button>
             {altProfileTag}
             {autonomyControl}
-            <ReasoningChip
-              appSessionId={appSessionId}
-              model={chipModel}
-              effort={primaryReasoning}
-              provider={composerProvider}
-            />
             {references.canvasKey && (
               <Suspense fallback={null}>
                 <CanvasDesignSystem canvasKey={references.canvasKey} appSessionId={appSessionId} />
               </Suspense>
             )}
             {designTools}
-            <div className="ml-auto flex shrink-0">{modelPicker}</div>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {modelPicker}
+              <ReasoningChip
+                appSessionId={appSessionId}
+                model={chipModel}
+                effort={primaryReasoning}
+                provider={composerProvider}
+              />
+            </div>
           </div>
         )}
       </div>

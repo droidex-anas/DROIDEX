@@ -1,4 +1,4 @@
-import type { ContextWindowTokens, ModelInfo, ProviderKind } from '../types/bridge';
+import type { ContextWindowTokens, ModelInfo, ProviderKind, ProviderStatus } from '../types/bridge';
 
 // The context window is a per-chat preference distinct from the window the
 // chat is measured against: picking none leaves the provider's own in place.
@@ -25,6 +25,19 @@ export function contextWindowLabel(tokens: number): string {
   return tokens >= 1000000
     ? `${String(tokens / 1000000)}M`
     : `${String(Math.round(tokens / 1000))}k`;
+}
+
+/**
+ * The window a chat that pins none runs on: the one measured for it, or for a
+ * draft on its harness's own default model, the one that default asks for.
+ */
+export function unpinnedContextWindow(
+  measured: number | undefined,
+  model: Pick<ModelInfo, 'id'> | undefined,
+  status: Pick<ProviderStatus, 'defaultModelId' | 'defaultContextWindowTokens'> | undefined,
+): number | undefined {
+  if (measured !== undefined) return measured;
+  return model?.id === status?.defaultModelId ? status?.defaultContextWindowTokens : undefined;
 }
 
 /**

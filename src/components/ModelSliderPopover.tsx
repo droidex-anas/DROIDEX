@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, RotateCcw, Search } from 'lucide-react';
-import { Zap } from '@droidex/icons';
 import { isReasoningEffort, offersReasoningEffort } from '../lib/reasoningEffort';
+import { fastModeBlockedReason, offersFastMode } from '../lib/fastMode';
 import {
-  FAST_MODE_HINT,
-  FAST_MODE_LABEL,
-  fastModeBlockedReason,
-  offersFastMode,
-} from '../lib/fastMode';
-import { contextWindowOptions, offersContextWindow } from '../lib/contextWindow';
+  contextWindowOptions,
+  offersContextWindow,
+  unpinnedContextWindow,
+} from '../lib/contextWindow';
 import useContextWindow from '../hooks/useContextWindow';
 import {
   ModelIcon,
@@ -26,7 +24,7 @@ import ModelSliderCatalogList from './ModelSliderCatalogList';
 import ContextWindowMenu from './ContextWindowMenu';
 import { Input } from './ui/Field';
 import { pushEscapeLayer } from './ui/escapeStack';
-import { Tooltip } from './ui/Tooltip';
+import { FastModeToggle } from './FastModeToggle';
 import EffortSlider from './effortSlider/EffortSlider';
 import type { EffortSliderElement } from './effortSlider/effortSliderElement';
 import {
@@ -45,7 +43,14 @@ const MAX_WIDTH = 'calc(100vw - 16px)';
  * chat; Mission Control and exact-child pickers keep the classic popover. The
  * composer floats it above the model chip.
  */
-export default function ModelSliderPopover({ appSessionId }: { appSessionId: string | null }) {
+export default function ModelSliderPopover({
+  appSessionId,
+  pickEffort = true,
+}: {
+  appSessionId: string | null;
+  /** False where effort has its own control beside the chip: the panel then lists models only. */
+  pickEffort?: boolean;
+}) {
   const {
     query,
     setQuery,
@@ -77,6 +82,7 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
     useContextWindow(scopedAppSessionId);
   const efforts = effortsFor(activeModel, effReasoning);
   const canDrill =
+    pickEffort &&
     activeModel !== undefined &&
     showsReasoning &&
     offersReasoningEffort(activeModel) &&
@@ -100,13 +106,11 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
       ? 'Default'
       : effortDisplay(shownEffort, provider);
 
-  const fastModeBlocked = fastModeBlockedReason(activeModel);
-  // The window a chat that pins none runs on: the one measured for it, or for
-  // a draft on the harness's own default model, the one that default asks for.
-  const status = providerStatuses.find((entry) => entry.provider === provider);
-  const defaultWindow =
-    providerWindow ??
-    (activeModel?.id === status?.defaultModelId ? status?.defaultContextWindowTokens : undefined);
+  const defaultWindow = unpinnedContextWindow(
+    providerWindow,
+    activeModel,
+    providerStatuses.find((entry) => entry.provider === provider),
+  );
   const defaultEffort = activeModel?.defaultReasoningEffort;
   const canReset =
     defaultEffort !== undefined &&
@@ -180,29 +184,11 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
                 <ChevronLeft className="h-4 w-4" />
               </button>
               {offersFastMode(provider) && (
-                <Tooltip label={fastModeBlocked ?? `${FAST_MODE_LABEL} · ${FAST_MODE_HINT}`}>
-                  <button
-                    type="button"
-                    aria-pressed={fastMode}
-                    aria-label={FAST_MODE_LABEL}
-                    aria-description={fastModeBlocked ?? FAST_MODE_HINT}
-                    disabled={fastModeBlocked !== undefined}
-                    onClick={() => {
-                      setFastMode(!fastMode);
-                    }}
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition-colors disabled:opacity-40 ${
-                      fastMode
-                        ? 'bg-active text-accent dark:bg-surface'
-                        : 'text-muted enabled:hover:bg-elevated dark:enabled:hover:bg-surface/60 enabled:hover:text-primary'
-                    }`}
-                  >
-                    <Zap
-                      size={14}
-                      className="transition-colors"
-                      fill={fastMode ? 'currentColor' : 'transparent'}
-                    />
-                  </button>
-                </Tooltip>
+                <FastModeToggle
+                  on={fastMode}
+                  blockedReason={fastModeBlockedReason(activeModel)}
+                  onToggle={setFastMode}
+                />
               )}
               <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                 <ModelIcon provider={providerOf(activeModel, resolvedModelId)} size={14} />

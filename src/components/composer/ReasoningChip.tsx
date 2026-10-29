@@ -8,8 +8,8 @@ const loadReasoningPanel = () => import('./ReasoningPanel');
 const ReasoningPanel = lazy(loadReasoningPanel);
 
 /**
- * Design's reasoning control beside the mode: it names the chat's effort and
- * opens the effort slider for its model. A model with no levels to pick
+ * Design's reasoning control beside the model chip: it names the chat's effort
+ * and opens the effort slider for its model. A model with no levels to pick
  * between keeps it in place, dimmed, so the row does not shift between models.
  */
 export function ReasoningChip({
@@ -64,7 +64,7 @@ export function ReasoningChip({
         }}
         anchorRef={chipRef}
         label="Reasoning"
-        placement="top-start"
+        placement="top-end"
       >
         <Suspense fallback={null}>
           <ReasoningPanel appSessionId={appSessionId} />

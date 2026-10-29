@@ -31,10 +31,13 @@ export default function ModelSelectorPopover({
   appSessionId,
   singleAgent = false,
   childTarget,
+  pickEffort = true,
 }: {
   appSessionId: string | null;
   singleAgent?: boolean;
   childTarget?: ExactChildSettingsTarget;
+  /** False where effort has its own control beside the chip: the panel then lists models only. */
+  pickEffort?: boolean;
 }) {
   const picker = useModelPicker({ appSessionId, singleAgent, childTarget });
   const {
@@ -81,7 +84,7 @@ export default function ModelSelectorPopover({
       // Leave ←/→ to the search caret while there is text to move through.
       const inSearch = e.target instanceof HTMLInputElement && e.target.value.length > 0;
       const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
-      if (inSearch && horizontal) return;
+      if (horizontal && (inSearch || !pickEffort)) return;
       e.preventDefault();
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (childTarget && !childReady) return;
@@ -105,6 +108,7 @@ export default function ModelSelectorPopover({
     effReasoning,
     filterOpen,
     models,
+    pickEffort,
     updateModel,
     updateReasoning,
   ]);
@@ -204,7 +208,7 @@ export default function ModelSelectorPopover({
               onSelectReasoning={updateReasoning}
               disabled={disabled}
               reasoningLocked={childMode}
-              showReasoning={showsReasoning}
+              showReasoning={pickEffort && showsReasoning}
             />
           </div>
         </div>
