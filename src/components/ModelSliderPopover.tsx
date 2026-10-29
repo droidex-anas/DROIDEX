@@ -1,13 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, RotateCcw, Search } from 'lucide-react';
 import { Zap } from '@droidex/icons';
-import type { ProviderKind, ReasoningEffort } from '../types/bridge';
-import {
-  isReasoningEffort,
-  offersReasoningEffort,
-  reasoningEffortLabel,
-} from '../lib/reasoningEffort';
+import { isReasoningEffort, offersReasoningEffort } from '../lib/reasoningEffort';
 import {
   FAST_MODE_HINT,
   FAST_MODE_LABEL,
@@ -33,33 +28,16 @@ import { Input } from './ui/Field';
 import { pushEscapeLayer } from './ui/escapeStack';
 import { Tooltip } from './ui/Tooltip';
 import EffortSlider from './effortSlider/EffortSlider';
-import type { EffortSliderElement, EffortSliderLevel } from './effortSlider/effortSliderElement';
+import type { EffortSliderElement } from './effortSlider/effortSliderElement';
+import {
+  CARD_SLIDER_STYLE,
+  effortDisplay,
+  effortSliderLevels,
+} from './effortSlider/effortSliderCard';
 
 const WIDTH_PX = 320;
 // Inside the window's 8px floating-layer margin on both sides.
 const MAX_WIDTH = 'calc(100vw - 16px)';
-
-// The slider speaks the chip's vocabulary (Xhigh, and the harness's own word
-// for ultra: Ultracode on Claude, Ultra elsewhere).
-function effortDisplay(effort: ReasoningEffort, provider: ProviderKind): string {
-  const label = reasoningEffortLabel(effort, provider);
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-// The card is already the surface, so the slider's own panel stays flat and
-// fills the card at the app's type scale instead of scaling with its width.
-const SLIDER_STYLE = {
-  '--effort-unit': '1px',
-  '--effort-width': '100%',
-  '--effort-padding': '8px 4px 4px',
-  '--effort-surface': 'transparent',
-  '--effort-border': 'transparent',
-  '--effort-shadow': 'none',
-  '--effort-text': 'var(--text)',
-  '--effort-muted': 'var(--text-muted)',
-  '--effort-fill': 'color-mix(in srgb, var(--text) 45%, transparent)',
-  '--effort-accent': 'var(--ultra, #a392e5)',
-} as CSSProperties;
 
 /**
  * The alternative composer model selector: a panel that lists models and
@@ -108,10 +86,7 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
   const panelRef = useRef<HTMLDivElement>(null);
   const sliderRef = useRef<EffortSliderElement>(null);
 
-  const levels = useMemo<EffortSliderLevel[]>(
-    () => efforts.map((effort) => ({ value: effort, label: effortDisplay(effort, provider) })),
-    [efforts, provider],
-  );
+  const levels = useMemo(() => effortSliderLevels(efforts, provider), [efforts, provider]);
   // An unset effort is provider-managed; the slider sits on the model's default.
   const shownEffort = effReasoning ?? activeModel?.defaultReasoningEffort;
   const sliderValue =
@@ -267,7 +242,7 @@ export default function ModelSliderPopover({ appSessionId }: { appSessionId: str
               value={sliderValue}
               autoFocus
               onCommit={commitEffort}
-              style={SLIDER_STYLE}
+              style={CARD_SLIDER_STYLE}
               helpAnchor={panelRef}
             />
           </motion.div>

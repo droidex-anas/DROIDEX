@@ -102,6 +102,7 @@ import {
 } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { DesignComposerFrame } from './composer/DesignComposerFrame';
+import { ReasoningChip } from './composer/ReasoningChip';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
 import {
@@ -2468,7 +2469,8 @@ export default function PromptInput({
                 aria-label={`Fast mode: ${FAST_MODE_HINT}`}
               />
             )}
-            {primaryReasoning && (
+            {/* Design gives reasoning its own control in the row. */}
+            {!designComposer && primaryReasoning && (
               <span
                 className={`shrink-0 capitalize ${
                   primaryReasoning === 'ultra' ? 'text-ultra' : 'text-muted'
@@ -2867,6 +2869,12 @@ export default function PromptInput({
             </button>
             {altProfileTag}
             {autonomyControl}
+            <ReasoningChip
+              appSessionId={appSessionId}
+              model={chipModel}
+              effort={primaryReasoning}
+              provider={composerProvider}
+            />
             {references.canvasKey && (
               <Suspense fallback={null}>
                 <CanvasDesignSystem canvasKey={references.canvasKey} appSessionId={appSessionId} />
