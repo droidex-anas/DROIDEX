@@ -13,6 +13,19 @@ test('the effort indicator shows only a selected effort the model can use', () =
     ['a model without efforts hides it', 'high', { supportedReasoningEfforts: [] }, undefined],
     // A known model whose capability list is absent counts as no support.
     ['an absent capability list hides it', 'high', {}, undefined],
+    // Droid's Auto lists only "none": there is no reasoning to name.
+    [
+      'a model that only runs none hides it',
+      'none',
+      { supportedReasoningEfforts: ['none'], defaultReasoningEffort: 'none' },
+      undefined,
+    ],
+    [
+      'none beside real levels shows',
+      'none',
+      { supportedReasoningEfforts: ['none', 'low'] },
+      'none',
+    ],
     ['an unknown model (list loading) keeps it', 'low', undefined, 'low'],
     ['an unknown model keeps an unset effort unset', undefined, undefined, undefined],
   ];
