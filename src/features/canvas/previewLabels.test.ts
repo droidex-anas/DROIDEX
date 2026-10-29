@@ -69,6 +69,7 @@ test('a sheet without a live preview never hides a failure behind an older desig
   assert.equal(sheetState(frame(READY), 'rev_01', false, false).kind, 'still');
   assert.deepEqual(sheetState(frame({ status: 'pending', generation: 1 }), null, false, false), {
     kind: 'note',
+    reason: 'queued',
     title: 'Waiting to build',
     detail: 'It builds when a slot is free.',
   });

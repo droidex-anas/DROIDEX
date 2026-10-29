@@ -14,7 +14,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { Spinner, X } from '@droidex/icons';
+import { X } from '@droidex/icons';
 import { CodeCopyButton } from '../../components/MarkdownCode';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
@@ -46,6 +46,7 @@ import {
   type SourceIssue,
 } from './canvasSourceIssues';
 import { CompareCaption, ConflictBar, ConflictCompare } from './CanvasSourceConflict';
+import { ReadFailure, SourceEmptyState } from './CanvasSourceStates';
 import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import type { CanvasFrame, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
@@ -139,6 +140,10 @@ export function CanvasSourcePanel({
     void saveCanvasSource(canvasId, crypto.randomUUID(), writeSource);
   }, [canvasId, writeSource]);
 
+  const retryRead = () => {
+    dispatch({ type: 'retryRead' });
+  };
+
   const close = useCallback(() => {
     forgetCanvasSource(canvasId);
     onClose();
@@ -181,9 +186,9 @@ export function CanvasSourcePanel({
         <header className="flex shrink-0 items-center gap-1">
           <h2 className="flex min-w-0 flex-1 items-baseline gap-2">
             <span className="truncate text-body-strong text-primary">{frame.name}</span>
-            <span className="shrink-0 text-caption tabular-nums text-muted">
-              {versionLabel(frame.revisionId, version)}
-            </span>
+            {version !== null && (
+              <span className="shrink-0 text-caption tabular-nums text-muted">v{version}</span>
+            )}
           </h2>
           {activePath !== null && <CodeCopyButton text={sourceText(source, activePath)} />}
           <Button
@@ -219,19 +224,17 @@ export function CanvasSourcePanel({
           dispatch({ type: 'selectFile', path });
         }}
       />
-      {read?.status === 'failed' ? (
-        <ReadFailure
-          message={read.message}
-          keeping={dirtyPaths(source).length > 0}
-          onRetry={() => {
-            dispatch({ type: 'retryRead' });
-          }}
-        />
-      ) : null}
       {activePath === null ? (
-        <EmptyEditor reason={emptyReason(frame.revisionId, source)} />
+        <SourceEmptyState revisionId={frame.revisionId} source={source} onRetry={retryRead} />
       ) : (
         <>
+          {read?.status === 'failed' ? (
+            <ReadFailure
+              message={read.message}
+              keeping={dirtyPaths(source).length > 0}
+              onRetry={retryRead}
+            />
+          ) : null}
           {conflict ? (
             <ConflictBar
               comparing={comparing}
@@ -287,78 +290,6 @@ export function CanvasSourcePanel({
         }}
       />
     </section>
-  );
-}
-
-function versionLabel(revisionId: string | null, version: number | null): string {
-  if (revisionId === null) return 'No source yet';
-  return version === null ? '' : `v${String(version)}`;
-}
-
-/** Why the editor area has no file to show. */
-type EmptyReason = 'noRevision' | 'reading' | 'readFailed' | 'noFiles';
-
-/**
- * "No source yet" belongs only to a frame that has never built a revision. A
- * revision the panel does not hold yet is still arriving — including the render
- * before the read starts, and every render while a save is in flight against a
- * revision this frame has — and a failed read says so beside its own Retry.
- */
-function emptyReason(revisionId: string | null, source: FrameSource): EmptyReason {
-  if (revisionId === null) return 'noRevision';
-  if (source.read?.status === 'failed') return 'readFailed';
-  if (source.read?.status === 'loading' || source.revisionId !== revisionId) return 'reading';
-  return 'noFiles';
-}
-
-const EMPTY_MESSAGE: Record<EmptyReason, string> = {
-  noRevision: 'This frame has no source yet.',
-  reading: 'Reading this version’s source…',
-  readFailed: 'Source could not be read.',
-  noFiles: 'This version has no source files.',
-};
-
-function EmptyEditor({ reason }: { reason: EmptyReason }) {
-  return (
-    <p
-      role={reason === 'reading' ? 'status' : undefined}
-      className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-lg bg-code text-body text-secondary"
-    >
-      {reason === 'reading' && (
-        <Spinner className="size-icon-md shrink-0 animate-spin text-muted" aria-hidden />
-      )}
-      {EMPTY_MESSAGE[reason]}
-    </p>
-  );
-}
-
-/**
- * A read that failed. Retry asks for the same revision again; nothing here
- * touches a buffer, because reopening the panel to force a read is exactly how
- * the user would lose the draft they are trying to keep.
- */
-function ReadFailure({
-  message,
-  keeping,
-  onRetry,
-}: {
-  message: string;
-  keeping: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <div
-      role="alert"
-      className="flex shrink-0 items-center gap-2 rounded-lg bg-elevated py-1 pl-3 pr-1 text-caption text-secondary"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="text-danger">{message}</span>
-        {keeping ? ' Your unsaved edits are still here.' : null}
-      </span>
-      <Button size="sm" onClick={onRetry}>
-        Try again
-      </Button>
-    </div>
   );
 }
 

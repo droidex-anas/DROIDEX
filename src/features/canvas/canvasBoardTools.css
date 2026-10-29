@@ -183,6 +183,7 @@
   gap: 2px;
   padding: 4px;
   border-radius: 12px;
+  transform-origin: 50% 100%;
 }
 
 .canvas-selection-bar .canvas-tool {

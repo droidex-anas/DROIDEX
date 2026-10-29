@@ -10,7 +10,14 @@
 
 import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import { AlertTriangle } from '@droidex/icons';
+import {
+  AlertTriangle,
+  CirclePause,
+  CirclePlay,
+  Clock,
+  LayoutTemplate,
+  type IconComponent,
+} from '@droidex/icons';
 import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
@@ -149,6 +156,7 @@ export function DesignFrame(props: DesignFrameProps) {
           frame={frame}
           interacted={props.interacted}
           roomRight={props.roomRight}
+          motion={motion}
           inChat={props.inChat}
           actions={props.actions}
           onInteract={onInteract}
@@ -347,15 +355,25 @@ function SheetContent({
       data-compact={compact || undefined}
       data-tiny={tiny || undefined}
     >
-      <div className="canvas-sheet-message canvas-chrome">
+      <div key={state.kind} className="canvas-sheet-message canvas-state-reveal canvas-chrome">
         {state.kind === 'busy' && (
           <PendingBloom stage={state.stage} visible={visible} motion={motion} />
         )}
         {state.kind === 'note' && (
-          <SheetNote title={state.title} detail={state.detail} compact={compact} />
+          <SheetNote
+            icon={NOTE_ICONS[state.reason]}
+            title={state.title}
+            detail={state.detail}
+            compact={compact}
+          />
         )}
         {state.kind === 'still' && (
-          <SheetNote title="Preview not running" detail={state.detail} compact={compact} />
+          <SheetNote
+            icon={CirclePlay}
+            title="Preview not running"
+            detail={state.detail}
+            compact={compact}
+          />
         )}
         {state.kind === 'failed' && (
           <FailedNote state={state} compact={compact} onOpenSource={onOpenSource} />
@@ -365,17 +383,29 @@ function SheetContent({
   );
 }
 
+const NOTE_ICONS: Record<Extract<SheetState, { kind: 'note' }>['reason'], IconComponent> = {
+  empty: LayoutTemplate,
+  queued: Clock,
+  cancelled: CirclePause,
+};
+
 function SheetNote({
+  icon,
   title,
   detail,
   compact,
 }: {
+  icon: IconComponent;
   title: string;
   detail: string;
   compact: boolean;
 }) {
+  const Icon = icon;
   return (
     <>
+      <span className="canvas-sheet-icon">
+        <Icon className="h-4 w-4" aria-hidden />
+      </span>
       <p className="canvas-sheet-title">{title}</p>
       {!compact && <p className="canvas-sheet-detail">{detail}</p>}
     </>
@@ -397,7 +427,9 @@ function FailedNote({
   const place = first ? diagnosticPlace(first) : null;
   return (
     <>
-      <AlertTriangle className="h-4 w-4 text-danger" aria-hidden />
+      <span className="canvas-sheet-icon" data-tone="danger">
+        <AlertTriangle className="h-4 w-4" aria-hidden />
+      </span>
       <p className="canvas-sheet-title">Didn’t build</p>
       {!compact && first && (
         <p className="canvas-sheet-detail canvas-sheet-clamp">

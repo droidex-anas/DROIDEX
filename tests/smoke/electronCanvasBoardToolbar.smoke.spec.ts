@@ -101,13 +101,13 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   const label = frame(page, 'B').locator('[data-frame-header]');
   await label.focus();
   const toolbar = page.getByRole('toolbar', { name: 'Design B actions' });
-  const rename = toolbar.getByRole('button', { name: 'Rename Design B' });
+  const versions = toolbar.getByRole('button', { name: 'Versions of Design B' });
   const more = toolbar.getByRole('button', { name: 'More for Design B' });
 
   await page.keyboard.press('Tab');
-  await expect(rename).toBeFocused();
+  await expect(versions).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(toolbar.getByRole('button', { name: 'Versions of Design B' })).toBeFocused();
+  await expect(toolbar.getByRole('button', { name: 'Interact with Design B' })).toBeFocused();
   await page.keyboard.press('End');
   await expect(more).toBeFocused();
 
@@ -128,7 +128,7 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   await page.keyboard.press('Tab');
   await expect(more).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(rename).toBeFocused();
+  await expect(versions).toBeFocused();
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 });
 

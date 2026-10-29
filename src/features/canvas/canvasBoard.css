@@ -121,19 +121,26 @@
 
 .canvas-frame-toolbar {
   display: flex;
+  align-items: center;
   gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
+  padding: 4px;
+  border-radius: 10px;
   background: var(--raised);
   box-shadow: var(--shadow-sm);
+  transform-origin: 0 100%;
+}
+
+.canvas-frame-tools[data-align='end'] .canvas-frame-toolbar {
+  transform-origin: 100% 100%;
 }
 
 .canvas-frame-tool {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 6px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   font: 500 12px / 18px var(--canvas-chrome-font);
   color: var(--text-secondary);
@@ -150,10 +157,40 @@
   color: var(--text);
 }
 
+.canvas-frame-tool[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--selection) 14%, transparent);
+  color: var(--selection);
+}
+
+.canvas-frame-tool-text {
+  width: auto;
+  padding: 0 10px;
+}
+
+/* The version on show, as a tinted chip that opens the list of versions. */
 .canvas-frame-version {
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+  background: var(--success-soft);
+  color: var(--success);
   font-variant-numeric: tabular-nums;
 }
 
+.canvas-frame-version:hover,
+.canvas-frame-version:focus-visible,
+.canvas-frame-version[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.canvas-frame-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
 /* The name while it is renamed: the label's own pill, holding a field. */
 .canvas-frame-name-field {
   width: 100%;
@@ -243,10 +280,28 @@
   max-width: min(280px, calc(100% * var(--board-scale)));
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 16px;
   text-align: center;
   transform-origin: 50% 50%;
+}
+
+/* The state's mark, on a soft tile above its title. */
+.canvas-sheet-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-muted);
+}
+
+.canvas-sheet-icon[data-tone='danger'] {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .canvas-sheet-title {
@@ -267,7 +322,7 @@
 }
 
 /* No room for words: the label above names the frame, and a failure keeps its mark. */
-.canvas-sheet-state[data-tiny] .canvas-sheet-message > :not(svg) {
+.canvas-sheet-state[data-tiny] .canvas-sheet-message > :not([data-tone='danger']) {
   display: none;
 }
 
@@ -285,7 +340,7 @@
 
 .canvas-sheet-action {
   pointer-events: auto;
-  margin-top: 8px;
+  margin-top: 10px;
   height: 26px;
   padding: 0 10px;
   border-radius: 7px;

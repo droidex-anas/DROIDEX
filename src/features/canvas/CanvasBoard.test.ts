@@ -247,7 +247,7 @@ test('a selected frame offers Add to chat only on its chat’s own canvas, and s
   );
   assert.match(
     render(snapshot, picked, false, { onToggleChat, pinnedIds: new Set(['a']) }),
-    /aria-pressed="true" aria-label="Take Design a out of the chat"[^>]*>.*In chat/,
+    /aria-pressed="true" aria-label="Take Design a out of the chat"/,
   );
 });
 

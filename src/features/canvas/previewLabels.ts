@@ -66,7 +66,7 @@ export function isPending(build: CanvasBuildState): boolean {
 export type SheetState =
   /** Someone is working on it now: the stage name shimmers. */
   | { kind: 'busy'; stage: 'writing' | 'building' }
-  | { kind: 'note'; title: string; detail: string }
+  | { kind: 'note'; reason: 'empty' | 'queued' | 'cancelled'; title: string; detail: string }
   | { kind: 'failed'; diagnostics: CanvasDiagnostic[] }
   /** It has a working revision that is not running: its last picture, if any. */
   | { kind: 'still'; revisionId: string; detail: string };
@@ -90,7 +90,12 @@ export function sheetState(
   if (frame.revisionId === null)
     return agentWorking
       ? { kind: 'busy', stage: 'writing' }
-      : { kind: 'note', title: 'Empty frame', detail: 'Nothing has been written to it yet.' };
+      : {
+          kind: 'note',
+          reason: 'empty',
+          title: 'Empty frame',
+          detail: 'Nothing has been written to it yet.',
+        };
   if (build.status === 'failed') return { kind: 'failed', diagnostics: build.diagnostics };
   if (shown !== null)
     return {
@@ -104,9 +109,19 @@ export function sheetState(
     case 'building':
       return { kind: 'busy', stage: 'building' };
     case 'cancelled':
-      return { kind: 'note', title: 'Build cancelled', detail: 'Its next change builds it again.' };
+      return {
+        kind: 'note',
+        reason: 'cancelled',
+        title: 'Build cancelled',
+        detail: 'Its next change builds it again.',
+      };
     default:
-      return { kind: 'note', title: 'Waiting to build', detail: 'It builds when a slot is free.' };
+      return {
+        kind: 'note',
+        reason: 'queued',
+        title: 'Waiting to build',
+        detail: 'It builds when a slot is free.',
+      };
   }
 }
 

@@ -1,6 +1,7 @@
-/* Canvas motion: frame arrival and toolbar reveal. This file is imported by the
-   lazy Canvas surface, so these rules load with the board rather than on every
-   app start. The pending shimmer has its own sheet, canvasBloom.css. */
+/* Canvas motion: frame arrival, toolbar reveal and state fades. This file is
+   imported by the lazy Canvas surface, so these rules load with the board
+   rather than on every app start. The pending shimmer has its own sheet,
+   canvasBloom.css. */
 
 /* Frame arrival and toolbar reveal. Duration, easing and travel are set
    inline from the motion tokens, so the curve is stated once in
@@ -20,7 +21,7 @@
 @keyframes canvas-popover-reveal {
   from {
     opacity: 0;
-    transform: translateY(var(--canvas-popover-travel, 4px));
+    transform: translateY(var(--canvas-popover-travel, 4px)) scale(0.96);
   }
   to {
     opacity: 1;
@@ -44,6 +45,32 @@
 @media (prefers-reduced-motion: reduce) {
   .canvas-frame-arrival,
   .canvas-popover-reveal {
+    animation: none;
+  }
+}
+
+/* An empty, loading or failed state settling in. Opacity only: a sheet's
+   message already carries the chrome's screen-size scale as its transform. */
+@keyframes canvas-state-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.canvas-state-reveal {
+  animation: canvas-state-reveal 200ms var(--ease-smooth-out) both;
+}
+
+/* Loading shows nothing for its first 300ms, so a fast read never flashes. */
+.canvas-state-reveal[data-delayed] {
+  animation-delay: 300ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-state-reveal {
     animation: none;
   }
 }

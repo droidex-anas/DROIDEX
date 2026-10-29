@@ -88,18 +88,18 @@ test('fit centres every frame and its chrome with padding and never magnifies pa
 
   // 72 px of padding each side leaves 856 px for a 3000 px span.
   assert.ok(Math.abs(wide.scale - 856 / 3000) < 1e-12);
-  // The 66 px label and toolbar above the frames are framed with them, so the
+  // The 74 px label and toolbar above the frames are framed with them, so the
   // bounds centre sits half that below the viewport centre.
-  assert.deepEqual(canvasToScreen(wide, { x: 1500, y: 500 }), { x: 500, y: 433 });
+  assert.deepEqual(canvasToScreen(wide, { x: 1500, y: 500 }), { x: 500, y: 437 });
 
   // One small frame reads at its real size instead of filling the board.
   const single = fitFrames([rect(-40, 120, 320, 240)], size);
   assert.equal(single.scale, 1);
-  assert.deepEqual(canvasToScreen(single, { x: 120, y: 240 }), { x: 500, y: 433 });
+  assert.deepEqual(canvasToScreen(single, { x: 120, y: 240 }), { x: 500, y: 437 });
 
   // A tall frame keeps the padding above its toolbar, not just above its edge.
   const tall = fitFrames([rect(0, 0, 400, 2000)], size);
-  assert.equal(canvasToScreen(tall, { x: 0, y: 0 }).y, 72 + 66);
+  assert.equal(canvasToScreen(tall, { x: 0, y: 0 }).y, 72 + 74);
   assert.equal(canvasToScreen(tall, { x: 0, y: 2000 }).y, 800 - 72);
 
   // Nothing to frame, and a board with no measured size, are both identity.
