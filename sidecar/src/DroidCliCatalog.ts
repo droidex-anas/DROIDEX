@@ -92,17 +92,21 @@ function parseDetailLine(
   line: string,
 ): Pick<ModelInfo, 'displayName' | 'supportedReasoningEfforts' | 'defaultReasoningEffort'> | null {
   const match =
-    /^-\s+(.+?):\s+supports reasoning:\s+\w+;\s+supported:\s+\[([^\]]*)\];\s+default:\s+(\S+)/.exec(
+    /^-\s+(.+?):\s+supports reasoning:\s+(\w+);\s+supported:\s+\[([^\]]*)\];\s+default:\s+(\S+)/.exec(
       line,
     );
   if (!match) return null;
+  const displayName = match[1].trim();
+  // A model without reasoning still lists "[none]; default: none", which is no
+  // level to choose or show.
+  if (match[2] === 'No') return { displayName, supportedReasoningEfforts: [] };
   return {
-    displayName: match[1].trim(),
-    supportedReasoningEfforts: match[2]
+    displayName,
+    supportedReasoningEfforts: match[3]
       .split(',')
       .map((value) => reasoningValue(value.trim()))
       .filter((value): value is ReasoningEffort => Boolean(value)),
-    defaultReasoningEffort: reasoningValue(match[3]),
+    defaultReasoningEffort: reasoningValue(match[4]),
   };
 }
 
