@@ -139,6 +139,7 @@ import {
   MessageBubble,
   MessageSquareText,
   Models,
+  Plus,
   Settings,
   Zap,
 } from '@droidex/icons';
@@ -1061,7 +1062,17 @@ export default function PromptInput({
 
   // Autonomy snapshot for a session this composer would create: the draft
   // override when the user picked one, otherwise the persisted app default.
-  const draftAutonomy = state.draftAutonomy ?? state.defaultAutonomy;
+  // Design chats always start at High, so iterating on a canvas never stops
+  // to ask permission.
+  const draftAutonomy: Autonomy = state.designComposer
+    ? 'high'
+    : (state.draftAutonomy ?? state.defaultAutonomy);
+  // The Design composer keeps only the autonomy control of a chat that is
+  // not at High yet, so the user can still raise it.
+  const showsAutonomy =
+    !state.designComposer ||
+    (activeSession !== null &&
+      (state.pendingAutonomy?.autonomy ?? activeSession.autonomy) !== 'high');
   const [missionAutonomyGateOpen, setMissionAutonomyGateOpen] = useState(false);
   // The gate's premise is gone once the draft is at High (e.g. raised through
   // the selector while the gate is showing).
@@ -2086,7 +2097,10 @@ export default function PromptInput({
   const showStartIn = !activeSession && !missionPreview && (!!cwd || projectDraft);
   const enterSteers = state.liveEnterBehavior === 'steer';
   let chatPlaceholder =
-    placeholder ?? 'What would you like to work on?  (/ for skills, @ for files)';
+    placeholder ??
+    (state.designComposer
+      ? 'Describe a change to the design…'
+      : 'What would you like to work on?  (/ for skills, @ for files)');
   if (isSpecMode) chatPlaceholder = 'Describe what to build in spec mode...';
   if (projectDraft)
     chatPlaceholder = 'What should this project get done?  (/ for skills, @ for files)';
@@ -2576,19 +2590,34 @@ export default function PromptInput({
           {/* Toolbar — one seamless surface with the draft, no divider line.
               It wraps on narrow windows rather than pushing controls offscreen. */}
           <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-1">
-            <AddMenu
-              visualizeSelected={visualizeSelected}
-              // Both rows hand focus to the draft, which is where the prompt
-              // continues once the menu has added to it.
-              onAttachFiles={() => {
-                editorRef.current?.focus();
-                void handleAttachFiles();
-              }}
-              onToggleVisualize={() => {
-                setVisualizeSelected(!visualizeSelected);
-                editorRef.current?.focus();
-              }}
-            />
+            {state.designComposer ? (
+              <button
+                type="button"
+                onClick={() => {
+                  editorRef.current?.focus();
+                  void handleAttachFiles();
+                }}
+                className="flex size-control-md shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-active/60 hover:text-primary"
+                title="Attach files"
+                aria-label="Attach files"
+              >
+                <Plus className="size-icon-md" aria-hidden="true" />
+              </button>
+            ) : (
+              <AddMenu
+                visualizeSelected={visualizeSelected}
+                // Both rows hand focus to the draft, which is where the prompt
+                // continues once the menu has added to it.
+                onAttachFiles={() => {
+                  editorRef.current?.focus();
+                  void handleAttachFiles();
+                }}
+                onToggleVisualize={() => {
+                  setVisualizeSelected(!visualizeSelected);
+                  editorRef.current?.focus();
+                }}
+              />
+            )}
 
             {activeSession?.droidProfile === 'alt' && (
               <span className="shrink-0 px-2 text-caption text-muted" title="Alt Factory account">
@@ -2613,7 +2642,7 @@ export default function PromptInput({
                     : 'Provider managed'}
                 </span>
               </span>
-            ) : activeSession ? (
+            ) : !showsAutonomy ? null : activeSession ? (
               <AutonomySelector
                 placement="top-start"
                 scope="session"
@@ -2734,15 +2763,17 @@ export default function PromptInput({
                         {reasoningEffortLabel(primaryReasoning, composerProvider)}
                       </span>
                     )}
-                    {contextWindowTokens !== undefined && offersContextWindow(composerProvider) && (
-                      <span
-                        className="shrink-0 text-muted"
-                        title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
-                      >
-                        {primaryReasoning ? '· ' : ''}
-                        {contextWindowLabel(contextWindowTokens)}
-                      </span>
-                    )}
+                    {!state.designComposer &&
+                      contextWindowTokens !== undefined &&
+                      offersContextWindow(composerProvider) && (
+                        <span
+                          className="shrink-0 text-muted"
+                          title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
+                        >
+                          {primaryReasoning ? '· ' : ''}
+                          {contextWindowLabel(contextWindowTokens)}
+                        </span>
+                      )}
                   </>
                 )}
               </button>
