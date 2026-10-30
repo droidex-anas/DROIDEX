@@ -405,6 +405,7 @@ export default function PromptInput({
     });
   };
   const modelChipRef = useRef<HTMLButtonElement>(null);
+  const designModelControlsRef = useRef<HTMLDivElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
@@ -2518,6 +2519,9 @@ export default function PromptInput({
             setModelsOpen(false);
           }}
           anchorRef={modelChipRef}
+          // A pick resizes the chip and Design's reasoning chip beside it; the
+          // end of the row they share stays put, so the open picker does too.
+          alignRef={designComposer ? designModelControlsRef : undefined}
           label={missionPreview ? 'Models' : 'Model'}
           placement={`${pickerSide}-end`}
         >
@@ -2893,7 +2897,7 @@ export default function PromptInput({
               </Suspense>
             )}
             {designTools}
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+            <div ref={designModelControlsRef} className="ml-auto flex shrink-0 items-center gap-1">
               {modelPicker}
               <ReasoningChip
                 appSessionId={appSessionId}
