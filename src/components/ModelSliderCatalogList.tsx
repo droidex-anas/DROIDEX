@@ -7,10 +7,12 @@ import {
   providerOf,
   shortModelName,
 } from './ModelIcon';
-import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
-
-// Five 40px rows before the list scrolls.
-const LIST_MAX_HEIGHT_PX = 200;
+import {
+  MODEL_LIST_HEIGHT_PX,
+  ModelListStatus,
+  SelectionHighlight,
+  useModelListVirtualizer,
+} from './modelListParts';
 
 /**
  * The slider popover's model list: the virtualized, filtered catalog, with the
@@ -44,8 +46,8 @@ export default function ModelSliderCatalogList({
   return (
     <div
       ref={scrollRef}
-      className="-mx-1 min-h-0 overflow-y-auto px-1"
-      style={{ maxHeight: LIST_MAX_HEIGHT_PX }}
+      className="-mx-1 min-h-0 overflow-y-auto overscroll-contain px-1"
+      style={{ height: MODEL_LIST_HEIGHT_PX }}
     >
       <div
         role="listbox"
@@ -114,7 +116,7 @@ function SliderRow({
         onSelect();
       }}
       title={model.displayName}
-      className={`relative flex h-10 cursor-pointer items-center gap-2.5 rounded-md px-2.5 select-none ${
+      className={`relative flex h-10 cursor-pointer items-center gap-2.5 rounded-md px-2 select-none ${
         selected ? 'cursor-default' : 'hover:bg-elevated dark:hover:bg-active'
       }`}
     >

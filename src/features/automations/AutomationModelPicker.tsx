@@ -209,7 +209,7 @@ export function AutomationModelPicker({
                 />
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-1">
+              <div className="my-2 flex flex-wrap gap-1">
                 <CategoryButton
                   label="All"
                   active={category === 'all'}

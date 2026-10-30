@@ -36,6 +36,10 @@ import {
 const WIDTH_PX = 320;
 // Inside the window's 8px floating-layer margin on both sides.
 const MAX_WIDTH = 'calc(100vw - 16px)';
+// A view arrives 8px from the side it comes from; the one leaving only fades,
+// faster than the arrival.
+const VIEW_ENTER = { duration: 0.14, ease: [0.22, 1, 0.36, 1] } as const;
+const VIEW_EXIT = { duration: 0.09, ease: 'easeIn' } as const;
 
 /**
  * The alternative composer model selector: a panel that lists models and
@@ -62,7 +66,6 @@ export default function ModelSliderPopover({
     provider,
     providerStatuses,
     showHarness,
-    harnessLocked,
     selectHarness,
     models,
     hasRealModels,
@@ -100,11 +103,8 @@ export default function ModelSliderPopover({
       ? shownEffort
       : (levels.at(-1)?.value ?? '');
   const showEffortView = view === 'effort' && canDrill && sliderValue !== '';
-  const drillLabel = !canDrill
-    ? undefined
-    : shownEffort === undefined
-      ? 'Default'
-      : effortDisplay(shownEffort, provider);
+  let drillLabel: string | undefined;
+  if (canDrill) drillLabel = shownEffort ? effortDisplay(shownEffort, provider) : 'Reasoning';
 
   const defaultWindow = unpinnedContextWindow(
     providerWindow,
@@ -166,11 +166,10 @@ export default function ModelSliderPopover({
         {showEffortView ? (
           <motion.div
             key="effort"
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 12 }}
-            transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="px-3 pt-2 pb-3"
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0, transition: VIEW_ENTER }}
+            exit={{ opacity: 0, transition: VIEW_EXIT }}
+            className="px-2.5 pt-2 pb-3"
           >
             <div className="flex h-8 items-center gap-1.5">
               <button
@@ -235,62 +234,55 @@ export default function ModelSliderPopover({
         ) : (
           <motion.div
             key="list"
-            initial={{ opacity: 0, x: -12 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="flex min-h-0 flex-col"
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0, transition: VIEW_ENTER }}
+            exit={{ opacity: 0, transition: VIEW_EXIT }}
+            className="flex min-h-0 flex-col gap-1.5 p-1.5"
           >
             {showHarness && (
               <HarnessSegments
                 provider={provider}
                 statuses={providerStatuses}
-                locked={harnessLocked}
                 onSelect={selectHarness}
               />
             )}
-
-            <div className="flex min-h-0 flex-col px-3 pt-3 pb-3">
-              <div className="flex shrink-0 items-center gap-1.5">
-                <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-field px-3 dark:bg-bg/50">
-                  <Search className="size-icon-sm shrink-0 text-muted" />
-                  <Input
-                    variant="embedded"
-                    autoFocus
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                    }}
-                    placeholder="Search models"
-                    aria-label="Search models"
-                  />
-                </div>
-                {catOptions.length > 0 && (
-                  <ModelCategoryFilter
-                    options={catOptions}
-                    selected={cat}
-                    open={filterOpen}
-                    onOpenChange={setFilterOpen}
-                    onSelect={setCat}
-                  />
-                )}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-field px-2 dark:bg-bg/50">
+                <Search className="size-icon-sm shrink-0 text-muted" />
+                <Input
+                  variant="embedded"
+                  autoFocus
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                  }}
+                  placeholder="Search models"
+                  aria-label="Search models"
+                />
               </div>
-
-              <div className="px-0.5 pb-1 pt-2.5 text-caption text-muted">Select model</div>
-
-              <ModelSliderCatalogList
-                models={models}
-                hasRealModels={hasRealModels}
-                selectedModelId={selectedRowId}
-                query={query}
-                drillLabel={drillLabel}
-                drillUltra={canDrill && shownEffort === 'ultra'}
-                onSelectModel={updateModel}
-                onDrill={() => {
-                  setView('effort');
-                }}
-              />
+              {catOptions.length > 0 && (
+                <ModelCategoryFilter
+                  options={catOptions}
+                  selected={cat}
+                  open={filterOpen}
+                  onOpenChange={setFilterOpen}
+                  onSelect={setCat}
+                />
+              )}
             </div>
+            <div className="px-2 pt-1 text-caption text-muted">Select model</div>
+            <ModelSliderCatalogList
+              models={models}
+              hasRealModels={hasRealModels}
+              selectedModelId={selectedRowId}
+              query={query}
+              drillLabel={drillLabel}
+              drillUltra={canDrill && shownEffort === 'ultra'}
+              onSelectModel={updateModel}
+              onDrill={() => {
+                setView('effort');
+              }}
+            />
           </motion.div>
         )}
       </AnimatePresence>

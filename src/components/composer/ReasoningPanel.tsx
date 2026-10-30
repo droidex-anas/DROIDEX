@@ -43,7 +43,11 @@ export default function ReasoningPanel({ appSessionId }: { appSessionId: string 
   const showsContextWindow = offersContextWindow(provider);
 
   return (
-    <div ref={panelRef} style={{ width: WIDTH_PX, maxWidth: MAX_WIDTH }} className="px-3 pt-1 pb-3">
+    <div
+      ref={panelRef}
+      style={{ width: WIDTH_PX, maxWidth: MAX_WIDTH }}
+      className="px-2.5 pt-1 pb-3"
+    >
       {(showsFastMode || showsContextWindow) && (
         <div className="flex h-8 items-center gap-1.5">
           {showsFastMode && (
