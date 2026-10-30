@@ -39,6 +39,17 @@ export function storedMessageAnchors(
   return anchors;
 }
 
+// A line the transcript reader skips as corrupt holds no anchors, but it still
+// takes up a physical line.
+function lineAnchors(raw: string, lineIndex: number): Map<string, number> {
+  if (!raw.trim()) return new Map();
+  try {
+    return storedMessageAnchors(JSON.parse(raw) as StoredMessageLine, lineIndex);
+  } catch {
+    return new Map();
+  }
+}
+
 // Physical line anchors survive forks, which replace the head but keep message lines.
 export class ProviderTranscriptAnchors {
   private initialized = false;
@@ -54,12 +65,7 @@ export class ProviderTranscriptAnchors {
       try {
         let index = 0;
         for await (const raw of lines) {
-          if (!raw.trim()) {
-            index += 1;
-            continue;
-          }
-          const line = JSON.parse(raw) as StoredMessageLine;
-          for (const [key, start] of storedMessageAnchors(line, index)) {
+          for (const [key, start] of lineAnchors(raw, index)) {
             const previous = this.starts.get(key);
             if (
               (previous === undefined && start !== index) ||

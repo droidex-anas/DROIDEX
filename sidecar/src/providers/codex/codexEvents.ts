@@ -255,6 +255,12 @@ export class CodexEventMapper {
     if (previous?.label && previous.label !== previous.prompt) child.label = previous.label;
     // Closing a failed thread is not a successful run. A new running state can resume it.
     if (previous?.status === 'failed' && child.status === 'completed') child.status = 'failed';
+    // Codex thread metadata names no model; a child no spawn call configured
+    // runs on the parent's.
+    if (!child.modelId && this.model.modelId) {
+      child.modelId = this.model.modelId;
+      child.reasoningEffort ??= reasoningValue(this.model.reasoningEffort ?? undefined);
+    }
     this.children.set(id, child);
     return [{ childSession: child }];
   }

@@ -75,6 +75,36 @@ test('root agent activity keeps parent output in its own transcript without hidi
   );
 });
 
+// Without a model the child is never admitted, and its transcript rows are dropped.
+test('a code-mode child Codex announces without a model runs on the parent model', async (t) => {
+  const { client, notifications } = fakeClient((method) =>
+    method === 'thread/start'
+      ? { thread: { id: 'parent-thread' }, model: 'parent-model' }
+      : undefined,
+  );
+  const session = codexSession(client, 'app-parent');
+  t.after(() => session.close());
+  await session.open();
+  const events: NormalizedEvent[] = [];
+  session.onBackgroundEvent((event) => events.push(event));
+  notifications.get('thread/started')?.({
+    thread: { id: 'code-child', parentThreadId: 'parent-thread' },
+  });
+  notifications.get('item/completed')?.({
+    threadId: 'parent-thread',
+    item: {
+      type: 'subAgentActivity',
+      id: 'child-activity',
+      kind: 'interacted',
+      agentThreadId: 'code-child',
+      agentPath: '/root/child',
+    },
+  });
+  const announced = events.filter((event) => event.childSession);
+  assert.ok(announced.length > 0);
+  assert.ok(announced.every((event) => event.childSession?.modelId === 'parent-model'));
+});
+
 test('native child streams remain separate from the parent turn and stop at settlement or closure', async () => {
   let startTurn: () => void = () => undefined;
   const started = new Promise<void>((resolve) => {
