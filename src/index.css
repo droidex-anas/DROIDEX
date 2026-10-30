@@ -952,10 +952,12 @@
   /* A floating layer's content box (ui/Popover, ui/Tooltip). It portals to
      <body>, outside #root's zoom, so it applies the UI zoom itself, and its
      max height converts the room usePopoverPosition measured in screen
-     pixels into its own zoomed units. */
+     pixels into its own zoomed units. A layer can reach over the title bar,
+     so it punches a no-drag hole there to keep its controls pressable. */
   .floating-layer {
     zoom: var(--ui-zoom);
     max-height: calc(var(--available-height, 100vh) / var(--ui-zoom));
+    -webkit-app-region: no-drag;
   }
 
   /* Enter from the side the layer actually landed on (data-side): fade in
