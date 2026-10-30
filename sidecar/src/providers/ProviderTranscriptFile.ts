@@ -72,7 +72,7 @@ export class ProviderTranscriptFile {
   // reported to the caller that wrote it, and the lines after it still go out.
   private writes: Promise<void> = Promise.resolve();
   private readonly children = new Map<string, ProviderTranscriptFile>();
-  private readonly anchors = new ProviderTranscriptAnchors();
+  private anchors = new ProviderTranscriptAnchors();
 
   // Reads the summary when it writes rather than holding a copy: the registry
   // replaces the summary object on every update, and the head line goes out
@@ -201,7 +201,12 @@ export class ProviderTranscriptFile {
       anchored.commit();
       this.headWritten = true;
     });
-    this.writes = attempt.catch(() => undefined);
+    // A failed append can leave part of its line on disk, so the next write
+    // learns the file's state from the file again.
+    this.writes = attempt.catch(() => {
+      this.headWritten = false;
+      this.anchors = new ProviderTranscriptAnchors();
+    });
     return attempt;
   }
 

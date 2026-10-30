@@ -151,6 +151,50 @@ test("a spawn's settings reach the child's own code-mode children after its thre
   assert.equal(grandchild?.reasoningEffort, 'high');
 });
 
+test("a restored child's settings outlast later activity that names no settings", async (t) => {
+  const { client, notifications } = fakeClient((method) =>
+    method === 'thread/start'
+      ? { thread: { id: 'parent-thread' }, model: 'parent-model' }
+      : undefined,
+  );
+  const session = codexSession(client, 'app-parent');
+  t.after(() => session.close());
+  await session.open();
+  session.restoreChildren([
+    {
+      providerSessionId: 'restored',
+      role: 'worker',
+      status: 'running',
+      modelId: 'explicit-model',
+      reasoningEffort: 'high',
+      transcriptAvailable: true,
+    },
+  ]);
+  const events: NormalizedEvent[] = [];
+  session.onBackgroundEvent((event) => events.push(event));
+  for (const [threadId, agentThreadId] of [
+    ['parent-thread', 'restored'],
+    ['restored', 'grandchild'],
+  ])
+    notifications.get('item/completed')?.({
+      threadId,
+      item: {
+        type: 'subAgentActivity',
+        id: `${agentThreadId}-activity`,
+        kind: 'interacted',
+        agentThreadId,
+        agentPath: '/root/restored',
+      },
+    });
+  for (const id of ['restored', 'grandchild']) {
+    const child = events.findLast(
+      (event) => event.childSession?.providerSessionId === id,
+    )?.childSession;
+    assert.equal(child?.modelId, 'explicit-model', id);
+    assert.equal(child?.reasoningEffort, 'high', id);
+  }
+});
+
 test('native child streams remain separate from the parent turn and stop at settlement or closure', async () => {
   let startTurn: () => void = () => undefined;
   const started = new Promise<void>((resolve) => {

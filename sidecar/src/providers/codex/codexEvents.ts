@@ -182,6 +182,10 @@ export class CodexEventMapper {
     this.model = model;
   }
 
+  modelSettings(): ProviderModelSettings {
+    return this.model;
+  }
+
   // Every payload is read through a reader that answers undefined for a shape
   // this build does not recognize: a notification is not worth throwing out of
   // the transport's synchronous stdout listener.

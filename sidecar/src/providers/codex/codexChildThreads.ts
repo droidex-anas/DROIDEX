@@ -58,9 +58,21 @@ export class CodexChildThreads {
       const existing = this.threads.get(id);
       if (existing) {
         if (child.role) existing.role = child.role;
-        // A spawn call can name the child's settings after its thread started.
-        if (child.modelId) existing.mapper.setModel(model);
-        return [{ ...event, childSession: { ...child, role: existing.role } }];
+        // Only a spawn call names a known child's settings, possibly after its
+        // thread started; other activity carries its sender's defaults.
+        if (child.toolUseId && child.modelId) existing.mapper.setModel(model);
+        const settings = existing.mapper.modelSettings();
+        return [
+          {
+            ...event,
+            childSession: {
+              ...child,
+              role: existing.role,
+              ...(settings.modelId ? { modelId: settings.modelId } : {}),
+              ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
+            },
+          },
+        ];
       }
       this.threads.set(id, {
         role: child.role ?? 'worker',
