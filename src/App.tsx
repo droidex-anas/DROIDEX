@@ -9,7 +9,7 @@ import {
   type CSSProperties,
 } from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
-import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion, useTransform } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
 import { hasActiveSessionWork } from './lib/sessions';
 import { bridge } from './lib/bridge';
@@ -63,7 +63,6 @@ import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from '.
 import { toast } from './lib/toast';
 import { PaneResizeHandle } from './components/utility/PaneResizeHandle';
 import { UtilityPane } from './components/utility/UtilityPane';
-import { ProductSwitcher } from './components/ProductSwitcher';
 import { terminalInstances, releaseTerminalInstancesExcept } from './lib/terminalInstanceRegistry';
 import {
   isExpandableTool,
@@ -90,7 +89,7 @@ import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { listProjects, restoreBrowsersCommand } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
-import { useDesignChatColumn } from './features/canvas/designChatColumn';
+import { useBoardShare, useDesignChatColumn } from './features/canvas/designChatColumn';
 import { useFirstArtifactPane } from './features/canvas/useFirstArtifactPane';
 import { useSharedStorage } from './hooks/useSharedStorage';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
@@ -120,7 +119,6 @@ import {
   LazyCanvasChatBootstrap,
   LazyCanvasHeader,
   LazyCanvasWorkspace,
-  LazyDesignHome,
   LazyCommandPalette,
   LazyAgentsWorkspace,
   LazyThreadsWorkspace,
@@ -296,10 +294,6 @@ export default function App() {
       state.mainView === 'projects');
   const showUtilityPane =
     !embedded && !!activeSession && utilityPanel.open && !showWizard && !fullContentRoute;
-  // Design mode shows the Design home until one of its chats is open; from
-  // then on the chat and its board are the workspace (spec §4).
-  const designHomeShown =
-    !embedded && state.productMode === 'design' && !activeSession && !showWizard;
   // An expanded browser or agent covers the full content row; the utility pane
   // already stays out of the full-content routes, so the expansion follows it.
   const paneExpanded =
@@ -340,8 +334,15 @@ export default function App() {
   // The context panel floats *over* the chat as an overlay (it does not shrink
   // the main scroll area), so the page scrollbar stays pinned to the window's
   // right edge instead of sliding inward and looking like a divider.
+  // A design's chat opens its board instead, so the panel never shows there
+  // in the moment before the board arrives.
   const rightPanelVisible =
-    !focused && !fullContentRoute && !showUtilityPane && state.rightPanelOpen && hasSessionContent;
+    !focused &&
+    !fullContentRoute &&
+    !showUtilityPane &&
+    state.productMode === 'chat' &&
+    state.rightPanelOpen &&
+    hasSessionContent;
   const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
   const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
@@ -356,10 +357,16 @@ export default function App() {
   const contentRowRef = useRef<HTMLDivElement>(null);
   const [contentRowWidth, setContentRowWidth] = useState(0);
   const chatBesideBoard = useDesignChatColumn(contentRowWidth);
-  const chatBesideBoardFlex = `0 0 ${String(chatBesideBoard.width)}px`;
+  // Design's board takes the row beside its chat column, and the column keeps
+  // the rest; the board's share eases that in as it opens.
+  const boardShare = useBoardShare(designCanvasTab !== null);
+  const boardWidth = useTransform(
+    boardShare,
+    (share) => `calc((100% - ${String(chatBesideBoard.width)}px) * ${String(share)})`,
+  );
   let chatColumnStyle: CSSProperties | undefined;
-  if (designCanvasTab) chatColumnStyle = { ...DESIGN_CHAT_TONE, flex: chatBesideBoardFlex };
-  else if (canvasExpanded) chatColumnStyle = { flex: chatBesideBoardFlex };
+  if (designCanvasTab) chatColumnStyle = DESIGN_CHAT_TONE;
+  else if (canvasExpanded) chatColumnStyle = { flex: `0 0 ${String(chatBesideBoard.width)}px` };
   // The toggle moves between the tab row and the chat header, so its preload
   // listeners follow the button itself.
   const bindUtilityToggleIntent = useCallback((toggle: HTMLButtonElement) => {
@@ -381,19 +388,17 @@ export default function App() {
     [dispatch],
   );
   const renderCanvasWorkspace = (appSessionId: string, tab: UtilityTab, expanded: boolean) => (
-    <Suspense fallback={utilityToolFallback('canvas')}>
-      <LazyCanvasWorkspace
-        appSessionId={appSessionId}
-        canvasId={canvasAttachment}
-        namedCanvasId={tab.canvasId ?? undefined}
-        frameId={tab.frameId ?? undefined}
-        isExpanded={expanded}
-        onToggleExpanded={() => {
-          setExpandedPaneAppSessionId(expanded ? null : appSessionId);
-        }}
-        onAttachmentChange={setCanvasAttachment}
-      />
-    </Suspense>
+    <LazyCanvasWorkspace
+      appSessionId={appSessionId}
+      canvasId={canvasAttachment}
+      namedCanvasId={tab.canvasId ?? undefined}
+      frameId={tab.frameId ?? undefined}
+      isExpanded={expanded}
+      onToggleExpanded={() => {
+        setExpandedPaneAppSessionId(expanded ? null : appSessionId);
+      }}
+      onAttachmentChange={setCanvasAttachment}
+    />
   );
   const shellPaintMarked = useRef(false);
   const composerStartupResolved = useRef(false);
@@ -922,15 +927,6 @@ export default function App() {
                     workspaceScopesReady={workspaceScopesReady}
                   />
                 </Suspense>
-              ) : designHomeShown ? (
-                <>
-                  {!state.tabStripShown && (
-                    <div data-electron-drag-region className="h-9 shrink-0" />
-                  )}
-                  <Suspense fallback={null}>
-                    <LazyDesignHome />
-                  </Suspense>
-                </>
               ) : isMissionControlView ? (
                 <motion.div
                   key="mission-control"
@@ -982,20 +978,33 @@ export default function App() {
             {sideChatClose.dialog}
 
             {/* Keyed once, so switching chats swaps the board in place instead
-                of replaying its entrance. It leaves at once: a fading board
-                would squeeze whatever takes its place in the row. */}
+                of replaying its entrance. It slides in from the row's edge at
+                its full width, so it never reflows on the way, and it leaves at
+                once: a fading board would squeeze whatever takes its place. */}
             <MotionConfig reducedMotion="user">
               <AnimatePresence initial={false}>
                 {designCanvasTab && activeSession && (
                   <motion.div
                     key="design-canvas"
-                    initial={{ opacity: 0, x: 8 }}
-                    animate={{ opacity: 1, x: 0 }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
                     exit={{ opacity: 0, transition: { duration: 0 } }}
                     transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                    className="relative h-full min-w-0 flex-1"
+                    style={{ width: boardWidth }}
+                    className="flex h-full shrink-0 justify-end overflow-hidden"
                   >
-                    {renderCanvasWorkspace(activeSession.appSessionId, designCanvasTab, true)}
+                    <div
+                      className="relative h-full shrink-0"
+                      style={{
+                        width: Math.max(0, contentRowWidth - chatBesideBoard.width),
+                        minWidth: '100%',
+                      }}
+                    >
+                      {/* Blank until the board is ready, which then fades in. */}
+                      <Suspense fallback={null}>
+                        {renderCanvasWorkspace(activeSession.appSessionId, designCanvasTab, true)}
+                      </Suspense>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1150,7 +1159,11 @@ export default function App() {
                         );
                       }
                       if (tab.tool === 'canvas') {
-                        return renderCanvasWorkspace(activeSession.appSessionId, tab, paneExpanded);
+                        return (
+                          <Suspense fallback={utilityToolFallback('canvas')}>
+                            {renderCanvasWorkspace(activeSession.appSessionId, tab, paneExpanded)}
+                          </Suspense>
+                        );
                       }
                       if (tab.tool === 'review') {
                         return (
@@ -1254,11 +1267,9 @@ export default function App() {
           layout are unchanged. */}
       <div
         data-electron-drag-region
-        className="absolute h-9 z-40 flex items-center gap-1.5"
+        className="absolute h-9 z-40 flex items-center"
         style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
       >
-        {/* The switch leads, so it stays under the pointer across products. */}
-        <ProductSwitcher />
         <Tooltip
           label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
           placement="bottom"

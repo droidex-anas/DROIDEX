@@ -9,6 +9,7 @@ import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
 import type { BuildCommit, BuildTarget } from './canvasBuildHost.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING, type CanvasCommitOwner } from './canvasCommits.js';
+import { readCanvasCover, saveCanvasCover } from './canvasCovers.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasFrameEdits } from './CanvasFrameEdits.js';
@@ -138,6 +139,20 @@ export class CanvasWorkspace {
       this.canvas(request.canvasId);
       return importCanvasImage(this.writerLease.directory, request);
     });
+  }
+
+  /** Replaces the picture the canvas's Design home card shows. */
+  saveCover(canvasId: string, png: Buffer): Promise<void> {
+    return this.commits.admit(() => {
+      this.commits.requireOpen();
+      this.canvas(canvasId);
+      return saveCanvasCover(this.writerLease.directory, canvasId, png);
+    });
+  }
+
+  readCover(canvasId: string): Promise<Buffer | null> {
+    this.canvas(canvasId);
+    return readCanvasCover(this.writerLease.directory, canvasId);
   }
 
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */

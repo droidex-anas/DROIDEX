@@ -280,6 +280,27 @@
     animation-timeline: scroll(self inline);
   }
 
+  /* The same fade down a column, such as the new-chat home's starting points,
+     which scroll under its composer. Each edge reaches its full depth within
+     the first or last stretch of scroll, so a long column never shows a
+     half-drawn fade. */
+  .scroll-fade-y {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--fade-start),
+      #000 calc(100% - var(--fade-end)),
+      transparent
+    );
+    animation:
+      scroll-fade-top linear both,
+      scroll-fade-bottom linear both;
+    animation-timeline: scroll(self block);
+    animation-range:
+      0 3rem,
+      calc(100% - 3rem) 100%;
+  }
+
   ::selection {
     background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
@@ -562,6 +583,38 @@
 
   .droid-rise {
     animation: droid-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* A row that arrives with what it belongs to grows from nothing, so what
+     sits under it slides down instead of jumping. Its one child takes its
+     content's height, which the grid track reveals. */
+  @keyframes row-open {
+    from {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+    to {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+  }
+
+  .row-open {
+    display: grid;
+    flex-shrink: 0;
+    grid-template-rows: 1fr;
+    animation: row-open 300ms var(--ease-smooth-out) both;
+  }
+
+  .row-open > :first-child {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .row-open {
+      animation: none;
+    }
   }
 
   /* The toast stack clears the status bar, or a pending Remote approval panel
@@ -1277,7 +1330,7 @@
   }
 }
 
-/* Registered so the fade edges can animate as lengths (see .scroll-fade-x). */
+/* Registered so the fade edges can animate as lengths (see .scroll-fade-x and -y). */
 @property --fade-start {
   syntax: '<length>';
   inherits: false;
@@ -1297,6 +1350,24 @@
   }
   to {
     --fade-start: 28px;
+    --fade-end: 0px;
+  }
+}
+
+@keyframes scroll-fade-top {
+  from {
+    --fade-start: 0px;
+  }
+  to {
+    --fade-start: 3rem;
+  }
+}
+
+@keyframes scroll-fade-bottom {
+  from {
+    --fade-end: 3rem;
+  }
+  to {
     --fade-end: 0px;
   }
 }

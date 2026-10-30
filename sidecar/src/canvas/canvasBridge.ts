@@ -203,6 +203,13 @@ class CanvasDispatch {
           command.designSystemAdherence,
         );
         return { kind: 'ok' };
+      case 'canvas.saveCover':
+        await workspace.saveCover(command.canvasId, Buffer.from(command.png, 'base64'));
+        return { kind: 'ok' };
+      case 'canvas.readCover': {
+        const png = await workspace.readCover(command.canvasId);
+        return { kind: 'cover', png: png?.toString('base64') ?? null };
+      }
       case 'canvas.reportPreview':
         // The canvas has to be open; the report itself is only the pane's word.
         workspace.snapshot(command.canvasId);

@@ -555,6 +555,10 @@ export type CanvasCommand =
     }
   | { type: 'canvas.listLibraryItems'; requestId: string; query: string }
   | { type: 'canvas.readLibraryThumbnail'; requestId: string; itemId: string }
+  // The picture a canvas's Design home card shows: a base64 PNG of its first
+  // frame, which the pane captures and each later save replaces.
+  | { type: 'canvas.saveCover'; requestId: string; canvasId: string; png: string }
+  | { type: 'canvas.readCover'; requestId: string; canvasId: string }
   // Explicit whole-canvas deletion from the canvas picker, never an agent tool.
   // The preview names what deleting would end, and removal carries back its
   // sequence and chats so a canvas that changed since is not deleted unseen.
@@ -604,6 +608,7 @@ export type CanvasReply =
   | { kind: 'libraryItem'; item: LibraryItem }
   | { kind: 'libraryItems'; items: LibraryItem[] }
   | { kind: 'libraryThumbnail'; png: string | null }
+  | { kind: 'cover'; png: string | null }
   | { kind: 'removalPreview'; preview: CanvasRemovalPreview };
 
 export type CanvasEvent =

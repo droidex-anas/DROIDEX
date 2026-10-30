@@ -245,7 +245,10 @@ export function CanvasStatus({ label }: { label: string }) {
 
 function CanvasStatusLine({ label }: { label: string }) {
   return (
-    <p role="status" className="flex items-center gap-2 text-label font-normal text-muted">
+    <p
+      role="status"
+      className="flex items-center gap-2 text-label font-normal text-muted motion-safe:animate-fade-in-late"
+    >
       <Spinner size={14} className="shrink-0 motion-safe:animate-spin-slow" />
       {label}
     </p>

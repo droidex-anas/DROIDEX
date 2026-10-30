@@ -22,6 +22,7 @@ import { CanvasMenu } from './CanvasMenu';
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import type { EditElementInput } from './elementEditProtocol';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
+import { useCoverCapture } from './canvasCovers';
 import { DesignPreview } from './DesignPreview';
 import {
   CanvasAction,
@@ -244,24 +245,30 @@ export function CanvasWorkspace({
             <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
           </div>
         )}
-        <CanvasBody
-          state={state}
-          appSessionId={appSessionId}
-          // Only the chat's own canvas can be pinned: its turn's lease is there.
-          pinnable={namedCanvasId === undefined || namedCanvasId === canvasId}
-          interaction={interaction}
-          onInteractionChange={setInteraction}
-          boardRef={boardRef}
-          onChoose={chooseCanvas}
-          onAttachOwed={attachOwed}
-          onRetry={() => {
-            dispatch({ type: 'reopened' });
-            setReopenCount((count) => count + 1);
-          }}
-          onOpenSource={(designId) => {
-            dispatch(openSourcePanel(designId));
-          }}
-        />
+        {/* Each state fades in over the last, so the board never cuts in. */}
+        <div
+          key={state.status}
+          className="flex min-h-0 flex-1 flex-col motion-safe:animate-fade-in"
+        >
+          <CanvasBody
+            state={state}
+            appSessionId={appSessionId}
+            // Only the chat's own canvas can be pinned: its turn's lease is there.
+            pinnable={namedCanvasId === undefined || namedCanvasId === canvasId}
+            interaction={interaction}
+            onInteractionChange={setInteraction}
+            boardRef={boardRef}
+            onChoose={chooseCanvas}
+            onAttachOwed={attachOwed}
+            onRetry={() => {
+              dispatch({ type: 'reopened' });
+              setReopenCount((count) => count + 1);
+            }}
+            onOpenSource={(designId) => {
+              dispatch(openSourcePanel(designId));
+            }}
+          />
+        </div>
       </div>
       <CanvasSourceSlot
         frame={openSourceFrame(state)}
@@ -414,6 +421,7 @@ function CanvasBoardMount({
     [appSessionId, pinnable, snapshot],
   );
   const { frames } = snapshot;
+  useCoverCapture(canvasId, frames);
   const { selectedFrameIds } = interaction;
   const emptyBoard = toolsMissing ? (
     <CanvasToolsMissing canvasId={canvasId} />

@@ -116,7 +116,7 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PreviewGuestFrame } from '../../src/features/canvas/DesignPreview';
 import { captureCanvasImage } from '../../src/features/canvas/captureCanvasImage';
-import { libraryThumbnail } from '../../src/features/canvas/libraryThumbnail';
+import { frameTile, LIBRARY_THUMBNAIL_WIDTH_PX } from '../../src/features/canvas/frameTile';
 const container = document.createElement('div');
 container.id = 'canvas-zoom-probe';
 container.style.cssText = 'position:fixed;left:0;top:0;width:720px;height:720px;transform:scale(0.5);transform-origin:top left;z-index:99999';
@@ -130,7 +130,7 @@ createRoot(container).render(createElement(PreviewGuestFrame, {
 }));
 Object.assign(window, { __canvasPreviewProbe: {
   capture: () => captureCanvasImage(ids.canvasId, ref, new AbortController().signal),
-  libraryThumbnail: () => libraryThumbnail(ids.canvasId, ref),
+  libraryThumbnail: () => frameTile(ids.canvasId, ref, LIBRARY_THUMBNAIL_WIDTH_PX),
 } });
 `,
       resolveDir: path.resolve('tests/smoke'),

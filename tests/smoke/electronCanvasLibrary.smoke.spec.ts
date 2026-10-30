@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { expect, test } from '@playwright/test';
 import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
 import { DEFAULT_DESIGN_SYSTEM_REF } from '../../sidecar/src/canvas/designSystems';
-import { MAX_LIBRARY_THUMBNAIL_BASE64_LENGTH } from '../../src/features/canvas/wireValidation';
+import { MAX_TILE_BASE64_LENGTH } from '../../src/features/canvas/wireValidation';
 import { compileDesign, mountZoomedPreview } from './canvasPreviewHost';
 import { withCanvasBridge, withCanvasHost } from './canvasSmoke';
 
@@ -78,7 +78,7 @@ test('a real capture becomes the item thumbnail the Design home picker shows', a
           return probe.libraryThumbnail();
         });
         assert.ok(typeof encoded === 'string' && encoded.length > 0);
-        assert.ok(encoded.length <= MAX_LIBRARY_THUMBNAIL_BASE64_LENGTH);
+        assert.ok(encoded.length <= MAX_TILE_BASE64_LENGTH);
         assert.ok(encoded.startsWith(PNG_BASE64_PREFIX));
         const size = await page.evaluate(async (png) => {
           const bytes = Uint8Array.from(atob(png), (character) => character.charCodeAt(0));

@@ -27,6 +27,38 @@ function shownDraft(current: AppState, tileId: string | null): AppState['draftCh
   return page?.kind === 'new-chat' ? page.draft : null;
 }
 
+/** What a new chat starts, which its home shows around the composer. */
+export type NewChatStart =
+  | { kind: 'chat' }
+  | { kind: 'design'; canvasId: string | null }
+  | { kind: 'project' };
+
+export function newChatStart(draft: AppState['draftChat']): NewChatStart {
+  if (draft?.project) return { kind: 'project' };
+  if (draft?.canvas) return { kind: 'design', canvasId: draft.canvas.canvasId };
+  return { kind: 'chat' };
+}
+
+/**
+ * The new-chat home: a page with no chat yet and no send on its way, which
+ * centres its composer. Null once there is a chat or a send to show.
+ */
+export function selectNewChatHome(
+  current: AppState,
+  appSessionId: string | null,
+  tileId: string | null,
+): NewChatStart | null {
+  const session = appSessionId ? current.sessions[appSessionId] : undefined;
+  if (session || startingCompose(current, tileId)) return null;
+  return newChatStart(shownDraft(current, tileId));
+}
+
+export function equalNewChatHome(left: NewChatStart | null, right: NewChatStart | null): boolean {
+  if (left === null || right === null) return left === right;
+  if (left.kind === 'design' && right.kind === 'design') return left.canvasId === right.canvasId;
+  return left.kind === right.kind;
+}
+
 export function selectChatViewState(
   current: AppState,
   appSessionId: string | null,

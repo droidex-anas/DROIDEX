@@ -10,21 +10,27 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
 // light themes as well as dark ones.
 const textTint = (pct: number) => `color-mix(in srgb, var(--text) ${String(pct)}%, transparent)`;
 
+const FIELD_EASE = '240ms var(--ease-smooth-out)';
+
 export const liveMarkdownTheme = EditorView.theme({
-  // The composer sets --composer-min-height for a new chat's roomier field;
-  // the first send eases it down to one line.
+  // The composer sets the field's geometry. The foot is room under the draft
+  // for the + and the send, outside the scroller so a long draft never runs
+  // under them; every part eases, so the first send closes the field up.
   '&': {
     fontSize: '14px',
-    minHeight: 'var(--composer-min-height, 44px)',
+    minHeight: 'var(--composer-min-height)',
     maxHeight: '200px',
-    transition: 'min-height 200ms var(--ease-smooth-out)',
+    paddingBottom: 'var(--composer-foot)',
+    transition: `min-height ${FIELD_EASE}, padding ${FIELD_EASE}`,
   },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { fontFamily: 'inherit', lineHeight: '20px', overflow: 'auto' },
   '.cm-content': {
     fontFamily: 'inherit',
-    padding: '12px 16px 10px calc(16px + var(--composer-indent, 0px))',
+    padding:
+      '16px var(--composer-trail) 16px calc(var(--composer-lead) + var(--composer-indent, 0px))',
     caretColor: 'var(--accent)',
+    transition: `padding ${FIELD_EASE}`,
   },
   // CodeMirror ships a fixed #888 placeholder, which is unreadable on a light
   // canvas; the muted token is derived to stay legible in either scheme.

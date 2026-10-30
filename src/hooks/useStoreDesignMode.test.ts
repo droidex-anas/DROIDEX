@@ -96,6 +96,19 @@ test('Chat returns to the chat Design was entered from', () => {
   assert.equal(back.chatModeAppSessionId, null);
 });
 
+test("a new chat's switch changes its draft in place, even after Design was entered from a chat", () => {
+  const design = reducer(onChat('session-a'), { type: 'SET_PRODUCT_MODE', mode: 'design' });
+  const chatDraft = reducer(design, { type: 'SET_DRAFT_PRODUCT', mode: 'chat' });
+  assert.equal(chatDraft.activeAppSessionId, null);
+  assert.equal(activeProduct(chatDraft), 'chat');
+  assert.equal(chatDraft.chatModeAppSessionId, null);
+  const designAgain = reducer(chatDraft, { type: 'SET_DRAFT_PRODUCT', mode: 'design' });
+  assert.deepEqual(designAgain.draftChat?.canvas, { canvasId: null });
+  // An open chat is not a draft the switch can change.
+  const openChat = onChat('session-b');
+  assert.equal(reducer(openChat, { type: 'SET_DRAFT_PRODUCT', mode: 'design' }), openChat);
+});
+
 test('each tab keeps its own product, and a design draft keeps its canvas promise', () => {
   const designTab = reducer(initialState, { type: 'OPEN_NEW_TAB', product: 'design' });
   assert.equal(activeProduct(designTab), 'design');

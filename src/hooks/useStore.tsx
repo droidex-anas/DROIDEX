@@ -716,6 +716,7 @@ export type Action =
   // The design bootstrap finished with this chat, either way; it must not run again.
   | { type: 'CANVAS_CHAT_SETTLED'; appSessionId: string }
   | { type: 'SET_PRODUCT_MODE'; mode: ProductMode }
+  | { type: 'SET_DRAFT_PRODUCT'; mode: ProductMode }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_SCOPE'; scope: DiffScope }
   | OpenReviewAtAction
@@ -2290,6 +2291,16 @@ function reduceAction(state: AppState, action: Action): AppState {
         return reducer(chat, { type: 'SET_ACTIVE_SESSION', id: target });
       }
       return reducer(chat, { type: 'START_CHAT', ...newDraft(state, 'chat') });
+    }
+
+    // The new-chat home's switch changes what its draft starts, in place: the
+    // composer and what was typed stay put, and no earlier chat is returned to.
+    case 'SET_DRAFT_PRODUCT': {
+      if (state.activeAppSessionId !== null || activeProduct(state) === action.mode) return state;
+      return reducer(
+        { ...state, chatModeAppSessionId: null },
+        { type: 'START_CHAT', ...newDraft(state, action.mode) },
+      );
     }
 
     case 'SET_REVIEW_OPEN':

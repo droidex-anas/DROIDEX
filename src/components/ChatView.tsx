@@ -40,7 +40,7 @@ import { useOpenAgent } from './agents/useOpenAgent';
 import { useForkChat, useForkPending, useOpenForkSource } from '../hooks/useForkChat';
 import { useScrolling } from './ui/useScrolling';
 import { ConversationTimeline } from './ConversationTimeline';
-import { WelcomeScreen } from './WelcomeScreen';
+import { NewChatHeading } from './NewChatHome';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
 import { isEmbedded } from '../lib/embed';
 import {
@@ -55,7 +55,12 @@ import {
 } from '../hooks/useConversationTimeline';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
-import { equalVisibleChatState, selectChatViewState, type ChatViewState } from './chatViewState';
+import {
+  equalVisibleChatState,
+  newChatStart,
+  selectChatViewState,
+  type ChatViewState,
+} from './chatViewState';
 import { createChatFeedProjector } from './chatFeedProjector';
 import { setMountedFeedRows } from '../lib/rendererPerf';
 import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
@@ -881,27 +886,11 @@ export default function ChatView({
       </TranscriptColumn>
     );
   } else {
-    const draft = state.draftChat;
+    // The composer and the starting points under it belong to the tile.
     conversationContent = (
-      <WelcomeScreen
+      <NewChatHeading
+        start={newChatStart(state.draftChat)}
         {...(draftFolder !== undefined ? { folder: draftFolder } : {})}
-        onSeedPrompt={(text) => {
-          dispatch({ type: 'SEED_COMPOSER', text });
-        }}
-        {...(draft?.project
-          ? {
-              project: {
-                onStartChat: () => {
-                  dispatch({
-                    type: 'START_CHAT',
-                    cwd: draft.cwd,
-                    executionMode: draft.executionMode,
-                    ...(draft.branch ? { branch: draft.branch } : {}),
-                  });
-                },
-              },
-            }
-          : {})}
       />
     );
   }
@@ -956,9 +945,15 @@ export default function ChatView({
       {header}
       <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
         {activeSession && boardCanvasId !== null && (
-          <Suspense fallback={null}>
-            <LazyCanvasColumnTabs key={boardCanvasId} canvasId={boardCanvasId} />
-          </Suspense>
+          // Opens with the board, so the transcript eases down under it; a
+          // switch to another canvas keeps the row and swaps only its tabs.
+          <div className="row-open">
+            <div>
+              <Suspense fallback={<div className="h-9" />}>
+                <LazyCanvasColumnTabs key={boardCanvasId} canvasId={boardCanvasId} />
+              </Suspense>
+            </div>
+          </div>
         )}
         <TranscriptReachHost
           items={feedItems}

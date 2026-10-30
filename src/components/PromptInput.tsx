@@ -95,7 +95,7 @@ import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
 import { offersContextWindow } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
-import { DesignComposerFrame } from './composer/DesignComposerFrame';
+import { ComposerFrame } from './composer/ComposerFrame';
 import { ReasoningChip } from './composer/ReasoningChip';
 import { composerTextAfterSeed, resetComposerAfterSubmit } from '../lib/composerReset';
 import { chipRemovedByBackspace } from '../lib/composerChips';
@@ -135,7 +135,6 @@ import {
   MessageBubble,
   MessageSquareText,
   Models,
-  Plus,
   Settings,
   Zap,
 } from '@droidex/icons';
@@ -226,20 +225,41 @@ const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
 
 const ACCENT = 'var(--accent)';
 
-// A new chat's field opens two lines taller than a running chat's, which
-// starts at one line and grows with the draft (read by liveMarkdownTheme).
-const ROOMY_FIELD_STYLE: CSSProperties & Record<'--composer-min-height', string> = {
-  '--composer-min-height': '88px',
+// Where the draft sits in its field (read by liveMarkdownTheme). The + and the
+// send hold the field's bottom corners in every layout, so the first send only
+// closes the field up around the text.
+type FieldStyle = CSSProperties &
+  Record<
+    '--composer-min-height' | '--composer-foot' | '--composer-lead' | '--composer-trail',
+    string
+  >;
+// One line between the + and the send, growing with the draft.
+const ROW_FIELD: FieldStyle = {
+  '--composer-min-height': '52px',
+  '--composer-foot': '0px',
+  '--composer-lead': '44px',
+  '--composer-trail': '50px',
+};
+// A new chat's home: room for a few lines, with the + and the send under them.
+const HOME_FIELD: FieldStyle = {
+  '--composer-min-height': '112px',
+  '--composer-foot': '40px',
+  '--composer-lead': '16px',
+  '--composer-trail': '16px',
+};
+// Voice's mute and hang-up take more of the row than the send does.
+const VOICE_ROW_FIELD: FieldStyle = { ...ROW_FIELD, '--composer-trail': '84px' };
+// The editor's own padding until its chunk loads, so the placeholder sits where the draft will.
+const FIELD_FALLBACK_STYLE: CSSProperties = {
+  minHeight: 'var(--composer-min-height)',
+  padding: '16px var(--composer-trail) calc(16px + var(--composer-foot)) var(--composer-lead)',
 };
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
 
-/**
- * Whether this composer is the one Design mode moves between its home and the
- * canvas workspace: the live one, never a background tile's (spec §4).
- */
-function travelsWithDesign(state: AppState, appSessionId: string | null): boolean {
+/** Whether this is the live Design composer, never a background tile's (spec §4). */
+function isDesignComposer(state: AppState, appSessionId: string | null): boolean {
   return activeProduct(state) === 'design' && appSessionId === state.activeAppSessionId;
 }
 // The app reads the account itself, so this never reaches a harness as a prompt.
@@ -344,7 +364,7 @@ export default function PromptInput({
             ? seed.appSessionId === appSessionId
             : seed.draftTileId !== null && seed.draftTileId === activeDraftTileId(current),
         ) ?? null,
-      designComposer: travelsWithDesign(current, appSessionId),
+      designComposer: isDesignComposer(current, appSessionId),
       defaultAutonomy: current.defaultAutonomy,
       draftAutonomy: current.draftAutonomy,
       draftChat: current.draftChat,
@@ -2356,7 +2376,9 @@ export default function PromptInput({
   // Mission Control picks a model per role and an exact child its own, each
   // with its effort beside it, so neither has the chat's reasoning chip.
   const editsRoles = missionPreview || childSettingsTarget !== undefined;
-  const roomyField = !activeSession && !designComposer && !compact;
+  let fieldStyle = ROW_FIELD;
+  if (centered) fieldStyle = HOME_FIELD;
+  else if (voiceHere) fieldStyle = VOICE_ROW_FIELD;
 
   // Autonomy: read-only for a targeted child, live control for an open session,
   // draft override before a session exists.
@@ -2452,23 +2474,18 @@ export default function PromptInput({
           </>
         ) : (
           <>
-            {/* Design names the model in words alone. */}
-            {!designComposer && (
-              <>
-                <ModelIcon
-                  provider={resolveModelProvider(
-                    chipModel,
-                    primaryModelId,
-                    PROVIDER_MARKS[composerProvider],
-                  )}
-                  size={14}
-                />
-                {isDroidProxyModel(chipModel, primaryModelId) && (
-                  <span className="shrink-0 flex items-center">
-                    <DroidProxyMark size={12} />
-                  </span>
-                )}
-              </>
+            <ModelIcon
+              provider={resolveModelProvider(
+                chipModel,
+                primaryModelId,
+                PROVIDER_MARKS[composerProvider],
+              )}
+              size={14}
+            />
+            {isDroidProxyModel(chipModel, primaryModelId) && (
+              <span className="shrink-0 flex items-center">
+                <DroidProxyMark size={12} />
+              </span>
             )}
             <span className="truncate font-medium text-primary">
               {shortModelName(selectedModelLabel)}
@@ -2513,7 +2530,7 @@ export default function PromptInput({
     </>
   );
   const actionSlot = (
-    <div ref={scheduleAnchorRef} className="shrink-0">
+    <div ref={scheduleAnchorRef} className="absolute bottom-2.5 right-2.5">
       {voiceHere ? (
         <Suspense fallback={null}>
           <VoiceComposerControls />
@@ -2549,9 +2566,10 @@ export default function PromptInput({
   );
 
   return (
-    <DesignComposerFrame
-      travels={designComposer}
-      className={`w-full min-w-0 shrink-0 ${compact ? 'px-3 pb-3 pt-2' : 'px-6 pb-5 pt-2'}`}
+    <ComposerFrame
+      centered={centered}
+      // The 12px foot centres the row under the field on the sidebar's Settings row.
+      className={`w-full min-w-0 shrink-0 pb-3 pt-2 ${compact ? 'px-3' : 'px-6'}`}
       // The transcript keeps its own 24px padding inside the panel inset; the
       // composer must too, or its centre drifts 12px off the transcript's.
       style={{ paddingRight: rightInset ? 312 + 24 : undefined }}
@@ -2653,10 +2671,10 @@ export default function PromptInput({
           </Suspense>
         )}
 
-        {/* No stroke at rest or in focus: focus lifts the fill a touch with a
-            translucent layer over the elevated rung (raised on light; text on
-            dark, where raised is the elevated rung). */}
-        <div className="relative z-10 rounded-xl bg-elevated focus-within:bg-gradient-to-b focus-within:from-raised/60 focus-within:to-raised/60 dark:focus-within:from-text/5 dark:focus-within:to-text/5">
+        {/* No stroke at rest or in focus. Light keeps its grey while typing;
+            dark lifts the fill a touch with a translucent text layer, since its
+            raised rung is the elevated one. */}
+        <div className="relative z-10 rounded-xl bg-elevated dark:focus-within:bg-gradient-to-b dark:focus-within:from-text/5 dark:focus-within:to-text/5">
           {(hasAttachmentChips || designMarks.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
               {designMarks.map((mark) => (
@@ -2770,78 +2788,58 @@ export default function PromptInput({
             </div>
           )}
 
-          <div className="flex items-end">
-            <div
-              className="relative min-w-0 flex-1"
-              style={roomyField ? ROOMY_FIELD_STYLE : undefined}
+          <div className="relative min-w-0" style={fieldStyle}>
+            <DraftSelections items={composerSelections} onWidthChange={setSelectionsIndent} />
+            {/* The draft renders markdown as it is typed; the editor owns
+                typing while `input` here stays the source of truth for sends,
+                seeds, and formatting actions. */}
+            <Suspense
+              fallback={
+                <div className="text-sm leading-5 text-muted/50" style={FIELD_FALLBACK_STYLE}>
+                  {promptPlaceholder}
+                </div>
+              }
             >
-              <DraftSelections items={composerSelections} onWidthChange={setSelectionsIndent} />
-              {/* The draft renders markdown as it is typed; the editor owns
-                  typing while `input` here stays the source of truth for sends,
-                  seeds, and formatting actions. */}
-              <Suspense
-                fallback={
-                  <div
-                    className="px-4 pt-3 pb-2 text-sm text-muted/50"
-                    style={{ minHeight: 'var(--composer-min-height, 44px)' }}
-                  >
-                    {promptPlaceholder}
-                  </div>
-                }
-              >
-                <ComposerEditor
-                  ref={editorRef}
-                  value={input}
-                  ariaLabel="Prompt"
-                  placeholder={composerSelections.length > 0 ? '' : promptPlaceholder}
-                  indentPx={selectionsIndent}
-                  onChange={editDraft}
-                  onCaret={setCaret}
-                  onKeyDown={handleKeyDown}
-                  onContextMenu={draftEditing.openMenu}
-                  onPasteFiles={addComposerFiles}
-                  onReady={() => {
-                    setEditorReady(true);
-                  }}
-                />
-              </Suspense>
+              <ComposerEditor
+                ref={editorRef}
+                value={input}
+                ariaLabel="Prompt"
+                placeholder={composerSelections.length > 0 ? '' : promptPlaceholder}
+                indentPx={selectionsIndent}
+                onChange={editDraft}
+                onCaret={setCaret}
+                onKeyDown={handleKeyDown}
+                onContextMenu={draftEditing.openMenu}
+                onPasteFiles={addComposerFiles}
+                onReady={() => {
+                  setEditorReady(true);
+                }}
+              />
+            </Suspense>
+            <div className="absolute bottom-3 left-2 flex">
+              <AddMenu
+                visualizeSelected={visualizeSelected}
+                // Both rows hand focus to the draft, which is where the prompt
+                // continues once the menu has added to it.
+                onAttachFiles={() => {
+                  editorRef.current?.focus();
+                  void handleAttachFiles();
+                }}
+                onToggleVisualize={() => {
+                  setVisualizeSelected(!visualizeSelected);
+                  editorRef.current?.focus();
+                }}
+                placement={`${pickerSide}-start`}
+              />
             </div>
-            <div className="shrink-0 p-1.5">{actionSlot}</div>
+            {actionSlot}
           </div>
         </div>
 
-        {/* The field keeps to the prompt and its send; the rest sits in one
-            quiet row under it that never wraps: the design system and library
-            names give way first, then the autonomy label, never the model's. */}
+        {/* The rest sits in one quiet row under the field that never wraps: the
+            design system and library names give way first, then the autonomy
+            label, never the model's. */}
         <div className="flex min-w-0 items-center gap-1 pl-2.5 pt-2 text-label font-normal">
-          {designComposer ? (
-            <button
-              type="button"
-              onClick={() => {
-                editorRef.current?.focus();
-                void handleAttachFiles();
-              }}
-              className="flex size-control-sm shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-active/60 hover:text-primary"
-              title="Attach files"
-              aria-label="Attach files"
-            >
-              <Plus className="size-icon-md" aria-hidden="true" />
-            </button>
-          ) : (
-            <AddMenu
-              visualizeSelected={visualizeSelected}
-              // Both rows hand focus to the draft, which is where the prompt
-              // continues once the menu has added to it.
-              onAttachFiles={() => {
-                editorRef.current?.focus();
-                void handleAttachFiles();
-              }}
-              onToggleVisualize={() => {
-                setVisualizeSelected(!visualizeSelected);
-                editorRef.current?.focus();
-              }}
-            />
-          )}
           {altProfileTag}
           {autonomyControl}
           {references.canvasKey && (
@@ -2930,6 +2928,6 @@ export default function PromptInput({
             />
           </Suspense>
         )}
-    </DesignComposerFrame>
+    </ComposerFrame>
   );
 }

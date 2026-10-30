@@ -256,6 +256,27 @@ export class CanvasClient {
     return reply(event, 'artifact').artifact;
   }
 
+  /** Replaces the picture the canvas's Design home card shows with a base64 PNG. */
+  async saveCover(canvasId: string, png: string): Promise<void> {
+    const event = await this.request({
+      type: 'canvas.saveCover',
+      requestId: requestId(),
+      canvasId,
+      png,
+    });
+    reply(event, 'ok');
+  }
+
+  /** The canvas's cover as a base64 PNG, or null before one was saved. */
+  async readCover(canvasId: string): Promise<string | null> {
+    const event = await this.request({
+      type: 'canvas.readCover',
+      requestId: requestId(),
+      canvasId,
+    });
+    return reply(event, 'cover').png;
+  }
+
   /** Watches summary broadcasts and re-reads the list after reconnecting. */
   subscribeSummaries(listener: (summaries: CanvasSummary[]) => void): () => void {
     this.listen();

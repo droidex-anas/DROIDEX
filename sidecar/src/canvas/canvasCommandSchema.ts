@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { DESIGN_SYSTEM_LIMITS } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
+import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
 import type { CanvasCommand } from './protocol.js';
 import {
@@ -259,6 +260,17 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       itemId: canvasIdentifierSchema,
     })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.saveCover'),
+      ...request,
+      canvasId: canvasIdentifierSchema,
+      png: base64Schema(MAX_COVER_BASE64_LENGTH),
+    })
+    .strict(),
+  z
+    .object({ type: z.literal('canvas.readCover'), ...request, canvasId: canvasIdentifierSchema })
     .strict(),
   z
     .object({

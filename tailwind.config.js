@@ -140,8 +140,9 @@ export default {
       // button press, the 1.5px ring (focus, invalid fields) and the smooth-out
       // curve for anything that moves or opens.
       scale: { 97: '0.97' },
-      // The browser preview card's box; the page picture is fitted inside it.
-      aspectRatio: { browser: '16 / 10' },
+      // The browser preview card's box, where the page picture is fitted, and a
+      // canvas tile, whose frame picture is cut to the same shape.
+      aspectRatio: { browser: '16 / 10', tile: '16 / 10' },
       ringWidth: { 1.5: '1.5px' },
       transitionTimingFunction: { 'smooth-out': 'var(--ease-smooth-out)' },
       // Floating layers stack popovers < dialogs < toasts < tooltips.
@@ -174,6 +175,8 @@ export default {
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
+        // A wait that ends quickly never shows.
+        'fade-in-late': 'fadeIn 0.2s ease-out 0.4s both',
         'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         'pulse-glow': 'pulseGlow 2s ease-in-out infinite',
         'spin-slow': 'spin 1.8s linear infinite',

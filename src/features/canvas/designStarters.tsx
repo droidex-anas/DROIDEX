@@ -1,6 +1,10 @@
 // The starting points Design offers wherever nothing has been designed yet.
 // Each one seeds the composer without sending, so the user keeps typing.
 
+import { SKETCH_INK as INK, SKETCH_MARK as MARK } from '../../components/StarterTile';
+
+export const DESIGN_PLACEHOLDER = 'Describe a screen, a flow, or a component…';
+
 type SketchKind = 'page' | 'component' | 'dashboard' | 'form';
 
 export const DESIGN_STARTERS: readonly {
@@ -34,9 +38,6 @@ export const DESIGN_STARTERS: readonly {
     sketch: 'form',
   },
 ];
-
-const INK = 'bg-text/10 transition-colors group-hover:bg-text/15';
-const MARK = 'bg-accent/35 transition-colors group-hover:bg-accent/60';
 
 /** A wireframe of what the starter asks for, drawn in the board's quiet tones. */
 export function StarterSketch({ kind }: { kind: SketchKind }) {
