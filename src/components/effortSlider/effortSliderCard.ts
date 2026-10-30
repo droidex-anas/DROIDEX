@@ -14,6 +14,8 @@ export const CARD_SLIDER_STYLE = {
   '--effort-shadow': 'none',
   '--effort-text': 'var(--text)',
   '--effort-muted': 'var(--text-muted)',
+  '--effort-rail': 'var(--active)',
+  '--effort-tick': 'color-mix(in srgb, var(--text) 22%, transparent)',
   '--effort-fill': 'color-mix(in srgb, var(--text) 45%, transparent)',
   '--effort-accent': 'var(--ultra, #a392e5)',
 } as CSSProperties;
