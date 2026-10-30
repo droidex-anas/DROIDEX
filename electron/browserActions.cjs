@@ -1,13 +1,13 @@
-// Agent actions on a page, sent from main through CDP: trusted pointer and
-// keyboard input that also reaches cross-site frames, and field changes made
-// on a ref's own element. The page script never acts for the agent. An action
+// Agent actions on a page, sent from main: trusted pointer and keyboard input
+// that also reaches cross-site frames, and field changes made on a ref's own
+// element. The page script never acts for the agent. An action
 // stops before it sends anything once a new document starts loading, and one
 // whose input never went out fails rather than report a navigation it did not
 // cause.
 
 const { send, frameHolds, focusedFrame, ELEMENT_TAKES_TEXT } = require('./browserFrames.cjs');
 const { callPageScript } = require('./browserPageScript.cjs');
-const { keyOf, modifiersOf, pressOn } = require('./browserKeys.cjs');
+const { keyOf, modifiersOf, createBrowserKeys } = require('./browserKeys.cjs');
 const { observeNavigation, NAVIGATION_GRACE_MS } = require('./browserNavigation.cjs');
 const { createBrowserCover } = require('./browserCover.cjs');
 
@@ -24,9 +24,12 @@ function createBrowserActions({
   credentials,
   unthrottled,
   redactUrl,
+  clipboard,
   onPoint,
+  onPress,
 }) {
   const { refuseCovered } = createBrowserCover({ reading });
+  const { pressOn, insertTextOn } = createBrowserKeys({ clipboard });
 
   async function act(contents, entry, request) {
     // After a navigation or a wait, errors count from when the request came.
@@ -120,10 +123,18 @@ function createBrowserActions({
         await refuseCovered(contents, entry, request.ref, now);
       }
       const press = { x, y, button, clickCount, modifiers };
-      await dispatchMouse(contents, step, target, [
-        { type: 'mousePressed', ...press },
-        { type: 'mouseReleased', ...press },
-      ]);
+      // A press moves the app's keyboard focus into the page; the pane hands
+      // it back if the user's focus left after the press began.
+      const pressedAt = Date.now();
+      onPress(entry, { pressedAt, done: false });
+      try {
+        await dispatchMouse(contents, step, target, [
+          { type: 'mousePressed', ...press },
+          { type: 'mouseReleased', ...press },
+        ]);
+      } finally {
+        onPress(entry, { pressedAt, done: true });
+      }
     }
   }
 
@@ -185,8 +196,8 @@ function createBrowserActions({
     });
   }
 
-  // Text goes to the session of the frame that holds the focus (a cross-site
-  // frame only takes keys sent to its own session); a ref is focused first.
+  // Text goes to the frame that holds the focus (a cross-site frame only
+  // takes keys sent to its own session); a ref is focused first.
   async function type(contents, entry, request, step) {
     const text = String(request.text ?? '');
     await runWithWebContentsDebugger(contents, async (dbg, holding) => {
@@ -223,7 +234,7 @@ function createBrowserActions({
       const stillOn = onSamePage(dbg, holding, sessionId, document);
       // The text, and then Enter, go only to the document they were aimed at.
       await inputReady(dbg, step, holding, sessionId, document);
-      if (text) await send(dbg, sessionId, 'Input.insertText', { text });
+      if (text) await insertTextOn(contents, dbg, sessionId, text);
       if (request.submit) {
         await keepsFocus(dbg, sessionId, document);
         // An input handler can move the focus on to another control.
@@ -231,7 +242,7 @@ function createBrowserActions({
           throw new Error(`${request.ref} lost the focus before Enter; read the page again.`);
         // The page check comes last, right before the key.
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, keyOf('Enter'), stillOn);
+        await pressOn(contents, dbg, sessionId, keyOf('Enter'), stillOn);
       }
     });
   }
@@ -248,7 +259,7 @@ function createBrowserActions({
         // A key can move the focus; the rest go only to the frame they began in.
         if (i > 0) await keepsFocus(dbg, sessionId, document);
         await inputReady(dbg, step, holding, sessionId, document);
-        await pressOn(dbg, sessionId, key, stillOn);
+        await pressOn(contents, dbg, sessionId, key, stillOn);
       }
     });
   }

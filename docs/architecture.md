@@ -46,11 +46,11 @@ flowchart LR
 
 ### Sidecar session core
 
-- `appSessionId` is the stable top-level application identity. `childSessionId` is the stable logical child identity within its `parentAppSessionId`; `providerSessionId` is reserved for the backing Factory session.
+- `appSessionId` is the stable top-level application identity. `childSessionId` is the stable logical child identity within its `parentAppSessionId`; `providerSessionId` is the replaceable backend identity, never a renderer key.
 - `SessionManager` is the composition root and public command coordinator. It retains public dispatch, cross-module routing, and shutdown ordering.
 - `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter. A Droid steer is `add_user_message` with a caller-minted `messageId`, delivered when the user message carrying that id arrives and dropped on discard, acknowledged Stop or close. Slash-command candidates use ordinary delivery. `DroidTurn` keeps the app turn open across Droid's follow-on loops and an in-flight interrupt, observing an active loop through its terminal idle before emitting one final result. The SDK owns main-loop conversion; only late-loop notifications are buffered and converted here. Child sessions still queue.
 - `SessionRegistry` owns top-level sessions only: the live parent map, stable application identity, provider aliases, canonical parent summary persistence, and projected summary reads. Children never enter `SessionRegistry` or `sessions.list`.
-- Ordinary chats enter durable `sessions.list` history only after the provider file contains both a user message and an assistant response. In-progress first turns remain visible through the live registry; abandoned or unanswered provider files never become permanent sidebar rows. Once admitted, an app-owned primary chat retains its cached summary and DROIDEX title if its transcript becomes unavailable or returns with only a header, including across restarts; file reconciliation never deletes app-owned notices. Missing files are excluded from indexing until they return. Delete/archive tombstones live only in renderer storage, so they survive metadata caps and catalog omissions to keep retained chats hidden.
+- Droid chats enter durable `sessions.list` history after a completed user/assistant exchange. App-owned Claude and Codex chats enter after their first durable prompt, including interrupted first turns. Sessions without a durable prompt remain visible only through the live registry. Once admitted, an app-owned primary chat retains its cached summary and DROIDEX title if its transcript becomes unavailable or returns with only a header, including across restarts; file reconciliation never deletes app-owned notices. Missing files are excluded from indexing until they return. Delete/archive tombstones live only in renderer storage, so they survive metadata caps and catalog omissions to keep retained chats hidden.
 - If full-text search initialization fails while cached summaries remain readable, catalog listing and loading remain available and search is disabled. History health carries the cause and repair instructions to a banner and toast, including on connect and snapshot recovery. The shared search database is preserved for repair because missing transcripts cannot reconstruct retained summaries.
 - `ChildSessions` is the one stateful generic owner of parent-child membership, canonical child identity, provider replacement, admission, capacity, queues, turns, settings, cleanup, exact context/compaction targets, and child persistence/hydration. Spawn ownership is indexed during hydration, admission, and link changes so child deltas do not scan historical siblings.
 - `MissionControlPolicy` owns only AGI Mission Control policy and projection: features, progress, worker/validator decisions, spawn correlation, Mission phase, and Mission completion. It may call `ChildSessions`; `ChildSessions` does not import Mission Control.
@@ -108,7 +108,9 @@ Permission requests stay with the human. A thread's own question goes to the
 chat that started it, and the human can still answer it in the thread.
 
 The renderer keeps the projects snapshot once in its app store and opens
-conversations through the normal chat and composer. A chat's own tools for
+conversations through the normal chat and composer. A tile targeting an existing
+session shows a composer only after its summary is known; missing summaries show
+a loading or unavailable state. A chat's own tools for
 starting and steering other chats arrive the way the browser's and automations'
 do: the `droidex-sessions` in-app MCP server for Droid and Claude Code, or
 deferred dynamic tools using the same handlers for Codex. Codex does not start
@@ -137,6 +139,7 @@ read of the store, so it works with the sidebar collapsed. See
 - Nothing is retirable until the renderer has reported which session is on screen, and the decision is taken again immediately before each close, so a prompt arriving while an earlier session is being released keeps the sessions behind it alive.
 - Viewing a released session costs nothing: the transcript is served from persisted history in under 10 milliseconds regardless of its length. Selecting it reloads the provider session in the background (`sessionRuntimeWarmUp`, about 0.7 seconds), so the runtime is usually back before the user sends. Neither the release nor the warm-up writes a transcript row. The budget is six times the child budget despite that reload being the cheaper of the two, because of where the cost lands: a child pays behind its own loading state, a session pays when the user comes back to write in it.
 - A sidecar restart applies the same rules before spending anything. `SessionAdoption` resurrects the sessions recorded in `live-runtime-v2.json`, which spawns a provider process each, so it asks `sessionRuntimeRetirement` first and leaves any session already past the budget or over the idle count cap closed and reopenable rather than spawning a process for the first sweep to release. A restart takes every provider process, browser, and pending edit with it, so the journal records when each session was last active and adoption reads the exit phase and journalled child statuses alongside it. Sessions interrupted mid-turn, waiting on the user, or holding unsettled children are resurrected as before. The journal names the sidecar that wrote it, and while that sidecar still runs another one on the same profile leaves its sessions and processes alone; the Electron main process also holds a single-instance lock per profile.
+- Adoption waits for boot history reconciliation and leaves an already-open runtime alone. The journal's streaming flag identifies an unfinished turn; a settled chat can retain a running phase. A new turn clears the prior interruption reason. Missing canonical metadata produces an interruption diagnostic; it never invents a provider or model to resume a chat.
 
 ### History persistence
 
@@ -145,6 +148,7 @@ read of the store, so it works with the sidebar collapsed. See
 - `HistoryPersistenceQueue` retains transcript metadata losslessly, collapses pending summaries and child records by stable identity, and enforces explicit row and byte ceilings.
 - Ordinary writes flush on a short debounce or batch limit with SQLite WAL `synchronous=NORMAL`. Reconciliation drains pending transactions for read consistency without forcing a durability checkpoint. Session creation, turn settlement, provider replacement, compaction, child settlement, unregister, and shutdown additionally force a `synchronous=FULL` WAL checkpoint before the corresponding completed state is published. These boundaries await worker replies without blocking the orchestration event loop; owners revalidate the captured session or turn before applying the result.
 - App-owned provider transcripts serialize appends through an asynchronous file-write queue, one per file. A line that fails is reported to the caller that wrote it and is lost; the lines after it are still written, and the head line is retried until a line lands. Turn settlement and close wait for the queue and for every child file, and reject only when the message they closed could not be written. No transcript file or extra worker is opened at session construction. A fork of an open chat reads the source file through the same queue, so the copy holds every line queued before it and none written half-way.
+- App-owned Codex and Claude transcripts enter history after their first durable prompt, including interrupted turns without a reply. Their stored provider and settings remain authoritative; external Droid files require a completed exchange before admission. Admission semantics version the derived file cache so unchanged files are reconsidered when that rule changes.
 - One writer worker thread owns the SQLite connection and executes each batch inside one `BEGIN IMMEDIATE` transaction. A transactional writer-generation lease rejects work from a timed-out worker after its replacement starts, so late termination cannot overwrite recovered state or cross a durability checkpoint. Failed transactions roll back completely, the queue retains the batch, and the supervised client recreates a failed worker with bounded exponential retry. Live output continues while bounded queue capacity remains; durability boundaries fail visibly until recovery.
 - A separate index worker owns provider-file tree reconciliation, targeted watcher reconciliation, search-text extraction, and SQLite FTS5 updates. It returns revisioned cache deltas; a missed delta triggers an authoritative snapshot before the sidecar changes its in-memory historical summaries or provider-path index. The orchestration thread never walks the provider-file tree or rebuilds the derived cache; explicit history page loads still parse only the indexed provider paths needed for that page. The first session list and a post-close list publish only after their reconciliation result is applied.
 - Full-text content indexing is incremental and restartable. Each transaction advances a persisted byte cursor and indexed-tail fingerprint, so appends index only new JSONL records and a restart resumes at the last committed boundary. File replacement, truncation, or a changed indexed tail rebuilds only that provider's derived rows; deletion removes rows through an indexed provider-to-row mapping.
@@ -153,19 +157,87 @@ read of the store, so it works with the sidebar collapsed. See
 - Canonical durability uses `session-index.sqlite`; the separate `session-search.sqlite` holds cached file summaries and FTS5 state. The canonical schema version and user-data rows are unchanged. An absent search database is initialized from available provider JSONL; FTS schema rebuilds stay within search tables. Corrupt search storage fails without deleting the database because retained summaries for unavailable transcripts cannot be reconstructed from provider files. Quit DROIDEX, back up `session-search.sqlite` and its WAL/SHM files, then repair it or restore a known-good backup. The worker bundle ships beside `sidecar.mjs` in packaged updates.
 - The worker bundle carries no third-party runtime: both worker isolates compile it, so a value import of the Droid SDK from the history graph costs the sidecar tens of MiB of resident memory for code the workers never call. `historyWorkerBundle.test.ts` gates this.
 
+### Child transcript views
+
+The visible Agents detail pane owns a child-history subscription on its bridge
+connection. For an autonomous Droid Task child, the existing provider-file
+watcher refreshes that child's latest history after its path index reconciles.
+Only the selected child is read; sibling changes do no transcript work. Reads
+coalesce while one is pending and validate the exact parent, child and selection
+after every await. A subscription sent before resume attaches waits for that
+exact child source. Pane cleanup, connection loss, closing the chat and shutdown
+end the subscription. A runtime close, such as idle retirement, only invalidates
+pending reads; the reopened parent rebinds the open pane. A refresh merges the latest text
+without changing selection, the oldest loaded cursor or an in-flight earlier page.
+Managed Droid children retain their own runtime's event stream.
+
+Claude requests the SDK's full subagent conversation with `forwardSubagentText`.
+Tagged child rows use background ingress during and after the parent's turn.
+Native message IDs assemble streamed chunks and completed content blocks without
+repeating them on replay. The child's own frames supply its model; admission waits
+for exact metadata instead of displaying the parent's model. Restored manifests
+retain the child's transcript capability, exact spawn link and Workflow group
+across resume. Workflow frames with a shared spawn key never invent a unique
+child owner.
+
+### Codex child transcripts
+
+`CodexChildThreads` observes native children through the parent's app-server
+connection. Each thread owns its item correlation and turn lifecycle; transcript
+events resolve the native thread ID to the parent's stable logical child ID.
+Children keep streaming after the parent turn settles, while late rows after
+child settlement or parent closure are rejected. Opening a Codex child reads
+its conversation without creating a Droid runtime.
+The parent native thread is never admitted as a child. A saved child record that
+points at that parent is rejected with guidance to start a new chat.
+
+On parent resume, children with no saved transcript read the current native
+`thread/turns/list` history after child ownership is attached. Background events
+remain buffered until the listener subscribes. Notifications arriving during
+that read are queued and reconciled by
+item ID. An already-active text item displays its snapshot immediately, then
+waits for its completed item to append the exact remainder: native deltas have
+no offsets with which to reconcile that snapshot safely. New items stream
+normally. Closing the parent invalidates pending reads before cleanup.
+
+Native text and thinking events carry `textUpdate` with their item ID and explicit
+`delta` or `snapshot` semantics. Child files persist this identity on each durable
+chunk. History pages assemble complete items before applying their event limit,
+so a streamed reply does not replay as independent fragments. Commentary and final
+answers retain their distinct native item IDs.
+Each stored chunk records its message's first file line. A resumed writer seeds
+those positions once before appending. Lazy pages extend to the earliest position
+of their selected messages and include intervening rows in chronological order;
+the requested event count is soft only for that complete message span.
+Extra expansion is bounded by the transcript reader's 5 MB window budget;
+an oversized span reports a history error instead of cutting the reply.
+Selected native messages retain their complete text within that budget.
+
+### Renderer computer-use preview
+
+`ComputerUsePictureInPicture` follows the focused conversation's current turn,
+including the child being read in the Agents pane. DROIDEX browser work uses
+the existing bounded preview stream and agent cursor without moving the native
+page or changing its viewport. Codex computer-use tools supply saved screenshots
+through transcript image results; those update the preview when returned.
+The preview stays present between tool calls, hides when the native browser pane
+already shows its page, and releases its stream when hidden or settled.
+Inspected screenshots stay open until the user closes them.
+
 ### Renderer child navigation
 
 - The left navigation and `sessions.list` contain parent sessions only.
 - The active parent's canonical child summaries appear in the right context panel, including historical and same-role siblings.
 - Selection, readiness, transcript filtering, settings, send, steer, Stop, and interrupt all resolve through one visible target keyed by `parentAppSessionId + childSessionId`.
 - A provider runtime identity is never stored as a renderer child key. Historical or unavailable children remain selectable for transcript review while mutating actions stay disabled.
+- The Agents utility pane loads the selected child's history and renders the chat's existing `MessageFeed`, with retry and earlier-message controls. Streaming follows the latest messages until the reader scrolls back; earlier history and resized rows preserve that reader's anchor. Its visible child retains loaded history; leaving the pane releases the inactive transcript window unless that child is still selected in the chat.
 
 ### Renderer transcript runtime
 
 - The reload snapshot walks backwards to collect the newest 40 non-transient events before applying its byte budget; saving a short tail does not scan the retained conversation.
 
 - The renderer store exposes one canonical array-shaped transcript per `appSessionId`, backed by immutable 128-event chunks. Streaming replaces only the bounded live chunk; settled chunks remain shared across store revisions, history slices, feed projection, snapshots, and inactive-session caching. The adapter is read-compatible with existing array consumers but rejects mutation.
-- Each transcript runtime owns a persistent bucketed event-ID index, first-user pointer, latest child activity by source, and merged child-spawn index. Duplicate checks and child-panel derivations therefore do not scan retained history. Ordered bridge batches still preserve every non-transcript action as an ordering barrier.
+- Each transcript runtime owns a persistent bucketed event-ID index, native text-item positions by source and kind, first-user pointer, latest child activity by source, and merged child-spawn index. Interleaved deltas update their original message; snapshots replace that item's text. Restored pages reconcile the same identity, preserving a newer live suffix when the page is its prefix. Duplicate checks and child-panel derivations therefore do not scan retained history. Ordered bridge batches still preserve every non-transcript action as an ordering barrier.
 - Each transcript write publishes a revision record with its prior revision, prior length, and first changed index. Exact older-page insertion publishes prepend provenance; history replacement, retained-window release, and any uncertain batch lineage publish a reset. Duplicate events do not advance the revision, and session removal prunes the transcript and its revision together.
 - `ChatView` derives the visible primary or child transcript and grouped feed through a bounded projector. A proven append rebuilds only the earliest affected user turn, expanding backward when tool-call/result correlation crosses the boundary. Settled visible/feed chunks retain reference identity, and `MessageFeed` memoizes those chunks so a live token reconciles current rows rather than recreating every historical row element. Reset, missed revision, source-length mismatch, selection change, pending-state change, or feed-option change uses the canonical full builder.
 - The virtual list updates its find/anchor lookup from the projection's changed suffix at commit; reset and prepend rebuild the indexes. Synchronous height reads cover only new DOM rows and changed feed items. Row ResizeObservers handle later intrinsic changes, and width settling remeasures mounted rows without clearing offscreen sizes. Scroll margin is invalidated by preceding chrome changes, not streamed row growth.

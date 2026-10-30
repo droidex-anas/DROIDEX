@@ -301,11 +301,12 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
   // One fold per turn: every foldable item joins the same Worked group even
   // when work continues past the last assistant text, so a turn never shatters
   // into several folds. The group renders before the turn's top-level
-  // survivors (the answer and any errors, kept in transcript order).
+  // survivors, with browser references following the final answer.
   // Foldables carry their run index so compaction markers land at their
   // transcript position inside the fold.
   const foldables: { index: number; item: FeedItem }[] = [];
   const survivors: FeedItem[] = [];
+  const browserCards: FeedItem[] = [];
   const markers: { index: number; item: FeedItem }[] = [];
   let answerPushed = false;
   for (let i = 0; i < run.length; i++) {
@@ -345,7 +346,8 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       survivors.push(it);
     } else if (it.type === 'browser') {
       // The page the turn worked on stays in reach; its steps fold as usual.
-      survivors.push(it);
+      if (answer) browserCards.push(it);
+      else survivors.push(it);
     } else if (isCompactionMarker(it)) {
       // Provisional: the marker moves into the fold when the run has real work.
       markers.push({ index: i, item: it });
@@ -353,6 +355,9 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
     } else if (!(it.type === 'message' && isSpecBody(it.event.text))) {
       foldables.push({ index: i, item: it });
     }
+  }
+  if (answer && browserCards.length > 0) {
+    survivors.splice(survivors.indexOf(answer) + 1, 0, ...browserCards);
   }
   if (foldables.length > 0) {
     const folded = [...foldables, ...markers]

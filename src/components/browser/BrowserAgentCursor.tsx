@@ -20,8 +20,7 @@ interface Cursor {
 }
 
 /**
- * The agent's cursor over a page, in the pane or on the picture in the
- * transcript's Browser card. It glides to where the agent
+ * The agent's cursor over a page, in the pane or picture in picture. It glides to where the agent
  * points and, while the agent works, rests there rocking about its tip. The
  * app draws it above the page, so it is never part of the page or of the
  * agent's screenshots, and input never waits for it. It follows the page's

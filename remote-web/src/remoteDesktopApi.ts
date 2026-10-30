@@ -139,6 +139,7 @@ export function createRemoteDesktopApi(
     onNativeBrowserLoadFailed: noSubscription,
     onNativeBrowserWorking: noSubscription,
     onNativeBrowserAgentPoint: noSubscription,
+    onNativeBrowserAgentPress: noSubscription,
     onNativeBrowserFrame: noSubscription,
     onNativeBrowserClosed: noSubscription,
   };

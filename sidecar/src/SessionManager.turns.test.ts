@@ -176,6 +176,40 @@ test('an agent that settles inside the parent turn does not wake it a second tim
   }
 });
 
+test('a Task agent registers as running when Droid announces its session', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    const provider = await createSession(h);
+    h.history.seedSessionLaunchSettings('provider-child-live', { modelId: 'custom:glm-5.2' });
+    const [spawn] = taskRun('task-live', 'worker', '');
+    if (!spawn) throw new Error('taskRun yields its spawn call first');
+    provider.queueStreamEvents([spawn]);
+    await send(h, 'run worker');
+    await h.waitForIdle();
+    assert.equal(h.history.childSessions('provider-1').length, 0);
+
+    provider.emitNotification({
+      jsonrpc: '2.0',
+      method: 'droid.session_notification',
+      params: {
+        notification: {
+          type: 'child_session_available',
+          childSessionId: 'provider-child-live',
+          toolUseId: 'task-live',
+          subagentType: 'worker',
+        },
+      },
+    });
+
+    const child = h.history.childSessions('provider-1')[0];
+    assert.equal(child?.providerSessionId, 'provider-child-live');
+    assert.equal(child?.status, 'running');
+    assert.equal(child?.spawnLink?.id, 'task-live');
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('design turns synchronize TodoWrite and unexpected AbortErrors fail the turn', async () => {
   const h = createSessionManagerTestContext();
   try {

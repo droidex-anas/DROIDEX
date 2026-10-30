@@ -179,7 +179,10 @@ function createHarness(
     maxContextTokensForModel: () => 1_000,
     childSessions: {
       retryAgentWave: (appSessionId) => record('cleanup', 'children.retryWave', appSessionId),
-      attachParent: (appSessionId) => record('cleanup', 'children.attach', appSessionId),
+      attachParent: (appSessionId) => {
+        record('cleanup', 'children.attach', appSessionId);
+        return [];
+      },
       closeParent: (appSessionId) => closeChildren(appSessionId),
     },
     startLocalMcpServers: () => {
@@ -699,7 +702,7 @@ test('an eager resume and immediate send share one provider load', async () => {
 
   assert.equal(harness.runtime.loadCalls.length, 1);
   releaseLimit(800);
-  assert.equal(await warming, true);
+  assert.equal(await warming, harness.registry.getLive('warm-app'));
   await sending;
   assert.deepEqual(provider.prompts, ['send while warming']);
   assert.equal(harness.runtime.loadCalls.length, 1);
@@ -1211,6 +1214,11 @@ test('a turn persists recent activity at start and completion while queued sends
   await harness.lifecycle.create(createCommand());
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
+  harness.registry.updateSummary(
+    'touch',
+    { phase: 'paused', interruptReason: 'The previous turn did not continue.' },
+    { touchActivity: false },
+  );
   const before = harness.registry.getCanonicalSummary('touch')?.updatedAt;
   assert.ok(before !== undefined);
 
@@ -1219,6 +1227,7 @@ test('a turn persists recent activity at start and completion while queued sends
   await provider.waitForPrompts(2);
   const mid = harness.registry.getCanonicalSummary('touch');
   assert.equal(mid?.streaming, true);
+  assert.equal(mid?.interruptReason, undefined);
   assert.ok(mid !== undefined && mid.updatedAt > before);
   assert.equal(harness.history.persisted.at(-1)?.updatedAt, mid.updatedAt);
 
@@ -1233,6 +1242,7 @@ test('a turn persists recent activity at start and completion while queued sends
   await provider.waitForPrompts(4);
   const after = harness.registry.getCanonicalSummary('touch');
   assert.ok(after !== undefined && after.updatedAt > mid.updatedAt);
+  assert.equal(after.interruptReason, undefined);
 });
 
 test('interrupt handles idle, streaming, manual compaction, and auto-compaction states', async () => {
@@ -1369,7 +1379,7 @@ test('create and resume abandon in-flight opens when shutdown admission closes',
   assert.equal(resuming.runtime.loadCalls.length, 1);
   resuming.setShutdownStarted(true);
   releaseResumeLimit(800);
-  assert.equal(await resume, false);
+  assert.equal(await resume, undefined);
   assert.equal(resuming.registry.liveSessionsSnapshot().length, 0);
   assert.equal(resuming.calls.filter((call) => call.method === 'autoCompaction.arm').length, 0);
   assert.equal(
@@ -2101,7 +2111,7 @@ test('a resume that fails hands its scheduled runtime slot back without a sessio
   );
 
   gate.resolve();
-  assert.equal(await doomed, false);
+  assert.equal(await doomed, undefined);
   // No session closed, so this callback is the only thing that says a slot is
   // free again; without it a capacity-blocked delivery never retries.
   assert.equal(harness.capacityReleases(), 1);
@@ -2125,11 +2135,17 @@ test('closing a scheduled target during cold resume invalidates its provisional 
   );
 
   queueLoad(harness, 'cold-close');
-  assert.equal(await harness.lifecycle.resume('cold-close'), true);
+  assert.equal(
+    await harness.lifecycle.resume('cold-close'),
+    harness.registry.getLive('cold-close'),
+  );
   await harness.lifecycle.close('cold-close');
   await harness.lifecycle.close('cold-close');
   queueLoad(harness, 'cold-close');
-  assert.equal(await harness.lifecycle.resume('cold-close'), true);
+  assert.equal(
+    await harness.lifecycle.resume('cold-close'),
+    harness.registry.getLive('cold-close'),
+  );
   await harness.lifecycle.closeAll();
 });
 
@@ -2141,20 +2157,26 @@ test('closing a pending fork refuses its first open but permits a later resume',
   harness.lifecycle.beginForkOpen('provider-copy');
   await harness.lifecycle.close('provider-copy');
   await harness.lifecycle.send('unopened-copy', 'Do not reopen');
-  assert.equal(await harness.lifecycle.resume('provider-copy'), false);
+  assert.equal(await harness.lifecycle.resume('provider-copy'), undefined);
 
   assert.equal(harness.registry.getLive('unopened-copy'), undefined);
   assert.equal(harness.runtime.loadCalls.length, 0);
   assert.deepEqual(provider.prompts, []);
 
   harness.lifecycle.endForkOpen('provider-copy');
-  assert.equal(await harness.lifecycle.resume('provider-copy'), true);
+  assert.equal(
+    await harness.lifecycle.resume('provider-copy'),
+    harness.registry.getLive('unopened-copy'),
+  );
 
   harness.lifecycle.beginForkOpen('provider-copy');
   await harness.lifecycle.close('provider-copy');
   await harness.lifecycle.closeAll();
   queueLoad(harness, 'provider-copy');
-  assert.equal(await harness.lifecycle.resume('provider-copy'), true);
+  assert.equal(
+    await harness.lifecycle.resume('provider-copy'),
+    harness.registry.getLive('unopened-copy'),
+  );
 });
 
 test('a cold Claude resume seeds historical billing usage once before new turns', async (context) => {
@@ -2164,8 +2186,9 @@ test('a cold Claude resume seeds historical billing usage once before new turns'
   context.after(() => h.lifecycle.closeAll());
   const provider = queueLoad(h, 'claude-provider');
   h.setProvider(claudeResumeProvider(h, provider));
-  assert.equal(await h.lifecycle.resume('claude-chat'), true);
-  assert.equal(await h.lifecycle.resume('claude-chat'), true);
+  const resumed = await h.lifecycle.resume('claude-chat');
+  assert.ok(resumed);
+  assert.equal(await h.lifecycle.resume('claude-chat'), resumed);
   assert.deepEqual(
     h.calls.filter((call) => call.method === 'context.preserveUsage').map((call) => call.args),
     [['claude-chat', { tokensIn: 100, tokensOut: 40 }]],
@@ -2503,7 +2526,7 @@ test('automatic creates and resumes reserve the same twenty slots while user sta
   releaseCreate();
   resumeGate.resolve();
   assert.equal(await opening, true);
-  assert.equal(await resuming, true);
+  assert.equal(await resuming, h.registry.getLive('cold'));
   assert.equal(
     h.registry.getCanonicalSummary('queued-identity')?.providerSessionId,
     'new-provider',

@@ -1,7 +1,7 @@
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
 import { normalizeNotification, normalizeStreamEvent, type NormalizedEvent } from './normalize.js';
-import type { ChildSpawnLink, SessionRole, TranscriptEvent } from './protocol.js';
+import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 export type NormalizedSideEffects = Omit<
@@ -24,7 +24,7 @@ export interface SessionEventFlowDependencies {
   // undefined while the store has not admitted one yet.
   resolveChildScope: (
     appSessionId: string,
-    spawnLink: ChildSpawnLink,
+    owner: NonNullable<NormalizedEvent['childOwner']>,
   ) => ChildTranscriptScope | 'ambiguous' | undefined;
   recordUsage: (
     appSessionId: string,
@@ -115,7 +115,7 @@ export class SessionEventFlow {
       return;
     }
 
-    const terminal = this.terminalSources.get(appSessionId)?.has(sourceProviderSessionId);
+    const terminal = !owned && this.terminalSources.get(appSessionId)?.has(sourceProviderSessionId);
     const transcript =
       terminal && isPostTerminalGeneration(normalized.transcript)
         ? undefined
@@ -147,7 +147,7 @@ export class SessionEventFlow {
   // while the store has no child for that spawn yet.
   private ownedBy(
     appSessionId: string,
-    owner: ChildSpawnLink | undefined,
+    owner: NormalizedEvent['childOwner'],
   ): ChildTranscriptScope | 'unadmitted' | undefined {
     if (!owner) return undefined;
     const scope = this.dependencies.resolveChildScope(appSessionId, owner);

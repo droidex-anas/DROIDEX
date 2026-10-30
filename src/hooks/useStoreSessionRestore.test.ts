@@ -281,6 +281,12 @@ test('#29 history replaces keep live events and echoes the page does not hold, i
       ids: ['sess:1:0:text', 'live-b'],
     },
     {
+      name: 'authoritative status order and retained timestamp ties',
+      live: [ev('live-3', 3), ev('live-0', 0), ev('live-4', 4), ev('live-2', 2), ev('live-4b', 4)],
+      page: [ev('page-4', 4), { ...ev('page-1', 1), kind: 'status' }, ev('page-5', 5)],
+      ids: ['live-0', 'live-2', 'live-3', 'page-4', 'page-1', 'live-4', 'live-4b', 'page-5'],
+    },
+    {
       name: 'fresh reply matching only an old restored one',
       live: [ev('live-new', 100000, 'ok')],
       page: [ev('sess:1:0:text', 1000, 'ok'), ev('sess:2:0:text', 1001, 'later')],
@@ -421,6 +427,69 @@ test('child replace reconciles only its logical source and removes a superseded 
   assert.equal(next.sessionRestore.m1, undefined);
 });
 
+test('native child history keeps newer live suffixes and distinct items under canonical snapshot ids', () => {
+  const native = (
+    id: string,
+    messageId: string,
+    text: string,
+    kind: 'delta' | 'snapshot',
+    ts: number,
+  ): TranscriptEvent => ({
+    ...childEv('child-a', id, ts, text),
+    textUpdate: { messageId, kind },
+  });
+  const sibling = {
+    ...childEv('child-b', 'sibling', 11, 'Sibling output'),
+    textUpdate: { messageId: 'commentary', kind: 'delta' as const },
+  };
+  const fullText = `A complete answer ${'x'.repeat(64)}`;
+  let live = withLive([]);
+  for (const event of [
+    native('live-commentary', 'commentary', 'Working on', 'delta', 10),
+    sibling,
+    native('live-final', 'final', 'Incomplete answer', 'delta', 12),
+    native('live-suffix', 'commentary', ' checks.', 'delta', 13),
+    native('live-long', 'long', fullText, 'snapshot', 14),
+  ]) {
+    live = reducer(live, { type: 'SESSION_TRANSCRIPT', event });
+  }
+  const restored = reducer(live, {
+    type: 'SESSION_HISTORY',
+    appSessionId: 'm1',
+    childSessionId: 'child-a',
+    progress: [],
+    transcripts: [
+      native('saved-commentary', 'commentary', 'Working on', 'snapshot', 10),
+      native('saved-final', 'final', 'Complete answer', 'snapshot', 12),
+      native('saved-long', 'long', truncatedReplay(fullText, 20), 'snapshot', 14),
+      native('saved-distinct', 'distinct', 'Working on checks.', 'snapshot', 15),
+    ],
+    mode: 'replace',
+    hasMore: false,
+  });
+  assert.deepEqual(
+    restored.transcripts.m1
+      .filter((event) => event.sourceSessionId === 'child-a')
+      .map((event) => [event.id, event.text]),
+    [
+      ['saved-commentary', 'Working on checks.'],
+      ['saved-final', 'Complete answer'],
+      ['saved-long', fullText],
+      ['saved-distinct', 'Working on checks.'],
+    ],
+  );
+  assert.equal(
+    restored.transcripts.m1.find((event) => event.id === 'sibling'),
+    sibling,
+  );
+  const continued = reducer(restored, {
+    type: 'SESSION_TRANSCRIPT',
+    event: native('continued', 'commentary', ' Done.', 'delta', 16),
+  });
+  assert.equal(continued.transcripts.m1.length, 5);
+  assert.equal(continued.transcripts.m1[0].text, 'Working on checks. Done.');
+});
+
 test('child prepend advances only that child cursor and preserves parent and sibling order', () => {
   const primary = ev('primary-live', 5, 'parent output');
   const sibling = childEv('child-b', 'sibling-live', 6, 'sibling output');
@@ -470,6 +539,118 @@ test('child prepend advances only that child cursor and preserves parent and sib
   assert.equal(next.childHistory.m1['child-a'].olderCursor, 'cursor-1');
   assert.equal(next.childHistory.m1['child-a'].isLoadingOlder, false);
   assert.equal(next.childHistory.m1['child-a'].isViewportPinned, false);
+});
+
+test('child refresh preserves earlier history and an in-flight page while updating its saved tail', () => {
+  const primary = ev('primary', 1);
+  const sibling = childEv('child-b', 'sibling', 3);
+  const live: TranscriptEvent = {
+    ...childEv('child-a', 'live', 30, 'streamed reply with a newer suffix'),
+    textUpdate: { messageId: 'reply', kind: 'delta' },
+    endTs: 35,
+  };
+  const seeded = withLive(
+    [primary, childEv('child-a', 'older', 5), childEv('child-a', 'tail', 20), sibling, live],
+    {
+      childHistory: {
+        m1: {
+          'child-a': {
+            status: 'paged',
+            loadedCount: 3,
+            hasMore: true,
+            isLoaded: true,
+            isLoadingOlder: true,
+            olderCursor: 'oldest-loaded-cursor',
+            isViewportPinned: false,
+          },
+        },
+      },
+    },
+  );
+  const refreshed = reducer(seeded, {
+    type: 'SESSION_HISTORY',
+    appSessionId: 'm1',
+    childSessionId: 'child-a',
+    progress: [],
+    mode: 'refresh',
+    olderCursor: 'newest-page-cursor',
+    transcripts: [
+      childEv('child-a', 'tail', 20, 'saved final output'),
+      {
+        ...childEv('child-a', 'canonical-reply', 30, 'streamed reply'),
+        textUpdate: { messageId: 'reply', kind: 'snapshot' },
+      },
+    ],
+  });
+  assert.deepEqual(
+    refreshed.transcripts.m1
+      .filter((event) => event.sourceSessionId === 'child-a')
+      .map((event) => [event.id, event.text]),
+    [
+      ['older', 'older'],
+      ['tail', 'saved final output'],
+      ['canonical-reply', live.text],
+    ],
+  );
+  assert.equal(refreshed.childHistory.m1['child-a'].olderCursor, 'oldest-loaded-cursor');
+  assert.equal(refreshed.childHistory.m1['child-a'].isLoadingOlder, true);
+  assert.equal(refreshed.childHistory.m1['child-a'].isViewportPinned, false);
+  assert.equal(
+    refreshed.transcripts.m1.find((event) => event.id === primary.id),
+    primary,
+  );
+  assert.equal(
+    refreshed.transcripts.m1.find((event) => event.id === sibling.id),
+    sibling,
+  );
+  assert.equal(refreshed.selectedChild, seeded.selectedChild);
+
+  const prepended = reducer(refreshed, {
+    type: 'SESSION_HISTORY',
+    appSessionId: 'm1',
+    childSessionId: 'child-a',
+    progress: [],
+    mode: 'prepend',
+    olderCursor: 'earlier-cursor',
+    transcripts: [childEv('child-a', 'earliest', 0)],
+  });
+  assert.equal(prepended.childHistory.m1['child-a'].olderCursor, 'earlier-cursor');
+  assert.equal(prepended.childHistory.m1['child-a'].isLoadingOlder, false);
+  assert.equal(
+    prepended.transcripts.m1.find((event) => event.id === 'canonical-reply')?.text,
+    live.text,
+  );
+});
+
+test('a child refresh that starts after the loaded history replaces it and pages from its own cursor', () => {
+  const sibling = childEv('child-b', 'sibling', 3);
+  const loaded = { status: 'loaded', loadedCount: 1, hasMore: false, isLoaded: true } as const;
+  const seeded = withLive([childEv('child-a', 'stale', 5), sibling], {
+    childHistory: {
+      m1: { 'child-a': { ...loaded, isLoadingOlder: false, isViewportPinned: true } },
+    },
+  });
+  const refreshed = reducer(seeded, {
+    type: 'SESSION_HISTORY',
+    appSessionId: 'm1',
+    childSessionId: 'child-a',
+    progress: [],
+    mode: 'refresh',
+    olderCursor: 'before-latest-page',
+    transcripts: [childEv('child-a', 'latest', 900)],
+  });
+  assert.deepEqual(
+    refreshed.transcripts.m1
+      .filter((event) => event.sourceSessionId === 'child-a')
+      .map((event) => event.id),
+    ['latest'],
+  );
+  assert.equal(
+    refreshed.transcripts.m1.find((event) => event.id === sibling.id),
+    sibling,
+  );
+  assert.equal(refreshed.childHistory.m1['child-a'].olderCursor, 'before-latest-page');
+  assert.equal(refreshed.childHistory.m1['child-a'].hasMore, true);
 });
 
 test('successful empty child history settles loading without clearing other sources', () => {

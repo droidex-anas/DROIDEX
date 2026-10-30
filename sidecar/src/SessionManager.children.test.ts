@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -7,6 +7,7 @@ import { ProgressLogEntryType, type DroidStreamEvent } from '@factory/droid-sdk'
 
 import type * as Protocol from './protocol.js';
 import type { SessionFileChange } from './sessionFileCache.js';
+import type { SessionFileWatcherOptions } from './sessionFileWatcher.js';
 import {
   createMission,
   exactSettingsEvents,
@@ -17,6 +18,7 @@ import {
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 import {
   createSessionManagerTestContext,
+  chatCommand,
   historicalSummary,
   notifyDaemonCompaction,
   sessionUpdates,
@@ -590,6 +592,85 @@ function taskProgress(toolUseId: string, subagentSessionId: string): DroidStream
     update: { type: 'tool_call', subagentSessionId, parameters: { subagent_type: 'worker' } },
   };
 }
+
+test('a visible native Droid child refreshes from its own file while the parent runs and stops when disconnected', async () => {
+  const watchers: SessionFileWatcherOptions[] = [];
+  const h = createSessionManagerTestContext({
+    startSessionFileWatcher: (options) => {
+      watchers.push(options);
+      return {
+        close() {},
+        liveSessionFile: () => undefined,
+        consumeLiveSessionFile: () => undefined,
+      };
+    },
+  });
+  let running: Promise<void> | undefined;
+  let gate: ReturnType<typeof h.provider.deferNextStream> | undefined;
+  try {
+    await h.create(chatCommand('native file observation'));
+    const file = writeHistorySession(h.home, 'native-child', [
+      message('assistant', 'first', 'first child message', 1),
+    ]);
+    h.fixture.publishSessionFiles([file]);
+    h.history.seedSessionLaunchSettings('native-child', { modelId: 'model-default' });
+    h.provider
+      .session('provider-1')
+      .queueStreamEvents([taskProgress('native-spawn', 'native-child')]);
+    await h.handle({ type: 'session.send', appSessionId: 'provider-1', text: 'spawn child' });
+    const child = h.events
+      .flatMap((event) => (event.type === 'session.child' ? [event.child] : []))
+      .find((item) => item.spawnLink?.id === 'native-spawn');
+    assert.ok(child);
+    gate = h.provider.deferNextStream('provider-1');
+    running = h.handle({
+      type: 'session.send',
+      appSessionId: 'provider-1',
+      text: 'continue parent',
+    });
+    await h.provider.waitForPrompts('provider-1', 3);
+    const target = {
+      parentAppSessionId: 'provider-1',
+      childSessionId: child.childSessionId,
+      limit: 1,
+    };
+    await h.handle({ type: 'child.loadHistory', ...target });
+    const owner = {};
+    h.setChildHistoryWatch(owner, { type: 'child.watchHistory', requestId: 'visible', target });
+    await h.waitForIdle();
+    assert.equal(histories(h).at(-1)?.mode, 'refresh');
+    appendFileSync(
+      file.path,
+      JSON.stringify(message('assistant', 'late', 'late child message', 2)) + '\n',
+    );
+    h.fixture.publishSessionFiles([file]);
+    watchers[0]?.onExternalChange([file]);
+    await h.waitForIdle();
+    const refreshed = histories(h).at(-1);
+    assert.ok(refreshed);
+    assert.equal(refreshed.mode, 'refresh');
+    assert.equal(refreshed.childSessionId, child.childSessionId);
+    assert.deepEqual(
+      refreshed.transcripts.map((event) => [
+        event.text,
+        event.appSessionId,
+        event.sourceSessionId,
+        event.role,
+      ]),
+      [['late child message', 'provider-1', child.childSessionId, 'worker']],
+    );
+    assert.equal(h.runtime.loadCalls.length, 0, 'file observation opens no second SDK process');
+    const count = histories(h).length;
+    h.clearChildHistoryWatch(owner);
+    watchers[0]?.onExternalChange([file]);
+    await h.waitForIdle();
+    assert.equal(histories(h).length, count);
+  } finally {
+    gate?.resolve();
+    await running;
+    await h.dispose();
+  }
+});
 
 test('a linked child opens, replays, and keeps its status beside live Task children', async () => {
   const h = createSessionManagerTestContext();

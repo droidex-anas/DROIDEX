@@ -207,6 +207,7 @@ import {
   reduceChildTranscriptViewport,
   reduceChildUpdated,
   reduceSelectChild,
+  releaseInactiveChildTranscript,
   releaseInactiveSelectedChild,
   type ChildAccess,
   type ChildHistoryState,
@@ -627,7 +628,7 @@ export type Action =
       progress: ProgressEntry[];
       transcripts: TranscriptEvent[];
       childSessions?: ChildSessionSummary[];
-      mode?: 'replace' | 'prepend';
+      mode?: 'replace' | 'prepend' | 'refresh';
       olderCursor?: string;
       loadedCount?: number;
       hasMore?: boolean;
@@ -1067,7 +1068,28 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
 }
 
 export function reducer(state: AppState, action: Action): AppState {
-  return withoutLeftDrafts(reduceAction(state, action));
+  const next = withoutLeftDrafts(reduceAction(state, action));
+  if (
+    next.utilityPanels === state.utilityPanels &&
+    next.activeAppSessionId === state.activeAppSessionId
+  )
+    return next;
+  const parentAppSessionId = state.activeAppSessionId;
+  if (!parentAppSessionId) return next;
+  const panel = Object.hasOwn(state.utilityPanels, parentAppSessionId)
+    ? state.utilityPanels[parentAppSessionId]
+    : undefined;
+  if (!panel?.open) return next;
+  const childSessionId = panel.tabs.find(
+    (tab) => tab.id === panel.activeTabId && tab.tool === 'agents',
+  )?.agentId;
+  if (
+    !childSessionId ||
+    (next.selectedChild?.parentAppSessionId === parentAppSessionId &&
+      next.selectedChild.childSessionId === childSessionId)
+  )
+    return next;
+  return releaseInactiveChildTranscript(next, parentAppSessionId, childSessionId);
 }
 
 // A draft's seeds and its sent compose wait in its tile. Once the tile closes or

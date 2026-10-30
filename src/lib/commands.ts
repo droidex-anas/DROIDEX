@@ -460,6 +460,11 @@ export const loadChildHistory = (
   });
 };
 
+export const watchChildHistory = (
+  requestId: string,
+  target: Extract<ClientCommand, { type: 'child.watchHistory' }>['target'],
+) => bridge.sendIfConnected({ type: 'child.watchHistory', requestId, target });
+
 // Transcript content search; the matching sessions.searchResults event
 // carries the same requestId so callers can drop stale responses.
 export const searchSessions = (requestId: string, query: string) => {

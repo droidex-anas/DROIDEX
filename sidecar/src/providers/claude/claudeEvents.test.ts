@@ -15,7 +15,20 @@ const streamEvent = (event: unknown, parent: string | null = null): SDKMessage =
   message({ type: 'stream_event', event, parent_tool_use_id: parent });
 
 const assistant = (content: unknown[], parent: string | null = null): SDKMessage =>
-  message({ type: 'assistant', message: { content }, parent_tool_use_id: parent });
+  message({
+    type: 'assistant',
+    message: { id: 'native-message', content },
+    parent_tool_use_id: parent,
+  });
+
+const messageStart = (id: string, parent: string | null = null): SDKMessage =>
+  streamEvent(
+    {
+      type: 'message_start',
+      message: { id, model: 'claude-haiku-4-5', usage: mainLoopUsage(0, 0) },
+    },
+    parent,
+  );
 
 // The child-session signals one mapper reports, message by message.
 const childrenOf =
@@ -51,6 +64,7 @@ function mapped(messages: SDKMessage[]): { transcript: TranscriptEvent; owner?: 
 
 test('streamed text reaches the transcript once, not again from the snapshot', () => {
   const events = transcripts([
+    messageStart('native-message'),
     streamEvent({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }),
     streamEvent({
       type: 'content_block_delta',
@@ -65,6 +79,8 @@ test('streamed text reaches the transcript once, not again from the snapshot', (
     // The CLI snapshots each block as it finishes, carrying its whole text.
     assistant([{ type: 'text', text: 'Hello world' }]),
     streamEvent({ type: 'content_block_stop', index: 0 }),
+    streamEvent({ type: 'message_stop' }),
+    assistant([{ type: 'text', text: 'Hello world' }]),
   ]);
 
   assert.deepEqual(
@@ -72,6 +88,13 @@ test('streamed text reaches the transcript once, not again from the snapshot', (
     [
       ['text', 'Hello '],
       ['text', 'world'],
+    ],
+  );
+  assert.deepEqual(
+    events.map((event) => event.textUpdate),
+    [
+      { messageId: 'native-message', kind: 'delta' },
+      { messageId: 'native-message', kind: 'delta' },
     ],
   );
 });
@@ -113,6 +136,7 @@ test('a usage refusal adds no row and fails the turn with the window it hit', ()
 
 test('a tool call carries its streamed input and pairs with its result by id', () => {
   const events = transcripts([
+    messageStart('native-message'),
     streamEvent({
       type: 'content_block_start',
       index: 0,
@@ -157,6 +181,7 @@ test('a tool call carries its streamed input and pairs with its result by id', (
 
 test("a subagent's rows carry the spawn that owns them, never the parent's feed", () => {
   const events = mapped([
+    messageStart('native-child', 'toolu_task'),
     streamEvent(
       { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
       'toolu_task',
@@ -197,10 +222,112 @@ test("a subagent's rows carry the spawn that owns them, never the parent's feed"
   );
 });
 
+test('parallel and nested native messages retain their item, model and transcript capability', () => {
+  const mapper = new ClaudeEventMapper('app', 'claude-sonnet-4-6');
+  const events = ['a', 'b', 'nested'].flatMap((child) =>
+    mapper.map(
+      message({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: child,
+        tool_use_id: `spawn-${child}`,
+        task_type: 'local_agent',
+        spawn_depth: child === 'nested' ? 2 : 1,
+        description: child,
+      }),
+    ),
+  );
+  for (const child of ['a', 'b', 'nested']) {
+    events.push(...mapper.map(messageStart(`native-${child}`, `spawn-${child}`)));
+  }
+  for (const [child, text] of [
+    ['a', 'first '],
+    ['b', 'second'],
+    ['a', 'tail'],
+    ['nested', 'inner'],
+  ]) {
+    events.push(
+      ...mapper.map(
+        streamEvent(
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'text_delta', text },
+          },
+          `spawn-${child}`,
+        ),
+      ),
+    );
+  }
+  events.push(
+    ...mapper.map(
+      message({
+        type: 'assistant',
+        parent_tool_use_id: 'spawn-a',
+        message: {
+          id: 'native-a',
+          model: 'claude-haiku-4-5',
+          content: [{ type: 'thinking', thinking: 'reasoning' }],
+        },
+      }),
+    ),
+  );
+  events.push(
+    ...mapper.map(
+      message({
+        type: 'assistant',
+        parent_tool_use_id: 'spawn-a',
+        message: {
+          id: 'native-a-final',
+          model: 'claude-opus-4-6',
+          content: [{ type: 'text', text: 'final' }],
+        },
+      }),
+    ),
+  );
+  const [completed] = mapper.map(
+    message({
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'a',
+      status: 'completed',
+    }),
+  );
+  const rows = events.flatMap((event) =>
+    event.transcript ? [{ owner: event.childOwner?.id, row: event.transcript }] : [],
+  );
+  assert.deepEqual(
+    rows.map(({ owner, row }) => [owner, row.textUpdate?.messageId, row.text]),
+    [
+      ['spawn-a', 'native-a', 'first '],
+      ['spawn-b', 'native-b', 'second'],
+      ['spawn-a', 'native-a', 'tail'],
+      ['spawn-nested', 'native-nested', 'inner'],
+      ['spawn-a', 'native-a', 'reasoning'],
+      ['spawn-a', 'native-a-final', 'final'],
+    ],
+  );
+  const observed = events.flatMap((event) =>
+    event.childSession?.transcriptAvailable ? [event.childSession] : [],
+  );
+  assert.deepEqual(
+    observed.map((child) => [child.providerSessionId, child.modelId]),
+    [
+      ['a', 'claude-haiku-4-5'],
+      ['b', 'claude-haiku-4-5'],
+      ['nested', 'claude-haiku-4-5'],
+      ['a', 'claude-opus-4-6'],
+    ],
+  );
+  assert.equal(completed.childSession?.transcriptAvailable, true);
+  assert.equal(completed.childSession?.modelId, 'claude-opus-4-6');
+});
+
 // Shapes taken from a real six-agent workflow run: the fan-out is reported only
 // as a snapshot array on the workflow's own task_progress, and its agents never
 // get a task_started of their own.
-test("a workflow's agents come from its progress snapshot, with a phase and a model", () => {
+test("a workflow's agents come from progress while unattributable outer text stays out of their transcripts", (t) => {
+  const warning = t.mock.method(console, 'warn', () => undefined);
   const workflowAgent = (index: number, label: string, over: Record<string, unknown> = {}) => ({
     type: 'workflow_agent',
     index,
@@ -223,7 +350,33 @@ test("a workflow's agents come from its progress snapshot, with a phase and a mo
       workflow_progress: [{ type: 'workflow_phase', index: 1, title: 'Echo' }, ...agents],
     });
 
-  const children = childrenOf(new ClaudeEventMapper('app-1', 'claude-haiku-4-5'));
+  const mapper = new ClaudeEventMapper('app-1', 'claude-haiku-4-5');
+  const children = childrenOf(mapper);
+  mapper.restoreChildren([
+    {
+      providerSessionId: 'agent-1',
+      role: 'worker',
+      status: 'running',
+      modelId: 'claude-haiku-4-5',
+      transcriptAvailable: false,
+      spawnLink: { kind: 'tool-use', id: 'toolu_workflow' },
+      group: 'echo-six',
+    },
+  ]);
+  assert.deepEqual(
+    mapper.map(
+      message({
+        type: 'assistant',
+        parent_tool_use_id: 'toolu_workflow',
+        message: {
+          id: 'native-restored-workflow',
+          model: 'claude-opus-4-6',
+          content: [{ type: 'text', text: 'restored outer output' }],
+        },
+      }),
+    ),
+    [],
+  );
 
   assert.deepEqual(
     children(
@@ -252,6 +405,20 @@ test("a workflow's agents come from its progress snapshot, with a phase and a mo
     [started[0].toolUseId, started[0].group, started[0].modelId, started[0].prompt],
     ['toolu_workflow', 'echo-six', 'claude-haiku-4-5', 'Reply with echo:ONE and stop.'],
   );
+  assert.deepEqual(
+    mapper.map(
+      message({
+        type: 'assistant',
+        parent_tool_use_id: 'toolu_workflow',
+        message: {
+          id: 'native-workflow-single',
+          model: 'claude-opus-4-6',
+          content: [{ type: 'text', text: 'outer output' }],
+        },
+      }),
+    ),
+    [],
+  );
 
   // The same snapshot repeats every agent, so an unchanged one says nothing.
   assert.deepEqual(
@@ -262,6 +429,26 @@ test("a workflow's agents come from its progress snapshot, with a phase and a mo
       ]),
     ).map((child) => child.providerSessionId),
     ['agent-2'],
+  );
+  assert.deepEqual(
+    mapper.map(
+      message({
+        type: 'assistant',
+        parent_tool_use_id: 'toolu_workflow',
+        message: {
+          id: 'native-workflow',
+          model: 'claude-opus-4-6',
+          content: [{ type: 'text', text: 'shared source' }],
+        },
+      }),
+    ),
+    [],
+  );
+  assert.equal(warning.mock.callCount(), 1);
+  assert.match(String(warning.mock.calls[0]?.arguments[0]), /cannot identify.*agent/i);
+  assert.equal(
+    mapper.map(assistant([{ type: 'text', text: 'parent answer' }]))[0]?.transcript?.text,
+    'parent answer',
   );
 
   // The workflow stopping settles an agent its last snapshot still showed working.

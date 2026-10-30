@@ -140,11 +140,13 @@ test('external session and settings file changes fire once with their session fi
 
 test('a subagent writing its own session file is reported while it keeps writing', (t) => {
   const clock = manualClock();
+  const writes: string[] = [];
   const { dir, payloads, emit } = watch(t, {
     batchWindowMs: 1_500,
     now: clock.now,
     schedule: clock.schedule,
     cancel: clock.cancel,
+    onSessionFileWrite: (id) => writes.push(id),
   });
   const subagent = [{ providerSessionId: 'subagent', path: join(dir, 'subagent.jsonl') }];
   // A spawned subagent creates its session file and then writes to it for as
@@ -152,12 +154,14 @@ test('a subagent writing its own session file is reported while it keeps writing
   emit('encoded-cwd/subagent.jsonl');
   clock.advance(50);
   assert.deepEqual(payloads, [subagent], 'a file nobody has reported yet is not made to wait');
+  assert.deepEqual(writes, [], 'an unindexed file is not announced as readable');
 
   for (let elapsed = 0; elapsed < 1_500; elapsed += 100) {
     emit('encoded-cwd/subagent.jsonl');
     clock.advance(100);
   }
   assert.deepEqual(payloads, [subagent, subagent], 'later writes report once per batch window');
+  assert.equal(writes.length, 15, 'each later write is announced at once');
 });
 
 test('live session writes neither delay an external batch nor arm a timer', (t) => {

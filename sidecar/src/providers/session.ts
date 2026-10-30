@@ -1,9 +1,12 @@
 import type { McpServerConfig, SdkMcpServer } from '@factory/droid-sdk';
 
 import type { NormalizedEvent } from '../normalize.js';
+import type { PersistedChildSpawnLink } from '../history.js';
 import type {
   Autonomy,
   ContextWindowTokens,
+  ChildRole,
+  ChildStatus,
   ProviderUsage,
   ReasoningEffort,
   SessionInteractionMode,
@@ -147,6 +150,17 @@ export type DelegatedTurnEnd =
   | { status: 'completed' | 'interrupted' }
   | { status: 'failed'; error: Error };
 
+export interface ProviderChildSession {
+  providerSessionId: string;
+  role: ChildRole;
+  status: ChildStatus;
+  modelId: string;
+  reasoningEffort?: ReasoningEffort;
+  transcriptAvailable: boolean;
+  spawnLink?: PersistedChildSpawnLink;
+  group?: string;
+}
+
 /** Only false permits replay; withdrawal and uncertainty settle without it. */
 export type SteerOutcome = boolean | 'withdrawn' | 'unconfirmed';
 
@@ -174,6 +188,8 @@ export interface ProviderSession {
   ): AsyncGenerator<NormalizedEvent, void, undefined>;
   // Events delivered between turns, never duplicated by stream().
   onBackgroundEvent?(listener: (event: NormalizedEvent) => void): () => void;
+  // Restores observation of harness-owned children through the parent's connection.
+  restoreChildren?(children: readonly ProviderChildSession[]): void;
 
   /**
    * A turn the provider started by itself, outside `stream()`, and the moment

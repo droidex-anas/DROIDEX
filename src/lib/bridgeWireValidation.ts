@@ -318,6 +318,13 @@ export function isServerEvent(value: unknown): value is ServerEvent {
     case 'session.history':
       return (
         typeof value.appSessionId === 'string' &&
+        isOptionalString(value.childSessionId) &&
+        (value.mode === undefined ||
+          value.mode === 'replace' ||
+          value.mode === 'prepend' ||
+          value.mode === 'refresh') &&
+        (value.mode !== 'refresh' ||
+          (typeof value.childSessionId === 'string' && value.childSessionId.length > 0)) &&
         progressArray(value.progress) &&
         Array.isArray(value.transcripts) &&
         value.transcripts.every(isTranscriptEvent)
@@ -471,6 +478,19 @@ function isChildSessionSummary(value: unknown): boolean {
 
 function isTranscriptEvent(value: unknown): boolean {
   if (!isRecord(value)) return false;
+  const textUpdate = value.textUpdate;
+  if (
+    textUpdate !== undefined &&
+    (!isRecord(textUpdate) ||
+      typeof textUpdate.messageId !== 'string' ||
+      textUpdate.messageId.length === 0 ||
+      (textUpdate.kind !== 'delta' && textUpdate.kind !== 'snapshot') ||
+      (value.kind !== 'text' && value.kind !== 'thinking') ||
+      typeof value.text !== 'string' ||
+      value.author !== undefined ||
+      (value.spoken !== undefined && value.spoken !== false))
+  )
+    return false;
   const switched = value.modelSwitch;
   if (
     switched !== undefined &&

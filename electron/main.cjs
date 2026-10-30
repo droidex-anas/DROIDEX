@@ -149,6 +149,7 @@ const nativeBrowserManager = createNativeBrowserManager({
   appName: APP_NAME,
   session,
   nativeImage,
+  clipboard,
   dialog,
   safeStorage,
   getMainWindow: () => mainWindow,
