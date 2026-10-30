@@ -126,6 +126,7 @@ export function MessageFeed({
   onOpenSpecWiki,
   createdWorktreePath,
   onMountedRowsChange,
+  onListResize,
   scrollElementRef,
   viewportLayoutRef,
   listRef,
@@ -159,6 +160,7 @@ export function MessageFeed({
   onOpenSpecWiki?: () => void;
   createdWorktreePath?: string;
   onMountedRowsChange?: (count: number) => void;
+  onListResize?: () => void;
   scrollElementRef?: RefObject<HTMLElement | null>;
   viewportLayoutRef?: RefObject<ConversationViewportLayout | null>;
   listRef?: RefObject<ConversationListHandle | null>;
@@ -373,6 +375,7 @@ export function MessageFeed({
           listRef={listRef}
           initialScrollOffset={initialScrollOffset}
           onMountedRowsChange={onMountedRowsChange}
+          onResize={onListResize}
         >
           {(item, index) => {
             const fork = pending || !onFork ? undefined : forkOffer(item, finalResponseState);
