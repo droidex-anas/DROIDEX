@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { CodexEventMapper, mcpServerFailure } from './codexEvents.js';
+import { CodexEventMapper, mcpServerStatus } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import type { ProviderSession, SteerOutcome } from '../session.js';
@@ -44,7 +44,6 @@ const FAILED = {
     'MCP client for `broken_probe` failed to start: MCP startup failed: No such file or directory (os error 2)',
   failureReason: null,
 };
-const STARTING = { ...FAILED, status: 'starting', error: null };
 
 test('Design guidance uses Codex developer instructions on creation and resume without changing user input', async () => {
   for (const resumeId of [undefined, 'thread-1']) {
@@ -169,26 +168,27 @@ test('Codex provider preserves configured project instructions beside one Design
   }
 });
 
-test('a failed MCP server is read once per server, and its startup is not', () => {
+test('failed MCP servers are reported once, together, when every server has settled', () => {
   const mapper = new CodexEventMapper('app-1');
+  const update = (name: string, status: string) =>
+    mapper.mcpStatusEvents(mcpServerStatus({ ...FAILED, name, status })!);
 
-  assert.equal(mcpServerFailure(STARTING), undefined);
-  assert.deepEqual(mcpServerFailure(FAILED), { name: 'broken_probe', detail: FAILED.error });
+  assert.deepEqual(mcpServerStatus(FAILED), { name: 'broken_probe', status: 'failed' });
+  assert.deepEqual(update('figma', 'starting'), []);
+  assert.deepEqual(update('broken_probe', 'starting'), []);
+  assert.deepEqual(update('docs', 'starting'), []);
+  assert.deepEqual(update('figma', 'failed'), []);
+  assert.deepEqual(update('docs', 'ready'), []);
 
-  const rows = mapper.mcpFailureEvents(mcpServerFailure(FAILED)!);
+  const rows = update('broken_probe', 'failed');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].transcript?.kind, 'status');
   assert.equal(rows[0].transcript?.isError, undefined);
-  assert.equal(rows[0].transcript?.transient, undefined);
-  assert.match(rows[0].transcript?.text ?? '', /broken_probe/);
+  assert.equal(rows[0].transcript?.text, 'Some MCP servers didn’t start: figma, broken_probe.');
 
   // The same server failing again is the same fact, not a second row.
-  assert.deepEqual(mapper.mcpFailureEvents(mcpServerFailure(FAILED)!), []);
-  assert.equal(mapper.mcpFailureEvents({ name: 'other' }).length, 1);
-  assert.equal(
-    mapper.mcpFailureEvents({ name: 'other-2' })[0].transcript?.text,
-    'MCP server "other-2" failed to start.',
-  );
+  assert.deepEqual(update('figma', 'failed'), []);
+  assert.equal(update('late', 'failed')[0].transcript?.text, 'An MCP server didn’t start: late.');
 });
 
 // The servers start before the session's first turn, so the row has to survive

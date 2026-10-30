@@ -25,7 +25,7 @@ import {
   errorOf,
   isObject,
   MAPPED_NOTIFICATIONS,
-  mcpServerFailure,
+  mcpServerStatus,
   turnOf,
   type CodexTurn,
 } from './codexEvents.js';
@@ -702,8 +702,8 @@ export class CodexSession implements ProviderSession {
       this.usage.update(params);
     });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
-      const failure = mcpServerFailure(params);
-      if (failure) this.notice(this.mapper.mcpFailureEvents(failure));
+      const update = mcpServerStatus(params);
+      if (update) this.notice(this.mapper.mcpStatusEvents(update));
     });
     this.onThreadNotification('turn/started', (params) => {
       const turn = turnOf(params, this.usage);
