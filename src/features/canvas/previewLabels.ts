@@ -3,7 +3,33 @@
 // promising a rebuild that nothing queued is worse than saying the preview is
 // gone, and a frame nobody is writing must not shimmer as though someone were.
 
+import type { CanvasActivityStage } from './canvasMotion';
 import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame } from './protocol';
+
+/** The board's stage for a frame, and the revision whose picture it can show. */
+export interface FrameStatus {
+  stage: CanvasActivityStage | null;
+  revisionId: string | null;
+}
+
+export function frameStatus(frame: CanvasFrame, agentWorking: boolean): FrameStatus {
+  // A reserved frame is being written only while its chat has a turn running.
+  if (frame.revisionId === null)
+    return { stage: agentWorking ? 'writing' : null, revisionId: null };
+  const { build } = frame;
+  switch (build.status) {
+    case 'pending':
+      return { stage: 'queued', revisionId: null };
+    case 'building':
+      return { stage: 'building', revisionId: null };
+    case 'ready':
+      return { stage: 'ready', revisionId: build.revisionId };
+    case 'failed':
+      return { stage: 'failed', revisionId: build.lastWorkingRevisionId };
+    case 'cancelled':
+      return { stage: 'cancelled', revisionId: null };
+  }
+}
 
 /**
  * What a frame without a mounted document should say. Only a miss for the

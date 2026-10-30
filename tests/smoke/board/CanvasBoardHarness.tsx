@@ -326,6 +326,7 @@ function Harness() {
       appSessionId: 'chat_1',
       canvasId: snapshot.canvasId,
       attached: true,
+      agentWorking: false,
       frames: snapshot.frames,
       selected: snapshot.frames.filter((frame) =>
         interaction.selectedFrameIds.includes(frame.designId),

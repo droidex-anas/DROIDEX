@@ -426,6 +426,7 @@ function CanvasBoardMount({
       appSessionId,
       canvasId,
       attached: pinnable,
+      agentWorking,
       frames,
       selected: selectedFrameIds
         .map((designId) => byId.get(designId))
@@ -434,7 +435,7 @@ function CanvasBoardMount({
         boardRef.current?.focusFrame(designId);
       },
     });
-  }, [appSessionId, boardRef, canvasId, frames, pinnable, selectedFrameIds]);
+  }, [agentWorking, appSessionId, boardRef, canvasId, frames, pinnable, selectedFrameIds]);
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">

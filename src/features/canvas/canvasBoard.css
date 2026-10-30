@@ -50,7 +50,9 @@
   font-family: var(--canvas-chrome-font);
 }
 
-/* The name above the sheet, which is also the frame's drag handle and tab stop. */
+/* The name above the sheet, which is also the frame's drag handle and tab stop.
+   Plain text on the board, its first letter on the sheet's left edge: the
+   inset that gives the focus line room is taken back by the margin. */
 .canvas-frame-label {
   position: absolute;
   bottom: 100%;
@@ -58,7 +60,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding-bottom: 8px;
+  padding-bottom: 4px;
   transform-origin: 0 100%;
   outline: none;
   touch-action: none;
@@ -69,12 +71,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--raised);
-  box-shadow: var(--shadow-sm);
+  margin-left: -4px;
+  padding: 1px 4px;
+  border-radius: 5px;
   font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   transition:
     color 120ms,
     box-shadow 120ms;
@@ -91,9 +92,7 @@
 /* The keyboard's place on the board: the selection line around the name, which
    holds 3:1 against every board, where a tint read as nothing on dark ones. */
 .canvas-frame-label:focus-visible .canvas-frame-name {
-  box-shadow:
-    0 0 0 1.5px var(--selection),
-    var(--shadow-sm);
+  box-shadow: 0 0 0 1.5px var(--selection);
 }
 
 .canvas-frame-note {
@@ -191,10 +190,11 @@
   margin: 0 4px;
   background: color-mix(in srgb, var(--text) 12%, transparent);
 }
-/* The name while it is renamed: the label's own pill, holding a field. */
+/* The name while it is renamed: a raised field where the plain name stood. */
 .canvas-frame-name-field {
   width: 100%;
   outline: none;
+  background: var(--raised);
   color: var(--text);
   box-shadow:
     0 0 0 1.5px var(--selection),

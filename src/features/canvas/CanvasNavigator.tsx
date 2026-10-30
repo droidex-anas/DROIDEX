@@ -1,18 +1,27 @@
 // Spec §4's Components tab: every frame on the canvas the board is showing,
-// searchable, with its build state. Enter or a click focuses the frame on the
-// board. The search field keeps the keyboard and the arrows walk the matches,
-// so a canvas of any size is one tab stop and only the visible rows mount.
+// searchable, with its last picture and the stage the board shows for it.
+// Enter or a click focuses the frame on the board. The search field keeps the
+// keyboard and the arrows walk the matches, so a canvas of any size is one tab
+// stop and only the visible rows mount.
 
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search } from '@droidex/icons';
+import './canvasAnimations.css';
+import './canvasBloom.css';
 import { useBoardOnScreen } from './boardOnScreen';
+import { canvasActivity, type CanvasMotion } from './canvasMotion';
+import { FrameThumbnail } from './FrameThumbnail';
+import { PendingBloom } from './PendingBloom';
+import { frameStatus, type FrameStatus } from './previewLabels';
 import type { CanvasFrame } from './protocol';
+import { useCanvasMotion } from './useCanvasMotion';
 
-const ROW_PX = 32;
+const ROW_PX = 48;
 
 export function CanvasNavigator({ canvasId }: { canvasId: string }) {
   const board = useBoardOnScreen(canvasId);
+  const motion = useCanvasMotion();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
@@ -101,14 +110,14 @@ export function CanvasNavigator({ canvasId }: { canvasId: string }) {
         <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => {
             const frame = matches[item.index];
-            const status = frameStatus(frame);
+            const status = frameStatus(frame, board.agentWorking);
             return (
               <div
                 key={item.key}
                 id={`${listId}-${frame.designId}`}
                 role="option"
                 aria-selected={item.index === activeIndex}
-                aria-label={`${frame.name}, ${status.label}`}
+                aria-label={`${frame.name}, ${status.stage ? canvasActivity[status.stage].label : 'Empty'}`}
                 data-picked={selected.has(frame.designId) || undefined}
                 className="canvas-navigator-row"
                 style={{ transform: `translateY(${String(item.start)}px)` }}
@@ -121,9 +130,19 @@ export function CanvasNavigator({ canvasId }: { canvasId: string }) {
                   focus(frame);
                 }}
               >
-                <span className="canvas-navigator-name">{frame.name}</span>
-                <span className="canvas-navigator-status" data-status={status.tone}>
-                  {status.label}
+                <span className="canvas-navigator-thumb">
+                  {status.revisionId !== null && (
+                    <FrameThumbnail
+                      canvasId={canvasId}
+                      designId={frame.designId}
+                      revisionId={status.revisionId}
+                      fallback={null}
+                    />
+                  )}
+                </span>
+                <span className="canvas-navigator-text">
+                  <span className="canvas-navigator-name">{frame.name}</span>
+                  <FrameMeta frame={frame} stage={status.stage} motion={motion} />
                 </span>
               </div>
             );
@@ -134,19 +153,26 @@ export function CanvasNavigator({ canvasId }: { canvasId: string }) {
   );
 }
 
-/** A frame's build state in a word or two, as the board's sheets word it. */
-function frameStatus(frame: CanvasFrame): { label: string; tone: 'quiet' | 'failed' } {
-  if (frame.revisionId === null) return { label: 'Empty', tone: 'quiet' };
-  switch (frame.build.status) {
-    case 'ready':
-      return { label: 'Ready', tone: 'quiet' };
-    case 'failed':
-      return { label: 'Didn’t build', tone: 'failed' };
-    case 'building':
-      return { label: 'Building', tone: 'quiet' };
-    case 'cancelled':
-      return { label: 'Build cancelled', tone: 'quiet' };
-    case 'pending':
-      return { label: 'Waiting to build', tone: 'quiet' };
-  }
+/** A working frame's size; any other frame's stage, in the board's own words. */
+function FrameMeta({
+  frame,
+  stage,
+  motion,
+}: {
+  frame: CanvasFrame;
+  stage: FrameStatus['stage'];
+  motion: CanvasMotion;
+}) {
+  if (stage === 'ready')
+    return (
+      <span className="canvas-navigator-meta">
+        {Math.round(frame.rect.width)} × {Math.round(frame.rect.height)}
+      </span>
+    );
+  return (
+    <span className="canvas-navigator-meta" data-failed={stage === 'failed' || undefined}>
+      {/* Only the visible rows mount, so a mounted row is a visible one. */}
+      {stage ? <PendingBloom stage={stage} visible motion={motion} /> : 'Empty'}
+    </span>
+  );
 }

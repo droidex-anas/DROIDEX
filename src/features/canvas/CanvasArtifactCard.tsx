@@ -12,12 +12,12 @@ import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreSelector } from '../../hooks/useStore';
 import { useBoardOnScreen } from './boardOnScreen';
 import { canvasClient } from './canvasClient';
-import type { CanvasActivityStage } from './canvasMotion';
 import { CanvasToolsRecovery } from './CanvasPaneStates';
 import { lacksCanvasTools } from './canvasState';
 import { FrameThumbnail } from './FrameThumbnail';
 import { useOpenCanvasPane } from './openCanvasPane';
 import { PendingBloom } from './PendingBloom';
+import { frameStatus, type FrameStatus } from './previewLabels';
 import type { CanvasFrame, CanvasSnapshot } from './protocol';
 import { useCanvasMotion } from './useCanvasMotion';
 
@@ -113,31 +113,6 @@ function useCanvasFrame(canvasId: string, designId: string | null): CanvasFrame 
 
 function frameIn(snapshot: CanvasSnapshot, designId: string | null): CanvasFrame | null {
   return snapshot.frames.find((candidate) => candidate.designId === designId) ?? null;
-}
-
-/** The board's stage for a frame, and the revision whose picture it can show. */
-interface FrameStatus {
-  stage: CanvasActivityStage | null;
-  revisionId: string | null;
-}
-
-function frameStatus(frame: CanvasFrame, agentWorking: boolean): FrameStatus {
-  // A reserved frame is being written only while its chat has a turn running.
-  if (frame.revisionId === null)
-    return { stage: agentWorking ? 'writing' : null, revisionId: null };
-  const { build } = frame;
-  switch (build.status) {
-    case 'pending':
-      return { stage: 'queued', revisionId: null };
-    case 'building':
-      return { stage: 'building', revisionId: null };
-    case 'ready':
-      return { stage: 'ready', revisionId: build.revisionId };
-    case 'failed':
-      return { stage: 'failed', revisionId: build.lastWorkingRevisionId };
-    case 'cancelled':
-      return { stage: 'cancelled', revisionId: null };
-  }
 }
 
 function metaNote(frame: CanvasFrame | null | undefined): string {

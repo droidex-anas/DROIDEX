@@ -89,12 +89,11 @@
   inset: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
+  gap: 10px;
+  height: 48px;
+  padding: 0 8px;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 12px;
   color: var(--text-secondary);
 }
 
@@ -105,26 +104,58 @@
 }
 
 /* Selected on the board: weight, not a fill, so it reads beside the active row. */
-.canvas-navigator-row[data-picked] {
+.canvas-navigator-row[data-picked] .canvas-navigator-name {
   font-weight: 500;
   color: var(--text);
 }
 
-.canvas-navigator-name {
+/* The frame's last picture, whole, on the tile a frame without one keeps. */
+.canvas-navigator-thumb {
+  display: flex;
+  flex-shrink: 0;
+  width: 48px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--elevated);
+}
+
+.canvas-navigator-text {
+  display: flex;
   flex: 1;
   min-width: 0;
+  flex-direction: column;
+}
+
+.canvas-navigator-name,
+.canvas-navigator-meta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.canvas-navigator-status {
-  flex-shrink: 0;
+.canvas-navigator-name {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.canvas-navigator-meta {
   font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
 
-.canvas-navigator-status[data-status='failed'] {
+/* The stage is the board's own label (PendingBloom), set at the row's size. */
+.canvas-navigator-meta .canvas-sheet-title {
+  font: inherit;
+}
+
+.canvas-navigator-meta .canvas-sheet-title:not(.canvas-bloom-label) {
+  color: inherit;
+}
+
+.canvas-navigator-meta[data-failed] {
   color: var(--danger);
 }
 
