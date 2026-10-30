@@ -22,7 +22,7 @@ export const CARD_SLIDER_STYLE = {
 
 // The slider speaks the chip's vocabulary (Xhigh, and the harness's own word
 // for ultra: Ultracode on Claude, Ultra elsewhere).
-export function effortDisplay(effort: ReasoningEffort, provider: ProviderKind): string {
+function effortDisplay(effort: ReasoningEffort, provider: ProviderKind): string {
   const label = reasoningEffortLabel(effort, provider);
   return label.charAt(0).toUpperCase() + label.slice(1);
 }

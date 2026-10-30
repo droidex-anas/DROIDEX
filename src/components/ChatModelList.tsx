@@ -1,4 +1,3 @@
-import { ChevronRight } from 'lucide-react';
 import type { ModelInfo } from '../types/bridge';
 import {
   ModelIcon,
@@ -14,29 +13,19 @@ import {
   useModelListVirtualizer,
 } from './modelListParts';
 
-/**
- * The slider popover's model list: the virtualized, filtered catalog, with the
- * selected row carrying the "adjust effort" drill chip.
- */
-export default function ModelSliderCatalogList({
+/** The chat model picker's list: the virtualized, filtered catalog. */
+export default function ChatModelList({
   models,
   hasRealModels,
   selectedModelId,
   query,
-  drillLabel,
-  drillUltra,
   onSelectModel,
-  onDrill,
 }: {
   models: ModelInfo[];
   hasRealModels: boolean;
   selectedModelId: string | undefined;
   query: string;
-  /** Set when the selected model offers a choice of efforts; opens the slider. */
-  drillLabel: string | undefined;
-  drillUltra: boolean;
   onSelectModel: (modelId: string) => void;
-  onDrill: () => void;
 }) {
   const rows = hasRealModels ? models : [];
   const selectedIndex = rows.findIndex((model) => model.id === selectedModelId);
@@ -65,15 +54,12 @@ export default function ModelSliderCatalogList({
               className="absolute inset-x-0 top-0"
               style={{ transform: `translateY(${String(item.start)}px)` }}
             >
-              <SliderRow
+              <ModelRow
                 model={model}
                 selected={selected}
-                drillLabel={drillLabel}
-                drillUltra={drillUltra}
                 onSelect={() => {
                   if (!selected) onSelectModel(model.id);
                 }}
-                onDrill={onDrill}
               />
             </div>
           );
@@ -84,20 +70,14 @@ export default function ModelSliderCatalogList({
   );
 }
 
-function SliderRow({
+function ModelRow({
   model,
   selected,
-  drillLabel,
-  drillUltra,
   onSelect,
-  onDrill,
 }: {
   model: ModelInfo;
   selected: boolean;
-  drillLabel: string | undefined;
-  drillUltra: boolean;
   onSelect: () => void;
-  onDrill: () => void;
 }) {
   return (
     <div
@@ -137,23 +117,6 @@ function SliderRow({
       >
         {shortModelName(model.displayName)}
       </span>
-      {selected && drillLabel !== undefined && (
-        <button
-          type="button"
-          aria-label="Adjust reasoning effort"
-          title="Adjust reasoning effort"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDrill();
-          }}
-          className={`flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-caption transition-colors hover:bg-active ${
-            drillUltra ? 'text-ultra' : 'text-secondary hover:text-primary'
-          }`}
-        >
-          {drillLabel}
-          <ChevronRight className="h-3 w-3 text-muted" />
-        </button>
-      )}
     </div>
   );
 }

@@ -35,7 +35,7 @@ export default function AddMenu({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`flex size-control-md shrink-0 items-center justify-center rounded-full transition-colors ${
+        className={`flex size-control-sm shrink-0 items-center justify-center rounded-md transition-colors ${
           open ? 'bg-active text-primary' : 'text-muted hover:bg-active/60 hover:text-primary'
         }`}
         title="Add files or a plugin"

@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useMemo,
   useCallback,
+  type CSSProperties,
   type ReactNode,
   type SetStateAction,
 } from 'react';
@@ -89,18 +90,10 @@ import {
   runsAsCompactCommand,
   VISUALIZE_COMMAND,
 } from '../lib/composePrompt';
-import {
-  draftEffortFor,
-  reasoningEffortLabel,
-  resolveReasoningEffortDisplay,
-} from '../lib/reasoningEffort';
+import { draftEffortFor, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
-import {
-  CONTEXT_WINDOW_LABEL,
-  contextWindowLabel,
-  offersContextWindow,
-} from '../lib/contextWindow';
+import { offersContextWindow } from '../lib/contextWindow';
 import { compactionSettingsSnapshot } from '../lib/compactionSettings';
 import { DesignComposerFrame } from './composer/DesignComposerFrame';
 import { ReasoningChip } from './composer/ReasoningChip';
@@ -189,7 +182,6 @@ import { sideChatPromptFromCommand } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import useFastMode from '../hooks/useFastMode';
-import useContextWindow from '../hooks/useContextWindow';
 import { toast } from '../lib/toast';
 import { createProject } from '../features/projects/client';
 
@@ -209,9 +201,9 @@ const ImageViewerModal = lazy(() =>
 );
 // The model pickers open on demand; hovering the chip starts the download so
 // the first open does not wait on it.
-const loadModelSliderPopover = () => import('./ModelSliderPopover');
+const loadChatModelPopover = () => import('./ChatModelPopover');
 const loadModelSelectorPopover = () => import('./ModelSelectorPopover');
-const ModelSliderPopover = lazy(loadModelSliderPopover);
+const ChatModelPopover = lazy(loadChatModelPopover);
 const ModelSelectorPopover = lazy(loadModelSelectorPopover);
 const VoiceSendSlot = lazy(() => import('../features/voice/VoiceSendSlot'));
 const VoiceTakeoverPopover = lazy(() => import('../features/voice/VoiceTakeoverPopover'));
@@ -233,6 +225,12 @@ const VoiceComposerControls = lazy(() =>
 const EMPTY_COMPOSER_MENU: ComposerMenuModel = { entries: [], rows: [] };
 
 const ACCENT = 'var(--accent)';
+
+// A new chat's field opens two lines taller than a running chat's, which
+// starts at one line and grows with the draft (read by liveMarkdownTheme).
+const ROOMY_FIELD_STYLE: CSSProperties & Record<'--composer-min-height', string> = {
+  '--composer-min-height': '88px',
+};
 // Slash entries that drive Droid's own subsystems, so they leave the menu with
 // the controls they belong to when the chat runs on another provider.
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
@@ -362,7 +360,6 @@ export default function PromptInput({
           : null,
       liveEnterBehavior: current.liveEnterBehavior,
       missionControlMode: current.missionControlMode,
-      modelSelectorStyle: current.modelSelectorStyle,
       models: current.models,
       pendingAutonomy: appSessionId ? current.pendingAutonomy[appSessionId] : undefined,
       pendingActiveModelUpdate: appSessionId
@@ -383,7 +380,6 @@ export default function PromptInput({
   );
   const store = useStoreApi();
   const { fastMode, setFastMode } = useFastMode(appSessionId ?? undefined);
-  const { contextWindowTokens } = useContextWindow(appSessionId ?? undefined);
   const composerRevisionRef = useRef(0);
   const [input, setInputState] = useState('');
   const setInput = (value: SetStateAction<string>) => {
@@ -405,7 +401,7 @@ export default function PromptInput({
     });
   };
   const modelChipRef = useRef<HTMLButtonElement>(null);
-  const designModelControlsRef = useRef<HTMLDivElement>(null);
+  const modelControlsRef = useRef<HTMLDivElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
@@ -2357,6 +2353,10 @@ export default function PromptInput({
 
   // The side the composer's pickers open on: toward the room it has.
   const pickerSide = centered ? 'bottom' : 'top';
+  // Mission Control picks a model per role and an exact child its own, each
+  // with its effort beside it, so neither has the chat's reasoning chip.
+  const editsRoles = missionPreview || childSettingsTarget !== undefined;
+  const roomyField = !activeSession && !designComposer && !compact;
 
   // Autonomy: read-only for a targeted child, live control for an open session,
   // draft override before a session exists.
@@ -2416,16 +2416,12 @@ export default function PromptInput({
       <button
         ref={modelChipRef}
         onPointerEnter={() => {
-          void (state.modelSelectorStyle === 'slider'
-            ? loadModelSliderPopover()
-            : loadModelSelectorPopover());
+          void (editsRoles ? loadModelSelectorPopover() : loadChatModelPopover());
         }}
         onClick={() => {
           showModels((open) => !open);
         }}
-        className={`flex h-control-sm items-center gap-1.5 transition-colors ${
-          designComposer ? 'max-w-40 rounded-md px-1.5' : 'max-w-52 shrink-0 rounded-full px-2.5'
-        } ${
+        className={`flex h-control-sm max-w-52 items-center gap-1.5 rounded-md px-1.5 transition-colors ${
           modelsOpen
             ? 'bg-active text-primary'
             : 'text-secondary hover:bg-active/60 hover:text-primary'
@@ -2485,28 +2481,6 @@ export default function PromptInput({
                 aria-label={`Fast mode: ${FAST_MODE_HINT}`}
               />
             )}
-            {/* Design gives reasoning its own control in the row. */}
-            {!designComposer && primaryReasoning && (
-              <span
-                className={`shrink-0 capitalize ${
-                  primaryReasoning === 'ultra' ? 'text-ultra' : 'text-muted'
-                }`}
-                title={`Reasoning: ${reasoningEffortLabel(primaryReasoning, composerProvider)}`}
-              >
-                {reasoningEffortLabel(primaryReasoning, composerProvider)}
-              </span>
-            )}
-            {!designComposer &&
-              contextWindowTokens !== undefined &&
-              offersContextWindow(composerProvider) && (
-                <span
-                  className="shrink-0 text-muted"
-                  title={`${CONTEXT_WINDOW_LABEL}: ${contextWindowLabel(contextWindowTokens)}`}
-                >
-                  {primaryReasoning ? '· ' : ''}
-                  {contextWindowLabel(contextWindowTokens)}
-                </span>
-              )}
           </>
         )}
       </button>
@@ -2519,23 +2493,20 @@ export default function PromptInput({
             setModelsOpen(false);
           }}
           anchorRef={modelChipRef}
-          // A pick resizes the chip and Design's reasoning chip beside it; the
-          // end of the row they share stays put, so the open picker does too.
-          alignRef={designComposer ? designModelControlsRef : undefined}
+          // A pick resizes the chip and the reasoning chip beside it; the end
+          // of the row they share stays put, so the open picker does too.
+          alignRef={modelControlsRef}
           label={missionPreview ? 'Models' : 'Model'}
           placement={`${pickerSide}-end`}
         >
-          {/* The slider style is a chat-composer picker; Mission Control
-              and exact-child editors keep the classic popover's semantics. */}
-          {state.modelSelectorStyle === 'slider' && !missionPreview && !childSettingsTarget ? (
-            <ModelSliderPopover appSessionId={appSessionId} pickEffort={!designComposer} />
-          ) : (
+          {editsRoles ? (
             <ModelSelectorPopover
               appSessionId={appSessionId}
               singleAgent={!missionPreview}
               childTarget={childSettingsTarget}
-              pickEffort={!designComposer}
             />
+          ) : (
+            <ChatModelPopover appSessionId={appSessionId} />
           )}
         </Popover>
       </Suspense>
@@ -2800,14 +2771,20 @@ export default function PromptInput({
           )}
 
           <div className="flex items-end">
-            <div className="relative min-w-0 flex-1">
+            <div
+              className="relative min-w-0 flex-1"
+              style={roomyField ? ROOMY_FIELD_STYLE : undefined}
+            >
               <DraftSelections items={composerSelections} onWidthChange={setSelectionsIndent} />
               {/* The draft renders markdown as it is typed; the editor owns
                   typing while `input` here stays the source of truth for sends,
                   seeds, and formatting actions. */}
               <Suspense
                 fallback={
-                  <div className="min-h-11 px-4 pt-3 pb-2 text-sm text-muted/50">
+                  <div
+                    className="px-4 pt-3 pb-2 text-sm text-muted/50"
+                    style={{ minHeight: 'var(--composer-min-height, 44px)' }}
+                  >
                     {promptPlaceholder}
                   </div>
                 }
@@ -2829,54 +2806,15 @@ export default function PromptInput({
                 />
               </Suspense>
             </div>
-            {designComposer && <div className="shrink-0 p-1.5">{actionSlot}</div>}
+            <div className="shrink-0 p-1.5">{actionSlot}</div>
           </div>
-
-          {!designComposer && (
-            // One seamless surface with the draft, no divider line. It wraps on
-            // narrow windows rather than pushing controls offscreen.
-            <div className="flex flex-wrap items-center gap-1 px-2 pb-2 pt-1 text-caption">
-              <AddMenu
-                visualizeSelected={visualizeSelected}
-                // Both rows hand focus to the draft, which is where the prompt
-                // continues once the menu has added to it.
-                onAttachFiles={() => {
-                  editorRef.current?.focus();
-                  void handleAttachFiles();
-                }}
-                onToggleVisualize={() => {
-                  setVisualizeSelected(!visualizeSelected);
-                  editorRef.current?.focus();
-                }}
-              />
-              {altProfileTag}
-              {autonomyControl}
-              {appSessionId && references.canvasKey && (
-                <Suspense fallback={null}>
-                  <CanvasDesignSystem
-                    canvasKey={references.canvasKey}
-                    appSessionId={appSessionId}
-                  />
-                </Suspense>
-              )}
-              {/* Trailing cluster. It wraps to its own row as one unit on
-                  narrow windows, and justify-end keeps the action slot on the
-                  right edge instead of dropping it to the row start. flex-auto
-                  (not flex-1) so its content width is what triggers the wrap. */}
-              <div className="flex min-w-0 flex-auto items-center justify-end gap-1">
-                {modelPicker}
-                {actionSlot}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Design keeps the field to the prompt and its send, and sets the
-            rest in one quiet row under it that never wraps: the design system
-            and library names give way first, then the autonomy label, never
-            the model's. */}
-        {designComposer && (
-          <div className="flex min-w-0 items-center gap-1 pl-2.5 pt-2 text-label font-normal">
+        {/* The field keeps to the prompt and its send; the rest sits in one
+            quiet row under it that never wraps: the design system and library
+            names give way first, then the autonomy label, never the model's. */}
+        <div className="flex min-w-0 items-center gap-1 pl-2.5 pt-2 text-label font-normal">
+          {designComposer ? (
             <button
               type="button"
               onClick={() => {
@@ -2889,16 +2827,32 @@ export default function PromptInput({
             >
               <Plus className="size-icon-md" aria-hidden="true" />
             </button>
-            {altProfileTag}
-            {autonomyControl}
-            {references.canvasKey && (
-              <Suspense fallback={null}>
-                <CanvasDesignSystem canvasKey={references.canvasKey} appSessionId={appSessionId} />
-              </Suspense>
-            )}
-            {designTools}
-            <div ref={designModelControlsRef} className="ml-auto flex shrink-0 items-center gap-1">
-              {modelPicker}
+          ) : (
+            <AddMenu
+              visualizeSelected={visualizeSelected}
+              // Both rows hand focus to the draft, which is where the prompt
+              // continues once the menu has added to it.
+              onAttachFiles={() => {
+                editorRef.current?.focus();
+                void handleAttachFiles();
+              }}
+              onToggleVisualize={() => {
+                setVisualizeSelected(!visualizeSelected);
+                editorRef.current?.focus();
+              }}
+            />
+          )}
+          {altProfileTag}
+          {autonomyControl}
+          {references.canvasKey && (
+            <Suspense fallback={null}>
+              <CanvasDesignSystem canvasKey={references.canvasKey} appSessionId={appSessionId} />
+            </Suspense>
+          )}
+          {designTools}
+          <div ref={modelControlsRef} className="ml-auto flex shrink-0 items-center gap-1">
+            {modelPicker}
+            {!editsRoles && (
               <ReasoningChip
                 appSessionId={appSessionId}
                 model={chipModel}
@@ -2906,9 +2860,9 @@ export default function PromptInput({
                 provider={composerProvider}
                 placement={`${pickerSide}-end`}
               />
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {viewerImage && (

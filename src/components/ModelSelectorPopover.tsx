@@ -26,18 +26,16 @@ const AGENTS: { kind: AgentKind; label: string; hint: string }[] = [
   { kind: 'validator', label: 'Validator', hint: 'Verifies the work' },
 ];
 
-// The classic model picker's panel; the composer floats it above the model chip.
+// The model picker for Mission Control's roles and for an exact child: each
+// row carries its effort, since neither has the chat's reasoning chip.
 export default function ModelSelectorPopover({
   appSessionId,
   singleAgent = false,
   childTarget,
-  pickEffort = true,
 }: {
   appSessionId: string | null;
   singleAgent?: boolean;
   childTarget?: ExactChildSettingsTarget;
-  /** False where effort has its own control beside the chip: the panel then lists models only. */
-  pickEffort?: boolean;
 }) {
   const picker = useModelPicker({ appSessionId, singleAgent, childTarget });
   const {
@@ -83,7 +81,7 @@ export default function ModelSelectorPopover({
       // Leave ←/→ to the search caret while there is text to move through.
       const inSearch = e.target instanceof HTMLInputElement && e.target.value.length > 0;
       const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
-      if (horizontal && (inSearch || !pickEffort)) return;
+      if (horizontal && inSearch) return;
       e.preventDefault();
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (childTarget && !childReady) return;
@@ -107,7 +105,6 @@ export default function ModelSelectorPopover({
     effReasoning,
     filterOpen,
     models,
-    pickEffort,
     updateModel,
     updateReasoning,
   ]);
@@ -196,7 +193,7 @@ export default function ModelSelectorPopover({
             onSelectReasoning={updateReasoning}
             disabled={disabled}
             reasoningLocked={childMode}
-            showReasoning={pickEffort && showsReasoning}
+            showReasoning={showsReasoning}
           />
         </div>
       </div>

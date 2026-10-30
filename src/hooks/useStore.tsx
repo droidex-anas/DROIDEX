@@ -59,7 +59,6 @@ import {
   loadHarnessModels,
   loadImagePasteQuality,
   loadLiveEnterBehavior,
-  loadModelSelectorStyle,
   loadNarrationMode,
   loadPersistedUiState,
   loadReviewScope,
@@ -75,7 +74,6 @@ import {
   type LiveEnterBehavior,
   type MainView,
   type MissionRole,
-  type ModelSelectorStyle,
   type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
@@ -364,9 +362,6 @@ export interface AppState {
   // previous request (a repeated click must re-arm the scope-fallback dedupe).
   reviewFocusRequestId: number;
   diffView: DiffViewMode;
-  // Which picker the composer's model chip opens: the classic list with
-  // per-row effort dots, or the card that drills into the effort slider.
-  modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
   mainView: MainView;
   // Header tabs. The active tab's page, or its focused tile, is the live one
@@ -726,7 +721,6 @@ export type Action =
   | OpenReviewAtAction
   | { type: 'CLEAR_REVIEW_FOCUS' }
   | { type: 'SET_DIFF_VIEW'; mode: DiffViewMode }
-  | { type: 'SET_MODEL_SELECTOR_STYLE'; style: ModelSelectorStyle }
   | { type: 'TOGGLE_COMMAND_PALETTE' }
   | { type: 'CLOSE_COMMAND_PALETTE' }
   | { type: 'TOGGLE_SIDEBAR' }
@@ -974,7 +968,6 @@ export const initialState: AppState = {
   reviewFocusChange: null,
   reviewFocusRequestId: 0,
   diffView: loadDiffView(),
-  modelSelectorStyle: loadModelSelectorStyle(),
   skills: [],
   skillsProviderSessionId: undefined,
   harnessModels: loadHarnessModels(),
@@ -2380,9 +2373,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SET_DIFF_VIEW':
       return { ...state, diffView: action.mode };
-
-    case 'SET_MODEL_SELECTOR_STYLE':
-      return { ...state, modelSelectorStyle: action.style };
 
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };

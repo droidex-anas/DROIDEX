@@ -11,7 +11,14 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
 const textTint = (pct: number) => `color-mix(in srgb, var(--text) ${String(pct)}%, transparent)`;
 
 export const liveMarkdownTheme = EditorView.theme({
-  '&': { fontSize: '14px', minHeight: '44px', maxHeight: '200px' },
+  // The composer sets --composer-min-height for a new chat's roomier field;
+  // the first send eases it down to one line.
+  '&': {
+    fontSize: '14px',
+    minHeight: 'var(--composer-min-height, 44px)',
+    maxHeight: '200px',
+    transition: 'min-height 200ms var(--ease-smooth-out)',
+  },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { fontFamily: 'inherit', lineHeight: '20px', overflow: 'auto' },
   '.cm-content': {
