@@ -123,6 +123,7 @@ function DesignDraftShell({
             <PromptInput
               appSessionId={null}
               compact
+              centered
               placeholder={preview ?? DESIGN_PLACEHOLDER}
               designTools={startingPoint}
             />
@@ -251,8 +252,11 @@ function LibrarySeedChip() {
     [],
   );
   return (
+    // Sized like the design system control beside it.
     <div
-      className={`flex h-control-sm min-w-0 items-center rounded-md ${armed ? 'bg-active/60' : ''}`}
+      className={`flex h-control-sm max-w-fit grow basis-0 items-center rounded-md ${
+        armed ? 'min-w-11 bg-active/60' : 'min-w-control-sm'
+      }`}
     >
       <button
         type="button"

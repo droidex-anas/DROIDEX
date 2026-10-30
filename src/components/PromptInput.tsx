@@ -304,6 +304,7 @@ export default function PromptInput({
   compact = false,
   placeholder,
   designTools,
+  centered = false,
 }: {
   // The chat this composer writes into; null drafts a new chat.
   appSessionId: string | null;
@@ -313,6 +314,8 @@ export default function PromptInput({
   placeholder?: string;
   /** Controls a Design surface adds to the Design composer's row, after the design system. */
   designTools?: ReactNode;
+  /** The composer stands mid-page with room below it, so its pickers open downward. */
+  centered?: boolean;
 }) {
   const dispatch = useStoreDispatch();
   const askSideChat = useAskSideChat();
@@ -2351,6 +2354,9 @@ export default function PromptInput({
     />
   );
 
+  // The side the composer's pickers open on: toward the room it has.
+  const pickerSide = centered ? 'bottom' : 'top';
+
   // Autonomy: read-only for a targeted child, live control for an open session,
   // draft override before a session exists.
   const autonomyControl = targetChild ? (
@@ -2368,7 +2374,7 @@ export default function PromptInput({
     </span>
   ) : !showsAutonomy ? null : activeSession ? (
     <AutonomySelector
-      placement="top-start"
+      placement={`${pickerSide}-start`}
       scope="session"
       provider={activeSession.provider}
       value={state.pendingAutonomy?.autonomy ?? activeSession.autonomy}
@@ -2390,7 +2396,7 @@ export default function PromptInput({
     />
   ) : (
     <AutonomySelector
-      placement="top-start"
+      placement={`${pickerSide}-start`}
       scope="draft"
       provider={composerProvider}
       value={draftAutonomy}
@@ -2513,7 +2519,7 @@ export default function PromptInput({
           }}
           anchorRef={modelChipRef}
           label={missionPreview ? 'Models' : 'Model'}
-          placement="top-end"
+          placement={`${pickerSide}-end`}
         >
           {/* The slider style is a chat-composer picker; Mission Control
               and exact-child editors keep the classic popover's semantics. */}
@@ -2863,7 +2869,8 @@ export default function PromptInput({
 
         {/* Design keeps the field to the prompt and its send, and sets the
             rest in one quiet row under it that never wraps: the design system
-            and library names truncate before the model's. */}
+            and library names give way first, then the autonomy label, never
+            the model's. */}
         {designComposer && (
           <div className="flex min-w-0 items-center gap-1 pl-2.5 pt-2 text-label font-normal">
             <button
@@ -2893,6 +2900,7 @@ export default function PromptInput({
                 model={chipModel}
                 effort={primaryReasoning}
                 provider={composerProvider}
+                placement={`${pickerSide}-end`}
               />
             </div>
           </div>

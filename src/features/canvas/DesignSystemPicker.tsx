@@ -108,8 +108,12 @@ export function DesignSystemControl({
   }, [reads, isConnected]);
 
   return (
+    // Grows from nothing into the row's spare room, so the name truncates
+    // before the model's, and never narrower than its icon and clear button.
     <div
-      className={`flex h-control-sm min-w-0 items-center rounded-md ${value ? 'bg-active/60' : ''}`}
+      className={`flex h-control-sm max-w-fit grow basis-0 items-center rounded-md ${
+        value ? 'min-w-11 bg-active/60' : 'min-w-control-sm'
+      }`}
     >
       <button
         ref={triggerRef}
@@ -130,7 +134,7 @@ export function DesignSystemControl({
       >
         <Palette aria-hidden className="size-icon-sm shrink-0" />
         <span className="max-w-40 truncate">{shown.name}</span>
-        {isUnavailable && <span className="shrink-0 text-warning">· unavailable</span>}
+        {isUnavailable && <span className="truncate text-warning">· unavailable</span>}
       </button>
       {value && (
         <button
