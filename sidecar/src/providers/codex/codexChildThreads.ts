@@ -51,17 +51,20 @@ export class CodexChildThreads {
       if (child.done || child.status === 'completed' || child.status === 'failed')
         this.settled.add(id);
       else if (child.status === 'running') this.settled.delete(id);
+      const model = {
+        modelId: child.modelId ?? this.model.modelId,
+        reasoningEffort: child.reasoningEffort ?? this.model.reasoningEffort,
+      };
       const existing = this.threads.get(id);
       if (existing) {
         if (child.role) existing.role = child.role;
+        // A spawn call can name the child's settings after its thread started.
+        if (child.modelId) existing.mapper.setModel(model);
         return [{ ...event, childSession: { ...child, role: existing.role } }];
       }
       this.threads.set(id, {
         role: child.role ?? 'worker',
-        mapper: new CodexEventMapper(this.appSessionId, {
-          modelId: child.modelId ?? this.model.modelId,
-          reasoningEffort: child.reasoningEffort ?? this.model.reasoningEffort,
-        }),
+        mapper: new CodexEventMapper(this.appSessionId, model),
       });
       return [{ ...event, childSession: { ...child, role: child.role ?? 'worker' } }];
     });

@@ -105,6 +105,52 @@ test('a code-mode child Codex announces without a model runs on the parent model
   assert.ok(announced.every((event) => event.childSession?.modelId === 'parent-model'));
 });
 
+test("a spawn's settings reach the child's own code-mode children after its thread started", async (t) => {
+  const { client, notifications } = fakeClient((method) =>
+    method === 'thread/start'
+      ? { thread: { id: 'parent-thread' }, model: 'parent-model' }
+      : undefined,
+  );
+  const session = codexSession(client, 'app-parent');
+  t.after(() => session.close());
+  await session.open();
+  const events: NormalizedEvent[] = [];
+  session.onBackgroundEvent((event) => events.push(event));
+  notifications.get('thread/started')?.({
+    thread: { id: 'spawned', parentThreadId: 'parent-thread' },
+  });
+  notifications.get('item/completed')?.({
+    threadId: 'parent-thread',
+    item: {
+      type: 'collabAgentToolCall',
+      id: 'spawn',
+      tool: 'spawnAgent',
+      status: 'completed',
+      senderThreadId: 'parent-thread',
+      receiverThreadIds: ['spawned'],
+      prompt: 'work',
+      model: 'explicit-model',
+      reasoningEffort: 'high',
+      agentsStates: { spawned: { status: 'running', message: null } },
+    },
+  });
+  notifications.get('item/completed')?.({
+    threadId: 'spawned',
+    item: {
+      type: 'subAgentActivity',
+      id: 'grandchild-activity',
+      kind: 'interacted',
+      agentThreadId: 'grandchild',
+      agentPath: '/root/spawned/grandchild',
+    },
+  });
+  const grandchild = events.findLast(
+    (event) => event.childSession?.providerSessionId === 'grandchild',
+  )?.childSession;
+  assert.equal(grandchild?.modelId, 'explicit-model');
+  assert.equal(grandchild?.reasoningEffort, 'high');
+});
+
 test('native child streams remain separate from the parent turn and stop at settlement or closure', async () => {
   let startTurn: () => void = () => undefined;
   const started = new Promise<void>((resolve) => {

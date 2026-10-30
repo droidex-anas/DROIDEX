@@ -9,7 +9,7 @@
 // sessionTranscriptParser.ts maps the content blocks below back to transcript
 // events. Changing a shape here without reading those three is a silent
 // "session is empty after restart" bug.
-import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, open, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
@@ -195,8 +195,9 @@ export class ProviderTranscriptFile {
   private writeLine(line: object): Promise<void> {
     const attempt = this.writes.then(async () => {
       const head = await this.headIfMissing();
+      const lineBreak = head || this.headWritten ? '' : await lineBreakIfUnterminated(this.path);
       const anchored = await this.anchors.prepare(line, this.path, head !== '');
-      await appendFile(this.path, head + serialize(anchored.line));
+      await appendFile(this.path, head + lineBreak + serialize(anchored.line));
       anchored.commit();
       this.headWritten = true;
     });
@@ -247,6 +248,21 @@ async function hasContent(path: string): Promise<boolean> {
   } catch (error) {
     if (isMissingFile(error)) return false;
     throw error;
+  }
+}
+
+// A crash can leave the last saved line half-written; a new line must not join
+// it, or it is lost with it and every later message anchor is off by one.
+async function lineBreakIfUnterminated(path: string): Promise<string> {
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return '';
+    const last = Buffer.alloc(1);
+    await file.read(last, 0, 1, size - 1);
+    return last[0] === 0x0a ? '' : '\n';
+  } finally {
+    await file.close();
   }
 }
 
