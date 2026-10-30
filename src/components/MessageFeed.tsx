@@ -243,6 +243,7 @@ export function MessageFeed({
     feedIdentity,
     updateKind,
     rebuiltFromItemIndex,
+    clean ? staysUnderAnswer : undefined,
   );
   const enteredKeys = useMemo(() => new Set<string>(), [feedIdentity]);
   const recordEntrance = useCallback(
@@ -270,7 +271,7 @@ export function MessageFeed({
   // A design chat sets each turn's designs under its answer, so the row that
   // streams and carries the live cue is the last one above them.
   let tailIdx = lastIdx;
-  if (clean) while (tailIdx >= 0 && items[tailIdx].type === 'canvas_artifact') tailIdx -= 1;
+  if (clean) while (tailIdx >= 0 && staysUnderAnswer(items[tailIdx])) tailIdx -= 1;
   // The chat's own latest reply: a changes row can follow it, and a native
   // subagent's replies share the chat's id but are not the chat speaking.
   let lastReplyIdx = lastIdx;
@@ -341,6 +342,14 @@ export function MessageFeed({
     pending && !tailTyping && (subagentPoll ? !lastDockRunning : !tailSelfIndicates);
   // Time the check from the poll itself; the visible tail can be minutes old.
   const workingStart = rich ? (subagentPoll?.ts ?? tailTimestamp(last)) : undefined;
+  // A design chat's cue holds the place its answer takes, above the turn's
+  // designs, so the answer replaces it rather than pushing the designs down.
+  const designCue =
+    clean && showWorking ? (
+      <div className="mx-auto min-w-0 max-w-2xl pb-2 pt-4">
+        <DesignStatusLine status={designWorkingStatus(events)} startTs={workingStart} />
+      </div>
+    ) : null;
 
   return (
     // A reply's prose names files as it works; inside the transcript those
@@ -393,6 +402,7 @@ export function MessageFeed({
                   forkPointId={fork?.forkPointId}
                   forking={fork ? forking : undefined}
                 />
+                {index === tailIdx ? designCue : null}
                 {index === worktreeInsertAfter && createdWorktreePath ? (
                   <div className="mx-auto min-w-0 max-w-2xl">
                     <WorktreeCreatedCard path={createdWorktreePath} />
@@ -408,18 +418,15 @@ export function MessageFeed({
           }}
         </ConversationList>
 
-        {showWorking && (
+        {showWorking && !clean && (
           <div className="mx-auto min-w-0 max-w-2xl">
-            {clean ? (
-              <DesignStatusLine status={designWorkingStatus(events)} startTs={workingStart} />
-            ) : (
-              <WorkingIndicator
-                label={feedWorkingLabel(last, subagentPoll !== undefined)}
-                startTs={workingStart}
-              />
-            )}
+            <WorkingIndicator
+              label={feedWorkingLabel(last, subagentPoll !== undefined)}
+              startTs={workingStart}
+            />
           </div>
         )}
+        {tailIdx < 0 ? designCue : null}
         {pendingSteers}
       </div>
     </ProseFileLinks>
@@ -431,6 +438,10 @@ function feedWorkingLabel(last: FeedItem | undefined, pollingSubagents: boolean)
   if (last?.type === 'tools') return 'Running';
   if (last?.type === 'diff' || last?.type === 'diffs') return 'Updating files';
   return 'Working';
+}
+
+function staysUnderAnswer(item: FeedItem): boolean {
+  return item.type === 'canvas_artifact';
 }
 
 function isOwnReply(item: FeedItem): boolean {

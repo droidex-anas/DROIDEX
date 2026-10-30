@@ -1,7 +1,7 @@
 /* Canvas motion: frame arrival, toolbar reveal and state fades. This file is
-   imported by the lazy Canvas surface, so these rules load with the board
-   rather than on every app start. The pending shimmer has its own sheet,
-   canvasBloom.css. */
+   imported by the lazy Canvas surface and the artifact card, so these rules
+   load with the board or the first design card rather than on every app
+   start. The pending shimmer has its own sheet, canvasBloom.css. */
 
 /* Frame arrival and toolbar reveal. Duration, easing and travel are set
    inline from the motion tokens, so the curve is stated once in

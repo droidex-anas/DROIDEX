@@ -590,7 +590,9 @@
     }
   }
 
-  .feed-row-enter {
+  /* A code-split card's row stays empty until its chunk lands, so the row
+     rises when its content arrives rather than as an empty box. */
+  .feed-row-enter:not(:empty) {
     animation: feed-row-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   }
 
@@ -715,7 +717,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .feed-row-enter,
+    .feed-row-enter:not(:empty),
     .tool-rows-live > *,
     .chip-enter,
     .count-digit-enter,

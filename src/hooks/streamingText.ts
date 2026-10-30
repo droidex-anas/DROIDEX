@@ -127,6 +127,13 @@ export function useStreamingActivity(streamId: string, text: string, active: boo
   // its first text repeats an earlier turn's; only a mount around already
   // idle text (a recycled row) defers to the shared record.
   const wasActive = useRef(active);
+  // The render that starts a stream already shows it typing, so the feed's
+  // Working cue never lingers a frame under the reply taking over from it.
+  const [renderedActive, setRenderedActive] = useState(active);
+  if (renderedActive !== active) {
+    setRenderedActive(active);
+    setTyping(active);
+  }
 
   useEffect(() => {
     const fresh = active && !wasActive.current;

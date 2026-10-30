@@ -4,6 +4,7 @@
 // never the design's source.
 
 import { useEffect, useState } from 'react';
+import './canvasAnimations.css';
 import './canvasBloom.css';
 import './canvasArtifactCard.css';
 import type { CanvasArtifact } from '../../components/chatFeedArtifacts';
@@ -17,7 +18,7 @@ import { lacksCanvasTools } from './canvasState';
 import { FrameThumbnail } from './FrameThumbnail';
 import { useOpenCanvasPane } from './openCanvasPane';
 import { PendingBloom } from './PendingBloom';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame, CanvasSnapshot } from './protocol';
 import { useCanvasMotion } from './useCanvasMotion';
 
 export default function CanvasArtifactCard({
@@ -61,7 +62,7 @@ export default function CanvasArtifactCard({
         aria-label={`Open ${title} on the canvas`}
       >
         <span className="canvas-artifact-sheet">
-          <Sheet canvasId={canvasId} frame={frame} revisionId={status?.revisionId ?? null} />
+          <Sheet canvasId={canvasId} frame={frame} status={status} />
         </span>
         <span className="canvas-artifact-footer">
           <span className="canvas-artifact-text">
@@ -94,22 +95,33 @@ export default function CanvasArtifactCard({
 
 /** The frame as its canvas has it: undefined until the canvas loads, null once it is gone. */
 function useCanvasFrame(canvasId: string, designId: string | null): CanvasFrame | null | undefined {
-  const [frame, setFrame] = useState<CanvasFrame | null | undefined>(undefined);
+  // A canvas this page already watches (the board beside a design chat) has
+  // the frame at hand, so the card opens on its stage, not its loading line.
+  const [frame, setFrame] = useState<CanvasFrame | null | undefined>(() => {
+    const snapshot = canvasClient.snapshotOf(canvasId);
+    return snapshot ? frameIn(snapshot, designId) : undefined;
+  });
   useEffect(
     () =>
       canvasClient.subscribeCanvas(canvasId, (snapshot) => {
-        setFrame(snapshot.frames.find((candidate) => candidate.designId === designId) ?? null);
+        setFrame(frameIn(snapshot, designId));
       }),
     [canvasId, designId],
   );
   return frame;
 }
 
+function frameIn(snapshot: CanvasSnapshot, designId: string | null): CanvasFrame | null {
+  return snapshot.frames.find((candidate) => candidate.designId === designId) ?? null;
+}
+
 /** The board's stage for a frame, and the revision whose picture it can show. */
-function frameStatus(
-  frame: CanvasFrame,
-  agentWorking: boolean,
-): { stage: CanvasActivityStage | null; revisionId: string | null } {
+interface FrameStatus {
+  stage: CanvasActivityStage | null;
+  revisionId: string | null;
+}
+
+function frameStatus(frame: CanvasFrame, agentWorking: boolean): FrameStatus {
   // A reserved frame is being written only while its chat has a turn running.
   if (frame.revisionId === null)
     return { stage: agentWorking ? 'writing' : null, revisionId: null };
@@ -139,15 +151,23 @@ function metaNote(frame: CanvasFrame | null | undefined): string {
 function Sheet({
   canvasId,
   frame,
-  revisionId,
+  status,
 }: {
   canvasId: string;
   frame: CanvasFrame | null | undefined;
-  revisionId: string | null;
+  status: FrameStatus | null;
 }) {
-  if (!frame) return null;
-  const note = <span className="canvas-artifact-note">No preview yet</span>;
-  if (revisionId === null) return note;
+  if (!frame || !status) return null;
+  const { stage, revisionId } = status;
+  // Waits out a picture that is about to land, so the note never flashes.
+  const note = (
+    <span className="canvas-artifact-note canvas-state-reveal" data-delayed>
+      No preview yet
+    </span>
+  );
+  // A design on its way has nothing to show yet; its stage is named below.
+  const underway = stage === 'queued' || stage === 'writing' || stage === 'building';
+  if (revisionId === null) return underway ? null : note;
   return (
     <FrameThumbnail
       canvasId={canvasId}

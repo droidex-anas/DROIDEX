@@ -115,12 +115,15 @@ export function appendedFeedItemKeys(
   return appended;
 }
 
-export function appendedFeedItemKeysFromProjection(
-  items: readonly { key: string }[],
+// Rows a feed holds under its latest answer (a design chat's designs) are
+// passed over, so an answer that arrives above them still counts as appended.
+export function appendedFeedItemKeysFromProjection<Item extends { key: string }>(
+  items: readonly Item[],
   previous: { identity: string; items: readonly { key: string }[] } | null,
   identity: string,
   updateKind: 'full' | 'append' | 'prepend',
   rebuiltFromItemIndex: number,
+  staysUnderAnswer: (item: Item) => boolean = () => false,
 ): Set<string> {
   const appended = new Set<string>();
   if (previous?.identity !== identity || updateKind !== 'append') return appended;
@@ -131,10 +134,10 @@ export function appendedFeedItemKeysFromProjection(
     if (key !== undefined) previousSuffixKeys.add(key);
   }
   for (let index = items.length - 1; index >= start; index -= 1) {
-    const key = items.at(index)?.key;
-    if (key === undefined) continue;
-    if (previousSuffixKeys.has(key)) break;
-    appended.add(key);
+    const item = items.at(index);
+    if (item === undefined) continue;
+    if (!previousSuffixKeys.has(item.key)) appended.add(item.key);
+    else if (!staysUnderAnswer(item)) break;
   }
   return appended;
 }
