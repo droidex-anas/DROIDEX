@@ -14,10 +14,8 @@ import { Copy } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { useStoreSelector } from '../../../hooks/useStore';
 import { resolveScheme } from '../../../lib/theme';
-import { pushToast } from '../../../lib/toast';
 import { canvasClient } from '../canvasClient';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
-import { canvasMessage } from '../client';
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
 import type { DesignSystemDocumentView, DesignSystemProvenance } from '../protocol';
@@ -35,7 +33,7 @@ import {
   useDocumentDraft,
   type DraftChange,
 } from './documentDraft';
-import { DocumentHeader, DocumentNotice } from './DocumentHeader';
+import { DocumentHeader, DocumentNotice, OlderVersionNotice } from './DocumentHeader';
 import { DocumentMenu, useDuplicate } from './DocumentMenu';
 import { DocumentNav, SectionsMenu, useActiveSection, type DocumentNavProps } from './DocumentNav';
 import { itemCount, searchSections } from './documentSearch';
@@ -142,9 +140,7 @@ function KitDocument({
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const wide = useIsWide(rootRef);
   const duplicate = useDuplicate(view, appSessionId);
-  const saving = useSaveDraft(view.id, () => {
-    void onShow('latest');
-  });
+  const saving = useSaveDraft(view.id);
 
   const change = (next: DraftChange) => {
     editDraft(view, next);
@@ -228,8 +224,9 @@ function KitDocument({
   const saveOnShortcut = (event: KeyboardEvent) => {
     if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
     event.preventDefault();
-    if (!editing) return;
-    // Leaving the focused field first keeps what it holds in the draft.
+    if (!canEdit) return;
+    // Leaving the focused field first keeps what it holds in the draft, which
+    // may be the edit that starts it.
     scrollRef.current?.focus({ preventScroll: true });
     void saving.save();
   };
@@ -284,7 +281,7 @@ function KitDocument({
           </Button>
         )}
       </DocumentHeader>
-      {!isLatest && <OlderVersionNotice view={view} onShow={onShow} />}
+      {!isLatest && <OlderVersionNotice key={view.version} view={view} onShow={onShow} />}
       {isLatest && view.kind === 'preset' && (
         <DocumentNotice text="Presets are read-only">
           <Button variant="secondary" size="sm" icon={Copy} onClick={duplicate}>
@@ -333,8 +330,8 @@ function KitDocument({
             <SaveBar
               count={changeCount(editing)}
               state={saving.state}
-              onSave={(onto) => {
-                void saving.save(onto);
+              onSave={() => {
+                void saving.save();
               }}
               onDiscard={saving.discard}
             />
@@ -342,63 +339,6 @@ function KitDocument({
         </div>
       </div>
     </div>
-  );
-}
-
-/** Shown over an older version: back to the latest, or restore this one as the next. */
-function OlderVersionNotice({
-  view,
-  onShow,
-}: {
-  view: DesignSystemDocumentView;
-  onShow: (target: number | 'latest') => Promise<void>;
-}) {
-  const [restoring, setRestoring] = useState(false);
-
-  const restore = async () => {
-    setRestoring(true);
-    try {
-      await canvasClient.designSystems.restore(
-        crypto.randomUUID(),
-        view.id,
-        view.version,
-        view.latestVersion,
-      );
-      await onShow('latest');
-    } catch (error) {
-      pushToast(canvasMessage(error), 'error');
-    } finally {
-      setRestoring(false);
-    }
-  };
-
-  return (
-    <DocumentNotice
-      text={`Viewing v${String(view.version)} · latest is v${String(view.latestVersion)}`}
-    >
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          void onShow('latest');
-        }}
-      >
-        Back to latest
-      </Button>
-      {view.kind === 'user' && (
-        <Button
-          variant="primary"
-          size="sm"
-          loading={restoring}
-          disabled={restoring}
-          onClick={() => {
-            void restore();
-          }}
-        >
-          Restore as v{view.latestVersion + 1}
-        </Button>
-      )}
-    </DocumentNotice>
   );
 }
 

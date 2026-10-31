@@ -1,14 +1,19 @@
 // The document's top row (spec §5): Back to the board, the kit's name, its
 // version history and whose it is on the left; the caller's controls on the
-// right. DocumentNotice is the quiet line under it for a kit that is read-only.
+// right. DocumentNotice is the quiet line under it for a kit that is read-only,
+// and OlderVersionNotice that line over an older version.
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ArrowLeft } from '@droidex/icons';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { pushToast } from '../../../lib/toast';
+import { canvasClient } from '../canvasClient';
+import { canvasMessage } from '../client';
 import type { DesignSystemDocumentView } from '../protocol';
 import { InlineField } from './InlineField';
 import { UnsavedMark } from './UnsavedMark';
+import { useIsMounted } from './useIsMounted';
 import { VersionMenu } from './VersionMenu';
 
 const MAX_NAME_LENGTH = 120;
@@ -71,5 +76,64 @@ export function DocumentNotice({ text, children }: { text: string; children: Rea
       <p className="min-w-0 flex-1 truncate text-body text-secondary">{text}</p>
       {children}
     </div>
+  );
+}
+
+/** Shown over an older version: back to the latest, or restore this one as the next. */
+export function OlderVersionNotice({
+  view,
+  onShow,
+}: {
+  view: DesignSystemDocumentView;
+  onShow: (target: number | 'latest') => Promise<void>;
+}) {
+  const [restoring, setRestoring] = useState(false);
+  const isMounted = useIsMounted();
+
+  const restore = async () => {
+    setRestoring(true);
+    try {
+      await canvasClient.designSystems.restore(
+        crypto.randomUUID(),
+        view.id,
+        view.version,
+        view.latestVersion,
+      );
+      // Only while this version is on screen: the user may have moved on.
+      if (isMounted()) await onShow('latest');
+    } catch (error) {
+      pushToast(canvasMessage(error), 'error');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <DocumentNotice
+      text={`Viewing v${String(view.version)} · latest is v${String(view.latestVersion)}`}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          void onShow('latest');
+        }}
+      >
+        Back to latest
+      </Button>
+      {view.kind === 'user' && (
+        <Button
+          variant="primary"
+          size="sm"
+          loading={restoring}
+          disabled={restoring}
+          onClick={() => {
+            void restore();
+          }}
+        >
+          Restore as v{view.latestVersion + 1}
+        </Button>
+      )}
+    </DocumentNotice>
   );
 }

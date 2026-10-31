@@ -185,7 +185,13 @@ function NoteEditor({
   }, []);
 
   return (
-    <div className="flex flex-col gap-2 px-4 pb-4">
+    <div
+      onBlur={(event) => {
+        // Leaving the editor is Done too, so Save, Discard and ⌘S act on what it shows.
+        if (!event.currentTarget.contains(event.relatedTarget)) done();
+      }}
+      className="flex flex-col gap-2 px-4 pb-4"
+    >
       <Input
         variant="compact"
         aria-label="Note label"

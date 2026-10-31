@@ -1,7 +1,6 @@
 // A value that reads as text and edits in place (spec §6). Clicking it opens a
 // field; Enter or leaving the field keeps the value, Escape puts the old one
-// back. A value the check refuses shows why under the field on Enter, and is
-// dropped when the field is left.
+// back. A value the check refuses stays in the field with why under it.
 
 import {
   useEffect,
@@ -91,17 +90,17 @@ export function InlineField({
     };
   }, [editing]);
 
-  const finish = (showProblem: boolean) => {
+  const finish = (focusValue: boolean) => {
     const current = textRef.current;
     if (current === null) return;
     const next = current.trim();
     const why = next === value ? null : check(next);
-    if (why !== null && showProblem) {
+    if (why !== null) {
       setProblem(why);
       return;
     }
-    if (why === null && next !== value) onCommit(next);
-    stop(showProblem);
+    if (next !== value) onCommit(next);
+    stop(focusValue);
   };
 
   if (!editing)

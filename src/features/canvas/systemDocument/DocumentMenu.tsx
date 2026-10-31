@@ -12,6 +12,7 @@ import { forgetDesignSystem } from '../designSystemChoices';
 import { MAX_KIT_NAME_LENGTH } from '../designSystemDocumentValidation';
 import type { DesignSystemDocumentView } from '../protocol';
 import { ActionMenu } from './ActionMenu';
+import { useIsMounted } from './useIsMounted';
 
 const COPY_SUFFIX = ' copy';
 const UNDO_WINDOW_MS = 8000;
@@ -60,6 +61,7 @@ export function useDuplicate(view: DesignSystemDocumentView, appSessionId: strin
   // Kept until an answer, so a second click after a lost reply finds the copy already saved.
   const mutationId = useRef(crypto.randomUUID());
   const busy = useRef(false);
+  const isMounted = useIsMounted();
   return () => {
     if (busy.current) return;
     busy.current = true;
@@ -70,6 +72,8 @@ export function useDuplicate(view: DesignSystemDocumentView, appSessionId: strin
         ({ ref }) => {
           mutationId.current = crypto.randomUUID();
           pushToast(`Saved ${name}`, 'success');
+          // Opening the copy after the user left this document would override where they went.
+          if (!isMounted()) return;
           dispatch({
             type: 'OPEN_UTILITY_TOOL',
             tool: 'canvas',
@@ -112,10 +116,15 @@ function deleteKit(view: DesignSystemDocumentView, onBack: () => void) {
   const toastId = pushToast(`Deleted ${view.name}`, 'info', UNDO_WINDOW_MS, {
     label: 'Undo',
     run: () => {
-      forgotten.restore();
-      setDeleted(false).catch((error: unknown) => {
-        pushToast(canvasMessage(error), 'error');
-      });
+      // The choices come back only with the kit, so none names a deleted one.
+      setDeleted(false).then(
+        () => {
+          forgotten.restore();
+        },
+        (error: unknown) => {
+          pushToast(canvasMessage(error), 'error');
+        },
+      );
     },
   });
   setDeleted(true).catch((error: unknown) => {

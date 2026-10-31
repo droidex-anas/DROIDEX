@@ -15,7 +15,7 @@ export type SaveState =
   | { status: 'saving' }
   | { status: 'conflict'; latestVersion: number };
 
-export function useSaveDraft(id: string, onSaved: () => void) {
+export function useSaveDraft(id: string) {
   const [state, setState] = useState<SaveState>({ status: 'idle' });
   const savingRef = useRef(false);
   // A retry after a lost answer reuses the mutation ID, so it finds the version
@@ -24,11 +24,15 @@ export function useSaveDraft(id: string, onSaved: () => void) {
     null,
   );
 
-  /** Saves the kit's draft onto `onto`, by default the version it was based on. */
-  const save = async (onto?: number) => {
+  /**
+   * Saves the kit's draft onto the version it was based on or, after a
+   * conflict, over the version saved since. The kit's change event then moves
+   * a document showing the latest version to the saved one.
+   */
+  const save = async () => {
     const draft = currentDraft(id);
     if (!draft || savingRef.current) return;
-    const baseVersion = onto ?? draft.base.version;
+    const baseVersion = state.status === 'conflict' ? state.latestVersion : draft.base.version;
     const attempt = attemptRef.current;
     const mutationId =
       attempt?.draft === draft && attempt.onto === baseVersion
@@ -47,7 +51,6 @@ export function useSaveDraft(id: string, onSaved: () => void) {
       // An edit made while saving stays, as a draft on the version it began from.
       if (currentDraft(id) === draft) discardDraft(id);
       setState({ status: 'idle' });
-      onSaved();
     } catch (error) {
       if (error instanceof CanvasRequestError) attemptRef.current = null;
       const latestVersion = conflictVersion(error);
@@ -80,7 +83,7 @@ export function SaveBar({
 }: {
   count: number;
   state: SaveState;
-  onSave: (onto?: number) => void;
+  onSave: () => void;
   onDiscard: () => void;
 }) {
   const conflict = state.status === 'conflict' ? state.latestVersion : null;
@@ -105,9 +108,7 @@ export function SaveBar({
           loading={state.status === 'saving'}
           disabled={state.status === 'saving'}
           aria-keyshortcuts="Meta+S"
-          onClick={() => {
-            onSave(conflict ?? undefined);
-          }}
+          onClick={onSave}
         >
           {conflict === null ? 'Save' : `Save over v${String(conflict)}`}
         </Button>
