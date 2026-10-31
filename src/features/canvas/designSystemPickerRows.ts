@@ -1,6 +1,7 @@
 // The design-system picker's list (spec §9): which kits a search shows, in what
 // order, and where the arrow keys move. Auto leads, then the kits chosen
-// recently, the presets in the sidecar's order and the user's kits by name.
+// recently, the presets in the sidecar's order and the user's kits, the most
+// recently saved first.
 
 import { AUTO_DESIGN_SYSTEM, type DesignSystemChoice } from './designSystemChoices';
 import { sameKit } from './designSystemsState';
@@ -46,13 +47,18 @@ export function pickerRows(
       'preset',
       shown.filter((kit) => kit.kind === 'preset'),
     ),
-    yours: rows(
-      'user',
-      shown
-        .filter((kit) => kit.kind === 'user')
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    ),
+    yours: rows('user', shown.filter((kit) => kit.kind === 'user').sort(newestSavedFirst)),
   };
+}
+
+/** A kit with no saved time sorts after the dated ones, then by name. */
+function newestSavedFirst(left: DesignSystemSummary, right: DesignSystemSummary): number {
+  if (left.savedAt !== right.savedAt) {
+    if (left.savedAt === null) return 1;
+    if (right.savedAt === null) return -1;
+    return right.savedAt.localeCompare(left.savedAt);
+  }
+  return left.name.localeCompare(right.name);
 }
 
 /**

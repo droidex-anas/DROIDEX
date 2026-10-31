@@ -212,8 +212,8 @@ function ChipName({
 
 /**
  * The kits, read once connected, to name a pinned frame's kit and notice a
- * deleted one, and again on every open, so a kit saved since shows. Each read
- * moves the canvases' choices to their kits' latest versions.
+ * deleted one, and again on every open and every kit change. Each read moves
+ * the canvases' choices to their kits' latest versions.
  */
 function useKitList(): { list: KitList; reread: () => void; retry: () => void } {
   const [list, setList] = useState<KitList>({ status: 'loading' });
@@ -241,6 +241,7 @@ function useKitList(): { list: KitList; reread: () => void; retry: () => void } 
   const reread = useCallback(() => {
     setReads((count) => count + 1);
   }, []);
+  useEffect(() => canvasClient.subscribeDesignSystems(reread), [reread]);
   // A reread keeps the last list on screen; a retry shows the read again.
   const retry = () => {
     setList({ status: 'loading' });

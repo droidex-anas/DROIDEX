@@ -146,7 +146,7 @@ Done: The picker matches §9 (search, Auto, Recent, Presets, Yours, Open, New su
 - [x] Workspace body swap without remounting the projection; release board previews while the document shows; Back restores viewport and selection from `canvasState`.
 - [x] Picker per §9 at 320 px with the existing `Popover`; row Open (trailing ghost button and Right Arrow), absent on the Design home (`NEW_CANVAS_KEY`) and for Auto; New submenu (From DESIGN.md…, From CSS or Tailwind config…; 2c adds From this project). The new dialog chooses the created kit and opens it where a canvas area exists.
 - [x] Composer chip per §9 with `KitThumbnail`: the chip opens the document through `useOpenCanvasPane` when `canvasKey` is a real canvas and a kit is chosen and saved, otherwise the picker; the trailing chevron always opens the picker. Fix the faint light-mode swatches noted in 7b's follow-ups (to-do e4631db1).
-- [ ] Choices follow latest on `designSystemsChanged` and after a save; delete forgets with Undo; existing test that a queued request keeps its pinned version still passes unchanged.
+- [x] Choices follow latest on `designSystemsChanged` and after a save; delete forgets with Undo; existing test that a queued request keeps its pinned version still passes unchanged.
 - [x] Delete the Manage dialog chain and run `npm run quality:deadcode` to confirm nothing dangles.
 
 ## Slice 2a: previews, cover and demos

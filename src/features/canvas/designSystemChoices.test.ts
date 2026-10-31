@@ -13,6 +13,7 @@ import {
   type DesignSystemChoice,
 } from './designSystemChoices';
 import { canvasContextOf, type FramePin } from './framePins';
+import type { DesignSystemSummary } from './protocol';
 
 const stored = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', {
@@ -108,24 +109,24 @@ test('choices follow their kit’s latest version, and recent names each kit onc
   );
 
   const swatch = { surface: '#fff', accent: '#000' };
-  followLatest([
-    {
-      ...ocean.ref,
-      version: 4,
-      name: 'Deep ocean',
-      kind: 'user',
-      swatches: { light: swatch, dark: swatch },
-    },
-  ]);
+  const listed = (version: number, name: string): DesignSystemSummary => ({
+    id: ocean.ref.id,
+    version,
+    name,
+    kind: 'user',
+    swatches: { light: swatch, dark: swatch },
+    cover: false,
+    savedAt: null,
+    proposal: false,
+  });
+  followLatest([listed(4, 'Deep ocean')]);
   assert.deepEqual(designSystemChoice('cv_a'), {
     ref: { id: 'kit_ocean', version: 4, mode: 'dark' },
     name: 'Deep ocean',
   });
   assert.deepEqual(designSystemChoice('cv_b'), linen);
   // A list read before that save answers late; the choice stays on the newer version.
-  followLatest([
-    { ...ocean.ref, name: 'Ocean', kind: 'user', swatches: { light: swatch, dark: swatch } },
-  ]);
+  followLatest([listed(3, 'Ocean')]);
   assert.equal(designSystemChoice('cv_a')?.ref.version, 4);
   // Following keeps each canvas's place in the recent order.
   assert.deepEqual(

@@ -12,27 +12,42 @@ import {
 import { canvasContextOf, type FramePin } from './framePins';
 import type { DesignSystemRef, DesignSystemSummary } from './protocol';
 
-function kit(id: string, name: string, kind: DesignSystemSummary['kind']): DesignSystemSummary {
+function kit(
+  id: string,
+  name: string,
+  kind: DesignSystemSummary['kind'],
+  savedAt: string | null = null,
+): DesignSystemSummary {
   const swatch = { surface: '#fff', accent: '#000' };
-  return { id, version: 1, name, kind, swatches: { light: swatch, dark: swatch } };
+  return {
+    id,
+    version: 1,
+    name,
+    kind,
+    swatches: { light: swatch, dark: swatch },
+    cover: false,
+    savedAt,
+    proposal: false,
+  };
 }
 
 const systems = [
   kit('auto', 'Auto', 'auto'),
   kit('droidex', 'DROIDEX', 'preset'),
   kit('claude-inspired', 'Claude-inspired', 'preset'),
-  kit('kit_z', 'Zinc', 'user'),
-  kit('kit_a', 'Aurora', 'user'),
+  kit('kit_z', 'Zinc', 'user', '2026-10-30T09:00:00.000Z'),
+  kit('kit_a', 'Aurora', 'user', '2026-10-31T09:00:00.000Z'),
+  kit('kit_m', 'Moss', 'user'),
 ];
 
-test('Auto leads, then recent kits, presets in order and the user’s kits by name; a search narrows all', () => {
+test('Auto leads, then recent kits, presets in order and the user’s kits newest saved first; a search narrows all', () => {
   const all = pickerRows(systems, '', ['kit_z', 'kit_gone', 'droidex']);
   const names = (rows: PickerRow[]) => rows.map((row) => row.kit.name);
   assert.deepEqual(names(all.auto), ['Auto']);
   // A recent kit that is no longer saved is not offered.
   assert.deepEqual(names(all.recent), ['Zinc', 'DROIDEX']);
   assert.deepEqual(names(all.presets), ['DROIDEX', 'Claude-inspired']);
-  assert.deepEqual(names(all.yours), ['Aurora', 'Zinc']);
+  assert.deepEqual(names(all.yours), ['Aurora', 'Zinc', 'Moss']);
 
   const searched = pickerRows(systems, '  zi ', ['kit_z']);
   assert.deepEqual(searched.auto, []);
