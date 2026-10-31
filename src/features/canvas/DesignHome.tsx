@@ -5,6 +5,7 @@
 import { useEffect, useId, useState } from 'react';
 import { LibraryBig } from 'lucide-react';
 import { Search, X } from '@droidex/icons';
+import { SKETCH_INK } from '../../components/StarterTile';
 import { formatRelativeTime } from '../../lib/time';
 import { searchCanvases } from './canvasChats';
 import { useCanvasCover } from './canvasCovers';
@@ -158,18 +159,20 @@ function CanvasCard({ summary, onOpen }: { summary: CanvasSummary; onOpen: () =>
       onClick={onOpen}
       className="group flex w-full cursor-pointer flex-col gap-1 rounded-xl bg-raised p-1.5 text-left shadow-sm transition duration-200 ease-out hover:shadow-lg active:scale-97 active:duration-75"
     >
-      <span className="relative aspect-tile overflow-hidden rounded-lg bg-text/5">
+      <span className="relative flex aspect-tile items-center justify-center overflow-hidden rounded-lg bg-text/5 transition-colors duration-200 group-hover:bg-text/10">
         {cover ? (
           <img
             src={cover}
             alt=""
             draggable={false}
-            className="size-full object-cover object-top motion-safe:animate-fade-in"
+            className="absolute inset-0 size-full object-cover object-top motion-safe:animate-fade-in"
           />
         ) : (
-          // The board's dot grid until the canvas has a picture: before its
-          // first frame works, or before its board was opened with this cover.
-          cover === null && <span aria-hidden className="image-grid-dots absolute inset-0" />
+          // A blank frame, sketched like the starting points, until the canvas
+          // has a picture. Its board saves one once a frame works.
+          cover === null && (
+            <span aria-hidden className={`aspect-tile h-2/5 rounded-md ${SKETCH_INK}`} />
+          )
         )}
       </span>
       <span className="flex min-w-0 flex-col px-1.5 pb-1">
