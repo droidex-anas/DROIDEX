@@ -1,55 +1,69 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
-import { activeRow, choiceOf, pickerRows, rowAfterKey, shownKit } from './designSystemPickerRows';
+import {
+  activeRow,
+  choiceOf,
+  pickerRows,
+  rowAfterKey,
+  shownKit,
+  type PickerRow,
+} from './designSystemPickerRows';
 import { canvasContextOf, type FramePin } from './framePins';
 import type { DesignSystemRef, DesignSystemSummary } from './protocol';
 
-function kit(id: string, name: string, kind: DesignSystemSummary['kind']): DesignSystemSummary {
+function kit(
+  id: string,
+  name: string,
+  kind: DesignSystemSummary['kind'],
+  savedAt: string | null = null,
+): DesignSystemSummary {
   const swatch = { surface: '#fff', accent: '#000' };
-  return { id, version: 1, name, kind, swatches: { light: swatch, dark: swatch } };
+  return {
+    id,
+    version: 1,
+    name,
+    kind,
+    swatches: { light: swatch, dark: swatch },
+    cover: false,
+    savedAt,
+    proposal: false,
+  };
 }
 
 const systems = [
   kit('auto', 'Auto', 'auto'),
   kit('droidex', 'DROIDEX', 'preset'),
   kit('claude-inspired', 'Claude-inspired', 'preset'),
-  kit('kit_z', 'Zinc', 'user'),
-  kit('kit_a', 'Aurora', 'user'),
+  kit('kit_z', 'Zinc', 'user', '2026-10-30T09:00:00.000Z'),
+  kit('kit_a', 'Aurora', 'user', '2026-10-31T09:00:00.000Z'),
+  kit('kit_m', 'Moss', 'user'),
 ];
 
-test('Auto leads, presets keep their order, the user’s kits read by name, and a search narrows all', () => {
-  const all = pickerRows(systems, '');
-  assert.deepEqual(
-    all.auto.map((row) => row.id),
-    ['auto'],
-  );
-  assert.deepEqual(
-    all.presets.map((row) => row.id),
-    ['droidex', 'claude-inspired'],
-  );
-  assert.deepEqual(
-    all.yours.map((row) => row.name),
-    ['Aurora', 'Zinc'],
-  );
+test('Auto leads, then recent kits, presets in order and the user’s kits newest saved first; a search narrows all', () => {
+  const all = pickerRows(systems, '', ['kit_z', 'kit_gone', 'droidex']);
+  const names = (rows: PickerRow[]) => rows.map((row) => row.kit.name);
+  assert.deepEqual(names(all.auto), ['Auto']);
+  // A recent kit that is no longer saved is not offered.
+  assert.deepEqual(names(all.recent), ['Zinc', 'DROIDEX']);
+  assert.deepEqual(names(all.presets), ['DROIDEX', 'Claude-inspired']);
+  assert.deepEqual(names(all.yours), ['Aurora', 'Zinc', 'Moss']);
 
-  const searched = pickerRows(systems, '  zi ');
+  const searched = pickerRows(systems, '  zi ', ['kit_z']);
   assert.deepEqual(searched.auto, []);
+  assert.deepEqual(searched.recent, []);
   assert.deepEqual(searched.presets, []);
-  assert.deepEqual(
-    searched.yours.map((row) => row.name),
-    ['Zinc'],
-  );
+  assert.deepEqual(names(searched.yours), ['Zinc']);
 });
 
 test('the list opens on the current kit, a search on its first match, and arrows wrap', () => {
-  const { auto, presets, yours } = pickerRows(systems, '');
-  const rows = [...auto, ...presets, ...yours];
+  const { auto, recent, presets, yours } = pickerRows(systems, '', ['kit_z']);
+  const rows = [...auto, ...recent, ...presets, ...yours];
   const current = { id: 'kit_a', version: 1, mode: 'light' as const };
 
-  assert.equal(activeRow(rows, null, current, false)?.name, 'Aurora');
-  assert.equal(activeRow(rows, null, current, true)?.name, 'Auto');
-  assert.equal(activeRow(rows, 'kit_z@1', current, false)?.name, 'Zinc');
+  assert.equal(activeRow(rows, null, current, false)?.kit.name, 'Aurora');
+  assert.equal(activeRow(rows, null, current, true)?.kit.name, 'Auto');
+  assert.equal(activeRow(rows, 'user-kit_z', current, false), yours[1]);
 
   const last = rows[rows.length - 1];
   assert.equal(rowAfterKey(rows, last, 'ArrowDown'), rows[0]);

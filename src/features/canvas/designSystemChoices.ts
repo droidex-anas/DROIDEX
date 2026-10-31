@@ -1,11 +1,11 @@
-// The design system each canvas's next requests are pinned to (spec §10). The
+// The design system each canvas's next requests are pinned to (spec §9). The
 // renderer composes every request's turn context, so the user's explicit choice
 // lives here, by canvas, and persists; a canvas without one runs under Auto. A
-// request copies the choice when it is composed, so a later change reaches only
-// requests composed after it.
+// choice follows its kit's latest version, but a request copies the choice when
+// it is composed, so a later change reaches only requests composed after it.
 
 import { useSyncExternalStore } from 'react';
-import type { DesignSystemRef } from './protocol';
+import type { DesignSystemRef, DesignSystemSummary } from './protocol';
 
 export interface DesignSystemChoice {
   ref: DesignSystemRef;
@@ -103,6 +103,59 @@ export function chooseDesignSystem(key: string, choice: DesignSystemChoice | nul
   publish(choice ? { ...rest, [key]: { ref: { ...choice.ref }, name: choice.name } } : rest);
 }
 
+/**
+ * Moves every choice of a listed kit to the version and name the list has for
+ * it. A list read before a newer save can answer late, so a choice never moves
+ * to an older version.
+ */
+export function followLatest(summaries: readonly DesignSystemSummary[]): void {
+  const latest = new Map(summaries.map((kit) => [kit.id, kit]));
+  const next: Record<string, DesignSystemChoice> = { ...loaded() };
+  let moved = false;
+  for (const [key, choice] of Object.entries(next)) {
+    const kit = latest.get(choice.ref.id);
+    if (!kit || kit.version < choice.ref.version) continue;
+    if (kit.version === choice.ref.version && kit.name === choice.name) continue;
+    next[key] = { ref: { ...choice.ref, version: kit.version }, name: kit.name };
+    moved = true;
+  }
+  if (moved) publish(next);
+}
+
+/**
+ * Returns every canvas that chose the kit to Auto, as deleting it does. Auto is
+ * chosen rather than the choice removed, which would fall back to a pinned
+ * frame's kit and so to the deleted one. `restore` gives back the choices
+ * still on Auto.
+ */
+export function forgetDesignSystem(id: string): { restore(): void } {
+  const forgotten = Object.entries(loaded()).filter(([, choice]) => choice.ref.id === id);
+  if (forgotten.length > 0)
+    publish({
+      ...loaded(),
+      ...Object.fromEntries(forgotten.map(([key]) => [key, AUTO_DESIGN_SYSTEM])),
+    });
+  return {
+    restore() {
+      const back = forgotten.filter(
+        ([key]) => designSystemChoice(key)?.ref.id === AUTO_DESIGN_SYSTEM.ref.id,
+      );
+      if (back.length > 0) publish({ ...loaded(), ...Object.fromEntries(back) });
+    },
+  };
+}
+
+/** The kits most recently chosen on any canvas, newest first, each once; Auto is not one. */
+export function recentDesignSystems(limit = 3): DesignSystemChoice[] {
+  const recent: DesignSystemChoice[] = [];
+  for (const choice of Object.values(loaded()).reverse()) {
+    if (recent.length === limit) break;
+    const { id } = choice.ref;
+    if (id !== AUTO_DESIGN_SYSTEM.ref.id && !recent.some((kit) => kit.ref.id === id))
+      recent.push(choice);
+  }
+  return recent;
+}
 /** Holds the Design home's choice for the canvas the send `clientRef` will make. */
 export function oweCreatedCanvasChoice(clientRef: string): void {
   const choice = designSystemChoice(NEW_CANVAS_KEY);

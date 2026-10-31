@@ -1,7 +1,8 @@
 // The one way the Canvas pane opens. It is deliberately absent from the
-// utility-tool picker: an artifact card's Open (Task 6a) and the design entry
-// point reach it through here, so the canvas and the frame the caller means
-// travel with the request instead of being rediscovered by the pane.
+// utility-tool picker: an artifact card's Open (Task 6a), the design entry
+// point and a design system's Open reach it through here, so the canvas, frame
+// or document the caller means travel with the request instead of being
+// rediscovered by the pane.
 //
 // Importing this costs nothing: the pane itself is a lazy surface, and nothing
 // here touches it.
@@ -15,18 +16,23 @@ export interface CanvasPaneTarget {
   canvasId: string | null;
   /** The frame to focus once the board can focus one (Task 5d). */
   frameId?: string;
+  /** The design system document to show in place of the board; absent shows the board. */
+  designSystem?: { id: string; version?: number };
 }
 
 export function useOpenCanvasPane(): (target: CanvasPaneTarget) => void {
   const dispatch = useStoreDispatch();
   return useCallback(
-    ({ appSessionId, canvasId, frameId }: CanvasPaneTarget) => {
+    ({ appSessionId, canvasId, frameId, designSystem }: CanvasPaneTarget) => {
       dispatch({
         type: 'OPEN_UTILITY_TOOL',
         tool: 'canvas',
         appSessionId,
         canvasId,
         frameId: frameId ?? null,
+        ...(designSystem
+          ? { designSystemId: designSystem.id, designSystemVersion: designSystem.version ?? null }
+          : {}),
       });
     },
     [dispatch],

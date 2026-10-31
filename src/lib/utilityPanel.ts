@@ -23,11 +23,22 @@ export interface UtilityTab {
   canvasId?: string | null;
   // The frame an Open asked it to focus; null clears an earlier request.
   frameId?: string | null;
+  // The design system document shown in place of the board; null shows the board.
+  designSystemId?: string | null;
+  // The document's version; null shows the latest.
+  designSystemVersion?: number | null;
 }
 
 // The ids that point a singleton pane at one thing. Opening the tool again with
 // a different one re-points the pane that is already open.
-const TARGET_KEYS = ['agentId', 'threadId', 'canvasId', 'frameId'] as const;
+const TARGET_KEYS = [
+  'agentId',
+  'threadId',
+  'canvasId',
+  'frameId',
+  'designSystemId',
+  'designSystemVersion',
+] as const;
 type TargetKey = (typeof TARGET_KEYS)[number];
 
 export interface UtilityPanelState {
@@ -76,11 +87,15 @@ export function openUtilityTool(
     ? current.tabs.find((tab) => tab.tool === tool)
     : undefined;
   if (existing) {
+    const requested =
+      existing.designSystemId && showsBoard(details)
+        ? { ...details, designSystemId: null, designSystemVersion: null }
+        : details;
     const target = Object.fromEntries(
-      TARGET_KEYS.filter((key) => details[key] !== undefined).map((key) => [key, details[key]]),
+      TARGET_KEYS.filter((key) => requested[key] !== undefined).map((key) => [key, requested[key]]),
     );
     const retarget = TARGET_KEYS.some(
-      (key) => details[key] !== undefined && details[key] !== existing[key],
+      (key) => requested[key] !== undefined && requested[key] !== existing[key],
     );
     if (!retarget && current.open && current.activeTabId === existing.id) return current;
     return {
@@ -105,6 +120,14 @@ export function openUtilityTool(
     tabs: [...current.tabs, tab],
     activeTabId: tab.id,
   };
+}
+
+// A canvas or frame target without a document asks for the board, so it drops the document.
+function showsBoard(details: Partial<Pick<UtilityTab, TargetKey>>): boolean {
+  return (
+    details.designSystemId === undefined &&
+    (details.canvasId !== undefined || details.frameId !== undefined)
+  );
 }
 
 export function closeUtilityTab(
@@ -166,7 +189,17 @@ export function setUtilityPanelOpen(
   open: boolean,
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
-  if (!open) return current.open ? { ...current, open: false } : current;
+  // Closing the pane closes a document it shows; the board is there next time.
+  if (!open)
+    return current.open
+      ? {
+          ...current,
+          open: false,
+          tabs: current.tabs.map((tab) =>
+            tab.designSystemId ? { ...tab, designSystemId: null, designSystemVersion: null } : tab,
+          ),
+        }
+      : current;
   return {
     ...current,
     open: true,

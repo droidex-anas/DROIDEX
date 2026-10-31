@@ -13,21 +13,16 @@ import './canvasBloom.css';
 import './canvasBoard.css';
 import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
-import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreSelector } from '../../hooks/useStore';
 import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
-import { canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
+import { canvasClient as canvas, frameRemovals } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
-import type { AnnotateCanvasInput } from './annotationProtocol';
-import type { EditElementInput } from './elementEditProtocol';
-import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
-import { useCoverCapture } from './canvasCovers';
-import { DesignPreview } from './DesignPreview';
+import type { CanvasBoardHandle } from './CanvasBoard';
+import { CanvasBoardMount, type ShownDocument } from './CanvasBoardMount';
 import {
   CanvasAction,
   CanvasEmptyState,
-  CanvasInvitation,
   CanvasNote,
   CanvasPlate,
   CanvasStatus,
@@ -51,20 +46,17 @@ import {
   watchedCanvasId,
   type CanvasPaneState,
 } from './canvasState';
+import type { Viewport } from './canvasGeometry';
 import { CanvasSourceSlot } from './CanvasSourceSlot';
-import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
-import { showBoard } from './boardOnScreen';
 import { useCloseCanvasTab } from './leaveDeletedCanvas';
-import { useFrameActions } from './useFrameActions';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
-
-const readArtifact = canvas.readArtifact.bind(canvas);
 
 export function CanvasWorkspace({
   appSessionId,
   canvasId,
   namedCanvasId,
   frameId,
+  designSystemId,
+  designSystemVersion,
   isExpanded,
   onToggleExpanded,
   onAttachmentChange,
@@ -76,6 +68,10 @@ export function CanvasWorkspace({
   namedCanvasId?: string;
   /** The frame the opener meant, focused once the board has it. */
   frameId?: string;
+  /** The design system document shown in place of the board. */
+  designSystemId?: string;
+  /** The document's version; absent shows the latest. */
+  designSystemVersion?: number;
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onAttachmentChange: (appSessionId: string, canvasId: string | null) => void;
@@ -198,6 +194,23 @@ export function CanvasWorkspace({
     focused.current = target;
     boardRef.current.focusFrame(frameId);
   }, [frameId, watched, state]);
+  // A document hides the board, so the frame that next brings it back is focused again.
+  useEffect(() => {
+    if (designSystemId !== undefined) focused.current = null;
+  }, [designSystemId]);
+  const leaveBoard = useCallback((viewport: Viewport) => {
+    dispatch({ type: 'board-left', viewport });
+  }, []);
+  const shownDocument = useMemo(
+    () =>
+      designSystemId === undefined
+        ? null
+        : {
+            id: designSystemId,
+            ...(designSystemVersion === undefined ? {} : { version: designSystemVersion }),
+          },
+    [designSystemId, designSystemVersion],
+  );
 
   /**
    * Starts the canvas this chat is owed, or replays the one it already owes:
@@ -258,6 +271,8 @@ export function CanvasWorkspace({
             interaction={interaction}
             onInteractionChange={setInteraction}
             boardRef={boardRef}
+            shownDocument={shownDocument}
+            onLeaveBoard={leaveBoard}
             onChoose={chooseCanvas}
             onAttachOwed={attachOwed}
             onRetry={() => {
@@ -271,7 +286,7 @@ export function CanvasWorkspace({
         </div>
       </div>
       <CanvasSourceSlot
-        frame={openSourceFrame(state)}
+        frame={shownDocument ? null : openSourceFrame(state)}
         canvasId={watched}
         appSessionId={appSessionId}
         onClose={() => {
@@ -300,6 +315,8 @@ function CanvasBody({
   interaction,
   onInteractionChange,
   boardRef,
+  shownDocument,
+  onLeaveBoard,
   onAttachOwed,
   onChoose,
   onRetry,
@@ -311,6 +328,8 @@ function CanvasBody({
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
+  shownDocument: ShownDocument | null;
+  onLeaveBoard: (viewport: Viewport) => void;
   onAttachOwed: () => void;
   onChoose: (canvasId: string) => Promise<void>;
   onRetry: () => void;
@@ -355,6 +374,9 @@ function CanvasBody({
         <CanvasBoardMount
           appSessionId={appSessionId}
           snapshot={state.snapshot}
+          restoredViewport={state.boardViewport}
+          shownDocument={shownDocument}
+          onLeaveBoard={onLeaveBoard}
           pinnable={pinnable}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
@@ -363,127 +385,4 @@ function CanvasBody({
         />
       );
   }
-}
-
-/**
- * The board, bound to the canvas it is showing. A canvas whose frames were all
- * deleted presents the invitation instead (spec §4), because an empty board is
- * not an answer to "what do I do here".
- */
-function CanvasBoardMount({
-  appSessionId,
-  snapshot,
-  pinnable,
-  interaction,
-  onInteractionChange,
-  boardRef,
-  onOpenSource,
-}: {
-  appSessionId: string;
-  snapshot: CanvasSnapshot;
-  /** It is the chat's own canvas, so its frames can be pinned to the chat's next prompt. */
-  pinnable: boolean;
-  interaction: BoardInteraction;
-  onInteractionChange: (next: BoardInteraction) => void;
-  boardRef: RefObject<CanvasBoardHandle | null>;
-  onOpenSource: (designId: string) => void;
-}) {
-  const { canvasId } = snapshot;
-  const agentWorking = useSessionLive(appSessionId);
-  const toolsMissing = useStoreSelector((current) =>
-    lacksCanvasTools(current.sessions[appSessionId]),
-  );
-  const arrangeFrames = useCallback(
-    (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
-    [appSessionId, canvasId],
-  );
-  const annotate = useCallback(
-    (input: AnnotateCanvasInput) => canvas.annotate(appSessionId, canvasId, input),
-    [appSessionId, canvasId],
-  );
-  const editElement = useCallback(
-    (input: EditElementInput) => canvas.source.editElement(appSessionId, canvasId, input),
-    [appSessionId, canvasId],
-  );
-  const removeFrames = useCallback(
-    (removing: CanvasFrame[]) => frameRemovals.remove(appSessionId, canvasId, removing),
-    [appSessionId, canvasId],
-  );
-  const undoRemoval = useCallback(() => frameRemovals.undoLatest(canvasId), [canvasId]);
-  const frameActions = useFrameActions(appSessionId, canvasId, pinnable);
-  const pins = useFramePins(appSessionId);
-  const pinnedIds = useMemo(
-    () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
-    [pins, canvasId],
-  );
-  useEffect(
-    () => (pinnable ? syncFramePins(appSessionId, snapshot) : undefined),
-    [appSessionId, pinnable, snapshot],
-  );
-  const { frames } = snapshot;
-  useCoverCapture(canvasId, frames);
-  const { selectedFrameIds } = interaction;
-  const emptyBoard = toolsMissing ? (
-    <CanvasToolsMissing canvasId={canvasId} />
-  ) : (
-    <CanvasInvitation />
-  );
-  useEffect(() => {
-    const byId = new Map(frames.map((frame) => [frame.designId, frame]));
-    return showBoard({
-      appSessionId,
-      canvasId,
-      attached: pinnable,
-      agentWorking,
-      frames,
-      selected: selectedFrameIds
-        .map((designId) => byId.get(designId))
-        .filter((frame): frame is CanvasFrame => frame !== undefined),
-      focusFrame: (designId) => {
-        boardRef.current?.focusFrame(designId);
-      },
-    });
-  }, [agentWorking, appSessionId, boardRef, canvasId, frames, pinnable, selectedFrameIds]);
-
-  return (
-    <div data-canvas-board className="min-h-0 flex-1">
-      {snapshot.frames.length === 0 ? (
-        emptyBoard
-      ) : (
-        <CanvasBoard
-          ref={boardRef}
-          snapshot={snapshot}
-          onOpenSource={onOpenSource}
-          onArrangeFrames={arrangeFrames}
-          onAnnotate={annotate}
-          onEditElement={editElement}
-          onRemoveFrames={removeFrames}
-          onUndoRemoval={undoRemoval}
-          interaction={interaction}
-          onInteractionChange={onInteractionChange}
-          agentWorking={agentWorking}
-          pinnedIds={pinnedIds}
-          frameActions={frameActions.actions}
-          onToggleChat={
-            pinnable
-              ? (frame) => {
-                  toggleFramePin(appSessionId, canvasId, frame);
-                }
-              : undefined
-          }
-          renderPreview={(frame, revisionId, selections) => (
-            <DesignPreview
-              canvasId={canvasId}
-              frame={frame}
-              revisionId={revisionId}
-              readArtifact={readArtifact}
-              reportPreview={reportPreview}
-              selections={selections}
-            />
-          )}
-        />
-      )}
-      {frameActions.dialog}
-    </div>
-  );
 }

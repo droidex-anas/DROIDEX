@@ -287,6 +287,25 @@ export default function App() {
   const utilityPanel = utilityPanelForSession(state.utilityPanels, activeSession?.appSessionId);
   const activeUtilityTab =
     utilityPanel.tabs.find((tab) => tab.id === utilityPanel.activeTabId) ?? null;
+  // A document opened in an ordinary chat's docked canvas pane expands it
+  // (spec §4); Back to board leaves the size as it is.
+  const shownDocument = {
+    appSessionId: activeSession?.appSessionId ?? null,
+    designSystemId:
+      activeUtilityTab?.tool === 'canvas' ? (activeUtilityTab.designSystemId ?? null) : null,
+  };
+  const [lastDocument, setLastDocument] = useState(shownDocument);
+  if (
+    lastDocument.appSessionId !== shownDocument.appSessionId ||
+    lastDocument.designSystemId !== shownDocument.designSystemId
+  ) {
+    setLastDocument(shownDocument);
+    const opened =
+      lastDocument.appSessionId === shownDocument.appSessionId &&
+      shownDocument.designSystemId !== null;
+    if (opened && state.productMode !== 'design')
+      setExpandedPaneAppSessionId(shownDocument.appSessionId);
+  }
   // The pull request and Automations workspaces own the whole content area and
   // the top-right corner of their own toolbar, so the session-scoped panes and
   // overlays (utility pane, Context panel) and floating window buttons stay out
@@ -398,6 +417,8 @@ export default function App() {
       canvasId={canvasAttachment}
       namedCanvasId={tab.canvasId ?? undefined}
       frameId={tab.frameId ?? undefined}
+      designSystemId={tab.designSystemId ?? undefined}
+      designSystemVersion={tab.designSystemVersion ?? undefined}
       isExpanded={expanded}
       onToggleExpanded={() => {
         setExpandedPaneAppSessionId(expanded ? null : appSessionId);

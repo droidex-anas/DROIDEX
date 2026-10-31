@@ -699,6 +699,8 @@ export type Action =
       threadId?: string;
       canvasId?: string | null;
       frameId?: string | null;
+      designSystemId?: string | null;
+      designSystemVersion?: number | null;
     }
   | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
   | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
@@ -2208,6 +2210,8 @@ function reduceAction(state: AppState, action: Action): AppState {
           threadId: action.threadId,
           canvasId: action.canvasId,
           frameId: action.frameId,
+          designSystemId: action.designSystemId,
+          designSystemVersion: action.designSystemVersion,
         },
       );
       return {

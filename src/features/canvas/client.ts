@@ -87,6 +87,7 @@ export class CanvasClient {
   private readonly pending = new Map<string, Waiter>();
   private readonly boards = new Map<string, CanvasBoard>();
   private readonly summaryListeners = new Set<(summaries: CanvasSummary[]) => void>();
+  private readonly designSystemListeners = new Set<(id: string) => void>();
   private listening = false;
 
   constructor(private readonly transport: CanvasTransport) {}
@@ -287,6 +288,15 @@ export class CanvasClient {
     };
   }
 
+  /** Hears the ID of every kit saved, deleted or restored, by the user or an agent. */
+  subscribeDesignSystems(listener: (id: string) => void): () => void {
+    this.listen();
+    this.designSystemListeners.add(listener);
+    return () => {
+      this.designSystemListeners.delete(listener);
+    };
+  }
+
   /** This client's projection of a canvas, once its snapshot has landed. */
   snapshotOf(canvasId: string): CanvasSnapshot | null {
     return this.boards.get(canvasId)?.snapshot ?? null;
@@ -421,6 +431,10 @@ export class CanvasClient {
     }
     if (event.type === 'canvas.snapshot') {
       this.answer(event.requestId)?.settle(event);
+      return;
+    }
+    if (event.type === 'canvas.designSystemsChanged') {
+      for (const listener of this.designSystemListeners) listener(event.id);
       return;
     }
     if (event.type !== 'canvas.result') return;
