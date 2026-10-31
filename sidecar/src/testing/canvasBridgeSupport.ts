@@ -10,6 +10,7 @@ import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
+import { KitPreviews } from '../canvas/kitPreviews.js';
 import type {
   CanvasEvent,
   CanvasReply,
@@ -55,6 +56,7 @@ export function canvasCommandHandler(options: {
     options.ready,
     options.scopes,
     options.builds,
+    new KitPreviews(),
     {
       secret: ASSET_SECRET,
       list: (canvasId) => listCanvasAssets(options.root, canvasId),

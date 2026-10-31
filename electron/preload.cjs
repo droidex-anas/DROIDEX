@@ -151,8 +151,8 @@ contextBridge.exposeInMainWorld('droidex', {
   // board can ask main to end one. Main owns the registry of guests it
   // attached, so an ID it does not recognise is refused.
   canvasPreviewUrl: CANVAS_PREVIEW_URL,
-  canvasPreviewBind: (guestId, canvasId) =>
-    ipcRenderer.invoke('canvas-preview-bind', { guestId, canvasId }),
+  canvasPreviewBind: (guestId, binding) =>
+    ipcRenderer.invoke('canvas-preview-bind', { guestId, binding }),
   canvasPreviewTerminate: (guestId) => ipcRenderer.invoke('canvas-preview-terminate', { guestId }),
   canvasPreviewCapture: (request) => ipcRenderer.invoke('canvas-preview-capture', request),
   canvasPreviewCancelCapture: (requestId) =>

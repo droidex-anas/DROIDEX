@@ -6,11 +6,11 @@
 // design builds next; this is about a child process's life, which outlives the
 // build that ended it and keeps that slot occupied until termination settles.
 
-import { CompilerWorker, type CompiledDesign, type CompileInput } from './compiler.js';
+import { CompilerWorker, type CompiledDesign, type DesignCompileInput } from './compiler.js';
 
 /** The compiler surface one slot drives. A slot's own process, never shared. */
 export interface DesignCompiler {
-  compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign>;
+  compile(input: DesignCompileInput, signal: AbortSignal): Promise<CompiledDesign>;
   terminate(): Promise<void>;
 }
 

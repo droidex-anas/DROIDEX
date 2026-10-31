@@ -3,6 +3,7 @@
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
+import type { PreviewGuestBinding } from '../../../src/lib/desktop';
 import type {} from './CanvasBoardHarness';
 
 declare global {
@@ -67,8 +68,8 @@ export async function stubGuests(page: Page) {
     Object.defineProperty(window, 'droidex', {
       value: {
         canvasPreviewUrl: 'droidex-canvas-preview://preview/guest',
-        canvasPreviewBind: async (guestId: number, canvasId: string) =>
-          guestId === 41 && canvasId === 'cv_board',
+        canvasPreviewBind: async (guestId: number, binding: PreviewGuestBinding) =>
+          guestId === 41 && binding.kind === 'canvas' && binding.canvasId === 'cv_board',
         canvasPreviewCapture: async () => ({
           ok: false,
           error: { code: 'capture_unavailable', message: 'No capture in the DOM harness.' },

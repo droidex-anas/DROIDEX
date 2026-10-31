@@ -174,14 +174,27 @@ test('a preview frame is bound once to its canvas and loses that binding on clos
   const { hosts } = createHosts();
   const frame = createGeneratedFrame();
   const guest = createGuest(42, [frame]);
+  const canvasA = { kind: 'canvas', canvasId: 'canvas-a' };
   hosts.attach(guest);
-  assert.equal(hosts.canvasForFrame(42, frame), null);
-  assert.equal(hosts.bindCanvas(42, 'canvas-a'), true);
-  assert.equal(hosts.canvasForFrame(42, frame), 'canvas-a');
-  assert.equal(hosts.canvasForFrame(42, {}), null);
-  assert.equal(hosts.bindCanvas(42, 'canvas-b'), false);
+  assert.equal(hosts.bindingForFrame(42, frame), null);
+  assert.equal(hosts.bind(42, { kind: 'canvas', canvasId: '../canvas-a' }), false);
+  assert.equal(hosts.bind(42, canvasA), true);
+  assert.deepEqual(hosts.bindingForFrame(42, frame), canvasA);
+  assert.equal(hosts.bindingForFrame(42, {}), null);
+  assert.equal(hosts.bind(42, canvasA), true);
+  assert.equal(hosts.bind(42, { kind: 'canvas', canvasId: 'canvas-b' }), false);
+  assert.equal(hosts.bind(42, { kind: 'kit' }), false);
   hosts.terminate(42);
-  assert.equal(hosts.canvasForFrame(42, frame), null);
+  assert.equal(hosts.bindingForFrame(42, frame), null);
+});
+
+test('a kit-bound guest cannot be rebound to a canvas', () => {
+  const { hosts } = createHosts();
+  const frame = createGeneratedFrame();
+  hosts.attach(createGuest(43, [frame]));
+  assert.equal(hosts.bind(43, { kind: 'kit' }), true);
+  assert.equal(hosts.bind(43, { kind: 'canvas', canvasId: 'canvas-a' }), false);
+  assert.deepEqual(hosts.bindingForFrame(43, frame), { kind: 'kit' });
 });
 
 test("main's own watchdog ends an unresponsive guest", () => {

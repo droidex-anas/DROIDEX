@@ -13,7 +13,7 @@ import { createCanvasMcpServer } from '../canvas/canvasMcpServer.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
-import { CompileFailedError, type CompileInput } from '../canvas/compiler.js';
+import { CompileFailedError, type DesignCompileInput } from '../canvas/compiler.js';
 import { checkDesignSystemAdherence } from '../canvas/designSystemAdherence.js';
 import { readDesignSystem } from '../canvas/designSystems.js';
 import { storage } from './canvasBuildSupport.js';
@@ -114,7 +114,7 @@ export async function openTurn(t: TestContext) {
  * cannot render.
  */
 function answeringBuilds(): CanvasBuilds {
-  const compile = async (input: CompileInput) => {
+  const compile = async (input: DesignCompileInput) => {
     const main = input.files['main.tsx'] ?? '';
     if (main.includes('BROKEN'))
       throw new CompileFailedError([

@@ -7,10 +7,12 @@ import type {
   CanvasDiagnostic,
   DesignSystemCover,
   DesignSystemDocumentView,
+  DesignSystemRef,
   DesignSystemSource,
   DesignSystemSummary,
   DesignSystemVersionEntry,
   DesignSystemVersionRef,
+  KitPreview,
 } from './protocol';
 import type { DocumentSection } from './designSystemDocumentProtocol';
 
@@ -127,5 +129,39 @@ export class DesignSystemRequests {
     });
     const { ref, diagnostics } = reply(event, 'designSystemSaved');
     return { ref, diagnostics };
+  }
+
+  /** `item` is a preview's id, `cover` or `typography`. */
+  async readPreview(ref: DesignSystemRef, item: string): Promise<KitPreview> {
+    const event = await this.send({
+      type: 'canvas.readKitPreview',
+      requestId: requestId(),
+      ref,
+      item,
+    });
+    return reply(event, 'kitPreview').preview;
+  }
+
+  /** `png` is base64; it replaces any earlier capture of that preview and mode. */
+  async saveCapture(ref: DesignSystemRef, item: string, png: string): Promise<void> {
+    const event = await this.send({
+      type: 'canvas.saveKitCapture',
+      requestId: requestId(),
+      ref,
+      item,
+      png,
+    });
+    reply(event, 'ok');
+  }
+
+  /** The base64 PNG, or null before that preview first rendered live in that mode. */
+  async readCapture(ref: DesignSystemRef, item: string): Promise<string | null> {
+    const event = await this.send({
+      type: 'canvas.readKitCapture',
+      requestId: requestId(),
+      ref,
+      item,
+    });
+    return reply(event, 'kitCapture').png;
   }
 }

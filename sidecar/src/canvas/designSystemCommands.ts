@@ -18,6 +18,8 @@ import {
   type DesignSystemSummary,
   type SavedBy,
 } from './designSystems.js';
+import { readKitCapture, saveKitCapture } from './kitCaptures.js';
+import type { KitPreviews } from './kitPreviews.js';
 import type { CanvasCommand, CanvasReply, DesignSystemVersionRef } from './protocol.js';
 
 /** A kit version as its document shows it: everything but its source. */
@@ -53,7 +55,10 @@ export type DesignSystemCommand = Extract<
       | 'restoreDesignSystemVersion'
       | 'setDesignSystemDeleted'
       | 'copyDesignSystem'
-      | 'importDesignSystem'}`;
+      | 'importDesignSystem'
+      | 'readKitPreview'
+      | 'saveKitCapture'
+      | 'readKitCapture'}`;
   }
 >;
 
@@ -66,6 +71,9 @@ const COMMAND_TYPES = new Set<CanvasCommand['type']>([
   'canvas.setDesignSystemDeleted',
   'canvas.copyDesignSystem',
   'canvas.importDesignSystem',
+  'canvas.readKitPreview',
+  'canvas.saveKitCapture',
+  'canvas.readKitCapture',
 ]);
 
 const BY_USER: SavedBy = { actor: 'user' };
@@ -76,6 +84,7 @@ export function isDesignSystemCommand(command: CanvasCommand): command is Design
 
 export async function answerDesignSystemCommand(
   command: DesignSystemCommand,
+  previews: KitPreviews,
 ): Promise<CanvasReply> {
   switch (command.type) {
     case 'canvas.listDesignSystems':
@@ -132,6 +141,15 @@ export async function answerDesignSystemCommand(
         savedBy: BY_USER,
       });
       return saved(ref, imported.diagnostics);
+    }
+    case 'canvas.readKitPreview':
+      return { kind: 'kitPreview', preview: await previews.read(command.ref, command.item) };
+    case 'canvas.saveKitCapture':
+      await saveKitCapture(command.ref, command.item, Buffer.from(command.png, 'base64'));
+      return { kind: 'ok' };
+    case 'canvas.readKitCapture': {
+      const png = await readKitCapture(command.ref, command.item);
+      return { kind: 'kitCapture', png: png?.toString('base64') ?? null };
     }
   }
 }

@@ -17,9 +17,10 @@ import {
   type CompiledDesign,
   type CompilerRequest,
   type CompilerResponse,
+  type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
-import { designEntryDiagnostic } from './designEntry.js';
+import { DESIGN_ENTRY, designEntryDiagnostic } from './designEntry.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
@@ -48,6 +49,7 @@ export async function compileDesign(
   input: CompileInput,
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
+  if (input.kind === 'kitPreview') return compileKitPreview(input, signal);
   const entryDiagnostic = designEntryDiagnostic(Object.keys(input.files));
   if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
@@ -99,6 +101,35 @@ export async function compileDesign(
       ...adherence.diagnostics,
     ]),
     elements: instrumented.elements,
+  };
+}
+
+/**
+ * One kit example as a one-file design under that kit version. Nothing on it
+ * can be selected, and the kit is not held to its own rules.
+ */
+async function compileKitPreview(
+  input: KitPreviewCompileInput,
+  signal: AbortSignal,
+): Promise<CompiledDesign> {
+  const files = { [DESIGN_ENTRY]: input.example };
+  const system = await readDesignSystem(input.system);
+  stopIfCancelled(signal);
+  const bundle = await bundleDesign({ files, kitFiles: system.files });
+  stopIfCancelled(signal);
+  if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
+  const unbound = unboundNameDiagnostics(files);
+  if (unbound.length > 0) throw new CompileFailedError(unbound);
+  const stylesheet = await buildDesignStylesheet(files, system);
+  stopIfCancelled(signal);
+  if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
+
+  const html = previewDocument(stylesheet.css, bundle.js, input.system.mode);
+  return {
+    artifactId: createHash('sha256').update(html).digest('hex'),
+    html,
+    diagnostics: boundDiagnostics(bundle.warnings),
+    elements: [],
   };
 }
 

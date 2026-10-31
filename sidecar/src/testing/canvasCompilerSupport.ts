@@ -1,16 +1,17 @@
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
-import type { CompileInput, CompilerRequest } from '../canvas/compiler.js';
+import type { CompilerRequest, DesignCompileInput } from '../canvas/compiler.js';
 import { DROIDEX_DESIGN_SYSTEM } from '../canvas/presets/droidex.js';
 import type { SourceFiles } from '../canvas/protocol.js';
 
 /** One design's compile request on the DROIDEX kit, with the kit rule off unless named. */
 export function compileInput(
   files: SourceFiles,
-  designSystemAdherence: CompileInput['designSystemAdherence'] = 'off',
-): CompileInput {
+  designSystemAdherence: DesignCompileInput['designSystemAdherence'] = 'off',
+): DesignCompileInput {
   return {
+    kind: 'design',
     designId: 'design-1',
     revisionId: 'revision-1',
     generation: 1,

@@ -21,7 +21,7 @@ import {
   CompilerUnavailableError,
   RUNTIME_UNAVAILABLE,
   type CompiledDesign,
-  type CompileInput,
+  type DesignCompileInput,
 } from '../canvas/compiler.js';
 import type { DesignCompiler } from '../canvas/canvasCompilerProcesses.js';
 import { CanvasFiles, type CanvasFileSystem } from '../canvas/canvasFiles.js';
@@ -48,7 +48,7 @@ const APP = 'app-1';
 
 /** One compile the test holds open until it decides what the compiler answers. */
 export interface HeldCompile {
-  input: CompileInput;
+  input: DesignCompileInput;
   signal: AbortSignal;
   /** The slot's own process that took this compile. */
   client: DesignCompiler;
@@ -124,7 +124,7 @@ class FakeCompiler implements DesignCompiler {
     private readonly index: number,
   ) {}
 
-  compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
+  compile(input: DesignCompileInput, signal: AbortSignal): Promise<CompiledDesign> {
     return new Promise<CompiledDesign>((resolve, reject) => {
       // The real client answers an abort itself rather than waiting for the
       // worker, so a cancelled build always settles here too.

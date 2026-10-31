@@ -111,6 +111,7 @@ test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared prim
   for (const mode of ['light', 'dark'] as const) {
     const design = await compiler.compile(
       {
+        kind: 'design',
         designId: 'hey',
         revisionId: 'revision-1',
         generation: 1,

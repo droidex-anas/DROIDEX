@@ -40,7 +40,7 @@ const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
-const { readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const { mayRequestPreviewAsset, readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
 const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
@@ -662,12 +662,8 @@ function registerCanvasPreviewProtocol() {
     { urls: ['droidex-canvas-preview://preview/*'] },
     (details, callback) => {
       if (!assetRequest.test(details.url)) return callback({});
-      const canvasId = canvasPreviewHosts.canvasForFrame(details.webContentsId, details.frame);
-      const requestedCanvas = /^\/asset\/([A-Za-z0-9_-]{1,128})\//.exec(
-        new URL(details.url).pathname,
-      )?.[1];
-      if (canvasId !== null && (requestedCanvas === undefined || requestedCanvas === canvasId))
-        return callback({});
+      const binding = canvasPreviewHosts.bindingForFrame(details.webContentsId, details.frame);
+      if (mayRequestPreviewAsset(binding, details.url)) return callback({});
       callback({ redirectURL: 'droidex-canvas-preview://preview/not-found' });
     },
   );
@@ -822,13 +818,9 @@ function registerIpc() {
     assertMainRenderer(event);
     return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
   });
-  ipcMain.handle('canvas-preview-bind', (event, { guestId, canvasId }) => {
+  ipcMain.handle('canvas-preview-bind', (event, { guestId, binding }) => {
     assertMainRenderer(event);
-    return (
-      Number.isSafeInteger(guestId) &&
-      /^[A-Za-z0-9_-]{1,128}$/.test(canvasId) &&
-      canvasPreviewHosts.bindCanvas(guestId, canvasId)
-    );
+    return Number.isSafeInteger(guestId) && canvasPreviewHosts.bind(guestId, binding);
   });
   ipcMain.handle('canvas-preview-capture', (event, request) => {
     assertMainRenderer(event);

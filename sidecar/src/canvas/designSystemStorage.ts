@@ -1,7 +1,8 @@
 // Where saved kits live on disk and how a file there is read and published:
 // `canvases/design-systems/<id>/<n>.json`, one immutable file per version, a
-// `deleted` tombstone beside them (design system documents spec §3), and one
-// `<mutationId>.applied` receipt per delete or Undo that ran.
+// `deleted` tombstone beside them (design system documents spec §3), one
+// `<mutationId>.applied` receipt per delete or Undo that ran, and the captures
+// of each version's previews.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -9,7 +10,7 @@ import { link, lstat, mkdir, open, readdir, rm, unlink } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path';
 import { canvasError, storageFailure } from './canvasError.js';
 import { canvasDir } from '../droidexPaths.js';
-import { canvasIdentifierSchema } from './schema.js';
+import { canvasIdentifierSchema, type DesignSystemRef } from './schema.js';
 
 const UNREADABLE = 'That design system version is not available.';
 const SAVE_RECOVERY = 'The design system could not be saved.';
@@ -31,6 +32,13 @@ function identifier(value: string): string {
 
 export function versionPath(id: string, version: number): string {
   return join(kitDirectory(id), `${String(version)}.json`);
+}
+
+/** Where one capture of a version's preview lives; `item` is `cover` or a preview target id. */
+export function capturePath(ref: DesignSystemRef, item: string): string {
+  const version = String(ref.version);
+  if (item === 'cover') return join(kitDirectory(ref.id), `${version}.cover-${ref.mode}.png`);
+  return join(kitDirectory(ref.id), `${version}.previews`, `${item}-${ref.mode}.png`);
 }
 
 export function tombstonePath(id: string): string {

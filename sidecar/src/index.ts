@@ -5,6 +5,7 @@ import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { KitPreviews } from './canvas/kitPreviews.js';
 import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
 import { ProjectService } from './projects/ProjectService.js';
 import { ProjectStore } from './projects/store.js';
@@ -210,10 +211,12 @@ void canvasReady.catch((error: unknown) => {
   });
 });
 const canvasAdmission = new AbortController();
+const kitPreviews = new KitPreviews();
 const canvasBridge = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
+  kitPreviews,
   {
     secret: CANVAS_ASSET_SECRET,
     list: (canvasId) => listCanvasAssets(canvasDir(), canvasId),
@@ -310,7 +313,7 @@ async function shutdown(): Promise<void> {
         }
       },
       shutdownCanvas: () =>
-        shutdownCanvas(canvasBuilds, canvasScopes, canvasReady, canvasWorkspace),
+        shutdownCanvas(canvasBuilds, kitPreviews, canvasScopes, canvasReady, canvasWorkspace),
       shutdownUsage: async () => {
         try {
           await queueUsageSessions([]);

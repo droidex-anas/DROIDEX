@@ -23,6 +23,7 @@ import { answerLibraryCommand, isLibraryCommand } from './canvasLibrary.js';
 import { answerRemovalCommand, isRemovalCommand } from './canvasRemoval.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
+import type { KitPreviews } from './kitPreviews.js';
 import type {
   CanvasCommand,
   CanvasError,
@@ -48,6 +49,7 @@ class CanvasDispatch {
     ready: Promise<CanvasWorkspace>,
     private readonly scopes: CanvasScopes,
     private readonly builds: CanvasBuilds,
+    private readonly previews: KitPreviews,
     private readonly assets: {
       secret: string;
       list: (canvasId: string) => Promise<OwnedAsset[]>;
@@ -92,7 +94,7 @@ class CanvasDispatch {
       if (command.type === 'canvas.readArtifact') return await this.readArtifact(command);
       // Kits are not a canvas's, so they stay reachable when Canvas storage is not.
       if (isDesignSystemCommand(command)) {
-        const reply = await answerDesignSystemCommand(command);
+        const reply = await answerDesignSystemCommand(command, this.previews);
         return { type: 'canvas.result', requestId: command.requestId, ok: true, reply };
       }
       const workspace = await this.workspace;
@@ -346,6 +348,7 @@ export function createCanvasCommandHandler(
   ready: Promise<CanvasWorkspace>,
   scopes: CanvasScopes,
   builds: CanvasBuilds,
+  previews: KitPreviews,
   assets: { secret: string; list: (canvasId: string) => Promise<OwnedAsset[]> },
   emit: (event: ServerEvent) => void,
   onPageGone: (listener: (pageId: string) => void) => () => void,
@@ -354,7 +357,7 @@ export function createCanvasCommandHandler(
   capture: CanvasCapture;
 } {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
-  const dispatch = new CanvasDispatch(ready, scopes, builds, assets, emit, onPageGone);
+  const dispatch = new CanvasDispatch(ready, scopes, builds, previews, assets, emit, onPageGone);
 
   const handle = async (value: unknown, pageId: string | null): Promise<boolean> => {
     if (!isCanvasRequest(value)) return false;

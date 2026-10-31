@@ -11,7 +11,7 @@ import { imageMediaType } from './canvasAssets.js';
 import { canvasError, storageFailure } from './canvasError.js';
 
 /** The pane saves a downscaled capture, so a cover stays small. */
-const MAX_COVER_BYTES = 512 * 1024;
+export const MAX_COVER_BYTES = 512 * 1024;
 export const MAX_COVER_BASE64_LENGTH = Math.ceil(MAX_COVER_BYTES / 3) * 4;
 
 const COVER_FILE = 'cover.png';

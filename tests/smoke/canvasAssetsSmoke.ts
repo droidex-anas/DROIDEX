@@ -257,10 +257,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
 
         const guestId = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
-            guestId,
-            canvasId,
-          ] as const),
+          await page.evaluate(
+            ([id, canvas]) =>
+              window.droidex!.canvasPreviewBind(id, { kind: 'canvas', canvasId: canvas }),
+            [guestId, canvasId] as const,
+          ),
           true,
         );
         const instance = {
@@ -321,10 +322,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         const missingFontUrl = `droidex-canvas-preview://preview/font/${'f'.repeat(64)}`;
         const fallbackGuest = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
-            fallbackGuest,
-            canvasId,
-          ] as const),
+          await page.evaluate(
+            ([id, canvas]) =>
+              window.droidex!.canvasPreviewBind(id, { kind: 'canvas', canvasId: canvas }),
+            [fallbackGuest, canvasId] as const,
+          ),
           true,
         );
         assert.equal(
@@ -362,10 +364,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         assert.ok(second.kind === 'canvasCreated' && second.canvasId);
         const secondGuest = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
-            secondGuest,
-            second.canvasId,
-          ] as const),
+          await page.evaluate(
+            ([id, canvas]) =>
+              window.droidex!.canvasPreviewBind(id, { kind: 'canvas', canvasId: canvas }),
+            [secondGuest, second.canvasId] as const,
+          ),
           true,
         );
         assert.equal(
