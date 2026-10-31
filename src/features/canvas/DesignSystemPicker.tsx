@@ -10,8 +10,9 @@ import { Button } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { cn } from '../../components/ui/cn';
-import { useStoreSelector } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
+import { lacksCanvasTools } from './canvasState';
 import { canvasMessage } from './client';
 import {
   AUTO_DESIGN_SYSTEM,
@@ -30,6 +31,8 @@ import { NewDesignSystemDialog } from './NewDesignSystemDialog';
 import { useOpenCanvasPane } from './openCanvasPane';
 import type { PreviewMode } from './PreviewModeToggle';
 import type { DesignSystemSource, DesignSystemSummary } from './protocol';
+
+const FROM_PROJECT_PROMPT = 'Create a design system from this project.';
 
 /** `value` null runs under the pinned frames' kit, else Auto. */
 export function CanvasDesignSystem({
@@ -54,6 +57,7 @@ export function CanvasDesignSystem({
   const close = useCallback(() => {
     setOpen(false);
   }, []);
+  const fromProject = useFromProject(appSessionId, close);
 
   const systems = list.status === 'listed' ? list.systems : null;
   const shown = shownKit(pins, value, systems);
@@ -172,6 +176,7 @@ export function CanvasDesignSystem({
             close();
             setComposing({ kind, mode });
           }}
+          onFromProject={fromProject}
         />
       </Popover>
       {composing && (
@@ -208,6 +213,21 @@ function ChipName({
       {isUnavailable && <span className="truncate text-warning">· unavailable</span>}
     </>
   );
+}
+
+/** Puts the §12 sentence in the chat's composer, where its agent can read the project folder. */
+function useFromProject(appSessionId: string | null, close: () => void): (() => void) | null {
+  const dispatch = useStoreDispatch();
+  const canReadProject = useStoreSelector((state) => {
+    const session = appSessionId === null ? undefined : state.sessions[appSessionId];
+    if (!session || lacksCanvasTools(session)) return false;
+    return session.workspaceKind !== 'none' && session.cwd !== '';
+  });
+  if (appSessionId === null || !canReadProject) return null;
+  return () => {
+    close();
+    dispatch({ type: 'SEED_COMPOSER', appSessionId, text: FROM_PROJECT_PROMPT });
+  };
 }
 
 /**

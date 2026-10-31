@@ -1,5 +1,7 @@
 // The picker's footer (spec §9): New design system, opening the sources a kit
-// can start from. Choosing one hands its kind to the picker, which opens the form.
+// can start from. Choosing a paste source hands its kind to the picker, which
+// opens the form; From this project asks the chat's agent instead (design
+// system documents spec §12).
 
 import { useRef, useState } from 'react';
 import { ChevronRight, Plus } from '@droidex/icons';
@@ -8,8 +10,11 @@ import type { DesignSystemSource } from './protocol';
 
 export function NewDesignSystemMenu({
   onCompose,
+  onFromProject,
 }: {
   onCompose: (kind: DesignSystemSource['kind']) => void;
+  /** Null where the chat has no project folder or no Canvas tools. */
+  onFromProject: (() => void) | null;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -39,6 +44,7 @@ export function NewDesignSystemMenu({
         width={240}
         label="New design system"
       >
+        {onFromProject && <Menu.Item onSelect={onFromProject}>From this project</Menu.Item>}
         <Menu.Item
           onSelect={() => {
             onCompose('designMd');

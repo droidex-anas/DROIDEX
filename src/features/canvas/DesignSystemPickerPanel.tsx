@@ -27,6 +27,7 @@ export function DesignSystemPickerPanel({
   onPick,
   onOpen,
   onCompose,
+  onFromProject,
 }: {
   list: KitList;
   onRetry: () => void;
@@ -35,6 +36,7 @@ export function DesignSystemPickerPanel({
   /** Shows a kit's document in the canvas area; null where there is none, as on the Design home. */
   onOpen: ((kit: DesignSystemSummary) => void) | null;
   onCompose: (kind: DesignSystemSource['kind'], mode: PreviewMode) => void;
+  onFromProject: (() => void) | null;
 }) {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<PreviewMode>(current.mode);
@@ -150,6 +152,7 @@ export function DesignSystemPickerPanel({
           onCompose={(kind) => {
             onCompose(kind, mode);
           }}
+          onFromProject={onFromProject}
         />
       </div>
     </>
