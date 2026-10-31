@@ -455,12 +455,15 @@ test('a deleted kit leaves the list but stays readable, and restoring it lists i
   const ref = await save(kit);
   const isListed = async () => (await listDesignSystems()).some((entry) => entry.id === kit.id);
 
-  await setDesignSystemDeleted(kit.id, true);
+  await setDesignSystemDeleted(kit.id, true, 'delete-once');
   assert.equal(await isListed(), false);
   assert.deepEqual(await readDesignSystem(ref), kit);
   await assert.rejects(save({ ...kit, version: 2 }), { code: 'invalid_input' });
 
-  await setDesignSystemDeleted(kit.id, false);
+  await setDesignSystemDeleted(kit.id, false, 'undo-once');
+  assert.equal(await isListed(), true);
+  // A delete whose answer was lost and is retried after its Undo is not applied again.
+  await setDesignSystemDeleted(kit.id, true, 'delete-once');
   assert.equal(await isListed(), true);
 });
 

@@ -1,6 +1,7 @@
 // Where saved kits live on disk and how a file there is read and published:
-// `canvases/design-systems/<id>/<n>.json`, one immutable file per version, and
-// a `deleted` tombstone beside them (design system documents spec §3).
+// `canvases/design-systems/<id>/<n>.json`, one immutable file per version, a
+// `deleted` tombstone beside them (design system documents spec §3), and one
+// `<mutationId>.applied` receipt per delete or Undo that ran.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -19,9 +20,13 @@ export function systemsRoot(): string {
 }
 
 function kitDirectory(id: string): string {
-  const parsed = canvasIdentifierSchema.safeParse(id);
+  return join(systemsRoot(), identifier(id));
+}
+
+function identifier(value: string): string {
+  const parsed = canvasIdentifierSchema.safeParse(value);
   if (!parsed.success) throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? '');
-  return join(systemsRoot(), parsed.data);
+  return parsed.data;
 }
 
 export function versionPath(id: string, version: number): string {
@@ -30,6 +35,10 @@ export function versionPath(id: string, version: number): string {
 
 export function tombstonePath(id: string): string {
   return join(kitDirectory(id), 'deleted');
+}
+
+export function deletionReceiptPath(id: string, mutationId: string): string {
+  return join(kitDirectory(id), `${identifier(mutationId)}.applied`);
 }
 
 /** The kit's saved version numbers, unordered; none when it was never saved. */

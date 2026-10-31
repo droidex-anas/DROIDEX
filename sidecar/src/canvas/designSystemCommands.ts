@@ -74,29 +74,16 @@ export function isDesignSystemCommand(command: CanvasCommand): command is Design
   return COMMAND_TYPES.has(command.type);
 }
 
-/** The reply, and the kit a write changed so the bridge can announce it. */
 export async function answerDesignSystemCommand(
   command: DesignSystemCommand,
-): Promise<{ reply: CanvasReply; changed: string | null }> {
+): Promise<CanvasReply> {
   switch (command.type) {
     case 'canvas.listDesignSystems':
-      return {
-        reply: { kind: 'designSystems', systems: await listDesignSystems() },
-        changed: null,
-      };
+      return { kind: 'designSystems', systems: await listDesignSystems() };
     case 'canvas.readDesignSystem':
-      return {
-        reply: { kind: 'designSystem', system: await readDocument(command.ref) },
-        changed: null,
-      };
+      return { kind: 'designSystem', system: await readDocument(command.ref) };
     case 'canvas.listDesignSystemVersions':
-      return {
-        reply: {
-          kind: 'designSystemVersions',
-          versions: await listDesignSystemVersions(command.id),
-        },
-        changed: null,
-      };
+      return { kind: 'designSystemVersions', versions: await listDesignSystemVersions(command.id) };
     case 'canvas.saveDesignSystem': {
       // The document edits only what it shows; source and examples stay the base's.
       const base = await readDesignSystem({ id: command.id, version: command.baseVersion });
@@ -115,8 +102,8 @@ export async function answerDesignSystemCommand(
       return saved(ref, []);
     }
     case 'canvas.setDesignSystemDeleted':
-      await setDesignSystemDeleted(command.id, command.deleted);
-      return { reply: { kind: 'ok' }, changed: command.id };
+      await setDesignSystemDeleted(command.id, command.deleted, command.mutationId);
+      return { kind: 'ok' };
     // A new kit's id is its mutationId: a retried save finds the version it
     // already published and answers with it instead of saving a second kit.
     case 'canvas.copyDesignSystem': {
@@ -152,11 +139,8 @@ export async function answerDesignSystemCommand(
 function saved(
   ref: DesignSystemVersionRef,
   diagnostics: Extract<CanvasReply, { kind: 'designSystemSaved' }>['diagnostics'],
-): { reply: CanvasReply; changed: string } {
-  return {
-    reply: { kind: 'designSystemSaved', ref: { id: ref.id, version: ref.version }, diagnostics },
-    changed: ref.id,
-  };
+): CanvasReply {
+  return { kind: 'designSystemSaved', ref: { id: ref.id, version: ref.version }, diagnostics };
 }
 
 async function readDocument(ref: DesignSystemVersionRef): Promise<DesignSystemDocumentView> {

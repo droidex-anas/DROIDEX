@@ -10,7 +10,7 @@ import { CompilerWorker } from './compiler.js';
 import type { DesignSystemDocumentView } from './designSystemCommands.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
-import { readDesignSystem, type DesignSystemSource } from './designSystems.js';
+import { readDesignSystem, saveDesignSystem, type DesignSystemSource } from './designSystems.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import type { CanvasDiagnostic, DesignSystemVersionRef } from './protocol.js';
@@ -391,19 +391,32 @@ test('the document saves on its latest version, restores an older one and is ann
     [3, 2, 1],
   );
 
-  await canvas.handle({
+  const deleteStudio = {
     type: 'canvas.setDesignSystemDeleted',
     requestId: 'delete',
     mutationId: 'delete-studio',
     id: 'studio',
     deleted: true,
-  });
+  };
+  await canvas.handle(deleteStudio);
   assert.deepEqual(okReply(canvas, 'delete'), { kind: 'ok' });
   // Every write is announced so other windows refetch; the stale save is not.
   assert.equal(
     canvas.events.filter((event) => event.type === 'canvas.designSystemsChanged').length,
     4,
   );
+
+  // canvas_theme saves through the same owner, so an agent's save is announced too.
+  await canvas.handle({ ...deleteStudio, requestId: 'undo', mutationId: 'undo', deleted: false });
+  const before = canvas.events.length;
+  await saveDesignSystem(await readDesignSystem({ id: 'studio', version: 3 }), {
+    mutationId: 'agent-save',
+    baseVersion: 3,
+    savedBy: { actor: 'agent', appSessionId: 'chat-one' },
+  });
+  assert.deepEqual(canvas.events.slice(before), [
+    { type: 'canvas.designSystemsChanged', id: 'studio' },
+  ]);
 });
 
 async function exportFolder(t: TestContext): Promise<{ parent: string; destination: string }> {

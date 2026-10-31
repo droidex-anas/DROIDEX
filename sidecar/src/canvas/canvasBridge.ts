@@ -12,6 +12,7 @@ import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { resolveCanvasAssetReferences } from './canvasAssets.js';
 import { canvasCommandSchema, type CanvasMutation } from './canvasCommandSchema.js';
+import { onDesignSystemChange } from './designSystemChanges.js';
 import {
   answerDesignSystemCommand,
   isDesignSystemCommand,
@@ -60,6 +61,9 @@ class CanvasDispatch {
       this.watches.forget(pageId);
       this.captures.forget(pageId);
     });
+    onDesignSystemChange((id) => {
+      this.emit({ type: 'canvas.designSystemsChanged', id });
+    });
     this.workspace = ready.then(
       (opened) => {
         opened.changes.subscribe((change) => {
@@ -88,8 +92,7 @@ class CanvasDispatch {
       if (command.type === 'canvas.readArtifact') return await this.readArtifact(command);
       // Kits are not a canvas's, so they stay reachable when Canvas storage is not.
       if (isDesignSystemCommand(command)) {
-        const { reply, changed } = await answerDesignSystemCommand(command);
-        if (changed !== null) this.emit({ type: 'canvas.designSystemsChanged', id: changed });
+        const reply = await answerDesignSystemCommand(command);
         return { type: 'canvas.result', requestId: command.requestId, ok: true, reply };
       }
       const workspace = await this.workspace;

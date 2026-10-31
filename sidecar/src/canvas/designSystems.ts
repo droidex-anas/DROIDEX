@@ -13,6 +13,7 @@ import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { announceDesignSystemChange } from './designSystemChanges.js';
 import { convertLegacyVersion, legacySummary } from './designSystemConversion.js';
 import {
   DOCUMENT_LIMITS,
@@ -24,6 +25,7 @@ import {
   withNoteAuthors,
 } from './designSystemDocument.js';
 import {
+  deletionReceiptPath,
   exists,
   flushAncestors,
   isMissing,
@@ -418,6 +420,7 @@ export async function saveDesignSystem(
   } catch (error) {
     throw storageFailure('The design system could not be saved.', error);
   }
+  announceDesignSystemChange(kit.id);
   // A reference also names a mode; a saved kit has both, so the light one is
   // the selection a caller gets back until the user picks otherwise.
   return { id: kit.id, version: kit.version, mode: 'light' };
@@ -449,14 +452,21 @@ async function isSavedMutation(
   );
 }
 
-/**
- * Takes a user kit out of every list, or puts it back. Its versions stay
- * readable either way, so frames and queued requests pinned to them still build.
- */
-export async function setDesignSystemDeleted(id: string, deleted: boolean): Promise<void> {
+/** Takes a user kit out of every list, or puts it back; pinned versions still build. A
+ * mutation that already ran is not rerun, so a delete retried after Undo changes nothing. */
+export async function setDesignSystemDeleted(
+  id: string,
+  deleted: boolean,
+  mutationId: string,
+): Promise<void> {
   if (designSystemKind(id) !== 'user') throw canvasError('preset_read_only', BUILT_IN_MESSAGE);
   if ((await latestVersion(id)) === 0) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
-  await setMarker(tombstonePath(id), deleted);
+  const receipt = deletionReceiptPath(id, mutationId);
+  if (!(await exists(receipt))) {
+    await setMarker(tombstonePath(id), deleted);
+    await setMarker(receipt, true);
+  }
+  announceDesignSystemChange(id);
 }
 
 /** What a version's header says about its document. */
