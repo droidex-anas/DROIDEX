@@ -14,7 +14,6 @@ import {
 } from '../testing/canvasStorageSupport.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
-import { restoreRevision } from './canvasRevisionHistory.js';
 import { CanvasScopes } from './canvasScopes.js';
 import type { CanvasCommand, CanvasScope, RevisionSummary, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
@@ -102,6 +101,10 @@ test('history pages committed revisions newest first with safe authors and pinne
       [third.revisionId, third.sequence],
       [second.revisionId, second.sequence],
     ],
+  );
+  assert.deepEqual(
+    page.map((revision) => revision.version),
+    [3, 2],
   );
   assert.deepEqual(page[0]?.author, { kind: 'user' });
   assert.deepEqual(saved(page[0]).designSystem, { ...designSystem, version: 2, mode: 'dark' });
@@ -266,7 +269,7 @@ test('build status belongs to the exact cached revision, including misses and fa
   assert.deepEqual(await history(), ['building', 'unbuilt', 'unbuilt', 'unbuilt']);
 });
 
-test('restore commits a new head and build, retaining later history and its original replay receipt', async (t) => {
+test('switching shows an earlier revision without adding one, and the next edit builds on it', async (t) => {
   const canvas = await harness(t);
   const first = await canvas.write('one', null, { 'main.tsx': 'one', 'original.txt': 'original' });
   const second = await canvas.workspace.write(canvas.scope, {
@@ -279,45 +282,36 @@ test('restore commits a new head and build, retaining later history and its orig
   });
   const third = await canvas.write('three', second.revisionId, { 'main.tsx': 'three' });
   const input = {
-    mutationId: 'restore',
+    mutationId: 'switch',
     designId: canvas.designId,
     revisionId: first.revisionId,
     expectedRevisionId: third.revisionId,
   };
-  const restored = await restoreRevision(canvas.workspace, canvas.scope, input);
-  assert.notEqual(restored.revisionId, first.revisionId);
-  assert.notEqual(restored.revisionId, second.revisionId);
-  assert.notEqual(restored.revisionId, third.revisionId);
-  assert.equal(restored.sequence, third.sequence + 1);
-  assert.deepEqual(
-    { ...(await canvas.workspace.readFiles(canvas.canvasId, restored)) },
-    { 'main.tsx': 'one', 'original.txt': 'original' },
-  );
+  const switched = await canvas.workspace.switchRevision(canvas.scope, input);
+  assert.deepEqual(switched, {
+    designId: canvas.designId,
+    revisionId: first.revisionId,
+    sequence: third.sequence + 1,
+  });
   const frame = canvas.workspace.snapshot(canvas.canvasId).frames[0];
-  assert.deepEqual(frame?.designSystem, designSystem);
-  assert.ok(frame?.build.status === 'building' || frame?.build.status === 'cancelled');
+  assert.equal(frame?.revisionId, first.revisionId);
+  assert.deepEqual(frame.designSystem, designSystem);
+  assert.ok(frame.build.status === 'building' || frame.build.status === 'cancelled');
+  const versions = async (workspace: CanvasWorkspace) =>
+    (await workspace.history.listRevisions(canvas.canvasId, canvas.designId, { limit: 50 })).map(
+      (revision) => [revision.revisionId, revision.version],
+    );
+  assert.deepEqual(await versions(canvas.workspace), [
+    [third.revisionId, 3],
+    [second.revisionId, 2],
+    [first.revisionId, 1],
+  ]);
+
+  const later = await canvas.write('four', first.revisionId, { 'main.tsx': 'four' });
   assert.deepEqual(
-    (
-      await canvas.workspace.history.listRevisions(canvas.canvasId, canvas.designId, { limit: 50 })
-    ).map((revision) => [revision.revisionId, revision.mutationKind]),
-    [
-      [restored.revisionId, 'restore'],
-      [third.revisionId, 'write'],
-      [second.revisionId, 'write'],
-      [first.revisionId, 'write'],
-    ],
+    { ...(await canvas.workspace.readFiles(canvas.canvasId, later)) },
+    { 'main.tsx': 'four', 'original.txt': 'original' },
   );
-  assert.equal(
-    (
-      await canvas.workspace.history.readRevisionFiles(
-        canvas.canvasId,
-        canvas.designId,
-        second.revisionId,
-      )
-    )['later.txt'],
-    'later',
-  );
-  const later = await canvas.write('four', restored.revisionId, { 'main.tsx': 'four' });
   // The writer lease admits one open workspace per storage root.
   await canvas.workspace.close();
   const reopenedBuilds = quietBuilds();
@@ -329,27 +323,34 @@ test('restore commits a new head and build, retaining later history and its orig
   const metadata = await reopened.history.readRevisionMetadata(
     canvas.canvasId,
     canvas.designId,
-    restored.revisionId,
+    later.revisionId,
   );
-  assert.equal(metadata.restoredFromRevisionId, first.revisionId);
-  assert.equal(metadata.parentRevisionId, third.revisionId);
-  const history = await reopened.history.listRevisions(canvas.canvasId, canvas.designId, {
-    limit: 50,
-  });
-  assert.equal(
-    saved(history.find((revision) => revision.revisionId === restored.revisionId))
-      .restoredFromRevisionId,
-    first.revisionId,
-  );
-  assert.deepEqual(await restoreRevision(reopened, canvas.scope, input), restored);
+  assert.equal(metadata.parentRevisionId, first.revisionId);
+  assert.deepEqual(await versions(reopened), [
+    [later.revisionId, 4],
+    [third.revisionId, 3],
+    [second.revisionId, 2],
+    [first.revisionId, 1],
+  ]);
+  // A retry answers its first receipt and leaves the later edit on show.
+  assert.deepEqual(await reopened.switchRevision(canvas.scope, input), switched);
   assert.equal(reopened.snapshot(canvas.canvasId).frames[0]?.revisionId, later.revisionId);
   await assert.rejects(
-    restoreRevision(reopened, canvas.scope, { ...input, revisionId: second.revisionId }),
+    reopened.switchRevision(canvas.scope, { ...input, revisionId: second.revisionId }),
+    { code: 'invalid_input' },
+  );
+  await assert.rejects(
+    reopened.switchRevision(canvas.scope, {
+      ...input,
+      mutationId: 'switch-unknown',
+      revisionId: 'not-a-revision',
+      expectedRevisionId: later.revisionId,
+    }),
     { code: 'invalid_input' },
   );
 });
 
-test('restore CAS rejects a concurrent head change without losing either source or spending its ID', async (t) => {
+test('switch CAS rejects a concurrent head change without spending its ID', async (t) => {
   const reached = deferred();
   const release = deferred();
   let selectedPath: string | null = null;
@@ -365,32 +366,33 @@ test('restore CAS rejects a concurrent head change without losing either source 
   const first = await canvas.write('one', null, { 'main.tsx': 'one' });
   const second = await canvas.write('two', first.revisionId, { 'main.tsx': 'two' });
   const input = {
-    mutationId: 'restore',
+    mutationId: 'switch',
     designId: canvas.designId,
     revisionId: first.revisionId,
     expectedRevisionId: second.revisionId,
   };
   selectedPath = join(canvas.canvasId, 'revisions', first.revisionId, 'revision.json');
-  const restoring = restoreRevision(canvas.workspace, canvas.scope, input);
+  const switching = canvas.workspace.switchRevision(canvas.scope, input);
   await reached.promise;
   const third = await canvas.write('three', second.revisionId, { 'main.tsx': 'three' });
   release.resolve();
-  await assert.rejects(restoring, { code: 'revision_conflict' });
+  await assert.rejects(switching, { code: 'revision_conflict' });
   assert.equal(canvas.workspace.snapshot(canvas.canvasId).frames[0]?.revisionId, third.revisionId);
-  const restored = await restoreRevision(canvas.workspace, canvas.scope, {
+  const switched = await canvas.workspace.switchRevision(canvas.scope, {
     ...input,
     expectedRevisionId: third.revisionId,
   });
-  assert.equal((await canvas.workspace.readFiles(canvas.canvasId, restored))['main.tsx'], 'one');
+  assert.equal(switched.revisionId, first.revisionId);
+  assert.equal(canvas.workspace.snapshot(canvas.canvasId).frames[0]?.revisionId, first.revisionId);
 });
 
-test('a removed design refuses history and restore until Undo brings its history back', async (t) => {
+test('a removed design refuses history and switching until Undo brings its history back', async (t) => {
   const canvas = await harness(t);
   const { workspace, scope, canvasId, designId } = canvas;
   const revision = await canvas.write('one', null, { 'main.tsx': 'one' });
   const { undoId } = await workspace.removeFrames(scope, 'remove', [designId]);
   const input = {
-    mutationId: 'restore',
+    mutationId: 'switch',
     designId,
     revisionId: revision.revisionId,
     expectedRevisionId: revision.revisionId,
@@ -398,7 +400,7 @@ test('a removed design refuses history and restore until Undo brings its history
   await assert.rejects(workspace.history.listRevisions(canvasId, designId, { limit: 50 }), {
     code: 'not_found',
   });
-  await assert.rejects(restoreRevision(workspace, scope, input), { code: 'not_found' });
+  await assert.rejects(workspace.switchRevision(scope, input), { code: 'not_found' });
   assert.deepEqual(await readdir(join(canvas.root, canvasId, 'revisions')), [revision.revisionId]);
   await workspace.undoRemoval(scope, 'undo', undoId);
   assert.deepEqual(
@@ -481,7 +483,7 @@ test('a damaged saved revision is listed as damaged without failing its page', a
   );
 });
 
-test('history bridge validates bounded reads and authorizes restore through the attached chat', async (t) => {
+test('history bridge validates bounded reads and authorizes switching through the attached chat', async (t) => {
   const canvas = await harness(t);
   const first = await canvas.write('one', null, { 'main.tsx': 'one' });
   const second = await canvas.write('two', first.revisionId, { 'main.tsx': 'two' });
@@ -526,19 +528,19 @@ test('history bridge validates bounded reads and authorizes restore through the 
   });
   assert.ok(diff.ok && diff.reply.kind === 'revisionDiff' && diff.reply.diff.files.length === 1);
   const input = {
-    mutationId: 'restore',
+    mutationId: 'switch',
     designId: canvas.designId,
     revisionId: first.revisionId,
     expectedRevisionId: second.revisionId,
   };
-  const restored = await request({
-    type: 'canvas.restoreRevision',
-    requestId: 'restore',
+  const switched = await request({
+    type: 'canvas.switchRevision',
+    requestId: 'switch',
     canvasId: canvas.canvasId,
     appSessionId: 'app-1',
     input,
   });
-  assert.ok(restored.ok && restored.reply.kind === 'written');
+  assert.ok(switched.ok && switched.reply.kind === 'written');
   const invalid = await request({
     type: 'canvas.listRevisions',
     requestId: 'bad-page',
@@ -555,7 +557,7 @@ test('history bridge validates bounded reads and authorizes restore through the 
   });
   assert.ok(!badPath.ok && badPath.error.code === 'invalid_input');
   const detached = await request({
-    type: 'canvas.restoreRevision',
+    type: 'canvas.switchRevision',
     requestId: 'unattached',
     canvasId: canvas.canvasId,
     appSessionId: 'other-app',

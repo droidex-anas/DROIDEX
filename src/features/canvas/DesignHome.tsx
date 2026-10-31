@@ -1,70 +1,52 @@
-// The Design draft area (spec §4). Two surfaces share its centred composer:
-// the Design home, where every prompt makes a new canvas, and the draft a
-// chosen canvas pins, where the prompt joins that canvas instead. They are
-// deliberately separate: the home promises a canvas it has not got yet, so it
-// declares that promise itself rather than trusting whoever navigated here —
-// a restored window and a new tab reach this home with no draft of their own.
+// What the Design home adds to the new-chat home (spec §4), loaded with the
+// canvas chunk: the canvases already made, under its starting points, and the
+// library item its next canvas starts from, in the composer's row.
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { LibraryBig } from 'lucide-react';
-import { BrandMark } from '../../components/BrandMark';
-import PromptInput from '../../components/PromptInput';
 import { Search, X } from '@droidex/icons';
-import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { SKETCH_INK } from '../../components/StarterTile';
 import { formatRelativeTime } from '../../lib/time';
 import { searchCanvases } from './canvasChats';
-import { NEW_CANVAS_KEY } from './designSystemChoices';
-import { CanvasDesignSystem } from './DesignSystemPicker';
+import { useCanvasCover } from './canvasCovers';
 import { LibraryPicker } from './LibraryPicker';
 import { armLibrarySeed, useArmedLibrarySeed } from './librarySeed';
 import { useCanvases } from './useCanvases';
 import { useOpenCanvas } from './useOpenCanvas';
 import type { CanvasSummary } from './protocol';
 
-// Each one seeds the composer without sending, so the user keeps typing.
-const EXAMPLES = [
-  'A settings page with a theme toggle',
-  'A pricing card with three tiers',
-  'A dashboard with a usage chart',
-  'A sign-in form with inline errors',
-];
+// The search field earns its place once the grid is longer than a glance.
+const SEARCH_THRESHOLD = 6;
 
-export function DesignHome() {
-  // A canvas the user named by pressing a card, or by New chat with this
-  // canvas, is already chosen; anything else here makes a new one.
-  const pinnedCanvasId = useStoreSelector((current) => current.canvasDraft?.canvasId ?? null);
-  return pinnedCanvasId === null ? (
-    <NewCanvasHome />
-  ) : (
-    <CanvasChatDraft canvasId={pinnedCanvasId} />
-  );
-}
-
-function NewCanvasHome() {
-  const dispatch = useStoreDispatch();
+/**
+ * The canvases already made, under the composer. A first run has none, so the
+ * section stays out of the way until there is something to reopen.
+ */
+export function RecentCanvases() {
   const { canvases } = useCanvases();
   const { openCanvas } = useOpenCanvas();
   const [query, setQuery] = useState('');
-  const promised = useStoreSelector((current) => current.canvasDraft !== null);
-  const summaries = canvases.status === 'listed' ? searchCanvases(canvases.summaries, query) : [];
+  const headingId = useId();
 
-  // What this home promises its next prompt, on whichever path led here.
-  useEffect(() => {
-    if (!promised) dispatch({ type: 'SET_CANVAS_DRAFT', canvasId: null });
-  }, [dispatch, promised]);
+  if (canvases.status === 'loading') return null;
+  if (canvases.status === 'failed')
+    return (
+      <p role="alert" className="text-caption text-danger">
+        {canvases.message}
+      </p>
+    );
+  if (canvases.summaries.length === 0) return null;
 
+  const summaries = searchCanvases(canvases.summaries, query);
   return (
-    <DesignDraftShell
-      canvasKey={NEW_CANVAS_KEY}
-      title="What should we design?"
-      hint="Every prompt here starts a new canvas and a chat attached to it."
-      startingPoint={<LibrarySeedChip />}
-    >
-      <div className="droid-rise mt-12" style={{ animationDelay: '160ms' }}>
-        <div className="flex items-center justify-between gap-3 px-1">
-          <h2 className="text-body-strong text-primary">Your canvases</h2>
-          <label className="flex min-w-0 items-center gap-1.5 rounded-lg bg-elevated/50 px-2 py-1">
-            <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-muted" />
+    <section aria-labelledby={headingId} className="droid-rise">
+      <div className="flex h-control-md items-center justify-between gap-3 px-0.5">
+        <h2 id={headingId} className="text-body-strong text-primary">
+          Recent canvases
+        </h2>
+        {canvases.summaries.length > SEARCH_THRESHOLD && (
+          <label className="flex min-w-0 items-center gap-1.5 rounded-md bg-elevated px-2 py-1">
+            <Search aria-hidden className="size-icon-sm shrink-0 text-muted" />
             <input
               value={query}
               onChange={(event) => {
@@ -75,26 +57,17 @@ function NewCanvasHome() {
               className="w-32 min-w-0 bg-transparent text-label font-normal text-primary placeholder:text-muted focus:outline-none"
             />
           </label>
-        </div>
-
-        {canvases.status === 'loading' && (
-          <p role="status" className="px-1 pt-3 text-label font-normal text-muted">
-            Reading your canvases…
-          </p>
         )}
-        {canvases.status === 'failed' && (
-          <p role="alert" className="px-1 pt-3 text-label font-normal text-danger">
-            {canvases.message}
-          </p>
-        )}
-        {canvases.status === 'listed' && summaries.length === 0 && (
-          <p className="px-1 pt-3 text-label font-normal leading-relaxed text-muted">
-            {query
-              ? 'No canvas by that name.'
-              : 'Nothing designed yet. Your first prompt makes the first one.'}
-          </p>
-        )}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      </div>
+      {summaries.length === 0 ? (
+        <p className="px-0.5 pt-2 text-caption text-muted">No canvas by that name.</p>
+      ) : (
+        <div
+          className="mt-2 grid gap-3"
+          // Cards keep a cover's width: three beside a full composer, fewer in a
+          // narrow tile, and one canvas does not stretch across the row.
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(12rem, 1fr))' }}
+        >
           {summaries.map((summary) => (
             <CanvasCard
               key={summary.canvasId}
@@ -105,88 +78,8 @@ function NewCanvasHome() {
             />
           ))}
         </div>
-      </div>
-    </DesignDraftShell>
-  );
-}
-
-/**
- * The draft a chosen canvas pins: "New chat with this canvas", and a card whose
- * own chats this window does not hold. Its prompt joins that canvas, so it
- * never offers the home's new-canvas promise or its grid.
- */
-function CanvasChatDraft({ canvasId }: { canvasId: string }) {
-  const { canvases } = useCanvases();
-  const canvas =
-    canvases.status === 'listed'
-      ? (canvases.summaries.find((summary) => summary.canvasId === canvasId) ?? null)
-      : null;
-  return (
-    <DesignDraftShell
-      canvasKey={canvasId}
-      title={canvas ? `New chat on ${canvas.name}` : 'New chat on this canvas'}
-      hint="This prompt starts a fresh chat on the canvas you opened; its designs stay as they are."
-    />
-  );
-}
-
-/** The centred composer both design drafts are sent from. */
-function DesignDraftShell({
-  canvasKey,
-  title,
-  hint,
-  startingPoint,
-  children,
-}: {
-  /** Whose design-system choice the draft's prompt runs under. */
-  canvasKey: string;
-  title: string;
-  hint: string;
-  /** What a new canvas starts from, beside the design-system chip. */
-  startingPoint?: ReactNode;
-  children?: ReactNode;
-}) {
-  const dispatch = useStoreDispatch();
-  return (
-    <div className="flex-1 min-h-0 overflow-y-auto">
-      <div data-electron-drag-region className="h-9 shrink-0" />
-      <div
-        // The composer's column (PromptInput) plus this page's own inset.
-        style={{ maxWidth: 'calc(42rem + 46px)' }}
-        className="mx-auto flex w-full flex-col px-6 pb-10"
-      >
-        <div className="droid-rise flex flex-col items-center pt-12">
-          <BrandMark size={30} className="text-accent" />
-          <h1 className="mt-5 text-title text-primary">{title}</h1>
-          <p className="mt-2 text-center text-body text-muted">{hint}</p>
-        </div>
-
-        <div className="droid-rise mt-7" style={{ animationDelay: '90ms' }}>
-          <div className="mb-2 flex gap-1 px-3">
-            <CanvasDesignSystem canvasKey={canvasKey} appSessionId={null} />
-            {startingPoint}
-          </div>
-          <PromptInput appSessionId={null} compact />
-          <ul className="mt-2 flex flex-wrap gap-1.5 px-3">
-            {EXAMPLES.map((example) => (
-              <li key={example}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch({ type: 'SEED_COMPOSER', text: example, replace: true });
-                  }}
-                  className="cursor-pointer rounded-full bg-accent/[0.07] px-3 py-1.5 text-label font-normal text-secondary transition-colors hover:bg-accent/15 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
-                >
-                  {example}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {children}
-      </div>
-    </div>
+      )}
+    </section>
   );
 }
 
@@ -195,7 +88,7 @@ function DesignDraftShell({
  * from, its first frame an independent copy. The send makes the canvas, so
  * picking only arms it; leaving the home drops it.
  */
-function LibrarySeedChip() {
+export function LibrarySeedChip() {
   const armed = useArmedLibrarySeed();
   const [picking, setPicking] = useState(false);
   useEffect(
@@ -205,8 +98,11 @@ function LibrarySeedChip() {
     [],
   );
   return (
+    // Sized like the design system control beside it.
     <div
-      className={`flex min-w-0 shrink-0 items-center rounded-full text-caption ${armed ? 'bg-elevated/60' : ''}`}
+      className={`flex h-control-sm max-w-fit grow basis-0 items-center rounded-md ${
+        armed ? 'min-w-11 bg-active/60' : 'min-w-control-sm'
+      }`}
     >
       <button
         type="button"
@@ -220,9 +116,9 @@ function LibrarySeedChip() {
         onClick={() => {
           setPicking(true);
         }}
-        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className="flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted transition-colors hover:bg-active/60 hover:text-primary"
       >
-        <LibraryBig aria-hidden className="h-3.5 w-3.5 shrink-0" />
+        <LibraryBig aria-hidden className="size-icon-sm shrink-0" />
         <span className="max-w-40 truncate">{armed ? armed.name : 'From library…'}</span>
       </button>
       {armed && (
@@ -233,7 +129,7 @@ function LibrarySeedChip() {
           onClick={() => {
             armLibrarySeed(null);
           }}
-          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-active hover:text-primary"
         >
           <X aria-hidden className="h-2.5 w-2.5" strokeWidth={3} />
         </button>
@@ -254,33 +150,40 @@ function LibrarySeedChip() {
   );
 }
 
+/** A canvas's cover over its name, in the starting points' tile. */
 function CanvasCard({ summary, onOpen }: { summary: CanvasSummary; onOpen: () => void }) {
+  const cover = useCanvasCover(summary.canvasId);
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl bg-raised text-left shadow-sm transition-colors hover:bg-active focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+      className="group flex w-full cursor-pointer flex-col gap-1 rounded-xl bg-raised p-1.5 text-left shadow-sm transition duration-200 ease-out hover:shadow-lg active:scale-97 active:duration-75"
     >
-      {/* A real thumbnail arrives with captured frames (Task 5c); until then the
-          tile stays a quiet surface rather than a fake preview. */}
-      <span className="flex h-20 items-center justify-center bg-elevated/40 text-caption text-muted">
-        {summary.designCount === 0 ? 'Empty' : designCountLabel(summary.designCount)}
+      <span className="relative flex aspect-tile items-center justify-center overflow-hidden rounded-lg bg-text/5 transition-colors duration-200 group-hover:bg-text/10">
+        {cover ? (
+          <img
+            src={cover}
+            alt=""
+            draggable={false}
+            className="absolute inset-0 size-full object-cover object-top motion-safe:animate-fade-in"
+          />
+        ) : (
+          // A blank frame, sketched like the starting points, until the canvas
+          // has a picture. Its board saves one once a frame works.
+          cover === null && (
+            <span aria-hidden className={`aspect-tile h-2/5 rounded-md ${SKETCH_INK}`} />
+          )
+        )}
       </span>
-      <span className="flex flex-col gap-0.5 px-3 py-2">
-        <span className="truncate text-label text-primary">{summary.name}</span>
-        <span className="truncate text-caption text-muted">
-          {formatRelativeTime(summary.updatedAt, Date.now())} ·{' '}
-          {chatCountLabel(summary.attachedAppSessionIds.length)}
-        </span>
+      <span className="flex min-w-0 flex-col px-1.5 pb-1">
+        <span className="truncate text-body-strong text-primary">{summary.name}</span>
+        <span className="truncate text-caption text-muted">{editedLabel(summary.updatedAt)}</span>
       </span>
     </button>
   );
 }
 
-function designCountLabel(count: number): string {
-  return count === 1 ? '1 design' : `${String(count)} designs`;
-}
-
-function chatCountLabel(count: number): string {
-  return count === 1 ? '1 chat' : `${String(count)} chats`;
+function editedLabel(updatedAt: number): string {
+  const ago = formatRelativeTime(updatedAt, Date.now());
+  return ago === 'now' ? 'Edited just now' : `Edited ${ago} ago`;
 }

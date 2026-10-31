@@ -24,6 +24,10 @@ export interface PopoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chil
   /** Open at this viewport point (a right-click); the anchor still takes
    * focus back on close. A press on the anchor then dismisses too. */
   anchorPoint?: AnchorPoint;
+  /** Position against this element instead of the anchor, when the anchor
+   * moves while the layer is open; the anchor still toggles it and takes
+   * focus back. */
+  alignRef?: RefObject<HTMLElement | null>;
   /** Accessible name of the layer. */
   label: string;
   placement?: Placement;
@@ -43,6 +47,7 @@ export function Popover({
   onClose,
   anchorRef,
   anchorPoint,
+  alignRef,
   label,
   placement = 'bottom-start',
   width,
@@ -62,7 +67,7 @@ export function Popover({
   const mergedRef = useMergeRefs([panelRef, ref]);
   const { setFloating, floatingStyles, side, isPositioned, anchorHidden } = usePopoverPosition({
     open,
-    anchorRef,
+    anchorRef: alignRef ?? anchorRef,
     anchorPoint,
     placement,
     offsetPx: 4,

@@ -1,16 +1,16 @@
-// The revision history the frame toolbar shows for one frame: its newest
-// revisions, and Restore behind an inline confirm. A read or a restore answers
-// only the frame it was asked for, so a late reply never lands on a frame the
-// toolbar has moved on from.
+// The versions the frame toolbar lists for one frame, and switching the frame
+// to show one of them. A read or a switch answers only the frame it was asked
+// for, so a late reply never lands on a frame the toolbar has moved on from.
 
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { CanvasRequestError, canvasMessage } from './client';
-import type { RestoreRevisionInput, RevisionSummary } from './protocol';
+import type { CanvasFrame, RevisionSummary, SwitchRevisionInput } from './protocol';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 export interface HistoryClient {
   /** The newest `MAX_REVISION_PAGE_SIZE` revisions of a design on this canvas. */
   listRevisions: (designId: string) => Promise<RevisionSummary[]>;
-  restoreRevision: (input: RestoreRevisionInput) => Promise<unknown>;
+  switchRevision: (input: SwitchRevisionInput) => Promise<unknown>;
 }
 
 /** The frame on show and the head its history is read against. */
@@ -22,36 +22,25 @@ export interface HistoryTarget {
 export type RevisionList =
   | { status: 'loading' }
   | { status: 'failed'; message: string }
-  /** `complete` when the page reached the design's first revision, so each can be numbered. */
+  /** `complete` when the page reached the design's first revision. */
   | { status: 'listed'; revisions: RevisionSummary[]; complete: boolean };
 
-export type RestoreState =
-  | { status: 'idle' }
-  | { status: 'confirming'; revisionId: string }
-  | { status: 'restoring'; revisionId: string }
-  | { status: 'refused'; message: string };
-
-export interface HistoryState {
-  list: RevisionList;
-  restore: RestoreState;
-}
-
-/** A revision's place counted from the frame's first, once the whole history is read. */
+/** The version number of a listed revision. */
 export function revisionNumber(list: RevisionList, revisionId: string | null): number | null {
-  if (list.status !== 'listed' || !list.complete || revisionId === null) return null;
-  const index = list.revisions.findIndex((revision) => revision.revisionId === revisionId);
-  return index < 0 ? null : list.revisions.length - index;
+  if (list.status !== 'listed') return null;
+  return list.revisions.find((revision) => revision.revisionId === revisionId)?.version ?? null;
 }
-const LOADING: RevisionList = { status: 'loading' };
-const IDLE: RestoreState = { status: 'idle' };
 
-export const CHANGED_SINCE_READ = 'This frame changed since its history was read. Pick again.';
+const LOADING: RevisionList = { status: 'loading' };
+
+export const CHANGED_SINCE_READ = 'This frame changed since its versions were read. Pick again.';
 
 export class FrameHistory {
   private target: HistoryTarget | null = null;
   /** Bumped by every read, so only the newest one is applied. */
   private reads = 0;
-  private state: HistoryState = { list: LOADING, restore: IDLE };
+  private switching = false;
+  private list: RevisionList = LOADING;
   private readonly listeners = new Set<() => void>();
 
   constructor(private readonly client: HistoryClient) {}
@@ -63,17 +52,15 @@ export class FrameHistory {
     };
   };
 
-  readonly read = (): HistoryState => this.state;
+  readonly read = (): RevisionList => this.list;
 
-  /** Shows `target`'s history, read again whenever the frame or its head changes. */
+  /** Shows `target`'s versions, read again whenever the frame or its head changes. */
   show(target: HistoryTarget): void {
     const shown = this.target;
     if (shown?.designId === target.designId && shown.headRevisionId === target.headRevisionId)
       return;
     this.target = target;
-    // A restore keeps saying so while its own write moves this frame's head.
-    const keep = shown?.designId === target.designId && this.state.restore.status === 'restoring';
-    this.set({ list: LOADING, restore: keep ? this.state.restore : IDLE });
+    this.set(LOADING);
     void this.load();
   }
 
@@ -84,52 +71,37 @@ export class FrameHistory {
   }
 
   reload(): void {
-    this.set({ ...this.state, list: LOADING });
+    this.set(LOADING);
     void this.load();
   }
 
-  confirm(revisionId: string): void {
-    if (this.state.restore.status === 'restoring') return;
-    this.set({ ...this.state, restore: { status: 'confirming', revisionId } });
-  }
-
-  cancel(): void {
-    if (this.state.restore.status === 'restoring') return;
-    this.set({ ...this.state, restore: IDLE });
-  }
-
   /**
-   * Restores the confirmed revision over the head it was confirmed against.
-   * True once the sidecar wrote it; the new head then arrives with the canvas.
+   * Shows `revisionId` on the frame, against the head its versions were read
+   * for. Resolves with why the sidecar refused, or null once it moved or when
+   * there is nothing to say: the new head arrives with the canvas.
    */
-  async restore(): Promise<boolean> {
-    const { restore } = this.state;
+  async switchTo(revisionId: string): Promise<string | null> {
     const target = this.target;
-    if (restore.status !== 'confirming' || !target) return false;
-    const { revisionId } = restore;
-    this.set({ ...this.state, restore: { status: 'restoring', revisionId } });
-    const stillShown = () =>
-      this.target?.designId === target.designId &&
-      this.state.restore.status === 'restoring' &&
-      this.state.restore.revisionId === revisionId;
+    if (!target || this.switching || revisionId === target.headRevisionId) return null;
+    this.switching = true;
     try {
-      // CAS on the head means a retried restore can never land twice.
-      await this.client.restoreRevision({
+      // CAS on the head means a retried switch can never land on a newer edit.
+      await this.client.switchRevision({
         mutationId: crypto.randomUUID(),
         designId: target.designId,
         revisionId,
         expectedRevisionId: target.headRevisionId,
       });
+      return null;
     } catch (error) {
-      if (!stillShown()) return false;
-      const changed = error instanceof CanvasRequestError && error.code === 'revision_conflict';
-      const message = changed ? CHANGED_SINCE_READ : canvasMessage(error);
-      this.set({ ...this.state, restore: { status: 'refused', message } });
-      if (changed) this.reload();
-      return false;
+      if (this.target?.designId !== target.designId) return null;
+      if (!(error instanceof CanvasRequestError && error.code === 'revision_conflict'))
+        return canvasMessage(error);
+      this.reload();
+      return CHANGED_SINCE_READ;
+    } finally {
+      this.switching = false;
     }
-    if (stillShown()) this.set({ ...this.state, restore: IDLE });
-    return true;
   }
 
   private async load(): Promise<void> {
@@ -144,11 +116,28 @@ export class FrameHistory {
     } catch (error) {
       list = { status: 'failed', message: canvasMessage(error) };
     }
-    if (read === this.reads) this.set({ ...this.state, list });
+    if (read === this.reads) this.set(list);
   }
 
-  private set(next: HistoryState): void {
-    this.state = next;
+  private set(next: RevisionList): void {
+    this.list = next;
     for (const listener of this.listeners) listener();
   }
+}
+
+/** One frame's versions, read again whenever its head moves. */
+export function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
+  const history = useMemo(() => new FrameHistory(client), [client]);
+  const { designId, revisionId } = frame;
+  useEffect(() => {
+    if (revisionId) history.show({ designId, headRevisionId: revisionId });
+  }, [history, designId, revisionId]);
+  useEffect(
+    () => () => {
+      history.dispose();
+    },
+    [history],
+  );
+  const list = useSyncExternalStore(history.subscribe, history.read, history.read);
+  return { history, list };
 }

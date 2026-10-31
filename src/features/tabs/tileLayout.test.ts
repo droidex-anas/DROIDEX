@@ -36,7 +36,7 @@ test('panes follow their tiles, so moving, splitting or closing one leaves the o
 
 test('a drop splits at an edge, takes the place at the center, and moves a tile already shown', () => {
   const two = grid(['a'], ['b']);
-  const chat = (appSessionId: string): PlaceDrag => ({ kind: 'chat', appSessionId });
+  const chat = (appSessionId: string): PlaceDrag => ({ kind: 'chat', appSessionId, design: false });
 
   assert.equal(pointerZone(0.1, 0.5), 'left');
   assert.equal(pointerZone(0.5, 0.9), 'bottom');
@@ -57,4 +57,9 @@ test('a drop splits at an edge, takes the place at the center, and moves a tile 
     edge: 'center',
   });
   assert.equal(tileDrop(two, { kind: 'tile', tileId: 'a' }, 'a', 'bottom'), null);
+
+  // A design never tiles: wherever it lands, it opens in a tab of its own.
+  const design: PlaceDrag = { kind: 'chat', appSessionId: 'd', design: true };
+  assert.deepEqual(tileDrop(two, design, 'a', 'bottom'), { kind: 'tab', appSessionId: 'd' });
+  assert.deepEqual(tileDrop(two, design, 'a', 'center'), { kind: 'tab', appSessionId: 'd' });
 });

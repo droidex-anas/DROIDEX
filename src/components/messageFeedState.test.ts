@@ -90,6 +90,20 @@ test('projected entrance keys inspect only the rebuilt feed suffix', () => {
     ],
     ['new-2', 'new-1'],
   );
+  // An answer set above the turn's designs enters like any appended row.
+  assert.deepEqual(
+    [
+      ...appendedFeedItemKeysFromProjection(
+        items(['old-1', 'old-2', 'turn', 'answer', 'tail']),
+        previous,
+        identity,
+        'append',
+        2,
+        (item) => item.key === 'tail',
+      ),
+    ],
+    ['answer'],
+  );
   assert.deepEqual(
     [
       ...appendedFeedItemKeysFromProjection(

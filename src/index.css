@@ -280,6 +280,27 @@
     animation-timeline: scroll(self inline);
   }
 
+  /* The same fade down a column, such as the new-chat home's starting points,
+     which scroll under its composer. Each edge reaches its full depth within
+     the first or last stretch of scroll, so a long column never shows a
+     half-drawn fade. */
+  .scroll-fade-y {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--fade-start),
+      #000 calc(100% - var(--fade-end)),
+      transparent
+    );
+    animation:
+      scroll-fade-top linear both,
+      scroll-fade-bottom linear both;
+    animation-timeline: scroll(self block);
+    animation-range:
+      0 3rem,
+      calc(100% - 3rem) 100%;
+  }
+
   ::selection {
     background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
@@ -564,6 +585,40 @@
     animation: droid-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
+  /* A row that arrives with what it belongs to grows from nothing, so what
+     sits under it slides down instead of jumping. Its one child takes its
+     content's height, which the grid track reveals. The animation lets go when
+     it ends: a held opacity would make the row a stacking context and trap
+     an overlay inside it, such as the Components panel. */
+  @keyframes row-open {
+    from {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+    to {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+  }
+
+  .row-open {
+    display: grid;
+    flex-shrink: 0;
+    grid-template-rows: 1fr;
+    animation: row-open 300ms var(--ease-smooth-out) backwards;
+  }
+
+  .row-open > :first-child {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .row-open {
+      animation: none;
+    }
+  }
+
   /* The toast stack clears the status bar, or a pending Remote approval panel
      by the same gap it keeps from the window's right edge. */
   .toast-stack {
@@ -590,7 +645,9 @@
     }
   }
 
-  .feed-row-enter {
+  /* A code-split card's row stays empty until its chunk lands, so the row
+     rises when its content arrives rather than as an empty box. */
+  .feed-row-enter:not(:empty) {
     animation: feed-row-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   }
 
@@ -715,7 +772,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .feed-row-enter,
+    .feed-row-enter:not(:empty),
     .tool-rows-live > *,
     .chip-enter,
     .count-digit-enter,
@@ -950,10 +1007,12 @@
   /* A floating layer's content box (ui/Popover, ui/Tooltip). It portals to
      <body>, outside #root's zoom, so it applies the UI zoom itself, and its
      max height converts the room usePopoverPosition measured in screen
-     pixels into its own zoomed units. */
+     pixels into its own zoomed units. A layer can reach over the title bar,
+     so it punches a no-drag hole there to keep its controls pressable. */
   .floating-layer {
     zoom: var(--ui-zoom);
     max-height: calc(var(--available-height, 100vh) / var(--ui-zoom));
+    -webkit-app-region: no-drag;
   }
 
   /* Enter from the side the layer actually landed on (data-side): fade in
@@ -1273,7 +1332,7 @@
   }
 }
 
-/* Registered so the fade edges can animate as lengths (see .scroll-fade-x). */
+/* Registered so the fade edges can animate as lengths (see .scroll-fade-x and -y). */
 @property --fade-start {
   syntax: '<length>';
   inherits: false;
@@ -1293,6 +1352,24 @@
   }
   to {
     --fade-start: 28px;
+    --fade-end: 0px;
+  }
+}
+
+@keyframes scroll-fade-top {
+  from {
+    --fade-start: 0px;
+  }
+  to {
+    --fade-start: 3rem;
+  }
+}
+
+@keyframes scroll-fade-bottom {
+  from {
+    --fade-end: 3rem;
+  }
+  to {
     --fade-end: 0px;
   }
 }

@@ -5,7 +5,7 @@
 
 import { syntaxTree } from '@codemirror/language';
 import { markdown, markdownLanguage, insertNewlineContinueMarkup } from '@codemirror/lang-markdown';
-import { drawSelection, EditorView, keymap } from '@codemirror/view';
+import { drawSelection, EditorView, keymap, ViewPlugin } from '@codemirror/view';
 import { history, historyKeymap, insertNewline } from '@codemirror/commands';
 import { StateField } from '@codemirror/state';
 import {
@@ -147,6 +147,37 @@ function breakLine(view: EditorView): boolean {
   return insertNewlineContinueMarkup(view) || insertNewline(view);
 }
 
+// CodeMirror measures again when the field's height or its top and bottom
+// padding change, but not its sides. The composer moves the draft between its
+// + and send through that side padding (the first send closes the field up),
+// so without a redraw the caret stays where the draft used to start.
+const caretFollowsInsets = ViewPlugin.fromClass(
+  class {
+    private insets: string;
+    private readonly observer: ResizeObserver;
+
+    constructor(view: EditorView) {
+      this.insets = sideInsets(view.contentDOM);
+      this.observer = new ResizeObserver(() => {
+        const insets = sideInsets(view.contentDOM);
+        if (insets === this.insets) return;
+        this.insets = insets;
+        view.dispatch({ selection: view.state.selection });
+      });
+      this.observer.observe(view.contentDOM);
+    }
+
+    destroy() {
+      this.observer.disconnect();
+    }
+  },
+);
+
+function sideInsets(element: HTMLElement): string {
+  const style = getComputedStyle(element);
+  return `${style.paddingLeft} ${style.paddingRight}`;
+}
+
 // One editor package for the composer: GFM parsing, live decorations, link
 // clicks, undo, and the newline bindings. Plain Enter never reaches here — the
 // composer intercepts it to send — so Shift+Enter and Alt+Enter are the ways to
@@ -165,6 +196,7 @@ export function liveMarkdown() {
     // The browser's own caret is a hairline with no width control, so the
     // editor draws its own and the theme gives it the composer's weight.
     drawSelection(),
+    caretFollowsInsets,
     history(),
     keymap.of([
       ...historyKeymap,

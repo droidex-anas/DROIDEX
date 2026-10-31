@@ -7,7 +7,8 @@ import { useStoreSelector } from '../../hooks/useStore';
 import { PROVIDER_LABELS, providerModelCatalog } from '../../features/providers/providerIdentity';
 import { resetLabel } from '../../lib/usageLimit';
 import type { ModelInfo, TranscriptEvent } from '../../types/bridge';
-import { GitFork as ForkIcon } from '@droidex/icons';
+import type { DesignWorkingStatus } from '../chatFeedClean';
+import { GitFork as ForkIcon, Spinner } from '@droidex/icons';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 
@@ -227,6 +228,46 @@ export function WorkingIndicator({
         <span aria-live="polite">{label}</span>
         <span aria-hidden="true">{suffix}…</span>
       </span>
+    </div>
+  );
+}
+
+/* ── Design status line — what a design chat's agent is doing and the plan step
+   it is on, in quiet label-sized words beside a spinner so it never reads as a
+   reply ── */
+export function DesignStatusLine({
+  status,
+  startTs,
+}: {
+  status: DesignWorkingStatus;
+  startTs?: number;
+}) {
+  const elapsed = useElapsed(startTs, true);
+  const { step } = status;
+  return (
+    <div role="status" className="cue-enter flex h-5 min-w-0 items-center gap-1.5 text-label">
+      <Spinner
+        aria-hidden
+        className="mr-0.5 size-icon-sm shrink-0 text-muted motion-safe:animate-spin-slow"
+      />
+      <span className="shimmer-text shrink-0 font-medium">{status.label}</span>
+      {step && (
+        <>
+          <span aria-hidden className="shrink-0 text-muted">
+            ·
+          </span>
+          <span className="min-w-0 truncate text-muted">{step.text}</span>
+          <span className="shrink-0 tabular-nums text-muted">
+            <span className="sr-only">, step </span>
+            {step.number}/{step.total}
+          </span>
+        </>
+      )}
+      {startTs != null && elapsed >= 1000 && (
+        <span aria-hidden className="ml-auto shrink-0 pl-2 tabular-nums text-muted">
+          {formatDuration(elapsed)}
+        </span>
+      )}
     </div>
   );
 }

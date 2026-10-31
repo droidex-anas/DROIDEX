@@ -12,7 +12,6 @@ import type { DiffStyle } from '../hooks/persistedThemePreferences';
 import type {
   DiffViewMode,
   LiveEnterBehavior,
-  ModelSelectorStyle,
   SideChatDefaultPlacement,
 } from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from '@droidex/icons';
@@ -729,36 +728,12 @@ function SetupSection({ onClose }: { onClose: () => void }) {
 function ConfigurationSection() {
   const dispatch = useStoreDispatch();
   const defaultAutonomy = useStoreSelector((state) => state.defaultAutonomy);
-  const modelSelectorStyle = useStoreSelector((state) => state.modelSelectorStyle);
   const sideChatPlacement = useStoreSelector((state) => state.sideChatDefaultPlacement);
   return (
     <div className="max-w-2xl mx-auto">
       <SectionTitle title="Configuration" />
       <GroupLabel>Default models</GroupLabel>
       <HarnessModelSettings />
-      <GroupLabel>Composer</GroupLabel>
-      <div className="rounded-xl bg-surface shadow-lg mb-8">
-        <SettingRow
-          label="Model selector"
-          description="How the composer's model chip picks a model: a card that drills into an effort slider, or the classic list with per-row effort dots."
-        >
-          <Dropdown
-            ariaLabel="Model selector"
-            value={modelSelectorStyle}
-            width="w-44"
-            options={[
-              { value: 'slider', label: 'Effort slider' },
-              { value: 'classic', label: 'Classic list' },
-            ]}
-            onChange={(style) => {
-              dispatch({
-                type: 'SET_MODEL_SELECTOR_STYLE',
-                style: style as ModelSelectorStyle,
-              });
-            }}
-          />
-        </SettingRow>
-      </div>
       <GroupLabel>Transcript</GroupLabel>
       <ToolActivitySettings />
       <GroupLabel>Sessions</GroupLabel>

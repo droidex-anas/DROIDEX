@@ -7,7 +7,9 @@
 // place: opening it again focuses the tab or tile showing it.
 
 import type { AppState } from '../../hooks/useStore';
+import { isDesignChat } from '../../lib/chatMetadata';
 import { isEmbedded } from '../../lib/embed';
+import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
 import { resolveNewChatCwd } from '../../lib/workspaces';
 import {
   canSplit,
@@ -30,6 +32,8 @@ import {
 } from './tileGrid';
 
 type NewChatDraft = NonNullable<AppState['draftChat']>;
+
+export type ProductMode = 'chat' | 'design';
 
 export type TabPage =
   | { kind: 'chat'; appSessionId: string }
@@ -65,7 +69,7 @@ export interface TabStrip {
 
 export type TabAction =
   | { type: 'OPEN_TAB'; page: FocusedPage }
-  | { type: 'OPEN_NEW_CHAT_TAB' }
+  | { type: 'OPEN_NEW_TAB'; product: ProductMode }
   | { type: 'ACTIVATE_TAB'; tabId: string }
   | { type: 'CLOSE_TAB'; tabId: string }
   | { type: 'REOPEN_CLOSED_TAB' }
@@ -88,7 +92,8 @@ export type LivePageSource = Pick<
   AppState,
   'mainView' | 'activeAppSessionId' | 'draftChat' | 'tabStrip'
 >;
-export type TabStripSource = LivePageSource & Pick<AppState, 'sessions'>;
+export type ProductSource = LivePageSource & Pick<AppState, 'chatMetadata'>;
+export type TabStripSource = ProductSource & Pick<AppState, 'sessions'>;
 
 const MAX_CLOSED_TABS = 20;
 
@@ -141,7 +146,8 @@ function gridPage(grid: TileGrid): TabPage {
   return tiles.length === 1 ? tiles[0].page : { kind: 'tiles', grid };
 }
 
-function withGrid(tab: Tab, grid: TileGrid): Tab {
+/** A one-tile grid becomes a plain tab while keeping the surviving tile's identity. */
+export function withGrid(tab: Tab, grid: TileGrid): Tab {
   const tiles = gridTiles(grid);
   if (tiles.length > 1) return { ...tab, page: { kind: 'tiles', grid } };
   return { ...tab, page: tiles[0].page, tileId: tiles[0].id };
@@ -156,18 +162,44 @@ function withActiveGrid(strip: TabStrip, grid: TileGrid): TabStrip {
 
 // What the sidebar's New chat would open from here: the active chat's
 // workspace, or the current draft's.
-function newChatPage(state: TabStripSource): TilePage {
+/**
+ * What a new chat or design opens on from here: the active chat's workspace,
+ * or the current draft's. A design keeps the folder as context without cutting
+ * a worktree, and promises a new canvas.
+ */
+export function newDraft(state: TabStripSource, product: ProductMode): NewChatDraft {
   const activeSession = state.activeAppSessionId
     ? state.sessions[state.activeAppSessionId]
     : undefined;
   const cwd = resolveNewChatCwd(activeSession, state.draftChat);
-  return { kind: 'new-chat', draft: { cwd, executionMode: cwd ? 'worktree' : 'local' } };
+  if (product === 'design') return { cwd, executionMode: 'local', canvas: { canvasId: null } };
+  return { cwd, executionMode: cwd ? 'worktree' : 'local' };
 }
 
-// Mission Control owns the whole content area, so a mission never shares a tab.
-export function isMission(state: TabStripSource, appSessionId: string): boolean {
+function newPage(state: TabStripSource, product: ProductMode): TilePage {
+  return { kind: 'new-chat', draft: newDraft(state, product) };
+}
+
+/** Design is a draft that promises a canvas, or a chat a design send created. */
+export function pageProduct(page: FocusedPage, state: Pick<AppState, 'chatMetadata'>): ProductMode {
+  if (page.kind === 'new-chat') return page.draft?.canvas ? 'design' : 'chat';
+  if (page.kind === 'chat' && isDesignChat(state.chatMetadata[page.appSessionId])) return 'design';
+  return 'chat';
+}
+
+/** The product the Chat | Design switch shows: the live page's. */
+export function activeProduct(state: ProductSource): ProductMode {
+  return pageProduct(liveFocusedPage(state), state);
+}
+
+// Mission Control owns the whole content area, and a design shares it only
+// with its board, so neither ever shares a tab.
+export function fillsTab(state: TabStripSource, appSessionId: string): boolean {
   const sessions: Partial<AppState['sessions']> = state.sessions;
-  return sessions[appSessionId]?.sessionPurpose === 'mission-control';
+  return (
+    sessions[appSessionId]?.sessionPurpose === 'mission-control' ||
+    isDesignChat(state.chatMetadata[appSessionId])
+  );
 }
 
 export function tabPage(strip: TabStrip, tab: Tab, live: TabPage): TabPage {
@@ -179,12 +211,17 @@ export function showsTabStrip(state: Pick<AppState, 'tabStrip'>): boolean {
   return state.tabStrip.tabs.length > 1 && !isEmbedded();
 }
 
-// The collapsed sidebar moves the window controls into main's top row: the tab
-// strip when it shows, otherwise the view's own header.
-export function viewRowHoldsWindowControls(
+/** Where main's top row starts when the window controls sit in it, or null while the sidebar holds them. */
+export function mainRowLeadPx(state: Pick<AppState, 'sidebarCollapsed'>): number | null {
+  return state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : null;
+}
+
+// The window controls land in the tab strip when it shows, otherwise in the
+// view's own header.
+export function viewRowLeadPx(
   state: Pick<AppState, 'sidebarCollapsed' | 'tabStrip'>,
-): boolean {
-  return state.sidebarCollapsed && !showsTabStrip(state);
+): number | null {
+  return showsTabStrip(state) ? null : mainRowLeadPx(state);
 }
 
 /** The chats in the active tab's tiles beside the focused one, whose stored page is stale. */
@@ -378,7 +415,9 @@ function reorderTabs(strip: TabStrip, tabIds: string[]): TabStrip {
 function splittableGrid(state: TabStripSource, live: TabPage): TileGrid | null {
   if (live.kind === 'tiles') return live.grid;
   if (live.kind !== 'chat' && live.kind !== 'new-chat') return null;
-  if (live.kind === 'chat' && isMission(state, live.appSessionId)) return null;
+  if (live.kind === 'chat' && fillsTab(state, live.appSessionId)) return null;
+  // A design draft fills its tab like the design it becomes.
+  if (live.kind === 'new-chat' && live.draft?.canvas) return null;
   const tab = activeTab(state.tabStrip);
   return tab ? singleTileGrid({ id: tab.tileId, page: live }) : null;
 }
@@ -416,10 +455,10 @@ function splitTab(
     return next === grid ? strip : withActiveGrid(strip, next);
   }
   if (!canSplit(grid, targetTileId, edge)) return strip;
-  if (appSessionId !== null && isMission(state, appSessionId)) return strip;
+  if (appSessionId !== null && fillsTab(state, appSessionId)) return strip;
   const tile: Tile = {
     id: crypto.randomUUID(),
-    page: appSessionId === null ? newChatPage(state) : { kind: 'chat', appSessionId },
+    page: appSessionId === null ? newPage(state, 'chat') : { kind: 'chat', appSessionId },
   };
   const split = { ...splitTile(grid, targetTileId, edge, tile), focusedTileId: tile.id };
   const others = appSessionId === null ? strip : withoutOtherTabsShowing(strip, appSessionId);
@@ -442,12 +481,12 @@ export function reduceTabStrip(state: TabStripSource, action: TabAction): TabStr
   switch (action.type) {
     case 'OPEN_TAB':
       return openTab(strip, action.page, live);
-    case 'OPEN_NEW_CHAT_TAB':
-      return openTab(strip, newChatPage(state), live);
+    case 'OPEN_NEW_TAB':
+      return openTab(strip, newPage(state, action.product), live);
     case 'ACTIVATE_TAB':
       return activateTab(strip, action.tabId, live);
     case 'CLOSE_TAB':
-      return closeTab(strip, action.tabId, live, newChatPage(state));
+      return closeTab(strip, action.tabId, live, newPage(state, activeProduct(state)));
     case 'REOPEN_CLOSED_TAB':
       return reopenClosedTab(strip, live);
     case 'REORDER_TABS':

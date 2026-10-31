@@ -4,7 +4,9 @@
 
 import { useSyncExternalStore, type DragEvent } from 'react';
 
-export type PlaceDrag = { kind: 'chat'; appSessionId: string } | { kind: 'tile'; tileId: string };
+export type PlaceDrag =
+  // A design fills the content area beside its board, so it never tiles.
+  { kind: 'chat'; appSessionId: string; design: boolean } | { kind: 'tile'; tileId: string };
 
 const PLACE_DRAG_TYPE = 'application/x-droidex-place';
 

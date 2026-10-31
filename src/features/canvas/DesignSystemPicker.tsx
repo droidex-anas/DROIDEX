@@ -1,7 +1,7 @@
 // The design system a canvas's next requests are pinned to (spec §10), and the
 // picker that changes it: search, a light or dark preview, the presets, then
-// the user's kits. It sits above the Design home's composer and in a canvas
-// chat's composer toolbar; a choice shows as a chip that removes back to DROIDEX.
+// the user's kits. It sits in the composer's toolbar on a canvas chat and in
+// Design; a choice shows as a chip that removes back to DROIDEX.
 
 import {
   useCallback,
@@ -108,8 +108,12 @@ export function DesignSystemControl({
   }, [reads, isConnected]);
 
   return (
+    // Grows from nothing into the row's spare room, so the name truncates
+    // before the model's, and never narrower than its icon and clear button.
     <div
-      className={`flex min-w-0 shrink-0 items-center rounded-full text-caption ${value ? 'bg-elevated/60' : ''}`}
+      className={`flex h-control-sm max-w-fit grow basis-0 items-center rounded-md ${
+        value ? 'min-w-11 bg-active/60' : 'min-w-control-sm'
+      }`}
     >
       <button
         ref={triggerRef}
@@ -126,11 +130,11 @@ export function DesignSystemControl({
           if (!open) setReads((count) => count + 1);
           setOpen(!open);
         }}
-        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className="flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted transition-colors hover:bg-active/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
-        <Palette aria-hidden className="h-3.5 w-3.5 shrink-0" />
+        <Palette aria-hidden className="size-icon-sm shrink-0" />
         <span className="max-w-40 truncate">{shown.name}</span>
-        {isUnavailable && <span className="shrink-0 text-warning">· unavailable</span>}
+        {isUnavailable && <span className="truncate text-warning">· unavailable</span>}
       </button>
       {value && (
         <button

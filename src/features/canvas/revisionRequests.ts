@@ -1,10 +1,10 @@
 // A design's revision history (spec §9): the newest page of its commits, and
-// Restore, which writes an old revision's source as a new head.
+// switching the frame to show one of them, which adds no revision.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
 import type {
   CanvasCommand,
-  RestoreRevisionInput,
+  SwitchRevisionInput,
   RevisionPage,
   RevisionSummary,
   WriteReceipt,
@@ -26,13 +26,13 @@ export class RevisionRequests {
   }
 
   /** Fails with `revision_conflict` when the head moved off `input.expectedRevisionId`. */
-  async restore(
+  async switchTo(
     appSessionId: string,
     canvasId: string,
-    input: RestoreRevisionInput,
+    input: SwitchRevisionInput,
   ): Promise<WriteReceipt> {
     const event = await this.send({
-      type: 'canvas.restoreRevision',
+      type: 'canvas.switchRevision',
       requestId: requestId(),
       appSessionId,
       canvasId,

@@ -28,13 +28,16 @@ import {
 } from '../features/tabs/tabNavigation';
 import { activeTabDraft, loadTabStrip } from '../features/tabs/tabStorage';
 import {
+  activeProduct,
   chatsBesideFocus,
+  fillsTab,
   isChatInView,
-  isMission,
   livePage,
+  newDraft,
   reduceTabStrip,
   withoutChats,
   withoutOtherTabsShowing,
+  type ProductMode,
   type TabAction,
   type TabStrip,
 } from '../features/tabs/tabStrip';
@@ -56,7 +59,6 @@ import {
   loadHarnessModels,
   loadImagePasteQuality,
   loadLiveEnterBehavior,
-  loadModelSelectorStyle,
   loadNarrationMode,
   loadPersistedUiState,
   loadReviewScope,
@@ -72,8 +74,6 @@ import {
   type LiveEnterBehavior,
   type MainView,
   type MissionRole,
-  type ModelSelectorStyle,
-  type ProductMode,
   type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
@@ -146,6 +146,7 @@ import {
   isChatHidden,
   loadChatMetadata,
   linkChatsPullRequest,
+  markDesignChat,
   type ChatPullRequest,
   pinChat,
   renameChat,
@@ -335,11 +336,6 @@ export interface AppState {
   // so this is only what keeps a reopened Canvas pane from blinking through its
   // empty state; everything else about a canvas is feature-local.
   canvasAttachments: Record<string, string | null>;
-  // The canvas the design draft on screen will attach its chat to; `canvasId`
-  // null asks for a new one. This is unsent intent: leaving the draft or
-  // returning to Chat abandons it. The Design home declares it on every entry
-  // path, so a restored window or a new tab promises a canvas too (spec §4).
-  canvasDraft: CanvasDraft | null;
   // The pane requests a Design send has handed to a create request, keyed
   // by that request's `clientRef`. `appSessionId` is null until `session.created`
   // names the chat. Navigation and later drafts never touch one: only its own
@@ -366,13 +362,7 @@ export interface AppState {
   // previous request (a repeated click must re-arm the scope-fallback dedupe).
   reviewFocusRequestId: number;
   diffView: DiffViewMode;
-  // Which picker the composer's model chip opens: the classic list with
-  // per-row effort dots, or the card that drills into the effort slider.
-  modelSelectorStyle: ModelSelectorStyle;
   sidebarCollapsed: boolean;
-  // Which product the sidebar is in: ordinary Chat, or Design (the canvases
-  // list and the Design home). A sidebar preference, not a session mode.
-  productMode: ProductMode;
   mainView: MainView;
   // Header tabs. The active tab's page, or its focused tile, is the live one
   // above (mainView, activeAppSessionId, draftChat); see features/tabs/tabStrip.
@@ -397,6 +387,11 @@ export interface AppState {
     branch?: string;
     /** The draft starts a project: its first message goes to the project's lead. */
     project?: true;
+    /**
+     * A design draft: its chat attaches to this canvas, or to a new one when
+     * `canvasId` is null. It travels with the draft's tab (spec §4).
+     */
+    canvas?: CanvasDraft;
   } | null;
   // Persisted app-wide default autonomy for new sessions. Owned by Settings;
   // factory-default reloads and draft/session changes never overwrite it.
@@ -561,6 +556,8 @@ export type Action =
   | { type: 'RENAME_CHAT'; appSessionId: string; title: string }
   | { type: 'SET_CHAT_METADATA'; chatMetadata: ChatMetadataMap }
   | { type: 'PIN_CHAT'; appSessionId: string }
+  // A chat shown through Design opens as a design from then on.
+  | { type: 'MARK_DESIGN_CHAT'; appSessionId: string }
   | { type: 'UNPIN_CHAT'; appSessionId: string }
   | { type: 'ARCHIVE_CHAT'; appSessionId: string }
   | { type: 'RESTORE_CHAT'; appSessionId: string }
@@ -716,18 +713,15 @@ export type Action =
     }
   | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
   | { type: 'SET_CANVAS_ATTACHMENT'; appSessionId: string; canvasId: string | null }
-  // The Design home declaring what it will ask for, on whichever entry path the
-  // user reached it by. The switcher's own draft is the ordinary START_CHAT.
-  | { type: 'SET_CANVAS_DRAFT'; canvasId: string | null }
   // The design bootstrap finished with this chat, either way; it must not run again.
   | { type: 'CANVAS_CHAT_SETTLED'; appSessionId: string }
   | { type: 'SET_PRODUCT_MODE'; mode: ProductMode }
+  | { type: 'SET_DRAFT_PRODUCT'; mode: ProductMode }
   | { type: 'SET_REVIEW_OPEN'; open: boolean }
   | { type: 'SET_REVIEW_SCOPE'; scope: DiffScope }
   | OpenReviewAtAction
   | { type: 'CLEAR_REVIEW_FOCUS' }
   | { type: 'SET_DIFF_VIEW'; mode: DiffViewMode }
-  | { type: 'SET_MODEL_SELECTOR_STYLE'; style: ModelSelectorStyle }
   | { type: 'TOGGLE_COMMAND_PALETTE' }
   | { type: 'CLOSE_COMMAND_PALETTE' }
   | { type: 'TOGGLE_SIDEBAR' }
@@ -757,10 +751,8 @@ export type Action =
       executionMode: 'worktree' | 'local';
       branch?: string;
       project?: true;
-      // A design draft: the session this chat creates is attached to this
-      // canvas, or to a new one when `canvasId` is null. Absent for an
-      // ordinary New chat, which starts with no canvas at all (spec §4).
-      canvas?: { canvasId: string | null };
+      // Absent for an ordinary New chat, which starts with no canvas at all.
+      canvas?: CanvasDraft;
     }
   | {
       type: 'SEED_COMPOSER';
@@ -924,11 +916,9 @@ export const initialState: AppState = {
   rightPanelOpen: persistedUiState.rightPanelOpen ?? true,
   utilityPanels: persistedUiState.utilityPanels ?? {},
   canvasAttachments: {},
-  canvasDraft: null,
   canvasChatRequests: {},
   chatModeAppSessionId: null,
   sidebarCollapsed: persistedUiState.sidebarCollapsed ?? false,
-  productMode: persistedUiState.productMode ?? 'chat',
   mainView: persistedUiState.mainView ?? 'session',
   tabStrip: restoredTabStrip,
   automationEditorRequest: null,
@@ -979,7 +969,6 @@ export const initialState: AppState = {
   reviewFocusChange: null,
   reviewFocusRequestId: 0,
   diffView: loadDiffView(),
-  modelSelectorStyle: loadModelSelectorStyle(),
   skills: [],
   skillsProviderSessionId: undefined,
   harnessModels: loadHarnessModels(),
@@ -1306,8 +1295,12 @@ function reduceAction(state: AppState, action: Action): AppState {
           action.clientRef,
           action.session.appSessionId,
         ),
-        // The draft became a chat, so nothing is owed a canvas by it any more.
-        canvasDraft: shouldActivate ? null : state.canvasDraft,
+        // A design send's chat opens as a design from now on, in every window.
+        chatMetadata:
+          ownsCreate && action.clientRef in state.canvasChatRequests
+            ? (markDesignChat(state.chatMetadata, action.session.appSessionId) ??
+              state.chatMetadata)
+            : state.chatMetadata,
         // A foreground chat just created by this renderer is already seen. A
         // chat this client just learned of starts seen at its creation, so its
         // first reply reads as unread.
@@ -1484,8 +1477,6 @@ function reduceAction(state: AppState, action: Action): AppState {
                 : (state.heldComposeOrigins[action.originHoldId] ?? null),
           },
         },
-        // Only this send consumes its draft; navigation may have started another.
-        canvasDraft: state.canvasDraft === action.canvas ? null : state.canvasDraft,
         canvasChatRequests: action.canvas
           ? {
               ...state.canvasChatRequests,
@@ -1644,6 +1635,11 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'PIN_CHAT': {
       const chatMetadata = pinChat(state.chatMetadata, action.appSessionId, Date.now());
+      return chatMetadata ? { ...state, chatMetadata } : state;
+    }
+
+    case 'MARK_DESIGN_CHAT': {
+      const chatMetadata = markDesignChat(state.chatMetadata, action.appSessionId);
       return chatMetadata ? { ...state, chatMetadata } : state;
     }
 
@@ -2136,10 +2132,6 @@ function reduceAction(state: AppState, action: Action): AppState {
           mainView: 'session',
           automationEditorRequest: null,
           tabStrip,
-          // Leaving the draft abandons the canvas it was going to make. One a
-          // send already handed to a create is an obligation, not intent, so it
-          // stays until its own chat settles it.
-          canvasDraft: null,
         },
         now,
       );
@@ -2274,10 +2266,6 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SET_CANVAS_DRAFT':
-      if (state.canvasDraft?.canvasId === action.canvasId) return state;
-      return { ...state, canvasDraft: { canvasId: action.canvasId } };
-
     case 'CANVAS_CHAT_SETTLED': {
       const canvasChatRequests = withoutCanvasRequests(
         state.canvasChatRequests,
@@ -2287,34 +2275,32 @@ function reduceAction(state: AppState, action: Action): AppState {
       return { ...state, canvasChatRequests };
     }
 
+    // The switch turns the focused place into the other product. Design
+    // remembers the chat it replaced; Chat goes back to it, or to a new chat.
     case 'SET_PRODUCT_MODE': {
-      if (state.productMode === action.mode) return state;
+      if (activeProduct(state) === action.mode) return state;
       if (action.mode === 'design') {
-        const session = state.activeAppSessionId
-          ? state.sessions[state.activeAppSessionId]
-          : undefined;
-        const cwd = session?.cwd ?? state.draftChat?.cwd ?? '';
-        // Design keeps the selected project as context, without cutting a new
-        // worktree. Chat remembers the conversation it was left on.
         return reducer(
-          { ...state, productMode: 'design', chatModeAppSessionId: state.activeAppSessionId },
-          { type: 'START_CHAT', cwd, executionMode: 'local' },
+          { ...state, chatModeAppSessionId: state.activeAppSessionId },
+          { type: 'START_CHAT', ...newDraft(state, 'design') },
         );
       }
-      // Leaving Design abandons a canvas no send has taken yet, so the next
-      // ordinary message cannot mint one. Obligations already handed to a
-      // create still have to land.
-      const chat: AppState = {
-        ...state,
-        productMode: 'chat',
-        canvasDraft: null,
-        chatModeAppSessionId: null,
-      };
       const target = state.chatModeAppSessionId;
-      // Chat restores the chat it was left on (spec §4); with none, it opens on
-      // the draft it would have shown anyway.
-      if (target === null || !(target in state.sessions)) return chat;
-      return reducer(chat, { type: 'SET_ACTIVE_SESSION', id: target });
+      const chat: AppState = { ...state, chatModeAppSessionId: null };
+      if (target !== null && target in state.sessions) {
+        return reducer(chat, { type: 'SET_ACTIVE_SESSION', id: target });
+      }
+      return reducer(chat, { type: 'START_CHAT', ...newDraft(state, 'chat') });
+    }
+
+    // The new-chat home's switch changes what its draft starts, in place: the
+    // composer and what was typed stay put, and no earlier chat is returned to.
+    case 'SET_DRAFT_PRODUCT': {
+      if (state.activeAppSessionId !== null || activeProduct(state) === action.mode) return state;
+      return reducer(
+        { ...state, chatModeAppSessionId: null },
+        { type: 'START_CHAT', ...newDraft(state, action.mode) },
+      );
     }
 
     case 'SET_REVIEW_OPEN':
@@ -2398,9 +2384,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SET_DIFF_VIEW':
       return { ...state, diffView: action.mode };
-
-    case 'SET_MODEL_SELECTOR_STYLE':
-      return { ...state, modelSelectorStyle: action.style };
 
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };
@@ -2492,7 +2475,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
 
     case 'OPEN_TAB':
-    case 'OPEN_NEW_CHAT_TAB':
+    case 'OPEN_NEW_TAB':
     case 'ACTIVATE_TAB':
     case 'CLOSE_TAB':
     case 'REOPEN_CLOSED_TAB':
@@ -2517,9 +2500,9 @@ function reduceAction(state: AppState, action: Action): AppState {
     }
 
     // The chat leaves any other tab first, so showing it lands here instead
-    // of switching to that tab. A mission keeps a tab of its own.
+    // of switching to that tab. A mission or a design keeps a tab of its own.
     case 'DROP_CHAT': {
-      const tabStrip = isMission(state, action.appSessionId)
+      const tabStrip = fillsTab(state, action.appSessionId)
         ? state.tabStrip
         : withoutOtherTabsShowing(state.tabStrip, action.appSessionId);
       const moved: AppState = { ...state, tabStrip };
@@ -2554,6 +2537,7 @@ function reduceAction(state: AppState, action: Action): AppState {
           executionMode: action.executionMode,
           branch: action.branch,
           ...(action.project ? { project: action.project } : {}),
+          ...(action.canvas ? { canvas: action.canvas } : {}),
         },
         draftAutonomy: null,
         draftFastMode: false,
@@ -2568,7 +2552,6 @@ function reduceAction(state: AppState, action: Action): AppState {
         mainView: 'session',
         automationEditorRequest: null,
         tabStrip: showNewChat(state),
-        canvasDraft: action.canvas ? { canvasId: action.canvas.canvasId } : null,
       };
     }
 

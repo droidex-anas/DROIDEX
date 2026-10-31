@@ -14,7 +14,6 @@ import type {
   CanvasSnapshot,
   CanvasSummary,
   EditElementInput,
-  RestoreRevisionInput,
   StyleResolution,
 } from './protocol.js';
 import {
@@ -111,6 +110,19 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       resolution: styleResolutionSchema.nullable(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('switch'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      designId: canvasIdentifierSchema,
+      revisionId: canvasIdentifierSchema,
+      sequence: versionSchema,
+    })
+    .strict(),
+  // A receipt from the Restore that wrote a new revision, which no command
+  // records now. Saved canvases still hold them until the ledger retires them.
   z
     .object({
       kind: z.literal('restore'),
@@ -247,9 +259,11 @@ export type Placement = z.infer<typeof placementSchema>;
 export type PersistedMutation = z.infer<typeof persistedMutationSchema>;
 export type CanvasManifest = z.infer<typeof canvasManifestSchema>;
 
-export type SourceRevisionMutation =
-  | { kind: 'edit'; input: EditElementInput; resolution: StyleResolution | null }
-  | { kind: 'restore'; input: RestoreRevisionInput };
+export interface SourceRevisionMutation {
+  kind: 'edit';
+  input: EditElementInput;
+  resolution: StyleResolution | null;
+}
 
 export function emptyCanvasManifest(canvasId: string, name: string, now: number): CanvasManifest {
   return {

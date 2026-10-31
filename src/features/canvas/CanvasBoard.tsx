@@ -302,156 +302,164 @@ export function CanvasBoard({
   };
 
   return (
-    <div
-      ref={board}
-      data-testid="canvas-board"
-      data-board-mode={interaction.mode}
-      tabIndex={0}
-      aria-label="Design board"
-      className="relative h-full min-h-0 w-full overflow-hidden bg-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring"
-      style={{ cursor: gestures.cursor, touchAction: 'none' }}
-      onPointerDown={gestures.onBackgroundPointerDown}
-      onPointerUp={(event) => {
-        gestures.endGesture(event, true);
-      }}
-      onPointerCancel={(event) => {
-        gestures.endGesture(event, false);
-      }}
-      onLostPointerCapture={(event) => {
-        gestures.endGesture(event, false);
-      }}
-      onKeyDown={(event) => {
-        onBoardKeyDown(event, {
-          interaction,
-          order,
-          dispatch,
-          cancel: () => gestures.cancel() || annotation.escape() || editor.clear(),
-          annotationKey: annotation.runKey,
-          editKey: editor.runKey,
-          zoom: onZoom,
-          setMode: onMode,
-          holdSpace: () => {
-            gestures.holdSpace(true);
-          },
-          pan: (delta) => {
-            view.markNavigated();
-            view.stopAnimating();
-            view.panByScreen(delta);
-          },
-          nudge: (step) => {
-            placeSelection((rects) =>
-              rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
-            );
-          },
-          removeSelection,
-          undoRemoval: onUndoRemoval,
-          focusBoard: () => board.current?.focus({ preventScroll: true }),
-          focusLabel,
-        });
-      }}
-      onKeyUp={(event) => {
-        if (event.key === ' ') gestures.holdSpace(false);
-      }}
-      onBlur={gestures.onBlur}
-    >
+    // The element panel is a column beside the board, not a layer over it, so
+    // it takes its own wheel and the board only gives up width.
+    <div className="flex h-full min-h-0 w-full bg-bg">
       <div
-        className="absolute left-0 top-0"
-        style={
-          {
-            transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
-            transformOrigin: '0 0',
-            // The board stylesheet divides frame chrome by this, so it keeps its size.
-            '--board-scale': String(scale),
-          } as React.CSSProperties
-        }
+        ref={board}
+        data-testid="canvas-board"
+        data-board-mode={interaction.mode}
+        tabIndex={0}
+        aria-label="Design board"
+        className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring"
+        style={{ cursor: gestures.cursor, touchAction: 'none' }}
+        onPointerDown={gestures.onBackgroundPointerDown}
+        onPointerUp={(event) => {
+          gestures.endGesture(event, true);
+        }}
+        onPointerCancel={(event) => {
+          gestures.endGesture(event, false);
+        }}
+        onLostPointerCapture={(event) => {
+          gestures.endGesture(event, false);
+        }}
+        onKeyDown={(event) => {
+          onBoardKeyDown(event, {
+            interaction,
+            order,
+            dispatch,
+            cancel: () => gestures.cancel() || annotation.escape() || editor.clear(),
+            annotationKey: annotation.runKey,
+            editKey: editor.runKey,
+            zoom: onZoom,
+            setMode: onMode,
+            holdSpace: () => {
+              gestures.holdSpace(true);
+            },
+            pan: (delta) => {
+              view.markNavigated();
+              view.stopAnimating();
+              view.panByScreen(delta);
+            },
+            nudge: (step) => {
+              placeSelection((rects) =>
+                rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
+              );
+            },
+            removeSelection,
+            undoRemoval: onUndoRemoval,
+            focusBoard: () => board.current?.focus({ preventScroll: true }),
+            focusLabel,
+          });
+        }}
+        onKeyUp={(event) => {
+          if (event.key === ' ') gestures.holdSpace(false);
+        }}
+        onBlur={gestures.onBlur}
       >
-        {frames.map((frame, index) => (
-          <DesignFrame
-            key={frame.designId}
-            canvasId={snapshot.canvasId}
-            frame={frame}
-            rect={drawn[index].rect}
-            scale={scale}
-            roomRight={view.size.x - (view.viewport.x + drawn[index].rect.x * scale)}
-            motion={motion}
-            arriving={!openedWith.has(frame.designId)}
-            visible={visible.includes(frame.designId)}
-            mode={interaction.mode}
-            selected={interaction.selectedFrameIds.includes(frame.designId)}
-            showTools={showsFrameTools(interaction, frame.designId)}
-            interacted={interaction.interactedFrameId === frame.designId}
-            held={gestures.heldDesignId === frame.designId}
-            agentWorking={agentWorking}
-            capturePointer={overlayCapture}
-            shownRevisionId={previews.shown.get(frame.designId) ?? null}
-            preview={previews.preview(frame)}
-            released={previews.released.includes(frame.designId)}
-            onExitInteract={() => {
-              dispatch({ type: 'escape' });
-              board.current?.focus({ preventScroll: true });
-            }}
-            onOpenSource={onOpenSource}
-            inChat={pinnedIds?.has(frame.designId) ?? false}
-            onToggleChat={onToggleChat}
-            actions={frameActions}
-            onDelete={removeSelection}
-            onHold={gestures.onFramePointerDown}
-            onPick={(picked, additive) => {
-              dispatch({ type: 'pick', designId: picked.designId, additive });
-            }}
-            onInteract={(picked) => {
-              dispatch({ type: 'interact', designId: picked.designId });
-            }}
-            onPickElement={(picked, at) => {
-              editor.pick(picked.designId, at);
-            }}
-            onEditEnter={(picked) => {
-              editor.enter(picked.designId);
-            }}
-            elementBox={
-              editor.selection?.draft.element.designId === frame.designId
-                ? editor.selection.shown.rect
-                : null
-            }
-            tabStop={frame.designId === tabStopId}
-            onFocusLabel={onFocusLabel}
-          />
-        ))}
-        <AnnotationLayer
-          {...annotation.layer}
-          frames={frames}
-          scale={scale}
-          interactive={
-            interaction.mode === 'select' && annotation.tool === null && !gestures.spaceHeld
+        <div
+          className="absolute left-0 top-0"
+          style={
+            {
+              transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
+              transformOrigin: '0 0',
+              // The board stylesheet divides frame chrome by this, so it keeps its size.
+              '--board-scale': String(scale),
+            } as React.CSSProperties
           }
+        >
+          {frames.map((frame, index) => (
+            <DesignFrame
+              key={frame.designId}
+              canvasId={snapshot.canvasId}
+              frame={frame}
+              rect={drawn[index].rect}
+              scale={scale}
+              roomRight={view.size.x - (view.viewport.x + drawn[index].rect.x * scale)}
+              motion={motion}
+              arriving={!openedWith.has(frame.designId)}
+              visible={visible.includes(frame.designId)}
+              mode={interaction.mode}
+              selected={interaction.selectedFrameIds.includes(frame.designId)}
+              showTools={showsFrameTools(interaction, frame.designId)}
+              interacted={interaction.interactedFrameId === frame.designId}
+              held={gestures.heldDesignId === frame.designId}
+              agentWorking={agentWorking}
+              capturePointer={overlayCapture}
+              shownRevisionId={previews.shown.get(frame.designId) ?? null}
+              preview={previews.preview(frame)}
+              released={previews.released.includes(frame.designId)}
+              onExitInteract={() => {
+                dispatch({ type: 'escape' });
+                board.current?.focus({ preventScroll: true });
+              }}
+              onOpenSource={onOpenSource}
+              inChat={pinnedIds?.has(frame.designId) ?? false}
+              onToggleChat={onToggleChat}
+              actions={frameActions}
+              onDelete={removeSelection}
+              onHold={gestures.onFramePointerDown}
+              onPick={(picked, additive) => {
+                dispatch({ type: 'pick', designId: picked.designId, additive });
+              }}
+              onInteract={(picked) => {
+                dispatch({ type: 'interact', designId: picked.designId });
+              }}
+              onPickElement={(picked, at) => {
+                editor.pick(picked.designId, at);
+              }}
+              onEditEnter={(picked) => {
+                editor.enter(picked.designId);
+              }}
+              elementBox={
+                editor.selection?.draft.element.designId === frame.designId
+                  ? editor.selection.shown.rect
+                  : null
+              }
+              tabStop={frame.designId === tabStopId}
+              onFocusLabel={onFocusLabel}
+            />
+          ))}
+          <AnnotationLayer
+            {...annotation.layer}
+            frames={frames}
+            scale={scale}
+            interactive={
+              interaction.mode === 'select' && annotation.tool === null && !gestures.spaceHeld
+            }
+          />
+        </div>
+
+        {annotation.tool && (
+          <DrawSurface
+            passThrough={gestures.spaceHeld}
+            onPointerDown={annotation.onSurfacePointerDown}
+          />
+        )}
+        {gestures.band && <RubberBand band={gestures.band} />}
+
+        <BoardControls
+          scale={scale}
+          motion={motion}
+          mode={interaction.mode}
+          selectedCount={interaction.selectedFrameIds.length}
+          hasFrames={frames.length > 0}
+          error={gestures.layoutError || annotation.error || editor.error}
+          onMode={onMode}
+          onZoom={onZoom}
+          onAlign={(edge: AlignEdge) => {
+            placeSelection((rects) => alignRects(rects, edge));
+          }}
+          onDistribute={(axis: DistributeAxis) => {
+            placeSelection((rects) => distributeRects(rects, axis));
+          }}
+          annotationTools={<AnnotationTools {...annotation.rail} />}
         />
+
+        <p role="status" className="sr-only">
+          {announcement}
+        </p>
       </div>
-
-      {annotation.tool && (
-        <DrawSurface
-          passThrough={gestures.spaceHeld}
-          onPointerDown={annotation.onSurfacePointerDown}
-        />
-      )}
-      {gestures.band && <RubberBand band={gestures.band} />}
-
-      <BoardControls
-        scale={scale}
-        motion={motion}
-        mode={interaction.mode}
-        selectedCount={interaction.selectedFrameIds.length}
-        hasFrames={frames.length > 0}
-        error={gestures.layoutError || annotation.error || editor.error}
-        onMode={onMode}
-        onZoom={onZoom}
-        onAlign={(edge: AlignEdge) => {
-          placeSelection((rects) => alignRects(rects, edge));
-        }}
-        onDistribute={(axis: DistributeAxis) => {
-          placeSelection((rects) => distributeRects(rects, axis));
-        }}
-        annotationTools={<AnnotationTools {...annotation.rail} />}
-      />
       {editor.selection && (
         <ElementPanel
           ref={editor.panel}
@@ -462,10 +470,6 @@ export function CanvasBoard({
           onLeave={() => board.current?.focus({ preventScroll: true })}
         />
       )}
-
-      <p role="status" className="sr-only">
-        {announcement}
-      </p>
     </div>
   );
 }

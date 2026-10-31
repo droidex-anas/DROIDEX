@@ -62,38 +62,25 @@ export function errorOf(
 }
 
 // `mcpServer/startupStatus/updated`: Codex reports every configured MCP server
-// starting and then settling. Only a failure is worth telling the chat about,
-// and only the message Codex sent with it explains why.
-export interface McpServerFailure {
+// starting and then settling.
+const MCP_STARTUP_STATES = ['starting', 'ready', 'failed', 'cancelled'] as const;
+
+export interface McpServerStatus {
   name: string;
-  detail?: string;
+  status: (typeof MCP_STARTUP_STATES)[number];
 }
 
-export function mcpServerFailure(params: unknown): McpServerFailure | undefined {
-  if (!isObject(params) || params.status !== 'failed') return undefined;
-  // The whole name: it is the key that keeps a server to one row.
+export function mcpServerStatus(params: unknown): McpServerStatus | undefined {
+  if (!isObject(params)) return undefined;
+  // The whole name: it is the key that reports a server once.
   const name = typeof params.name === 'string' ? params.name.trim() : '';
-  if (!name) return undefined;
-  const detail = text(params.error);
-  return { name, ...(detail ? { detail } : {}) };
+  const status = MCP_STARTUP_STATES.find((state) => state === params.status);
+  return name && status ? { name, status } : undefined;
 }
 
-// A failing server can answer with a whole document; one bounded line is all a
-// status row can show.
-const DETAIL_LIMIT = 200;
-
-function text(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const line = value.split('\n', 1)[0].trim();
-  if (!line) return undefined;
-  return line.length > DETAIL_LIMIT ? `${line.slice(0, DETAIL_LIMIT)}…` : line;
-}
-
-// Codex's own message usually names the server and what went wrong, so putting
-// the name in front of it again would say the same thing twice.
-function mcpFailureText({ name, detail }: McpServerFailure): string {
-  if (!detail) return `MCP server "${name}" failed to start.`;
-  return detail.includes(name) ? detail : `MCP server "${name}" failed to start: ${detail}`;
+function mcpFailureText(names: readonly string[]): string {
+  const servers = names.length === 1 ? 'An MCP server' : 'Some MCP servers';
+  return `${servers} didn’t start: ${names.join(', ')}.`;
 }
 
 // Only the account's usage limit fails a turn on quota. `rateLimitExceeded` is
@@ -176,8 +163,11 @@ export class CodexEventMapper {
   // Message items that have already reached the transcript through their deltas.
   private readonly streamed = new Set<string>();
   private readonly children = new Map<string, ChildSessionSignal>();
-  // Servers already reported: one row each, however often Codex retries them.
-  private readonly failedMcpServers = new Set<string>();
+  private readonly startingMcpServers = new Set<string>();
+  // Failed servers waiting for the rest to settle, and those already reported,
+  // once each however often Codex retries them.
+  private readonly unreportedMcpFailures: string[] = [];
+  private readonly reportedMcpFailures = new Set<string>();
 
   constructor(
     private readonly appSessionId: string,
@@ -276,13 +266,22 @@ export class CodexEventMapper {
     return this.tools.get(itemId)?.changes ?? [];
   }
 
-  // A server the user did not ask for in this turn failing is not the turn's
-  // error: it is a standing fact about the session, so it lands as one stored
-  // status row rather than a red row.
-  mcpFailureEvents(failure: McpServerFailure): NormalizedEvent[] {
-    if (this.failedMcpServers.has(failure.name)) return [];
-    this.failedMcpServers.add(failure.name);
-    return [{ transcript: this.transcript('status', { text: mcpFailureText(failure) }) }];
+  // A server failing is not the turn's error but a standing fact about the
+  // session, so it is a quiet status row rather than a red one. Codex starts
+  // every configured server at once; their failures wait for the rest to
+  // settle and land as one row naming them all.
+  mcpStatusEvents({ name, status }: McpServerStatus): NormalizedEvent[] {
+    if (status === 'starting') {
+      this.startingMcpServers.add(name);
+      return [];
+    }
+    this.startingMcpServers.delete(name);
+    if (status === 'failed' && !this.reportedMcpFailures.has(name)) {
+      this.reportedMcpFailures.add(name);
+      this.unreportedMcpFailures.push(name);
+    }
+    if (this.startingMcpServers.size > 0 || this.unreportedMcpFailures.length === 0) return [];
+    return [this.statusEvent(mcpFailureText(this.unreportedMcpFailures.splice(0)))];
   }
 
   statusEvent(text: string): NormalizedEvent {

@@ -29,7 +29,8 @@ const NO_PINS: readonly FramePin[] = [];
  */
 export function composerCanvasKey(state: AppState, appSessionId: string | null): string | null {
   if (appSessionId) return state.canvasAttachments[appSessionId] ?? null;
-  return state.canvasDraft ? (state.canvasDraft.canvasId ?? NEW_CANVAS_KEY) : null;
+  const canvas = state.draftChat?.canvas;
+  return canvas ? (canvas.canvasId ?? NEW_CANVAS_KEY) : null;
 }
 
 export function useComposerReferences(appSessionId: string | null, toChild: boolean) {

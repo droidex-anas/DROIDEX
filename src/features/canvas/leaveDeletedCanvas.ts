@@ -40,9 +40,7 @@ export function useLeaveDeletedCanvas(): (
       closeCanvasTab(appSessionId);
       const state = store.getState();
       if (state.activeAppSessionId !== appSessionId) return;
-      if (state.productMode === 'design')
-        dispatch({ type: 'START_CHAT', cwd: '', executionMode: 'local' });
-      else dispatch({ type: 'SET_PRODUCT_MODE', mode: 'design' });
+      dispatch({ type: 'START_CHAT', cwd: '', executionMode: 'local', canvas: { canvasId: null } });
     },
     [closeCanvasTab, dispatch, store],
   );

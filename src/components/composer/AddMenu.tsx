@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import type { Placement } from '@floating-ui/react';
 import { FolderOpen, Plus } from '@droidex/icons';
 import { VisualizeIcon } from '../icons/VisualizeIcon';
 import { Menu } from '../ui/Menu';
@@ -19,10 +20,12 @@ export default function AddMenu({
   visualizeSelected,
   onAttachFiles,
   onToggleVisualize,
+  placement,
 }: {
   visualizeSelected: boolean;
   onAttachFiles: () => void;
   onToggleVisualize: () => void;
+  placement: Placement;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -35,7 +38,7 @@ export default function AddMenu({
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className={`flex size-control-md shrink-0 items-center justify-center rounded-full transition-colors ${
+        className={`flex size-control-sm shrink-0 items-center justify-center rounded-md transition-colors ${
           open ? 'bg-active text-primary' : 'text-muted hover:bg-active/60 hover:text-primary'
         }`}
         title="Add files or a plugin"
@@ -52,7 +55,7 @@ export default function AddMenu({
         }}
         anchorRef={triggerRef}
         label="Add to this prompt"
-        placement="top-start"
+        placement={placement}
         width={320}
       >
         <Menu.Label>Add</Menu.Label>

@@ -7,7 +7,8 @@
 //   stored override stays the source of truth across every harness;
 // - pin moves a chat into the Pinned section at the top of the sidebar;
 // - archive hides it from the sidebar (restorable from Settings > Archived);
-// - delete tombstones it so it never appears in the app again.
+// - delete tombstones it so it never appears in the app again;
+// - design marks a chat a design send created, so it opens as a design.
 //
 // Everything persists in localStorage and survives restarts. Payloads loaded
 // from storage are sanitized: a corrupt or bloated entry degrades to an empty
@@ -30,12 +31,13 @@ export interface ChatMetadata {
   archivedAt?: number;
   deletedAt?: number;
   pullRequests?: ChatPullRequest[];
+  design?: true;
 }
 
 export type ChatMetadataMap = Record<string, ChatMetadata>;
 
 export const CHAT_METADATA_STORAGE_KEY = 'droid-chat-metadata';
-// Bound expendable preferences; tombstones must outlive retained history rows.
+// Bound expendable preferences; tombstones and Design identity outlive this budget.
 const MAX_TRACKED_CHATS = 1000;
 export const MAX_CHAT_TITLE_LENGTH = 200;
 export const MAX_CHAT_PULL_REQUESTS = 10;
@@ -63,6 +65,7 @@ function sanitizeMetadata(value: unknown): ChatMetadata | null {
   if (pinnedAt !== undefined) out.pinnedAt = pinnedAt;
   if (archivedAt !== undefined) out.archivedAt = archivedAt;
   if (deletedAt !== undefined) out.deletedAt = deletedAt;
+  if (raw.design === true) out.design = true;
   if (Array.isArray(raw.pullRequests)) {
     const pullRequests: ChatPullRequest[] = [];
     for (const value of raw.pullRequests) {
@@ -75,16 +78,15 @@ function sanitizeMetadata(value: unknown): ChatMetadata | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-// Automatic PR links are expendable before names/pins. Both loading and writes
-// preserve tombstones because the sidecar cannot see renderer-only deletion.
+// Automatic PR links are expendable before names/pins; durable identity is never evicted.
 function metadataRetentionPriority(meta: ChatMetadata): number {
-  if (isChatHidden(meta)) return 2;
+  if (isChatHidden(meta) || meta.design) return 2;
   return meta.displayTitle !== undefined || meta.pinnedAt !== undefined ? 1 : 0;
 }
 
 function capMetadataEntries(entries: [string, ChatMetadata][]): [string, ChatMetadata][] {
-  const byEvictionOrder = entries.filter(([, meta]) => !isChatHidden(meta));
-  // Hidden entries cannot be evicted, so they must not consume the preference budget.
+  // Hidden-chat tombstones and Design identity are durable, not expendable preferences.
+  const byEvictionOrder = entries.filter(([, meta]) => !isChatHidden(meta) && !meta.design);
   if (byEvictionOrder.length <= MAX_TRACKED_CHATS) return entries;
   byEvictionOrder.sort((a, b) => metadataRetentionPriority(a[1]) - metadataRetentionPriority(b[1]));
   const dropped = new Set(
@@ -105,7 +107,7 @@ export function loadChatMetadata(): ChatMetadataMap {
       if (meta) entries.push([appSessionId, meta]);
     }
     // Storage order is recency (writes reinsert the touched id last); the cap
-    // drops the oldest preferences while preserving every tombstone.
+    // drops the oldest preferences while preserving tombstones and Design identity.
     return Object.fromEntries(capMetadataEntries(entries));
   } catch {
     return {};
@@ -123,6 +125,10 @@ export function saveChatMetadata(map: ChatMetadataMap): void {
 // Hidden chats stay out of the normal sidebar, search, and the unread badge.
 export function isChatHidden(meta: ChatMetadata | undefined): boolean {
   return meta?.archivedAt !== undefined || meta?.deletedAt !== undefined;
+}
+
+export function isDesignChat(meta: ChatMetadata | undefined): boolean {
+  return meta?.design === true;
 }
 
 export function isChatPinned(meta: ChatMetadata | undefined): boolean {
@@ -193,6 +199,7 @@ function withMetadata(
     meta.pinnedAt !== undefined ||
     meta.archivedAt !== undefined ||
     meta.deletedAt !== undefined ||
+    meta.design !== undefined ||
     (meta.pullRequests?.length ?? 0) > 0;
   const next = hasContent ? { ...rest, [appSessionId]: meta } : rest;
   // Apply the load-time preference cap while keeping tombstones. Reinserting
@@ -221,6 +228,13 @@ export function renameChat(
   return withMetadata(map, appSessionId, { ...meta, displayTitle: trimmed });
 }
 
+export function markDesignChat(map: ChatMetadataMap, appSessionId: string): ChatMetadataMap | null {
+  const byId: Partial<ChatMetadataMap> = map;
+  const meta = byId[appSessionId];
+  if (meta?.design) return null;
+  return withMetadata(map, appSessionId, { ...meta, design: true });
+}
+
 export function pinChat(
   map: ChatMetadataMap,
   appSessionId: string,
@@ -242,6 +256,7 @@ export function unpinChat(map: ChatMetadataMap, appSessionId: string): ChatMetad
   if (meta.displayTitle !== undefined) next.displayTitle = meta.displayTitle;
   if (meta.archivedAt !== undefined) next.archivedAt = meta.archivedAt;
   if (meta.deletedAt !== undefined) next.deletedAt = meta.deletedAt;
+  if (meta.design) next.design = true;
   return withMetadata(map, appSessionId, next);
 }
 
@@ -259,6 +274,7 @@ export function archiveChat(
   if (meta?.pullRequests) next.pullRequests = meta.pullRequests;
   if (meta?.displayTitle !== undefined) next.displayTitle = meta.displayTitle;
   if (meta?.deletedAt !== undefined) next.deletedAt = meta.deletedAt;
+  if (meta?.design) next.design = true;
   return withMetadata(map, appSessionId, next);
 }
 
@@ -271,6 +287,7 @@ export function restoreChat(map: ChatMetadataMap, appSessionId: string): ChatMet
   if (meta.pullRequests) next.pullRequests = meta.pullRequests;
   if (meta.displayTitle !== undefined) next.displayTitle = meta.displayTitle;
   if (meta.deletedAt !== undefined) next.deletedAt = meta.deletedAt;
+  if (meta.design) next.design = true;
   return withMetadata(map, appSessionId, next);
 }
 
@@ -286,6 +303,7 @@ export function deleteChat(
   if (meta?.pullRequests) next.pullRequests = meta.pullRequests;
   if (meta?.displayTitle !== undefined) next.displayTitle = meta.displayTitle;
   if (meta?.archivedAt !== undefined) next.archivedAt = meta.archivedAt;
+  if (meta?.design) next.design = true;
   return withMetadata(map, appSessionId, next);
 }
 
@@ -358,20 +376,20 @@ export function linkChatsPullRequest(
       },
     ];
   });
-  let visibleCount = entries.filter(([, meta]) => !isChatHidden(meta)).length;
+  let preferenceCount = entries.filter(([, meta]) => !isChatHidden(meta) && !meta.design).length;
   for (const id of targets) {
     if (Object.hasOwn(map, id)) continue;
-    if (visibleCount >= MAX_TRACKED_CHATS) {
+    if (preferenceCount >= MAX_TRACKED_CHATS) {
       // Opening a chat gives its links priority over passive discovery. Never
-      // evict names, pins, or tombstones, and never churn the cache on polling.
+      // evict names, pins, Design identity, or tombstones, or churn the cache on polling.
       if (id !== activeAppSessionId) continue;
       const expendable = entries.findIndex(([, meta]) => metadataRetentionPriority(meta) === 0);
       if (expendable < 0) continue;
       entries.splice(expendable, 1);
-      visibleCount -= 1;
+      preferenceCount -= 1;
     }
     entries.push([id, { pullRequests: [pr] }]);
-    visibleCount += 1;
+    preferenceCount += 1;
     changed = true;
   }
   return changed ? Object.fromEntries(entries) : null;

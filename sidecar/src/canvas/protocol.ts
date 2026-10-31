@@ -15,7 +15,7 @@ import type {
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
-  RestoreRevisionInput,
+  SwitchRevisionInput,
   RevisionPage,
   RevisionRef,
   SourceFiles,
@@ -48,7 +48,7 @@ export type {
   FrameRect,
   RemoveFramesInput,
   RenameFrameInput,
-  RestoreRevisionInput,
+  SwitchRevisionInput,
   RevisionPage,
   RevisionRef,
   SourceFiles,
@@ -228,16 +228,18 @@ export type RevisionAuthor = { kind: 'user' } | { kind: 'agent'; scopeRef: strin
 /** What the manifest's commit index holds for every committed revision. */
 interface RevisionCommit {
   revisionId: string;
+  /** 1 for the design's first revision; it never changes. */
+  version: number;
   /** Canvas commit sequence, also used as the exclusive pagination cursor. */
   sequence: number;
   author: RevisionAuthor;
+  /** `restore` only on revisions an earlier DROIDEX's Restore wrote. */
   mutationKind: 'create' | 'write' | 'edit' | 'restore';
 }
 
 export type RevisionSummary =
   | (RevisionCommit & {
       state: 'saved';
-      restoredFromRevisionId?: string;
       createdAt: number;
       designSystem: DesignSystemRef;
       /** Only the head is `building`; an older revision without a build is never built. */
@@ -400,11 +402,11 @@ export type CanvasCommand =
       input: EditElementInput;
     }
   | {
-      type: 'canvas.restoreRevision';
+      type: 'canvas.switchRevision';
       requestId: string;
       appSessionId: string;
       canvasId: string;
-      input: RestoreRevisionInput;
+      input: SwitchRevisionInput;
     }
   | {
       type: 'canvas.arrange';
@@ -475,6 +477,10 @@ export type CanvasCommand =
     }
   | { type: 'canvas.listLibraryItems'; requestId: string; query: string }
   | { type: 'canvas.readLibraryThumbnail'; requestId: string; itemId: string }
+  // The picture a canvas's Design home card shows: a base64 PNG of its first
+  // frame, which the pane captures and each later save replaces.
+  | { type: 'canvas.saveCover'; requestId: string; canvasId: string; png: string }
+  | { type: 'canvas.readCover'; requestId: string; canvasId: string }
   // Explicit whole-canvas deletion from the canvas picker, never an agent tool.
   // The preview names what deleting would end, and removal carries back its
   // sequence and chats so a canvas that changed since is not deleted unseen.
@@ -537,6 +543,7 @@ export type CanvasReply =
   | { kind: 'libraryItem'; item: LibraryItem }
   | { kind: 'libraryItems'; items: LibraryItem[] }
   | { kind: 'libraryThumbnail'; png: string | null }
+  | { kind: 'cover'; png: string | null }
   | { kind: 'removalPreview'; preview: CanvasRemovalPreview };
 
 export type CanvasEvent =

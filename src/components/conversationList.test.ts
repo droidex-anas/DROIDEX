@@ -217,11 +217,18 @@ test('a prompt sent moments ago animates once even when the projection rebuilt i
   const entered = new Set<string>();
   const none = new Set<string>();
   const now = 10_000;
-  const sent = { key: 'prompt', type: 'message', event: { author: 'user', ts: now - 500 } };
-  const replayed = { key: 'old', type: 'message', event: { author: 'user', ts: now - 60_000 } };
+  const prompt = (id: string, ageMs: number) => ({
+    key: id,
+    type: 'message',
+    event: { id, author: 'user', ts: now - ageMs },
+  });
+  const sent = prompt('local-1', 500);
   assert.equal(shouldAnimateFeedRow(sent, none, entered, now), true);
-  assert.equal(shouldAnimateFeedRow(replayed, none, entered, now), false);
-  entered.add('prompt');
+  assert.equal(shouldAnimateFeedRow(prompt('local-0', 60_000), none, entered, now), false);
+  // Its new-chat page showed the seed entering, and a saved twin replaces an echo on screen.
+  assert.equal(shouldAnimateFeedRow(prompt('seed-chat', 500), none, entered, now), false);
+  assert.equal(shouldAnimateFeedRow(prompt('user:chat:0:text', 500), none, entered, now), false);
+  entered.add('local-1');
   assert.equal(shouldAnimateFeedRow(sent, none, entered, now), false);
 });
 

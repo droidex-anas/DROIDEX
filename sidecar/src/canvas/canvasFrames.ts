@@ -68,7 +68,7 @@ export async function stageRevision(
   canvasId: string,
   design: PersistedDesign,
   input: WriteFilesInput,
-  { mutation, validateSource }: SourceWriteOptions,
+  { validateSource }: SourceWriteOptions,
 ): Promise<NewRevision> {
   const merged = mergeSource(await currentSource(files, canvasId, design), input);
   const violation = mergedRevisionViolation(merged);
@@ -81,7 +81,6 @@ export async function stageRevision(
     designId: input.designId,
     revisionId: randomUUID(),
     parentRevisionId: design.revisionId,
-    restoredFromRevisionId: mutation?.kind === 'restore' ? mutation.input.revisionId : undefined,
     designSystem: input.designSystem ?? design.designSystem,
     createdAt: Date.now(),
   };

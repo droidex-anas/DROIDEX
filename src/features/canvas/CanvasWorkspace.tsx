@@ -22,6 +22,7 @@ import { CanvasMenu } from './CanvasMenu';
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import type { EditElementInput } from './elementEditProtocol';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
+import { useCoverCapture } from './canvasCovers';
 import { DesignPreview } from './DesignPreview';
 import {
   CanvasAction,
@@ -232,33 +233,43 @@ export function CanvasWorkspace({
     );
 
   return (
-    <div data-testid="canvas-workspace" className="relative flex h-full min-h-0 flex-col bg-bg">
-      {/* Expanded, the window's top row carries the canvas name and the
-          Chat | Canvas control instead (`CanvasHeader`). */}
-      {!isExpanded && (
-        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-raised px-1 shadow-sm">
-          {watched !== null && <CanvasMenu appSessionId={appSessionId} canvasId={watched} />}
-          <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
+    // The source panel takes a column at the right, so the board beside it
+    // narrows instead of losing half its height.
+    <div data-testid="canvas-workspace" className="flex h-full min-h-0 bg-bg">
+      <div className="canvas-pane-column relative flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* Expanded, the window's top row carries the canvas name and the
+            Chat | Canvas control instead (`CanvasHeader`). */}
+        {!isExpanded && (
+          <div className="canvas-pane-corner absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-raised px-1 shadow-sm">
+            {watched !== null && <CanvasMenu appSessionId={appSessionId} canvasId={watched} />}
+            <AgentPaneExpand expanded={isExpanded} onToggle={onToggleExpanded} />
+          </div>
+        )}
+        {/* Each state fades in over the last, so the board never cuts in. */}
+        <div
+          key={state.status}
+          className="flex min-h-0 flex-1 flex-col motion-safe:animate-fade-in"
+        >
+          <CanvasBody
+            state={state}
+            appSessionId={appSessionId}
+            // Only the chat's own canvas can be pinned: its turn's lease is there.
+            pinnable={namedCanvasId === undefined || namedCanvasId === canvasId}
+            interaction={interaction}
+            onInteractionChange={setInteraction}
+            boardRef={boardRef}
+            onChoose={chooseCanvas}
+            onAttachOwed={attachOwed}
+            onRetry={() => {
+              dispatch({ type: 'reopened' });
+              setReopenCount((count) => count + 1);
+            }}
+            onOpenSource={(designId) => {
+              dispatch(openSourcePanel(designId));
+            }}
+          />
         </div>
-      )}
-      <CanvasBody
-        state={state}
-        appSessionId={appSessionId}
-        // Only the chat's own canvas can be pinned: its turn's lease is there.
-        pinnable={namedCanvasId === undefined || namedCanvasId === canvasId}
-        interaction={interaction}
-        onInteractionChange={setInteraction}
-        boardRef={boardRef}
-        onChoose={chooseCanvas}
-        onAttachOwed={attachOwed}
-        onRetry={() => {
-          dispatch({ type: 'reopened' });
-          setReopenCount((count) => count + 1);
-        }}
-        onOpenSource={(designId) => {
-          dispatch(openSourcePanel(designId));
-        }}
-      />
+      </div>
       <CanvasSourceSlot
         frame={openSourceFrame(state)}
         canvasId={watched}
@@ -410,6 +421,7 @@ function CanvasBoardMount({
     [appSessionId, pinnable, snapshot],
   );
   const { frames } = snapshot;
+  useCoverCapture(canvasId, frames);
   const { selectedFrameIds } = interaction;
   const emptyBoard = toolsMissing ? (
     <CanvasToolsMissing canvasId={canvasId} />
@@ -422,6 +434,7 @@ function CanvasBoardMount({
       appSessionId,
       canvasId,
       attached: pinnable,
+      agentWorking,
       frames,
       selected: selectedFrameIds
         .map((designId) => byId.get(designId))
@@ -430,7 +443,7 @@ function CanvasBoardMount({
         boardRef.current?.focusFrame(designId);
       },
     });
-  }, [appSessionId, boardRef, canvasId, frames, pinnable, selectedFrameIds]);
+  }, [agentWorking, appSessionId, boardRef, canvasId, frames, pinnable, selectedFrameIds]);
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">

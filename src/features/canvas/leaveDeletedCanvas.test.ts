@@ -46,6 +46,6 @@ test('A deletion that settles after the user moved to another chat leaves that c
   assert.equal(state.canvasAttachments.deleting ?? null, null);
   assert.deepEqual(state.utilityPanels.deleting?.tabs, []);
   assert.equal(state.activeAppSessionId, 'moved-to');
-  assert.equal(state.productMode, before.productMode);
+  assert.equal(state.draftChat, before.draftChat);
   assert.deepEqual(state.utilityPanels['moved-to'], before.utilityPanels['moved-to']);
 });

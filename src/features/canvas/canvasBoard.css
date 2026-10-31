@@ -50,7 +50,9 @@
   font-family: var(--canvas-chrome-font);
 }
 
-/* The name above the sheet, which is also the frame's drag handle and tab stop. */
+/* The name above the sheet, which is also the frame's drag handle and tab stop.
+   Plain text on the board, its first letter on the sheet's left edge: the
+   inset that gives the focus line room is taken back by the margin. */
 .canvas-frame-label {
   position: absolute;
   bottom: 100%;
@@ -58,7 +60,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding-bottom: 8px;
+  padding-bottom: 4px;
   transform-origin: 0 100%;
   outline: none;
   touch-action: none;
@@ -69,12 +71,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--raised);
-  box-shadow: var(--shadow-sm);
+  margin-left: -4px;
+  padding: 1px 4px;
+  border-radius: 5px;
   font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--text-secondary);
+  color: var(--text-muted);
   transition:
     color 120ms,
     box-shadow 120ms;
@@ -91,9 +92,7 @@
 /* The keyboard's place on the board: the selection line around the name, which
    holds 3:1 against every board, where a tint read as nothing on dark ones. */
 .canvas-frame-label:focus-visible .canvas-frame-name {
-  box-shadow:
-    0 0 0 1.5px var(--selection),
-    var(--shadow-sm);
+  box-shadow: 0 0 0 1.5px var(--selection);
 }
 
 .canvas-frame-note {
@@ -121,19 +120,26 @@
 
 .canvas-frame-toolbar {
   display: flex;
+  align-items: center;
   gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
+  padding: 4px;
+  border-radius: 10px;
   background: var(--raised);
   box-shadow: var(--shadow-sm);
+  transform-origin: 0 100%;
+}
+
+.canvas-frame-tools[data-align='end'] .canvas-frame-toolbar {
+  transform-origin: 100% 100%;
 }
 
 .canvas-frame-tool {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 6px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   font: 500 12px / 18px var(--canvas-chrome-font);
   color: var(--text-secondary);
@@ -150,14 +156,45 @@
   color: var(--text);
 }
 
+.canvas-frame-tool[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--selection) 14%, transparent);
+  color: var(--selection);
+}
+
+.canvas-frame-tool-text {
+  width: auto;
+  padding: 0 10px;
+}
+
+/* The version on show, as a tinted chip that opens the list of versions. */
 .canvas-frame-version {
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+  background: var(--success-soft);
+  color: var(--success);
   font-variant-numeric: tabular-nums;
 }
 
-/* The name while it is renamed: the label's own pill, holding a field. */
+.canvas-frame-version:hover,
+.canvas-frame-version:focus-visible,
+.canvas-frame-version[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.canvas-frame-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+/* The name while it is renamed: a raised field where the plain name stood. */
 .canvas-frame-name-field {
   width: 100%;
   outline: none;
+  background: var(--raised);
   color: var(--text);
   box-shadow:
     0 0 0 1.5px var(--selection),
@@ -180,7 +217,7 @@
   padding: 1px 6px;
   border-radius: 5px;
   background: var(--selection);
-  color: var(--selection-text);
+  color: var(--on-selection);
   font: 500 11px / 16px var(--canvas-chrome-font);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -243,10 +280,28 @@
   max-width: min(280px, calc(100% * var(--board-scale)));
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 16px;
   text-align: center;
   transform-origin: 50% 50%;
+}
+
+/* The state's mark, on a soft tile above its title. */
+.canvas-sheet-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-muted);
+}
+
+.canvas-sheet-icon[data-tone='danger'] {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .canvas-sheet-title {
@@ -267,7 +322,7 @@
 }
 
 /* No room for words: the label above names the frame, and a failure keeps its mark. */
-.canvas-sheet-state[data-tiny] .canvas-sheet-message > :not(svg) {
+.canvas-sheet-state[data-tiny] .canvas-sheet-message > :not([data-tone='danger']) {
   display: none;
 }
 
@@ -285,7 +340,7 @@
 
 .canvas-sheet-action {
   pointer-events: auto;
-  margin-top: 8px;
+  margin-top: 10px;
   height: 26px;
   padding: 0 10px;
   border-radius: 7px;
@@ -424,4 +479,12 @@
   pointer-events: none;
   box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
   background: color-mix(in srgb, var(--selection) 6%, transparent);
+}
+
+/* ── Pane ───────────────────────────────────────────────────────────────── */
+
+/* The element panel docks inside the board's column, so the side pane's corner
+   controls step left of it instead of covering its header. */
+.canvas-pane-column:has(.canvas-element-panel) > .canvas-pane-corner {
+  right: calc(theme('width.80') + theme('spacing.4'));
 }

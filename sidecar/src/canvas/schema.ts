@@ -319,7 +319,7 @@ export const revisionPageSchema = z
   })
   .strict();
 
-export const restoreRevisionInputSchema = z
+export const switchRevisionInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
     designId: canvasIdentifierSchema,
@@ -410,7 +410,7 @@ export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
 export type EditElementInput = z.infer<typeof editElementInputSchema>;
 export type StyleResolution = z.infer<typeof styleResolutionSchema>;
 export type RevisionPage = z.infer<typeof revisionPageSchema>;
-export type RestoreRevisionInput = z.infer<typeof restoreRevisionInputSchema>;
+export type SwitchRevisionInput = z.infer<typeof switchRevisionInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
 export type RemoveFramesInput = z.infer<typeof removeFramesInputSchema>;
 export type UndoRemovalInput = z.infer<typeof undoRemovalInputSchema>;

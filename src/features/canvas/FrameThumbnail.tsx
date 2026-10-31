@@ -17,22 +17,29 @@ export function FrameThumbnail({
   revisionId: string;
   fallback: ReactNode;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
+  // undefined while the first read is out, so a kept picture never shows its
+  // fallback first; null once there is none.
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     let wanted = true;
     let created: string | null = null;
-    setUrl(null);
+    setUrl(undefined);
     const read = () => {
       readCanvasThumbnail(canvasId, designId, revisionId).then(
         (png) => {
-          if (!wanted || !png) return;
+          if (!wanted) return;
+          if (!png) {
+            setUrl((shown) => shown ?? null);
+            return;
+          }
           if (created) URL.revokeObjectURL(created);
           created = URL.createObjectURL(new Blob([new Uint8Array(png)], { type: 'image/png' }));
           setUrl(created);
         },
         (error: unknown) => {
           console.error('A Canvas thumbnail could not be read:', error);
+          if (wanted) setUrl((shown) => shown ?? null);
         },
       );
     };
@@ -45,8 +52,16 @@ export function FrameThumbnail({
     };
   }, [canvasId, designId, revisionId]);
 
+  if (url === undefined) return null;
   if (url === null) return fallback;
   // Whole, as the board shows the frame: a card's 16:10 tile must not cut a
   // portrait frame down to its top.
-  return <img className="h-full w-full object-contain" src={url} alt="" draggable={false} />;
+  return (
+    <img
+      className="canvas-state-reveal h-full w-full object-contain"
+      src={url}
+      alt=""
+      draggable={false}
+    />
+  );
 }

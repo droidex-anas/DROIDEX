@@ -4,9 +4,12 @@ import { Square } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
-import { LazyAttachedChatsMenu, LazyCanvasColumnTabs } from '../lib/lazySurfaces';
+import {
+  LazyAttachedChatsMenu,
+  LazyCanvasColumnTabs,
+  LazyDesignColumnHeader,
+} from '../lib/lazySurfaces';
 import { utilityPanelForSession } from '../lib/utilityPanel';
-import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
 import type { SessionRestore } from '../hooks/storeChildSession';
@@ -23,7 +26,7 @@ import { PendingSteers } from './transcript/PendingSteers';
 import { JumpToLatest } from './transcript/JumpToLatest';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
-import { chatDisplayTitle } from '../lib/chatMetadata';
+import { chatDisplayTitle, isDesignChat } from '../lib/chatMetadata';
 import {
   childSessionActivityForTarget,
   childSessionLabel,
@@ -37,7 +40,7 @@ import { useOpenAgent } from './agents/useOpenAgent';
 import { useForkChat, useForkPending, useOpenForkSource } from '../hooks/useForkChat';
 import { useScrolling } from './ui/useScrolling';
 import { ConversationTimeline } from './ConversationTimeline';
-import { WelcomeScreen } from './WelcomeScreen';
+import { NewChatHeading } from './NewChatHome';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
 import { isEmbedded } from '../lib/embed';
 import {
@@ -52,14 +55,19 @@ import {
 } from '../hooks/useConversationTimeline';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
-import { equalVisibleChatState, selectChatViewState, type ChatViewState } from './chatViewState';
+import {
+  equalVisibleChatState,
+  newChatStart,
+  selectChatViewState,
+  type ChatViewState,
+} from './chatViewState';
 import { createChatFeedProjector } from './chatFeedProjector';
 import { setMountedFeedRows } from '../lib/rendererPerf';
 import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
-import { showsTabStrip, viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
+import { activeProduct, showsTabStrip, viewRowLeadPx } from '../features/tabs/tabStrip';
 import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
 import { tileHandleProps } from '../features/tabs/tileDrag';
 
@@ -326,9 +334,13 @@ export default function ChatView({
     [isObscured],
   );
   const state = useStoreSelector(selectState, equalChatState);
-  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
+  const rowLeadPx = useStoreSelector(viewRowLeadPx);
   const tabStripShown = useStoreSelector(showsTabStrip);
   const boardCanvasId = useStoreSelector((current) => canvasOnBoard(current, appSessionId));
+  const inDesign = useStoreSelector((current) => activeProduct(current) === 'design');
+  const designChat = useStoreSelector((current) =>
+    appSessionId ? isDesignChat(current.chatMetadata[appSessionId]) : false,
+  );
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -606,6 +618,8 @@ export default function ChatView({
     });
   }, [activeAppSessionId, specContent, hasFileSpec, fileSpec, storedSpec?.path, dispatch]);
 
+  // A child session's feed is the child's own work, so it stays in full.
+  const cleanFeed = designChat && !viewingChildSession;
   const feedProjectorRef = useRef<ReturnType<typeof createChatFeedProjector> | null>(null);
   feedProjectorRef.current ??= createChatFeedProjector();
   // The projector owns visibility filtering because transcript mutation indices
@@ -628,6 +642,7 @@ export default function ChatView({
       specContent,
       changes: true,
       groupChildSessions: !viewingChildSession,
+      clean: cleanFeed,
     },
   });
   const tailLen = transcript.at(-1)?.text?.length ?? 0;
@@ -647,24 +662,30 @@ export default function ChatView({
         : false),
     restoreStatus: restoreStatusForConversationTimeline(restore?.status, !isEmbedded()),
   });
-  const { onScroll, jumpToLatest, isAwayFromLatest, requestOlderHistory, restoredScrollOffset } =
-    useConversationScrollWindow({
-      scrollRef,
-      visibleConversationKey,
-      isViewingChildSession: viewingChildSession,
-      activeAppSessionId,
-      historyAppSessionId,
-      historyChildSessionId,
-      olderCursor,
-      isLoadingOlder: loadingOlder,
-      transcriptLength: transcript.length,
-      transcriptTailLength: tailLen,
-      retainedTranscriptLength: transcript.length,
-      isConversationLive: live,
-      isAutoPagingOlderHistory,
-      dispatch,
-      viewportLayoutRef,
-    });
+  const {
+    onScroll,
+    onListResize,
+    jumpToLatest,
+    isAwayFromLatest,
+    requestOlderHistory,
+    restoredScrollOffset,
+  } = useConversationScrollWindow({
+    scrollRef,
+    visibleConversationKey,
+    isViewingChildSession: viewingChildSession,
+    activeAppSessionId,
+    historyAppSessionId,
+    historyChildSessionId,
+    olderCursor,
+    isLoadingOlder: loadingOlder,
+    transcriptLength: transcript.length,
+    transcriptTailLength: tailLen,
+    retainedTranscriptLength: transcript.length,
+    isConversationLive: live,
+    isAutoPagingOlderHistory,
+    dispatch,
+    viewportLayoutRef,
+  });
 
   // Old/large chats restore only a recent window, which can hold too few final
   // responses for the rail to be useful. Page older history in (via the same
@@ -807,6 +828,7 @@ export default function ChatView({
             specContent={specContent}
             density={toolActivity.density}
             inlineDiffs={toolActivity.inlineDiffs}
+            clean={cleanFeed}
             {...(openSpecWiki !== undefined ? { onOpenSpecWiki: openSpecWiki } : {})}
             {...(!viewingChildSession && createdWorktreePath !== undefined
               ? { createdWorktreePath }
@@ -815,6 +837,7 @@ export default function ChatView({
               ? { pendingSteers: <PendingSteers appSessionId={activeSession.appSessionId} /> }
               : {})}
             onMountedRowsChange={setMountedFeedRows}
+            onListResize={onListResize}
             scrollElementRef={scrollRef}
             viewportLayoutRef={viewportLayoutRef}
             listRef={conversationListRef}
@@ -863,40 +886,33 @@ export default function ChatView({
       </TranscriptColumn>
     );
   } else {
-    const draft = state.draftChat;
+    // The composer and the starting points under it belong to the tile.
     conversationContent = (
-      <WelcomeScreen
+      <NewChatHeading
+        start={newChatStart(state.draftChat)}
         {...(draftFolder !== undefined ? { folder: draftFolder } : {})}
-        onSeedPrompt={(text) => {
-          dispatch({ type: 'SEED_COMPOSER', text });
-        }}
-        {...(draft?.project
-          ? {
-              project: {
-                onStartChat: () => {
-                  dispatch({
-                    type: 'START_CHAT',
-                    cwd: draft.cwd,
-                    executionMode: draft.executionMode,
-                    ...(draft.branch ? { branch: draft.branch } : {}),
-                  });
-                },
-              },
-            }
-          : {})}
       />
     );
   }
 
   // Only the top-left tile's header row takes in the window controls.
-  const leadPx =
-    holdsWindowControls && (!tile || (tile.atTop && tile.atLeft)) ? WINDOW_CONTROLS_LEAD_PX : 16;
+  const leadPx = rowLeadPx !== null && (!tile || (tile.atTop && tile.atLeft)) ? rowLeadPx : 16;
   // A lone chat in a tab is named by its tab, whose row also lists its
   // processes, so it needs a header only for a crumb back — or for the canvas
   // on its board, whose chats this column's header owns (spec §4).
   const namedByTab = tabStripShown && !tile;
   let header: ReactNode = null;
-  if (activeSession && (!namedByTab || chatHeaderSub || boardCanvasId !== null)) {
+  if (activeSession && inDesign && boardCanvasId !== null && !chatHeaderSub && !tile) {
+    header = (
+      <Suspense fallback={<div data-electron-drag-region className="h-9 shrink-0" />}>
+        <LazyDesignColumnHeader
+          appSessionId={activeSession.appSessionId}
+          canvasId={boardCanvasId}
+          leadPx={leadPx}
+        />
+      </Suspense>
+    );
+  } else if (activeSession && (!namedByTab || chatHeaderSub || boardCanvasId !== null)) {
     header = (
       <ChatHeader
         title={
@@ -929,9 +945,15 @@ export default function ChatView({
       {header}
       <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
         {activeSession && boardCanvasId !== null && (
-          <Suspense fallback={null}>
-            <LazyCanvasColumnTabs key={boardCanvasId} canvasId={boardCanvasId} />
-          </Suspense>
+          // Opens with the board, so the transcript eases down under it; a
+          // switch to another canvas keeps the row and swaps only its tabs.
+          <div className="row-open">
+            <div>
+              <Suspense fallback={<div className="h-9" />}>
+                <LazyCanvasColumnTabs key={boardCanvasId} canvasId={boardCanvasId} />
+              </Suspense>
+            </div>
+          </div>
         )}
         <TranscriptReachHost
           items={feedItems}

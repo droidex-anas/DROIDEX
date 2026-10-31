@@ -9,6 +9,7 @@ import { importCanvasImage, type CanvasImageImport } from './canvasAssets.js';
 import type { BuildCommit, BuildTarget } from './canvasBuildHost.js';
 import { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { CanvasCommits, CLOSING, type CanvasCommitOwner } from './canvasCommits.js';
+import { readCanvasCover, saveCanvasCover } from './canvasCovers.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasFrameEdits } from './CanvasFrameEdits.js';
@@ -47,7 +48,7 @@ import type {
   ElementEditResult,
   OutdatedCanvas,
   OwnedAsset,
-  RestoreRevisionInput,
+  SwitchRevisionInput,
   RevisionRef,
   SourceFiles,
   WriteFilesInput,
@@ -140,6 +141,20 @@ export class CanvasWorkspace {
     });
   }
 
+  /** Replaces the picture the canvas's Design home card shows. */
+  saveCover(canvasId: string, png: Buffer): Promise<void> {
+    return this.commits.admit(() => {
+      this.commits.requireOpen();
+      this.canvas(canvasId);
+      return saveCanvasCover(this.writerLease.directory, canvasId, png);
+    });
+  }
+
+  readCover(canvasId: string): Promise<Buffer | null> {
+    this.canvas(canvasId);
+    return readCanvasCover(this.writerLease.directory, canvasId);
+  }
+
   /** The canvas a chat works on, or null while the chat is unattached (spec §6). */
   attachedCanvasId(appSessionId: string): string | null {
     return this.heads.attachedCanvasId(appSessionId);
@@ -189,13 +204,7 @@ export class CanvasWorkspace {
     return recordedEdit(manifest, input.mutationId, mutationFingerprint(input));
   }
 
-  recordedRestore(scope: CanvasScope, input: RestoreRevisionInput): WriteReceipt | null {
-    this.commits.requireOpen();
-    const manifest = this.leases.requireDesigns(scope, [input.designId]);
-    return recordedRevision(manifest, input.mutationId, 'restore', mutationFingerprint(input));
-  }
-
-  // Edits and restores retain their original request fingerprint, not the derived file write.
+  // Edits retain their original request fingerprint, not the derived file write.
   write(
     scope: CanvasScope,
     input: WriteFilesInput,
@@ -241,15 +250,70 @@ export class CanvasWorkspace {
         };
         recordMutation(
           next,
-          mutation?.kind === 'edit'
-            ? { kind: 'edit', ...record, resolution: mutation.resolution }
-            : { kind: mutation?.kind ?? 'write', ...record },
+          mutation
+            ? { ...record, kind: 'edit', resolution: mutation.resolution }
+            : { ...record, kind: 'write' },
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, [input.designId]));
         // The revision is durable, so it can be built. Queuing it here is what
         // makes the change below report this revision's own build and never the
         // previous one's artifact (spec §4).
+        this.builds.enqueue(canvasId, receipt.designId, receipt.revisionId);
+        return { value: receipt, change: canvasChange(next, [target], this.builds) };
+      });
+    });
+  }
+
+  /**
+   * Shows a revision already in the frame's history by moving its pointer
+   * there. The commit index gains nothing, so every version keeps its number
+   * and the next edit builds on the one shown.
+   */
+  switchRevision(scope: CanvasScope, input: SwitchRevisionInput): Promise<WriteReceipt> {
+    return this.commits.admit(async () => {
+      this.commits.requireOpen();
+      const manifest = this.leases.requireDesigns(scope, [input.designId]);
+      const canvasId = manifest.canvasId;
+      const fingerprint = mutationFingerprint(input);
+      const recorded = recordedRevision(manifest, input.mutationId, 'switch', fingerprint);
+      if (recorded) return recorded;
+      requireExpectedRevision(requireDesign(manifest, input.designId), input.expectedRevisionId);
+      const { designSystem } = await this.history.readRevisionMetadata(
+        canvasId,
+        input.designId,
+        input.revisionId,
+      );
+
+      return this.commits.publish(async () => {
+        const live = this.leases.requireDesigns(scope, [input.designId]);
+        const again = recordedRevision(live, input.mutationId, 'switch', fingerprint);
+        if (again) return { value: again };
+        const next = structuredClone(live);
+        const target = requireDesign(next, input.designId);
+        requireExpectedRevision(target, input.expectedRevisionId);
+        target.revisionId = input.revisionId;
+        target.designSystem = designSystem;
+        target.manifestVersion += 1;
+        next.sequence += 1;
+        next.updatedAt = Date.now();
+        const receipt: WriteReceipt = {
+          designId: input.designId,
+          revisionId: input.revisionId,
+          sequence: next.sequence,
+        };
+        recordMutation(
+          next,
+          {
+            kind: 'switch',
+            mutationId: input.mutationId,
+            scopeId: scope.scopeId,
+            fingerprint,
+            ...receipt,
+          },
+          this.leases.isActive,
+        );
+        await this.heads.install(next, this.scopedGate(scope, [input.designId]));
         this.builds.enqueue(canvasId, receipt.designId, receipt.revisionId);
         return { value: receipt, change: canvasChange(next, [target], this.builds) };
       });

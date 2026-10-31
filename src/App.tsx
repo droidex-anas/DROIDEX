@@ -1,6 +1,15 @@
-import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion, useTransform } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
 import { hasActiveSessionWork } from './lib/sessions';
 import { bridge } from './lib/bridge';
@@ -34,17 +43,16 @@ import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/us
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
-import {
-  TOP_ROW_HEIGHT_PX,
-  WINDOW_CONTROLS_INSET_PX,
-  WINDOW_CONTROLS_LEAD_PX,
-} from './lib/windowChrome';
+import { TOP_ROW_HEIGHT_PX, WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome';
 import { HeaderTabs } from './features/tabs/HeaderTabs';
 import { RunningProcessesMenu } from './components/RunningProcessesMenu';
 import { ChatTiles } from './features/tabs/ChatTiles';
+import { DesignDropTarget } from './features/tabs/DesignDropTarget';
 import {
   activeGrid,
+  activeProduct,
   adjacentTabId,
+  mainRowLeadPx,
   numberedTabId,
   showsTabStrip,
   type TabAction,
@@ -53,6 +61,7 @@ import { adjacentTileId, nextSplit, type TileEdge } from './features/tabs/tileGr
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
+import { PaneResizeHandle } from './components/utility/PaneResizeHandle';
 import { UtilityPane } from './components/utility/UtilityPane';
 import { terminalInstances, releaseTerminalInstancesExcept } from './lib/terminalInstanceRegistry';
 import {
@@ -80,6 +89,7 @@ import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { listProjects, restoreBrowsersCommand } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
+import { useBoardShare, useDesignChatColumn } from './features/canvas/designChatColumn';
 import { useFirstArtifactPane } from './features/canvas/useFirstArtifactPane';
 import { useSharedStorage } from './hooks/useSharedStorage';
 import { useWorkspaceScopes } from './hooks/useWorkspaceScopes';
@@ -109,7 +119,6 @@ import {
   LazyCanvasChatBootstrap,
   LazyCanvasHeader,
   LazyCanvasWorkspace,
-  LazyDesignHome,
   LazyCommandPalette,
   LazyAgentsWorkspace,
   LazyThreadsWorkspace,
@@ -152,15 +161,18 @@ function ContextListIcon({ className }: { className?: string }) {
 }
 
 const UTILITY_PANE_MIN = 420;
-// Spec §4: the canvas workspace's docked chat column. Narrower than the pane's
-// own minimum, because here the board takes the rest of the row.
-const DESIGN_CHAT_COLUMN = 360;
+// Design's chat column is a side panel a tone off the board; scoping `--bg`
+// carries that tone to everything in it that paints the page background.
+const DESIGN_CHAT_TONE = {
+  backgroundColor: 'var(--sidebar)',
+  '--bg': 'var(--sidebar)',
+} as CSSProperties;
 
 /** How wide an expanded pane is: the whole row, or the row beside the board's
  * chat column. */
-function expandedPaneWidth(contentRowWidth: number, besideChatColumn: boolean): number {
-  if (!besideChatColumn) return contentRowWidth;
-  return Math.max(contentRowWidth - DESIGN_CHAT_COLUMN, Math.round(contentRowWidth / 2));
+function expandedPaneWidth(contentRowWidth: number, chatColumnWidth: number | null): number {
+  if (chatColumnWidth === null) return contentRowWidth;
+  return Math.max(contentRowWidth - chatColumnWidth, Math.round(contentRowWidth / 2));
 }
 const UTILITY_PANE_MAX = 980;
 const UTILITY_PANE_DEFAULT = 560;
@@ -205,7 +217,7 @@ export default function App() {
         : 'docked',
       shortcutBindings: current.shortcutBindings,
       sidebarCollapsed: current.sidebarCollapsed,
-      productMode: current.productMode,
+      productMode: activeProduct(current),
       // A design draft's canvas lands only once its chat exists.
       canvasChatRequests: current.canvasChatRequests,
       tabStripShown: showsTabStrip(current),
@@ -282,10 +294,6 @@ export default function App() {
       state.mainView === 'projects');
   const showUtilityPane =
     !embedded && !!activeSession && utilityPanel.open && !showWizard && !fullContentRoute;
-  // Design mode shows the Design home until one of its chats is open; from
-  // then on the chat and its board are the workspace (spec §4).
-  const designHomeShown =
-    !embedded && state.productMode === 'design' && !activeSession && !showWizard;
   // An expanded browser or agent covers the full content row; the utility pane
   // already stays out of the full-content routes, so the expansion follows it.
   const paneExpanded =
@@ -297,7 +305,14 @@ export default function App() {
   // the chat column stays beside it at its docked width so the transcript and
   // composer never move (spec §4). Every other expandable tool still covers
   // the row and leaves the chat behind it inert.
-  const canvasExpanded = paneExpanded && activeUtilityTab?.tool === 'canvas';
+  // Design has no docked pane: an open canvas tab is the board beside the chat
+  // column, filling the rest of the row.
+  const designCanvasTab =
+    state.productMode === 'design' && showUtilityPane && activeUtilityTab?.tool === 'canvas'
+      ? activeUtilityTab
+      : null;
+  const canvasExpanded =
+    designCanvasTab !== null || (paneExpanded && activeUtilityTab?.tool === 'canvas');
   const chatObscured = paneExpanded && !canvasExpanded;
   // Only a request whose create has replied has a canvas pane to open.
   const canvasRequests = Object.entries(state.canvasChatRequests).filter(
@@ -319,8 +334,15 @@ export default function App() {
   // The context panel floats *over* the chat as an overlay (it does not shrink
   // the main scroll area), so the page scrollbar stays pinned to the window's
   // right edge instead of sliding inward and looking like a divider.
+  // A design's chat opens its board instead, so the panel never shows there
+  // in the moment before the board arrives.
   const rightPanelVisible =
-    !focused && !fullContentRoute && !showUtilityPane && state.rightPanelOpen && hasSessionContent;
+    !focused &&
+    !fullContentRoute &&
+    !showUtilityPane &&
+    state.productMode === 'chat' &&
+    state.rightPanelOpen &&
+    hasSessionContent;
   const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
   const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
@@ -334,6 +356,17 @@ export default function App() {
   const confirmingTab = utilityPanel.tabs.find((tab) => tab.id === confirmCloseTabId) ?? null;
   const contentRowRef = useRef<HTMLDivElement>(null);
   const [contentRowWidth, setContentRowWidth] = useState(0);
+  const chatBesideBoard = useDesignChatColumn(contentRowWidth);
+  // Design's board takes the row beside its chat column, and the column keeps
+  // the rest; the board's share eases that in as it opens.
+  const boardShare = useBoardShare(designCanvasTab !== null);
+  const boardWidth = useTransform(
+    boardShare,
+    (share) => `calc((100% - ${String(chatBesideBoard.width)}px) * ${String(share)})`,
+  );
+  let chatColumnStyle: CSSProperties | undefined;
+  if (designCanvasTab) chatColumnStyle = DESIGN_CHAT_TONE;
+  else if (canvasExpanded) chatColumnStyle = { flex: `0 0 ${String(chatBesideBoard.width)}px` };
   // The toggle moves between the tab row and the chat header, so its preload
   // listeners follow the button itself.
   const bindUtilityToggleIntent = useCallback((toggle: HTMLButtonElement) => {
@@ -353,6 +386,19 @@ export default function App() {
       dispatch({ type: 'SET_CANVAS_ATTACHMENT', appSessionId, canvasId });
     },
     [dispatch],
+  );
+  const renderCanvasWorkspace = (appSessionId: string, tab: UtilityTab, expanded: boolean) => (
+    <LazyCanvasWorkspace
+      appSessionId={appSessionId}
+      canvasId={canvasAttachment}
+      namedCanvasId={tab.canvasId ?? undefined}
+      frameId={tab.frameId ?? undefined}
+      isExpanded={expanded}
+      onToggleExpanded={() => {
+        setExpandedPaneAppSessionId(expanded ? null : appSessionId);
+      }}
+      onAttachmentChange={setCanvasAttachment}
+    />
   );
   const shellPaintMarked = useRef(false);
   const composerStartupResolved = useRef(false);
@@ -670,13 +716,18 @@ export default function App() {
         dispatch({ type: 'TOGGLE_SIDEBAR' });
       },
       toggleUtilityPane,
+      toggleProduct: () => {
+        const mode = activeProduct(store.getState()) === 'chat' ? 'design' : 'chat';
+        dispatch({ type: 'SET_PRODUCT_MODE', mode });
+      },
       openCommandPalette: () => {
         dispatch({ type: 'TOGGLE_COMMAND_PALETTE' });
       },
       openSettings: () => {
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
-      newTab: tabAction(() => ({ type: 'OPEN_NEW_CHAT_TAB' })),
+      newTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) })),
+      newDesignTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: 'design' })),
       closeTab: tabAction(() => ({ type: 'CLOSE_TAB', tabId: tabStrip().activeTabId })),
       reopenClosedTab: tabAction(() => ({ type: 'REOPEN_CLOSED_TAB' })),
       nextTab: tabAction(() => ({ type: 'ACTIVATE_TAB', tabId: adjacentTabId(tabStrip(), 1) })),
@@ -845,10 +896,7 @@ export default function App() {
             second tab open, the tab strip stacks above and takes that role. */}
         <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
           {state.tabStripShown && (
-            <HeaderTabs
-              leadPx={state.sidebarCollapsed ? WINDOW_CONTROLS_LEAD_PX : 16}
-              controls={sessionControls}
-            />
+            <HeaderTabs leadPx={mainRowLeadPx(state) ?? 16} controls={sessionControls} />
           )}
           <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <section
@@ -857,7 +905,7 @@ export default function App() {
               // a few composer controls turn pointer events back on; inert
               // keeps the whole column out of reach.
               inert={chatObscured && !browserExpanded}
-              style={canvasExpanded ? { flex: `0 0 ${String(DESIGN_CHAT_COLUMN)}px` } : undefined}
+              style={chatColumnStyle}
               className={`flex min-w-0 flex-col overflow-hidden ${
                 browserExpanded
                   ? 'pointer-events-none absolute inset-0 z-20'
@@ -879,15 +927,6 @@ export default function App() {
                     workspaceScopesReady={workspaceScopesReady}
                   />
                 </Suspense>
-              ) : designHomeShown ? (
-                <>
-                  {!state.tabStripShown && (
-                    <div data-electron-drag-region className="h-9 shrink-0" />
-                  )}
-                  <Suspense fallback={null}>
-                    <LazyDesignHome />
-                  </Suspense>
-                </>
               ) : isMissionControlView ? (
                 <motion.div
                   key="mission-control"
@@ -921,21 +960,68 @@ export default function App() {
                   ) : null}
                 </>
               )}
+              {canvasExpanded && (
+                <PaneResizeHandle
+                  label="Resize chat"
+                  edge="right"
+                  width={chatBesideBoard.width}
+                  min={chatBesideBoard.min}
+                  max={chatBesideBoard.max}
+                  onResize={chatBesideBoard.resize}
+                  onResizeEnd={chatBesideBoard.commit}
+                />
+              )}
             </section>
             {/* Holds the chat column's place while it floats, so the pane stays
                 anchored on the right as it widens. */}
             {browserExpanded && <div className="min-w-0 flex-1" />}
             {sideChatClose.dialog}
 
+            {/* Keyed once, so switching chats swaps the board in place instead
+                of replaying its entrance. It slides in from the row's edge at
+                its full width, so it never reflows on the way, and it leaves at
+                once: a fading board would squeeze whatever takes its place. */}
+            <MotionConfig reducedMotion="user">
+              <AnimatePresence initial={false}>
+                {designCanvasTab && activeSession && (
+                  <motion.div
+                    key="design-canvas"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, transition: { duration: 0 } }}
+                    transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                    style={{ width: boardWidth }}
+                    className="flex h-full shrink-0 justify-end overflow-hidden"
+                  >
+                    <div
+                      className="relative h-full shrink-0"
+                      style={{
+                        width: Math.max(0, contentRowWidth - chatBesideBoard.width),
+                        minWidth: '100%',
+                      }}
+                    >
+                      {/* Blank until the board is ready, which then fades in. */}
+                      <Suspense fallback={null}>
+                        {renderCanvasWorkspace(activeSession.appSessionId, designCanvasTab, true)}
+                      </Suspense>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </MotionConfig>
+
             <AnimatePresence initial={false}>
-              {showUtilityPane && (
+              {showUtilityPane && !designCanvasTab && (
                 <motion.div
                   key="utility-pane"
                   initial={{ width: 0, opacity: 0 }}
                   animate={{
                     width:
                       paneExpanded && contentRowWidth > 0
-                        ? expandedPaneWidth(contentRowWidth, canvasExpanded)
+                        ? expandedPaneWidth(
+                            contentRowWidth,
+                            canvasExpanded ? chatBesideBoard.width : null,
+                          )
                         : utilityPaneWidth,
                     opacity: 1,
                   }}
@@ -1075,19 +1161,7 @@ export default function App() {
                       if (tab.tool === 'canvas') {
                         return (
                           <Suspense fallback={utilityToolFallback('canvas')}>
-                            <LazyCanvasWorkspace
-                              appSessionId={activeSession.appSessionId}
-                              canvasId={canvasAttachment}
-                              namedCanvasId={tab.canvasId ?? undefined}
-                              frameId={tab.frameId ?? undefined}
-                              isExpanded={paneExpanded}
-                              onToggleExpanded={() => {
-                                setExpandedPaneAppSessionId(
-                                  paneExpanded ? null : activeSession.appSessionId,
-                                );
-                              }}
-                              onAttachmentChange={setCanvasAttachment}
-                            />
+                            {renderCanvasWorkspace(activeSession.appSessionId, tab, paneExpanded)}
                           </Suspense>
                         );
                       }
@@ -1162,6 +1236,7 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {state.productMode === 'design' && !embedded && <DesignDropTarget />}
           </div>
         </main>
 
@@ -1192,7 +1267,7 @@ export default function App() {
           layout are unchanged. */}
       <div
         data-electron-drag-region
-        className="absolute h-9 z-40 flex items-center gap-1.5"
+        className="absolute h-9 z-40 flex items-center"
         style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
       >
         <Tooltip

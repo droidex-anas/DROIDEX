@@ -67,7 +67,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
       activeAppSessionId: 'm1',
       rightPanelOpen: false,
       sidebarCollapsed: true,
-      productMode: 'design',
       specMode: true,
       missionControlMode: false,
       selectedChild: {
@@ -116,7 +115,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
         activeAppSessionId: 'm1',
         rightPanelOpen: false,
         sidebarCollapsed: true,
-        productMode: 'design',
         specMode: true,
         missionControlMode: false,
         utilityPanels: {
@@ -146,12 +144,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
       });
     },
   );
-  // Chat is the default, so only the Design choice is worth restoring.
-  for (const stored of ['chat', 'both', 7, null]) {
-    withLocalStorage(JSON.stringify({ productMode: stored }), () => {
-      assert.equal(loadPersistedUiState().productMode, undefined, JSON.stringify(stored));
-    });
-  }
 });
 
 test('loadPersistedUiState drops invalid pull request workspace fields', () => {

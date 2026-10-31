@@ -1,17 +1,17 @@
-// The source drawer's place in the Canvas pane: the lower half of the tab while
-// it is open, so the board above keeps its layout and its selection. The drawer,
-// its editor and the code theme load with the first Source action.
+// The source panel's place in the Canvas pane: a column at the pane's right
+// while it is open, so the board beside it keeps its frames and its selection
+// and only gives up width. The panel, its editor and the code theme load with
+// the first Source action.
 
-import { lazy, Suspense } from 'react';
-import { CanvasClient } from './client';
-import { bridge } from '../../lib/bridge';
+import { lazy, Suspense, useMemo } from 'react';
+import { canvasClient as canvas } from './canvasClient';
+import type { HistoryClient } from './frameHistory';
 import type { CanvasFrame } from './protocol';
+import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 const LazySourcePanel = lazy(async () => ({
   default: (await import('./CanvasSourcePanel')).CanvasSourcePanel,
 }));
-
-const canvas = new CanvasClient(bridge);
 
 export function CanvasSourceSlot({
   frame,
@@ -19,24 +19,36 @@ export function CanvasSourceSlot({
   appSessionId,
   onClose,
 }: {
-  /** The frame the drawer is open on, or null while it is closed. */
+  /** The frame the panel is open on, or null while it is closed. */
   frame: CanvasFrame | null;
   canvasId: string | null;
   appSessionId: string;
   onClose: () => void;
 }) {
-  if (!frame || canvasId === null) return null;
+  const history = useMemo(
+    (): HistoryClient | null =>
+      canvasId === null
+        ? null
+        : {
+            listRevisions: (designId) =>
+              canvas.revisions.list(canvasId, designId, { limit: MAX_REVISION_PAGE_SIZE }),
+            switchRevision: (input) => canvas.revisions.switchTo(appSessionId, canvasId, input),
+          },
+    [appSessionId, canvasId],
+  );
+  if (!frame || canvasId === null || history === null) return null;
   return (
-    <div className="min-h-0 shrink-0 basis-1/2 px-2 pb-2">
-      <Suspense fallback={<div aria-hidden className="h-full rounded-2xl bg-raised" />}>
+    <div className="flex min-h-0 w-2/5 min-w-80 max-w-2xl shrink-0 py-2 pr-2">
+      <Suspense fallback={<div aria-hidden className="h-full w-full rounded-xl bg-surface" />}>
         <LazySourcePanel
           canvasId={canvasId}
           frame={frame}
           readSource={readSource}
-          // An explicit Save, sent exactly as the drawer submitted it: the
+          // An explicit Save, sent exactly as the panel submitted it: the
           // mutation identity belongs to the write, not to this call, so a retry
           // of an uncertain Save reaches the sidecar's ledger as the same write.
           writeSource={(id, write) => canvas.source.write(appSessionId, id, write)}
+          history={history}
           onClose={onClose}
         />
       </Suspense>

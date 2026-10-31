@@ -27,7 +27,6 @@ export type MissionRole = 'worker' | 'validator';
 export type AgentKind = 'primary' | MissionRole;
 export type LiveEnterBehavior = 'steer' | 'queue';
 export type DiffViewMode = 'unified' | 'split';
-export type ModelSelectorStyle = 'classic' | 'slider';
 // Where a side chat opens when none is on screen: the utility pane or a floating window.
 export type SideChatDefaultPlacement = 'docked' | 'floating';
 
@@ -131,7 +130,6 @@ const COMPACTION_MODEL_STORAGE_KEY = 'droid-compaction-model';
 const LIVE_ENTER_BEHAVIOR_STORAGE_KEY = 'droid-live-enter-behavior';
 const IMAGE_PASTE_QUALITY_STORAGE_KEY = 'droid-image-paste-quality';
 const DIFF_VIEW_STORAGE_KEY = 'droid-diff-view';
-const MODEL_SELECTOR_STYLE_STORAGE_KEY = 'droid-model-selector-style';
 const SIDE_CHAT_PLACEMENT_STORAGE_KEY = 'droid-side-chat-placement';
 const DEFAULT_VOICE_STORAGE_KEY = 'droid-default-voice';
 const KNOWN_VOICES_STORAGE_KEY = 'droid-known-voices';
@@ -145,14 +143,11 @@ const UI_STATE_STORAGE_KEY = 'droid-ui-state-v2';
 export type MainView = 'session' | 'pull-requests' | 'automations' | 'projects';
 
 // The product the sidebar is showing: chats, or canvases and the Design home.
-export type ProductMode = 'chat' | 'design';
-
 interface PersistedUiState {
   activeAppSessionId: string | null;
   rightPanelOpen: boolean;
   utilityPanels: Record<string, UtilityPanelState>;
   sidebarCollapsed: boolean;
-  productMode?: ProductMode;
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
@@ -217,25 +212,6 @@ export function loadDiffView(): DiffViewMode {
 
 export function saveDiffView(mode: DiffViewMode): void {
   saveItem(DIFF_VIEW_STORAGE_KEY, mode);
-}
-
-// The slider is the default; only someone who chose the classic list keeps it.
-function normalizeModelSelectorStyle(value: unknown): ModelSelectorStyle {
-  return value === 'classic' ? 'classic' : 'slider';
-}
-
-export function loadModelSelectorStyle(): ModelSelectorStyle {
-  try {
-    return normalizeModelSelectorStyle(
-      getLocalStorage()?.getItem(MODEL_SELECTOR_STYLE_STORAGE_KEY),
-    );
-  } catch {
-    return 'slider';
-  }
-}
-
-export function saveModelSelectorStyle(style: ModelSelectorStyle): void {
-  saveItem(MODEL_SELECTOR_STYLE_STORAGE_KEY, style);
 }
 
 function normalizeSideChatPlacement(value: unknown): SideChatDefaultPlacement {
@@ -355,7 +331,6 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
       utilityPanels: sanitizeUtilityPanels(parsed.utilityPanels),
       sidebarCollapsed:
         typeof parsed.sidebarCollapsed === 'boolean' ? parsed.sidebarCollapsed : undefined,
-      productMode: parsed.productMode === 'design' ? 'design' : undefined,
       specMode: typeof parsed.specMode === 'boolean' ? parsed.specMode : undefined,
       missionControlMode:
         typeof parsed.missionControlMode === 'boolean' ? parsed.missionControlMode : undefined,
@@ -380,7 +355,6 @@ export interface PersistedUiStateSource {
   rightPanelOpen: boolean;
   utilityPanels: Record<string, UtilityPanelState>;
   sidebarCollapsed: boolean;
-  productMode: ProductMode;
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
@@ -398,7 +372,6 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     rightPanelOpen: state.rightPanelOpen,
     utilityPanels: persistUtilityPanels(state.utilityPanels),
     sidebarCollapsed: state.sidebarCollapsed,
-    productMode: state.productMode,
     specMode: state.specMode,
     missionControlMode: state.missionControlMode,
     browsers: state.browsers,

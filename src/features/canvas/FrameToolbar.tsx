@@ -1,27 +1,26 @@
-// The selected frame's toolbar (spec §4): rename it, read and restore its
-// revisions, run it, read its source, add it to the chat, and the rest behind
-// More. It floats above the frame's label at screen size, so it follows the
-// frame through pan and zoom. It is one tab stop: the arrows move inside it and
-// Escape hands the keyboard back to the label.
+// The selected frame's toolbar (spec §4): switch its version, run it, read its
+// source, add it to the chat, rename it, and the rest behind More. It floats
+// above the frame's label at screen size, so it follows the frame through pan
+// and zoom. It is one tab stop: the arrows move inside it and Escape hands the
+// keyboard back to the label. Its tools are icons; each says what it does on
+// hover and on keyboard focus.
 
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Check, Ellipsis, History, MessageThread, Pencil, Play } from '@droidex/icons';
+import { Check, Ellipsis, MessageThread, Pencil, Play } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
-import { FrameHistory, revisionNumber, type HistoryClient } from './frameHistory';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { revealStyle, type CanvasMotion } from './canvasMotion';
+import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
 import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
-
 /** What the toolbar does to the canvas, bound to the chat showing it. */
 export interface FrameActions {
   history: HistoryClient;
@@ -38,6 +37,8 @@ export interface FrameToolbarProps {
   interacted: boolean;
   /** Screen pixels from the frame's left edge to the board's right edge. */
   roomRight: number;
+  /** Spec §11's timings; the bar reveals on the popover token. */
+  motion: CanvasMotion;
   inChat: boolean;
   actions: FrameActions;
   onInteract: (frame: CanvasFrame) => void;
@@ -51,21 +52,26 @@ export interface FrameToolbarProps {
   onLeave: () => void;
 }
 
-type ToolId = 'rename' | 'history' | 'interact' | 'source' | 'chat' | 'more';
+type ToolId = 'history' | 'interact' | 'source' | 'chat' | 'rename' | 'more';
 
 export function FrameToolbar(props: FrameToolbarProps) {
   if (!props.interacted) return <SelectToolbar {...props} />;
   return (
-    <ToolbarShell roomRight={props.roomRight} label={`${props.frame.name} actions`}>
-      <button
-        type="button"
-        aria-label="Return to Select"
-        title="Return to Select (Escape)"
-        className="canvas-frame-tool"
-        onClick={props.onExitInteract}
-      >
-        Done
-      </button>
+    <ToolbarShell
+      roomRight={props.roomRight}
+      motion={props.motion}
+      label={`${props.frame.name} actions`}
+    >
+      <Tooltip label="Return to Select (Escape)">
+        <button
+          type="button"
+          aria-label="Return to Select"
+          className="canvas-frame-tool canvas-frame-tool-text"
+          onClick={props.onExitInteract}
+        >
+          Done
+        </button>
+      </Tooltip>
     </ToolbarShell>
   );
 }
@@ -73,6 +79,7 @@ export function FrameToolbar(props: FrameToolbarProps) {
 function SelectToolbar({
   frame,
   roomRight,
+  motion,
   inChat,
   actions,
   onInteract,
@@ -83,20 +90,16 @@ function SelectToolbar({
   onLeave,
 }: FrameToolbarProps) {
   const [open, setOpen] = useState<'history' | 'more' | null>(null);
-  const [focusedTool, setFocusedTool] = useState<ToolId>('rename');
+  const [focusedTool, setFocusedTool] = useState<ToolId | null>(null);
   const historyAnchor = useRef<HTMLButtonElement>(null);
   const moreAnchor = useRef<HTMLButtonElement>(null);
-  const { history, state } = useFrameHistory(actions.history, frame);
-  const closeMore = useCallback(() => {
+  const { history, list } = useFrameHistory(actions.history, frame);
+  const close = useCallback(() => {
     setOpen(null);
   }, []);
-  const closeHistory = useCallback(() => {
-    history.cancel();
-    setOpen(null);
-  }, [history]);
 
   const tools = toolsShown({ frame, actions, onOpenSource, onToggleChat });
-  const tabStop = tools.includes(focusedTool) ? focusedTool : tools[0];
+  const tabStop = focusedTool !== null && tools.includes(focusedTool) ? focusedTool : tools[0];
   const tool = (id: ToolId) => ({
     'data-tool': id,
     tabIndex: id === tabStop ? 0 : -1,
@@ -122,115 +125,124 @@ function SelectToolbar({
     event.currentTarget.querySelector<HTMLElement>(`[data-tool="${next}"]`)?.focus();
   };
 
-  const version = revisionNumber(state.list, frame.revisionId);
+  const version = revisionNumber(list, frame.revisionId);
   return (
-    <ToolbarShell roomRight={roomRight} label={`${frame.name} actions`} onKeyDown={onKeyDown}>
-      {actions.canEdit && (
-        <button
-          type="button"
-          {...tool('rename')}
-          aria-label={`Rename ${frame.name}`}
-          title="Rename"
-          onClick={onRename}
-        >
-          <Pencil className="h-3.5 w-3.5" aria-hidden />
-        </button>
-      )}
+    <ToolbarShell
+      roomRight={roomRight}
+      motion={motion}
+      label={`${frame.name} actions`}
+      onKeyDown={onKeyDown}
+    >
       {frame.revisionId && (
-        <button
-          ref={historyAnchor}
-          type="button"
-          {...tool('history')}
-          aria-haspopup="dialog"
-          aria-expanded={open === 'history'}
-          aria-label={`History of ${frame.name}${version === null ? '' : `, version ${String(version)}`}`}
-          title="History"
-          onClick={() => {
-            setOpen(open === 'history' ? null : 'history');
-          }}
-        >
-          <History className="h-3.5 w-3.5" aria-hidden />
-          {version !== null && <span className="canvas-frame-version">v{version}</span>}
-        </button>
+        <>
+          <Tooltip label="Versions">
+            <button
+              ref={historyAnchor}
+              type="button"
+              {...tool('history')}
+              className="canvas-frame-tool canvas-frame-version"
+              aria-haspopup="menu"
+              aria-expanded={open === 'history'}
+              aria-label={`Versions of ${frame.name}${version === null ? '' : `, version ${String(version)} on show`}`}
+              onClick={() => {
+                setOpen(open === 'history' ? null : 'history');
+              }}
+            >
+              {version === null ? '–' : `v${String(version)}`}
+            </button>
+          </Tooltip>
+          <ToolDivider />
+        </>
       )}
-      <button
-        type="button"
-        {...tool('interact')}
-        aria-label={`Interact with ${frame.name}`}
-        title="Interact (double-click)"
-        onClick={() => {
-          onInteract(frame);
-        }}
-      >
-        <Play className="h-3.5 w-3.5" aria-hidden />
-        Interact
-      </button>
-      {onOpenSource && (
+      <Tooltip label="Interact (double-click)">
         <button
           type="button"
-          {...tool('source')}
-          aria-label={`Source of ${frame.name}`}
+          {...tool('interact')}
+          aria-label={`Interact with ${frame.name}`}
           onClick={() => {
-            onOpenSource(frame.designId);
+            onInteract(frame);
           }}
         >
-          <CodeGlyph />
-          Source
+          <Play className="h-4 w-4" aria-hidden />
         </button>
+      </Tooltip>
+      {onOpenSource && (
+        <Tooltip label="Source">
+          <button
+            type="button"
+            {...tool('source')}
+            aria-label={`Source of ${frame.name}`}
+            onClick={() => {
+              onOpenSource(frame.designId);
+            }}
+          >
+            <CodeGlyph />
+          </button>
+        </Tooltip>
       )}
       {onToggleChat && (
+        <Tooltip label={inChat ? 'In chat. Take it out' : 'Add to chat'}>
+          <button
+            type="button"
+            {...tool('chat')}
+            aria-pressed={inChat}
+            aria-label={
+              inChat ? `Take ${frame.name} out of the chat` : `Add ${frame.name} to the chat`
+            }
+            onClick={() => {
+              onToggleChat(frame);
+            }}
+          >
+            {inChat ? (
+              <Check className="h-4 w-4" aria-hidden />
+            ) : (
+              <MessageThread className="h-4 w-4" aria-hidden />
+            )}
+          </button>
+        </Tooltip>
+      )}
+      {actions.canEdit && (
+        <Tooltip label="Rename">
+          <button
+            type="button"
+            {...tool('rename')}
+            aria-label={`Rename ${frame.name}`}
+            onClick={onRename}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+          </button>
+        </Tooltip>
+      )}
+      <ToolDivider />
+      <Tooltip label="More">
         <button
+          ref={moreAnchor}
           type="button"
-          {...tool('chat')}
-          aria-pressed={inChat}
-          aria-label={
-            inChat ? `Take ${frame.name} out of the chat` : `Add ${frame.name} to the chat`
-          }
+          {...tool('more')}
+          aria-haspopup="menu"
+          aria-expanded={open === 'more'}
+          aria-label={`More for ${frame.name}`}
           onClick={() => {
-            onToggleChat(frame);
+            setOpen(open === 'more' ? null : 'more');
           }}
         >
-          {inChat ? (
-            <Check className="h-3.5 w-3.5" aria-hidden />
-          ) : (
-            <MessageThread className="h-3.5 w-3.5" aria-hidden />
-          )}
-          {inChat ? 'In chat' : 'Add to chat'}
+          <Ellipsis className="h-4 w-4" aria-hidden />
         </button>
-      )}
-      <button
-        ref={moreAnchor}
-        type="button"
-        {...tool('more')}
-        aria-haspopup="menu"
-        aria-expanded={open === 'more'}
-        aria-label={`More for ${frame.name}`}
-        title="More"
-        onClick={() => {
-          setOpen(open === 'more' ? null : 'more');
-        }}
-      >
-        <Ellipsis className="h-3.5 w-3.5" aria-hidden />
-      </button>
+      </Tooltip>
 
-      <Popover
+      <RevisionHistory
         open={open === 'history'}
-        onClose={closeHistory}
+        onClose={close}
         anchorRef={historyAnchor}
-        placement="bottom-start"
-        width={MENU_WIDTH_PX}
-        label={`History of ${frame.name}`}
-      >
-        <RevisionHistory
-          history={history}
-          state={state}
-          headRevisionId={frame.revisionId}
-          canRestore={actions.canEdit}
-        />
-      </Popover>
+        frameName={frame.name}
+        history={history}
+        list={list}
+        headRevisionId={frame.revisionId}
+        canSwitch={actions.canEdit}
+      />
       <Popover
         open={open === 'more'}
-        onClose={closeMore}
+        onClose={close}
         anchorRef={moreAnchor}
         placement="bottom-start"
         width={MENU_WIDTH_PX}
@@ -245,7 +257,7 @@ function SelectToolbar({
             label="Make variants…"
             disabled={!actions.canEdit || !frame.revisionId}
             onRun={() => {
-              closeMore();
+              close();
               actions.makeVariants(frame);
             }}
           />
@@ -253,7 +265,7 @@ function SelectToolbar({
             label="Save to library…"
             disabled={!frame.revisionId}
             onRun={() => {
-              closeMore();
+              close();
               actions.saveToLibrary(frame);
             }}
           />
@@ -261,7 +273,7 @@ function SelectToolbar({
             label="Delete frame"
             hint="⌫"
             onRun={() => {
-              closeMore();
+              close();
               onDelete();
             }}
           />
@@ -277,11 +289,13 @@ function SelectToolbar({
  */
 function ToolbarShell({
   roomRight,
+  motion,
   label,
   onKeyDown,
   children,
 }: {
   roomRight: number;
+  motion: CanvasMotion;
   label: string;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
@@ -312,30 +326,14 @@ function ToolbarShell({
         ref={bar}
         role="toolbar"
         aria-label={label}
-        className="canvas-frame-toolbar"
+        style={revealStyle(motion)}
+        className={`canvas-frame-toolbar ${motion.popoverMs > 0 ? 'canvas-popover-reveal' : ''}`}
         onKeyDown={onKeyDown}
       >
         {children}
       </div>
     </div>
   );
-}
-
-/** The frame's history, read again whenever its head moves. */
-function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
-  const history = useMemo(() => new FrameHistory(client), [client]);
-  const { designId, revisionId } = frame;
-  useEffect(() => {
-    if (revisionId) history.show({ designId, headRevisionId: revisionId });
-  }, [history, designId, revisionId]);
-  useEffect(
-    () => () => {
-      history.dispose();
-    },
-    [history],
-  );
-  const state = useSyncExternalStore(history.subscribe, history.read, history.read);
-  return { history, state };
 }
 
 /** The bar's tools in order, which is the order the arrows walk. */
@@ -346,15 +344,14 @@ function toolsShown({
   onToggleChat,
 }: Pick<FrameToolbarProps, 'frame' | 'actions' | 'onOpenSource' | 'onToggleChat'>): ToolId[] {
   const tools: ToolId[] = [];
-  if (actions.canEdit) tools.push('rename');
   if (frame.revisionId) tools.push('history');
   tools.push('interact');
   if (onOpenSource) tools.push('source');
   if (onToggleChat) tools.push('chat');
+  if (actions.canEdit) tools.push('rename');
   tools.push('more');
   return tools;
 }
-
 function nextTool(tools: readonly ToolId[], current: ToolId, key: string): ToolId | null {
   const at = tools.indexOf(current);
   switch (key) {
@@ -373,7 +370,7 @@ function nextTool(tools: readonly ToolId[], current: ToolId, key: string): ToolI
 
 function CodeGlyph() {
   return (
-    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" aria-hidden>
+    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" aria-hidden>
       <path
         d="M9 7 4 12l5 5M15 7l5 5-5 5"
         stroke="currentColor"
@@ -383,4 +380,8 @@ function CodeGlyph() {
       />
     </svg>
   );
+}
+
+function ToolDivider() {
+  return <span aria-hidden className="canvas-frame-divider" />;
 }

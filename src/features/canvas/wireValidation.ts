@@ -62,6 +62,7 @@ const REPLY_KINDS = new Set([
   'libraryItem',
   'libraryItems',
   'libraryThumbnail',
+  'cover',
   'removalPreview',
 ]);
 
@@ -79,9 +80,11 @@ const MAX_SOURCE_PATH_LENGTH = 256;
 // One read of a design's history asks for the whole page.
 export const MAX_REVISION_PAGE_SIZE = 50;
 const MAX_REVISION_DIFF_BYTES = 256 * 1024;
-// `LIBRARY_LIST_LIMIT` and `MAX_THUMBNAIL_BASE64_LENGTH` in the sidecar's canvasLibrary.ts.
+// `LIBRARY_LIST_LIMIT` in the sidecar's canvasLibrary.ts.
 const MAX_LIBRARY_ITEMS = 50;
-export const MAX_LIBRARY_THUMBNAIL_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
+// A tile's picture: `MAX_THUMBNAIL_BASE64_LENGTH` in the sidecar's canvasLibrary.ts
+// and `MAX_COVER_BASE64_LENGTH` in its canvasCovers.ts.
+export const MAX_TILE_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
 // The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
 const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
@@ -187,9 +190,10 @@ function isReply(value: unknown): boolean {
     case 'libraryItems':
       return boundedList(value.items, MAX_LIBRARY_ITEMS, isLibraryItem);
     case 'libraryThumbnail':
+    case 'cover':
       return (
         value.png === null ||
-        (typeof value.png === 'string' && value.png.length <= MAX_LIBRARY_THUMBNAIL_BASE64_LENGTH)
+        (typeof value.png === 'string' && value.png.length <= MAX_TILE_BASE64_LENGTH)
       );
     case 'removalPreview':
       return (
@@ -305,7 +309,6 @@ function isRevisionSummary(value: unknown): boolean {
   if (value.state === 'damaged') return true;
   return (
     value.state === 'saved' &&
-    (value.restoredFromRevisionId === undefined || id(value.restoredFromRevisionId)) &&
     count(value.createdAt) &&
     isDesignSystem(value.designSystem) &&
     typeof value.buildStatus === 'string' &&
@@ -317,6 +320,8 @@ function isRevisionCommit(value: unknown): value is Record<string, unknown> {
   if (!record(value) || !record(value.author)) return false;
   return (
     id(value.revisionId) &&
+    count(value.version) &&
+    value.version >= 1 &&
     count(value.sequence) &&
     (value.author.kind === 'user' ||
       (value.author.kind === 'agent' && id(value.author.scopeRef))) &&

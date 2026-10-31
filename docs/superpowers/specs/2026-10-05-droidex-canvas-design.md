@@ -116,7 +116,7 @@ The inspector selects an element in the rendered preview and outlines it without
 
 Direct editing supports literal text, allowlisted token-backed style values, and owned image references where the source mapping is unambiguous. Apply edits to the source tree, then build a new revision. Shared component definitions, computed text and repeated expressions show the actual edit scope and route ambiguous changes through the agent. Never persist a DOM-only edit that disappears on rebuild. Changing one repeated instance requires a real data/source change; it cannot silently change every instance.
 
-The source drawer has file navigation, editing, diagnostics, Save and revision comparison. A dirty buffer is local editor state; saving uses the revision captured when editing began. A conflict preserves that buffer and offers comparison/reapply, never silent overwrite. Viewing an old revision does not move the current head; Restore creates a new revision from it.
+The source drawer has file navigation, editing, diagnostics, Save and revision comparison. A dirty buffer is local editor state; saving uses the revision captured when editing began. A conflict preserves that buffer and offers comparison/reapply, never silent overwrite. Revisions are numbered v1, v2… from the oldest. Switching to one moves the frame’s current pointer to it and adds no revision; the next edit builds on it and becomes the newest version.
 
 Selected designs/elements and the selected design system appear as concise composer chips. Sending pins their IDs and revision numbers to that request. Queue, steer, send-now and retry preserve those references; later selection changes cannot retarget an earlier request. Users can remove chips. A user-authored sentence that happens to resemble an internal instruction must remain intact.
 
@@ -282,7 +282,7 @@ Measure a 50-frame board containing text, forms, cards, tables and a stateful co
 | Edit code while agent submits a revision | Conflict preserves local buffer; no lost source | Tasks 2, 8 |
 | Make two layout/style/color variants | Original unchanged; siblings persist and finish independently; real CTA state | Task 9 |
 | New chat with this canvas; resume/provider replacement | Same canvas; correct per-request scope; no stale mutation into replacement | Tasks 2, 4, 5 |
-| Export/reuse/history/delete/undo | Independent imported library copy, restore as new revision, source/assets export, bounded screenshot failure, durable undo | Tasks 9–10 |
+| Export/reuse/history/delete/undo | Independent imported library copy, switch versions without adding one, source/assets export, bounded screenshot failure, durable undo | Tasks 9–10 |
 | Crash, disk-full, bad source, path escape, hung preview | No data loss or app freeze; actionable diagnostics; cleanup complete | Tasks 1–3, 10 |
 | Privacy canary across live/replay/search/export | Internal unique marker absent from every DROIDEX surface; user-authored matching text preserved | Task 4 |
 | Animation and keyboard pass | Reference-inspired motion, actual actor presence, accessible interaction, light/dark and reduced motion | Tasks 5, 11–12 |

@@ -44,6 +44,8 @@ export interface ConversationListProps {
   listRef?: RefObject<ConversationListHandle | null>;
   initialScrollOffset?: number;
   onMountedRowsChange?: (count: number) => void;
+  /** The list's height changed; called within the measurement that changed it. */
+  onResize?: () => void;
 }
 
 export function ConversationList({
@@ -56,6 +58,7 @@ export function ConversationList({
   listRef,
   initialScrollOffset,
   onMountedRowsChange,
+  onResize,
 }: ConversationListProps) {
   const listElRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -65,6 +68,9 @@ export function ConversationList({
   const [scrollMargin, setScrollMargin] = useState(0);
   const onMountedRowsChangeRef = useRef(onMountedRowsChange);
   onMountedRowsChangeRef.current = onMountedRowsChange;
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
+  const totalSizeRef = useRef<number | null>(null);
 
   const getScrollElement = useCallback((): HTMLElement | null => {
     if (scrollElementRef?.current) return scrollElementRef.current;
@@ -107,6 +113,10 @@ export function ConversationList({
     directDomUpdates: true,
     onChange: (instance) => {
       onMountedRowsChangeRef.current?.(instance.getVirtualIndexes().length);
+      const totalSize = instance.getTotalSize();
+      if (totalSize === totalSizeRef.current) return;
+      totalSizeRef.current = totalSize;
+      onResizeRef.current?.();
     },
   });
 

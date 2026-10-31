@@ -31,7 +31,7 @@ export function useFrameActions(
     (): HistoryClient => ({
       listRevisions: (designId) =>
         canvas.revisions.list(canvasId, designId, { limit: MAX_REVISION_PAGE_SIZE }),
-      restoreRevision: (input) => canvas.revisions.restore(appSessionId, canvasId, input),
+      switchRevision: (input) => canvas.revisions.switchTo(appSessionId, canvasId, input),
     }),
     [appSessionId, canvasId],
   );

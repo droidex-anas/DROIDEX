@@ -1,12 +1,13 @@
-// The two ways into a canvas, shared by the Design sidebar, the Design home
-// grid and the canvas menu (spec §4).
+// The two ways into a canvas, shared by the Design home grid and the canvas
+// menu (spec §4).
 //
 // `openCanvas` shows an existing canvas through a chat already attached to it.
 // `startCanvasChat` drafts a fresh chat for a canvas: its first message creates
 // the session with its canvas intent; `CanvasChatBootstrap` opens the attached pane.
 
 import { useCallback } from 'react';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { useStoreApi, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { livePage, pageShowsChat, tabPage } from '../tabs/tabStrip';
 import { useOpenCanvasPane } from './openCanvasPane';
 import { recentAttachedChat } from './canvasChats';
 import type { CanvasSummary } from './protocol';
@@ -22,15 +23,13 @@ export function useOpenCanvas(): {
   activeCanvasId: string | null;
 } {
   const dispatch = useStoreDispatch();
+  const store = useStoreApi();
   const openPane = useOpenCanvasPane();
   const sessions = useStoreSelector((current) => current.sessions);
-  const { activeAppSessionId, activeCanvasId } = useStoreSelector((current) => {
+  const activeCanvasId = useStoreSelector((current) => {
     const id = current.activeAppSessionId;
-    return {
-      activeAppSessionId: id,
-      activeCanvasId: id ? (current.canvasAttachments[id] ?? null) : null,
-    };
-  }, shallowEqual);
+    return id ? (current.canvasAttachments[id] ?? null) : null;
+  });
 
   // A design chat is folder-less: designing needs no repository, and a new
   // worktree is a side effect nobody asked for by pressing New canvas.
@@ -45,18 +44,24 @@ export function useOpenCanvas(): {
   // same chat's pane, or the user lands on whatever tool it last showed.
   const showCanvasInChat = useCallback(
     (appSessionId: string, canvasId: string) => {
-      if (appSessionId !== activeAppSessionId)
-        dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
+      dispatch({ type: 'MARK_DESIGN_CHAT', appSessionId });
+      dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
       openPane({ appSessionId, canvasId });
     },
-    [activeAppSessionId, dispatch, openPane],
+    [dispatch, openPane],
   );
 
   const openCanvas = useCallback(
     (summary: CanvasSummary) => {
-      const attached = recentAttachedChat(summary, (id) =>
-        id in sessions ? sessions[id].updatedAt : undefined,
+      // A canvas already open in a tab is shown there, through the chat that tab has.
+      const state = store.getState();
+      const live = livePage(state);
+      const open = summary.attachedAppSessionIds.find((id) =>
+        state.tabStrip.tabs.some((tab) => pageShowsChat(tabPage(state.tabStrip, tab, live), id)),
       );
+      const attached =
+        open ??
+        recentAttachedChat(summary, (id) => (id in sessions ? sessions[id].updatedAt : undefined));
       // Its own chats are the way in. With none of them here, a fresh chat on
       // the same canvas is the honest alternative to a dead card.
       if (!attached) {
@@ -65,7 +70,7 @@ export function useOpenCanvas(): {
       }
       showCanvasInChat(attached, summary.canvasId);
     },
-    [sessions, showCanvasInChat, startCanvasChat],
+    [sessions, showCanvasInChat, startCanvasChat, store],
   );
 
   return { openCanvas, showCanvasInChat, startCanvasChat, activeCanvasId };

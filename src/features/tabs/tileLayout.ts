@@ -111,7 +111,8 @@ export function pointerZone(x: number, y: number): DropZone {
 export type TileDrop =
   | { kind: 'move'; tileId: string; edge: DropZone }
   | { kind: 'split'; appSessionId: string; edge: TileEdge }
-  | { kind: 'show'; appSessionId: string };
+  | { kind: 'show'; appSessionId: string }
+  | { kind: 'tab'; appSessionId: string };
 
 function moveDrop(
   grid: TileGrid,
@@ -127,7 +128,8 @@ function moveDrop(
 /**
  * What dropping `drag` on a tile's `zone` does, or null when it would change
  * nothing. A chat the grid already shows moves like its tile; another chat
- * splits the tile at an edge, or takes its place at the center.
+ * splits the tile at an edge, or takes its place at the center. A design opens
+ * in a tab of its own wherever it lands.
  */
 export function tileDrop(
   grid: TileGrid,
@@ -137,6 +139,7 @@ export function tileDrop(
 ): TileDrop | null {
   if (drag.kind === 'tile') return moveDrop(grid, drag.tileId, targetTileId, zone);
   const shown = chatTile(grid, drag.appSessionId);
+  if (drag.design) return shown ? null : { kind: 'tab', appSessionId: drag.appSessionId };
   if (shown) return moveDrop(grid, shown.id, targetTileId, zone);
   if (zone === 'center') return { kind: 'show', appSessionId: drag.appSessionId };
   if (!canSplit(grid, targetTileId, zone)) return null;
