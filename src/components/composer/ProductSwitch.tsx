@@ -27,10 +27,11 @@ const TAG_DRAW_S = 0.8;
 function BetaTag() {
   const reduceMotion = useReducedMotion();
   return (
-    // Exactly where the thumb sits on Design, with the line drawn just inside
-    // it, so it never covers Chat's thumb. It sits on the track, not the radio,
-    // so switching never replays it.
-    <span className="pointer-events-none absolute inset-y-1 left-1/2 right-1 p-px">
+    // Placed in Design's grid cell, so it covers exactly that choice, with the
+    // line drawn 1px inside it. Both end lines are needed: an absolute item's
+    // missing line falls back to the track's padding edge. It sits on the
+    // track, not the radio, so switching never replays it.
+    <span className="pointer-events-none absolute inset-0 col-start-2 col-end-3 row-start-1 row-end-2 p-px">
       {/* Mirrored, so the line starts and closes at the tag's corner. */}
       <svg aria-hidden className="block size-full -scale-x-100 overflow-visible">
         <motion.rect
@@ -94,17 +95,20 @@ export function ProductSwitch({
       role="radiogroup"
       aria-label="Product"
       onKeyDown={walk}
-      className="relative inline-grid grid-cols-2 rounded-lg bg-elevated p-1"
+      className="relative inline-grid grid-cols-2 gap-1 rounded-lg bg-elevated p-1"
     >
       <motion.span
         aria-hidden
-        className="absolute inset-y-1 left-1 rounded-md bg-raised shadow-sm dark:bg-active"
-        // Half the track, less its padding: the width of one choice.
-        style={{ width: 'calc(50% - 4px)' }}
+        className="absolute inset-y-1 left-0.5 px-0.5"
+        // One choice and half the gap either side of it, so sliding a whole
+        // slot lands the thumb exactly on the other choice.
+        style={{ width: 'calc(50% - 2px)' }}
         initial={false}
         animate={{ x: product === 'design' ? '100%' : '0%' }}
         transition={reduceMotion ? { duration: 0 } : THUMB_SPRING}
-      />
+      >
+        <span className="block size-full rounded-md bg-raised shadow-sm dark:bg-active" />
+      </motion.span>
       {PRODUCTS.map(({ mode, label, Icon }) => {
         const selected = mode === product;
         const radio = (
@@ -125,7 +129,7 @@ export function ProductSwitch({
             onClick={() => {
               if (!selected) onSwitch(mode);
             }}
-            className={`relative flex h-6 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 text-label transition-colors duration-150 ${
+            className={`relative flex h-6 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 text-label transition-colors duration-150 ${
               selected ? 'text-primary' : 'text-muted hover:text-secondary'
             }`}
           >
