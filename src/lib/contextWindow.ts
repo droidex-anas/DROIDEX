@@ -21,7 +21,7 @@ export function offersContextWindow(provider: ProviderKind | undefined): boolean
 }
 
 /** A window in the app's own words: 200k, 1M. */
-export function contextWindowLabel(tokens: number): string {
+function contextWindowLabel(tokens: number): string {
   return tokens >= 1000000
     ? `${String(tokens / 1000000)}M`
     : `${String(Math.round(tokens / 1000))}k`;
