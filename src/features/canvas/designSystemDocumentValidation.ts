@@ -42,7 +42,7 @@ const UNSAFE_TOKEN_VALUE = /[;{}<>\n\r\t]|\/\*/;
 const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 const utf8 = new TextEncoder();
 
-function isTokenName(value: unknown): boolean {
+export function isTokenName(value: unknown): boolean {
   return typeof value === 'string' && TOKEN_NAME.test(value);
 }
 

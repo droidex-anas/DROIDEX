@@ -125,12 +125,12 @@ function useDocumentDraft(id: string): [DocumentDraft | null, (change: DraftChan
 
 `draftDiff` is written so 2b can pass a proposal's sections as `next` and get the same marks.
 
-- [ ] Layout per §5: header row, sticky nav (folds into a Sections menu under ~960 px), document column, page edge space-8, sections space-8, notes at the 672 reading measure.
-- [ ] Notes (rendered with the transcript's existing markdown renderer), token tables (`tbody` dividers only), specimens through `specimenStyle.ts` (`CSS.supports` per kind and no `url(`), Other tokens explanation, provenance line under the cover.
-- [ ] Draft editing per §6, keyboard first: Enter/blur keep, Escape reverts, Escape with nothing open calls `onBack`, ⌘S saves. Removed items struck through with Undo.
-- [ ] Save, conflict (Discard mine / Save over vN), version menu, read-only older version with Restore, Duplicate, Export (existing host action), Delete with Undo toast, Use in this canvas (calls `chooseDesignSystem` with the toggle's mode), presets read-only.
-- [ ] Refresh on `designSystemsChanged` for the open kit; a draft is never replaced by a refresh.
-- [ ] Tests: `documentDraft.test.ts` (apply, diff, discard, a refresh does not drop the draft). Everything else is verified in the running app, light and dark, with a user kit and each preset.
+- [x] Layout per §5: header row, sticky nav (folds into a Sections menu under ~960 px), document column, page edge space-8, sections space-8, notes at the 672 reading measure.
+- [x] Notes (rendered with the transcript's existing markdown renderer), token tables (`tbody` dividers only), specimens through `specimenStyle.ts` (`CSS.supports` per kind and no `url(`), Other tokens explanation, provenance line under the cover.
+- [x] Draft editing per §6, keyboard first: Enter/blur keep, Escape reverts, Escape with nothing open calls `onBack`, ⌘S saves. Removed items struck through with Undo.
+- [x] Save, conflict (Discard mine / Save over vN), version menu, read-only older version with Restore, Duplicate, Export (existing host action), Delete with Undo toast, Use in this canvas (calls `chooseDesignSystem` with the toggle's mode), presets read-only.
+- [x] Refresh on `designSystemsChanged` for the open kit; a draft is never replaced by a refresh.
+- [x] Tests: `documentDraft.test.ts` (apply, diff, discard, a refresh does not drop the draft). Everything else is verified in the running app, light and dark, with a user kit and each preset.
 
 ## Slice 1c: navigation, picker and chip
 
