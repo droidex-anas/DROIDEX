@@ -90,7 +90,8 @@ export default function Hey() {
 }
 `;
 
-export const UNIVERSAL_GUIDANCE = `Import primitives from @droidex/design-system. Button accepts native button props
+/** Every kit's guidance up to its fonts line, which only a kit that embeds fonts can make. */
+export const PRIMITIVE_GUIDANCE = `Import primitives from @droidex/design-system. Button accepts native button props
 and variant primary | secondary | quiet (default primary); Card accepts div props
 and children; Badge accepts span props. Input accepts native input props plus a
 required visible label and optional hint/error; it connects descriptions and errors.
@@ -116,6 +117,8 @@ Decorative icons use aria-hidden; icon-only buttons need an accessible name.
 Use the compiler import allowlist: react, react/jsx-runtime, react-dom/client,
 lucide-react and @droidex/design-system are available, as are relative source
 modules. Unsupported package imports fail. No remote imports or fonts.
-The kit includes licensed Latin fonts; other scripts use local system fonts.
-Local component state resets on a source revision or refresh.
 `;
+
+export const STATE_RESET_NOTE = 'Local component state resets on a source revision or refresh.\n';
+
+export const UNIVERSAL_GUIDANCE = `${PRIMITIVE_GUIDANCE}The kit includes licensed Latin fonts; other scripts use local system fonts.\n${STATE_RESET_NOTE}`;

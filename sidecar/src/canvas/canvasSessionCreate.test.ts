@@ -7,7 +7,7 @@ import { CanvasScopes } from './canvasScopes.js';
 import { CanvasTurns } from './canvasTurnContext.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { prepareSessionFirstTurn } from './canvasSessionCreate.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
+import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
 import {
   canvasRoot,
   deferred,
@@ -94,7 +94,7 @@ for (const target of ['new', 'saved'] as const) {
     // The model's first create adds frames to the pane's canvas, never another board.
     const created = await workspace.create(scope, {
       mutationId: 'model-first-create',
-      frames: [{ name: 'Card', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF }],
+      frames: [{ name: 'Card', width: 720, height: 720, designSystem: AUTO_DESIGN_SYSTEM_REF }],
     });
     assert.equal(created.canvasId, canvasId);
     assert.equal(workspace.listCanvases().length, 1);
@@ -307,7 +307,7 @@ test('resume and send wait for Canvas preparation so the first model create uses
     assert.ok(scope?.canvasId);
     const result = await workspace.create(scope, {
       mutationId: 'first-model-create',
-      frames: [{ name: 'Card', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF }],
+      frames: [{ name: 'Card', width: 720, height: 720, designSystem: AUTO_DESIGN_SYSTEM_REF }],
     });
     assert.equal(result.canvasId, scope.canvasId);
     assert.equal(workspace.attachedCanvasId('pending-chat'), scope.canvasId);

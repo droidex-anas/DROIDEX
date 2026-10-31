@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_DESIGN_SYSTEM } from './designSystemChoices';
+import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
 import { activeRow, choiceOf, pickerRows, rowAfterKey, shownKit } from './designSystemPickerRows';
 import { canvasContextOf, type FramePin } from './framePins';
 import type { DesignSystemRef, DesignSystemSummary } from './protocol';
@@ -11,14 +11,19 @@ function kit(id: string, name: string, kind: DesignSystemSummary['kind']): Desig
 }
 
 const systems = [
+  kit('auto', 'Auto', 'auto'),
   kit('droidex', 'DROIDEX', 'preset'),
   kit('claude-inspired', 'Claude-inspired', 'preset'),
   kit('kit_z', 'Zinc', 'user'),
   kit('kit_a', 'Aurora', 'user'),
 ];
 
-test('presets keep their order, the user’s kits read by name, and a search narrows both', () => {
+test('Auto leads, presets keep their order, the user’s kits read by name, and a search narrows all', () => {
   const all = pickerRows(systems, '');
+  assert.deepEqual(
+    all.auto.map((row) => row.id),
+    ['auto'],
+  );
   assert.deepEqual(
     all.presets.map((row) => row.id),
     ['droidex', 'claude-inspired'],
@@ -29,6 +34,7 @@ test('presets keep their order, the user’s kits read by name, and a search nar
   );
 
   const searched = pickerRows(systems, '  zi ');
+  assert.deepEqual(searched.auto, []);
   assert.deepEqual(searched.presets, []);
   assert.deepEqual(
     searched.yours.map((row) => row.name),
@@ -37,12 +43,12 @@ test('presets keep their order, the user’s kits read by name, and a search nar
 });
 
 test('the list opens on the current kit, a search on its first match, and arrows wrap', () => {
-  const { presets, yours } = pickerRows(systems, '');
-  const rows = [...presets, ...yours];
+  const { auto, presets, yours } = pickerRows(systems, '');
+  const rows = [...auto, ...presets, ...yours];
   const current = { id: 'kit_a', version: 1, mode: 'light' as const };
 
   assert.equal(activeRow(rows, null, current, false)?.name, 'Aurora');
-  assert.equal(activeRow(rows, null, current, true)?.name, 'DROIDEX');
+  assert.equal(activeRow(rows, null, current, true)?.name, 'Auto');
   assert.equal(activeRow(rows, 'kit_z@1', current, false)?.name, 'Zinc');
 
   const last = rows[rows.length - 1];
@@ -53,13 +59,13 @@ test('the list opens on the current kit, a search on its first match, and arrows
 });
 
 test('picking a kit pins its version in the previewed mode', () => {
-  assert.deepEqual(choiceOf(systems[1], 'dark'), {
+  assert.deepEqual(choiceOf(systems[2], 'dark'), {
     ref: { id: 'claude-inspired', version: 1, mode: 'dark' },
     name: 'Claude-inspired',
   });
 });
 
-test('the chip names the kit a request runs under: the choice, else the first pin’s, else DROIDEX', () => {
+test('the chip names the kit a request runs under: the choice, else the first pin’s, else Auto', () => {
   const pin = (designSystem: DesignSystemRef): FramePin => ({
     canvasId: 'cv',
     designId: `d_${designSystem.id}`,
@@ -70,14 +76,16 @@ test('the chip names the kit a request runs under: the choice, else the first pi
   });
   const claude = pin({ id: 'claude-inspired', version: 1, mode: 'dark' });
   const zinc = pin({ id: 'kit_z', version: 1, mode: 'light' });
-  const chosen = choiceOf(systems[3], 'light');
+  const madeUnderAuto = pin(AUTO_DESIGN_SYSTEM.ref);
+  const chosen = choiceOf(systems[4], 'light');
 
   assert.deepEqual(shownKit([claude, zinc], chosen, systems), chosen);
   assert.deepEqual(shownKit([claude, zinc], null, systems), {
     ref: claude.designSystem,
     name: 'Claude-inspired',
   });
-  assert.deepEqual(shownKit([], null, null), DEFAULT_DESIGN_SYSTEM);
+  assert.deepEqual(shownKit([], null, null), AUTO_DESIGN_SYSTEM);
+  assert.deepEqual(shownKit([madeUnderAuto], null, null), AUTO_DESIGN_SYSTEM);
   for (const [pins, choice] of [
     [[claude, zinc], chosen],
     [[zinc], null],

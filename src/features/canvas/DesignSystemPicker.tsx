@@ -1,7 +1,7 @@
 // The design system a canvas's next requests are pinned to (spec §10), and the
-// picker that changes it: search, a light or dark preview, the presets, then
-// the user's kits. It sits in the composer's toolbar on a canvas chat and in
-// Design; a choice shows as a chip that removes back to DROIDEX.
+// picker that changes it: search, a light or dark preview, Auto, the presets,
+// then the user's kits. It sits in the composer's toolbar on a canvas chat and
+// in Design; a choice shows as a chip that removes back to Auto.
 
 import {
   useCallback,
@@ -62,7 +62,7 @@ export function CanvasDesignSystem({
 }
 
 /**
- * `value` null runs under the pinned frames' kit, else DROIDEX. The control
+ * `value` null runs under the pinned frames' kit, else Auto. The control
  * owns its popover, the kit list and the Manage dialog.
  */
 export function DesignSystemControl({
@@ -139,8 +139,8 @@ export function DesignSystemControl({
       {value && (
         <button
           type="button"
-          aria-label={`Remove ${value.name} and use DROIDEX`}
-          title="Use DROIDEX"
+          aria-label={`Remove ${value.name} and use Auto`}
+          title="Use Auto"
           onClick={() => {
             onChange(null);
           }}
@@ -197,8 +197,8 @@ function PickerPanel({
   const [movedTo, setMovedTo] = useState<string | null>(null);
 
   const searching = query.trim() !== '';
-  const { presets, yours } = pickerRows(list.status === 'listed' ? list.systems : [], query);
-  const rows = [...presets, ...yours];
+  const { auto, presets, yours } = pickerRows(list.status === 'listed' ? list.systems : [], query);
+  const rows = [...auto, ...presets, ...yours];
   const active = activeRow(rows, movedTo, current, searching);
   const activeId = active ? optionId(active) : undefined;
 
@@ -281,6 +281,7 @@ function PickerPanel({
         {list.status === 'listed' && searching && rows.length === 0 && (
           <MenuNote>No design system by that name.</MenuNote>
         )}
+        {auto.map(option)}
         {presets.length > 0 && <OptionGroup label="Presets">{presets.map(option)}</OptionGroup>}
         {list.status === 'listed' && (yours.length > 0 || !searching) && (
           <OptionGroup label="Yours">
@@ -354,7 +355,11 @@ function KitOption({
       >
         {kit.name}
       </span>
-      <KitSwatches kit={kit} mode={mode} />
+      {kit.kind === 'auto' ? (
+        <span className="shrink-0 text-label font-normal text-muted">From your prompt</span>
+      ) : (
+        <KitSwatches kit={kit} mode={mode} />
+      )}
       <span className="flex w-3.5 shrink-0 justify-center">
         {isCurrent && <Check aria-label="Current" className="h-3.5 w-3.5 text-accent" />}
       </span>

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
+import { AUTO_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
 import { SessionVoice } from './providers/SessionVoice.js';
 import { canvasRoot, deferred, quietBuilds } from './testing/canvasStorageSupport.js';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
@@ -100,9 +100,7 @@ test('voice and delegated turns wait for the captured Canvas create before leasi
     assert.ok(scope?.canvasId);
     const created = await workspace.create(scope, {
       mutationId: 'spoken-model-create',
-      frames: [
-        { name: 'Spoken', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF },
-      ],
+      frames: [{ name: 'Spoken', width: 720, height: 720, designSystem: AUTO_DESIGN_SYSTEM_REF }],
     });
     assert.equal(created.canvasId, workspace.attachedCanvasId('spoken'));
     assert.equal(workspace.listCanvases().length, 1);

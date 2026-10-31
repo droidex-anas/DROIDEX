@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { CompilerWorker, type CompiledDesign } from '../../sidecar/src/canvas/compiler';
-import { DEFAULT_DESIGN_SYSTEM_REF } from '../../sidecar/src/canvas/designSystems';
+import { DROIDEX_DESIGN_SYSTEM } from '../../sidecar/src/canvas/presets/droidex';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
 import {
   PREVIEW_POLL_SCRIPT,
@@ -37,7 +37,11 @@ export async function compileDesign(files: SourceFiles): Promise<CompiledDesign>
         revisionId: 'rev_smoke',
         generation: 1,
         files,
-        designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+        designSystem: {
+          id: DROIDEX_DESIGN_SYSTEM.id,
+          version: DROIDEX_DESIGN_SYSTEM.version,
+          mode: 'dark',
+        },
       },
       new AbortController().signal,
     );

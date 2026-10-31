@@ -243,7 +243,7 @@ function isKitSummary(value: unknown): boolean {
   const { light, dark } = value.swatches;
   return (
     boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
-    (value.kind === 'preset' || value.kind === 'user') &&
+    (value.kind === 'auto' || value.kind === 'preset' || value.kind === 'user') &&
     [light, dark].every(
       (swatch) =>
         record(swatch) &&

@@ -1,6 +1,6 @@
 // The design system each canvas's next requests are pinned to (spec §10). The
 // renderer composes every request's turn context, so the user's explicit choice
-// lives here, by canvas, and persists; a canvas without one uses DROIDEX. A
+// lives here, by canvas, and persists; a canvas without one runs under Auto. A
 // request copies the choice when it is composed, so a later change reaches only
 // requests composed after it.
 
@@ -13,10 +13,10 @@ export interface DesignSystemChoice {
   name: string;
 }
 
-/** The sidecar's DEFAULT_DESIGN_SYSTEM_REF, which a request without a choice runs under. */
-export const DEFAULT_DESIGN_SYSTEM: DesignSystemChoice = {
-  ref: { id: 'droidex', version: 1, mode: 'light' },
-  name: 'DROIDEX',
+/** The sidecar's AUTO_DESIGN_SYSTEM_REF: no kit, so the agent styles from the prompt and canvas. */
+export const AUTO_DESIGN_SYSTEM: DesignSystemChoice = {
+  ref: { id: 'auto', version: 1, mode: 'light' },
+  name: 'Auto',
 };
 
 /** The Design home's key: its prompt makes a canvas that has no ID yet. Canvas IDs are UUIDs. */
@@ -87,7 +87,7 @@ function subscribe(listener: () => void) {
   };
 }
 
-/** The user's explicit choice for this canvas, or null when it runs under DROIDEX. */
+/** The user's explicit choice for this canvas, or null when it has none. */
 export function designSystemChoice(key: string): DesignSystemChoice | null {
   return loaded()[key] ?? null;
 }

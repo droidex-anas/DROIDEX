@@ -1,14 +1,15 @@
 // The design-system picker's list: which kits a search shows, in what order,
-// and where the arrow keys move. Presets keep the sidecar's order and the
-// user's kits read by name, as the Manage dialog lists them.
+// and where the arrow keys move. Auto leads, presets keep the sidecar's order
+// and the user's kits read by name, as the Manage dialog lists them.
 
-import { DEFAULT_DESIGN_SYSTEM, type DesignSystemChoice } from './designSystemChoices';
+import { AUTO_DESIGN_SYSTEM, type DesignSystemChoice } from './designSystemChoices';
 import { sameKit } from './designSystemsState';
 import { requestDesignSystem, type FramePin } from './framePins';
 import type { PreviewMode } from './PreviewModeToggle';
 import type { DesignSystemRef, DesignSystemSummary } from './protocol';
 
 export interface PickerRows {
+  auto: DesignSystemSummary[];
   presets: DesignSystemSummary[];
   yours: DesignSystemSummary[];
 }
@@ -19,6 +20,7 @@ export function pickerRows(systems: readonly DesignSystemSummary[], query: strin
     ? systems.filter((kit) => kit.name.toLocaleLowerCase().includes(needle))
     : systems;
   return {
+    auto: shown.filter((kit) => kit.kind === 'auto'),
     presets: shown.filter((kit) => kit.kind === 'preset'),
     yours: shown
       .filter((kit) => kit.kind === 'user')
@@ -69,7 +71,7 @@ export function shownKit(
 ): DesignSystemChoice {
   const ref = requestDesignSystem(pins, choice?.ref ?? null);
   if (choice) return { ref, name: choice.name };
-  if (sameKit(ref, DEFAULT_DESIGN_SYSTEM.ref)) return { ref, name: DEFAULT_DESIGN_SYSTEM.name };
+  if (sameKit(ref, AUTO_DESIGN_SYSTEM.ref)) return { ref, name: AUTO_DESIGN_SYSTEM.name };
   const listed = systems?.find((kit) => sameKit(kit, ref));
   return { ref, name: listed?.name ?? 'Pinned frame’s kit' };
 }

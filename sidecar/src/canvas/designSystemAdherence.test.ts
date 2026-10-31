@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { CompileFailedError, CompilerWorker } from './compiler.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
+import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
@@ -148,4 +149,13 @@ test('the compiler fails a straying build under strict and builds it with notes 
       return true;
     },
   );
+});
+
+test('Auto holds a design to no kit: a straying build passes strict, keeping its own tokens', async () => {
+  const compiled = await worker.compile(
+    { ...compileInput(STRAYING, 'strict'), designSystem: AUTO_DESIGN_SYSTEM_REF },
+    new AbortController().signal,
+  );
+  assert.deepEqual(compiled.diagnostics, []);
+  assert.match(compiled.html, /--ds-accent: #d9480f/);
 });

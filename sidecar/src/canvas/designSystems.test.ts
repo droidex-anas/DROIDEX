@@ -288,6 +288,8 @@ test('listing returns preset swatches and the latest user version without readin
     summaries.filter((entry) => entry.kind === 'preset').map((entry) => entry.id),
     ['droidex', 'openai-inspired', 'claude-inspired'],
   );
+  // Auto leads the list as its own kind, so no preset reads as the default.
+  assert.deepEqual([summaries[0].id, summaries[0].kind], ['auto', 'auto']);
   assert.ok(summaries.every((entry) => !('files' in entry) && !('guidance' in entry)));
   await assert.rejects(
     readDesignSystem({ id: kit.id, version: 2, mode: 'light' }),

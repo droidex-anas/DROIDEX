@@ -6,7 +6,7 @@ import { CanvasCommandError } from './canvasError.js';
 import { CanvasScopes } from './canvasScopes.js';
 import { assertCanvasTurnContext, CanvasTurns } from './canvasTurnContext.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
+import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
 import type { CanvasTurnContext } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
@@ -80,7 +80,7 @@ test('a turn pins the references its prompt carried, and nothing it did not', ()
   assert.deepEqual(ordinary.context, {
     designs: [],
     elements: [],
-    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystem: AUTO_DESIGN_SYSTEM_REF,
   });
   assert.equal(ordinary.allowedDesignIds, 'canvas');
   assert.equal(ordinary.canvasId, 'cv_01');
@@ -184,7 +184,7 @@ test('an unattached ordinary chat mints a null binding its first create fills', 
 
   const created = await workspace.create(scope, {
     mutationId: 'create-hey',
-    frames: [{ name: 'Hey', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF }],
+    frames: [{ name: 'Hey', width: 720, height: 720, designSystem: AUTO_DESIGN_SYSTEM_REF }],
   });
   // One commit made the canvas, the chat's attachment and the lease's binding.
   assert.equal(workspace.attachedCanvasId('app-1'), created.canvasId);
