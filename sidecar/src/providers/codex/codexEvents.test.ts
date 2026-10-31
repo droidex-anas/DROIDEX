@@ -91,6 +91,7 @@ test('failed MCP servers are reported once, together, when every server has sett
   assert.equal(rows.length, 1);
   assert.equal(rows[0].transcript?.kind, 'status');
   assert.equal(rows[0].transcript?.isError, undefined);
+  assert.equal(rows[0].transcript?.transient, undefined);
   assert.equal(rows[0].transcript?.text, 'Some MCP servers didn’t start: figma, broken_probe.');
 
   // The same server failing again is the same fact, not a second row.
