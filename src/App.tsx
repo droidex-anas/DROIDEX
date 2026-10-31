@@ -169,8 +169,8 @@ const UTILITY_PANE_MIN = 420;
 // Design's chat column is a side panel a tone off the board; scoping `--bg`
 // carries that tone to everything in it that paints the page background.
 const DESIGN_CHAT_TONE = {
-  backgroundColor: 'var(--sidebar)',
-  '--bg': 'var(--sidebar)',
+  backgroundColor: 'var(--sidebar-solid)',
+  '--bg': 'var(--sidebar-solid)',
 } as CSSProperties;
 
 /** How wide an expanded pane is: the whole row, or the row beside the board's

@@ -208,6 +208,15 @@ describe('deriveThemeTokens', () => {
       }
     }
   });
+
+  it('keeps the solid sidebar tone opaque when the frosted sidebar is on', () => {
+    for (const scheme of ['dark', 'light'] as const) {
+      const colors = DEFAULT_THEME[scheme];
+      const frosted = deriveThemeTokens({ ...colors, diffStyle: 'soft', translucentSidebar: true });
+      assert.notEqual(frosted['--sidebar'], frosted['--sidebar-solid'], scheme);
+      assert.equal(frosted['--sidebar-solid'], tokensFor(colors)['--sidebar'], scheme);
+    }
+  });
 });
 
 describe('custom theme list helpers', () => {

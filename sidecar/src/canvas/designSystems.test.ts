@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { canvasDir } from '../droidexPaths.js';
-import { deferred } from '../testing/canvasStorageSupport.js';
+import { deferred, pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { CanvasCommandError } from './canvasError.js';
 import {
   DESIGN_SYSTEM_LIMITS,
@@ -19,6 +19,8 @@ import { CANVAS_LIMITS } from './schema.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+
+pinScratchProfile();
 
 const KITS = [DROIDEX_DESIGN_SYSTEM, OPENAI_INSPIRED_DESIGN_SYSTEM, CLAUDE_INSPIRED_DESIGN_SYSTEM];
 
@@ -295,6 +297,22 @@ test('listing returns preset swatches and the latest user version without readin
     readDesignSystem({ id: kit.id, version: 2, mode: 'light' }),
     CanvasCommandError,
   );
+});
+
+test('listing leaves out a kit with a damaged header and keeps every other kit', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => undefined);
+  await saveDesignSystem(userKit('readable-kit'));
+  const damaged = join(canvasDir(), 'design-systems', 'damaged-kit');
+  await mkdir(damaged, { recursive: true });
+  await writeFile(join(damaged, '1.json'), JSON.stringify(userKit('damaged-kit')) + '\n');
+
+  const ids = (await listDesignSystems()).map((entry) => entry.id);
+
+  assert.deepEqual(ids.slice(0, 4), ['auto', 'droidex', 'openai-inspired', 'claude-inspired']);
+  assert.ok(ids.includes('readable-kit'));
+  assert.ok(!ids.includes('damaged-kit'));
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0]?.arguments[0]), /damaged-kit version 1/);
 });
 
 test('oversized guidance is refused', async () => {

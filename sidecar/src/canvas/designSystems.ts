@@ -168,7 +168,11 @@ export const AUTO_DESIGN_SYSTEM_REF: DesignSystemRef = {
   mode: 'light',
 };
 
-/** Auto, the presets, then the latest published user version; reads only metadata headers. */
+/**
+ * Auto, the presets, then the latest published user version; reads only
+ * metadata headers. A kit whose header is damaged is left out and logged, so
+ * one bad kit never hides the others.
+ */
 export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
   const summaries = BUILT_IN_DESIGN_SYSTEMS.map((system) =>
     summarize(system, system.id === AUTO_DESIGN_SYSTEM.id ? 'auto' : 'preset'),
@@ -180,33 +184,10 @@ export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
       if (!entry.isDirectory()) continue;
-      const id = canvasIdentifierSchema.parse(entry.name);
-      const versions = (await readdir(join(root, id)))
-        .filter((name) => /^[1-9][0-9]*\.json$/.test(name))
-        .map((name) => Number(name.slice(0, -5)));
-      if (versions.length === 0) continue;
-      const version = versions.reduce((latest, current) => Math.max(latest, current), 0);
-      const header = await readSavedText(versionPath(id, version), SUMMARY_HEADER_BYTES);
-      if (header === null) continue; // A concurrent save has not published its version yet.
-      const newline = header.indexOf('\n');
-      if (newline < 0 || !header.startsWith('{"summary":'))
-        throw canvasError(
-          'storage_failed',
-          'Design system metadata is damaged. Restore the saved kit.',
-        );
-      const firstLine = header.slice(0, newline);
-      const parsed = summarySchema.safeParse(parseJson(firstLine.slice('{"summary":'.length, -1)));
-      if (
-        !parsed.success ||
-        parsed.data.id !== id ||
-        parsed.data.version !== version ||
-        parsed.data.kind !== 'user'
-      )
-        throw canvasError(
-          'storage_failed',
-          'Design system metadata is damaged. Restore the saved kit.',
-        );
-      summaries.push(parsed.data);
+      const id = canvasIdentifierSchema.safeParse(entry.name);
+      if (!id.success) continue;
+      const summary = await readLatestUserSummary(id.data);
+      if (summary) summaries.push(summary);
     }
     return summaries;
   } catch (error) {
@@ -216,6 +197,42 @@ export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
       error,
     );
   }
+}
+
+async function readLatestUserSummary(id: string): Promise<DesignSystemSummary | null> {
+  const versions = (await readdir(join(systemsRoot(), id)))
+    .filter((name) => /^[1-9][0-9]*\.json$/.test(name))
+    .map((name) => Number(name.slice(0, -5)));
+  if (versions.length === 0) return null;
+  const version = versions.reduce((latest, current) => Math.max(latest, current), 0);
+  const header = await readSavedText(versionPath(id, version), SUMMARY_HEADER_BYTES);
+  if (header === null) return null; // A concurrent save has not published its version yet.
+  const newline = header.indexOf('\n');
+  if (newline < 0 || !header.startsWith('{"summary":'))
+    return skipDamagedKit(id, version, 'its file does not start with a saved kit header');
+  const firstLine = header.slice(0, newline);
+  const parsed = summarySchema.safeParse(parseJson(firstLine.slice('{"summary":'.length, -1)));
+  if (
+    !parsed.success ||
+    parsed.data.id !== id ||
+    parsed.data.version !== version ||
+    parsed.data.kind !== 'user'
+  )
+    return skipDamagedKit(id, version, 'its header does not describe that saved version');
+  return parsed.data;
+}
+
+// The picker lists on every open, so each damaged file is logged once.
+const reportedDamagedKits = new Set<string>();
+
+function skipDamagedKit(id: string, version: number, reason: string): null {
+  const path = versionPath(id, version);
+  if (reportedDamagedKits.has(path)) return null;
+  reportedDamagedKits.add(path);
+  console.warn(
+    `Design system ${id} version ${String(version)} was not listed because ${reason}. Restore or remove ${path}.`,
+  );
+  return null;
 }
 
 /**

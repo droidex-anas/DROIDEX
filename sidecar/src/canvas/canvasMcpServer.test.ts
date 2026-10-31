@@ -14,6 +14,7 @@ import {
   holdManifestWrite,
   noteDraft,
   observedFileSystem,
+  pinScratchProfile,
   userScopeFor,
 } from '../testing/canvasStorageSupport.js';
 import { saveLibraryItem } from './canvasLibrary.js';
@@ -24,6 +25,8 @@ import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
   DESIGN_SESSION_GUIDANCE,
 } from './designSessionGuidance.js';
+
+pinScratchProfile();
 
 const droidexKit = { id: 'droidex', version: 1, mode: 'dark' } as const;
 const frame = { name: 'Hey', width: 720, height: 520, designSystem: droidexKit };
