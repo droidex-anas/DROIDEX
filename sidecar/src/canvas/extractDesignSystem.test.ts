@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import postcss from 'postcss';
+import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { DESIGN_SYSTEM_LIMITS, readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { HEY_TSX } from './presets/starter.js';
+
+pinScratchProfile();
 
 const input = {
   name: 'Owned studio',

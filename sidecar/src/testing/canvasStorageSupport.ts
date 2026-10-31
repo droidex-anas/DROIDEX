@@ -4,10 +4,11 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import type { TestContext } from 'node:test';
+import { after, type TestContext } from 'node:test';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from '../canvas/CanvasWorkspace.js';
 import type { AnnotationDraft } from '../canvas/canvasAnnotationSchema.js';
@@ -110,6 +111,22 @@ export async function withFrame(t: TestContext, options: WorkspaceOptions = {}) 
   assert.equal(frame.layoutVersion, 0);
   assert.equal(frame.revisionId, null);
   return { ...context, canvasId, scope, designId: frame.designId };
+}
+
+/**
+ * Points the profile at a scratch directory for the rest of the suite. Suites
+ * that write through the profile's own Canvas paths call it at module top, so a
+ * run that skips the isolatedTestEnv preload still never writes a real profile.
+ */
+export function pinScratchProfile(): void {
+  const profile = mkdtempSync(join(tmpdir(), 'droidex-profile-'));
+  const previous = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = profile;
+  after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previous;
+    rmSync(profile, { recursive: true, force: true });
+  });
 }
 
 /** A real Canvas root directory, removed after the test. */

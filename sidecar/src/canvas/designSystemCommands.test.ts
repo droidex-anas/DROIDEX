@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { startBridgeServer } from '../bridgeServer.js';
 import { errorOf, harness, okReply, type Harness } from '../testing/canvasBridgeSupport.js';
+import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { CompilerWorker } from './compiler.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import {
@@ -15,6 +16,8 @@ import {
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import type { CanvasDiagnostic, DesignSystemVersionRef } from './protocol.js';
+
+pinScratchProfile();
 
 const DESIGN_MD = `# Paper and ink
 
