@@ -186,9 +186,10 @@ Done: In a Tailwind + CSS variables project, one agent save creates a kit with t
 
 **Files:** create `sidecar/src/canvas/designSystemProject.ts` (+ test: `readProjectSources(projectRoot, sources)` with the §12 path rules, then `designSystemSources.ts`, `designSystemTokens.ts`, `configLiterals.ts` and `designSystemImport.ts` into `buildDocument`); `designSystemImport.ts` (accept several sources); the `from: { project }` branch in `canvasMcpServer.ts`, which resolves the project root from the scope's session, never from input; `designSystemAdherence.ts` (+ test), `canvasDiagnostics.ts` (`design_system_type`, `design_system_radius`, `design_system_spacing`, `design_system_shadow`), `designSystemBrief.ts` (tokens grouped by section kind, same 4 KiB budget); renderer `NewDesignSystemMenu.tsx` (From this project, shown when the session has a `cwd` and Canvas tools; puts the §12 sentence in the composer).
 
-- [ ] Path rules: relative, no `..`, final component not a link, real path inside the root, regular UTF-8 file, 256 KiB, 8 sources. Provenance `{ project: { name, files } }` added to the schema with the parsed paths only.
-- [ ] Adherence rules from token sections; codes added; cap 12; Auto and kits without a section skip that check; strict still fails builds.
-- [ ] Tests: `designSystemProject.test.ts` (outside path, symbolic link, oversize, Tailwind + CSS mapping with unmapped kept), `designSystemAdherence.test.ts` (each new finding once; a matching token value is not a finding; Auto none), brief size under 21 KiB with a full kit. Try it once on this repository.
+- [x] Path rules: relative, no `..`, final component not a link, real path inside the root, regular UTF-8 file, 256 KiB, 8 sources. Provenance `{ project: { name, files } }` added to the schema with the parsed paths only.
+- [x] Adherence rules from token sections; codes added; cap 12; Auto and kits without a section skip that check; strict still fails builds.
+- [x] Tests: `designSystemProject.test.ts` (outside path, symbolic link, oversize, Tailwind + CSS mapping with unmapped kept), `designSystemAdherence.test.ts` (each new finding once; a matching token value is not a finding; Auto none), brief size under 21 KiB with a full kit. Try it once on this repository.
+- [ ] The `from: { project }` branch in `canvasMcpServer.ts`, calling `importProjectDesignSystem` with the scope's session folder (after 2b merges).
 
 ## Slice 2d: kit images and Assets
 
