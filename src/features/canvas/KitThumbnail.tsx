@@ -10,10 +10,6 @@ const SIZE = {
   chip: { tile: 'w-10 rounded-xs px-1', accent: 'h-1.5 w-3.5' },
 };
 
-// The neutral hairline ColorPicker's swatches use: a white surface on a light
-// popover, or a black one on a dark, still reads as a tile.
-const EDGE = 'inset 0 0 0 1px rgba(128, 128, 128, 0.3)';
-
 export function KitThumbnail({
   kit,
   mode,
@@ -27,8 +23,12 @@ export function KitThumbnail({
   return (
     <span
       aria-hidden
-      className={cn('flex aspect-kit shrink-0 items-center', SIZE[size].tile)}
-      style={{ background: paintable(surface), boxShadow: EDGE }}
+      className={cn(
+        // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary kit surface needs an edge to read on any popover
+        'flex aspect-kit shrink-0 items-center ring-1 ring-inset ring-divider-strong',
+        SIZE[size].tile,
+      )}
+      style={{ background: paintable(surface) }}
     >
       <span
         className={cn('rounded-full', SIZE[size].accent)}

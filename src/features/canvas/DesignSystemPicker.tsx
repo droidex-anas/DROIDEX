@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Palette } from 'lucide-react';
 import { ChevronDown, X } from '@droidex/icons';
+import { Button } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { cn } from '../../components/ui/cn';
@@ -13,6 +14,7 @@ import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import {
+  AUTO_DESIGN_SYSTEM,
   chooseDesignSystem,
   followLatest,
   NEW_CANVAS_KEY,
@@ -28,9 +30,6 @@ import { NewDesignSystemDialog } from './NewDesignSystemDialog';
 import { useOpenCanvasPane } from './openCanvasPane';
 import type { PreviewMode } from './PreviewModeToggle';
 import type { DesignSystemSource, DesignSystemSummary } from './protocol';
-
-const CHIP_BUTTON =
-  'flex h-full cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-active/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring';
 
 /** `value` null runs under the pinned frames' kit, else Auto. */
 export function CanvasDesignSystem({
@@ -69,6 +68,7 @@ export function CanvasDesignSystem({
         }
       : null;
   const documentKit = openDocument && listed && listed.kind !== 'auto' ? listed : null;
+  const chosenKit = value && value.ref.id !== AUTO_DESIGN_SYSTEM.ref.id ? value : null;
 
   const togglePicker = (opener: HTMLButtonElement) => {
     openerRef.current = opener;
@@ -92,7 +92,7 @@ export function CanvasDesignSystem({
       ref={chipRef}
       className={cn(
         'flex h-control-sm max-w-fit grow basis-0 items-center rounded-md',
-        value ? 'min-w-24 bg-active/60' : 'min-w-14',
+        chosenKit ? 'min-w-28 bg-active/60' : 'min-w-14',
       )}
     >
       <button
@@ -113,37 +113,36 @@ export function CanvasDesignSystem({
           if (documentKit) openDocument?.(documentKit.id);
           else togglePicker(event.currentTarget);
         }}
-        className={cn(CHIP_BUTTON, 'min-w-0 gap-1.5 overflow-hidden pl-2 pr-1.5')}
+        className="flex h-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-md pl-2 pr-1.5 text-muted transition-colors hover:bg-active/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         <ChipName shown={shown} listed={listed} isUnavailable={isUnavailable} />
       </button>
-      {value && (
+      {chosenKit && (
         <Tooltip label="Use Auto">
-          <button
-            type="button"
-            aria-label={`Remove ${value.name} and use Auto`}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<X aria-hidden className="size-3" strokeWidth={2.5} />}
+            aria-label={`Remove ${chosenKit.name} and use Auto`}
             onClick={() => {
-              chooseDesignSystem(canvasKey, null);
+              // Auto itself, not no choice, which would run under a pinned frame's kit.
+              chooseDesignSystem(canvasKey, AUTO_DESIGN_SYSTEM);
             }}
-            className={cn(CHIP_BUTTON, 'w-5')}
-          >
-            <X aria-hidden className="size-3" strokeWidth={2.5} />
-          </button>
+          />
         </Tooltip>
       )}
       <Tooltip label="Change design system">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<ChevronDown aria-hidden className="size-3" />}
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="Change design system"
           onClick={(event) => {
             togglePicker(event.currentTarget);
           }}
-          className={cn(CHIP_BUTTON, 'w-5')}
-        >
-          <ChevronDown aria-hidden className="size-3" />
-        </button>
+        />
       </Tooltip>
       <Popover
         open={open}
@@ -226,8 +225,9 @@ function useKitList(): { list: KitList; reread: () => void; retry: () => void } 
     let active = true;
     canvasClient.designSystems.list().then(
       (systems) => {
+        if (!active) return;
         followLatest(systems);
-        if (active) setList({ status: 'listed', systems });
+        setList({ status: 'listed', systems });
       },
       (error: unknown) => {
         if (active) setList({ status: 'failed', message: canvasMessage(error) });

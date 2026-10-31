@@ -103,14 +103,19 @@ export function chooseDesignSystem(key: string, choice: DesignSystemChoice | nul
   publish(choice ? { ...rest, [key]: { ref: { ...choice.ref }, name: choice.name } } : rest);
 }
 
-/** Moves every choice of a listed kit to the version and name the list has for it. */
+/**
+ * Moves every choice of a listed kit to the version and name the list has for
+ * it. A list read before a newer save can answer late, so a choice never moves
+ * to an older version.
+ */
 export function followLatest(summaries: readonly DesignSystemSummary[]): void {
   const latest = new Map(summaries.map((kit) => [kit.id, kit]));
   const next: Record<string, DesignSystemChoice> = { ...loaded() };
   let moved = false;
   for (const [key, choice] of Object.entries(next)) {
     const kit = latest.get(choice.ref.id);
-    if (!kit || (kit.version === choice.ref.version && kit.name === choice.name)) continue;
+    if (!kit || kit.version < choice.ref.version) continue;
+    if (kit.version === choice.ref.version && kit.name === choice.name) continue;
     next[key] = { ref: { ...choice.ref, version: kit.version }, name: kit.name };
     moved = true;
   }
@@ -118,19 +123,24 @@ export function followLatest(summaries: readonly DesignSystemSummary[]): void {
 }
 
 /**
- * Returns every canvas that chose the kit to Auto, as deleting it does.
- * `restore` gives back the choices no canvas has replaced since.
+ * Returns every canvas that chose the kit to Auto, as deleting it does. Auto is
+ * chosen rather than the choice removed, which would fall back to a pinned
+ * frame's kit and so to the deleted one. `restore` gives back the choices
+ * still on Auto.
  */
 export function forgetDesignSystem(id: string): { restore(): void } {
-  const entries = Object.entries(loaded());
-  const forgotten = entries.filter(([, choice]) => choice.ref.id === id);
+  const forgotten = Object.entries(loaded()).filter(([, choice]) => choice.ref.id === id);
   if (forgotten.length > 0)
-    publish(Object.fromEntries(entries.filter(([, choice]) => choice.ref.id !== id)));
+    publish({
+      ...loaded(),
+      ...Object.fromEntries(forgotten.map(([key]) => [key, AUTO_DESIGN_SYSTEM])),
+    });
   return {
     restore() {
-      const current = loaded();
-      const back = forgotten.filter(([key]) => !(key in current));
-      if (back.length > 0) publish({ ...current, ...Object.fromEntries(back) });
+      const back = forgotten.filter(
+        ([key]) => designSystemChoice(key)?.ref.id === AUTO_DESIGN_SYSTEM.ref.id,
+      );
+      if (back.length > 0) publish({ ...loaded(), ...Object.fromEntries(back) });
     },
   };
 }

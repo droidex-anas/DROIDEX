@@ -122,6 +122,11 @@ test('choices follow their kit’s latest version, and recent names each kit onc
     name: 'Deep ocean',
   });
   assert.deepEqual(designSystemChoice('cv_b'), linen);
+  // A list read before that save answers late; the choice stays on the newer version.
+  followLatest([
+    { ...ocean.ref, name: 'Ocean', kind: 'user', swatches: { light: swatch, dark: swatch } },
+  ]);
+  assert.equal(designSystemChoice('cv_a')?.ref.version, 4);
   // Following keeps each canvas's place in the recent order.
   assert.deepEqual(
     recentDesignSystems(1).map((kit) => kit.name),
@@ -133,8 +138,17 @@ test('deleting a kit returns the canvases that chose it to Auto, and Undo gives 
   chooseDesignSystem('cv_e', linen);
   chooseDesignSystem('cv_f', linen);
   const deleted = forgetDesignSystem('kit_linen');
-  assert.equal(designSystemChoice('cv_e'), null);
-  assert.equal(designSystemChoice('cv_f'), null);
+  assert.deepEqual(designSystemChoice('cv_f'), AUTO_DESIGN_SYSTEM);
+  // A frame made with the deleted kit does not bring it back.
+  const pin: FramePin = {
+    canvasId: 'cv_e',
+    designId: 'd1',
+    revisionId: 'r1',
+    name: 'Pricing',
+    size: '720 × 520',
+    designSystem: linen.ref,
+  };
+  assert.deepEqual(canvasContextOf([pin], onCanvas('cv_e'))?.designSystem, AUTO_DESIGN_SYSTEM.ref);
 
   // A canvas the user moved on meanwhile keeps its new choice.
   chooseDesignSystem('cv_f', ocean);
