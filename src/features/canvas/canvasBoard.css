@@ -217,7 +217,7 @@
   padding: 1px 6px;
   border-radius: 5px;
   background: var(--selection);
-  color: var(--selection-text);
+  color: var(--on-selection);
   font: 500 11px / 16px var(--canvas-chrome-font);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

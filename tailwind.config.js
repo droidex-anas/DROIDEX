@@ -73,6 +73,8 @@ export default {
         update: v('--update'),
         'update-hover': v('--update-hover'),
         'on-update': v('--on-update'),
+        selection: v('--selection'),
+        'on-selection': v('--on-selection'),
         'brand-ink': v('--brand-ink'),
         'brand-paper': v('--brand-paper'),
         'brand-orange': v('--brand-orange'),

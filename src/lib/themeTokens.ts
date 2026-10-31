@@ -227,7 +227,7 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     '--diff-hunk-fg': diff.hunkFg,
     '--selection': SELECTION_COLORS[scheme].line,
     '--selection-label': SELECTION_COLORS[scheme].label,
-    '--selection-text': SELECTION_COLORS[scheme].text,
+    '--on-selection': SELECTION_COLORS[scheme].text,
     ...codeTokens(theme),
     ...annotationTokens(theme),
   };
