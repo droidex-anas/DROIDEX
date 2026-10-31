@@ -24,15 +24,15 @@
 - Preview guests: the opaque origin and network-denied session stay; a new `kit` binding may load only kit fonts and kit images.
 - Remote: nothing new. Design and the document stay hidden there.
 
-## Decisions this plan assumes
+## Decisions
 
-The spec's open questions, with the recommended answers. If the owner decides otherwise, the affected slice changes as noted.
+The owner settled the spec's open questions on 2026-10-31 (spec, Decisions):
 
-1. v1.6 kits convert on read (§15). Otherwise 1a drops `designSystemConversion.ts` and its test.
-2. Every agent change to an existing kit is a proposal (§11). Otherwise 2b adds one ownership check.
-3. Choices follow the latest version (§9). Otherwise 1c keeps today's version pinning and the save flow updates only the current canvas's choice.
-4. Kit images and Assets ship, last and cuttable (slice 2d). Without them the cover menu has no Replace with image.
-5. The composer chip opens the picker (§9). Otherwise 1c makes the chip open the document when a canvas area exists.
+1. v1.6 kits convert on read (§15); 1a owns `designSystemConversion.ts`.
+2. Every agent change to an existing kit is a proposal (§11).
+3. Choices follow the latest version (§9).
+4. Kit images and Assets ship, last and cuttable (slice 2d). If 2d is cut, the cover menu has no Replace with image.
+5. The composer chip opens the chosen kit's document where the chat has a canvas area, and the picker on the Design home (§9); 1c builds it.
 
 ## Slices, lanes and integration order
 
@@ -135,7 +135,7 @@ function useDocumentDraft(id: string): [DocumentDraft | null, (change: DraftChan
 
 Branch `canvas/ds-1c-navigation-picker`. Thread 3.
 
-Done: The picker matches §9 (search, Auto, Recent, Presets, Yours, Open, New submenu) in light and dark; Open shows the document in place of the board in Design and expands the pane in an ordinary chat; any frame target returns to the board with viewport and selection kept; the Manage dialog and its entry points are gone; choices follow the latest version and a queued request keeps its pin.
+Done: The picker matches §9 (search, Auto, Recent, Presets, Yours, Open, New submenu) in light and dark; Open shows the document in place of the board in Design and expands the pane in an ordinary chat; the composer chip opens the chosen kit's document where the chat has a canvas area and the picker on the Design home, under Auto and for an unavailable kit, and its chevron opens the picker everywhere; any frame target returns to the board with viewport and selection kept; the Manage dialog and its entry points are gone; choices follow the latest version and a queued request keeps its pin.
 
 **Files:** `src/lib/utilityPanel.ts` (target keys `designSystemId`, `designSystemVersion`; in its open path a frame or canvas target clears the document target), `src/features/canvas/openCanvasPane.ts` (`designSystem?` on the target), `src/hooks/useStore.tsx` (the new fields on the `OPEN_UTILITY_TOOL` action), `src/App.tsx` (expansion is App state, `expandedPaneAppSessionId`: expand when the active canvas tab gains a document target in an ordinary chat), `src/features/canvas/CanvasWorkspace.tsx` (ready body: lazy `DesignSystemDocument` when the tab has `designSystemId`, else the board; keep the workspace mounted), `DesignSystemPicker.tsx`, `designSystemPickerRows.ts` (+ test), create `NewDesignSystemMenu.tsx`, `NewDesignSystemDialog.tsx` (560 px, wraps `NewDesignSystemForm`), `KitThumbnail.tsx` (swatches now, cover capture in 2a), `designSystemChoices.ts` (+ test). Delete `useManageDesignSystems.tsx`, `DesignSystemsDialog.tsx`, `DesignSystemList.tsx` (its `KitSwatches` moves into `KitThumbnail.tsx`), `DesignSystemDetail.tsx`, `DesignSystemTokens.tsx`, `designSystemTokenTabs.ts`, `useDesignSystems.ts`, and the dialog parts of `designSystemsState.ts` (+ test), keeping `sameKit` and `KitList` where the picker uses them; remove the entries in `CanvasMenu.tsx` and `DesignColumnHeader.tsx`.
 
@@ -144,7 +144,7 @@ Done: The picker matches §9 (search, Auto, Recent, Presets, Yours, Open, New su
 - [ ] Utility tab targets; `useStoreUtilityPanel.test.ts` covers: a document target retargets the one canvas tab and a frame target clears it. Check the expansion from a docked ordinary chat in the running app.
 - [ ] Workspace body swap without remounting the projection; release board previews while the document shows; Back restores viewport and selection from `canvasState`.
 - [ ] Picker per §9 at 320 px with the existing `Popover`; row Open (trailing ghost button and Right Arrow), absent on the Design home (`NEW_CANVAS_KEY`) and for Auto; New submenu (From DESIGN.md…, From CSS or Tailwind config…; 2c adds From this project). The new dialog chooses the created kit and opens it where a canvas area exists.
-- [ ] Composer chip per §9 with `KitThumbnail`; fix the faint light-mode swatches noted in 7b's follow-ups (to-do e4631db1).
+- [ ] Composer chip per §9 with `KitThumbnail`: the chip opens the document through `useOpenCanvasPane` when `canvasKey` is a real canvas and a kit is chosen and saved, otherwise the picker; the trailing chevron always opens the picker. Fix the faint light-mode swatches noted in 7b's follow-ups (to-do e4631db1).
 - [ ] Choices follow latest on `designSystemsChanged` and after a save; delete forgets with Undo; existing test that a queued request keeps its pinned version still passes unchanged.
 - [ ] Delete the Manage dialog chain and run `npm run quality:deadcode` to confirm nothing dangles.
 

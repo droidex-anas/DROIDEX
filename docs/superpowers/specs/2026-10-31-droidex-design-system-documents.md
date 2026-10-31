@@ -110,7 +110,7 @@ The canvas area is the only place a document opens: the board region beside the 
 - `CanvasWorkspace` stays mounted. Its ready body swaps the board for the document, so the canvas projection and subscription are not rebuilt, and viewport and selection are restored on Back. The board's live previews are released while the document shows; the document uses the same four slots.
 - The chat column, its Agent and Components tabs and the composer stay beside the document. Talking to the agent about the kit while reading it is the point.
 - Each chat keeps its own utility panel, so each chat remembers whether it shows the board or a document. Closing the pane closes the document; an unsaved draft survives (§6).
-- The Design home has no canvas area. Its picker chooses and creates kits but shows no Open action.
+- The Design home has no canvas area. Its chip opens the picker (§9), which chooses and creates kits but shows no Open action.
 - Escape closes the innermost popover or inline edit first. With nothing open, Escape in the document goes back to the board.
 
 ## 5. The document view
@@ -178,7 +178,7 @@ Assets are images the kit owns: logos, marks, illustrations, cover images. PNG, 
 
 ## 9. Choosing a system: the picker and the chips
 
-**The composer chip** stays where the control is today, in the composer's quiet row. It shows the cover thumbnail (40 × 16, `rounded-xs`) or the swatches, then the kit's name, and a clear button back to Auto when a kit is chosen. Clicking it opens the picker. A kit chosen but no longer saved keeps today's “unavailable” treatment.
+**The composer chip** stays where the control is today, in the composer's quiet row. It shows the cover thumbnail (40 × 16, `rounded-xs`) or the swatches, then the kit's name, and a clear button back to Auto when a kit is chosen. Clicking it opens the chosen kit's document where the chat has a canvas area: in place of the board in a Design chat, and in the canvas pane of an ordinary chat with a canvas, which opens and expands as in §4. On the Design home, which has no canvas area, it opens the picker. It also opens the picker when there is no document to show: under Auto, and for a kit chosen but no longer saved, which keeps today's “unavailable” treatment. A trailing chevron on the chip (“Change design system”) opens the picker in every chat, so choosing another kit stays one click away.
 
 **The picker** replaces today's 280 px popover with a 320 px one (`Popover`, menus 200–320):
 
@@ -316,7 +316,7 @@ Event: `designSystemsChanged { id }` after every save, accept, discard, proposal
 
 ## 15. Kits saved by v1.6
 
-v1.6.0 and v1.6.1 shipped Design in beta with user kits saved as `{ modes, guidance }`. The beta label allows the format to change; it does not allow losing those kits. Unless the owner decides otherwise, `designSystems.ts` reads a v1.6 version file through one converter: tokens grouped by the contract's names into the canonical sections (unknown names into Other tokens), `guidance` as one `guidance.md` note by the user, examples kept, no cover. It presents the same version number, so frames pinned to it keep building; the next save writes the new shape. The converter and its test are deleted in the first release after the one that ships this feature.
+v1.6.0 and v1.6.1 shipped Design in beta with user kits saved as `{ modes, guidance }`. The beta label allows the format to change; it does not allow losing those kits. `designSystems.ts` reads a v1.6 version file through one converter: tokens grouped by the contract's names into the canonical sections (unknown names into Other tokens), `guidance` as one `guidance.md` note by the user, examples kept, no cover. It presents the same version number, so frames pinned to it keep building; the next save writes the new shape. The converter and its test are deleted in the first release after the one that ships this feature.
 
 ## 16. Out of scope
 
@@ -350,12 +350,12 @@ v1.6.0 and v1.6.1 shipped Design in beta with user kits saved as `{ modes, guida
 | Privacy canary | A unique marker in a note and a token value is absent from transcript, history, search and export |
 | Light and dark | Document, picker, chips and covers checked in both app themes and both preview modes |
 
-## Open questions
+## Decisions
 
-These have a recommended answer the plan follows unless the owner decides otherwise.
+The owner settled the open questions on 2026-10-31:
 
-1. **v1.6 kits** (§15): convert on read with a removal condition, or drop them as beta data. Recommendation: convert.
-2. **Agent edits to a kit it just created**: proposal like any other change, or direct while the user has not touched the kit. Recommendation: always a proposal; one rule is easier to trust, and creation can include everything in one save.
-3. **Choices follow the latest version** (§9) instead of staying on the chosen one. Recommendation: follow, with per-request pinning unchanged.
-4. **Kit images and Assets in this release** (§8). Recommendation: ship them; cover replacement needs the store anyway. The Assets section is the last slice and can slip without blocking the rest.
-5. **Composer chip click**: opens the picker (Open is one row action away) or opens the document directly. Recommendation: the picker; choosing is the composer's job and the Design home has no canvas area.
+1. **v1.6 kits** (§15) convert on read, with a removal condition.
+2. **Agent edits to a kit it just created** are proposals, like any other agent change to an existing kit (§11).
+3. **Choices follow the latest version** (§9); per-request pinning is unchanged.
+4. **Kit images and Assets** (§8) ship in this release as the last slice, which can be cut without blocking the rest.
+5. **The composer chip** opens the chosen kit's document where the chat has a canvas area, and the picker on the Design home (§9).
