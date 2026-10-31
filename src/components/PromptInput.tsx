@@ -1631,7 +1631,7 @@ export default function PromptInput({
         releaseProjectStart(clientRef);
         return;
       }
-      registerPending(clientRef, state.draftChat?.canvas);
+      registerPending(clientRef, draftAtSubmit?.canvas);
       // Whether this send empties the composer: an edit made while it was
       // preparing is kept, and a failure must not replace it.
       const clearsDraft = composerRevisionRef.current === composerRevision;
@@ -1676,7 +1676,7 @@ export default function PromptInput({
           cwd: dir,
           title,
           goal: composed,
-          canvas: canvasIntentForDraft(state.draftChat?.canvas ?? null, displayText, clientRef),
+          canvas: canvasIntentForDraft(draftAtSubmit?.canvas ?? null, displayText, clientRef),
           ...(mentions.length > 0 ? { mentions } : {}),
           ...(canvasContext ? { canvasContext } : {}),
           sessionPurpose: 'chat',
@@ -2242,7 +2242,7 @@ export default function PromptInput({
         [],
         { hour: '2-digit', minute: '2-digit' },
       )}`;
-      const preparation = await prepareDraftCwd(state.draftChat?.cwd ?? '', clientRef, placeholder);
+      const preparation = await prepareDraftCwd(draftAtStart?.cwd ?? '', clientRef, placeholder);
       if (!preparation.ok) {
         voiceAwaiting.current = null;
         releaseProjectStart(clientRef);
@@ -2258,7 +2258,7 @@ export default function PromptInput({
         skills: [],
         files: [],
         originHoldId,
-        canvas: state.draftChat?.canvas,
+        canvas: draftAtStart?.canvas,
       });
       if (voiceAwaiting.current?.clientRef === clientRef) voiceAwaiting.current.registered = true;
       if (projectDraft) {
@@ -2270,7 +2270,7 @@ export default function PromptInput({
             title: placeholder,
             prompt: VOICE_PROJECT_TASK,
             dir: preparation.path,
-            selectedDir: state.draftChat?.cwd ?? '',
+            selectedDir: draftAtStart?.cwd ?? '',
             draft: draftAtStart,
           },
           () => {
@@ -2288,7 +2288,7 @@ export default function PromptInput({
         cwd: preparation.path,
         title: placeholder,
         goal: '',
-        canvas: canvasIntentForDraft(state.draftChat?.canvas ?? null, '', clientRef),
+        canvas: canvasIntentForDraft(draftAtStart?.canvas ?? null, '', clientRef),
         sessionPurpose: 'chat',
         provider: draftProvider,
         interactionMode: isSpecMode ? 'spec' : 'auto',
