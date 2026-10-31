@@ -721,10 +721,12 @@ export default function App() {
         dispatch({ type: 'TOGGLE_SIDEBAR' });
       },
       toggleUtilityPane,
-      toggleProduct: () => {
-        const mode = activeProduct(store.getState()) === 'chat' ? 'design' : 'chat';
-        dispatch({ type: 'SET_PRODUCT_MODE', mode });
-      },
+      toggleProduct: isRemoteClient()
+        ? null
+        : () => {
+            const mode = activeProduct(store.getState()) === 'chat' ? 'design' : 'chat';
+            dispatch({ type: 'SET_PRODUCT_MODE', mode });
+          },
       openCommandPalette: () => {
         dispatch({ type: 'TOGGLE_COMMAND_PALETTE' });
       },
@@ -732,7 +734,9 @@ export default function App() {
         dispatch({ type: 'TOGGLE_SETTINGS' });
       },
       newTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) })),
-      newDesignTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: 'design' })),
+      newDesignTab: isRemoteClient()
+        ? null
+        : tabAction(() => ({ type: 'OPEN_NEW_TAB', product: 'design' })),
       closeTab: tabAction(() => ({ type: 'CLOSE_TAB', tabId: tabStrip().activeTabId })),
       reopenClosedTab: tabAction(() => ({ type: 'REOPEN_CLOSED_TAB' })),
       nextTab: tabAction(() => ({ type: 'ACTIVATE_TAB', tabId: adjacentTabId(tabStrip(), 1) })),

@@ -24,6 +24,7 @@ import {
   type AppState,
 } from '../../hooks/useStore';
 import { useSessionHistory } from '../../hooks/useSessionHistory';
+import { isRemoteClient } from '../../lib/desktop';
 import { isEmbedded } from '../../lib/embed';
 import { LazyLibrarySeedChip } from '../../lib/lazySurfaces';
 import { DESIGN_PLACEHOLDER } from '../canvas/designStarters';
@@ -222,7 +223,9 @@ const TilePane = memo(function TilePane({
         <NewChatStarters
           start={home}
           // Design never shares a tab, so only a lone page can switch to it.
-          switchable={tileId === null && !isEmbedded() && home.kind !== 'project'}
+          switchable={
+            tileId === null && !isEmbedded() && !isRemoteClient() && home.kind !== 'project'
+          }
           onPreview={setStarterPreview}
         />
       )}
