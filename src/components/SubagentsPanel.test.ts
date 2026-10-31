@@ -99,7 +99,7 @@ test('rows stay out of the panel markup — the list lives in the popover', () =
 test('rows render the label and a quiet status readout', () => {
   assert.ok(textOf(renderRow(child('running', { label: 'explorer' }))).includes('explorer'));
   assert.match(renderRow(child('running')), /shimmer-text[^"]*">Working/);
-  assert.ok(textOf(renderRow(child('pending'))).includes('Awaiting status'));
+  assert.ok(textOf(renderRow(child('pending'))).includes('Starting'));
   assert.ok(textOf(renderRow(child('paused'))).includes('Idle'));
   assert.ok(textOf(renderRow(child('completed'))).includes('Done'));
 });

@@ -176,13 +176,14 @@ test(
       {
         type: 'assistant',
         parent_tool_use_id: null,
-        message: { content: [{ type: 'text', text: 'Ported it to v3.' }] },
+        message: { id: 'ported', content: [{ type: 'text', text: 'Ported it to v3.' }] },
       },
       {
         type: 'assistant',
         parent_tool_use_id: null,
         error: 'unknown',
         message: {
+          id: 'canvas-error',
           content: [
             { type: 'text', text: `Tool failed: ${canary}` },
             {

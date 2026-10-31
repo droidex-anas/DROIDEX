@@ -6,6 +6,7 @@ import type {
   TranscriptEvent,
 } from '../types/bridge';
 import {
+  isDisjointLatestPage,
   reconcilePrependedTranscript,
   reconcileRestoredTranscript,
   reconcileTranscriptSourcePage,
@@ -137,7 +138,7 @@ export function reduceSessionHistory<S extends SessionRestoreStore>(
     progress: ProgressEntry[];
     transcripts: TranscriptEvent[];
     childSessions?: ChildSessionSummary[];
-    mode?: 'replace' | 'prepend';
+    mode?: 'replace' | 'prepend' | 'refresh';
     olderCursor?: string;
     loadedCount?: number;
     hasMore?: boolean;
@@ -147,22 +148,32 @@ export function reduceSessionHistory<S extends SessionRestoreStore>(
   const hasMore = Boolean(action.olderCursor);
 
   if (action.childSessionId) {
+    const { childSessionId } = action;
+    const restartsHistory =
+      action.mode === 'refresh' &&
+      isDisjointLatestPage(existing, childSessionId, action.transcripts, hasMore);
     const reconciled = reconcileTranscriptSourcePage(
-      existing,
-      action.childSessionId,
+      restartsHistory
+        ? existing.filter((event) => event.sourceSessionId !== childSessionId)
+        : existing,
+      childSessionId,
       action.transcripts,
-      action.mode ?? 'replace',
+      action.mode === 'prepend' ? 'prepend' : 'replace',
       hasMore,
     );
     const transcriptChanged = reconciled.transcript !== existing;
-    const previousHistory = state.childHistory[action.appSessionId]?.[action.childSessionId];
+    const previousHistory = state.childHistory[action.appSessionId]?.[childSessionId];
+    const preservesPagination =
+      action.mode === 'refresh' && !restartsHistory && previousHistory?.isLoaded;
+    const olderCursor = preservesPagination ? previousHistory.olderCursor : action.olderCursor;
+    const childHasMore = Boolean(olderCursor);
     const historyState = withChildHistory(state, action.appSessionId, action.childSessionId, {
-      status: hasMore ? 'paged' : 'loaded',
+      status: childHasMore ? 'paged' : 'loaded',
       loadedCount: reconciled.sourceEvents.length,
-      hasMore,
+      hasMore: childHasMore,
       isLoaded: true,
-      isLoadingOlder: false,
-      olderCursor: action.olderCursor,
+      isLoadingOlder: preservesPagination ? previousHistory.isLoadingOlder : false,
+      olderCursor,
       isViewportPinned: previousHistory?.isViewportPinned ?? true,
     });
     const next = transcriptChanged

@@ -2,35 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ChildSessionSummary } from '../../types/bridge';
-import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
-import {
-  CHILD_STREAM_PHASE_LABEL,
-  CHILD_STREAM_PREVIEW_BOX_CLASS,
-  CHILD_STREAM_PREVIEW_EXPANDED_BOX_CLASS,
-  childStreamPreviewBoxClass,
-} from '../../lib/childSessionStream';
+import type { ChildSessionSummary, TranscriptEvent } from '../../types/bridge';
 import { buildAgentRows } from './agentMonitorModel';
 import { areAgentRowPropsEqual, AgentRow, agentRowTitle, type AgentRowProps } from './AgentRow';
 import { AgentPaneDetail } from './AgentPaneDetail';
 import { AgentPaneList } from './AgentPaneList';
-
-function snapshot(
-  phase: ChildStreamSnapshot['phase'],
-  preview = 'hello',
-  fidelity: ChildStreamSnapshot['fidelity'] = 'token',
-): ChildStreamSnapshot {
-  return {
-    key: 'tool-a',
-    phase,
-    fidelity,
-    step:
-      phase === 'streaming' && fidelity !== 'token' ? 'Working' : CHILD_STREAM_PHASE_LABEL[phase],
-    preview,
-    previewKind: phase === 'streaming' && fidelity === 'token' ? 'markdown' : 'plain',
-    live: phase === 'streaming' || phase === 'starting',
-  };
-}
 
 function child(overrides: Partial<ChildSessionSummary> = {}): ChildSessionSummary {
   return {
@@ -121,32 +97,48 @@ test('the pane list splits active agents from finished ones', () => {
   assert.ok(text.includes('scout'));
 });
 
-test('the pane detail stands in with status and preview until a transcript arrives', () => {
-  // Harnesses that do not stream a child transcript still report a status and a
-  // latest step; the pane shows those and says the transcript is still missing.
+test('the pane detail renders only the selected child’s conversation through the chat feed', () => {
   const detail = row();
+  const childEvent = (id: string, extra: Partial<TranscriptEvent>): TranscriptEvent => ({
+    id,
+    appSessionId: 'parent',
+    sourceSessionId: 'child-a',
+    role: 'worker',
+    kind: 'text',
+    ts: 1_000,
+    ...extra,
+  });
   const html = renderToStaticMarkup(
     createElement(AgentPaneDetail, {
-      row: { ...detail, snapshot: snapshot('streaming', 'visible tail') },
+      row: detail,
       models: [],
-      transcript: [],
+      transcript: [
+        childEvent('parent-reply', {
+          sourceSessionId: 'primary',
+          role: 'primary',
+          text: 'parent-only',
+        }),
+        childEvent('task', { author: 'user', text: 'Check the browser changes' }),
+        childEvent('thinking', { kind: 'thinking', text: 'Inspecting the preview lifecycle' }),
+        childEvent('reply', { text: 'The child transcript is visible' }),
+        childEvent('sibling', { sourceSessionId: 'child-b', text: 'sibling-only' }),
+      ],
       live: true,
       toolActivity: { density: 'balanced', inlineDiffs: true },
       onBack: () => undefined,
       onOpenNested: () => undefined,
+      onRetryHistory: () => undefined,
+      onLoadEarlier: () => undefined,
       expanded: false,
       onToggleExpanded: () => undefined,
     }),
   );
   const text = html.replace(/<!--.*?-->/g, '');
   assert.ok(text.includes('Worker 1'));
-  assert.ok(text.includes('visible tail'));
-  assert.ok(html.includes('data-testid="subagent-stream-preview"'));
-  // The preview opens at its fixed height, so live tokens never resize the pane;
-  // "Show more" is what trades that for the taller scrolling box.
-  assert.ok(html.includes(CHILD_STREAM_PREVIEW_BOX_CLASS));
-  assert.equal(html.includes(CHILD_STREAM_PREVIEW_EXPANDED_BOX_CLASS), false);
-  assert.equal(childStreamPreviewBoxClass(true), CHILD_STREAM_PREVIEW_EXPANDED_BOX_CLASS);
-  assert.ok(text.includes('Show more'));
-  assert.ok(text.includes('its own transcript appears here once it streams'));
+  assert.ok(text.includes('Check the browser changes'));
+  assert.ok(text.includes('The child transcript is visible'));
+  assert.equal(text.includes('parent-only'), false);
+  assert.equal(text.includes('sibling-only'), false);
+  assert.equal(html.includes('data-testid="subagent-stream-preview"'), false);
+  assert.equal(text.includes('its own transcript appears here once it streams'), false);
 });

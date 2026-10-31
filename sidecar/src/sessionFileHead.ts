@@ -11,9 +11,10 @@ import { objectValue } from './values.js';
 export interface SessionFileHead {
   // Absent when the head has no session_start; Droid cannot load such a file.
   start?: StoredSessionStart;
+  hasPrompt: boolean;
   // A provider writes session_start before the first prompt, so an interrupted
-  // or abandoned turn leaves a valid file with no completed exchange. Those are
-  // not durable conversations and must not become permanent sidebar rows. A
+  // or abandoned turn leaves a valid file with no completed exchange. Droid's
+  // own files need one before admission; app-owned native files retain prompts. A
   // prompt answered only by a stored error row is one: that is how a crashed
   // chat ended.
   hasCompletedConversation: boolean;
@@ -49,6 +50,7 @@ export function readSessionFileHead(path: string, sizeBytes: number): SessionFil
 
   return {
     start,
+    hasPrompt,
     hasCompletedConversation: hasPrompt && hasAnswer,
   };
 }

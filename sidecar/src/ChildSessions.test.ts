@@ -68,6 +68,7 @@ function createHarness(
   let failResolveLimit = options.failResolveLimitOnce;
   let deferDurabilityForStatus = options.deferDurabilityForStatus;
   let clock = 100;
+  let childSequence = 0;
   const throwDriveSetup = (stage: NonNullable<typeof options.failDriveSetup>) => {
     if (failDriveSetup !== stage) return;
     failDriveSetup = undefined;
@@ -196,7 +197,10 @@ function createHarness(
       events.push(event);
       if (event.type === 'child.error') sequence.push(`child.error:${event.code}`);
     },
-    nextChildSessionId: () => 'generated-child',
+    nextChildSessionId: () => {
+      childSequence += 1;
+      return childSequence === 1 ? 'generated-child' : `generated-child-${childSequence}`;
+    },
     maxOpenSessions: options.maxOpenSessions ?? 4,
     maxLiveRuntimes: options.maxLiveRuntimes ?? options.maxOpenSessions ?? 4,
     maxQueuedRuntimes: options.maxQueuedRuntimes ?? 16,
@@ -550,7 +554,7 @@ test('a settled state-only child keeps the moment it stopped', () => {
   assert.equal(child?.settledAt, 100);
 });
 
-test('a state-only child with no model is admitted rather than parked', () => {
+test('native child admission waits for its own model instead of inheriting the parent model', () => {
   const h = createHarness([], { parentProvider: 'codex' });
   const identity = observe(h, {
     providerSessionId: 'agent-1',
@@ -561,11 +565,56 @@ test('a state-only child with no model is admitted rather than parked', () => {
     status: 'running',
   });
 
-  assert.ok(identity);
+  assert.equal(identity, undefined);
+  assert.deepEqual(h.owner.list(h.parentId), []);
+  const admitted = observe(h, {
+    providerSessionId: 'agent-1',
+    role: 'worker',
+    modelId: 'native-child-model',
+    transcriptAvailable: true,
+  });
+  assert.ok(admitted);
   assert.deepEqual(
     h.owner.list(h.parentId).map((child) => [child.label, child.status, child.modelId]),
-    [['echo:ONE', 'running', 'parent-model']],
+    [['echo:ONE', 'running', 'native-child-model']],
   );
+});
+
+test('Codex children sharing a spawn keep exact native scopes and open their saved transcripts', async () => {
+  const h = createHarness([], { parentProvider: 'codex' });
+  const ids = ['native-first', 'native-second'].map((providerSessionId) => {
+    const identity = observe(h, {
+      providerSessionId,
+      role: 'worker',
+      spawnLink: { kind: 'tool-use', id: 'shared-spawn' },
+      modelId: 'native-child-model',
+      transcriptAvailable: true,
+      streamFidelity: 'token',
+    });
+    assert.ok(identity);
+    return identity.childSessionId;
+  });
+  assert.notEqual(ids[0], ids[1]);
+  assert.deepEqual(h.owner.childScopeForProvider(h.parentId, 'native-second'), {
+    childSessionId: ids[1],
+    role: 'worker',
+  });
+  assert.equal(
+    h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id: 'shared-spawn' }),
+    'ambiguous',
+  );
+  await h.owner.open({
+    type: 'child.open',
+    parentAppSessionId: h.parentId,
+    childSessionId: ids[1],
+    requestId: 'open-native',
+  });
+  const ready = h.events.find(
+    (event) => event.type === 'child.updated' && event.requestId === 'open-native',
+  );
+  assert.equal(ready?.type === 'child.updated' && ready.access, 'history');
+  assert.ok(recorded(h, 'protocol', 'timeline.loadChildHistory'));
+  assert.ok(!h.calls.some((call) => call.method === 'loadSession'));
 });
 
 test('missing Task settings defer exact admission and preserve provider-only completion', () => {
@@ -680,10 +729,15 @@ test('poll observations never rekey a child away from its spawn link', () => {
 
 test('spawn routing indexes hydrated siblings and moves a late spawn link', async () => {
   const h = createHarness([
-    childRecord('a', 'provider-a', 'shared'),
+    { ...childRecord('a', 'provider-a', 'shared'), group: 'persisted-workflow' },
     childRecord('b', 'provider-b', 'shared'),
     childRecord('c', 'provider-c', 'original'),
   ]);
+  const manifest = h.owner
+    .attachParent(h.parentId)
+    .find((child) => child.providerSessionId === 'provider-a');
+  assert.deepEqual(manifest?.spawnLink, { kind: 'tool-use', id: 'shared' });
+  assert.equal(manifest?.group, 'persisted-workflow');
   const scope = (id: string) => h.owner.childScopeForSpawn(h.parentId, { kind: 'tool-use', id });
   assert.equal(scope('shared'), 'ambiguous');
   assert.deepEqual(scope('original'), { childSessionId: 'c', role: 'worker' });
@@ -1025,26 +1079,29 @@ test('completion rejects an immediate stale provider observation', async () => {
 
 test('repeated child observations publish only new task prompts', () => {
   const record = childRecord('child', 'provider');
-  const h = createHarness([record]);
-  const observePrompt = (prompt?: string) =>
+  const observePrompt = (h: Harness, prompt?: string) =>
     observe(h, {
       providerSessionId: record.providerSessionId,
       role: record.role,
       ...(record.spawnLink ? { spawnLink: record.spawnLink } : {}),
       ...(prompt ? { prompt } : {}),
     });
-
-  observePrompt('first prompt');
-  observePrompt();
-  observePrompt('first prompt');
-  observePrompt('changed prompt');
-
-  assert.deepEqual(
+  const publishedPrompts = (h: Harness) =>
     h.calls
       .filter((call) => call.target === 'protocol' && call.method === 'timeline.prompt')
-      .map((call) => call.args[1]),
-    ['first prompt', 'changed prompt'],
-  );
+      .map((call) => call.args[1]);
+
+  const claude = createHarness([record], { parentProvider: 'claude' });
+  observePrompt(claude, 'first prompt');
+  observePrompt(claude);
+  observePrompt(claude, 'first prompt');
+  observePrompt(claude, 'changed prompt');
+  assert.deepEqual(publishedPrompts(claude), ['first prompt', 'changed prompt']);
+
+  // A Droid Task child's own transcript opens with the brief.
+  const droid = createHarness([record]);
+  observePrompt(droid, 'first prompt');
+  assert.deepEqual(publishedPrompts(droid), []);
 });
 
 test('repeated same-provider observation preserves automatic compaction settlement', async () => {

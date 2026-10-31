@@ -9,6 +9,7 @@ import type { NormalizedEvent } from '../../normalize.js';
 import type { TranscriptEvent } from '../../protocol.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import type { ProviderModelSettings } from '../session.js';
+import { reasoningValue } from '../../modelCatalog.js';
 import { errMsg } from '../../errors.js';
 import { usageLimitDetails } from '../usageLimit.js';
 import type { FileChangeDetail } from './codexApprovals.js';
@@ -162,6 +163,7 @@ export class CodexEventMapper {
   private readonly tools = new Map<string, OpenTool>();
   // Message items that have already reached the transcript through their deltas.
   private readonly streamed = new Set<string>();
+  private readonly streamedThinking = new Set<string>();
   private readonly children = new Map<string, ChildSessionSignal>();
   private readonly startingMcpServers = new Set<string>();
   // Failed servers waiting for the rest to settle, and those already reported,
@@ -177,10 +179,15 @@ export class CodexEventMapper {
   beginTurn(): void {
     this.tools.clear();
     this.streamed.clear();
+    this.streamedThinking.clear();
   }
 
   setModel(model: ProviderModelSettings): void {
     this.model = model;
+  }
+
+  modelSettings(): ProviderModelSettings {
+    return this.model;
   }
 
   // Every payload is read through a reader that answers undefined for a shape
@@ -219,16 +226,27 @@ export class CodexEventMapper {
 
   childThreadStarted(params: unknown, parentThreadId: string | undefined): NormalizedEvent[] {
     if (!parentThreadId || !isObject(params) || !isObject(params.thread)) return [];
-    const { id, parentThreadId: parent, agentNickname, agentRole } = params.thread;
+    const {
+      id,
+      parentThreadId: parent,
+      agentNickname,
+      agentRole,
+      model,
+      reasoningEffort,
+    } = params.thread;
     if (parent !== parentThreadId || typeof id !== 'string' || !id) return [];
     const label = [agentRole, agentNickname]
       .filter((value) => typeof value === 'string' && value)
       .join(': ');
+    const effort = reasoningValue(reasoningEffort);
     return this.updateChild({
       providerSessionId: id,
       role: agentRole === 'validator' ? 'validator' : 'worker',
       ...(label ? { label } : {}),
-      transcriptAvailable: false,
+      ...(typeof model === 'string' ? { modelId: model } : {}),
+      ...(effort ? { reasoningEffort: effort } : {}),
+      transcriptAvailable: true,
+      streamFidelity: 'token',
     });
   }
 
@@ -245,6 +263,12 @@ export class CodexEventMapper {
     if (previous?.label && previous.label !== previous.prompt) child.label = previous.label;
     // Closing a failed thread is not a successful run. A new running state can resume it.
     if (previous?.status === 'failed' && child.status === 'completed') child.status = 'failed';
+    // Codex thread metadata names no model; a child no spawn call configured
+    // runs on the parent's.
+    if (!child.modelId && this.model.modelId) {
+      child.modelId = this.model.modelId;
+      child.reasoningEffort ??= reasoningValue(this.model.reasoningEffort ?? undefined);
+    }
     this.children.set(id, child);
     return [{ childSession: child }];
   }
@@ -305,10 +329,12 @@ export class CodexEventMapper {
   ): NormalizedEvent[] {
     if (!params?.delta) return [];
     if (kind === 'text') this.streamed.add(params.itemId);
+    else this.streamedThinking.add(params.itemId);
     return [
       {
         transcript: this.transcript(kind, {
           text: params.delta,
+          textUpdate: { messageId: params.itemId, kind: 'delta' },
           ...(forkPointId ? { forkPointId } : {}),
         }),
       },
@@ -334,6 +360,7 @@ export class CodexEventMapper {
   }
 
   private started(item: ThreadItem): NormalizedEvent[] {
+    if (item.type === 'functionCallOutput') return [];
     const call = toolCall(item);
     if (!call) return [];
     const provenance = canvasProvenance(item);
@@ -355,6 +382,30 @@ export class CodexEventMapper {
   }
 
   private completed(item: ThreadItem, forkPointId: string | undefined): NormalizedEvent[] {
+    if (item.type === 'userMessage') {
+      const text = item.content
+        .flatMap((value) => {
+          if (!isObject(value) || value.type !== 'text' || typeof value.text !== 'string')
+            return [];
+          return [value.text];
+        })
+        .join('\n');
+      return text ? [{ transcript: this.transcript('text', { text, author: 'user' }) }] : [];
+    }
+    if (item.type === 'reasoning') {
+      if (this.streamedThinking.delete(item.id)) return [];
+      const text = (item.content.length ? item.content : item.summary).join('\n\n');
+      return text
+        ? [
+            {
+              transcript: this.transcript('thinking', {
+                text,
+                textUpdate: { messageId: item.id, kind: 'snapshot' },
+              }),
+            },
+          ]
+        : [];
+    }
     if (item.type === 'agentMessage') {
       // A message that never streamed is visible nowhere else.
       if (this.streamed.delete(item.id) || !item.text) return [];
@@ -362,6 +413,7 @@ export class CodexEventMapper {
         {
           transcript: this.transcript('text', {
             text: item.text,
+            textUpdate: { messageId: item.id, kind: 'snapshot' },
             ...(forkPointId ? { forkPointId } : {}),
           }),
         },

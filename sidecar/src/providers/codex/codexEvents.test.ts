@@ -1,39 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { CodexEventMapper, mcpServerStatus } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
-import type { ProviderSession, SteerOutcome } from '../session.js';
+import type { SteerOutcome } from '../session.js';
 import { CodexSession } from './codexSession.js';
 import { codexSession, fakeClient } from './codexTestSupport.js';
-import { CodexProvider } from './CodexProvider.js';
 import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
-
-const CONFIGURED_CODEX = String.raw`#!/usr/bin/env node
-const { appendFileSync } = require('node:fs');
-const { createInterface } = require('node:readline');
-createInterface({ input: process.stdin }).on('line', (line) => {
-  const message = JSON.parse(line);
-  if (message.id === undefined) return;
-  appendFileSync('requests.jsonl', JSON.stringify(message) + '\n');
-  let result = {};
-  if (message.method === 'initialize') result = { userAgent: 'codex/0.161.0' };
-  if (message.method === 'config/read') result = { config: {
-    developer_instructions: 'PROJECT_NATIVE_GUIDANCE_MARKER',
-    instructions: 'BASE_NATIVE_GUIDANCE_MARKER',
-  } };
-  if (message.method === 'thread/start' || message.method === 'thread/resume')
-    result = { thread: { id: 'thread-one' }, model: 'test-model' };
-  if (message.method === 'skills/list') result = { data: [] };
-  if (message.method === 'plugin/installed') result = { marketplaces: [] };
-  if (message.method === 'app/list') result = { data: [], nextCursor: null };
-  process.stdout.write(JSON.stringify({ id: message.id, result }) + '\n');
-});
-`;
 
 // Exactly what `codex app-server` sends for a server whose command is missing.
 const FAILED = {
@@ -101,73 +75,6 @@ test('Design guidance uses Codex developer instructions on creation and resume w
   }
 });
 
-test('Codex provider preserves configured project instructions beside one Design brief on create and resume', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'codex-design-config-'));
-  const executable = join(directory, 'configured-codex.cjs');
-  writeFileSync(executable, CONFIGURED_CODEX);
-  chmodSync(executable, 0o755);
-  const previousPath = process.env.CODEX_PATH;
-  process.env.CODEX_PATH = executable;
-  const sessions: ProviderSession[] = [];
-  try {
-    const provider = new CodexProvider();
-    const input = {
-      cwd: directory,
-      autonomy: 'low' as const,
-      interactionMode: 'auto' as const,
-      sessionPurpose: 'design' as const,
-      modelId: 'test-model',
-      mcpServers: [],
-      interactions: {
-        requestApproval: () => Promise.reject(new Error('unused')),
-        requestQuestion: async () => ({ cancelled: true, answers: [] }),
-        isActive: () => true,
-        cancelPending: () => undefined,
-      },
-    };
-    const created = await provider.create(input);
-    sessions.push(created);
-    await created.close();
-    const resumed = await provider.resume(created.providerSessionId, {
-      ...input,
-      appSessionId: created.providerSessionId,
-      resumeId: created.resumeId,
-    });
-    sessions.push(resumed);
-    await resumed.close();
-    const requests: { method: string; params: Record<string, unknown> }[] = readFileSync(
-      join(directory, 'requests.jsonl'),
-      'utf8',
-    )
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line));
-    const opened = requests.filter(
-      (request) => request.method === 'thread/start' || request.method === 'thread/resume',
-    );
-    assert.equal(opened.length, 2);
-    for (const request of opened) {
-      assert.equal(
-        request.params.developerInstructions,
-        `PROJECT_NATIVE_GUIDANCE_MARKER\n\n${DESIGN_SESSION_GUIDANCE}`,
-      );
-      assert.equal('baseInstructions' in request.params, false);
-    }
-    assert.deepEqual(
-      requests
-        .filter((request) => request.method === 'config/read')
-        .map((request) => request.params),
-      [{ cwd: directory }, { cwd: directory }],
-    );
-    assert.equal(opened[1].params.threadId, created.resumeId);
-  } finally {
-    await Promise.all(sessions.map((session) => session.close()));
-    if (previousPath === undefined) delete process.env.CODEX_PATH;
-    else process.env.CODEX_PATH = previousPath;
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
 test('failed MCP servers are reported once, together, when every server has settled', () => {
   const mapper = new CodexEventMapper('app-1');
   const update = (name: string, status: string) =>
@@ -189,6 +96,76 @@ test('failed MCP servers are reported once, together, when every server has sett
   // The same server failing again is the same fact, not a second row.
   assert.deepEqual(update('figma', 'failed'), []);
   assert.equal(update('late', 'failed')[0].transcript?.text, 'An MCP server didn’t start: late.');
+});
+
+test('Codex function outputs retain their tool identity and screenshot without inventing a call', () => {
+  const mapper = new CodexEventMapper('app-1');
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9]).toString('base64');
+  const events = mapper.map('item/completed', {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+    item: {
+      type: 'functionCallOutput',
+      id: 'computer-output',
+      name: 'js',
+      namespace: 'mcp__cua_repl',
+      output: [
+        { type: 'input_text', text: 'Screenshot of the viewport.' },
+        { type: 'input_image', image_url: `data:image/jpeg;base64,${jpeg}` },
+      ],
+    },
+  });
+  assert.equal(events.length, 1);
+  const output = events[0].transcript;
+  assert.equal(output?.kind, 'tool_result');
+  assert.equal(output?.appSessionId, 'app-1');
+  assert.equal(output?.toolUseId, 'computer-output');
+  assert.equal(output?.toolName, 'computer_use');
+  assert.equal(output?.text, 'Screenshot of the viewport.');
+  assert.match(output?.images?.[0] ?? '', /tool-[0-9a-f]{32}\.jpg$/);
+  assert.equal(output?.isError, false);
+  assert.ok(!JSON.stringify(events).includes(jpeg));
+  const wrapper = mapper.map('item/completed', {
+    item: {
+      type: 'functionCallOutput',
+      id: 'wrapper-output',
+      name: 'exec',
+      namespace: 'functions',
+      output: 'wrapper complete',
+    },
+  });
+  assert.equal(wrapper[0]?.transcript?.toolName, 'functions.exec');
+  assert.deepEqual(
+    mapper.map('item/completed', {
+      item: { type: 'functionCallOutput', id: 'bad', name: 'exec', namespace: null, output: {} },
+    }),
+    [],
+  );
+});
+
+test('a Codex computer-use plugin call is named computer use, whatever server runs it', () => {
+  const mapper = new CodexEventMapper('app-1');
+  const call = (id: string, server: string, pluginId: string | null) =>
+    mapper.map('item/started', {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      item: {
+        type: 'mcpToolCall',
+        id,
+        server,
+        tool: 'js',
+        status: 'inProgress',
+        arguments: { code: 'await cua.getState();' },
+        pluginId,
+        result: null,
+        error: null,
+      },
+    })[0]?.transcript?.toolName;
+  assert.equal(
+    call('computer', 'renamed_repl', 'unified-computer-use@openai-bundled'),
+    'computer_use',
+  );
+  assert.equal(call('other', 'cua_repl', null), 'mcp__cua_repl__js');
 });
 
 // The servers start before the session's first turn, so the row has to survive

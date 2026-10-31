@@ -526,13 +526,7 @@ export const FeedItemView = memo(function FeedItemView({
         </Suspense>
       );
     case 'browser':
-      return (
-        <BrowserCard
-          cardKey={item.key}
-          events={item.events}
-          working={!item.ended && (sessionLive ?? live)}
-        />
-      );
+      return <BrowserCard events={item.events} working={!item.ended && (sessionLive ?? live)} />;
     case 'tools':
       return (
         <ToolGroupWithCards

@@ -140,6 +140,11 @@ const LazyRemoteApprovalPanel = lazy(() =>
     default: module.RemoteApprovalPanel,
   })),
 );
+const LazyComputerUsePictureInPicture = lazy(() =>
+  import('./components/computer-use/ComputerUsePictureInPicture').then((module) => ({
+    default: module.ComputerUsePictureInPicture,
+  })),
+);
 
 function ContextListIcon({ className }: { className?: string }) {
   return (
@@ -1328,6 +1333,14 @@ export default function App() {
           <LazyRemoteApprovalPanel />
         </Suspense>
       )}
+      {!embedded && (
+        <Suspense fallback={null}>
+          <LazyComputerUsePictureInPicture
+            hidden={showWizard || state.settingsOpen || fullContentRoute}
+          />
+        </Suspense>
+      )}
+
       <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>
 
       <AnimatePresence>

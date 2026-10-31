@@ -8,6 +8,7 @@ import { useReducedMotion } from 'framer-motion';
 import { findChildSessionForTarget } from '../../lib/childSessions';
 import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
 import type { ToolActivitySettings } from '../../lib/toolActivity';
+import type { ChildHistoryState } from '../../hooks/storeChildSession';
 import { PaneTransition } from '../../features/projects/PaneTransition';
 import { AgentPaneDetail } from './AgentPaneDetail';
 import { AgentPaneList } from './AgentPaneList';
@@ -24,6 +25,9 @@ export function AgentPaneBody({
   models,
   snapshots,
   transcript,
+  history,
+  onRetryHistory,
+  onLoadEarlier,
   provider,
   live,
   toolActivity,
@@ -37,6 +41,9 @@ export function AgentPaneBody({
   models: readonly ModelInfo[];
   snapshots: ReadonlyMap<string, ChildStreamSnapshot>;
   transcript: readonly TranscriptEvent[];
+  history: ChildHistoryState | undefined;
+  onRetryHistory: () => void;
+  onLoadEarlier: () => void;
   provider?: ProviderKind;
   live: boolean;
   toolActivity: ToolActivitySettings;
@@ -57,6 +64,9 @@ export function AgentPaneBody({
           row={open}
           models={models}
           transcript={transcript}
+          history={history}
+          onRetryHistory={onRetryHistory}
+          onLoadEarlier={onLoadEarlier}
           live={live}
           toolActivity={toolActivity}
           onBack={onBack}
