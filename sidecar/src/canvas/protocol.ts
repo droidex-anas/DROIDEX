@@ -313,6 +313,8 @@ export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
   currentRect?: FrameRect;
+  /** The kit's newest version, when a design system save names an older base. */
+  latestVersion?: number;
 }
 
 // ── Bridge commands and events ───────────────────────────────────────

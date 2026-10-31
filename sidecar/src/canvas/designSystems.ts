@@ -15,6 +15,7 @@ import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { canvasDir } from '../droidexPaths.js';
+import { tokenNameSchema, tokenValueSchema } from './designSystemDocument.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
 import {
   canvasIdentifierSchema,
@@ -29,13 +30,8 @@ export const DESIGN_SYSTEM_LIMITS = {
   maxGuidanceBytes: 16 * 1024,
   maxNameLength: 120,
   maxTokensPerMode: 128,
-  maxTokenValueLength: 160,
 } as const;
 
-const TOKEN_NAME_MESSAGE =
-  'A design token is a CSS custom property such as --ds-accent: lowercase words separated by hyphens.';
-const TOKEN_VALUE_MESSAGE =
-  'A design token value is a single CSS value without a semicolon, brace or comment.';
 const TOKEN_COUNT_MESSAGE = `Each mode declares at most ${String(DESIGN_SYSTEM_LIMITS.maxTokensPerMode)} tokens.`;
 const GUIDANCE_MESSAGE = `Kit guidance must stay under ${String(DESIGN_SYSTEM_LIMITS.maxGuidanceBytes / 1024)} KiB.`;
 const ENTRY_MESSAGE = `A design system must provide ${KIT_ENTRY}, which exports its primitives.`;
@@ -46,19 +42,8 @@ const IMMUTABLE_MESSAGE =
 const SAVE_RECOVERY = 'The design system could not be saved.';
 const LINKED_STORAGE = 'Canvas storage holds a symbolic link and was not used.';
 
-// A token value is pasted into a stylesheet, so it may not close the rule it
-// sits in or open a comment.
-export const tokenValueSchema = z
-  .string()
-  .trim()
-  .min(1, TOKEN_VALUE_MESSAGE)
-  .max(DESIGN_SYSTEM_LIMITS.maxTokenValueLength, TOKEN_VALUE_MESSAGE)
-  .refine((value) => !/[;{}<>]|\/\*/.test(value) && !/[\n\r\t]/.test(value), {
-    message: TOKEN_VALUE_MESSAGE,
-  });
-
 const modeTokensSchema = z
-  .record(z.string().regex(/^--[a-z0-9]+(-[a-z0-9]+)*$/, TOKEN_NAME_MESSAGE), tokenValueSchema)
+  .record(tokenNameSchema, tokenValueSchema)
   .refine((tokens) => Object.keys(tokens).length <= DESIGN_SYSTEM_LIMITS.maxTokensPerMode, {
     message: TOKEN_COUNT_MESSAGE,
   });

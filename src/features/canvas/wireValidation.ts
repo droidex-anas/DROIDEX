@@ -3,6 +3,7 @@
 // any feature code can observe it.
 
 import { isAnnotation, isAnnotationChange, MAX_ANNOTATIONS } from './annotationValidation';
+import { isTokenName, isTokenValue } from './designSystemDocumentValidation';
 import type { CanvasEvent } from './protocol';
 import {
   boundedList,
@@ -92,8 +93,6 @@ export const MAX_FRAME_NAME_LENGTH = 120;
 // A kit's bounds, matching `DESIGN_SYSTEM_LIMITS` in the sidecar's designSystems.ts.
 export const MAX_KIT_NAME_LENGTH = 120;
 const MAX_KIT_TOKENS = 128;
-const MAX_TOKEN_VALUE_LENGTH = 160;
-const TOKEN_NAME = /^--[a-z0-9]+(-[a-z0-9]+)*$/;
 const utf8 = new TextEncoder();
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
@@ -245,10 +244,7 @@ function isKitSummary(value: unknown): boolean {
     boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
     (value.kind === 'auto' || value.kind === 'preset' || value.kind === 'user') &&
     [light, dark].every(
-      (swatch) =>
-        record(swatch) &&
-        boundedText(swatch.surface, MAX_TOKEN_VALUE_LENGTH) &&
-        boundedText(swatch.accent, MAX_TOKEN_VALUE_LENGTH),
+      (swatch) => record(swatch) && isTokenValue(swatch.surface) && isTokenValue(swatch.accent),
     )
   );
 }
@@ -259,11 +255,7 @@ function isKitDetail(value: unknown): boolean {
     boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
     isKitTokens(value.modes.light) &&
     isKitTokens(value.modes.dark) &&
-    boundedList(
-      value.unmapped,
-      MAX_KIT_TOKENS,
-      (name) => typeof name === 'string' && TOKEN_NAME.test(name),
-    ) &&
+    boundedList(value.unmapped, MAX_KIT_TOKENS, isTokenName) &&
     (value.provenance === null || isKitProvenance(value.provenance))
   );
 }
@@ -273,7 +265,7 @@ function isKitTokens(value: unknown): boolean {
   const names = Object.keys(value);
   return (
     names.length <= MAX_KIT_TOKENS &&
-    names.every((name) => TOKEN_NAME.test(name) && boundedText(value[name], MAX_TOKEN_VALUE_LENGTH))
+    names.every((name) => isTokenName(name) && isTokenValue(value[name]))
   );
 }
 
@@ -488,6 +480,10 @@ function isError(value: unknown): boolean {
     typeof value.code === 'string' &&
     ERROR_CODES.has(value.code) &&
     text(value.message) &&
-    (value.code === 'layout_conflict' ? isRect(value.currentRect) : value.currentRect === undefined)
+    (value.code === 'layout_conflict'
+      ? isRect(value.currentRect)
+      : value.currentRect === undefined) &&
+    (value.latestVersion === undefined ||
+      (value.code === 'revision_conflict' && count(value.latestVersion)))
   );
 }
