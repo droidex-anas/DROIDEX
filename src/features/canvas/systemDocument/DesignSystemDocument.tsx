@@ -3,8 +3,10 @@
 // kits edit in place through a draft; presets and older versions read only.
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -142,10 +144,13 @@ function KitDocument({
   const duplicate = useDuplicate(view, appSessionId);
   const saving = useSaveDraft(view.id);
 
-  const change = (next: DraftChange) => {
-    editDraft(view, next);
-    keepFocusIn(scrollRef, next.kind === 'remove' ? next.key : undefined);
-  };
+  const change = useCallback(
+    (next: DraftChange) => {
+      editDraft(view, next);
+      keepFocusIn(scrollRef, next.kind === 'remove' ? next.key : undefined);
+    },
+    [view],
+  );
   const isDrafting = draft !== null;
   useEffect(() => {
     if (!isDrafting) keepFocusIn(scrollRef);
@@ -166,10 +171,13 @@ function KitDocument({
     scrollRef,
     visible.map((section) => section.id),
   );
-  const specimens = {
-    light: specimenProperties(working.sections, 'light'),
-    dark: specimenProperties(working.sections, 'dark'),
-  };
+  const specimens = useMemo(
+    () => ({
+      light: specimenProperties(working.sections, 'light'),
+      dark: specimenProperties(working.sections, 'dark'),
+    }),
+    [working.sections],
+  );
   const names = documentNames(working.sections);
   const baseTokens = new Map(
     Array.from(tokensByName(base.sections), ([name, { token }]) => [name, token]),

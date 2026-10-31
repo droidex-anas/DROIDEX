@@ -2,7 +2,7 @@
 // drawn with what it holds. Colours show both modes side by side; the other
 // kinds show one value and a specimen in the previewed mode.
 
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { MessageSquareText } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
@@ -151,7 +151,8 @@ export function TokenTable({
   );
 }
 
-function TokenRow({
+// Searching and scrolling render the whole document again; its rows need not.
+const TokenRow = memo(function TokenRow({
   token,
   kind,
   mode,
@@ -245,7 +246,7 @@ function TokenRow({
       </td>
     </tr>
   );
-}
+});
 
 /** A token's usage note and, when editable, its menu. */
 function TokenActions({
@@ -418,8 +419,9 @@ function tokenWith(
 
 function wasLabel(base: DocumentToken | undefined, token: DocumentToken): string | undefined {
   if (!base) return undefined;
-  if (base.note !== token.note && sameValues(valuesOf(base), valuesOf(token)))
-    return 'Usage note changed, not saved';
+  // A token moved to another group keeps its values.
+  if (sameValues(valuesOf(base), valuesOf(token)))
+    return base.note === token.note ? undefined : 'Usage note changed, not saved';
   if ('value' in base) return `Was ${base.value}`;
   return `Was ${base.light} in light, ${base.dark} in dark`;
 }

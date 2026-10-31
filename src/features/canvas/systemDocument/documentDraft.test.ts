@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { DocumentNote, DocumentSection } from '../designSystemDocumentProtocol';
+import type {
+  DocumentNote,
+  DocumentSection,
+  DocumentToken,
+  TokenGroup,
+} from '../designSystemDocumentProtocol';
 import {
   changeCount,
   currentDraft,
@@ -8,7 +13,7 @@ import {
   editDraft,
   type DocumentDraft,
 } from './documentDraft';
-import { draftDiff, tokenKey, withRemoved } from './documentSections';
+import { draftDiff, tokenKey, withItems, withRemoved } from './documentSections';
 import type { DesignSystemDocumentView } from '../protocol';
 
 const base: DocumentSection[] = [
@@ -108,6 +113,44 @@ test('edits are marked against the base, and a removed group is one mark', () =>
     ]),
   );
   discardDraft('marks');
+});
+
+test('a note or token moved to another holder, and reordered tokens, are marked changed', () => {
+  const [notes, colors] = base;
+  const feel = notes.items[1];
+  const bg: DocumentToken = { name: '--ds-bg', light: '#fff', dark: '#111' };
+  const accent: DocumentToken = { name: '--ds-accent', value: '#36f' };
+  const surfaces = (tokens: DocumentToken[]): TokenGroup => ({
+    kind: 'group',
+    id: 'surfaces',
+    title: 'Surfaces',
+    tokens,
+  });
+
+  const movedNote = [
+    withItems(
+      notes,
+      notes.items.filter((item) => item !== feel),
+    ),
+    withItems(colors, [surfaces([accent, bg]), feel]),
+  ];
+  assert.deepEqual(
+    draftDiff(base, movedNote),
+    new Map([
+      ['feel', 'changed'],
+      ['surfaces', 'changed'],
+    ]),
+  );
+
+  const accents: TokenGroup = { kind: 'group', id: 'accents', title: 'Accents', tokens: [accent] };
+  const movedToken = [notes, withItems(colors, [surfaces([bg]), accents])];
+  assert.deepEqual(
+    draftDiff(base, movedToken),
+    new Map([
+      ['accents', 'added'],
+      [tokenKey('--ds-accent'), 'changed'],
+    ]),
+  );
 });
 
 test('a removed note shows where it was, Undo puts it back there, and undoing every edit ends the draft', () => {

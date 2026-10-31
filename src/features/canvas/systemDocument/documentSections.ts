@@ -58,7 +58,8 @@ export function documentNames(sections: DocumentSection[]) {
 /**
  * What `next` changes against `base`. A removed section or group is one mark:
  * what it held is not marked again. A section is changed when it is renamed,
- * moved, or its items reordered.
+ * moved, or its items reordered, a group when its tokens are reordered, and an
+ * item or token when it moves to another section or group.
  */
 export function draftDiff(
   base: DocumentSection[],
@@ -103,10 +104,10 @@ function markItems(
   nextSectionIds: ReadonlySet<string>,
   marks: Map<string, DraftMark>,
 ) {
-  for (const [id, { item }] of nextItems) {
-    const was = baseItems.get(id)?.item;
+  for (const [id, { item, holder }] of nextItems) {
+    const was = baseItems.get(id);
     if (!was) marks.set(id, 'added');
-    else if (!sameItem(was, item)) marks.set(id, 'changed');
+    else if (was.holder !== holder || !sameItem(was.item, item)) marks.set(id, 'changed');
   }
   for (const [id, { holder }] of baseItems)
     if (!nextItems.has(id) && nextSectionIds.has(holder)) marks.set(id, 'removed');
@@ -118,10 +119,11 @@ function markTokens(
   nextItems: ReturnType<typeof itemsById>,
   marks: Map<string, DraftMark>,
 ) {
-  for (const [name, { token }] of nextTokens) {
-    const was = baseTokens.get(name)?.token;
+  for (const [name, { token, holder }] of nextTokens) {
+    const was = baseTokens.get(name);
     if (!was) marks.set(tokenKey(name), 'added');
-    else if (!sameToken(was, token)) marks.set(tokenKey(name), 'changed');
+    else if (was.holder !== holder || !sameToken(was.token, token))
+      marks.set(tokenKey(name), 'changed');
   }
   for (const [name, { holder }] of baseTokens)
     if (!nextTokens.has(name) && nextItems.has(holder)) marks.set(tokenKey(name), 'removed');
@@ -196,7 +198,14 @@ function sameItem(a: DocumentItem, b: DocumentItem): boolean {
     case 'note':
       return b.kind === 'note' && a.label === b.label && a.body === b.body;
     case 'group':
-      return b.kind === 'group' && a.title === b.title;
+      return (
+        b.kind === 'group' &&
+        a.title === b.title &&
+        sameOrder(
+          a.tokens.map(({ name }) => name),
+          b.tokens.map(({ name }) => name),
+        )
+      );
     case 'preview':
       return (
         b.kind === 'preview' &&
