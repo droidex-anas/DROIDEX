@@ -120,7 +120,7 @@ test('each tab keeps its own product, and a design draft keeps its canvas promis
   assert.deepEqual(backOnDesign.draftChat?.canvas, { canvasId: null });
 });
 
-test('a Remote browser opens a chat wherever the window would open a design', () => {
+function inRemoteBrowser(run: () => void) {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -128,17 +128,47 @@ test('a Remote browser opens a chat wherever the window would open a design', ()
     value: { droidex: { remoteBrowser: {} } },
   });
   try {
-    const designTab = reducer(initialState, { type: 'OPEN_NEW_TAB', product: 'design' });
-    assert.equal(activeProduct(designTab), 'chat');
-    // A design chat started on the laptop still opens as one, but its "+" opens a chat.
-    const onDesign = sendDraft(designHome(initialState), 'ref-design', 'session-design');
-    assert.equal(activeProduct(onDesign), 'design');
-    const next = reducer(onDesign, { type: 'OPEN_NEW_TAB', product: activeProduct(onDesign) });
-    assert.equal(activeProduct(next), 'chat');
+    run();
   } finally {
     if (descriptor) Object.defineProperty(globalThis, 'window', descriptor);
     else Reflect.deleteProperty(globalThis, 'window');
   }
+}
+
+test('a Remote browser opens a chat wherever the window would open a design', () => {
+  const onDesign = sendDraft(designHome(initialState), 'ref-design', 'session-design');
+  inRemoteBrowser(() => {
+    const designTab = reducer(initialState, { type: 'OPEN_NEW_TAB', product: 'design' });
+    assert.equal(activeProduct(designTab), 'chat');
+    // A design chat started on the laptop still opens as one, but its "+" opens a chat.
+    assert.equal(activeProduct(onDesign), 'design');
+    const next = reducer(onDesign, { type: 'OPEN_NEW_TAB', product: activeProduct(onDesign) });
+    assert.equal(activeProduct(next), 'chat');
+    // So do a canvas's own entries, such as New canvas.
+    const fromCanvas = reducer(onChat('session-a'), {
+      type: 'START_CHAT',
+      cwd: '',
+      executionMode: 'local',
+      canvas: { canvasId: 'canvas-a' },
+    });
+    assert.equal(fromCanvas.draftChat?.canvas, undefined);
+    assert.equal(activeProduct(fromCanvas), 'chat');
+  });
+});
+
+test('a Remote browser never opens the canvas pane, even on a design chat', () => {
+  const onDesign = sendDraft(designHome(initialState), 'ref-design', 'session-design');
+  const openBoard = {
+    type: 'OPEN_UTILITY_TOOL',
+    tool: 'canvas',
+    appSessionId: 'session-design',
+    canvasId: 'canvas-a',
+    frameId: null,
+  } as const;
+  assert.notEqual(reducer(onDesign, openBoard), onDesign);
+  inRemoteBrowser(() => {
+    assert.equal(reducer(onDesign, openBoard), onDesign);
+  });
 });
 
 test('a design send stays a design while it is created, and its chat opens as one', () => {

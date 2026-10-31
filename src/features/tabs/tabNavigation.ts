@@ -13,6 +13,7 @@ import {
   focusedPage,
   livePage,
   openTab,
+  pageProduct,
   pageShowsChat,
   tabPage,
   withGrid,
@@ -112,10 +113,15 @@ export function showChat(state: TabStripSource, appSessionId: string): TabStrip 
   return openTab(strip, chat, live);
 }
 
-/** A new chat in a split tab is its new-chat tile, when it has one. */
-export function showNewChat(state: TabStripSource): TabStrip {
+/**
+ * A new chat in a split tab is its new-chat tile, when it has one. A design
+ * never shares a tab, so its draft opens in a tab of its own.
+ */
+export function showNewChat(state: TabStripSource, draft: AppState['draftChat']): TabStrip {
   const live = livePage(state);
   if (live.kind !== 'tiles') return state.tabStrip;
+  const page: FocusedPage = { kind: 'new-chat', draft };
+  if (pageProduct(page, state) === 'design') return openTab(state.tabStrip, page, live);
   const tile = newChatTile(live.grid);
   if (!tile || tile.id === live.grid.focusedTileId) return state.tabStrip;
   return withTabPage(state.tabStrip, state.tabStrip.activeTabId, {
