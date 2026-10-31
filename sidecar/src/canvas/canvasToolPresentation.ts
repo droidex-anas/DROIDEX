@@ -18,6 +18,8 @@ export interface CanvasActivity {
   title?: string;
   /** This create gave an unattached chat its canvas, so it is the chat's first artifact. */
   firstArtifact?: true;
+  /** The kit a theme call saved, proposed or applied; its reference only, never its content. */
+  designSystem?: { id: string; version: number; status: 'saved' | 'proposed' | 'applied' };
 }
 
 export interface ToolProvenance {

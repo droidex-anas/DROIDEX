@@ -7,10 +7,10 @@ import valueParser from 'postcss-value-parser';
 import {
   designSystemSchema,
   DESIGN_SYSTEM_LIMITS,
-  tokenValueSchema,
   type DesignSystem,
   type DesignSystemSource,
 } from './designSystems.js';
+import { tokenValueSchema } from './designSystemDocument.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { UNIVERSAL_GUIDANCE } from './presets/starter.js';
 import {
