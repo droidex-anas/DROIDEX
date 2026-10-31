@@ -58,16 +58,20 @@ async function readProjectSources(
     return refused('The project folder cannot be read.');
   }
   const read: ProjectFile[] = [];
+  // By file identity, so two spellings of one file on a case-insensitive disk are one.
+  const named = new Map<string, string>();
   for (const source of sources) {
     const file = relativePath(source.path);
     if ('problem' in file) return refused(file.problem);
-    if (read.some((earlier) => earlier.file === file.path))
-      return refused(`${file.path} is named twice. Name each file once.`);
-    const bytes = await readInside(root, file.path);
-    if ('problem' in bytes) return refused(bytes.problem);
+    const opened = await readInside(root, file.path);
+    if ('problem' in opened) return refused(opened.problem);
+    const earlier = named.get(opened.identity);
+    if (earlier !== undefined)
+      return refused(`${file.path} is named twice, as ${earlier}. Name each file once.`);
+    named.set(opened.identity, file.path);
     let text: string;
     try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.bytes);
+      text = new TextDecoder('utf-8', { fatal: true }).decode(opened.bytes);
     } catch {
       return refused(`${file.path} is not UTF-8 text.`);
     }
@@ -91,10 +95,11 @@ function relativePath(raw: string): { path: string } | { problem: string } {
   return { path: segments.join('/') };
 }
 
+/** The bytes of the file the checks passed, read through the handle that opened it. */
 async function readInside(
   root: string,
   file: string,
-): Promise<{ bytes: Buffer } | { problem: string }> {
+): Promise<{ bytes: Buffer; identity: string } | { problem: string }> {
   const full = path.join(root, ...file.split('/'));
   try {
     const entry = await lstat(full);
@@ -104,15 +109,17 @@ async function readInside(
     // A linked folder on the way can still lead out of the project.
     if (!isInside(root, await realpath(full)))
       return { problem: `${file} leaves the project folder. Name a file inside it.` };
-    // No-follow, so a link swapped in after the checks above is not opened.
+    // The path may change once checked: no-follow refuses a link swapped in for
+    // the file, and the identity check a folder on the way swapped for a link.
     const handle = await open(full, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const opened = await handle.stat();
-      if (!opened.isFile()) return { problem: `${file} is not a regular file.` };
+      if (opened.dev !== entry.dev || opened.ino !== entry.ino)
+        return { problem: `${file} changed while it was being read. Try again.` };
       if (opened.size > MAX_FILE_BYTES) return { problem: tooLarge(file) };
       const bytes = await handle.readFile();
       if (bytes.length > MAX_FILE_BYTES) return { problem: tooLarge(file) };
-      return { bytes };
+      return { bytes, identity: `${String(opened.dev)}:${String(opened.ino)}` };
     } finally {
       await handle.close();
     }
