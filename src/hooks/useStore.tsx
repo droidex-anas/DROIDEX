@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { bridge } from '../lib/bridge';
+import { isRemoteClient } from '../lib/desktop';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
@@ -2189,12 +2190,12 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'OPEN_UTILITY_TOOL': {
       const appSessionId = action.appSessionId ?? state.activeAppSessionId;
       if (!appSessionId) return state;
-      if (
-        action.tool === 'canvas' &&
-        state.listConfirmedSessionIds !== null &&
-        !(appSessionId in state.sessions)
-      )
-        return state;
+      if (action.tool === 'canvas') {
+        // The board's previews are the laptop window's own views, out of a Remote browser's reach.
+        if (isRemoteClient()) return state;
+        if (state.listConfirmedSessionIds !== null && !(appSessionId in state.sessions))
+          return state;
+      }
       const panel = openUtilityTool(
         state.utilityPanels[appSessionId],
         action.tool,
@@ -2550,6 +2551,11 @@ function reduceAction(state: AppState, action: Action): AppState {
         : state;
 
     case 'START_CHAT': {
+      // Design previews run in the laptop's own window, so a Remote browser
+      // starts a chat wherever a design would start.
+      if (action.canvas && isRemoteClient()) {
+        return reducer(state, { type: 'START_CHAT', ...newDraft(state, 'chat') });
+      }
       // Stamp the session being left so model output produced while it was
       // open doesn't surface as an unread badge after starting a new chat.
       const sessionLastSeen = { ...state.sessionLastSeen };

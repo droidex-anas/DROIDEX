@@ -372,7 +372,7 @@ const TabList = memo(function TabList() {
 });
 
 // The strip's "+" opens the focused product's kind of tab; a primary-modifier
-// click opens the other one. A Remote browser only opens chats (newDraft).
+// click opens the other one. A Remote browser only opens chats.
 function NewTabButton() {
   const dispatch = useStoreDispatch();
   const remote = isRemoteClient();

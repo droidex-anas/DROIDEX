@@ -8,7 +8,6 @@
 
 import type { AppState } from '../../hooks/useStore';
 import { isDesignChat } from '../../lib/chatMetadata';
-import { isRemoteClient } from '../../lib/desktop';
 import { isEmbedded } from '../../lib/embed';
 import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
 import { resolveNewChatCwd } from '../../lib/workspaces';
@@ -164,17 +163,14 @@ function withActiveGrid(strip: TabStrip, grid: TileGrid): TabStrip {
 /**
  * What a new chat or design opens on from here: the active chat's workspace,
  * or the current draft's. A design keeps the folder as context without cutting
- * a worktree, and promises a new canvas. Design previews run in the laptop's
- * own window, so a Remote browser opens a chat instead.
+ * a worktree, and promises a new canvas.
  */
 export function newDraft(state: TabStripSource, product: ProductMode): NewChatDraft {
   const activeSession = state.activeAppSessionId
     ? state.sessions[state.activeAppSessionId]
     : undefined;
   const cwd = resolveNewChatCwd(activeSession, state.draftChat);
-  if (product === 'design' && !isRemoteClient()) {
-    return { cwd, executionMode: 'local', canvas: { canvasId: null } };
-  }
+  if (product === 'design') return { cwd, executionMode: 'local', canvas: { canvasId: null } };
   return { cwd, executionMode: cwd ? 'worktree' : 'local' };
 }
 
