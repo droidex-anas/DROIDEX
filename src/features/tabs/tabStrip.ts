@@ -183,7 +183,7 @@ function newPage(state: TabStripSource, product: ProductMode): TilePage {
 }
 
 /** Design is a draft that promises a canvas, or a chat a design send created. */
-function pageProduct(page: FocusedPage, state: Pick<AppState, 'chatMetadata'>): ProductMode {
+export function pageProduct(page: FocusedPage, state: Pick<AppState, 'chatMetadata'>): ProductMode {
   if (page.kind === 'new-chat') return page.draft?.canvas ? 'design' : 'chat';
   if (page.kind === 'chat' && isDesignChat(state.chatMetadata[page.appSessionId])) return 'design';
   return 'chat';

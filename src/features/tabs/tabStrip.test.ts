@@ -5,6 +5,7 @@ import { activeTabDraft, loadTabStrip, saveTabStrip } from './tabStorage';
 import { chatsOnScreen, isChatInView, livePage, tabPage, type TabPage } from './tabStrip';
 import { gridTiles } from './tileGrid';
 import { withLocalStorageMap } from '../../test/localStorage';
+import { isDesignChat } from '../../lib/chatMetadata';
 import { sessionIsUnread } from '../../lib/sessions';
 import type { SessionSummary } from '../../types/bridge';
 
@@ -334,6 +335,23 @@ test('a design never shares a tab: no split takes it in or splits it, and tiles 
 
   const chosen = reduce(chats, splitWith('b'), { type: 'SET_ACTIVE_SESSION', id: 'd' });
   assert.deepEqual(strip(chosen), ['a|b*', '[d]']);
+});
+
+test('entering Design from a split tab drafts it in a tab of its own, where its chat opens', () => {
+  const split = reduce(withChats('a'), splitWith(null));
+  const design = reduce(split, { type: 'SET_PRODUCT_MODE', mode: 'design' });
+  assert.deepEqual(strip(design), ['a|new-chat*', '[new-chat]']);
+  assert.deepEqual(design.draftChat?.canvas, { canvasId: null });
+
+  const created = reduce(
+    design,
+    { type: 'HOLD_COMPOSE_ORIGIN', holdId: 'ref-d' },
+    { ...registerCompose('ref-d', 'ref-d'), canvas: design.draftChat?.canvas },
+    { type: 'SESSION_CREATED', clientRef: 'ref-d', session: session('d') },
+  );
+  assert.deepEqual(strip(created), ['a|new-chat*', '[d]']);
+  assert.equal(created.activeAppSessionId, 'd');
+  assert.ok(isDesignChat(created.chatMetadata.d));
 });
 
 test('promoting a tiled chat to Design gives it a dedicated tab that survives reload', () => {

@@ -1229,8 +1229,18 @@ function reduceAction(state: AppState, action: Action): AppState {
       // from a tab or tile the user has since left opens there instead.
       const ownsCreate = pending !== undefined && action.session.lineage?.kind !== 'side';
       const sessions = { ...state.sessions, [action.session.appSessionId]: action.session };
+      // A design send's chat opens as a design from now on, in every window,
+      // and is placed as one.
+      const chatMetadata =
+        ownsCreate && action.clientRef in state.canvasChatRequests
+          ? (markDesignChat(state.chatMetadata, action.session.appSessionId) ?? state.chatMetadata)
+          : state.chatMetadata;
       const placed = ownsCreate
-        ? placeCreatedChat({ ...state, sessions }, pending.origin, action.session.appSessionId)
+        ? placeCreatedChat(
+            { ...state, sessions, chatMetadata },
+            pending.origin,
+            action.session.appSessionId,
+          )
         : null;
       const shouldActivate = placed?.focus === true;
       const tabStrip = placed?.tabStrip ?? state.tabStrip;
@@ -1317,12 +1327,7 @@ function reduceAction(state: AppState, action: Action): AppState {
           action.clientRef,
           action.session.appSessionId,
         ),
-        // A design send's chat opens as a design from now on, in every window.
-        chatMetadata:
-          ownsCreate && action.clientRef in state.canvasChatRequests
-            ? (markDesignChat(state.chatMetadata, action.session.appSessionId) ??
-              state.chatMetadata)
-            : state.chatMetadata,
+        chatMetadata,
         // A foreground chat just created by this renderer is already seen. A
         // chat this client just learned of starts seen at its creation, so its
         // first reply reads as unread.
@@ -2113,7 +2118,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         sessionLastSeen[state.activeAppSessionId] = now;
       }
       if (action.id) sessionLastSeen[action.id] = now;
-      const tabStrip = action.id ? showChat(state, action.id) : showNewChat(state);
+      const tabStrip = action.id ? showChat(state, action.id) : showNewChat(state, null);
       let next = invalidateSelectedChildOpening(releaseInactiveSelectedChild(state));
       const outgoingAppSessionId = state.activeAppSessionId;
       const outgoingSession = outgoingAppSessionId
@@ -2552,15 +2557,16 @@ function reduceAction(state: AppState, action: Action): AppState {
         sessionLastSeen[state.activeAppSessionId] = Date.now();
       }
       const next = invalidateSelectedChildOpening(state);
+      const draftChat = {
+        cwd: action.cwd,
+        executionMode: action.executionMode,
+        branch: action.branch,
+        ...(action.project ? { project: action.project } : {}),
+        ...(action.canvas ? { canvas: action.canvas } : {}),
+      };
       return {
         ...next,
-        draftChat: {
-          cwd: action.cwd,
-          executionMode: action.executionMode,
-          branch: action.branch,
-          ...(action.project ? { project: action.project } : {}),
-          ...(action.canvas ? { canvas: action.canvas } : {}),
-        },
+        draftChat,
         draftAutonomy: null,
         draftFastMode: false,
         draftContextWindowTokens: null,
@@ -2573,7 +2579,7 @@ function reduceAction(state: AppState, action: Action): AppState {
         sessionLastSeen,
         mainView: 'session',
         automationEditorRequest: null,
-        tabStrip: showNewChat(state),
+        tabStrip: showNewChat(state, draftChat),
       };
     }
 
