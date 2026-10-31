@@ -146,7 +146,8 @@ function gridPage(grid: TileGrid): TabPage {
   return tiles.length === 1 ? tiles[0].page : { kind: 'tiles', grid };
 }
 
-function withGrid(tab: Tab, grid: TileGrid): Tab {
+/** A one-tile grid becomes a plain tab while keeping the surviving tile's identity. */
+export function withGrid(tab: Tab, grid: TileGrid): Tab {
   const tiles = gridTiles(grid);
   if (tiles.length > 1) return { ...tab, page: { kind: 'tiles', grid } };
   return { ...tab, page: tiles[0].page, tileId: tiles[0].id };

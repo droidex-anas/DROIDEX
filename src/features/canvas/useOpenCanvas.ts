@@ -6,12 +6,7 @@
 // the session with its canvas intent; `CanvasChatBootstrap` opens the attached pane.
 
 import { useCallback } from 'react';
-import {
-  shallowEqual,
-  useStoreApi,
-  useStoreDispatch,
-  useStoreSelector,
-} from '../../hooks/useStore';
+import { useStoreApi, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { livePage, pageShowsChat, tabPage } from '../tabs/tabStrip';
 import { useOpenCanvasPane } from './openCanvasPane';
 import { recentAttachedChat } from './canvasChats';
@@ -31,13 +26,10 @@ export function useOpenCanvas(): {
   const store = useStoreApi();
   const openPane = useOpenCanvasPane();
   const sessions = useStoreSelector((current) => current.sessions);
-  const { activeAppSessionId, activeCanvasId } = useStoreSelector((current) => {
+  const activeCanvasId = useStoreSelector((current) => {
     const id = current.activeAppSessionId;
-    return {
-      activeAppSessionId: id,
-      activeCanvasId: id ? (current.canvasAttachments[id] ?? null) : null,
-    };
-  }, shallowEqual);
+    return id ? (current.canvasAttachments[id] ?? null) : null;
+  });
 
   // A design chat is folder-less: designing needs no repository, and a new
   // worktree is a side effect nobody asked for by pressing New canvas.
@@ -53,11 +45,10 @@ export function useOpenCanvas(): {
   const showCanvasInChat = useCallback(
     (appSessionId: string, canvasId: string) => {
       dispatch({ type: 'MARK_DESIGN_CHAT', appSessionId });
-      if (appSessionId !== activeAppSessionId)
-        dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
+      dispatch({ type: 'SET_ACTIVE_SESSION', id: appSessionId });
       openPane({ appSessionId, canvasId });
     },
-    [activeAppSessionId, dispatch, openPane],
+    [dispatch, openPane],
   );
 
   const openCanvas = useCallback(

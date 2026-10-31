@@ -15,6 +15,7 @@ import {
   openTab,
   pageShowsChat,
   tabPage,
+  withGrid,
   withTabPage,
   type FocusedPage,
   type LivePageSource,
@@ -24,7 +25,15 @@ import {
   type TabStripSource,
   type ViewPage,
 } from './tabStrip';
-import { focusTile, gridTiles, newChatTile, withTilePage, type TilePage } from './tileGrid';
+import {
+  chatTile,
+  focusTile,
+  gridTiles,
+  newChatTile,
+  removeTile,
+  withTilePage,
+  type TilePage,
+} from './tileGrid';
 
 // The existing navigation action that shows `page` in the focused place.
 function pageNavigation(page: FocusedPage): Action {
@@ -82,8 +91,22 @@ export function enteredPlaceNavigation(state: LivePageSource, next: TabStrip): A
 export function showChat(state: TabStripSource, appSessionId: string): TabStrip {
   const strip = state.tabStrip;
   const live = livePage(state);
-  if (pageShowsChat(live, appSessionId)) return focusChatTile(strip, live, appSessionId);
   const chat: FocusedPage = { kind: 'chat', appSessionId };
+  if (fillsTab(state, appSessionId)) {
+    for (const tab of strip.tabs) {
+      const page = tabPage(strip, tab, live);
+      if (page.kind !== 'tiles') continue;
+      const tile = chatTile(page.grid, appSessionId);
+      if (!tile) continue;
+      const remaining = withGrid(tab, removeTile(page.grid, tile.id));
+      const separated = {
+        ...strip,
+        tabs: strip.tabs.map((entry) => (entry.id === tab.id ? remaining : entry)),
+      };
+      return openTab(separated, chat, tab.id === strip.activeTabId ? remaining.page : live);
+    }
+  }
+  if (pageShowsChat(live, appSessionId)) return focusChatTile(strip, live, appSessionId);
   const focused = focusTabShowing(strip, chat, live);
   if (focused !== strip || live.kind !== 'tiles' || !fillsTab(state, appSessionId)) return focused;
   return openTab(strip, chat, live);

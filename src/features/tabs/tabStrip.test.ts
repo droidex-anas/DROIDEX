@@ -336,6 +336,47 @@ test('a design never shares a tab: no split takes it in or splits it, and tiles 
   assert.deepEqual(strip(chosen), ['a|b*', '[d]']);
 });
 
+test('promoting a tiled chat to Design gives it a dedicated tab that survives reload', () => {
+  for (const background of [false, true]) {
+    const appSessionId = background ? 'b' : 'a';
+    const split = reduce(withChats('a', 'b'), splitWith('b'));
+    const originalTabId = split.tabStrip.activeTabId;
+    const otherChat = appSessionId === 'a' ? 'b' : 'a';
+    const survivingTileId = tileIdShowing(split, otherChat);
+    const beforePromotion = background
+      ? reduce(split, { type: 'OPEN_NEW_TAB', product: 'chat' })
+      : split;
+    const promoted = reduce(
+      beforePromotion,
+      { type: 'MARK_DESIGN_CHAT', appSessionId },
+      { type: 'SET_ACTIVE_SESSION', id: appSessionId },
+    );
+    assert.deepEqual(strip(promoted), [
+      otherChat,
+      ...(background ? ['new-chat'] : []),
+      `[${appSessionId}]`,
+    ]);
+    assert.equal(promoted.tabStrip.tabs[0].id, originalTabId);
+    assert.equal(promoted.tabStrip.tabs[0].tileId, survivingTileId);
+    assert.equal(promoted.activeAppSessionId, appSessionId);
+    withLocalStorageMap({}, () => {
+      saveTabStrip(promoted);
+      const restored = loadTabStrip();
+      assert.deepEqual(
+        restored.tabs.map((tab) => tab.page),
+        [
+          { kind: 'chat', appSessionId: otherChat },
+          ...(background
+            ? [{ kind: 'new-chat', draft: { cwd: '/workspace', executionMode: 'worktree' } }]
+            : []),
+          { kind: 'chat', appSessionId },
+        ],
+      );
+      assert.equal(restored.activeTabId, promoted.tabStrip.activeTabId);
+    });
+  }
+});
+
 test('a split tab holds one new chat, and a chat sent from it opens in its tile', () => {
   const split = reduce(withChats('a'), splitWith(null));
   assert.deepEqual(strip(split), ['[a|new-chat*]']);
