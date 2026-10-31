@@ -1,10 +1,11 @@
 // The pinned kit as a turn's first canvas_read carries it, so the agent can
 // follow the kit without fetching it: name, mode, token names, the primitives
 // its entry exports and its guidance. Token values, files and examples stay
-// with canvas_theme. Guidance is capped at 16 KiB by the kit schema and the name
-// lists share 4 KiB, so with the kit name a brief stays under 21 KiB.
+// with canvas_theme. The kit schema caps the notes and usage notes the guidance
+// carries at 16 KiB, not counting its headings, and the name lists share 4 KiB.
 
 import { CanvasCommandError } from './canvasError.js';
+import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
 import type { DesignSystemRef } from './protocol.js';
 
@@ -39,7 +40,7 @@ export async function designSystemBrief(
     throw error;
   }
   const primitives = kitPrimitives(system);
-  const tokens = Object.keys(system.modes[ref.mode]);
+  const tokens = Object.keys(kitModes(system.sections)[ref.mode]);
   // Primitives first: they are what a design builds with.
   const names = [...primitives, ...tokens];
   let listed = 0;
@@ -56,7 +57,7 @@ export async function designSystemBrief(
     primitives: primitives.slice(0, listed),
     tokens: tokens.slice(0, Math.max(0, listed - primitives.length)),
     ...(omittedNames > 0 ? { omittedNames } : {}),
-    guidance: system.guidance,
+    guidance: kitGuidance(system.name, system.sections),
   };
 }
 

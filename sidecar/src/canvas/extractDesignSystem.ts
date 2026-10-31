@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import postcss from 'postcss';
 import ts from 'typescript';
+import { buildDocument } from './buildDocument.js';
+import { kitModes } from './designSystemDocument.js';
 import { designSystemSchema, type DesignSystem } from './designSystems.js';
 import { lineAt, sourceTokens } from './designSystemTokens.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -63,16 +65,21 @@ export function extractDesignSystem(
       line: reference.line,
     });
   }
+  const contract = kitModes(DROIDEX_DESIGN_SYSTEM.sections);
+  const designMd = source['DESIGN.md'];
   const kit = designSystemSchema.safeParse({
     id: randomUUID(),
     version: 1,
     name: input.name,
-    modes: {
-      light: { ...DROIDEX_DESIGN_SYSTEM.modes.light, ...tokens.modes.light },
-      dark: { ...DROIDEX_DESIGN_SYSTEM.modes.dark, ...tokens.modes.dark },
-    },
+    cover: null,
+    sections: buildDocument({
+      tokens: {
+        light: { ...contract.light, ...tokens.modes.light },
+        dark: { ...contract.dark, ...tokens.modes.dark },
+      },
+      overview: designMd ? [{ kind: 'note', label: 'design.md', body: designMd }] : [],
+    }),
     files: primitives.files,
-    guidance: source['DESIGN.md'] ?? '',
     examples: {},
     provenance: { sourceCanvasId: input.sourceCanvasId, revision: input.from },
   });

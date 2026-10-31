@@ -16,6 +16,7 @@ export class CanvasCommandError extends Error implements CanvasError {
     readonly code: CanvasErrorCode,
     message: string,
     readonly currentRect?: FrameRect,
+    readonly latestVersion?: number,
   ) {
     super(message);
     this.name = 'CanvasCommandError';
@@ -28,6 +29,16 @@ export function canvasError(
   currentRect?: FrameRect,
 ): CanvasCommandError {
   return new CanvasCommandError(code, message, currentRect);
+}
+
+/** A design system save whose base is no longer the kit's newest version. */
+export function staleDesignSystemBase(latestVersion: number): CanvasCommandError {
+  return new CanvasCommandError(
+    'revision_conflict',
+    `This design system now has version ${String(latestVersion)}. Read it again and save on top of it.`,
+    undefined,
+    latestVersion,
+  );
 }
 
 /** The cause goes to the sidecar log; the caller learns only what to retry. */

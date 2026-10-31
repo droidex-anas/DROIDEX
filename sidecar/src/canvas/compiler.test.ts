@@ -16,6 +16,7 @@ import {
 } from './compiler.js';
 import { CompilerProcesses } from './canvasCompilerProcesses.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
+import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
@@ -167,26 +168,29 @@ test('Tailwind emits exactly the utilities the source spells out', async () => {
   assert.equal(/\.grid \{/.test(html), false, 'an unused utility is not emitted');
 });
 
-test('every kit starter compiles in both pinned modes with offline fonts', async () => {
+test('every preview and cover a built-in kit shows builds strictly in both pinned modes', async () => {
+  const offlineFont = /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/;
   for (const kit of [
+    AUTO_DESIGN_SYSTEM,
     DROIDEX_DESIGN_SYSTEM,
     OPENAI_INSPIRED_DESIGN_SYSTEM,
     CLAUDE_INSPIRED_DESIGN_SYSTEM,
   ]) {
-    const example = kit.examples['Hey.tsx'];
-    assert.ok(example);
-    for (const mode of ['light', 'dark'] as const) {
-      const input = {
-        ...compileInput({ 'main.tsx': example }),
-        designSystem: { id: kit.id, version: kit.version, mode },
-      };
-      const design = await shared.compile(input, new AbortController().signal);
-      assert.deepEqual(design.diagnostics, []);
-      assert.ok(design.html.includes("You're all set"));
-      assert.ok(design.html.includes('data-mode="' + mode + '"'));
-      assert.match(design.html, /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/);
-      assert.doesNotMatch(design.html, /data:font\/woff2;base64,/);
-      assert.doesNotMatch(design.html, /url\(\s*['"]?https?:/);
+    for (const item of [kit.cover, ...kit.sections.flatMap((section) => [...section.items])]) {
+      if (item?.kind !== 'preview') continue;
+      const { example } = item;
+      for (const mode of ['light', 'dark'] as const) {
+        const input = {
+          ...compileInput({ 'main.tsx': kit.examples[example] }, 'strict'),
+          designSystem: { id: kit.id, version: kit.version, mode },
+        };
+        const design = await shared.compile(input, new AbortController().signal);
+        const where = `${kit.id} ${example} ${mode}`;
+        assert.deepEqual(design.diagnostics, [], where);
+        assert.ok(design.html.includes('data-mode="' + mode + '"'), where);
+        assert.doesNotMatch(design.html, /data:font\/woff2;base64,|url\(\s*['"]?https?:/, where);
+        assert.equal(offlineFont.test(design.html), kit !== AUTO_DESIGN_SYSTEM, where);
+      }
     }
   }
 });

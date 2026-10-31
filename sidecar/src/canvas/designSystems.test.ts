@@ -8,12 +8,19 @@ import { test, type TestContext } from 'node:test';
 import { canvasDir } from '../droidexPaths.js';
 import { deferred, pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { CanvasCommandError } from './canvasError.js';
+import { CompilerWorker } from './compiler.js';
+import { buildDocument, type DocumentPart } from './buildDocument.js';
+import { kitModes } from './designSystemDocument.js';
 import {
   DESIGN_SYSTEM_LIMITS,
+  designSystemSchema,
   listDesignSystems,
+  listDesignSystemVersions,
   readDesignSystem,
   saveDesignSystem,
+  setDesignSystemDeleted,
   type DesignSystem,
+  type SavedBy,
 } from './designSystems.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
@@ -29,20 +36,22 @@ test('built-in versions are exact snapshots that callers cannot mutate', async (
     const ref = { id: kit.id, version: kit.version, mode: 'light' as const };
     const system = await readDesignSystem(ref);
     assert.deepEqual(system, kit);
-    system.modes.light['--ds-accent'] = '#000000';
+    system.sections.length = 0;
     system.files['index.tsx'] = '';
-    system.examples['Hey.tsx'] = '';
+    system.examples['cover.tsx'] = '';
     system.name = 'Changed';
     assert.deepEqual(await readDesignSystem(ref), kit);
-    await assert.rejects(saveDesignSystem({ ...kit, version: 2 }), CanvasCommandError);
+    await assert.rejects(save({ ...kit, version: kit.version + 1 }), {
+      code: 'preset_read_only',
+    });
     // The same validation used for custom versions applies to complete kit files.
-    await saveDesignSystem({ ...kit, id: 'validated-' + kit.id });
+    await save({ ...kit, id: 'validated-' + kit.id, version: 1 });
   }
 });
 
 test('kit text meets AA contrast on every surface the primitives use', () => {
   for (const kit of KITS) {
-    for (const [mode, tokens] of Object.entries(kit.modes)) {
+    for (const [mode, tokens] of Object.entries(kitModes(kit.sections))) {
       const pairs = [
         ...['canvas', 'surface', 'raised', 'elevated', 'active', 'accent-soft'].map((bg) => [
           'fg',
@@ -127,48 +136,42 @@ test('a version that was never written is not available', async () => {
 test('a saved kit reads back as it was written', async () => {
   const kit = userKit('saved-kit');
 
-  const ref = await saveDesignSystem(kit);
+  const ref = await save(kit);
 
   assert.deepEqual(ref, { id: 'saved-kit', version: 1, mode: 'light' });
   assert.deepEqual(await readDesignSystem({ ...ref, mode: 'dark' }), kit);
 });
 
-test('a published version never changes', async () => {
-  const kit = userKit('immutable-kit');
-  await saveDesignSystem(kit);
+test('a save onto a version that is no longer the latest names the latest and writes nothing', async () => {
+  const kit = userKit('stale-kit');
+  await save(kit);
+  await save({ ...kit, version: 2, name: 'Second' });
 
   await assert.rejects(
-    saveDesignSystem({ ...kit, name: 'Rewritten', guidance: 'Different guidance.' }),
+    save({ ...kit, version: 2, name: 'Late' }, { mutationId: 'late' }),
     (error) => {
       assert.ok(error instanceof CanvasCommandError);
-      assert.equal(error.code, 'invalid_input');
+      assert.equal(error.code, 'revision_conflict');
+      assert.equal(error.latestVersion, 2);
       return true;
     },
   );
-  assert.equal(
-    (await readDesignSystem({ id: 'immutable-kit', version: 1, mode: 'light' })).name,
-    kit.name,
-  );
-
-  // The next version is how a kit changes.
-  await saveDesignSystem({ ...kit, version: 2, name: 'Second' });
-  assert.equal(
-    (await readDesignSystem({ id: 'immutable-kit', version: 2, mode: 'light' })).name,
-    'Second',
-  );
+  const directory = join(canvasDir(), 'design-systems', kit.id);
+  assert.deepEqual((await readdir(directory)).sort(), ['1.json', '2.json']);
+  assert.equal((await readDesignSystem({ id: kit.id, version: 2, mode: 'light' })).name, 'Second');
 });
 
 test('a saved version answers a lost-response retry only for the original mutation and content', async () => {
   const kit = userKit('retry-kit');
   const mutationId = 'save-retry-kit';
-  const first = await saveDesignSystem(kit, { mutationId });
+  const first = await save(kit, { mutationId });
 
-  assert.deepEqual(await saveDesignSystem(kit, { mutationId }), first);
-  await assert.rejects(saveDesignSystem({ ...kit, name: 'Different' }, { mutationId }), {
-    code: 'invalid_input',
+  assert.deepEqual(await save(kit, { mutationId }), first);
+  await assert.rejects(save({ ...kit, name: 'Different' }, { mutationId }), {
+    code: 'revision_conflict',
   });
-  await assert.rejects(saveDesignSystem(kit, { mutationId: 'other-save' }), {
-    code: 'invalid_input',
+  await assert.rejects(save(kit, { mutationId: 'other-save' }), {
+    code: 'revision_conflict',
   });
   assert.deepEqual(await readDesignSystem(first), kit);
 });
@@ -191,15 +194,15 @@ test(
         throw Object.assign(new Error('Injected directory sync failure'), { code: 'EIO' });
     });
 
-    await assert.rejects(saveDesignSystem(kit, { mutationId }), { code: 'storage_failed' });
+    await assert.rejects(save(kit, { mutationId }), { code: 'storage_failed' });
     assert.deepEqual(await readDesignSystem({ id: kit.id, version: 1, mode: 'light' }), kit);
     syncs.length = 0;
-    await assert.rejects(saveDesignSystem(kit, { mutationId }), { code: 'storage_failed' });
+    await assert.rejects(save(kit, { mutationId }), { code: 'storage_failed' });
     assert.deepEqual(syncs, directories);
 
     failing = false;
     syncs.length = 0;
-    const receipt = await saveDesignSystem(kit, { mutationId });
+    const receipt = await save(kit, { mutationId });
     assert.deepEqual(receipt, { id: kit.id, version: 1, mode: 'light' });
     assert.deepEqual(syncs, directories);
     assert.deepEqual(await readDesignSystem(receipt), kit);
@@ -226,12 +229,12 @@ test(
       else retrySync.resolve();
       await release.promise;
     });
-    const first = saveDesignSystem(kit, { mutationId }).then((receipt) => {
+    const first = save(kit, { mutationId }).then((receipt) => {
       receiptCount += 1;
       return receipt;
     });
     await firstSync.promise;
-    const retry = saveDesignSystem(kit, { mutationId }).then((receipt) => {
+    const retry = save(kit, { mutationId }).then((receipt) => {
       receiptCount += 1;
       return receipt;
     });
@@ -259,20 +262,22 @@ test(
 );
 
 test('a built-in id cannot be shadowed by a user kit', async () => {
-  await assert.rejects(saveDesignSystem(userKit('droidex')), { code: 'preset_read_only' });
+  await assert.rejects(save(userKit('droidex')), { code: 'preset_read_only' });
 });
 
 test('listing returns preset swatches and the latest user version without reading kit content', async () => {
   const kit = userKit('listed-kit');
-  await saveDesignSystem(kit);
-  await saveDesignSystem({ ...kit, version: 2, name: 'Studio two' });
+  await save(kit);
+  await save({ ...kit, version: 2, name: 'Studio two' });
   const path = join(canvasDir(), 'design-systems', kit.id, '2.json');
   const saved = await readFile(path, 'utf8');
   // Metadata is independently readable even when the executable body is damaged.
   await writeFile(path, saved.slice(0, saved.indexOf('\n') + 1) + '"system": broken}\n');
   const summaries = await listDesignSystems();
+  const listed = summaries.filter((entry) => entry.id === kit.id);
+  assert.match(listed[0]?.savedAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual(
-    summaries.filter((entry) => entry.id === kit.id),
+    listed.map((entry) => ({ ...entry, savedAt: null })),
     [
       {
         id: kit.id,
@@ -283,6 +288,9 @@ test('listing returns preset swatches and the latest user version without readin
           light: { surface: '#ffffff', accent: '#1d4ed8' },
           dark: { surface: '#0b0b0c', accent: '#93c5fd' },
         },
+        cover: false,
+        savedAt: null,
+        proposal: false,
       },
     ],
   );
@@ -292,7 +300,7 @@ test('listing returns preset swatches and the latest user version without readin
   );
   // Auto leads the list as its own kind, so no preset reads as the default.
   assert.deepEqual([summaries[0].id, summaries[0].kind], ['auto', 'auto']);
-  assert.ok(summaries.every((entry) => !('files' in entry) && !('guidance' in entry)));
+  assert.ok(summaries.every((entry) => !('files' in entry) && !('sections' in entry)));
   await assert.rejects(
     readDesignSystem({ id: kit.id, version: 2, mode: 'light' }),
     CanvasCommandError,
@@ -301,7 +309,7 @@ test('listing returns preset swatches and the latest user version without readin
 
 test('listing leaves out a kit with a damaged header and keeps every other kit', async (t) => {
   const warn = t.mock.method(console, 'warn', () => undefined);
-  await saveDesignSystem(userKit('readable-kit'));
+  await save(userKit('readable-kit'));
   const damaged = join(canvasDir(), 'design-systems', 'damaged-kit');
   await mkdir(damaged, { recursive: true });
   await writeFile(join(damaged, '1.json'), JSON.stringify(userKit('damaged-kit')) + '\n');
@@ -315,25 +323,23 @@ test('listing leaves out a kit with a damaged header and keeps every other kit',
   assert.match(String(warn.mock.calls[0]?.arguments[0]), /damaged-kit version 1/);
 });
 
-test('oversized guidance is refused', async () => {
-  const guidance = 'g'.repeat(DESIGN_SYSTEM_LIMITS.maxGuidanceBytes + 1);
+test('a document whose text is over 16 KiB is refused, naming its longest note', async () => {
+  const notes: DocumentPart[] = ['a', 'b', 'c'].map((name, index) => ({
+    kind: 'note',
+    label: `${name}.md`,
+    body: 'g'.repeat(5000 + index * 1000),
+  }));
 
-  await assert.rejects(saveDesignSystem({ ...userKit('wordy-kit'), guidance }), (error) => {
+  await assert.rejects(save(userKit('wordy-kit', notes)), (error) => {
     assert.ok(error instanceof CanvasCommandError);
-    assert.match(error.message, /16 KiB/);
+    assert.match(error.message, /16 KiB.*c\.md/);
     return true;
   });
 });
 
 test('an unusable kit is refused before anything is written', async () => {
   const refusals: [string, DesignSystem][] = [
-    [
-      'a missing dark counterpart',
-      {
-        ...userKit('unpaired-kit'),
-        modes: { light: { '--ds-canvas': '#ffffff' }, dark: {} },
-      },
-    ],
+    ['a preview of a missing example', { ...userKit('previewless-kit'), examples: {} }],
     [
       'an oversized kit file',
       withFiles('large-kit', { 'index.tsx': 'x'.repeat(CANVAS_LIMITS.maxFileBytes + 1) }),
@@ -366,32 +372,24 @@ test('an unusable kit is refused before anything is written', async () => {
     ],
     [
       'an invalid custom property name',
-      {
-        ...userKit('malformed-token-kit'),
-        modes: { light: { '--ds_Accent': '#000' }, dark: { '--ds_Accent': '#fff' } },
-      },
+      withTokens('malformed-token-kit', { '--ds_Accent': '#000' }, { '--ds_Accent': '#fff' }),
     ],
     [
       'a token value that closes its rule',
-      {
-        ...userKit('injected-kit'),
-        modes: {
-          light: { '--ds-accent': '#000; } body { display: none' },
-          dark: { '--ds-accent': '#fff' },
-        },
-      },
+      withTokens(
+        'injected-kit',
+        { '--ds-accent': '#000; } body { display: none' },
+        { '--ds-accent': '#fff' },
+      ),
     ],
     [
       'a token name that is not a custom property',
-      {
-        ...userKit('named-kit'),
-        modes: { light: { accent: '#000' }, dark: { '--ds-accent': '#fff' } },
-      },
+      withTokens('named-kit', { accent: '#000' }, { accent: '#fff' }),
     ],
   ];
 
   for (const [reason, kit] of refusals) {
-    await assert.rejects(saveDesignSystem(kit), CanvasCommandError, reason);
+    await assert.rejects(save(kit), CanvasCommandError, reason);
     await assert.rejects(
       readDesignSystem({ id: kit.id, version: 1, mode: 'light' }),
       CanvasCommandError,
@@ -400,39 +398,168 @@ test('an unusable kit is refused before anything is written', async () => {
   }
 });
 
-test('concurrent saves of one version publish exactly one of them', async () => {
+test('concurrent saves onto one base publish exactly one of them', async () => {
   const kit = userKit('contested-kit');
   const rival = { ...kit, name: 'Rival' };
 
-  const outcomes = await Promise.allSettled([saveDesignSystem(kit), saveDesignSystem(rival)]);
+  const outcomes = await Promise.allSettled([
+    save(kit, { mutationId: 'first' }),
+    save(rival, { mutationId: 'rival' }),
+  ]);
 
   const saved = outcomes.filter((outcome) => outcome.status === 'fulfilled');
   const refused = outcomes.filter((outcome) => outcome.status === 'rejected');
   assert.equal(saved.length, 1, 'one writer publishes');
-  assert.equal(refused.length, 1, 'the other is told the version exists');
-  assert.ok(refused[0]?.status === 'rejected' && refused[0].reason instanceof CanvasCommandError);
-  assert.equal((refused[0] as PromiseRejectedResult).reason.code, 'invalid_input');
+  assert.equal(refused.length, 1, 'the other is told its base is stale');
+  const reason: unknown = refused[0]?.reason;
+  assert.ok(reason instanceof CanvasCommandError);
+  assert.equal(reason.code, 'revision_conflict');
+  assert.equal(reason.latestVersion, 1);
 
   // Whichever won, the stored kit is one of the two intact, never a blend.
   const stored = await readDesignSystem({ id: 'contested-kit', version: 1, mode: 'light' });
   assert.ok(stored.name === kit.name || stored.name === rival.name);
 });
 
-test('concurrent saves of different versions both publish', async () => {
-  const kit = userKit('busy-kit');
+test("each note a save changes becomes its saver's, and the history lists who saved", async () => {
+  const agent: SavedBy = { actor: 'agent', appSessionId: 'app-1' };
+  const spacing: DocumentPart = { kind: 'note', label: 'spacing.md', body: 'Keep gaps even.' };
+  const kit = userKit('authored-kit');
+  await save(kit);
+  await save({ ...userKit(kit.id, [PANEL_NOTE, spacing]), version: 2 }, { savedBy: agent });
+  const edited = { ...PANEL_NOTE, body: 'Group related controls in a panel.' };
+  await save({ ...userKit(kit.id, [edited, spacing]), version: 3 });
 
-  await Promise.all([
-    saveDesignSystem(kit),
-    saveDesignSystem({ ...kit, version: 2 }),
-    saveDesignSystem({ ...kit, version: 3 }),
-  ]);
-
-  for (const version of [1, 2, 3]) {
-    assert.equal(
-      (await readDesignSystem({ id: 'busy-kit', version, mode: 'light' })).version,
-      version,
+  const authors = async (version: number) =>
+    (await readDesignSystem({ id: kit.id, version, mode: 'light' })).sections.flatMap((section) =>
+      section.items.flatMap((item) => (item.kind === 'note' ? [[item.label, item.author]] : [])),
     );
+  assert.deepEqual(await authors(2), [
+    ['panel.md', 'user'],
+    ['spacing.md', 'agent'],
+  ]);
+  assert.deepEqual(await authors(3), [
+    ['panel.md', 'user'],
+    ['spacing.md', 'agent'],
+  ]);
+  assert.deepEqual(
+    (await listDesignSystemVersions(kit.id)).map(({ version, savedBy }) => [version, savedBy]),
+    [
+      [3, { actor: 'user' }],
+      [2, agent],
+      [1, { actor: 'user' }],
+    ],
+  );
+});
+
+test('a deleted kit leaves the list but stays readable, and restoring it lists it again', async (t) => {
+  const kit = userKit('deleted-kit');
+  const ref = await save(kit);
+  const isListed = async () => (await listDesignSystems()).some((entry) => entry.id === kit.id);
+
+  await setDesignSystemDeleted(kit.id, true, 'delete-once');
+  assert.equal(await isListed(), false);
+  assert.deepEqual(await readDesignSystem(ref), kit);
+  await assert.rejects(save({ ...kit, version: 2 }), { code: 'invalid_input' });
+
+  await setDesignSystemDeleted(kit.id, false, 'undo-once');
+  assert.equal(await isListed(), true);
+  // A delete whose answer was lost and is retried after its Undo is not applied again.
+  await setDesignSystemDeleted(kit.id, true, 'delete-once');
+  assert.equal(await isListed(), true);
+
+  // A duplicate that overlaps its delete waits for it, so it cannot land after the Undo.
+  const tombstone = join(canvasDir(), 'design-systems', kit.id, 'deleted');
+  const releaseDuplicate = deferred();
+  let tombstoneOpens = 0;
+  const open = fs.open;
+  const mockedOpen = t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+    if (args[0] === tombstone && ++tombstoneOpens === 2) await releaseDuplicate.promise;
+    return open(...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    mockedOpen.mock.restore();
+    syncBuiltinESMExports();
+  });
+  const first = setDesignSystemDeleted(kit.id, true, 'delete-twice');
+  const duplicate = setDesignSystemDeleted(kit.id, true, 'delete-twice');
+  await first;
+  await setDesignSystemDeleted(kit.id, false, 'undo-twice');
+  releaseDuplicate.resolve();
+  await duplicate;
+  assert.equal(await isListed(), true);
+});
+
+test('a v1.6 version at its old limits reads as a valid document, builds, and saves on as one', async (t) => {
+  const directory = join(canvasDir(), 'design-systems', 'legacy-kit');
+  await mkdir(directory, { recursive: true });
+  const modes = {
+    light: { '--ds-canvas': '#ffffff', '--ds-accent': '#1d4ed8', '--brand-ink': '#111111' },
+    dark: { '--ds-canvas': '#0b0b0c', '--ds-accent': '#93c5fd', '--brand-ink': '#eeeeee' },
+  };
+  // v1.6 allowed 16 KiB of guidance, 64 examples, 256 KiB each and 1 MiB together.
+  const guidance = Array.from({ length: 1000 }, (_, line) => `Rule ${String(line)}: be quiet.\n\n`)
+    .join('')
+    .slice(0, DESIGN_SYSTEM_LIMITS.maxGuidanceBytes);
+  const { files, examples: kitExamples } = userKit('legacy-kit');
+  const examples: Record<string, string> = {
+    ...kitExamples,
+    'Large.tsx': `// ${'x'.repeat(256 * 1024 - 4)}\n`,
+  };
+  while (Object.keys(examples).length < CANVAS_LIMITS.maxSourceFilesPerDesign)
+    examples[`Filler${String(Object.keys(examples).length)}.tsx`] = `// ${'x'.repeat(12 * 1024)}\n`;
+  const swatches = {
+    light: { surface: '#ffffff', accent: '#1d4ed8' },
+    dark: { surface: '#0b0b0c', accent: '#93c5fd' },
+  };
+  const summary = { id: 'legacy-kit', version: 1, name: 'Legacy', kind: 'user', swatches };
+  const system = { id: 'legacy-kit', version: 1, name: 'Legacy', modes, files, guidance, examples };
+  await writeFile(
+    join(directory, '1.json'),
+    `{"summary":${JSON.stringify(summary)},\n"system":${JSON.stringify(system)},"mutationId":"legacy"}\n`,
+  );
+
+  const listed = (await listDesignSystems()).find((entry) => entry.id === 'legacy-kit');
+  assert.deepEqual(
+    { ...listed, savedAt: null },
+    { ...summary, cover: false, savedAt: null, proposal: false },
+  );
+  const converted = await readDesignSystem({ id: 'legacy-kit', version: 1, mode: 'light' });
+  assert.ok(designSystemSchema.safeParse(converted).success);
+  assert.deepEqual(kitModes(converted.sections), modes);
+  // Longer than one note holds, so it continues between paragraphs in the next.
+  const notes = converted.sections[0]?.items.flatMap((item) =>
+    item.kind === 'note' ? [item] : [],
+  );
+  assert.deepEqual(
+    notes?.map((note) => note.label),
+    ['guidance.md', 'guidance-2.md', 'guidance-3.md'],
+  );
+  assert.equal(notes?.map((note) => note.body).join(''), guidance);
+  assert.ok(notes?.slice(0, -1).every((note) => note.body.endsWith('\n\n')));
+  assert.deepEqual([converted.files, converted.examples, converted.cover], [files, examples, null]);
+
+  const compiler = new CompilerWorker();
+  t.after(() => compiler.terminate());
+  for (const mode of ['light', 'dark'] as const) {
+    const design = await compiler.compile(
+      {
+        designId: 'pinned',
+        revisionId: 'revision-1',
+        generation: 1,
+        files: { 'main.tsx': examples['Panel.tsx'] },
+        designSystem: { id: 'legacy-kit', version: 1, mode },
+        designSystemAdherence: 'off',
+      },
+      new AbortController().signal,
+    );
+    assert.deepEqual(design.diagnostics, [], 'a frame pinned to it keeps building');
+    assert.ok(design.html.includes(modes[mode]['--brand-ink']));
   }
+
+  const next = await save({ ...converted, version: 2 });
+  assert.deepEqual(await readDesignSystem(next), { ...converted, version: 2 });
 });
 
 test('a linked kit directory is refused instead of followed', async (t) => {
@@ -442,7 +569,7 @@ test('a linked kit directory is refused instead of followed', async (t) => {
   await symlink(outside, linked, 'dir');
   t.after(() => rm(linked, { force: true }));
 
-  await assert.rejects(saveDesignSystem(userKit('linked-kit')), (error) => {
+  await assert.rejects(save(userKit('linked-kit')), (error) => {
     assert.ok(error instanceof CanvasCommandError);
     assert.equal(error.code, 'storage_failed');
     return true;
@@ -484,24 +611,52 @@ function observeDirectorySync(
   });
 }
 
-function userKit(id: string): DesignSystem {
+function save(kit: DesignSystem, options: { mutationId?: string; savedBy?: SavedBy } = {}) {
+  return saveDesignSystem(kit, {
+    mutationId: options.mutationId ?? `save-${kit.id}-${String(kit.version)}`,
+    baseVersion: kit.version > 1 ? kit.version - 1 : null,
+    savedBy: options.savedBy ?? { actor: 'user' },
+  });
+}
+
+const PANEL_NOTE: DocumentPart = {
+  kind: 'note',
+  label: 'panel.md',
+  body: 'Use the panel for every grouped block.',
+};
+
+function userKit(id: string, notes: DocumentPart[] = [PANEL_NOTE]): DesignSystem {
   return {
     id,
     version: 1,
     name: 'Studio',
-    modes: {
-      light: { '--ds-canvas': '#ffffff', '--ds-accent': '#1d4ed8' },
-      dark: { '--ds-canvas': '#0b0b0c', '--ds-accent': '#93c5fd' },
-    },
+    cover: null,
+    sections: buildDocument({
+      tokens: {
+        light: { '--ds-canvas': '#ffffff', '--ds-accent': '#1d4ed8' },
+        dark: { '--ds-canvas': '#0b0b0c', '--ds-accent': '#93c5fd' },
+      },
+      overview: notes,
+      components: [
+        { kind: 'preview', title: 'Panel', example: 'Panel.tsx', width: 480, height: 320 },
+      ],
+    }),
     files: {
       'index.tsx': `export function Panel({ children }: { children: unknown }) {
   return <div className="p-4">{children as never}</div>;
 }
 `,
     },
-    guidance: 'Use the panel for every grouped block.',
     examples: { 'Panel.tsx': 'export default function Example() {\n  return <p>hey</p>;\n}\n' },
   };
+}
+
+function withTokens(
+  id: string,
+  light: Record<string, string>,
+  dark: Record<string, string>,
+): DesignSystem {
+  return { ...userKit(id), sections: buildDocument({ tokens: { light, dark } }) };
 }
 
 function withFiles(id: string, files: Record<string, string>): DesignSystem {

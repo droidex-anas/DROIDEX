@@ -10,6 +10,7 @@ import { canvasDir } from '../droidexPaths.js';
 import { readOwnedImage, referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
@@ -92,13 +93,13 @@ export async function exportCanvasSource(
     files.push({ path: `design-system/${path}`, content });
   files.push({
     path: 'canvas-export/modes.json',
-    content: `${JSON.stringify({ selected: saved.designSystem.mode, modes: kit.modes }, null, 2)}\n`,
+    content: `${JSON.stringify({ selected: saved.designSystem.mode, modes: kitModes(kit.sections) }, null, 2)}\n`,
   });
   files.push({
     path: 'canvas-export/tailwind-config.json',
     content: `${JSON.stringify(CANVAS_TAILWIND_OPTIONS, null, 2)}\n`,
   });
-  files.push({ path: 'canvas-export/guidance.md', content: kit.guidance });
+  files.push({ path: 'canvas-export/guidance.md', content: kitGuidance(kit.name, kit.sections) });
   files.push(
     ...Object.entries(kit.examples).map(([path, content]) => ({
       path: `canvas-export/examples/${path}`,

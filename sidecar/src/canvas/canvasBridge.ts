@@ -12,6 +12,7 @@ import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { resolveCanvasAssetReferences } from './canvasAssets.js';
 import { canvasCommandSchema, type CanvasMutation } from './canvasCommandSchema.js';
+import { onDesignSystemChange } from './designSystemChanges.js';
 import {
   answerDesignSystemCommand,
   isDesignSystemCommand,
@@ -60,6 +61,9 @@ class CanvasDispatch {
       this.watches.forget(pageId);
       this.captures.forget(pageId);
     });
+    onDesignSystemChange((id) => {
+      this.emit({ type: 'canvas.designSystemsChanged', id });
+    });
     this.workspace = ready.then(
       (opened) => {
         opened.changes.subscribe((change) => {
@@ -87,13 +91,10 @@ class CanvasDispatch {
         return await this.watch(command, pageId);
       if (command.type === 'canvas.readArtifact') return await this.readArtifact(command);
       // Kits are not a canvas's, so they stay reachable when Canvas storage is not.
-      if (isDesignSystemCommand(command))
-        return {
-          type: 'canvas.result',
-          requestId: command.requestId,
-          ok: true,
-          reply: await answerDesignSystemCommand(command),
-        };
+      if (isDesignSystemCommand(command)) {
+        const reply = await answerDesignSystemCommand(command);
+        return { type: 'canvas.result', requestId: command.requestId, ok: true, reply };
+      }
       const workspace = await this.workspace;
       const reply = await this.answer(workspace, command);
       if (CHANGES_SUMMARIES.has(command.type))
@@ -466,6 +467,7 @@ function canvasFailure(error: unknown): CanvasError {
       code: error.code,
       message: error.message,
       ...(error.currentRect ? { currentRect: error.currentRect } : {}),
+      ...(error.latestVersion === undefined ? {} : { latestVersion: error.latestVersion }),
     };
   console.error('Canvas command failed:', error);
   return {

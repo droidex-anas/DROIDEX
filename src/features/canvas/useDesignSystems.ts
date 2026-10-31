@@ -6,8 +6,8 @@ import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import type { SavedDesignSystem } from './designSystemRequests';
 import { designSystemsReducer, initialDesignSystemsState } from './designSystemsState';
-import { MAX_KIT_NAME_LENGTH } from './wireValidation';
-import type { DesignSystemDetail, DesignSystemSource } from './protocol';
+import { MAX_KIT_NAME_LENGTH } from './designSystemDocumentValidation';
+import type { DesignSystemDocumentView, DesignSystemSource } from './protocol';
 
 export function useDesignSystems() {
   const [state, dispatch] = useReducer(designSystemsReducer, initialDesignSystemsState);
@@ -67,7 +67,7 @@ export function useDesignSystems() {
 
   /** The caller keeps `mutationId` until an answer, so a click after a lost reply replays. */
   const copy = useCallback(
-    async (system: DesignSystemDetail, mutationId: string) => {
+    async (system: DesignSystemDocumentView, mutationId: string) => {
       const suffix = ' copy';
       const name = system.name.slice(0, MAX_KIT_NAME_LENGTH - suffix.length) + suffix;
       const source = { id: system.id, version: system.version };

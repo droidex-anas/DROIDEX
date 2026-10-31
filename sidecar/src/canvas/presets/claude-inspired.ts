@@ -1,8 +1,9 @@
+import { buildDocument } from '../buildDocument.js';
 import type { DesignSystem } from '../designSystems.js';
 import lora from './fonts/lora.json' with { type: 'json' };
 import inter from './fonts/inter.json' with { type: 'json' };
 import { PRIMITIVES_TSX } from './primitives.js';
-import { HEY_TSX, UNIVERSAL_GUIDANCE } from './starter.js';
+import { LICENSED_FONTS, PRIMITIVE_EXAMPLES, PRIMITIVE_PARTS, rulesNote } from './starter.js';
 import { GEOMETRY_TOKENS, KIT_CSS } from './styles.js';
 
 const LIGHT_TOKENS: Record<string, string> = {
@@ -57,19 +58,96 @@ const DARK_TOKENS: Record<string, string> = {
   '--ds-backdrop': 'rgb(0 0 0 / 0.35)',
 };
 
+const FEEL_NOTE = `A locally authored interpretation, not an official preset. Warm parchment, clay actions and Lora serif headings over Inter controls. Use an editorial rhythm: generous reading space, a measure of about 65 characters for prose, and gentle shadows rather than borders.
+`;
+
+const READING_TSX = `import { useState } from 'react';
+import { Bookmark, BookmarkCheck } from 'lucide-react';
+import { Badge, Button, Card } from '@droidex/design-system';
+
+export default function ReadingView() {
+  const [saved, setSaved] = useState(false);
+  return (
+    <main className="min-h-screen bg-[color:var(--ds-canvas)] px-8 py-12">
+      <article className="mx-auto flex max-w-xl flex-col gap-6">
+        <Badge>Essay · 6 min read</Badge>
+        <h1>On writing things down</h1>
+        <p className="text-[color:var(--ds-fg-muted)]">
+          A note kept is a decision you no longer have to make twice.
+        </p>
+        <p>
+          Most of what we know at the end of a day is gone by the next morning. The habit of writing a few
+          lines before closing the laptop turns a busy day into one you can return to: what changed, what is
+          still open, and what you would do first tomorrow.
+        </p>
+        <Card className="flex flex-col gap-3">
+          <h2>Try it tonight</h2>
+          <p>Three lines are enough. Keep them where you will see them first.</p>
+        </Card>
+        <div className="flex gap-3">
+          <Button variant="secondary" onClick={() => setSaved(!saved)} aria-pressed={saved}>
+            {saved ? <BookmarkCheck size={16} aria-hidden="true" /> : <Bookmark size={16} aria-hidden="true" />}
+            {saved ? 'Saved' : 'Save for later'}
+          </Button>
+        </div>
+      </article>
+    </main>
+  );
+}
+`;
+
+const COVER_TSX = `import { ArrowRight, Feather } from 'lucide-react';
+import { Button } from '@droidex/design-system';
+
+export default function Cover() {
+  return (
+    <main className="flex h-screen items-center gap-16 overflow-hidden bg-[color:var(--ds-canvas)] px-16">
+      <div className="flex flex-1 flex-col gap-6">
+        <div className="flex items-center gap-3 text-[color:var(--ds-accent)]">
+          <Feather size={24} aria-hidden="true" />
+          <span className="font-[family-name:var(--ds-font-heading)] text-[length:var(--ds-text-lg)] text-[color:var(--ds-fg)]">
+            Claude-inspired
+          </span>
+        </div>
+        <h1 className="max-w-lg">Room to think, and words worth reading.</h1>
+        <Button className="w-fit">
+          Start writing
+          <ArrowRight size={16} aria-hidden="true" />
+        </Button>
+      </div>
+      <blockquote className="max-w-sm rounded-[var(--ds-radius-lg)] bg-[color:var(--ds-raised)] p-8 font-[family-name:var(--ds-font-heading)] text-[length:var(--ds-text-lg)] shadow-[var(--ds-shadow-md)]">
+        “The first draft is just you telling yourself the story.”
+      </blockquote>
+    </main>
+  );
+}
+`;
+
 export const CLAUDE_INSPIRED_DESIGN_SYSTEM: DesignSystem = {
   id: 'claude-inspired',
   version: 1,
   name: 'Claude-inspired',
-  modes: { light: LIGHT_TOKENS, dark: DARK_TOKENS },
+  cover: { kind: 'preview', example: 'cover.tsx' },
+  sections: buildDocument({
+    tokens: { light: LIGHT_TOKENS, dark: DARK_TOKENS },
+    overview: [
+      rulesNote(LICENSED_FONTS),
+      { kind: 'note', label: '2-feel.md', body: FEEL_NOTE },
+      {
+        kind: 'preview',
+        title: 'Reading view',
+        example: 'ReadingView.tsx',
+        width: 960,
+        height: 720,
+      },
+    ],
+    components: PRIMITIVE_PARTS,
+  }),
   files: {
     'index.tsx': PRIMITIVES_TSX,
     'tokens.css': inter.css + lora.css + KIT_CSS,
     'fonts/Inter-OFL.txt': inter.license,
     'fonts/Lora-OFL.txt': lora.license,
   },
-  guidance:
-    UNIVERSAL_GUIDANCE +
-    '\nClaude-inspired: a locally authored interpretation, not an official preset. Warm parchment, clay actions and Lora serif headings with Inter controls. Use an editorial rhythm, generous reading space and gentle shadows.\n',
-  examples: { 'Hey.tsx': HEY_TSX },
+  examples: { ...PRIMITIVE_EXAMPLES, 'ReadingView.tsx': READING_TSX, 'cover.tsx': COVER_TSX },
 };

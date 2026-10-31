@@ -1,26 +1,49 @@
-// Versioned executable design kits (spec §10). A kit is tokens, React
-// primitives, guidance and examples; a revision pins one `id` and `version`, and
-// that version never changes afterwards, so a saved design keeps compiling the
-// way it was designed.
+// Versioned executable design kits (spec §10). A kit version is a document
+// (design system documents spec §2) with React primitives and the examples its
+// previews render; a revision pins one `id` and `version`, and that version
+// never changes afterwards, so a saved design keeps compiling the way it was
+// designed.
 
-import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
-import { dirname, join, relative, sep } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
-import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import { canvasError, staleDesignSystemBase, storageFailure } from './canvasError.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import { canvasDir } from '../droidexPaths.js';
-import { tokenNameSchema, tokenValueSchema } from './designSystemDocument.js';
+import { announceDesignSystemChange } from './designSystemChanges.js';
+import { convertLegacyVersion, legacySummary } from './designSystemConversion.js';
+import {
+  DOCUMENT_LIMITS,
+  documentSectionsSchema,
+  kitModes,
+  largestNote,
+  tokenValueSchema,
+  withNoteAuthors,
+  writtenTextBytes,
+} from './designSystemDocument.js';
+import {
+  exists,
+  flushAncestors,
+  isMissing,
+  LINKED_STORAGE,
+  readSavedFile,
+  refuseLinkedPath,
+  savedVersions,
+  setTombstone,
+  systemsRoot,
+  tombstonePath,
+  versionPath,
+  writeVersion,
+} from './designSystemStorage.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
 import {
   canvasIdentifierSchema,
   designSystemVersionRefSchema,
   sourceFilesSchema,
+  sourcePathSchema,
 } from './schema.js';
 
 /** The file a kit exports its primitives from, and the only entry it may have. */
@@ -29,53 +52,32 @@ export const KIT_ENTRY = 'index.tsx';
 export const DESIGN_SYSTEM_LIMITS = {
   maxGuidanceBytes: 16 * 1024,
   maxNameLength: 120,
-  maxTokensPerMode: 128,
 } as const;
 
-const TOKEN_COUNT_MESSAGE = `Each mode declares at most ${String(DESIGN_SYSTEM_LIMITS.maxTokensPerMode)} tokens.`;
-const GUIDANCE_MESSAGE = `Kit guidance must stay under ${String(DESIGN_SYSTEM_LIMITS.maxGuidanceBytes / 1024)} KiB.`;
 const ENTRY_MESSAGE = `A design system must provide ${KIT_ENTRY}, which exports its primitives.`;
 const UNKNOWN_MESSAGE = 'That design system version is not available.';
 const BUILT_IN_MESSAGE = 'That design system name belongs to a built-in kit. Choose another id.';
-const IMMUTABLE_MESSAGE =
-  'That design system version is already saved. Save the change as the next version.';
-const SAVE_RECOVERY = 'The design system could not be saved.';
-const LINKED_STORAGE = 'Canvas storage holds a symbolic link and was not used.';
-
-const modeTokensSchema = z
-  .record(tokenNameSchema, tokenValueSchema)
-  .refine((tokens) => Object.keys(tokens).length <= DESIGN_SYSTEM_LIMITS.maxTokensPerMode, {
-    message: TOKEN_COUNT_MESSAGE,
-  });
+const DELETED_MESSAGE = 'That design system was deleted. Restore it before saving to it.';
 
 const kitFilesSchema = sourceFilesSchema.refine((files) => Object.hasOwn(files, KIT_ENTRY), {
   message: ENTRY_MESSAGE,
 });
 
-export const designSystemSchema = z
+const coverSchema = z
+  .discriminatedUnion('kind', [
+    z.object({ kind: z.literal('preview'), example: sourcePathSchema }).strict(),
+    z.object({ kind: z.literal('image'), assetId: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
+  ])
+  .nullable();
+
+const designSystemObjectSchema = z
   .object({
     id: canvasIdentifierSchema,
     version: z.number().int().positive().safe(),
     name: z.string().trim().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
-    modes: z
-      .object({ light: modeTokensSchema, dark: modeTokensSchema })
-      .strict()
-      .refine(
-        ({ light, dark }) => {
-          const names = Object.keys(light);
-          return (
-            names.length === Object.keys(dark).length &&
-            names.every((name) => Object.hasOwn(dark, name))
-          );
-        },
-        { message: 'Light and dark modes must declare the same design tokens.' },
-      ),
+    cover: coverSchema,
+    sections: documentSectionsSchema,
     files: kitFilesSchema,
-    guidance: z
-      .string()
-      .refine((text) => Buffer.byteLength(text, 'utf8') <= DESIGN_SYSTEM_LIMITS.maxGuidanceBytes, {
-        message: GUIDANCE_MESSAGE,
-      }),
     examples: sourceFilesSchema,
     // Extracted from a canvas revision, or saved as a copy of another kit version.
     provenance: z
@@ -94,46 +96,94 @@ export const designSystemSchema = z
   })
   .strict();
 
+export const designSystemSchema = designSystemObjectSchema.superRefine((system, context) => {
+  const problem = versionProblem(system);
+  if (problem) context.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+});
+
 export type DesignSystem = z.infer<typeof designSystemSchema>;
 type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
+export type DesignSystemCover = DesignSystem['cover'];
+
+// The rules that span the document and its files.
+function versionProblem(system: z.infer<typeof designSystemObjectSchema>): string | null {
+  const examples = system.sections.flatMap((section) =>
+    section.items.flatMap((item) => (item.kind === 'preview' ? [item.example] : [])),
+  );
+  if (system.cover?.kind === 'preview') examples.push(system.cover.example);
+  const missing = examples.find((example) => !Object.hasOwn(system.examples, example));
+  if (missing !== undefined) return `No example ${missing} exists. Add it or name another one.`;
+  if (examples.length > DOCUMENT_LIMITS.maxPreviews)
+    return `A design system has at most ${String(DOCUMENT_LIMITS.maxPreviews)} previews, its cover included.`;
+  if (writtenTextBytes(system.sections) > DESIGN_SYSTEM_LIMITS.maxGuidanceBytes)
+    return `The design system's text is over 16 KiB. Shorten its notes, starting with ${largestNote(system.sections) ?? 'the longest'}.`;
+  const documentBytes = Buffer.byteLength(
+    JSON.stringify({ ...system, files: undefined, examples: undefined }),
+    'utf8',
+  );
+  if (documentBytes > DOCUMENT_LIMITS.maxDocumentBytes)
+    return 'The design system document is over 256 KiB. Remove some of it.';
+  return null;
+}
+
+const savedBySchema = z.discriminatedUnion('actor', [
+  z.object({ actor: z.literal('user') }).strict(),
+  z.object({ actor: z.literal('agent'), appSessionId: z.string().min(1).max(200) }).strict(),
+]);
+export type SavedBy = z.infer<typeof savedBySchema>;
 
 const swatchesSchema = z.object({ surface: tokenValueSchema, accent: tokenValueSchema }).strict();
-const summarySchema = z
+// The first line of every saved version: what lists and the version history read.
+const headerSchema = z
   .object({
     id: canvasIdentifierSchema,
     version: z.number().int().positive().safe(),
     name: z.string().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
-    kind: z.enum(['auto', 'preset', 'user']),
     swatches: z.object({ light: swatchesSchema, dark: swatchesSchema }).strict(),
+    cover: z.boolean(),
+    savedAt: z.string().datetime(),
+    savedBy: savedBySchema,
   })
   .strict();
-export type DesignSystemSummary = z.infer<typeof summarySchema>;
+type VersionHeader = z.infer<typeof headerSchema>;
 
-/** One kit version as the Manage dialog shows it: its tokens, without source files. */
-export interface DesignSystemDetail {
+/** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
+export interface DesignSystemSummary {
   id: string;
   version: number;
   name: string;
-  modes: { light: Record<string, string>; dark: Record<string, string> };
-  /** Tokens the shared primitives do not read, kept under their own names (spec §10). */
-  unmapped: string[];
-  provenance: DesignSystemProvenance | null;
+  kind: 'auto' | 'preset' | 'user';
+  swatches: VersionHeader['swatches'];
+  cover: boolean;
+  /** When the listed version was saved; a built-in kit was never saved. */
+  savedAt: string | null;
+  /** Whether an agent proposal waits for review. */
+  proposal: boolean;
 }
 
-/** A new kit's source from the dialog's New menu. */
+/** One saved version as the version history lists it. */
+export interface DesignSystemVersionEntry {
+  version: number;
+  savedAt: string;
+  savedBy: SavedBy;
+}
+
+/** A new kit's source from the New menu. */
 export interface DesignSystemSource {
   kind: 'designMd' | 'cssOrTailwind';
   text: string;
 }
 
-const savedSystemSchema = z
+export type { DesignSystemProvenance };
+
+const savedVersionSchema = z
   .object({
-    summary: summarySchema,
+    summary: headerSchema,
     system: designSystemSchema,
     mutationId: canvasIdentifierSchema.optional(),
   })
   .strict();
-const SUMMARY_HEADER_BYTES = 8192;
+const HEADER_BYTES = 8192;
 
 // Parsing snapshots the authored kits and validates their limits at startup.
 const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [
@@ -153,26 +203,47 @@ export const AUTO_DESIGN_SYSTEM_REF: DesignSystemRef = {
   mode: 'light',
 };
 
+export function designSystemKind(id: string): DesignSystemSummary['kind'] {
+  if (id === AUTO_DESIGN_SYSTEM.id) return 'auto';
+  return BUILT_IN_DESIGN_SYSTEMS.some((system) => system.id === id) ? 'preset' : 'user';
+}
+
 /**
- * Auto, the presets, then the latest published user version; reads only
- * metadata headers. A kit whose header is damaged is left out and logged, so
- * one bad kit never hides the others.
+ * Auto, the presets, then the latest published version of each user kit that
+ * is not deleted; reads only headers. A kit whose header is damaged is left out
+ * and logged, so one bad kit never hides the others.
  */
 export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
-  const summaries = BUILT_IN_DESIGN_SYSTEMS.map((system) =>
-    summarize(system, system.id === AUTO_DESIGN_SYSTEM.id ? 'auto' : 'preset'),
-  );
+  const summaries: DesignSystemSummary[] = BUILT_IN_DESIGN_SYSTEMS.map((system) => ({
+    ...documentHeader(system),
+    kind: designSystemKind(system.id),
+    savedAt: null,
+    proposal: false,
+  }));
   const root = systemsRoot();
   try {
-    await refuseLinkedPath(join(root, '_'));
+    await refuseLinkedPath(root);
     const entries = await readdir(root, { withFileTypes: true });
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
       if (!entry.isDirectory()) continue;
       const id = canvasIdentifierSchema.safeParse(entry.name);
-      if (!id.success) continue;
-      const summary = await readLatestUserSummary(id.data);
-      if (summary) summaries.push(summary);
+      if (!id.success || (await exists(tombstonePath(id.data)))) continue;
+      const versions = await savedVersions(id.data);
+      if (versions.length === 0) continue;
+      const header = await readHeader(id.data, Math.max(...versions));
+      if (!header) continue;
+      const { version, name, swatches, cover, savedAt } = header;
+      summaries.push({
+        id: id.data,
+        version,
+        name,
+        kind: 'user',
+        swatches,
+        cover,
+        savedAt,
+        proposal: false,
+      });
     }
     return summaries;
   } catch (error) {
@@ -184,27 +255,37 @@ export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
   }
 }
 
-async function readLatestUserSummary(id: string): Promise<DesignSystemSummary | null> {
-  const versions = (await readdir(join(systemsRoot(), id)))
-    .filter((name) => /^[1-9][0-9]*\.json$/.test(name))
-    .map((name) => Number(name.slice(0, -5)));
-  if (versions.length === 0) return null;
-  const version = versions.reduce((latest, current) => Math.max(latest, current), 0);
-  const header = await readSavedText(versionPath(id, version), SUMMARY_HEADER_BYTES);
-  if (header === null) return null; // A concurrent save has not published its version yet.
-  const newline = header.indexOf('\n');
-  if (newline < 0 || !header.startsWith('{"summary":'))
+/** A user kit's saved versions, newest first; built-in kits have none. */
+export async function listDesignSystemVersions(id: string): Promise<DesignSystemVersionEntry[]> {
+  if (designSystemKind(id) !== 'user') return [];
+  const entries: DesignSystemVersionEntry[] = [];
+  for (const version of (await savedVersions(id)).sort((a, b) => b - a)) {
+    const header = await readHeader(id, version);
+    if (header) entries.push({ version, savedAt: header.savedAt, savedBy: header.savedBy });
+  }
+  return entries;
+}
+
+async function readHeader(id: string, version: number): Promise<VersionHeader | null> {
+  const saved = await readSavedFile(versionPath(id, version), HEADER_BYTES);
+  if (saved === null) return null; // A concurrent save has not published its version yet.
+  const newline = saved.text.indexOf('\n');
+  if (newline < 0 || !saved.text.startsWith('{"summary":'))
     return skipDamagedKit(id, version, 'its file does not start with a saved kit header');
-  const firstLine = header.slice(0, newline);
-  const parsed = summarySchema.safeParse(parseJson(firstLine.slice('{"summary":'.length, -1)));
-  if (
-    !parsed.success ||
-    parsed.data.id !== id ||
-    parsed.data.version !== version ||
-    parsed.data.kind !== 'user'
-  )
+  const value = parseJson(saved.text.slice('{"summary":'.length, newline - 1));
+  const header = headerSchema.safeParse(value).data ?? convertLegacyHeader(value, saved.modifiedAt);
+  if (header?.id !== id || header.version !== version)
     return skipDamagedKit(id, version, 'its header does not describe that saved version');
-  return parsed.data;
+  return header;
+}
+
+// v1.6 recorded neither when nor by whom; its kits were the user's.
+function convertLegacyHeader(value: unknown, modifiedAt: Date): VersionHeader | null {
+  const legacy = legacySummary(value);
+  if (!legacy) return null;
+  const { id, version, name, swatches } = legacy;
+  const savedAt = modifiedAt.toISOString();
+  return { id, version, name, swatches, cover: false, savedAt, savedBy: { actor: 'user' } };
 }
 
 // The picker lists on every open, so each damaged file is logged once.
@@ -221,8 +302,9 @@ function skipDamagedKit(id: string, version: number, reason: string): null {
 }
 
 /**
- * Exactly the pinned version, from the built-in kits or the user's saved ones.
- * A design's reference also names its preview mode, which selects nothing here.
+ * Exactly the pinned version, from the built-in kits or the user's saved ones,
+ * deleted or not. A design's reference also names its preview mode, which
+ * selects nothing here.
  */
 export async function readDesignSystem(
   ref: DesignSystemRef | DesignSystemVersionRef,
@@ -231,84 +313,147 @@ export async function readDesignSystem(
     (system) => system.id === ref.id && system.version === ref.version,
   );
   if (builtIn) return structuredClone(builtIn);
-  if (BUILT_IN_DESIGN_SYSTEMS.some((system) => system.id === ref.id))
-    throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
+  if (designSystemKind(ref.id) !== 'user') throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
 
-  const text = await readSavedText(versionPath(ref.id, ref.version));
-  if (text === null) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
-  const parsed = savedSystemSchema.safeParse(parseJson(text));
-  if (!parsed.success)
+  const saved = await readSavedFile(versionPath(ref.id, ref.version));
+  if (saved === null) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
+  const value = parseJson(saved.text);
+  const system = savedSystem(value) ?? convertLegacyVersion(value);
+  if (!system)
     throw canvasError(
       'storage_failed',
       'The saved kit is damaged. Restore that design system version.',
     );
   // A file whose contents name another version would serve the wrong kit.
-  if (
-    parsed.data.system.id !== ref.id ||
-    parsed.data.system.version !== ref.version ||
-    JSON.stringify(parsed.data.summary) !== JSON.stringify(summarize(parsed.data.system, 'user'))
-  )
+  if (system.id !== ref.id || system.version !== ref.version)
     throw canvasError(
       'storage_failed',
       'The saved kit metadata disagrees with its content. Restore that version.',
     );
-  return parsed.data.system;
+  return system;
 }
 
-/** Writes one new immutable version and returns the reference that pins it. */
+/** The kit a current version file holds, when its header describes it. */
+function savedSystem(value: unknown): DesignSystem | null {
+  const parsed = savedVersionSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const { summary, system } = parsed.data;
+  const described = {
+    ...documentHeader(system),
+    savedAt: summary.savedAt,
+    savedBy: summary.savedBy,
+  };
+  return isDeepStrictEqual(summary, described) ? system : null;
+}
+
+/**
+ * Writes the version after `baseVersion` (`null` for a new kit's first) and
+ * returns the reference that pins it. Each note the saver changed against the
+ * base becomes theirs (§2). A retry with the same mutation ID and kit answers
+ * with the version it already wrote; any other save onto a base that is no
+ * longer the latest is refused and writes nothing.
+ */
 export async function saveDesignSystem(
-  system: DesignSystem,
-  options: { mutationId?: string; beforePublish?: () => void } = {},
+  system: Omit<DesignSystem, 'version'>,
+  options: {
+    mutationId: string;
+    baseVersion: number | null;
+    savedBy: SavedBy;
+    beforePublish?: () => void;
+  },
 ): Promise<DesignSystemRef> {
-  const parsed = designSystemSchema.safeParse(system);
+  const parsed = designSystemSchema.safeParse({
+    ...system,
+    version: (options.baseVersion ?? 0) + 1,
+  });
   if (!parsed.success)
     throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? UNKNOWN_MESSAGE);
-  const kit = parsed.data;
-  if (BUILT_IN_DESIGN_SYSTEMS.some((builtIn) => builtIn.id === kit.id))
+  if (designSystemKind(parsed.data.id) !== 'user')
     throw canvasError('preset_read_only', BUILT_IN_MESSAGE);
+  const { baseVersion, savedBy } = options;
+  const base =
+    baseVersion === null
+      ? []
+      : (await readDesignSystem({ id: system.id, version: baseVersion })).sections;
+  const kit = {
+    ...parsed.data,
+    sections: withNoteAuthors(parsed.data.sections, base, savedBy.actor),
+  };
 
-  // The summary and executable content publish together in one immutable version.
-  const summary = summarize(kit, 'user');
   const path = versionPath(kit.id, kit.version);
-  try {
-    await writeVersion(
+  if (!(await isSavedMutation(path, options.mutationId, kit))) {
+    if (await exists(tombstonePath(kit.id))) throw canvasError('invalid_input', DELETED_MESSAGE);
+    await refuseStaleBase(kit.id, baseVersion);
+    const header: VersionHeader = {
+      ...documentHeader(kit),
+      savedAt: new Date().toISOString(),
+      savedBy,
+    };
+    // The header and executable content publish together in one immutable version.
+    const outcome = await writeVersion(
       path,
-      `{"summary":${JSON.stringify(summary)},\n"system":${JSON.stringify(kit)}${options.mutationId ? `,"mutationId":${JSON.stringify(options.mutationId)}` : ''}}\n`,
+      `{"summary":${JSON.stringify(header)},\n"system":${JSON.stringify(kit)},"mutationId":${JSON.stringify(options.mutationId)}}\n`,
       options.beforePublish ?? (() => undefined),
     );
-  } catch (error) {
-    if (!(error instanceof CanvasCommandError) || error.message !== IMMUTABLE_MESSAGE) throw error;
-    if (!options.mutationId || !(await sameSavedMutation(path, options.mutationId, kit)))
-      throw error;
+    if (outcome === 'exists' && !(await isSavedMutation(path, options.mutationId, kit)))
+      throw staleDesignSystemBase(await latestVersion(kit.id));
   }
   try {
     await flushAncestors(dirname(path));
   } catch (error) {
-    throw storageFailure(SAVE_RECOVERY, error);
+    throw storageFailure('The design system could not be saved.', error);
   }
+  announceDesignSystemChange(kit.id);
   // A reference also names a mode; a saved kit has both, so the light one is
   // the selection a caller gets back until the user picks otherwise.
   return { id: kit.id, version: kit.version, mode: 'light' };
 }
 
-async function sameSavedMutation(
+async function refuseStaleBase(id: string, baseVersion: number | null): Promise<void> {
+  const latest = await latestVersion(id);
+  if (latest === (baseVersion ?? 0)) return;
+  if (latest === 0) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
+  throw staleDesignSystemBase(latest);
+}
+
+async function latestVersion(id: string): Promise<number> {
+  return Math.max(0, ...(await savedVersions(id)));
+}
+
+async function isSavedMutation(
   path: string,
   mutationId: string,
   kit: DesignSystem,
 ): Promise<boolean> {
-  const text = await readSavedText(path);
-  if (text === null) return false;
-  const existing = savedSystemSchema.safeParse(parseJson(text));
-  if (!existing.success || existing.data.mutationId !== mutationId) return false;
+  const saved = await readSavedFile(path);
+  if (saved === null) return false;
+  const existing = savedVersionSchema.safeParse(parseJson(saved.text));
   return (
-    isDeepStrictEqual(existing.data.system, kit) &&
-    isDeepStrictEqual(existing.data.summary, summarize(kit, 'user'))
+    existing.success &&
+    existing.data.mutationId === mutationId &&
+    isDeepStrictEqual(existing.data.system, kit)
   );
 }
 
-function summarize(system: DesignSystem, kind: DesignSystemSummary['kind']): DesignSystemSummary {
-  const swatches = (mode: 'light' | 'dark') => {
-    const tokens = system.modes[mode];
+/** Takes a user kit out of every list, or puts it back; pinned versions still build. A
+ * mutation that already ran is not rerun, so a delete retried after Undo changes nothing. */
+export async function setDesignSystemDeleted(
+  id: string,
+  deleted: boolean,
+  mutationId: string,
+): Promise<void> {
+  if (designSystemKind(id) !== 'user') throw canvasError('preset_read_only', BUILT_IN_MESSAGE);
+  if ((await latestVersion(id)) === 0) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
+  await setTombstone(id, deleted, mutationId);
+  announceDesignSystemChange(id);
+}
+
+/** What a version's header says about its document. */
+function documentHeader(
+  system: DesignSystem,
+): Pick<VersionHeader, 'id' | 'version' | 'name' | 'swatches' | 'cover'> {
+  const modes = kitModes(system.sections);
+  const swatches = (tokens: Record<string, string>) => {
     let surface = 'transparent';
     if (Object.hasOwn(tokens, '--ds-surface')) surface = tokens['--ds-surface'];
     else if (Object.hasOwn(tokens, '--ds-canvas')) surface = tokens['--ds-canvas'];
@@ -319,19 +464,9 @@ function summarize(system: DesignSystem, kind: DesignSystemSummary['kind']): Des
     id: system.id,
     version: system.version,
     name: system.name,
-    kind,
-    swatches: { light: swatches('light'), dark: swatches('dark') },
+    swatches: { light: swatches(modes.light), dark: swatches(modes.dark) },
+    cover: system.cover !== null,
   };
-}
-
-function systemsRoot(): string {
-  return join(canvasDir(), 'design-systems');
-}
-
-function versionPath(id: string, version: number): string {
-  const parsed = canvasIdentifierSchema.safeParse(id);
-  if (!parsed.success) throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? '');
-  return join(systemsRoot(), parsed.data, `${String(version)}.json`);
 }
 
 function parseJson(text: string): unknown {
@@ -340,136 +475,4 @@ function parseJson(text: string): unknown {
   } catch {
     return null;
   }
-}
-
-// Canvas owns everything under its directory, so a link in the way is damage
-// rather than a path to follow, exactly as canvasFiles.ts treats its own tree.
-const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
-const CREATE_FLAGS =
-  constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
-
-async function readSavedText(path: string, maxBytes?: number): Promise<string | null> {
-  let file;
-  try {
-    await refuseLinkedPath(path);
-    file = await open(path, READ_FLAGS);
-  } catch (error) {
-    if (isMissing(error)) return null;
-    throw storageFailure(UNKNOWN_MESSAGE, error);
-  }
-  try {
-    if (maxBytes !== undefined) {
-      const buffer = Buffer.alloc(maxBytes);
-      const { bytesRead } = await file.read(buffer, 0, maxBytes, 0);
-      return buffer.subarray(0, bytesRead).toString('utf8');
-    }
-    return await file.readFile('utf8');
-  } catch (error) {
-    throw storageFailure(UNKNOWN_MESSAGE, error);
-  } finally {
-    await file.close();
-  }
-}
-
-/**
- * A kit version becomes readable in one `link`, which refuses a destination
- * that already exists. That refusal is what makes a published version
- * immutable: a check followed by a rename would let two writers that both saw
- * nothing overwrite each other. The temporary is named per call, so concurrent
- * writers never collide on it either.
- */
-async function writeVersion(
-  path: string,
-  content: string,
-  beforePublish: () => void,
-): Promise<void> {
-  const directory = dirname(path);
-  const temporary = join(directory, `.${randomUUID()}.tmp`);
-  try {
-    await refuseLinkedPath(path);
-    await mkdir(directory, { recursive: true });
-    const file = await open(temporary, CREATE_FLAGS, 0o600);
-    try {
-      await file.writeFile(content, 'utf8');
-      await file.sync();
-    } finally {
-      await file.close();
-    }
-    beforePublish();
-    await link(temporary, path);
-    await unlink(temporary);
-  } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
-    if (isExisting(error)) throw canvasError('invalid_input', IMMUTABLE_MESSAGE);
-    throw storageFailure(SAVE_RECOVERY, error);
-  }
-}
-
-/**
- * Flushes every directory entry this version rests on, whichever writer created
- * them. Flushing only what this save created would let one writer acknowledge a
- * version inside a directory another writer has not flushed yet, and a crash
- * would lose it. A flush of an already durable directory costs almost nothing,
- * so each save pays for its whole chain and its acknowledgement stands alone.
- */
-async function flushAncestors(leaf: string): Promise<void> {
-  const root = canvasDir();
-  // The storage root's own entry belongs to the user's profile, which may
-  // legitimately be a link; everything below it is Canvas's own.
-  const chain = [dirname(root), root];
-  let current = root;
-  for (const segment of relative(root, leaf).split(sep)) {
-    if (segment === '') break;
-    current = join(current, segment);
-    chain.push(current);
-  }
-  for (const path of chain) await syncDirectory(path);
-}
-
-async function syncDirectory(path: string): Promise<void> {
-  if (process.platform === 'win32') return;
-  const directory = await open(path, constants.O_RDONLY);
-  try {
-    await directory.sync();
-  } finally {
-    await directory.close();
-  }
-}
-
-/**
- * Refuses a path that crosses a symbolic link anywhere below the design-system
- * root. `O_NOFOLLOW` guards only the final component, so a linked kit directory
- * would otherwise let a read or a write land outside Canvas storage.
- */
-async function refuseLinkedPath(path: string): Promise<void> {
-  const root = systemsRoot();
-  let current = root;
-  for (const segment of relative(root, path).split(sep)) {
-    const stats = await lstatIfPresent(current);
-    // Nothing exists below a component that is not there.
-    if (!stats) return;
-    if (stats.isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
-    current = join(current, segment);
-  }
-}
-
-async function lstatIfPresent(path: string): Promise<{ isSymbolicLink(): boolean } | null> {
-  try {
-    return await lstat(path);
-  } catch (error) {
-    if (isMissing(error)) return null;
-    throw error;
-  }
-}
-
-function isMissing(error: unknown): boolean {
-  return hasCode(error, 'ENOENT');
-}
-
-function isExisting(error: unknown): boolean {
-  return hasCode(error, 'EEXIST');
-}
-
-function hasCode(error: unknown, code: string): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
 }

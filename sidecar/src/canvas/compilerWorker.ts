@@ -22,6 +22,7 @@ import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBun
 import { designEntryDiagnostic } from './designEntry.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
+import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { instrumentSource, SourceElementError } from './sourceElements.js';
@@ -256,7 +257,7 @@ function kitTokens(kit: DesignSystem, mode: DesignSystemRef['mode']): Record<str
       if (declaration.prop.startsWith('--')) tokens[declaration.prop] = declaration.value;
     });
   }
-  return { ...tokens, ...kit.modes[mode] };
+  return { ...tokens, ...kitModes(kit.sections)[mode] };
 }
 
 /** Releases the service process, flushes the acknowledgement, and exits. */

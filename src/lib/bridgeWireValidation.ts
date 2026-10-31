@@ -153,6 +153,7 @@ export function isServerEvent(value: unknown): value is ServerEvent {
     case 'canvas.change':
     case 'canvas.result':
     case 'canvas.captureRequest':
+    case 'canvas.designSystemsChanged':
       return isCanvasEvent(value);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';

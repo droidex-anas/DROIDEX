@@ -57,6 +57,7 @@ export class CanvasRequestError extends Error {
     readonly code: CanvasErrorCode,
     message: string,
     readonly currentRect?: FrameRect,
+    readonly latestVersion?: number,
   ) {
     super(message);
     this.name = 'CanvasRequestError';
@@ -426,10 +427,10 @@ export class CanvasClient {
     const waiter = this.answer(event.requestId);
     if (!waiter) return;
     if (event.ok) waiter.settle(event);
-    else
-      waiter.fail(
-        new CanvasRequestError(event.error.code, event.error.message, event.error.currentRect),
-      );
+    else {
+      const { code, message, currentRect, latestVersion } = event.error;
+      waiter.fail(new CanvasRequestError(code, message, currentRect, latestVersion));
+    }
   }
 
   private answer(id: string): Waiter | null {

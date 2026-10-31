@@ -10,7 +10,8 @@ import { TokenPanel } from './DesignSystemTokens';
 import { TOKEN_TABS, tokensByTab, type TokenTab } from './designSystemTokenTabs';
 import type { KitRead } from './designSystemsState';
 import { PreviewModeToggle, type PreviewMode } from './PreviewModeToggle';
-import type { CanvasDiagnostic, DesignSystemDetail, DesignSystemSummary } from './protocol';
+import type { DocumentSection } from './designSystemDocumentProtocol';
+import type { CanvasDiagnostic, DesignSystemDocumentView, DesignSystemSummary } from './protocol';
 
 const ACTION_CLASS =
   'flex items-center gap-1.5 rounded-lg bg-active px-2.5 py-1.5 text-label text-primary transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default disabled:opacity-60';
@@ -34,7 +35,7 @@ export function DesignSystemDetailPane({
   nameOf: (id: string) => string | null;
   onModeChange: (mode: PreviewMode) => void;
   onRetry: () => void;
-  onCopy: (system: DesignSystemDetail, mutationId: string) => Promise<void>;
+  onCopy: (system: DesignSystemDocumentView, mutationId: string) => Promise<void>;
 }) {
   if (read === null) return null;
   if (read.status === 'loading')
@@ -82,20 +83,20 @@ function KitDetail({
   onModeChange,
   onCopy,
 }: {
-  system: DesignSystemDetail;
+  system: DesignSystemDocumentView;
   isPreset: boolean;
   mode: PreviewMode;
   importNotes: CanvasDiagnostic[] | null;
   nameOf: (id: string) => string | null;
   onModeChange: (mode: PreviewMode) => void;
-  onCopy: (system: DesignSystemDetail, mutationId: string) => Promise<void>;
+  onCopy: (system: DesignSystemDocumentView, mutationId: string) => Promise<void>;
 }) {
   const [tab, setTab] = useState<TokenTab>('colors');
   // Kept until an answer, so a second click after a lost reply finds the copy already saved.
   const copyMutationId = useRef(crypto.randomUUID());
   const [status, setStatus] = useState<ActionStatus>({ state: 'idle' });
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const tokens = system.modes[mode];
+  const tokens = modeTokens(system.sections, mode);
   const tabs = tokensByTab(tokens);
   const unmapped = new Set(system.unmapped);
   const busy = status.state === 'busy';
@@ -241,8 +242,19 @@ function KitDetail({
   );
 }
 
+function modeTokens(sections: DocumentSection[], mode: PreviewMode): Record<string, string> {
+  const tokens: Record<string, string> = {};
+  for (const section of sections)
+    for (const item of section.items) {
+      if (item.kind !== 'group') continue;
+      for (const token of item.tokens)
+        tokens[token.name] = 'value' in token ? token.value : token[mode];
+    }
+  return tokens;
+}
+
 function kitOrigin(
-  system: DesignSystemDetail,
+  system: DesignSystemDocumentView,
   isPreset: boolean,
   nameOf: (id: string) => string | null,
 ): string {
