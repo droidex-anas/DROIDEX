@@ -190,6 +190,8 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     '--active': active,
     '--raised': raised,
     ...sidebarTokens(sidebar, scheme, theme.translucentSidebar),
+    // The sidebar tone without vibrancy, for side panels drawn over app content.
+    '--sidebar-solid': sidebar,
     '--divider': withAlpha(theme.fg, DIVIDER_ALPHA[scheme].divider),
     '--divider-strong': withAlpha(theme.fg, DIVIDER_ALPHA[scheme].strong),
     '--text': theme.fg,
