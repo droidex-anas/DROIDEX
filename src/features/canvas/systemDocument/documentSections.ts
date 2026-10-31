@@ -1,0 +1,220 @@
+// A document's sections compared by key (spec §6): what one list changes
+// against another, and what was removed put back in place to show struck
+// through. A draft is compared with its base; slice 2b compares a proposal.
+
+import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
+
+export type DocumentItem = DocumentSection['items'][number];
+export type SectionKind = DocumentSection['kind'];
+export type DraftMark = 'added' | 'changed' | 'removed';
+
+// Ids never contain a colon, so a token key cannot name a section or item.
+const TOKEN_KEY_PREFIX = 'token:';
+
+/** The key a token is marked and changed by; sections and items use their id. */
+export function tokenKey(name: string): string {
+  return TOKEN_KEY_PREFIX + name;
+}
+
+export function tokenNameOf(key: string): string | null {
+  return key.startsWith(TOKEN_KEY_PREFIX) ? key.slice(TOKEN_KEY_PREFIX.length) : null;
+}
+
+// Callers keep every item in a section of a kind that holds it.
+export function withItems(section: DocumentSection, items: DocumentItem[]): DocumentSection {
+  return { ...section, items } as DocumentSection;
+}
+
+export function itemsById(sections: DocumentSection[]) {
+  const items = new Map<string, { item: DocumentItem; holder: string }>();
+  for (const section of sections)
+    for (const item of section.items) items.set(item.id, { item, holder: section.id });
+  return items;
+}
+
+export function tokensByName(sections: DocumentSection[]) {
+  const tokens = new Map<string, { token: DocumentToken; holder: string }>();
+  for (const section of sections)
+    for (const item of section.items)
+      if (item.kind === 'group')
+        for (const token of item.tokens) tokens.set(token.name, { token, holder: item.id });
+  return tokens;
+}
+
+/** The names a new or renamed token, note or preview may not take. */
+export function documentNames(sections: DocumentSection[]) {
+  const tokenNames = new Set<string>();
+  const noteLabels = new Set<string>();
+  const previewTitles = new Set<string>();
+  for (const section of sections)
+    for (const item of section.items) {
+      if (item.kind === 'group') for (const token of item.tokens) tokenNames.add(token.name);
+      if (item.kind === 'note') noteLabels.add(item.label);
+      if (item.kind === 'preview') previewTitles.add(item.title);
+    }
+  return { tokenNames, noteLabels, previewTitles };
+}
+
+/**
+ * What `next` changes against `base`. A removed section or group is one mark:
+ * what it held is not marked again. A section is changed when it is renamed,
+ * moved, or its items reordered.
+ */
+export function draftDiff(
+  base: DocumentSection[],
+  next: DocumentSection[],
+): Map<string, DraftMark> {
+  const marks = new Map<string, DraftMark>();
+  markSections(base, next, marks);
+  const nextItems = itemsById(next);
+  markItems(itemsById(base), nextItems, new Set(next.map(({ id }) => id)), marks);
+  markTokens(tokensByName(base), tokensByName(next), nextItems, marks);
+  return marks;
+}
+
+function markSections(
+  base: DocumentSection[],
+  next: DocumentSection[],
+  marks: Map<string, DraftMark>,
+) {
+  const baseSections = new Map(base.map((section) => [section.id, section]));
+  const nextIds = new Set(next.map(({ id }) => id));
+  const baseOrder = base.filter(({ id }) => nextIds.has(id)).map(({ id }) => id);
+  const nextOrder = next.filter(({ id }) => baseSections.has(id)).map(({ id }) => id);
+  for (const section of next) {
+    const was = baseSections.get(section.id);
+    if (!was) marks.set(section.id, 'added');
+    else if (
+      was.title !== section.title ||
+      baseOrder.indexOf(section.id) !== nextOrder.indexOf(section.id) ||
+      !sameOrder(
+        was.items.map(({ id }) => id),
+        section.items.map(({ id }) => id),
+      )
+    )
+      marks.set(section.id, 'changed');
+  }
+  for (const { id } of base) if (!nextIds.has(id)) marks.set(id, 'removed');
+}
+
+function markItems(
+  baseItems: ReturnType<typeof itemsById>,
+  nextItems: ReturnType<typeof itemsById>,
+  nextSectionIds: ReadonlySet<string>,
+  marks: Map<string, DraftMark>,
+) {
+  for (const [id, { item }] of nextItems) {
+    const was = baseItems.get(id)?.item;
+    if (!was) marks.set(id, 'added');
+    else if (!sameItem(was, item)) marks.set(id, 'changed');
+  }
+  for (const [id, { holder }] of baseItems)
+    if (!nextItems.has(id) && nextSectionIds.has(holder)) marks.set(id, 'removed');
+}
+
+function markTokens(
+  baseTokens: ReturnType<typeof tokensByName>,
+  nextTokens: ReturnType<typeof tokensByName>,
+  nextItems: ReturnType<typeof itemsById>,
+  marks: Map<string, DraftMark>,
+) {
+  for (const [name, { token }] of nextTokens) {
+    const was = baseTokens.get(name)?.token;
+    if (!was) marks.set(tokenKey(name), 'added');
+    else if (!sameToken(was, token)) marks.set(tokenKey(name), 'changed');
+  }
+  for (const [name, { holder }] of baseTokens)
+    if (!nextTokens.has(name) && nextItems.has(holder)) marks.set(tokenKey(name), 'removed');
+}
+
+/** Whether the section, or anything in it, has a mark. */
+export function isMarked(section: DocumentSection, marks: ReadonlyMap<string, DraftMark>): boolean {
+  if (marks.has(section.id)) return true;
+  return section.items.some(
+    (item) =>
+      marks.has(item.id) ||
+      (item.kind === 'group' && item.tokens.some((token) => marks.has(tokenKey(token.name)))),
+  );
+}
+
+/** `next` with what `marks` calls removed put back where `base` had it. */
+export function withRemoved(
+  base: DocumentSection[],
+  next: DocumentSection[],
+  marks: ReadonlyMap<string, DraftMark>,
+): DocumentSection[] {
+  const isRemoved = (key: string) => marks.get(key) === 'removed';
+  const byId = ({ id }: { id: string }) => id;
+  const byKey = (token: DocumentToken) => tokenKey(token.name);
+  const baseSections = new Map(base.map((section) => [section.id, section]));
+  const shown = next.map((section) => {
+    const was = baseSections.get(section.id);
+    if (!was) return section;
+    const items = section.items.map((item) => {
+      const wasGroup = was.items.find((candidate) => candidate.id === item.id);
+      if (item.kind !== 'group' || wasGroup?.kind !== 'group') return item;
+      return { ...item, tokens: mergeRemoved(wasGroup.tokens, item.tokens, byKey, isRemoved) };
+    });
+    return withItems(section, mergeRemoved(was.items, items, byId, isRemoved));
+  });
+  return mergeRemoved(base, shown, byId, isRemoved);
+}
+
+// Each removed base element goes after the base element before it, so it shows
+// where it was.
+function mergeRemoved<T>(
+  base: readonly T[],
+  next: readonly T[],
+  keyOf: (element: T) => string,
+  isRemoved: (key: string) => boolean,
+): T[] {
+  const result = [...next];
+  let at = 0;
+  for (const element of base) {
+    const key = keyOf(element);
+    if (isRemoved(key)) {
+      result.splice(at, 0, element);
+      at += 1;
+      continue;
+    }
+    const found = result.findIndex((candidate) => keyOf(candidate) === key);
+    if (found >= 0) at = found + 1;
+  }
+  return result;
+}
+
+function sameOrder(base: string[], next: string[]): boolean {
+  const kept = new Set(next);
+  const baseKept = base.filter((id) => kept.has(id));
+  const was = new Set(base);
+  const nextKept = next.filter((id) => was.has(id));
+  return baseKept.every((id, index) => nextKept[index] === id);
+}
+
+function sameItem(a: DocumentItem, b: DocumentItem): boolean {
+  switch (a.kind) {
+    case 'note':
+      return b.kind === 'note' && a.label === b.label && a.body === b.body;
+    case 'group':
+      return b.kind === 'group' && a.title === b.title;
+    case 'preview':
+      return (
+        b.kind === 'preview' &&
+        a.title === b.title &&
+        a.note === b.note &&
+        a.example === b.example &&
+        a.width === b.width &&
+        a.height === b.height
+      );
+    case 'asset':
+      return (
+        b.kind === 'asset' && a.name === b.name && a.note === b.note && a.assetId === b.assetId
+      );
+  }
+}
+
+function sameToken(a: DocumentToken, b: DocumentToken): boolean {
+  if (a.note !== b.note) return false;
+  if ('value' in a) return 'value' in b && a.value === b.value;
+  return !('value' in b) && a.light === b.light && a.dark === b.dark;
+}

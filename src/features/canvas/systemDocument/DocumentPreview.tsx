@@ -1,0 +1,135 @@
+// A component preview or demo (spec §5, §7): its title, an optional note and a
+// tile at the item's size, scaled down to the column and never up. Slice 2a
+// renders the kit in the tile; until then it is a titled placeholder.
+
+import { useRef, useState } from 'react';
+import { MessageSquareText } from '@droidex/icons';
+import { Button } from '../../../components/ui/Button';
+import { cn } from '../../../components/ui/cn';
+import type { DocumentPreview } from '../designSystemDocumentProtocol';
+import { ActionMenu, type MenuAction } from './ActionMenu';
+import type { DraftChange } from './documentDraft';
+import type { DraftMark } from './documentSections';
+import { InlineField, type InlineFieldHandle } from './InlineField';
+import { NotePopover } from './NotePopover';
+import { UndoRemove, UnsavedMark } from './UnsavedMark';
+
+const MAX_TITLE_LENGTH = 120;
+const MAX_PREVIEW_NOTE_BYTES = 1024;
+
+export function PreviewItem({
+  preview,
+  mark,
+  previewTitles,
+  actions,
+  onChange,
+}: {
+  preview: DocumentPreview;
+  mark: DraftMark | undefined;
+  /** Every preview title in the draft, which a renamed preview may not take. */
+  previewTitles: ReadonlySet<string>;
+  /** The preview's move and remove actions. */
+  actions: MenuAction[];
+  onChange: ((change: DraftChange) => void) | null;
+}) {
+  const titleRef = useRef<InlineFieldHandle>(null);
+  const noteRef = useRef<HTMLButtonElement>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const isRemoved = mark === 'removed';
+  const edit = isRemoved ? null : onChange;
+
+  const titleProblem = (title: string) => {
+    if (title.length === 0 || title.length > MAX_TITLE_LENGTH)
+      return 'A title is 1 to 120 characters.';
+    return previewTitles.has(title) ? `Another preview is already called ${title}.` : null;
+  };
+
+  return (
+    <figure className="flex flex-col gap-2">
+      <figcaption className="flex min-h-control-md items-center gap-2">
+        <UnsavedMark mark={mark} />
+        {edit ? (
+          <InlineField
+            ref={titleRef}
+            value={preview.title}
+            label={`Title of the ${preview.title} preview`}
+            check={titleProblem}
+            onCommit={(title) => {
+              edit({ kind: 'setItem', item: { ...preview, title } });
+            }}
+            className="text-body-strong text-primary"
+          />
+        ) : (
+          <span
+            className={cn(
+              'truncate text-body-strong',
+              isRemoved ? 'text-muted line-through' : 'text-primary',
+            )}
+          >
+            {preview.title}
+          </span>
+        )}
+        <span className="flex-1" />
+        {onChange && isRemoved && (
+          <UndoRemove label={preview.title} removedKey={preview.id} onChange={onChange} />
+        )}
+        {edit && (
+          <>
+            <Button
+              ref={noteRef}
+              variant="ghost"
+              size="sm"
+              icon={MessageSquareText}
+              aria-label={
+                preview.note === undefined
+                  ? `Add a note to ${preview.title}`
+                  : `Note of ${preview.title}`
+              }
+              aria-expanded={noteOpen}
+              onClick={() => {
+                setNoteOpen((open) => !open);
+              }}
+            />
+            <ActionMenu
+              label={`${preview.title} actions`}
+              actions={[{ label: 'Rename', run: () => titleRef.current?.edit() }, ...actions]}
+            />
+          </>
+        )}
+      </figcaption>
+      {!isRemoved && preview.note !== undefined && (
+        <p className="max-w-2xl whitespace-pre-wrap text-body text-secondary">{preview.note}</p>
+      )}
+      {!isRemoved && (
+        <PreviewTile title={preview.title} width={preview.width} height={preview.height} />
+      )}
+      {noteOpen && edit && (
+        <NotePopover
+          anchorRef={noteRef}
+          title={`Note · ${preview.title}`}
+          note={preview.note}
+          maxBytes={MAX_PREVIEW_NOTE_BYTES}
+          onChange={(note) => {
+            edit({ kind: 'setItem', item: { ...preview, note } });
+          }}
+          onClose={() => {
+            setNoteOpen(false);
+          }}
+        />
+      )}
+    </figure>
+  );
+}
+
+function PreviewTile({ title, width, height }: { title: string; width: number; height: number }) {
+  return (
+    <div
+      role="img"
+      aria-label={`${title} preview`}
+      className="flex w-full items-center justify-center rounded-lg bg-surface text-label text-muted"
+      style={{ maxWidth: width, aspectRatio: `${String(width)} / ${String(height)}` }}
+    >
+      {title}
+    </div>
+  );
+}
