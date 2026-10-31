@@ -4,15 +4,16 @@
 // declaration that cannot become a token is reported, never dropped quietly.
 
 import valueParser from 'postcss-value-parser';
-import {
-  designSystemSchema,
-  DESIGN_SYSTEM_LIMITS,
-  type DesignSystem,
-  type DesignSystemSource,
-} from './designSystems.js';
-import { tokenValueSchema } from './designSystemDocument.js';
+import { buildDocument, CONTRACT_TOKEN_NAMES, type DocumentPart } from './buildDocument.js';
+import { designSystemSchema, type DesignSystem, type DesignSystemSource } from './designSystems.js';
+import { DOCUMENT_LIMITS, kitModes, tokenValueSchema } from './designSystemDocument.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import { UNIVERSAL_GUIDANCE } from './presets/starter.js';
+import {
+  LICENSED_FONTS,
+  PRIMITIVE_EXAMPLES,
+  PRIMITIVE_PARTS,
+  rulesNote,
+} from './presets/starter.js';
 import {
   fencedBlocks,
   looksLikeConfig,
@@ -29,7 +30,7 @@ export type ImportDesignSystemResult =
   | { status: 'refused'; diagnostics: CanvasDiagnostic[] };
 
 /** The tokens Button, Input, Card, Badge, Tabs and Dialog read, with DROIDEX's values. */
-const CONTRACT = DROIDEX_DESIGN_SYSTEM.modes;
+const CONTRACT = kitModes(DROIDEX_DESIGN_SYSTEM.sections);
 const MODES: readonly Mode[] = ['light', 'dark'];
 const MAX_DIAGNOSTICS = 64;
 // Messages can quote pasted names; the renderer drops a reply with an overlong one.
@@ -79,9 +80,9 @@ const ALIASES: Record<string, string[]> = {
 };
 
 /** Kit tokens outside the shared primitive contract; presets have none. */
-export function unmappedKitTokens(system: Pick<DesignSystem, 'modes'>): string[] {
-  return Object.keys(system.modes.light)
-    .filter((name) => !Object.hasOwn(CONTRACT.light, name))
+export function unmappedKitTokens(system: Pick<DesignSystem, 'sections'>): string[] {
+  return Object.keys(kitModes(system.sections).light)
+    .filter((name) => !CONTRACT_TOKEN_NAMES.has(name))
     .sort();
 }
 
@@ -104,44 +105,46 @@ export function importDesignSystem(
     id: kit.id,
     version: 1,
     name: kit.name,
-    modes: mapOntoContract(declared, diagnostics),
+    cover: null,
+    sections: buildDocument({
+      tokens: mapOntoContract(declared, diagnostics),
+      overview: [rulesNote(LICENSED_FONTS), ...read.notes],
+      components: PRIMITIVE_PARTS,
+    }),
     files: DROIDEX_DESIGN_SYSTEM.files,
-    guidance: read.guidance,
-    examples: DROIDEX_DESIGN_SYSTEM.examples,
+    examples: PRIMITIVE_EXAMPLES,
   });
   if (!parsed.success)
     return refused(parsed.error.issues[0]?.message ?? 'That design system is not valid.');
   return { status: 'imported', system: parsed.data, diagnostics: bounded(diagnostics) };
 }
 
-type SourceRead = { status: 'read'; guidance: string } | Refused;
+type SourceRead = { status: 'read'; notes: DocumentPart[] } | Refused;
 
 // Competing values are refused, as extraction refuses them: neither is the
 // kit's. Bounding the token count also bounds how deep a reference chain runs.
 function tokenRefusal(declared: Declared, diagnostics: CanvasDiagnostic[]): Refused | null {
   const competing = diagnostics.find((entry) => entry.code === 'ambiguous_token');
   if (competing) return failed([competing, ...diagnostics.filter((entry) => entry !== competing)]);
-  const { maxTokensPerMode } = DESIGN_SYSTEM_LIMITS;
-  if (declared.lines.size <= maxTokensPerMode) return null;
+  const { maxTokens } = DOCUMENT_LIMITS;
+  if (declared.lines.size <= maxTokens) return null;
   return refused(
-    `That source declares ${String(declared.lines.size)} tokens; a kit holds at most ${String(maxTokensPerMode)} in each mode.`,
+    `That source declares ${String(declared.lines.size)} tokens; a kit holds at most ${String(maxTokens)}.`,
   );
 }
 
-/** The whole text becomes guidance beside the primitive notes; its css and config blocks set tokens. */
+/** The whole text becomes the kit's design.md note; its css and config blocks set tokens. */
 function readDesignMd(
   text: string,
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
 ): SourceRead {
   if (text.trim() === '') return refused('Write or paste a DESIGN.md first.');
-  const guidance = `${UNIVERSAL_GUIDANCE}\n${text.trim()}\n`;
-  if (Buffer.byteLength(guidance) > DESIGN_SYSTEM_LIMITS.maxGuidanceBytes) {
-    const allowance = DESIGN_SYSTEM_LIMITS.maxGuidanceBytes - Buffer.byteLength(UNIVERSAL_GUIDANCE);
+  const body = `${text.trim()}\n`;
+  if (Buffer.byteLength(body) > DOCUMENT_LIMITS.maxNoteBytes)
     return refused(
-      `A DESIGN.md holds at most ${String(Math.floor(allowance / 1024))} KiB beside the primitive notes. Shorten it; it is never truncated.`,
+      `A DESIGN.md holds at most ${String(DOCUMENT_LIMITS.maxNoteBytes / 1024)} KiB. Shorten it; it is never truncated.`,
     );
-  }
   for (const block of fencedBlocks(text)) {
     let failure: CanvasDiagnostic | null = null;
     if (block.language === 'css') failure = readCss(block.text, block.line, declared, diagnostics);
@@ -155,10 +158,10 @@ function readDesignMd(
       message:
         'This DESIGN.md has no css or Tailwind config block, so the kit keeps DROIDEX tokens.',
     });
-  return { status: 'read', guidance };
+  return { status: 'read', notes: [{ kind: 'note', label: 'design.md', body }] };
 }
 
-/** Pasted CSS variables or a Tailwind config: tokens only, so the kit keeps the primitive notes alone. */
+/** Pasted CSS variables or a Tailwind config: tokens only, so the kit keeps the shared notes alone. */
 function readTokenSource(
   text: string,
   declared: Declared,
@@ -176,7 +179,7 @@ function readTokenSource(
         : 'No CSS custom properties or Tailwind theme values were found.',
       diagnostics,
     );
-  return { status: 'read', guidance: UNIVERSAL_GUIDANCE };
+  return { status: 'read', notes: [] };
 }
 
 type Refused = Extract<ImportDesignSystemResult, { status: 'refused' }>;

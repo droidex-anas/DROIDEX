@@ -3,7 +3,7 @@
 
 import { z } from 'zod';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
-import { DESIGN_SYSTEM_LIMITS } from './designSystems.js';
+import { DESIGN_SYSTEM_LIMITS, designSystemSchema } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
@@ -41,6 +41,8 @@ const base64Schema = (maxLength: number) =>
 const kitName = {
   name: z.string().trim().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
 };
+const kitVersionSchema = z.number().int().positive().safe();
+const kitDocument = designSystemSchema.innerType().shape;
 // A DESIGN.md becomes kit guidance, so it shares the guidance bound; pasted
 // CSS or a config is only read for tokens.
 const MAX_PASTED_TOKEN_SOURCE_BYTES = 64 * 1024;
@@ -216,6 +218,44 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.readDesignSystem'),
       ...request,
       ref: designSystemVersionRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.saveDesignSystem'),
+      ...request,
+      mutationId: canvasIdentifierSchema,
+      id: canvasIdentifierSchema,
+      baseVersion: kitVersionSchema,
+      ...kitName,
+      cover: kitDocument.cover,
+      sections: kitDocument.sections,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.listDesignSystemVersions'),
+      ...request,
+      id: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.restoreDesignSystemVersion'),
+      ...request,
+      mutationId: canvasIdentifierSchema,
+      id: canvasIdentifierSchema,
+      version: kitVersionSchema,
+      onto: kitVersionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.setDesignSystemDeleted'),
+      ...request,
+      mutationId: canvasIdentifierSchema,
+      id: canvasIdentifierSchema,
+      deleted: z.boolean(),
     })
     .strict(),
   z

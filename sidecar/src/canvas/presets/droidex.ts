@@ -1,7 +1,8 @@
+import { buildDocument } from '../buildDocument.js';
 import type { DesignSystem } from '../designSystems.js';
 import inter from './fonts/inter.json' with { type: 'json' };
 import { PRIMITIVES_TSX } from './primitives.js';
-import { HEY_TSX, UNIVERSAL_GUIDANCE } from './starter.js';
+import { LICENSED_FONTS, PRIMITIVE_EXAMPLES, PRIMITIVE_PARTS, rulesNote } from './starter.js';
 import { GEOMETRY_TOKENS, KIT_CSS } from './styles.js';
 
 const LIGHT_TOKENS: Record<string, string> = {
@@ -50,18 +51,137 @@ const DARK_TOKENS: Record<string, string> = {
   '--ds-shadow-md': '0 16px 44px rgb(0 0 0 / 0.50)',
 };
 
+const FEEL_NOTE = `Warm paper and graphite, with restrained amber actions. Keep surfaces quiet, rounded and softly raised, and separate them with tone rather than lines. Use a compact sans-serif hierarchy: one heading size per view and muted text for everything secondary. The preview palette is independent of the app's chrome.
+`;
+
+const SETTINGS_TSX = `import { useState } from 'react';
+import { Check } from 'lucide-react';
+import { Badge, Button, Card, Input, Tabs } from '@droidex/design-system';
+
+export default function SettingsPanel() {
+  const [tab, setTab] = useState('general');
+  const [name, setName] = useState('Northwind studio');
+  const [saved, setSaved] = useState(false);
+  return (
+    <main className="min-h-screen bg-[color:var(--ds-canvas)] p-8">
+      <Card className="mx-auto flex max-w-2xl flex-col gap-6">
+        <div className="flex items-center justify-between gap-4">
+          <h1>Settings</h1>
+          <Badge>Team plan</Badge>
+        </div>
+        <Tabs
+          label="Settings"
+          value={tab}
+          onValueChange={setTab}
+          items={[
+            {
+              value: 'general',
+              label: 'General',
+              content: (
+                <form
+                  className="flex flex-col gap-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    setSaved(true);
+                  }}
+                >
+                  <Input
+                    label="Workspace name"
+                    value={name}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      setSaved(false);
+                    }}
+                    hint="Shown to everyone you invite."
+                    error={name.trim() ? undefined : 'Give the workspace a name.'}
+                  />
+                  <Input label="Owner" defaultValue="ada@northwind.dev" disabled />
+                  <div className="flex items-center gap-3">
+                    <Button type="submit" disabled={!name.trim() || saved}>
+                      {saved ? <Check size={16} aria-hidden="true" /> : null}
+                      {saved ? 'Saved' : 'Save changes'}
+                    </Button>
+                    <Button variant="quiet" onClick={() => setName('Northwind studio')}>
+                      Reset
+                    </Button>
+                  </div>
+                </form>
+              ),
+            },
+            {
+              value: 'members',
+              label: 'Members',
+              content: <p className="text-[color:var(--ds-fg-muted)]">Four people work here.</p>,
+            },
+            { value: 'billing', label: 'Billing', disabled: true, content: null },
+          ]}
+        />
+      </Card>
+    </main>
+  );
+}
+`;
+
+const COVER_TSX = `import { ArrowRight, Sparkles } from 'lucide-react';
+import { Badge, Button, Card } from '@droidex/design-system';
+
+export default function Cover() {
+  return (
+    <main className="flex h-screen items-center gap-12 overflow-hidden bg-[color:var(--ds-canvas)] px-16">
+      <div className="flex flex-1 flex-col gap-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--ds-accent)] text-[color:var(--ds-accent-fg)]">
+            <Sparkles size={20} aria-hidden="true" />
+          </span>
+          <span className="text-[length:var(--ds-text-lg)] font-semibold tracking-tight">DROIDEX</span>
+        </div>
+        <h1 className="max-w-md">Quiet surfaces for focused work.</h1>
+        <p className="max-w-md text-[color:var(--ds-fg-muted)]">
+          Warm paper, graphite text and one amber action per view.
+        </p>
+        <div className="flex gap-3">
+          <Button>
+            Get started
+            <ArrowRight size={16} aria-hidden="true" />
+          </Button>
+          <Button variant="secondary">Read the rules</Button>
+        </div>
+      </div>
+      <Card className="flex w-96 flex-col gap-4">
+        <Badge>Today</Badge>
+        <h2>Three sessions running</h2>
+        <p className="text-[color:var(--ds-fg-muted)]">Two waiting for you, one almost done.</p>
+        <Button variant="quiet">Open sessions</Button>
+      </Card>
+    </main>
+  );
+}
+`;
+
 export const DROIDEX_DESIGN_SYSTEM: DesignSystem = {
   id: 'droidex',
   version: 1,
   name: 'DROIDEX',
-  modes: { light: LIGHT_TOKENS, dark: DARK_TOKENS },
+  cover: { kind: 'preview', example: 'cover.tsx' },
+  sections: buildDocument({
+    tokens: { light: LIGHT_TOKENS, dark: DARK_TOKENS },
+    overview: [
+      rulesNote(LICENSED_FONTS),
+      { kind: 'note', label: '2-feel.md', body: FEEL_NOTE },
+      {
+        kind: 'preview',
+        title: 'Settings panel',
+        example: 'SettingsPanel.tsx',
+        width: 960,
+        height: 640,
+      },
+    ],
+    components: PRIMITIVE_PARTS,
+  }),
   files: {
     'index.tsx': PRIMITIVES_TSX,
     'tokens.css': inter.css + KIT_CSS,
     'fonts/Inter-OFL.txt': inter.license,
   },
-  guidance:
-    UNIVERSAL_GUIDANCE +
-    '\nDROIDEX: warm paper and graphite, with restrained amber actions. Keep surfaces quiet, rounded and softly raised; use a compact sans-serif hierarchy. The preview palette is independent of app chrome.\n',
-  examples: { 'Hey.tsx': HEY_TSX },
+  examples: { ...PRIMITIVE_EXAMPLES, 'SettingsPanel.tsx': SETTINGS_TSX, 'cover.tsx': COVER_TSX },
 };

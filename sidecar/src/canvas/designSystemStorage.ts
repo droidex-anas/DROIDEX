@@ -1,0 +1,214 @@
+// Where saved kits live on disk and how a file there is read and published:
+// `canvases/design-systems/<id>/<n>.json`, one immutable file per version, and
+// a `deleted` tombstone beside them (design system documents spec §3).
+
+import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import { link, lstat, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
+import { dirname, join, relative, sep } from 'node:path';
+import { canvasError, storageFailure } from './canvasError.js';
+import { canvasDir } from '../droidexPaths.js';
+import { canvasIdentifierSchema } from './schema.js';
+
+const UNREADABLE = 'That design system version is not available.';
+const SAVE_RECOVERY = 'The design system could not be saved.';
+export const LINKED_STORAGE = 'Canvas storage holds a symbolic link and was not used.';
+
+export function systemsRoot(): string {
+  return join(canvasDir(), 'design-systems');
+}
+
+function kitDirectory(id: string): string {
+  const parsed = canvasIdentifierSchema.safeParse(id);
+  if (!parsed.success) throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? '');
+  return join(systemsRoot(), parsed.data);
+}
+
+export function versionPath(id: string, version: number): string {
+  return join(kitDirectory(id), `${String(version)}.json`);
+}
+
+export function tombstonePath(id: string): string {
+  return join(kitDirectory(id), 'deleted');
+}
+
+/** The kit's saved version numbers, unordered; none when it was never saved. */
+export async function savedVersions(id: string): Promise<number[]> {
+  const directory = kitDirectory(id);
+  try {
+    await refuseLinkedPath(directory);
+    return (await readdir(directory))
+      .filter((name) => /^[1-9][0-9]*\.json$/.test(name))
+      .map((name) => Number(name.slice(0, -'.json'.length)));
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw storageFailure(UNREADABLE, error);
+  }
+}
+
+export async function exists(path: string): Promise<boolean> {
+  try {
+    await refuseLinkedPath(path);
+    return (await lstatIfPresent(path)) !== null;
+  } catch (error) {
+    throw storageFailure(UNREADABLE, error);
+  }
+}
+
+// Canvas owns everything under its directory, so a link in the way is damage
+// rather than a path to follow, exactly as canvasFiles.ts treats its own tree.
+const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
+const CREATE_FLAGS =
+  constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
+
+/** A saved file's text, or its first `maxBytes`, with when it was last written. */
+export async function readSavedFile(
+  path: string,
+  maxBytes?: number,
+): Promise<{ text: string; modifiedAt: Date } | null> {
+  let file;
+  try {
+    await refuseLinkedPath(path);
+    file = await open(path, READ_FLAGS);
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw storageFailure(UNREADABLE, error);
+  }
+  try {
+    const { mtime } = await file.stat();
+    if (maxBytes === undefined) return { text: await file.readFile('utf8'), modifiedAt: mtime };
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await file.read(buffer, 0, maxBytes, 0);
+    return { text: buffer.subarray(0, bytesRead).toString('utf8'), modifiedAt: mtime };
+  } catch (error) {
+    throw storageFailure(UNREADABLE, error);
+  } finally {
+    await file.close();
+  }
+}
+
+/**
+ * A kit version becomes readable in one `link`, which refuses a destination
+ * that already exists. That refusal is what makes a published version
+ * immutable: a check followed by a rename would let two writers that both saw
+ * nothing overwrite each other. The temporary is named per call, so concurrent
+ * writers never collide on it either.
+ */
+export async function writeVersion(
+  path: string,
+  content: string,
+  beforePublish: () => void,
+): Promise<'published' | 'exists'> {
+  const directory = dirname(path);
+  const temporary = join(directory, `.${randomUUID()}.tmp`);
+  try {
+    await refuseLinkedPath(path);
+    await mkdir(directory, { recursive: true });
+    await writeNew(temporary, content);
+    beforePublish();
+    await link(temporary, path);
+    await unlink(temporary);
+    return 'published';
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    if (hasCode(error, 'EEXIST')) return 'exists';
+    throw storageFailure(SAVE_RECOVERY, error);
+  }
+}
+
+/** Creates or removes an empty marker file in a kit's directory, then flushes it. */
+export async function setMarker(path: string, present: boolean): Promise<void> {
+  try {
+    await refuseLinkedPath(path);
+    if (present) await writeNew(path, '').catch(ignoreCode('EEXIST'));
+    else await unlink(path).catch(ignoreCode('ENOENT'));
+    await flushAncestors(dirname(path));
+  } catch (error) {
+    throw storageFailure(SAVE_RECOVERY, error);
+  }
+}
+
+async function writeNew(path: string, content: string): Promise<void> {
+  const file = await open(path, CREATE_FLAGS, 0o600);
+  try {
+    await file.writeFile(content, 'utf8');
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+}
+
+/**
+ * Flushes every directory entry this version rests on, whichever writer created
+ * them. Flushing only what this save created would let one writer acknowledge a
+ * version inside a directory another writer has not flushed yet, and a crash
+ * would lose it. A flush of an already durable directory costs almost nothing,
+ * so each save pays for its whole chain and its acknowledgement stands alone.
+ */
+export async function flushAncestors(leaf: string): Promise<void> {
+  const root = canvasDir();
+  // The storage root's own entry belongs to the user's profile, which may
+  // legitimately be a link; everything below it is Canvas's own.
+  const chain = [dirname(root), root];
+  let current = root;
+  for (const segment of relative(root, leaf).split(sep)) {
+    if (segment === '') break;
+    current = join(current, segment);
+    chain.push(current);
+  }
+  for (const path of chain) await syncDirectory(path);
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  const directory = await open(path, constants.O_RDONLY);
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+/**
+ * Refuses a path that is or crosses a symbolic link anywhere from the
+ * design-system root down. `O_NOFOLLOW` guards only a file being opened, so a
+ * linked kit directory would otherwise let a read or a write land outside
+ * Canvas storage.
+ */
+export async function refuseLinkedPath(path: string): Promise<void> {
+  const segments = relative(systemsRoot(), path)
+    .split(sep)
+    .filter((segment) => segment !== '');
+  let current = systemsRoot();
+  for (let index = 0; ; index += 1) {
+    const stats = await lstatIfPresent(current);
+    // Nothing exists below a component that is not there.
+    if (!stats) return;
+    if (stats.isSymbolicLink()) throw canvasError('storage_failed', LINKED_STORAGE);
+    if (index === segments.length) return;
+    current = join(current, segments[index]);
+  }
+}
+
+async function lstatIfPresent(path: string): Promise<{ isSymbolicLink(): boolean } | null> {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+}
+
+export function isMissing(error: unknown): boolean {
+  return hasCode(error, 'ENOENT');
+}
+
+function ignoreCode(code: string): (error: unknown) => void {
+  return (error) => {
+    if (!hasCode(error, code)) throw error;
+  };
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
+}

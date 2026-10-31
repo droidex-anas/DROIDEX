@@ -30,7 +30,7 @@ import {
   saveDesignSystem,
 } from './designSystems.js';
 
-const authoredSystemSchema = designSystemSchema.omit({ provenance: true });
+const authoredSystemSchema = designSystemSchema.innerType().omit({ provenance: true });
 const scopeIdSchema = z
   .string()
   .min(1)
@@ -442,6 +442,8 @@ export function createCanvasMcpServer(
               return {
                 ref: await saveDesignSystem(input.system, {
                   mutationId: input.mutationId,
+                  baseVersion: input.system.version === 1 ? null : input.system.version - 1,
+                  savedBy: { actor: 'agent', appSessionId: scope.appSessionId },
                   beforePublish: () => {
                     turns.requireScope(scope.scopeId);
                   },

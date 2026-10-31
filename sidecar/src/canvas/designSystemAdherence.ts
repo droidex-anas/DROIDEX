@@ -16,6 +16,7 @@ import { ADHERENCE_CODES } from './canvasDiagnostics.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { kitPrimitives } from './designSystemBrief.js';
+import { kitModes } from './designSystemDocument.js';
 import { AUTO_DESIGN_SYSTEM_REF, type DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './protocol.js';
 
@@ -125,7 +126,8 @@ function readKit(
 ): { ok: true; kit: Kit } | { ok: false; diagnostic: CanvasDiagnostic } {
   const families = new Set(GENERIC_FAMILIES);
   const fontTokens: string[] = [];
-  for (const [name, value] of Object.entries({ ...system.modes.light, ...system.modes.dark })) {
+  const modes = kitModes(system.sections);
+  for (const [name, value] of Object.entries({ ...modes.light, ...modes.dark })) {
     if (!name.startsWith('--ds-font')) continue;
     fontTokens.push(name);
     for (const family of fontFamilies(value)) families.add(family.toLowerCase());
@@ -151,7 +153,7 @@ function readKit(
       for (const match of rule.selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) classes.add(match[1]);
     });
   }
-  const tokens = new Set(Object.keys(system.modes.light));
+  const tokens = new Set(Object.keys(modes.light));
   return {
     ok: true,
     kit: { tokens, families, fontTokens, classes, primitives: kitPrimitives(system) },

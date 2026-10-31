@@ -67,6 +67,43 @@ test('kit guidance reads titles, notes and usage notes in document order', () =>
   assert.equal(guidance.includes('--ds-canvas'), false);
 });
 
+test("kit guidance keeps a section's usage notes where they sit between its notes", () => {
+  const note = (label: string) => ({
+    kind: 'note' as const,
+    id: label.slice(0, -3),
+    label,
+    body: label,
+    author: 'user' as const,
+  });
+  const preview = (title: string) => ({
+    kind: 'preview' as const,
+    id: title.toLowerCase(),
+    title,
+    example: `${title}.tsx`,
+    width: 480,
+    height: 320,
+    note: `Use ${title}.`,
+  });
+  const components: DocumentSection = {
+    kind: 'components',
+    id: 'components',
+    title: 'Components',
+    items: [preview('Button'), note('forms.md'), preview('Input'), preview('Card'), note('end.md')],
+  };
+
+  assert.equal(
+    kitGuidance('Kit', [components]),
+    [
+      '# Kit',
+      '## Components',
+      '- Button: Use Button.',
+      '### forms.md\n\nforms.md',
+      '- Input: Use Input.\n- Card: Use Card.',
+      '### end.md\n\nend.md',
+    ].join('\n\n'),
+  );
+});
+
 test('a section added later goes to its canonical place, even after the user reordered', () => {
   const kinds = (sections: DocumentSection[]) => sections.map((section) => section.kind);
   const built = [...CANONICAL_SECTION_ORDER]

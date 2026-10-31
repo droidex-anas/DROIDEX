@@ -11,6 +11,7 @@ import { saveOwnedAsset } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
+import { kitGuidance } from './designSystemDocument.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import type { DesignSystemRef } from './protocol.js';
@@ -82,20 +83,21 @@ function embeddedFontIds(css: string): string[] {
 
 test('exports the exact revision, referenced image, and complete pinned kit', async (t) => {
   const { root, destination } = await profile(t);
-  const guidance = 'Use the kit tokens and primitives.';
   const font = Buffer.from('wOF2test-font');
   const fontId = createHash('sha256').update(font).digest('hex');
-  const kit = await saveDesignSystem({
-    ...DROIDEX_DESIGN_SYSTEM,
-    id: 'export-kit',
-    name: 'Export kit',
-    guidance,
-    files: {
-      ...DROIDEX_DESIGN_SYSTEM.files,
-      'tokens.css': `${DROIDEX_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
-      'fonts/OFL.txt': 'Open Font License',
+  const kit = await saveDesignSystem(
+    {
+      ...DROIDEX_DESIGN_SYSTEM,
+      id: 'export-kit',
+      name: 'Export kit',
+      files: {
+        ...DROIDEX_DESIGN_SYSTEM.files,
+        'tokens.css': `${DROIDEX_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
+        'fonts/OFL.txt': 'Open Font License',
+      },
     },
-  });
+    { mutationId: 'export-kit', baseVersion: null, savedBy: { actor: 'user' } },
+  );
   const image = Buffer.from(
     '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489',
     'hex',
@@ -125,7 +127,10 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
   assert.equal(await readFile(join(destination, 'src/main.tsx'), 'utf8'), source);
   assert.deepEqual(await readFile(join(destination, 'assets', assetId)), image);
   assert.deepEqual(await readFile(join(destination, 'fonts', `${fontId}.woff2`)), font);
-  assert.equal(await readFile(join(destination, 'canvas-export/guidance.md'), 'utf8'), guidance);
+  assert.equal(
+    await readFile(join(destination, 'canvas-export/guidance.md'), 'utf8'),
+    kitGuidance(system.name, system.sections),
+  );
   for (const [path, content] of Object.entries(system.examples)) {
     assert.equal(
       await readFile(join(destination, 'canvas-export/examples', path), 'utf8'),

@@ -243,8 +243,8 @@ function probeTarget(appPath: string | undefined): ProbeTarget {
 }
 
 function compileInput(files?: CompileInput['files']): CompileInput {
-  const example = DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'];
-  if (files === undefined && example === undefined) fail('the design kit ships no starter example');
+  const example = DROIDEX_DESIGN_SYSTEM.examples['cover.tsx'];
+  if (files === undefined && example === undefined) fail('the design kit ships no cover');
   return {
     designId: 'canvas-compiler-probe',
     revisionId: 'canvas-compiler-probe',
@@ -474,8 +474,8 @@ for (const id of ['droidex', 'openai-inspired', 'claude-inspired']) {
   for (const mode of ['light', 'dark'] as const) {
     const ref: DesignSystemRef = { id, version: 1, mode };
     const kit = await readDesignSystem(ref);
-    const example = kit.examples['Hey.tsx'];
-    if (example === undefined) fail(`${id} ships no starter example`);
+    const example = kit.examples['cover.tsx'];
+    if (example === undefined) fail(`${id} ships no cover`);
     for (const family of id === 'claude-inspired' ? ['Inter', 'Lora'] : ['Inter']) {
       if (!kit.files[`fonts/${family}-OFL.txt`]?.includes('SIL OPEN FONT LICENSE'))
         fail(`${id} ships no ${family} font notice`);

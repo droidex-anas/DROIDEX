@@ -13,6 +13,7 @@ import {
   type ExportFile,
 } from './canvasExport.js';
 import { modeTokens } from './designStylesheet.js';
+import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import type { DesignSystemVersionRef } from './protocol.js';
 import { designSystemVersionRefSchema } from './schema.js';
@@ -25,9 +26,10 @@ const exportRequestSchema = z
   .strict();
 
 /**
- * The kit's own files under `src/`, its examples, its guidance as `DESIGN.md`,
- * and its light and dark tokens as `modes.css` under the kit's `data-mode`
- * selectors, which From CSS reads back.
+ * The kit's own files under `src/`, its examples, each note under `notes/`,
+ * the document as `document.json`, and two derived files: the text the agent
+ * reads as `DESIGN.md`, and the light and dark tokens as `modes.css` under the
+ * kit's `data-mode` selectors, which From CSS reads back.
  */
 export async function exportDesignSystem(
   ref: DesignSystemVersionRef,
@@ -44,12 +46,24 @@ export async function exportDesignSystem(
       path: `examples/${path}`,
       content,
     })),
-    { path: 'DESIGN.md', content: kit.guidance },
-    { path: 'modes.css', content: `${modeTokens(kit)}\n` },
+    ...kit.sections.flatMap((section) =>
+      section.items.flatMap((item) =>
+        item.kind === 'note' ? [{ path: `notes/${item.label}`, content: item.body }] : [],
+      ),
+    ),
+    { path: 'DESIGN.md', content: kitGuidance(kit.name, kit.sections) },
+    { path: 'modes.css', content: `${modeTokens(kitModes(kit.sections))}\n` },
     {
-      path: 'design-system.json',
+      path: 'document.json',
       content: `${JSON.stringify(
-        { id: kit.id, version: kit.version, name: kit.name, provenance: kit.provenance ?? null },
+        {
+          id: kit.id,
+          version: kit.version,
+          name: kit.name,
+          cover: kit.cover,
+          sections: kit.sections,
+          provenance: kit.provenance ?? null,
+        },
         null,
         2,
       )}\n`,

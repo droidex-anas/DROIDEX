@@ -4,7 +4,7 @@
 
 import type {
   CanvasDiagnostic,
-  DesignSystemDetail,
+  DesignSystemDocumentView,
   DesignSystemSource,
   DesignSystemSummary,
   DesignSystemVersionRef,
@@ -17,7 +17,7 @@ export type KitList =
 
 export type KitRead =
   | { status: 'loading' }
-  | { status: 'read'; system: DesignSystemDetail }
+  | { status: 'read'; system: DesignSystemDocumentView }
   | { status: 'failed'; message: string };
 
 export interface DesignSystemsState {
@@ -37,7 +37,7 @@ export type DesignSystemsAction =
   | { type: 'listFailed'; message: string }
   | { type: 'select'; ref: DesignSystemVersionRef }
   | { type: 'reading' }
-  | { type: 'read'; system: DesignSystemDetail }
+  | { type: 'read'; system: DesignSystemDocumentView }
   | { type: 'readFailed'; ref: DesignSystemVersionRef; message: string }
   | { type: 'compose'; kind: DesignSystemSource['kind'] }
   | { type: 'cancelCompose' }

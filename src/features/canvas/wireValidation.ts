@@ -3,7 +3,12 @@
 // any feature code can observe it.
 
 import { isAnnotation, isAnnotationChange, MAX_ANNOTATIONS } from './annotationValidation';
-import { isTokenName, isTokenValue } from './designSystemDocumentValidation';
+import {
+  isKitDocument,
+  isKitSummary,
+  isKitVersion,
+  isKitVersionEntry,
+} from './designSystemDocumentValidation';
 import type { CanvasEvent } from './protocol';
 import {
   boundedList,
@@ -59,6 +64,7 @@ const REPLY_KINDS = new Set([
   'revisionDiff',
   'designSystems',
   'designSystem',
+  'designSystemVersions',
   'designSystemSaved',
   'libraryItem',
   'libraryItems',
@@ -90,9 +96,6 @@ export const MAX_TILE_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
 const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
 export const MAX_FRAME_NAME_LENGTH = 120;
-// A kit's bounds, matching `DESIGN_SYSTEM_LIMITS` in the sidecar's designSystems.ts.
-export const MAX_KIT_NAME_LENGTH = 120;
-const MAX_KIT_TOKENS = 128;
 const utf8 = new TextEncoder();
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
@@ -107,6 +110,8 @@ export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEv
       return (
         id(value.captureId) && id(value.canvasId) && id(value.designId) && id(value.revisionId)
       );
+    case 'canvas.designSystemsChanged':
+      return id(value.id);
     case 'canvas.result':
       if (!id(value.requestId)) return false;
       return value.ok === true ? isReply(value.reply) : value.ok === false && isError(value.error);
@@ -178,7 +183,9 @@ function isReply(value: unknown): boolean {
     case 'designSystems':
       return list(value.systems, isKitSummary);
     case 'designSystem':
-      return isKitDetail(value.system);
+      return isKitDocument(value.system);
+    case 'designSystemVersions':
+      return list(value.versions, isKitVersionEntry);
     case 'designSystemSaved':
       return (
         isKitVersion(value.ref) &&
@@ -230,53 +237,6 @@ function isFrameDimension(value: unknown): boolean {
     Number.isFinite(value) &&
     value > 0 &&
     value <= MAX_FRAME_DIMENSION_PX
-  );
-}
-
-function isKitVersion(value: unknown): value is Record<string, unknown> {
-  return record(value) && id(value.id) && count(value.version);
-}
-
-function isKitSummary(value: unknown): boolean {
-  if (!isKitVersion(value) || !record(value.swatches)) return false;
-  const { light, dark } = value.swatches;
-  return (
-    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
-    (value.kind === 'auto' || value.kind === 'preset' || value.kind === 'user') &&
-    [light, dark].every(
-      (swatch) => record(swatch) && isTokenValue(swatch.surface) && isTokenValue(swatch.accent),
-    )
-  );
-}
-
-function isKitDetail(value: unknown): boolean {
-  if (!isKitVersion(value) || !record(value.modes)) return false;
-  return (
-    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
-    isKitTokens(value.modes.light) &&
-    isKitTokens(value.modes.dark) &&
-    boundedList(value.unmapped, MAX_KIT_TOKENS, isTokenName) &&
-    (value.provenance === null || isKitProvenance(value.provenance))
-  );
-}
-
-function isKitTokens(value: unknown): boolean {
-  if (!record(value)) return false;
-  const names = Object.keys(value);
-  return (
-    names.length <= MAX_KIT_TOKENS &&
-    names.every((name) => isTokenName(name) && isTokenValue(value[name]))
-  );
-}
-
-function isKitProvenance(value: unknown): boolean {
-  if (!record(value)) return false;
-  if (value.copiedFrom !== undefined) return isKitVersion(value.copiedFrom);
-  return (
-    id(value.sourceCanvasId) &&
-    record(value.revision) &&
-    id(value.revision.designId) &&
-    id(value.revision.revisionId)
   );
 }
 

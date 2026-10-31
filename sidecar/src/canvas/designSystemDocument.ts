@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { sourcePathSchema } from './schema.js';
 
-const DOCUMENT_LIMITS = {
+export const DOCUMENT_LIMITS = {
   maxSections: 16,
   maxItemsPerSection: 64,
   maxTitleLength: 120,
@@ -20,7 +20,14 @@ const DOCUMENT_LIMITS = {
   maxAssets: 48,
   previewWidthPx: { min: 240, max: 1440 },
   previewHeightPx: { min: 120, max: 1200 },
+  maxExampleBytes: 64 * 1024,
+  maxExamplesBytes: 512 * 1024,
+  /** The stored version without its files and examples. */
+  maxDocumentBytes: 256 * 1024,
 } as const;
+
+// §14 asks for these as preview targets beside the previews' own ids.
+const RESERVED_PREVIEW_IDS = new Set(['cover', 'typography']);
 
 const TOKEN_KINDS = [
   'colors',
@@ -168,13 +175,16 @@ export const documentSectionsSchema = z
     if (problem) context.addIssue({ code: z.ZodIssueCode.custom, message: problem });
   });
 
-// The rules that span sections: one section per kind but notes, ids, labels and
-// token names unique in the whole document, and the document-wide counts.
+// The rules that span sections: one section per kind but notes, ids and the
+// natural keys an agent's change names (token names, note labels, preview
+// titles, asset names) unique in the whole document, and the document-wide counts.
 function documentProblem(sections: DocumentSection[]): string | null {
   const kinds = new Set<string>();
   const ids = new Set<string>();
   const labels = new Set<string>();
   const tokenNames = new Set<string>();
+  const previewTitles = new Set<string>();
+  const assetNames = new Set<string>();
   for (const section of sections) {
     if (section.kind !== 'notes' && !claim(kinds, section.kind))
       return `A design system has one ${section.kind} section. Move "${section.title}" into it.`;
@@ -187,6 +197,12 @@ function documentProblem(sections: DocumentSection[]): string | null {
         const repeated = item.tokens.find((token) => !claim(tokenNames, token.name));
         if (repeated) return `${repeated.name} is declared twice. Keep one.`;
       }
+      if (item.kind === 'preview' && RESERVED_PREVIEW_IDS.has(item.id))
+        return `A preview cannot use the id ${item.id}. Choose another.`;
+      if (item.kind === 'preview' && !claim(previewTitles, item.title))
+        return `Two previews are called ${item.title}. Rename one.`;
+      if (item.kind === 'asset' && !claim(assetNames, item.name))
+        return `Two images are called ${item.name}. Rename one.`;
     }
   }
   const allItems = sections.flatMap<DocumentItem>((section) => section.items);
@@ -239,12 +255,54 @@ export function kitGuidance(name: string, sections: DocumentSection[]): string {
   const blocks = [`# ${name}`];
   for (const section of sections) {
     blocks.push(`## ${section.title}`);
-    for (const item of section.items)
-      if (item.kind === 'note') blocks.push(`### ${item.label}\n\n${item.body}`);
-    const usage = section.items.flatMap(usageNotes);
+    let usage: string[] = [];
+    for (const item of section.items) {
+      if (item.kind !== 'note') {
+        usage.push(...usageNotes(item));
+        continue;
+      }
+      if (usage.length > 0) blocks.push(usage.join('\n'));
+      usage = [];
+      blocks.push(`### ${item.label}\n\n${item.body}`);
+    }
     if (usage.length > 0) blocks.push(usage.join('\n'));
   }
   return blocks.join('\n\n');
+}
+
+/** The label of the note that costs the agent the most, for a refusal to name. */
+export function largestNote(sections: DocumentSection[]): string | null {
+  let largest: { label: string; bytes: number } | null = null;
+  for (const section of sections)
+    for (const item of section.items) {
+      if (item.kind !== 'note') continue;
+      const bytes = Buffer.byteLength(item.body, 'utf8');
+      if (!largest || bytes > largest.bytes) largest = { label: item.label, bytes };
+    }
+  return largest?.label ?? null;
+}
+
+/**
+ * Sets every note's author from who saved (§2): a note whose label and body
+ * match the base note with its id keeps that author; any other is the saver's.
+ */
+export function withNoteAuthors(
+  sections: DocumentSection[],
+  base: DocumentSection[],
+  author: 'user' | 'agent',
+): DocumentSection[] {
+  const before = new Map<string, Extract<DocumentItem, { kind: 'note' }>>();
+  for (const section of base)
+    for (const item of section.items) if (item.kind === 'note') before.set(item.id, item);
+  const authored = structuredClone(sections);
+  for (const section of authored)
+    for (const item of section.items) {
+      if (item.kind !== 'note') continue;
+      const earlier = before.get(item.id);
+      const unchanged = earlier?.label === item.label && earlier.body === item.body;
+      item.author = unchanged ? earlier.author : author;
+    }
+  return authored;
 }
 
 function usageNotes(item: DocumentItem): string[] {

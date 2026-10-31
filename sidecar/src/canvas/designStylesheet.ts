@@ -19,6 +19,7 @@ import valueParser from 'postcss-value-parser';
 import type { Config } from 'tailwindcss';
 import { canvasRuntime } from './canvasRuntime.js';
 import { hostKitFonts } from './canvasFontAssets.js';
+import { kitModes } from './designSystemDocument.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -43,7 +44,7 @@ export async function buildDesignStylesheet(
   system: DesignSystem,
 ): Promise<DesignStylesheetResult> {
   const sources: [string, string][] = [
-    [TOKENS_FILE, modeTokens(system)],
+    [TOKENS_FILE, modeTokens(kitModes(system.sections))],
     ...cssFiles(system.files).map(([path, css]): [string, string] => [
       `${KIT_SPECIFIER}/${path}`,
       css,
@@ -226,10 +227,10 @@ const TOKENS_FILE = `${KIT_SPECIFIER}/tokens`;
  * Both modes are emitted, and `data-mode` on the document picks one. Switching
  * mode is then an attribute change rather than a rebuild.
  */
-export function modeTokens(system: Pick<DesignSystem, 'modes'>): string {
+export function modeTokens(modes: ReturnType<typeof kitModes>): string {
   return (['light', 'dark'] as const)
     .map((mode) => {
-      const declarations = Object.entries(system.modes[mode])
+      const declarations = Object.entries(modes[mode])
         .map(([name, value]) => `  ${name}: ${value};`)
         .join('\n');
       return `[data-mode='${mode}'] {\n${declarations}\n}`;

@@ -7,7 +7,7 @@ import {
   type DesignSystemsAction,
   type DesignSystemsState,
 } from './designSystemsState';
-import type { DesignSystemDetail, DesignSystemSummary } from './protocol';
+import type { DesignSystemDocumentView, DesignSystemSummary } from './protocol';
 
 const SWATCHES = {
   light: { surface: '#ffffff', accent: '#8a5a1f' },
@@ -15,17 +15,33 @@ const SWATCHES = {
 };
 
 function kit(id: string, version: number, kind: 'preset' | 'user' = 'user'): DesignSystemSummary {
-  return { id, version, name: id, kind, swatches: SWATCHES };
-}
-
-function detail(id: string, version: number): DesignSystemDetail {
   return {
     id,
     version,
     name: id,
-    modes: { light: {}, dark: {} },
+    kind,
+    swatches: SWATCHES,
+    cover: false,
+    savedAt: null,
+    proposal: false,
+  };
+}
+
+function detail(id: string, version: number): DesignSystemDocumentView {
+  return {
+    id,
+    version,
+    latestVersion: version,
+    name: id,
+    kind: 'user',
+    cover: null,
+    sections: [],
+    examples: [],
     unmapped: [],
     provenance: null,
+    savedAt: null,
+    savedBy: null,
+    proposal: null,
   };
 }
 
