@@ -198,6 +198,31 @@ test('a kit without a section gets no check for it', () => {
   ]);
 });
 
+test('a compound value one token holds is on the kit, and a number in a style object is pixels', () => {
+  const kit = structuredClone(DROIDEX_DESIGN_SYSTEM);
+  for (const section of kit.sections)
+    if (section.kind === 'radius')
+      for (const item of section.items)
+        if (item.kind === 'group')
+          for (const token of item.tokens)
+            if (token.name === '--ds-radius-sm' && 'value' in token) token.value = '4px 8px';
+  const files = {
+    'main.tsx': `import { Card } from '@droidex/design-system';
+export default () => (
+  <Card style={{ borderRadius: '4px 8px' }}>
+    <p style={{ padding: 13, margin: -16, gap: 0, fontSize: 13 }}>Plans</p>
+    <svg><text fontSize={13}>1</text></svg>
+  </Card>
+);
+`,
+  };
+  const result = checkDesignSystemAdherence(files, kit, 'strict');
+  assert.deepEqual(places(result.diagnostics), [
+    'design_system_spacing main.tsx:4',
+    'design_system_type main.tsx:4',
+  ]);
+});
+
 const worker = new CompilerWorker();
 after(() => worker.terminate());
 

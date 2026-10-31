@@ -22,8 +22,11 @@ import {
   rulesNote,
 } from './presets/starter.js';
 import {
+  declarePlaceholders,
+  emptyDeclared,
   fencedBlocks,
   looksLikeConfig,
+  placeOf,
   readCss,
   readTailwind,
   tokenName,
@@ -118,13 +121,14 @@ export function importDesignSystem(
   if (sources.filter((source) => source.kind === 'designMd').length > 1)
     return refused('Name one DESIGN.md; a kit keeps one design.md note.');
   const diagnostics: CanvasDiagnostic[] = [];
-  const declared: Declared = { scopes: { shared: {}, light: {}, dark: {} }, places: new Map() };
+  const declared = emptyDeclared();
   const notes: DocumentPart[] = [];
   for (const source of sources) {
     const read = readSource(source, declared, diagnostics);
     if (read.status === 'refused') return read;
     notes.push(...read.notes);
   }
+  declarePlaceholders(declared, diagnostics);
   if (declared.places.size === 0) {
     if (notes.length === 0)
       return refused(
@@ -266,17 +270,18 @@ function mapOntoContract(
     if (alias) assign(contractName, `--${alias}`);
   }
 
-  for (const [name, place] of declared.places) {
+  for (const name of declared.places.keys()) {
     if (claimed.has(name)) continue;
     const light = resolved.light.get(name);
     const dark = resolved.dark.get(name);
     const either = light ?? dark;
     if (either === undefined) continue;
+    const only: Mode = light === undefined ? 'dark' : 'light';
     if (light === undefined || dark === undefined)
       diagnostics.push({
         code: 'single_mode_token',
-        message: `${name} has only a ${light === undefined ? 'dark' : 'light'} value; both modes use it.`,
-        ...place,
+        message: `${name} has only a ${only} value; both modes use it.`,
+        ...placeOf(declared, name, only),
       });
     modes.light[name] = light ?? either;
     modes.dark[name] = dark ?? either;
@@ -297,7 +302,7 @@ function resolveValues(
   diagnostics: CanvasDiagnostic[],
 ): Record<Mode, Map<string, string>> {
   const resolved = { light: new Map<string, string>(), dark: new Map<string, string>() };
-  const problems = new Map<string, string>();
+  const problems = new Map<string, { problem: string; mode: Mode }>();
   for (const mode of MODES) {
     // One resolution per token keeps fanned-out references linear, and a token
     // still being resolved when it is reached again is a cycle.
@@ -316,16 +321,16 @@ function resolveValues(
       const resolution = resolve(name);
       if (resolution === undefined) continue;
       if ('value' in resolution) resolved[mode].set(name, resolution.value);
-      else if (!problems.has(name)) problems.set(name, resolution.problem);
+      else if (!problems.has(name)) problems.set(name, { problem: resolution.problem, mode });
     }
   }
-  for (const [name, place] of declared.places) {
-    const problem = problems.get(name);
-    if (problem !== undefined)
+  for (const name of declared.places.keys()) {
+    const failure = problems.get(name);
+    if (failure !== undefined)
       diagnostics.push({
         code: 'unusable_value',
-        message: `${name} was not imported. ${problem}`,
-        ...place,
+        message: `${name} was not imported. ${failure.problem}`,
+        ...placeOf(declared, name, failure.mode),
       });
   }
   return resolved;

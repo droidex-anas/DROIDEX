@@ -140,9 +140,12 @@ function sectionTokens(sections: DocumentSection[], kind: TokenSectionKind): Sec
   return tokens;
 }
 
-/** The absolute lengths outside any function that no token of the scale holds. */
+/**
+ * The absolute lengths outside any function that no token of the scale holds;
+ * none when the whole value is a token's, as a compound `4px 8px` radius.
+ */
 export function offScale(scale: Scale | undefined, value: string): string[] {
-  if (!scale) return [];
+  if (!scale || scale.values.has(normalized(value))) return [];
   return lengthWords(value).filter((word) => !scale.values.has(normalized(word.replace(/^-/, ''))));
 }
 
@@ -159,12 +162,15 @@ export function isShadowLiteral(scale: Scale | undefined, value: string): boolea
   return !scale.values.has(shadow);
 }
 
-/** A value as the scales compare it: an absolute length in px, at the browser's 16px root. */
+/** A value as the scales compare it: each absolute length in px, at the browser's 16px root. */
 function normalized(value: string): string {
-  const text = value.trim().replace(/\s+/g, ' ').toLowerCase();
-  const length = ABSOLUTE_LENGTH.exec(text);
-  if (!length) return text;
-  const px = Number.parseFloat(text) * PX_PER_UNIT[length[1] as keyof typeof PX_PER_UNIT];
+  return value.trim().toLowerCase().split(/\s+/).map(inPx).join(' ');
+}
+
+function inPx(word: string): string {
+  const length = ABSOLUTE_LENGTH.exec(word);
+  if (!length) return word;
+  const px = Number.parseFloat(word) * PX_PER_UNIT[length[1] as keyof typeof PX_PER_UNIT];
   return `${String(Math.round(px * 1000) / 1000)}px`;
 }
 

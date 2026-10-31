@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import fsPromises, { mkdir, mkdtemp, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -89,10 +90,55 @@ test('a project file outside the folder, behind a link, too large or not text is
     [[css('src/index.css'), css('src//index.css')], /src\/index\.css is named twice/],
     [Array.from({ length: 9 }, (_, index) => css(`${String(index)}.css`)), /at most 8 project/],
   ];
+  // Two spellings of one file, where the disk ignores case.
+  const ignoresCase = await stat(join(root, 'SRC/INDEX.CSS')).then(
+    () => true,
+    () => false,
+  );
+  if (ignoresCase)
+    refusals.push([[css('src/index.css'), css('SRC/INDEX.CSS')], /SRC\/INDEX\.CSS is named twice/]);
   for (const [sources, message] of refusals) {
     const result = await importProjectDesignSystem(root, sources, KIT);
     assert.equal(result.status, 'refused', sources[0].path);
     assert.equal(result.diagnostics[0].code, 'invalid_input');
     assert.match(result.diagnostics[0].message, message);
   }
+});
+
+test('a folder swapped for a link after the path checks is not read through', async (t) => {
+  const root = await project(t, { 'nested/theme.css': ':root { --inside: #123456; }' });
+  const outside = await project(t, { 'theme.css': ':root { --outside: #abcdef; }' });
+  const open = fsPromises.open.bind(fsPromises);
+  // Lands between the checks and the open, as a racing writer in the project could.
+  const swap = t.mock.method(fsPromises, 'open', async (...args: Parameters<typeof open>) => {
+    swap.mock.restore();
+    syncBuiltinESMExports();
+    await rename(join(root, 'nested'), join(root, 'moved'));
+    await symlink(outside, join(root, 'nested'));
+    return open(...args);
+  });
+  syncBuiltinESMExports();
+  t.after(syncBuiltinESMExports);
+
+  const result = await importProjectDesignSystem(
+    root,
+    [{ path: 'nested/theme.css', kind: 'css' }],
+    KIT,
+  );
+  assert.equal(swap.mock.callCount(), 1);
+  assert.equal(result.status, 'refused');
+  assert.match(result.diagnostics[0].message, /nested\/theme\.css changed while it was being read/);
+});
+
+test('a token that fails in one mode is reported where that mode sets it', async (t) => {
+  const root = await project(t, {
+    'light.css': ':root[data-mode="light"] { --brand: #123456; }',
+    'dark.css': ':root[data-mode="dark"] { --brand: var(--missing); }',
+  });
+  const css = (path: string): ProjectSource => ({ path, kind: 'css' });
+  const result = await importProjectDesignSystem(root, [css('light.css'), css('dark.css')], KIT);
+  assert.deepEqual(
+    result.diagnostics.map(({ code, file, line }) => `${code} ${file ?? ''}:${String(line ?? '')}`),
+    ['unusable_value dark.css:1'],
+  );
 });

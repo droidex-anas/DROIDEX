@@ -34,10 +34,37 @@ interface SourcePlace {
   line: number;
 }
 
-/** Each scope's token values, and the place that first declared each name. */
+/** Each scope's token values and where each was set, and the config's placeholders. */
 export interface Declared {
   scopes: Record<TokenScope, Record<string, string>>;
-  places: Map<string, SourcePlace>;
+  /** In the order names were first declared. */
+  places: Map<string, Partial<Record<TokenScope, SourcePlace>>>;
+  /** Config values that are `var()` of their own name, as `sm: 'var(--shadow-sm)'`. */
+  placeholders: Map<string, SourcePlace>;
+}
+
+export function emptyDeclared(): Declared {
+  return {
+    scopes: { shared: {}, light: {}, dark: {} },
+    places: new Map(),
+    placeholders: new Map(),
+  };
+}
+
+/** Where the value a mode reads for a token was set: its own rule, else the shared one. */
+export function placeOf(declared: Declared, name: string, mode: Mode): SourcePlace | undefined {
+  const places = declared.places.get(name);
+  return places?.[mode] ?? places?.shared;
+}
+
+/**
+ * A placeholder names the stylesheet's token of the same name, so it gives way
+ * to any source that sets it; one no source sets is declared as written.
+ */
+export function declarePlaceholders(declared: Declared, diagnostics: CanvasDiagnostic[]): void {
+  for (const [name, place] of declared.placeholders)
+    if (!declared.places.has(name))
+      declare(declared, { name, value: `var(${name})`, targets: ['shared'], place }, diagnostics);
 }
 
 function placeIn(origin: TextOrigin, line: number): SourcePlace {
@@ -260,7 +287,9 @@ export function readTailwind(
   }
   for (const [rawName, { value, place }] of values) {
     const name = tokenName(rawName);
-    if (name !== null) declare(declared, { name, value, targets: ['shared'], place }, diagnostics);
+    if (name === null) continue;
+    if (value.trim() === `var(${name})`) declared.placeholders.set(name, place);
+    else declare(declared, { name, value, targets: ['shared'], place }, diagnostics);
   }
   return null;
 }
@@ -295,11 +324,10 @@ function declare(
   diagnostics: CanvasDiagnostic[],
 ): void {
   const { name, targets, place } = token;
-  // A token's place follows its value past a reference to its own name.
-  const referencesItself = (scope: TokenScope) =>
-    Object.hasOwn(declared.scopes[scope], name) && declared.scopes[scope][name] === `var(${name})`;
-  if (!declared.places.has(name) || targets.some(referencesItself))
-    declared.places.set(name, place);
+  // The last value a scope sees is the one it keeps, so its place is too.
+  const places = declared.places.get(name) ?? {};
+  for (const scope of targets) places[scope] = place;
+  declared.places.set(name, places);
   declareToken(
     declared.scopes,
     { name, targets, ...place, value: token.value.replace(/\s+/g, ' ').trim() },

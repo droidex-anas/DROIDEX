@@ -144,11 +144,16 @@ class DesignCheck {
           this.usesKit = true;
         return;
       }
+      const line = () => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
       if (isTextLiteral(node)) {
-        const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-        this.classes({ file, line }, node.text);
+        this.classes({ file, line: line() }, node.text);
         const property = styledProperty(node);
-        if (property !== null) this.value({ file, line }, property, node.text);
+        if (property !== null) this.value({ file, line: line() }, property, node.text);
+      } else if (ts.isNumericLiteral(node) && Number(node.text) !== 0 && inStyleObject(node)) {
+        // React styles a bare number in these properties as that many pixels.
+        const property = styledProperty(node);
+        if (property !== null && scaleOfProperty(property) !== null)
+          this.value({ file, line: line() }, property, `${node.text}px`);
       }
       ts.forEachChild(node, visit);
     };
@@ -298,12 +303,19 @@ function styledProperty(literal: ts.Node): string | null {
   return text.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
+/** A value in an object, as React's `style`; a JSX attribute's number is no pixel count. */
+function inStyleObject(literal: ts.Node): boolean {
+  const value = styledValue(literal);
+  return value !== null && ts.isPropertyAssignment(value.parent);
+}
+
 /** The outermost expression a literal is part of the value of, or null for a condition. */
 function styledValue(literal: ts.Node): ts.Node | null {
   let node = literal;
   while (
     ts.isConditionalExpression(node.parent) ||
     ts.isParenthesizedExpression(node.parent) ||
+    ts.isPrefixUnaryExpression(node.parent) ||
     ts.isBinaryExpression(node.parent) ||
     ts.isTemplateExpression(node.parent) ||
     ts.isTemplateSpan(node.parent) ||
