@@ -68,7 +68,8 @@ export function useCoverCapture(canvasId: string, frames: readonly CanvasFrame[]
   }, [canvasId, designId, revisionId]);
 }
 
-function coverRevision(frames: readonly CanvasFrame[]): RevisionRef | null {
+/** The frame a canvas's cover pictures: its first working one. */
+export function coverRevision(frames: readonly CanvasFrame[]): RevisionRef | null {
   for (const { designId, build } of frames)
     if (build.status === 'ready') return { designId, revisionId: build.revisionId };
   return null;
