@@ -38,11 +38,11 @@ export function useCanvasCover(canvasId: string): string | null | undefined {
       .readCover(canvasId)
       .then(
         (png) => {
-          show(canvasId, png);
+          if (!covers.has(canvasId)) show(canvasId, png);
         },
         (error: unknown) => {
           console.error('A canvas cover could not be read:', error);
-          show(canvasId, null);
+          if (!covers.has(canvasId)) show(canvasId, null);
         },
       )
       .finally(() => {
