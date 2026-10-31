@@ -23,6 +23,10 @@ export function truncateDiagnosticText(
 export const ADHERENCE_CODES = {
   color: 'design_system_color',
   font: 'design_system_font',
+  type: 'design_system_type',
+  radius: 'design_system_radius',
+  spacing: 'design_system_spacing',
+  shadow: 'design_system_shadow',
   unused: 'design_system_unused',
   override: 'design_system_override',
 } as const;

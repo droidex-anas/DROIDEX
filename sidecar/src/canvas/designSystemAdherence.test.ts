@@ -131,6 +131,73 @@ test('strict fails on what guide reports, keeping overrides out of it, and off c
   assert.deepEqual(check(STRAYING, 'off'), { status: 'passed', diagnostics: [] });
 });
 
+const OFF_SCALE: SourceFiles = {
+  'main.tsx': `import { Card } from '@droidex/design-system';
+import './styles.css';
+
+export default function Plans() {
+  return (
+    <Card className="rounded-[7px] p-[13px] gap-[8px] text-[13px] shadow-[0_2px_4px_#000]">
+      <h2 className="rounded-[10px] text-[0.875rem]" style={{ fontSize: '13px', padding: '0.5rem' }}>Plans</h2>
+    </Card>
+  );
+}
+`,
+  'styles.css': `.plan {
+  font-size: 13px;
+  border-radius: 7px 6px;
+  margin: 0 auto -13px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+.plan:focus {
+  box-shadow: 0 0 0 2px var(--ds-focus);
+  font-size: 14px;
+  padding: 1rem 16px;
+}
+`,
+};
+
+test('sizes, radii, spacing and shadows off the kit’s tokens are reported, and values on them are not', () => {
+  const result = check(OFF_SCALE);
+  assert.deepEqual(places(result.diagnostics), [
+    'design_system_radius main.tsx:6',
+    'design_system_spacing main.tsx:6',
+    'design_system_type main.tsx:6',
+    'design_system_shadow main.tsx:6',
+    'design_system_type main.tsx:7',
+    'design_system_type styles.css:2',
+    'design_system_radius styles.css:3',
+    'design_system_spacing styles.css:4',
+    'design_system_shadow styles.css:5',
+  ]);
+  assert.equal(
+    result.diagnostics[0].message,
+    'rounded-[7px] is a corner radius the kit does not define. Use one of its tokens (var(--ds-radius-sm), var(--ds-radius-md), var(--ds-radius-lg), var(--ds-radius-pill)) instead.',
+  );
+  assert.equal(check(OFF_SCALE, 'strict').status, 'failed');
+});
+
+test('a kit without a section gets no check for it', () => {
+  const typographyOnly = {
+    ...DROIDEX_DESIGN_SYSTEM,
+    sections: DROIDEX_DESIGN_SYSTEM.sections.filter(
+      (section) => !['colors', 'spacing', 'radius', 'shadows'].includes(section.kind),
+    ),
+  };
+  const offScale = checkDesignSystemAdherence(OFF_SCALE, typographyOnly, 'strict');
+  assert.deepEqual(places(offScale.diagnostics), [
+    'design_system_type main.tsx:6',
+    'design_system_type main.tsx:7',
+    'design_system_type styles.css:2',
+  ]);
+  const straying = checkDesignSystemAdherence(STRAYING, typographyOnly, 'guide');
+  assert.deepEqual(places(straying.diagnostics), [
+    'design_system_font main.tsx:7',
+    'design_system_font styles.css:6',
+    'design_system_override :',
+  ]);
+});
+
 const worker = new CompilerWorker();
 after(() => worker.terminate());
 

@@ -37,6 +37,8 @@ const TOKEN_KINDS = [
   'tokens',
 ] as const;
 
+export type TokenSectionKind = (typeof TOKEN_KINDS)[number];
+
 /** Where a builder puts each kind of section, and where one added later goes. */
 export const CANONICAL_SECTION_ORDER = ['notes', ...TOKEN_KINDS, 'components', 'assets'] as const;
 
