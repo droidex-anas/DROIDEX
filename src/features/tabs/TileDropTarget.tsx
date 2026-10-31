@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { useState, type DragEvent, type ReactNode } from 'react';
 import { endPlaceDrag, isPlaceDrag, type PlaceDrag } from './tileDrag';
 import type { TileGrid } from './tileGrid';
 import { pointerZone, tileDrop, type DropZone, type TileDrop } from './tileLayout';
@@ -34,7 +34,8 @@ export function TileDropTarget({
       (event.clientY - rect.top) / rect.height,
     );
     const drop = tileDrop(grid, drag, tileId, pointer);
-    return drop ? { zone: pointer, drop } : null;
+    if (!drop) return null;
+    return { zone: drop.kind === 'tab' ? 'center' : pointer, drop };
   };
 
   return (
@@ -63,12 +64,19 @@ export function TileDropTarget({
         onDrop(target.drop);
       }}
     >
-      {zone && (
-        <div
-          // eslint-disable-next-line design-policy/design-tokens -- dashed drop target: drag cue
-          className={`pointer-events-none absolute m-1.5 rounded-lg bg-elevated/60 outline-dashed outline-1 -outline-offset-1 outline-divider-strong transition-all duration-150 ease-out ${ZONE_CLASSES[zone]}`}
-        />
-      )}
+      {zone && <DropCue className={ZONE_CLASSES[zone]} />}
+    </div>
+  );
+}
+
+// The shaded part of a place that a drop would fill; the caller positions it.
+export function DropCue({ className, children }: { className: string; children?: ReactNode }) {
+  return (
+    <div
+      // eslint-disable-next-line design-policy/design-tokens -- dashed drop target: drag cue
+      className={`pointer-events-none absolute m-1.5 rounded-lg bg-elevated/60 outline-dashed outline-1 -outline-offset-1 outline-divider-strong transition-all duration-150 ease-out ${className}`}
+    >
+      {children}
     </div>
   );
 }

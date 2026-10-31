@@ -12,6 +12,7 @@ import {
   type BuildFeedOptions,
   type FeedItem,
 } from './chatFeed';
+import { cleanFeed } from './chatFeedClean';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
 import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
@@ -107,14 +108,17 @@ function isSubagentPoll(event: TranscriptEvent): boolean {
 export type GroupedFeedOptions = BuildFeedOptions & {
   specContent?: string;
   changes?: boolean;
+  /** A design chat's feed: the conversation and its designs only (`cleanFeed`). */
+  clean?: boolean;
 };
 
 export function buildGroupedFeed(
   events: TranscriptEvent[],
   pending: boolean,
-  { specContent, changes = false, ...feedOptions }: GroupedFeedOptions = {},
+  { specContent, changes = false, clean = false, ...feedOptions }: GroupedFeedOptions = {},
 ): FeedItem[] {
-  return groupTurns(buildFeed(events, feedOptions), pending, specContent, changes);
+  const grouped = groupTurns(buildFeed(events, feedOptions), pending, specContent, changes);
+  return clean ? cleanFeed(grouped) : grouped;
 }
 
 // Public helper so the chat view can derive the same anchors MessageFeed stamps.
@@ -336,9 +340,9 @@ function collapseRun(run: FeedItem[], specContent?: string): FeedItem[] {
       // The user heard this. Folding it into "Worked for …" would hide half of
       // the conversation they just had.
       survivors.push(it);
-    } else if (it.type === 'generated_image') {
-      // The image is what the turn produced, not a step along the way: folding
-      // it would hide the thing that was asked for.
+    } else if (it.type === 'generated_image' || it.type === 'canvas_artifact') {
+      // The image or design is what the turn produced, not a step along the
+      // way: folding it would hide the thing that was asked for.
       survivors.push(it);
     } else if (isHarnessModelSwitch(it)) {
       // The harness changed the model under the turn, often on a usage limit;

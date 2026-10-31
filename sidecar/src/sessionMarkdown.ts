@@ -48,6 +48,7 @@ function toolResultBlock(event: TranscriptEvent): string | null {
 }
 
 function blockFor(event: TranscriptEvent): string | null {
+  if (event.canvasActivity) return `**Canvas:** ${event.canvasActivity.message}`;
   switch (event.kind) {
     case 'text':
       if (!event.text) return null;

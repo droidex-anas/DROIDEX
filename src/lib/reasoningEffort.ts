@@ -17,25 +17,34 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return typeof value === 'string' && Object.hasOwn(REASONING_EFFORTS, value);
 }
 
+function turnsReasoningOff(effort: ReasoningEffort): boolean {
+  return effort === 'none' || effort === 'off';
+}
+
 // Whether a model's harness offers a reasoning effort for it at all. A model
-// known to publish none has no control to offer, in the picker or beside the
+// known to publish none, or only a level that turns reasoning off (Droid's Auto
+// lists just "none"), has no control to offer, in the picker or beside the
 // model's name. An unknown model (list still loading) keeps the control so it
 // does not flicker out and back in.
 export function offersReasoningEffort(
   model: Pick<ModelInfo, 'supportedReasoningEfforts'> | undefined,
 ): boolean {
-  return !model || (model.supportedReasoningEfforts?.length ?? 0) > 0;
+  return (
+    !model || (model.supportedReasoningEfforts ?? []).some((effort) => !turnsReasoningOff(effort))
+  );
 }
 
 // Callers choose the session or draft effort. An unset session effort stays
 // provider-managed; display code must not substitute a global or catalog default.
 // A level the model is known not to run is never shown on it; its declared
-// default it runs even when it lists no levels.
+// default it runs even when it lists no levels. Reasoning turned off is worth
+// naming only on a model that could turn it on.
 export function resolveReasoningEffortDisplay(
   effort: ReasoningEffort | undefined,
   model: Pick<ModelInfo, 'supportedReasoningEfforts' | 'defaultReasoningEffort'> | undefined,
 ): ReasoningEffort | undefined {
   if (!model || effort === undefined) return effort;
+  if (turnsReasoningOff(effort) && !offersReasoningEffort(model)) return undefined;
   return model.supportedReasoningEfforts?.includes(effort) ||
     model.defaultReasoningEffort === effort
     ? effort

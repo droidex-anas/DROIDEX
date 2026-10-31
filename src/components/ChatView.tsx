@@ -1,10 +1,15 @@
-import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
+import { useRef, useEffect, useMemo, useState, useCallback, Suspense, type ReactNode } from 'react';
 import { GripVertical, ChevronRight } from 'lucide-react';
 import { Square } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
-import { WINDOW_CONTROLS_LEAD_PX } from '../lib/windowChrome';
+import {
+  LazyAttachedChatsMenu,
+  LazyCanvasColumnTabs,
+  LazyDesignColumnHeader,
+} from '../lib/lazySurfaces';
+import { utilityPanelForSession } from '../lib/utilityPanel';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
 import type { SessionRestore } from '../hooks/storeChildSession';
@@ -21,7 +26,7 @@ import { PendingSteers } from './transcript/PendingSteers';
 import { JumpToLatest } from './transcript/JumpToLatest';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
-import { chatDisplayTitle } from '../lib/chatMetadata';
+import { chatDisplayTitle, isDesignChat } from '../lib/chatMetadata';
 import {
   childSessionActivityForTarget,
   childSessionLabel,
@@ -35,7 +40,7 @@ import { useOpenAgent } from './agents/useOpenAgent';
 import { useForkChat, useForkPending, useOpenForkSource } from '../hooks/useForkChat';
 import { useScrolling } from './ui/useScrolling';
 import { ConversationTimeline } from './ConversationTimeline';
-import { WelcomeScreen } from './WelcomeScreen';
+import { NewChatHeading } from './NewChatHome';
 import { isChatWorktreePath } from '../lib/chatWorkspace';
 import { isEmbedded } from '../lib/embed';
 import {
@@ -50,14 +55,19 @@ import {
 } from '../hooks/useConversationTimeline';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
-import { equalVisibleChatState, selectChatViewState, type ChatViewState } from './chatViewState';
+import {
+  equalVisibleChatState,
+  newChatStart,
+  selectChatViewState,
+  type ChatViewState,
+} from './chatViewState';
 import { createChatFeedProjector } from './chatFeedProjector';
 import { setMountedFeedRows } from '../lib/rendererPerf';
 import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
-import { showsTabStrip, viewRowHoldsWindowControls } from '../features/tabs/tabStrip';
+import { activeProduct, showsTabStrip, viewRowLeadPx } from '../features/tabs/tabStrip';
 import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
 import { tileHandleProps } from '../features/tabs/tileDrag';
 
@@ -162,29 +172,97 @@ function RestoreFailedBanner({ message, onRetry }: { message?: string; onRetry: 
   );
 }
 
+// The canvas this chat's board is showing, or null when it has no board open.
+// Spec §4 makes the chat column's header the place its canvas's chats are
+// listed, so the header reads that state rather than being told about it.
+function canvasOnBoard(state: AppState, appSessionId: string | null): string | null {
+  if (!appSessionId) return null;
+  const panel = utilityPanelForSession(state.utilityPanels, appSessionId);
+  if (!panel.open) return null;
+  const tab = panel.tabs.find((candidate) => candidate.id === panel.activeTabId);
+  if (tab?.tool !== 'canvas') return null;
+  return tab.canvasId ?? state.canvasAttachments[appSessionId] ?? null;
+}
+
+interface ChatHeaderSub {
+  label: string;
+  meta?: string;
+  running: boolean;
+  backTitle?: string;
+  onBack: () => void;
+  onStop?: () => void;
+}
+
+function ChatTitleText({ title, live }: { title: string; live: boolean }) {
+  return (
+    <span
+      className={`truncate text-body-strong max-w-60 ${live ? 'shimmer-text' : 'text-primary'}`}
+    >
+      {title}
+    </span>
+  );
+}
+
+/**
+ * The chat's name in its header: a crumb back to the chat that owns a child
+ * session, the attached-chats menu once this chat has a canvas on screen, or
+ * plain text.
+ */
+function HeaderTitle({
+  title,
+  live,
+  sub,
+  canvas,
+}: {
+  title: string;
+  live: boolean;
+  sub: ChatHeaderSub | undefined;
+  canvas: { appSessionId: string; canvasId: string } | undefined;
+}) {
+  if (sub)
+    return (
+      <button
+        type="button"
+        onClick={sub.onBack}
+        title={sub.backTitle ?? 'Back to primary session'}
+        className="truncate text-body-strong text-muted transition-colors hover:text-primary max-w-48"
+      >
+        {title}
+      </button>
+    );
+  if (canvas)
+    return (
+      <Suspense fallback={<ChatTitleText title={title} live={live} />}>
+        <LazyAttachedChatsMenu
+          appSessionId={canvas.appSessionId}
+          canvasId={canvas.canvasId}
+          title={title}
+          live={live}
+        />
+      </Suspense>
+    );
+  return <ChatTitleText title={title} live={live} />;
+}
+
 function ChatHeader({
   title,
   live,
   sub,
   leadPx,
   appSessionId,
+  canvas,
   tile,
 }: {
   title: string;
   live: boolean;
-  sub?: {
-    label: string;
-    meta?: string;
-    running: boolean;
-    backTitle?: string;
-    onBack: () => void;
-    onStop?: () => void;
-  };
+  sub?: ChatHeaderSub;
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
   // The chat whose processes the header lists; null when it lists none.
   appSessionId: string | null;
+  // The chat's own canvas, which turns the title into its attached-chats menu.
+  canvas?: { appSessionId: string; canvasId: string };
   // In a split tab the title is the tile's drag handle and close button.
   tile: TileChrome | undefined;
 }) {
@@ -202,22 +280,7 @@ function ChatHeader({
         } ${tile && !tile.focused ? 'bg-elevated/25' : 'bg-elevated/60'}`}
       >
         <GripVertical className="w-3.5 h-3.5 shrink-0 text-muted/40" />
-        {sub ? (
-          <button
-            type="button"
-            onClick={sub.onBack}
-            title={sub.backTitle ?? 'Back to primary session'}
-            className="truncate text-body-strong text-muted transition-colors hover:text-primary max-w-48"
-          >
-            {title}
-          </button>
-        ) : (
-          <span
-            className={`truncate text-body-strong max-w-60 ${live ? 'shimmer-text' : 'text-primary'}`}
-          >
-            {title}
-          </span>
-        )}
+        <HeaderTitle title={title} live={live} sub={sub} canvas={canvas} />
         {sub && (
           <>
             <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted/50" />
@@ -271,8 +334,13 @@ export default function ChatView({
     [isObscured],
   );
   const state = useStoreSelector(selectState, equalChatState);
-  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
+  const rowLeadPx = useStoreSelector(viewRowLeadPx);
   const tabStripShown = useStoreSelector(showsTabStrip);
+  const boardCanvasId = useStoreSelector((current) => canvasOnBoard(current, appSessionId));
+  const inDesign = useStoreSelector((current) => activeProduct(current) === 'design');
+  const designChat = useStoreSelector((current) =>
+    appSessionId ? isDesignChat(current.chatMetadata[appSessionId]) : false,
+  );
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -550,6 +618,8 @@ export default function ChatView({
     });
   }, [activeAppSessionId, specContent, hasFileSpec, fileSpec, storedSpec?.path, dispatch]);
 
+  // A child session's feed is the child's own work, so it stays in full.
+  const cleanFeed = designChat && !viewingChildSession;
   const feedProjectorRef = useRef<ReturnType<typeof createChatFeedProjector> | null>(null);
   feedProjectorRef.current ??= createChatFeedProjector();
   // The projector owns visibility filtering because transcript mutation indices
@@ -572,6 +642,7 @@ export default function ChatView({
       specContent,
       changes: true,
       groupChildSessions: !viewingChildSession,
+      clean: cleanFeed,
     },
   });
   const tailLen = transcript.at(-1)?.text?.length ?? 0;
@@ -591,24 +662,30 @@ export default function ChatView({
         : false),
     restoreStatus: restoreStatusForConversationTimeline(restore?.status, !isEmbedded()),
   });
-  const { onScroll, jumpToLatest, isAwayFromLatest, requestOlderHistory, restoredScrollOffset } =
-    useConversationScrollWindow({
-      scrollRef,
-      visibleConversationKey,
-      isViewingChildSession: viewingChildSession,
-      activeAppSessionId,
-      historyAppSessionId,
-      historyChildSessionId,
-      olderCursor,
-      isLoadingOlder: loadingOlder,
-      transcriptLength: transcript.length,
-      transcriptTailLength: tailLen,
-      retainedTranscriptLength: transcript.length,
-      isConversationLive: live,
-      isAutoPagingOlderHistory,
-      dispatch,
-      viewportLayoutRef,
-    });
+  const {
+    onScroll,
+    onListResize,
+    jumpToLatest,
+    isAwayFromLatest,
+    requestOlderHistory,
+    restoredScrollOffset,
+  } = useConversationScrollWindow({
+    scrollRef,
+    visibleConversationKey,
+    isViewingChildSession: viewingChildSession,
+    activeAppSessionId,
+    historyAppSessionId,
+    historyChildSessionId,
+    olderCursor,
+    isLoadingOlder: loadingOlder,
+    transcriptLength: transcript.length,
+    transcriptTailLength: tailLen,
+    retainedTranscriptLength: transcript.length,
+    isConversationLive: live,
+    isAutoPagingOlderHistory,
+    dispatch,
+    viewportLayoutRef,
+  });
 
   // Old/large chats restore only a recent window, which can hold too few final
   // responses for the rail to be useful. Page older history in (via the same
@@ -751,6 +828,7 @@ export default function ChatView({
             specContent={specContent}
             density={toolActivity.density}
             inlineDiffs={toolActivity.inlineDiffs}
+            clean={cleanFeed}
             {...(openSpecWiki !== undefined ? { onOpenSpecWiki: openSpecWiki } : {})}
             {...(!viewingChildSession && createdWorktreePath !== undefined
               ? { createdWorktreePath }
@@ -759,6 +837,7 @@ export default function ChatView({
               ? { pendingSteers: <PendingSteers appSessionId={activeSession.appSessionId} /> }
               : {})}
             onMountedRowsChange={setMountedFeedRows}
+            onListResize={onListResize}
             scrollElementRef={scrollRef}
             viewportLayoutRef={viewportLayoutRef}
             listRef={conversationListRef}
@@ -807,39 +886,33 @@ export default function ChatView({
       </TranscriptColumn>
     );
   } else {
-    const draft = state.draftChat;
+    // The composer and the starting points under it belong to the tile.
     conversationContent = (
-      <WelcomeScreen
+      <NewChatHeading
+        start={newChatStart(state.draftChat)}
         {...(draftFolder !== undefined ? { folder: draftFolder } : {})}
-        onSeedPrompt={(text) => {
-          dispatch({ type: 'SEED_COMPOSER', text });
-        }}
-        {...(draft?.project
-          ? {
-              project: {
-                onStartChat: () => {
-                  dispatch({
-                    type: 'START_CHAT',
-                    cwd: draft.cwd,
-                    executionMode: draft.executionMode,
-                    ...(draft.branch ? { branch: draft.branch } : {}),
-                  });
-                },
-              },
-            }
-          : {})}
       />
     );
   }
 
   // Only the top-left tile's header row takes in the window controls.
-  const leadPx =
-    holdsWindowControls && (!tile || (tile.atTop && tile.atLeft)) ? WINDOW_CONTROLS_LEAD_PX : 16;
+  const leadPx = rowLeadPx !== null && (!tile || (tile.atTop && tile.atLeft)) ? rowLeadPx : 16;
   // A lone chat in a tab is named by its tab, whose row also lists its
-  // processes, so it needs a header only for a crumb back.
+  // processes, so it needs a header only for a crumb back — or for the canvas
+  // on its board, whose chats this column's header owns (spec §4).
   const namedByTab = tabStripShown && !tile;
   let header: ReactNode = null;
-  if (activeSession && (!namedByTab || chatHeaderSub)) {
+  if (activeSession && inDesign && boardCanvasId !== null && !chatHeaderSub && !tile) {
+    header = (
+      <Suspense fallback={<div data-electron-drag-region className="h-9 shrink-0" />}>
+        <LazyDesignColumnHeader
+          appSessionId={activeSession.appSessionId}
+          canvasId={boardCanvasId}
+          leadPx={leadPx}
+        />
+      </Suspense>
+    );
+  } else if (activeSession && (!namedByTab || chatHeaderSub || boardCanvasId !== null)) {
     header = (
       <ChatHeader
         title={
@@ -852,6 +925,9 @@ export default function ChatView({
         appSessionId={namedByTab ? null : activeSession.appSessionId}
         tile={tile}
         {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
+        {...(boardCanvasId !== null
+          ? { canvas: { appSessionId: activeSession.appSessionId, canvasId: boardCanvasId } }
+          : {})}
       />
     );
   } else if (!activeSession && tile) {
@@ -868,6 +944,17 @@ export default function ChatView({
     <div data-testid="chat-view" className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
       {header}
       <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
+        {activeSession && boardCanvasId !== null && (
+          // Opens with the board, so the transcript eases down under it; a
+          // switch to another canvas keeps the row and swaps only its tabs.
+          <div className="row-open">
+            <div>
+              <Suspense fallback={<div className="h-9" />}>
+                <LazyCanvasColumnTabs key={boardCanvasId} canvasId={boardCanvasId} />
+              </Suspense>
+            </div>
+          </div>
+        )}
         <TranscriptReachHost
           items={feedItems}
           updateKind={feedUpdateKind}

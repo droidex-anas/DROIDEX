@@ -18,6 +18,7 @@ import type {
   ProviderMention,
   ReasoningEffort,
   SessionInteractionMode,
+  SessionPurpose,
 } from '../../protocol.js';
 import { errMsg } from '../../errors.js';
 import { UsageLimitError } from '../usageLimit.js';
@@ -52,6 +53,7 @@ export interface ClaudeSessionInput {
   cwd: string;
   autonomy: Autonomy;
   interactionMode: SessionInteractionMode;
+  sessionPurpose?: SessionPurpose;
   modelId?: string;
   reasoningEffort?: ReasoningEffort;
   fastMode?: boolean;
@@ -61,6 +63,7 @@ export interface ClaudeSessionInput {
   defaultModel?: ClaudeDefaultModel;
   models: ModelInfo[];
   mcpServers: Record<string, McpServerConfig>;
+  canvasScopeForRead?: () => string | undefined;
   interactions: ProviderInteractions;
   // Set when reopening a stored session instead of starting a new one.
   resumeId?: string;

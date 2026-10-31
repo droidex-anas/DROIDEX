@@ -58,12 +58,12 @@ export const EFFORT_SLIDER_STYLES = `
   /* A larger invisible hit target without changing the reference geometry. */
   .control::before { content: ''; position: absolute; inset: min(-10px, calc(-4 * var(--u))) 0; }
   .control:focus-visible:not(.pointer-focus) { outline: calc(1 * var(--u)) solid #a392e5; outline-offset: calc(4 * var(--u)); border-radius: calc(6 * var(--u)); }
-  .rail { position: absolute; inset: 0; overflow: hidden; border-radius: calc(5.5 * var(--u)); background: #2f2f2f; }
+  .rail { position: absolute; inset: 0; overflow: hidden; border-radius: calc(5.5 * var(--u)); background: var(--effort-rail, #2f2f2f); }
   .ultra-base { position: absolute; inset: 0; background: #2f2f2c; opacity: 0; }
   .fill { position: absolute; inset: 0; background: var(--effort-fill, #727272); transform-origin: left center; }
   canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   .ticks { position: absolute; inset: 0 calc(6.6 * var(--u)); display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
-  .tick { width: calc(2.8 * var(--u)); height: calc(2.8 * var(--u)); border-radius: 50%; background: #ffffff38; }
+  .tick { width: calc(2.8 * var(--u)); height: calc(2.8 * var(--u)); border-radius: 50%; background: var(--effort-tick, #ffffff38); }
   .thumb {
     position: absolute; top: 0; left: 0; width: calc(16 * var(--u)); height: 100%;
     border-radius: calc(5.5 * var(--u)); background: #fff;

@@ -1,18 +1,30 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 
+const EDGE_CLASSES = {
+  left: { line: 'left-0', grip: 'left-1' },
+  right: { line: 'right-0', grip: 'right-1' },
+};
+
 export function PaneResizeHandle({
+  label,
+  edge = 'left',
   width,
   min,
   max,
   onResize,
   onResizeEnd,
 }: {
+  label: string;
+  /** The pane's edge the handle sits on; dragging away from the pane widens it. */
+  edge?: 'left' | 'right';
   width: number;
   min: number;
   max: number;
   onResize: (width: number) => void;
   onResizeEnd: (width: number) => void;
 }) {
+  // How the width follows the pointer moving right.
+  const direction = edge === 'right' ? 1 : -1;
   const drag = useRef<{ x: number; width: number; latest: number } | null>(null);
   const frame = useRef(0);
 
@@ -52,16 +64,16 @@ export function PaneResizeHandle({
     <div
       role="separator"
       tabIndex={0}
-      aria-label="Resize utility pane"
+      aria-label={label}
       aria-orientation="vertical"
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={width}
-      className="group absolute left-0 top-0 z-30 h-full w-3 cursor-col-resize focus:outline-none"
+      className={`group absolute top-0 z-30 h-full w-3 cursor-col-resize focus:outline-none ${EDGE_CLASSES[edge].line}`}
       onKeyDown={(event) => {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
         event.preventDefault();
-        const next = clamp(width + (event.key === 'ArrowLeft' ? 20 : -20));
+        const next = clamp(width + (event.key === 'ArrowRight' ? 20 : -20) * direction);
         onResize(next);
         onResizeEnd(next);
       }}
@@ -71,13 +83,17 @@ export function PaneResizeHandle({
       }}
       onPointerMove={(event) => {
         if (!drag.current) return;
-        schedule(clamp(drag.current.width + drag.current.x - event.clientX));
+        schedule(clamp(drag.current.width + (event.clientX - drag.current.x) * direction));
       }}
       onPointerUp={finishDrag}
       onPointerCancel={finishDrag}
     >
-      <div className="absolute left-0 top-0 h-full w-px bg-divider-strong/30 transition-colors group-hover:bg-accent/70 group-focus:bg-accent" />
-      <div className="absolute left-1 top-1/2 h-10 w-1 -translate-y-1/2 rounded-full bg-divider-strong/40 opacity-50 transition-colors group-hover:bg-accent group-hover:opacity-100 group-focus:bg-accent group-focus:opacity-100" />
+      <div
+        className={`absolute top-0 h-full w-px bg-divider-strong/30 transition-colors group-hover:bg-accent/70 group-focus-visible:bg-accent ${EDGE_CLASSES[edge].line}`}
+      />
+      <div
+        className={`absolute top-1/2 h-10 w-1 -translate-y-1/2 rounded-full bg-divider-strong/40 opacity-50 transition-colors group-hover:bg-accent group-hover:opacity-100 group-focus-visible:bg-accent group-focus-visible:opacity-100 ${EDGE_CLASSES[edge].grip}`}
+      />
     </div>
   );
 }

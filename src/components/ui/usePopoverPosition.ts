@@ -1,4 +1,4 @@
-import { useLayoutEffect, type RefObject } from 'react';
+import { useLayoutEffect, useState, type RefObject } from 'react';
 import {
   autoUpdate,
   flip,
@@ -18,10 +18,10 @@ const WINDOW_EDGE_PX = 8;
 // Preferred side, flip when it does not fit, slide along the anchor to stay
 // inside the window, and publish the room left so the layer scrolls inside
 // instead of being clipped (read by the `floating-layer` class).
-export function popoverMiddleware(offsetPx: number): Middleware[] {
+export function popoverMiddleware(offsetPx: number, flips = true): Middleware[] {
   return [
     offset(offsetPx),
-    flip({ padding: WINDOW_EDGE_PX }),
+    ...(flips ? [flip({ padding: WINDOW_EDGE_PX })] : []),
     shift({ padding: WINDOW_EDGE_PX }),
     size({
       padding: WINDOW_EDGE_PX,
@@ -45,7 +45,9 @@ export interface AnchorPoint {
 
 // The one positioning hook for menus, popovers and tooltips. The layer is
 // rendered fixed in a body-level portal; `side` is where it actually landed
-// after flipping, for `data-side` and the entrance animation.
+// after flipping, for `data-side` and the entrance animation. That side holds
+// until the layer closes, so content that grows or shrinks while it is open
+// (a filtered list, another harness's catalog) never flips it over the anchor.
 export function usePopoverPosition({
   open,
   anchorRef,
@@ -59,6 +61,7 @@ export function usePopoverPosition({
   placement: Placement;
   offsetPx: number;
 }) {
+  const [held, setHeld] = useState<Placement | null>(null);
   const {
     refs,
     floatingStyles,
@@ -67,11 +70,13 @@ export function usePopoverPosition({
     middlewareData,
   } = useFloating({
     open,
-    placement,
+    placement: held ?? placement,
     strategy: 'fixed',
-    middleware: popoverMiddleware(offsetPx),
+    middleware: popoverMiddleware(offsetPx, held === null),
     whileElementsMounted: autoUpdate,
   });
+  if (!open && held !== null) setHeld(null);
+  if (open && isPositioned && held === null) setHeld(landed);
 
   useLayoutEffect(() => {
     const anchor = open ? anchorRef.current : null;

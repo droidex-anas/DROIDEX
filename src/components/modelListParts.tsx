@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 const ROW_H = 40;
-const VISIBLE_H = 200;
+// Five rows. The height holds whatever the list shows, so a search or another
+// harness's catalog never resizes the picker under the pointer.
+export const MODEL_LIST_HEIGHT_PX = 200;
 
 /**
  * The model lists' shared scroller: a fixed-height virtual list that opens
@@ -17,8 +19,8 @@ export function useModelListVirtualizer(count: number, selectedIndex: number) {
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_H,
     overscan: 4,
-    initialRect: { width: 0, height: VISIBLE_H },
-    initialOffset: Math.max(0, selectedIndex * ROW_H - VISIBLE_H / 2 + ROW_H / 2),
+    initialRect: { width: 0, height: MODEL_LIST_HEIGHT_PX },
+    initialOffset: Math.max(0, selectedIndex * ROW_H - MODEL_LIST_HEIGHT_PX / 2 + ROW_H / 2),
   });
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export function SelectionHighlight({ index }: { index: number }) {
   return (
     <div
       aria-hidden
-      className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-md bg-surface ${
+      className={`pointer-events-none absolute inset-x-0 top-0 h-10 rounded-md bg-active dark:bg-surface ${
         index < 0 ? 'opacity-0' : ''
       }`}
       style={{

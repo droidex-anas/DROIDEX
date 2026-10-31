@@ -38,6 +38,12 @@ const attachments = require('./attachments.cjs');
 const imageSave = require('./imageSave.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
+const canvasPreview = require('./canvasPreview.cjs');
+const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
+const { readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
+const { createCanvasImageSave } = require('./canvasImageSave.cjs');
+const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
@@ -107,6 +113,7 @@ const usageAnalytics = createUsageAnalytics({
 });
 const sidecarSupervisor = createSidecarSupervisor({
   entryPath: sidecarEntry,
+  canvasRuntimeDir,
   cwd: () => (app.isPackaged ? process.resourcesPath : appRoot()),
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
@@ -114,6 +121,7 @@ const sidecarSupervisor = createSidecarSupervisor({
   onMessage: (message, reply, runEnded) =>
     void nativeBrowserRequests.handle(message, reply, runEnded),
 });
+const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
 let mainWindow = null;
@@ -133,6 +141,16 @@ const appUpdater = createAppUpdater({
   logError: (message, error) => console.error('[update] %s:', message, error),
 });
 const rendererOomRecovery = createRendererOomRecovery();
+const canvasPreviewHosts = createCanvasPreviewHosts({
+  log: (message) => console.warn('[canvas-preview] %s', message),
+  canCapture: () => powerMonitor.getSystemIdleState(1) !== 'locked',
+});
+const saveCanvasImage = createCanvasImageSave({
+  dialog,
+  fs: fsp,
+  readThumbnail: canvasPreviewHosts.readThumbnail,
+  getWindow: () => mainWindow,
+});
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via
 // nativeTheme; 'light'/'dark' pin a specific artwork.
@@ -160,9 +178,19 @@ const nativeBrowserManager = createNativeBrowserManager({
     if (isWindowUsable(mainWindow)) mainWindow.webContents.send(channel, payload);
   },
 });
-// Claims each <webview> guest for the session main reserved it for, in the
-// same dispatch that creates it.
-app.on('web-contents-created', (_event, contents) => nativeBrowserManager.handleCreated(contents));
+// Claims each <webview> guest in the same dispatch that creates it: a Canvas
+// preview whose attach was just hardened, or a Browser page for the session
+// main reserved it for (see installWebviewAttachment).
+let attachingCanvasPreview = false;
+const canvasPreviewGuests = new WeakSet();
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() === 'webview' && attachingCanvasPreview) {
+    attachingCanvasPreview = false;
+    canvasPreviewGuests.add(contents);
+    return;
+  }
+  nativeBrowserManager.handleCreated(contents);
+});
 const nativeBrowserRequests = createNativeBrowserRequests({
   manager: nativeBrowserManager,
   notifyRenderer: (channel, payload) => {
@@ -191,6 +219,13 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: favicons.FAVICON_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true },
+  },
+  // The trusted intermediate and its owned image/font subresources. Font
+  // loading from an opaque srcdoc needs CORS, while connect-src still denies
+  // generated fetches.
+  {
+    scheme: canvasPreview.CANVAS_PREVIEW_SCHEME,
+    privileges: { standard: true, secure: true, corsEnabled: true },
   },
 ]);
 // Overridable so a second dev instance (e.g. a feature worktree) can run beside
@@ -244,6 +279,26 @@ const profileUsage = createProfileUsage({ bridgeInfo: () => sidecarSupervisor.ge
 
 usageAnalytics.notePriorInstall();
 const diagnosticsInitialization = diagnostics.initialize();
+/**
+ * Resolves once the preview guest session's network is off. Every path that can
+ * create the app window goes through `openMainWindow`, so no window — and
+ * therefore no guest — can exist before that, and an `activate` that arrives
+ * during startup waits here instead of racing it into a second window.
+ */
+const previewSessionReady = app.whenReady().then(() => registerCanvasPreviewProtocol());
+
+function openMainWindow() {
+  return previewSessionReady.then(
+    () => {
+      if (!mainWindow) createMainWindow();
+      else focusMainWindow();
+    },
+    (error) => {
+      console.error('Canvas preview session setup failed; no window was opened:', error);
+    },
+  );
+}
+
 app.whenReady().then(async () => {
   await diagnosticsInitialization;
   installApplicationMenu({
@@ -261,7 +316,7 @@ app.whenReady().then(async () => {
   registerLocalImageProtocol();
   registerMediaPermissions();
   registerFaviconProtocol();
-  createMainWindow();
+  await openMainWindow();
   powerTier.start();
   const metricsTimer = setInterval(() => performanceMetrics.collect(), 30_000);
   metricsTimer.unref?.();
@@ -307,15 +362,15 @@ app.on('before-quit', () => {
 });
 
 app.on('activate', () => {
-  if (!mainWindow) createMainWindow();
-  else focusMainWindow();
+  void openMainWindow().then(() => {
+    deliverPendingNotificationOpen();
+  });
   void sidecarSupervisor.start().catch((error) => console.error(error));
   void remoteAccess
     .resume()
     .catch(() =>
       console.error('[remote] Could not resume. Open Remote settings to review configuration.'),
     );
-  deliverPendingNotificationOpen();
 });
 
 app.on('child-process-gone', (_event, details) => {
@@ -347,17 +402,13 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // Browser pages are <webview> guests; only guests main reserved attach.
+      // Browser pages and Canvas live previews are <webview> guests. Only this
+      // window may create one, and only through the attachment routing
+      // installed below, before any renderer content loads.
       webviewTag: true,
     },
   });
-  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) =>
-    nativeBrowserManager.handleWillAttach(event, webPreferences, params, mainWindow.webContents),
-  );
-  mainWindow.webContents.on('did-attach-webview', (_event, contents) =>
-    nativeBrowserManager.handleAttached(contents),
-  );
-
+  installWebviewAttachment(mainWindow.webContents);
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
   );
@@ -393,9 +444,60 @@ function createMainWindow() {
     terminalManager.closeAll();
     terminalSubscriptions.clear();
     filesRootAccess.clear();
+    canvasPreviewHosts.clear();
     mainWindow = null;
   });
   powerTier.attachWindow(mainWindow);
+}
+
+/**
+ * Routes each <webview> attachment to its one owner by the source it asks for:
+ * the owned Canvas preview source gets the preview hardening, and every other
+ * guest must carry a Browser reservation. Guests are created synchronously after
+ * the attach is accepted, so the created guest is claimed in the same dispatch.
+ */
+function installWebviewAttachment(contents) {
+  contents.on('will-attach-webview', (event, preferences, params) => {
+    if (params.src !== canvasPreview.CANVAS_PREVIEW_URL) {
+      attachingCanvasPreview = false;
+      nativeBrowserManager.handleWillAttach(event, preferences, params, contents);
+      return;
+    }
+    attachingCanvasPreview = hardenCanvasPreviewGuest(event, preferences, params);
+  });
+  contents.on('did-attach-webview', (_event, guest) => {
+    if (canvasPreviewGuests.has(guest)) canvasPreviewHosts.attach(guest);
+    else nativeBrowserManager.handleAttached(guest);
+  });
+}
+
+/**
+ * The attachment boundary for Canvas preview guests (spec §6): any requested
+ * preload is deleted, and Node, nested Node and nested guests stay off while
+ * context isolation, the guest sandbox and web security stay on.
+ */
+function hardenCanvasPreviewGuest(event, preferences, params) {
+  // Before the guest session is configured it routes DIRECT, so a guest that
+  // attached then would have a live network however correct its partition is.
+  if (!canvasPreview.canvasPreviewSessionReady(previewGuestSession())) {
+    console.warn('[canvas-preview] Refused a guest before its session was configured');
+    event.preventDefault();
+    return false;
+  }
+  delete preferences.preload;
+  delete params.preload;
+  // The guest's own in-memory session: no storage, every TCP connection to a
+  // dead proxy, no permissions. A `<webview>` may name any partition, so this
+  // is forced here rather than trusted from the element.
+  params.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+  preferences.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+  preferences.nodeIntegration = false;
+  preferences.nodeIntegrationInSubFrames = false;
+  preferences.contextIsolation = true;
+  preferences.sandbox = true;
+  preferences.webSecurity = true;
+  preferences.webviewTag = false;
+  return true;
 }
 
 // Voice mode records only while the user holds a conversation open, and only
@@ -505,7 +607,87 @@ function registerFaviconProtocol() {
   });
 }
 
+// Serves the one trusted intermediate a Canvas preview guest loads (see
+// canvasPreview.cjs). The policy travels as a header, so no document surgery can
+// drop it, and the generated frame inherits it through `srcdoc`.
+/** The one session every preview guest attaches into (see canvasPreview.cjs). */
+function previewGuestSession() {
+  return session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION);
+}
+
+function registerCanvasPreviewProtocol() {
+  const document = canvasPreview.canvasPreviewDocument();
+  const assetRequest = /^droidex-canvas-preview:\/\/preview\/(?:asset|font)\//;
+  const serve = async (request) => {
+    if (assetRequest.test(request.url)) {
+      const asset = await readCanvasPreviewAsset(request.url, {
+        canvasRoot: path.join(app.getPath('userData'), 'canvases'),
+        fontRoot: path.join(app.getPath('userData'), 'canvas-fonts'),
+        secret: sidecarSupervisor.canvasAssetSecret(),
+      });
+      if (!asset) return new Response('Not found', { status: 404 });
+      return new Response(asset.data, {
+        headers: {
+          'content-type': asset.mime,
+          'cache-control':
+            asset.mime === 'font/woff2' ? 'public, max-age=31536000, immutable' : 'no-store',
+          'x-content-type-options': 'nosniff',
+          ...(asset.mime === 'font/woff2' ? { 'access-control-allow-origin': '*' } : {}),
+        },
+      });
+    }
+    if (request.url === 'droidex-canvas-preview://preview/not-found')
+      return new Response('Not found', { status: 404 });
+    if (request.url !== canvasPreview.CANVAS_PREVIEW_URL) {
+      console.warn('Refused a Canvas preview request for %s', request.url);
+      return new Response('Forbidden', { status: 403, headers: { 'content-type': 'text/plain' } });
+    }
+    return new Response(document, {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': canvasPreview.CANVAS_PREVIEW_CSP,
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  };
+  // The default session can load the owned document for a failed attachment,
+  // but it has no bound frame and may never read an asset.
+  session.defaultSession.protocol.handle(canvasPreview.CANVAS_PREVIEW_SCHEME, (request) => {
+    if (assetRequest.test(request.url)) return new Response('Not found', { status: 404 });
+    return serve(request);
+  });
+  const guestSession = previewGuestSession();
+  guestSession.webRequest.onBeforeRequest(
+    { urls: ['droidex-canvas-preview://preview/*'] },
+    (details, callback) => {
+      if (!assetRequest.test(details.url)) return callback({});
+      const canvasId = canvasPreviewHosts.canvasForFrame(details.webContentsId, details.frame);
+      const requestedCanvas = /^\/asset\/([A-Za-z0-9_-]{1,128})\//.exec(
+        new URL(details.url).pathname,
+      )?.[1];
+      if (canvasId !== null && (requestedCanvas === undefined || requestedCanvas === canvasId))
+        return callback({});
+      callback({ redirectURL: 'droidex-canvas-preview://preview/not-found' });
+    },
+  );
+  return canvasPreview.configureCanvasPreviewSession(guestSession, serve);
+}
+
 function registerIpc() {
+  const exportHost = (chooserOptions) => ({
+    chooseDirectory: () =>
+      dialog.showOpenDialog(mainWindow, { buttonLabel: 'Export here', ...chooserOptions }),
+    getBridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
+    exportToken: () => sidecarSupervisor.canvasExportToken(),
+    fetchRequest: fetch,
+  });
+  const exportCanvasSource = createCanvasSourceExport(
+    exportHost({ title: 'Export Canvas source', properties: ['openDirectory'] }),
+  );
+  const exportDesignSystem = createDesignSystemExport(
+    exportHost({ title: 'Export design system', properties: ['openDirectory', 'createDirectory'] }),
+  );
   desktopIpc.handle('bridge-info', () => {
     return sidecarSupervisor.getBridgeInfo();
   });
@@ -533,6 +715,19 @@ function registerIpc() {
   desktopIpc.handle('pick-files', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : result.filePaths;
+  });
+  ipcMain.handle('canvas-pick-image', async (event, { canvasId }) => {
+    assertMainRenderer(event);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return canvasImageImportResult(importCanvasImage, canvasId, result.filePaths[0]);
+  });
+  ipcMain.handle('canvas-drop-image', (event, { canvasId, filePath }) => {
+    assertMainRenderer(event);
+    return canvasImageImportResult(importCanvasImage, canvasId, filePath);
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.
@@ -619,6 +814,49 @@ function registerIpc() {
   });
   desktopIpc.handle('system-idle-time', () => {
     return powerMonitor.getSystemIdleTime();
+  });
+  // The board asks main to end one preview guest. Main ends it through the
+  // `webContents` it attached and refuses an ID it never attached; it never asks
+  // the guest for anything (spec §6).
+  ipcMain.handle('canvas-preview-terminate', (event, { guestId }) => {
+    assertMainRenderer(event);
+    return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
+  });
+  ipcMain.handle('canvas-preview-bind', (event, { guestId, canvasId }) => {
+    assertMainRenderer(event);
+    return (
+      Number.isSafeInteger(guestId) &&
+      /^[A-Za-z0-9_-]{1,128}$/.test(canvasId) &&
+      canvasPreviewHosts.bindCanvas(guestId, canvasId)
+    );
+  });
+  ipcMain.handle('canvas-preview-capture', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.capture(request);
+  });
+  ipcMain.handle('canvas-preview-cancel-capture', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.cancelCapture(request?.requestId);
+  });
+  ipcMain.handle('canvas-thumbnail-read', (event, request) => {
+    assertMainRenderer(event);
+    return canvasPreviewHosts.readThumbnail(
+      request?.canvasId,
+      request?.designId,
+      request?.revisionId,
+    );
+  });
+  ipcMain.handle('canvas-image-save', (event, request) => {
+    assertMainRenderer(event);
+    return saveCanvasImage(request);
+  });
+  ipcMain.handle('canvas-export-source', (event, input) => {
+    assertMainRenderer(event);
+    return exportCanvasSource(input);
+  });
+  ipcMain.handle('canvas-export-design-system', (event, input) => {
+    assertMainRenderer(event);
+    return exportDesignSystem(input);
   });
   desktopIpc.handle('power-tier', () => {
     return powerTier.snapshot();
@@ -1044,9 +1282,7 @@ function applyAppIcon() {
 }
 
 function focusMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    createMainWindow();
-  }
+  // Never creates one: `openMainWindow` owns that, behind the preview session.
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -1056,16 +1292,17 @@ function focusMainWindow() {
 
 function queueNotificationSessionOpen(appSessionId) {
   if (!appSessionId) {
-    focusMainWindow();
+    void openMainWindow();
     return;
   }
   pendingNotificationOpen = {
     appSessionId,
     expiresAt: Date.now() + PENDING_NOTIFICATION_OPEN_MS,
   };
-  focusMainWindow();
   // Immediate attempt; focus/show/did-finish-load will retry until ack.
-  deliverPendingNotificationOpen();
+  void openMainWindow().then(() => {
+    deliverPendingNotificationOpen();
+  });
 }
 
 function pendingNotificationPayload() {
@@ -1175,6 +1412,13 @@ function sidecarEntry() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'sidecar/dist/sidecar.mjs')
     : path.join(appRoot(), 'sidecar/dist/sidecar.mjs');
+}
+
+function canvasRuntimeDir() {
+  // The design compiler's esbuild, Tailwind, PostCSS and React ship beside the
+  // sidecar bundle (electron-builder.config.cjs). A checkout stages no runtime,
+  // so the sidecar keeps resolving them from its own node_modules.
+  return app.isPackaged ? path.join(process.resourcesPath, 'sidecar/canvas-runtime') : undefined;
 }
 
 function readBuildMetadata() {

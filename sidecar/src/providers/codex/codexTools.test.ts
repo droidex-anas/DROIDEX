@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
+import { createCanvasMcpServer } from '../../canvas/canvasMcpServer.js';
+import { CanvasScopes } from '../../canvas/canvasScopes.js';
+import { CanvasTurns } from '../../canvas/canvasTurnContext.js';
 import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
 import { SessionInteractions } from '../../SessionInteractions.js';
 import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
@@ -30,8 +33,22 @@ function harness() {
   });
   const automations = createSdkMcpServer({
     name: 'droidex-automations',
-    tools: [tool('automation_list', 'List automations.', {}, () => 'No automations.')],
+    tools: [
+      tool('automation_list', 'List automations.', {}, () => 'No automations.'),
+      tool('automation_snapshot', 'Show an automation.', {}, () => ({
+        content: [
+          { type: 'text', text: '{"ok":true}' },
+          { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+        ],
+      })),
+    ],
   });
+  const canvas = createCanvasMcpServer(
+    () => Promise.reject(new Error('Canvas storage unavailable')),
+    new CanvasTurns(new CanvasScopes(), () => null),
+    () => Promise.reject(new Error('Canvas capture unavailable')),
+    () => 'chat-one',
+  );
   const interactions = {
     requestApproval: async (approval: ProviderApprovalRequest) => {
       approvals.push(approval);
@@ -41,7 +58,7 @@ function harness() {
     isActive: () => live,
     cancelPending: () => {},
   };
-  const bridge = new CodexToolBridge([server, automations], {
+  const bridge = new CodexToolBridge([server, automations, canvas], {
     appSessionId: 'chat-one',
     interactions: interactions,
     threadId: () => threadId,
@@ -112,7 +129,7 @@ test('declares valid deferred namespaces and JSON Schemas once per bridge', () =
   const { bridge } = harness();
   assert.deepEqual(
     bridge.declarations.map((entry) => entry.name),
-    ['droidex_sessions', 'droidex_automations'],
+    ['droidex_sessions', 'droidex_automations', 'droidex_canvas'],
   );
   for (const namespace of bridge.declarations) {
     assert.match(namespace.name, /^[a-zA-Z0-9_-]+$/);
@@ -125,6 +142,58 @@ test('declares valid deferred namespaces and JSON Schemas once per bridge', () =
   assert.match(
     JSON.stringify(bridge.declarations[0].tools[0].inputSchema),
     /"required":\["reportBack"\]/,
+  );
+});
+
+test('a Canvas call from a settled Codex turn is refused before approval or dispatch', async () => {
+  const h = harness();
+  const invalid = await h.bridge.call({
+    threadId: 'thread-one',
+    turnId: 'turn-one',
+    namespace: 'droidex_canvas',
+    tool: 'canvas_read',
+    arguments: { unexpected: 'secret' },
+  });
+  assert.equal(invalid.success, false);
+  const [invalidReply] = invalid.contentItems;
+  assert.ok(invalidReply?.type === 'inputText');
+  assert.match(invalidReply.text, /invalid_input/);
+  h.endTurn();
+  const result = await h.bridge.call({
+    threadId: 'thread-one',
+    turnId: 'turn-one',
+    namespace: 'droidex_canvas',
+    tool: 'canvas_read',
+    arguments: {},
+  });
+  assert.equal(result.success, false);
+  assert.equal(h.approvals.length, 0);
+  const [reply] = result.contentItems;
+  assert.ok(reply?.type === 'inputText');
+  assert.match(reply.text, /no longer active/);
+});
+
+test('Codex rejects two in-app servers with the same dynamic namespace', () => {
+  const servers = ['droidex-canvas', 'droidex_canvas'].map((name) =>
+    createSdkMcpServer({ name, tools: [tool('canvas_read', 'Read.', {}, () => '{}')] }),
+  );
+  const interactions = {
+    requestApproval: async () => 'cancel' as const,
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => true,
+    cancelPending: () => undefined,
+  };
+  assert.throws(
+    () =>
+      new CodexToolBridge(servers, {
+        appSessionId: 'chat-one',
+        interactions,
+        threadId: () => 'thread-one',
+        turnId: () => 'turn-one',
+        isLive: () => true,
+        prompts: new OpenPrompts('chat-one', interactions),
+      }),
+    /namespace collision/,
   );
 });
 
@@ -166,6 +235,12 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
         name: 'droidex-sessions',
         tools: [tool('session_list', 'List chats.', {}, () => '[]')],
       }),
+      createCanvasMcpServer(
+        () => Promise.reject(new Error('Canvas storage unavailable')),
+        new CanvasTurns(new CanvasScopes(), () => null),
+        () => Promise.reject(new Error('Canvas capture unavailable')),
+        () => 'chat-one',
+      ),
     ],
   };
   const fresh = new CodexSession(input);
@@ -178,8 +253,12 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
       name: namespace.name,
       deferred: namespace.tools.every((tool) => tool.deferLoading),
     })),
-    [{ name: 'droidex_sessions', deferred: true }],
+    [
+      { name: 'droidex_sessions', deferred: true },
+      { name: 'droidex_canvas', deferred: true },
+    ],
   );
+  assert.equal(fresh.canvasTools, 'at_start');
   // The folder's own developer instructions stay, ahead of the note naming the tools.
   const instructions = (start?.params as { developerInstructions: string }).developerInstructions;
   assert.ok(instructions.startsWith('Workspace guidance.\n\n'));
@@ -188,6 +267,8 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
   await resumed.open('thread-one');
   const resume = sent.find((entry) => entry.method === 'thread/resume');
   assert.equal('dynamicTools' in (resume?.params as object), false);
+  // Only the stored summary knows what the resumed thread started with.
+  assert.equal(resumed.canvasTools, undefined);
   assert.equal(
     (resume?.params as { developerInstructions: string }).developerInstructions,
     instructions,
@@ -209,10 +290,9 @@ test('a known tool runs through approval; unknown tools, other threads, and deni
   });
   assert.equal(state.calls(), 1);
   assert.equal(state.approvals[0].signature, 'mcp::droidex-sessions::thread_spawn::thread');
-  assert.deepEqual(state.approvals[0].mcpTool, {
-    serverName: 'droidex-sessions',
-    toolName: 'thread_spawn',
-  });
+  assert.deepEqual(state.approvals[0].mcpTools, [
+    { serverName: 'droidex-sessions', toolName: 'thread_spawn' },
+  ]);
 
   state.deny();
   assert.deepEqual(await state.bridge.call(spawn), {
@@ -223,6 +303,25 @@ test('a known tool runs through approval; unknown tools, other threads, and deni
   state.switchThread();
   assert.equal((await state.bridge.call(spawn)).success, false);
   state.close();
+});
+
+test('an image a tool returns reaches Codex as an input image beside its text', async () => {
+  const state = harness();
+  assert.deepEqual(
+    await state.bridge.call({
+      ...spawn,
+      namespace: 'droidex_automations',
+      tool: 'automation_snapshot',
+      arguments: {},
+    }),
+    {
+      contentItems: [
+        { type: 'inputText', text: '{"ok":true}' },
+        { type: 'inputImage', imageUrl: 'data:image/png;base64,iVBORw0KGgo=' },
+      ],
+      success: true,
+    },
+  );
 });
 
 test('turn settlement cancels a dynamic-tool approval and refuses a late allow', async () => {

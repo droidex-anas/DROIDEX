@@ -3,7 +3,8 @@
 // which Codex applies to that turn and the ones after it.
 import type { NormalizedEvent } from '../../normalize.js';
 import type { SdkMcpServer } from '@factory/droid-sdk';
-import type { Autonomy } from '../../protocol.js';
+import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpNames.js';
+import type { Autonomy, SessionPurpose, SessionSummary } from '../../protocol.js';
 import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type { ProviderInteractions } from '../interactions.js';
 import type {
@@ -17,6 +18,7 @@ import type {
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, codexSandboxPolicy, OpenPrompts } from './codexApprovals.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 import { CodexRateLimits } from './codexRateLimits.js';
 import { canApproveWorkspaceEdits } from './codexEditPermissions.js';
 import {
@@ -24,7 +26,7 @@ import {
   errorOf,
   isObject,
   MAPPED_NOTIFICATIONS,
-  mcpServerFailure,
+  mcpServerStatus,
   turnOf,
   type CodexTurn,
 } from './codexEvents.js';
@@ -43,6 +45,7 @@ export interface CodexSessionInput {
   client: AppServerClient;
   cwd: string;
   autonomy: Autonomy;
+  sessionPurpose?: SessionPurpose;
   model: ProviderModelSettings;
   interactions: ProviderInteractions;
   inAppMcpServers?: SdkMcpServer[];
@@ -72,11 +75,14 @@ export class CodexSession implements ProviderSession {
   private readonly mapper: CodexEventMapper;
   private readonly childThreads: CodexChildThreads;
   private readonly cwd: string;
+  private readonly isDesignSession: boolean;
+  private readonly declaresCanvasTools: boolean;
   private readonly permissions: SessionAutonomy;
   private settingsChanges: Promise<void> = Promise.resolve();
   private model: ProviderModelSettings;
   private threadId?: string;
   private threadModel?: string;
+  private startedCanvasTools?: SessionSummary['canvasTools'];
   private turnId?: string;
   private turn?: TurnStream;
   private turnAutonomy?: Autonomy;
@@ -134,6 +140,10 @@ export class CodexSession implements ProviderSession {
     this.client = input.client;
     this.usage = new CodexRateLimits(this.client, input.onUsage);
     this.cwd = input.cwd;
+    this.isDesignSession = input.sessionPurpose === 'design';
+    this.declaresCanvasTools = (input.inAppMcpServers ?? []).some(
+      (server) => server.name === CANVAS_MCP_SERVER_NAME,
+    );
     this.permissions = new SessionAutonomy(input.autonomy, {
       write: () => {
         const stopping = this.stopUnenforceableTurns();
@@ -208,6 +218,10 @@ export class CodexSession implements ProviderSession {
     return this.threadId;
   }
 
+  get canvasTools(): SessionSummary['canvasTools'] {
+    return this.startedCanvasTools;
+  }
+
   get isClosed(): boolean {
     return this.hasClosed;
   }
@@ -228,15 +242,18 @@ export class CodexSession implements ProviderSession {
   // Typed turns carry settings on turn/start; voice applies them before
   // connecting, so opening needs no extra settings acknowledgement.
   async open(resumeId?: string): Promise<void> {
+    const developerInstructions = await this.developerInstructions();
     const { approvalPolicy, sandbox } = codexAutonomy(this.autonomy);
     const settings = {
       cwd: this.cwd,
       approvalPolicy,
       sandbox,
+      // Given again on resume: Codex keeps the tools with the thread but not
+      // this override, so a resumed chat would lose it at compaction.
+      ...(developerInstructions ? { developerInstructions } : {}),
       serviceTier: this.model.fastMode ? 'priority' : 'default',
       ...(this.model.modelId ? { model: this.model.modelId } : {}),
     };
-    const developerInstructions = await this.developerInstructions();
     const response = await (resumeId
       ? this.client.request<ThreadResponse>('thread/resume', {
           threadId: resumeId,
@@ -244,18 +261,14 @@ export class CodexSession implements ProviderSession {
           // reload the thread's own history for the model.
           excludeTurns: true,
           ...settings,
-          // Given again on resume: Codex keeps the tools with the thread but
-          // not this override, so a resumed chat would lose it at compaction.
-          ...(developerInstructions ? { developerInstructions } : {}),
         })
       : this.client.request<ThreadResponse>('thread/start', {
           ...settings,
-          ...(this.tools.declarations.length
-            ? { dynamicTools: this.tools.declarations, developerInstructions }
-            : {}),
+          ...(this.tools.declarations.length ? { dynamicTools: this.tools.declarations } : {}),
         }));
     this.threadId = response.thread.id;
     this.threadModel = response.model;
+    if (!resumeId) this.startedCanvasTools = this.declaresCanvasTools ? 'at_start' : 'none';
     this.mapper.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.childThreads.setModel({ ...this.model, modelId: this.model.modelId ?? this.threadModel });
     this.catalog ??= new CodexCatalog(this.client, [this.cwd]);
@@ -266,7 +279,12 @@ export class CodexSession implements ProviderSession {
   // Codex takes developerInstructions in place of the configured ones, so the
   // user's own developer_instructions for this folder go first.
   private async developerInstructions(): Promise<string | undefined> {
-    const note = this.tools.instructions;
+    const note = [
+      this.tools.instructions,
+      this.isDesignSession ? DESIGN_SESSION_GUIDANCE : undefined,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
     if (!note) return undefined;
     try {
       const { config } = await this.client.request<{
@@ -734,8 +752,8 @@ export class CodexSession implements ProviderSession {
       this.usage.update(params);
     });
     this.onThreadNotification('mcpServer/startupStatus/updated', (params) => {
-      const failure = mcpServerFailure(params);
-      if (failure) this.notice(this.mapper.mcpFailureEvents(failure));
+      const update = mcpServerStatus(params);
+      if (update) this.notice(this.mapper.mcpStatusEvents(update));
     });
     this.onThreadNotification('turn/started', (params) => {
       const turn = turnOf(params, this.usage);

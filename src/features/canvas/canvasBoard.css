@@ -1,0 +1,490 @@
+/* The board's chrome: frames drawn as sheets with their labels, selection and
+   states. It is imported by the lazy Canvas surface, so it loads with the board
+   rather than on every app start, in Chat as in Design; the tools that float
+   on the board have their own sheet, canvasBoardTools.css.
+
+   The world layer sets --board-scale. Chrome drawn inside it divides by that,
+   so a frame's edge, label, handles and badges keep their screen size at any
+   zoom while the design itself scales. */
+
+/* ── Frames ─────────────────────────────────────────────────────────────── */
+
+.canvas-frame {
+  /* Not --divider: dark themes blend that into the board until it reads
+     1.04:1, which loses the sheet's edge against the board it sits on. */
+  --canvas-sheet-edge: color-mix(in srgb, var(--text) 9%, transparent);
+  --canvas-chrome-font: var(--ui-font-family, system-ui, sans-serif);
+}
+
+/* A frame is a sheet: the design's viewport on a raised surface with a soft
+   shadow and a hairline edge, which is what separates a dark design from a
+   dark board. */
+.canvas-sheet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: calc(4px / var(--board-scale));
+  background: var(--raised);
+  box-shadow:
+    0 0 0 calc(1px / var(--board-scale)) var(--canvas-sheet-edge),
+    var(--shadow-sm);
+  transition: box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.canvas-frame:hover > .canvas-sheet {
+  box-shadow:
+    0 0 0 calc(1px / var(--board-scale)) color-mix(in srgb, var(--selection) 55%, transparent),
+    var(--shadow-sm);
+}
+
+.canvas-frame[data-selected] > .canvas-sheet {
+  box-shadow:
+    0 0 0 calc(1.5px / var(--board-scale)) var(--selection),
+    var(--shadow-sm);
+}
+
+/* Anything drawn at screen size inside a frame: labels, notes, handles. */
+.canvas-chrome {
+  transform: scale(calc(1 / var(--board-scale)));
+  font-family: var(--canvas-chrome-font);
+}
+
+/* The name above the sheet, which is also the frame's drag handle and tab stop.
+   Plain text on the board, its first letter on the sheet's left edge: the
+   inset that gives the focus line room is taken back by the margin. */
+.canvas-frame-label {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 4px;
+  transform-origin: 0 100%;
+  outline: none;
+  touch-action: none;
+}
+
+.canvas-frame-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: -4px;
+  padding: 1px 4px;
+  border-radius: 5px;
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--text-muted);
+  transition:
+    color 120ms,
+    box-shadow 120ms;
+}
+
+.canvas-frame:hover .canvas-frame-name {
+  color: var(--text);
+}
+
+.canvas-frame[data-selected] .canvas-frame-name {
+  color: var(--selection-label);
+}
+
+/* The keyboard's place on the board: the selection line around the name, which
+   holds 3:1 against every board, where a tint read as nothing on dark ones. */
+.canvas-frame-label:focus-visible .canvas-frame-name {
+  box-shadow: 0 0 0 1.5px var(--selection);
+}
+
+.canvas-frame-note {
+  flex-shrink: 0;
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--selection-label);
+}
+
+/* The selected frame's toolbar, above its label row, starting where the label
+   does, or ending where the frame does when the board would cut it off. The
+   wrapper is what scales, so the gap under the bar is in screen pixels. */
+.canvas-frame-tools {
+  position: absolute;
+  bottom: calc(100% + 32px / var(--board-scale));
+  left: 0;
+  padding-bottom: 6px;
+  transform-origin: 0 100%;
+}
+
+.canvas-frame-tools[data-align='end'] {
+  right: 0;
+  left: auto;
+  transform-origin: 100% 100%;
+}
+
+.canvas-frame-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
+  transform-origin: 0 100%;
+}
+
+.canvas-frame-tools[data-align='end'] .canvas-frame-toolbar {
+  transform-origin: 100% 100%;
+}
+
+.canvas-frame-tool {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--text-secondary);
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.canvas-frame-tool:hover,
+.canvas-frame-tool:focus-visible,
+.canvas-frame-tool[aria-expanded='true'] {
+  outline: none;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.canvas-frame-tool[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--selection) 14%, transparent);
+  color: var(--selection);
+}
+
+.canvas-frame-tool-text {
+  width: auto;
+  padding: 0 10px;
+}
+
+/* The version on show, as a tinted chip that opens the list of versions. */
+.canvas-frame-version {
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+  background: var(--success-soft);
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-frame-version:hover,
+.canvas-frame-version:focus-visible,
+.canvas-frame-version[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.canvas-frame-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+/* The name while it is renamed: a raised field where the plain name stood. */
+.canvas-frame-name-field {
+  width: 100%;
+  outline: none;
+  background: var(--raised);
+  color: var(--text);
+  box-shadow:
+    0 0 0 1.5px var(--selection),
+    var(--shadow-sm);
+}
+
+/* The selected frame's size, under its bottom edge. The wrapper scales about
+   the frame's centre line, and the badge centres itself on it. */
+.canvas-frame-size {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.canvas-frame-size > span {
+  display: block;
+  margin-top: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--selection);
+  color: var(--on-selection);
+  font: 500 11px / 16px var(--canvas-chrome-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* Resize: a square at the corner, and the two edges as invisible strips. */
+.canvas-frame-handle {
+  position: absolute;
+  touch-action: none;
+}
+
+.canvas-frame-handle[data-handle='southeast'] {
+  left: 100%;
+  top: 100%;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--selection);
+  border-radius: 2px;
+  background: var(--raised);
+  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
+  cursor: nwse-resize;
+}
+
+.canvas-frame-handle[data-handle='east'] {
+  top: 0;
+  left: 100%;
+  width: calc(10px / var(--board-scale));
+  height: 100%;
+  margin-left: calc(-5px / var(--board-scale));
+  cursor: ew-resize;
+}
+
+.canvas-frame-handle[data-handle='south'] {
+  left: 0;
+  top: 100%;
+  width: 100%;
+  height: calc(10px / var(--board-scale));
+  margin-top: calc(-5px / var(--board-scale));
+  cursor: ns-resize;
+}
+
+/* What a sheet says when it has no live preview: centred, at screen size. It
+   sits above the Select overlay yet lets presses through to it, so only its
+   own action takes a click. */
+.canvas-sheet-state {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.canvas-sheet-message {
+  display: flex;
+  /* Screen pixels, so never wider than the sheet it is centred on. */
+  max-width: min(280px, calc(100% * var(--board-scale)));
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 16px;
+  text-align: center;
+  transform-origin: 50% 50%;
+}
+
+/* The state's mark, on a soft tile above its title. */
+.canvas-sheet-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-muted);
+}
+
+.canvas-sheet-icon[data-tone='danger'] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.canvas-sheet-title {
+  font: 500 13px / 20px var(--canvas-chrome-font);
+  color: var(--text);
+}
+
+.canvas-sheet-detail {
+  font: 400 12px / 18px var(--canvas-chrome-font);
+  color: var(--text-muted);
+}
+
+.canvas-sheet-state[data-compact] .canvas-sheet-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* No room for words: the label above names the frame, and a failure keeps its mark. */
+.canvas-sheet-state[data-tiny] .canvas-sheet-message > :not([data-tone='danger']) {
+  display: none;
+}
+
+.canvas-sheet-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.canvas-sheet-detail strong {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.canvas-sheet-action {
+  pointer-events: auto;
+  margin-top: 10px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font: 500 12px / 18px var(--canvas-chrome-font);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  transition: background 120ms;
+}
+
+.canvas-sheet-action:hover,
+.canvas-sheet-action:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+/* A preview's notice across the sheet's bottom edge: full width, screen-size
+   type, and transparent to the pointer so the design under it still works. */
+.canvas-sheet-banner {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  width: calc(100% * var(--board-scale));
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--raised) 94%, transparent);
+  box-shadow: 0 -1px 0 var(--canvas-sheet-edge);
+  font-family: var(--canvas-chrome-font);
+  text-align: left;
+  transform: scale(calc(1 / var(--board-scale)));
+  transform-origin: 0 100%;
+  pointer-events: none;
+}
+
+/* A newer revision's stage, in the sheet's corner over the design still shown. */
+.canvas-sheet-badge {
+  position: absolute;
+  top: calc(8px / var(--board-scale));
+  right: calc(8px / var(--board-scale));
+  z-index: 1;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
+  transform-origin: 100% 0;
+  pointer-events: none;
+}
+
+/* ── Annotations ────────────────────────────────────────────────────────── */
+
+/* One SVG at the world layer's origin, drawing past its 1px box. It lets the
+   pointer through; only the marks Select can take hold of answer it. */
+.canvas-annotations {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+/* The keyboard's place among the marks: a soft halo in the selection blue. */
+.canvas-annotations [data-annotation] {
+  outline: none;
+}
+
+.canvas-annotations [data-annotation]:focus-visible {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--selection) 60%, transparent));
+}
+
+.canvas-annotation-text {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--canvas-chrome-font, var(--ui-font-family, system-ui, sans-serif));
+  line-height: 1.3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A note is a sheet of its own: its colour washed into the board, lifted
+   off it the way a frame is, with body text inside. */
+.canvas-annotation-text[data-kind='note'] {
+  padding: 0.7em;
+  border-radius: calc(4px / var(--board-scale));
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+}
+
+.canvas-annotation-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  caret-color: var(--selection);
+}
+
+.canvas-annotation-outline {
+  fill: none;
+  stroke: var(--selection);
+  stroke-width: 1.5px;
+  pointer-events: none;
+}
+
+.canvas-annotation-handle {
+  fill: var(--raised);
+  stroke: var(--selection);
+  stroke-width: 1.5px;
+  pointer-events: all;
+}
+
+.canvas-annotation-glyph {
+  fill: var(--raised);
+}
+
+/* The rubber band, in screen space above the world layer. */
+.canvas-band {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+  border: 1px solid var(--selection);
+  background: color-mix(in srgb, var(--selection) 8%, transparent);
+}
+
+/* The element Edit has picked, outlined over the guest that draws it. */
+.canvas-element-outline {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
+  background: color-mix(in srgb, var(--selection) 6%, transparent);
+}
+
+/* ── Pane ───────────────────────────────────────────────────────────────── */
+
+/* The element panel docks inside the board's column, so the side pane's corner
+   controls step left of it instead of covering its header. */
+.canvas-pane-column:has(.canvas-element-panel) > .canvas-pane-corner {
+  right: calc(theme('width.80') + theme('spacing.4'));
+}

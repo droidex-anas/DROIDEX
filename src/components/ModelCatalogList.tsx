@@ -8,7 +8,12 @@ import {
   providerOf,
   shortModelName,
 } from './ModelIcon';
-import { ModelListStatus, SelectionHighlight, useModelListVirtualizer } from './modelListParts';
+import {
+  MODEL_LIST_HEIGHT_PX,
+  ModelListStatus,
+  SelectionHighlight,
+  useModelListVirtualizer,
+} from './modelListParts';
 
 /** The catalog entry Droid CLI falls back to when no model is chosen. */
 export function defaultModelOf(models: ModelInfo[]) {
@@ -96,7 +101,11 @@ function ModelCatalogList({
   const rowProps = { pick, provider, disabled, reasoningLocked, showReasoning };
 
   return (
-    <div ref={scrollRef} className="mt-2 max-h-52 min-h-0 overflow-y-auto -mx-1 px-1">
+    <div
+      ref={scrollRef}
+      className="-mx-1 min-h-0 overflow-y-auto overscroll-contain px-1"
+      style={{ height: MODEL_LIST_HEIGHT_PX }}
+    >
       <div
         role="listbox"
         aria-label="Models"
@@ -155,7 +164,10 @@ const ModelRow = memo(function ModelRow({
   // composer badge and the context panel already drop the pill for it.
   const offersReasoning = showReasoning && offersReasoningEffort(model);
   const efforts = effortsFor(model, reasoning);
-  const shown = selected ? reasoning : (model.defaultReasoningEffort ?? efforts.at(-1));
+  // A chat with no effort of its own runs at its model's default.
+  const shown = selected
+    ? (reasoning ?? model.defaultReasoningEffort)
+    : (model.defaultReasoningEffort ?? efforts.at(-1));
   const current = shown === undefined ? -1 : efforts.indexOf(shown);
   const canStep = efforts.length > 1 && !reasoningLocked;
   // The one level with a state of its own: the active row's dots and word go
@@ -202,7 +214,7 @@ const ModelRow = memo(function ModelRow({
         if (!disabled) pick(id);
       }}
       title={label}
-      className={`relative flex items-center gap-2.5 h-10 px-2.5 rounded-md select-none ${
+      className={`relative flex items-center gap-2.5 h-10 px-2 rounded-md select-none ${
         disabled
           ? 'cursor-not-allowed opacity-50'
           : selected

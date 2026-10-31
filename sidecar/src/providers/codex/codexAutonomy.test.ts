@@ -662,7 +662,7 @@ test('closing a Codex voice session proceeds when its stop misses the deadline',
     liveSession: () => session,
     emit: (event) => emitted.push(event),
     appendTranscript: () => undefined,
-    ensureRunning: async () => undefined,
+    ensureRunning: async () => session,
     liveChanged: () => undefined,
   });
   try {

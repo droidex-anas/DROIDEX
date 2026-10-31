@@ -3,6 +3,7 @@ export type UtilityTool =
   | 'terminal'
   | 'browser'
   | 'files'
+  | 'canvas'
   | 'agents'
   | 'threads'
   | 'side';
@@ -18,7 +19,16 @@ export interface UtilityTab {
   agentId?: string;
   // The threads pane: the thread it is showing, absent while it shows the list.
   threadId?: string;
+  // A named Canvas Open views this canvas without changing the chat attachment.
+  canvasId?: string | null;
+  // The frame an Open asked it to focus; null clears an earlier request.
+  frameId?: string | null;
 }
+
+// The ids that point a singleton pane at one thing. Opening the tool again with
+// a different one re-points the pane that is already open.
+const TARGET_KEYS = ['agentId', 'threadId', 'canvasId', 'frameId'] as const;
+type TargetKey = (typeof TARGET_KEYS)[number];
 
 export interface UtilityPanelState {
   open: boolean;
@@ -36,6 +46,7 @@ const SINGLETON_TOOLS = new Set<UtilityTool>([
   'review',
   'browser',
   'files',
+  'canvas',
   'agents',
   'threads',
   'side',
@@ -43,7 +54,7 @@ const SINGLETON_TOOLS = new Set<UtilityTool>([
 
 // The tools whose pane can take the whole content row.
 export function isExpandableTool(tool: UtilityTool | undefined): boolean {
-  return tool === 'browser' || tool === 'agents' || tool === 'side';
+  return tool === 'browser' || tool === 'canvas' || tool === 'agents' || tool === 'side';
 }
 
 export function utilityPanelForSession(
@@ -58,19 +69,19 @@ export function openUtilityTool(
   panel: UtilityPanelState | undefined,
   tool: UtilityTool,
   createId: () => string,
-  details: Partial<
-    Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'agentId' | 'threadId'>
-  > = {},
+  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | TargetKey>> = {},
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
   const existing = SINGLETON_TOOLS.has(tool)
     ? current.tabs.find((tab) => tab.tool === tool)
     : undefined;
   if (existing) {
-    // Opening another agent or thread points the one pane at it.
-    const retarget =
-      (details.agentId !== undefined && details.agentId !== existing.agentId) ||
-      (details.threadId !== undefined && details.threadId !== existing.threadId);
+    const target = Object.fromEntries(
+      TARGET_KEYS.filter((key) => details[key] !== undefined).map((key) => [key, details[key]]),
+    );
+    const retarget = TARGET_KEYS.some(
+      (key) => details[key] !== undefined && details[key] !== existing[key],
+    );
     if (!retarget && current.open && current.activeTabId === existing.id) return current;
     return {
       ...current,
@@ -78,15 +89,7 @@ export function openUtilityTool(
       activeTabId: existing.id,
       ...(retarget
         ? {
-            tabs: current.tabs.map((tab) =>
-              tab.id === existing.id
-                ? {
-                    ...tab,
-                    ...(details.agentId === undefined ? {} : { agentId: details.agentId }),
-                    ...(details.threadId === undefined ? {} : { threadId: details.threadId }),
-                  }
-                : tab,
-            ),
+            tabs: current.tabs.map((tab) => (tab.id === existing.id ? { ...tab, ...target } : tab)),
           }
         : {}),
     };
@@ -236,7 +239,13 @@ export function persistUtilityPanels(
 ): Record<string, UtilityPanelState> {
   return Object.fromEntries(
     Object.entries(panels).map(([appSessionId, panel]) => {
-      const tabs = panel.tabs.filter((tab) => isRestoredTool(tab.tool));
+      const tabs = panel.tabs
+        .filter((tab) => isRestoredTool(tab.tool))
+        .map((tab) => {
+          const saved: UtilityTab = { id: tab.id, tool: tab.tool, label: tab.label };
+          if (tab.filePath !== undefined) saved.filePath = tab.filePath;
+          return saved;
+        });
       const activeTabId = tabs.some((tab) => tab.id === panel.activeTabId)
         ? panel.activeTabId
         : (tabs[0]?.id ?? null);
@@ -285,6 +294,7 @@ function isUtilityTool(value: unknown): value is UtilityTool {
     value === 'terminal' ||
     value === 'browser' ||
     value === 'files' ||
+    value === 'canvas' ||
     value === 'threads' ||
     value === 'side'
   );

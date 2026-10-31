@@ -13,6 +13,7 @@ import { join, relative, resolve } from 'node:path';
 import process from 'node:process';
 import { extractFile, listPackage } from '@electron/asar';
 import { parse as parseYaml } from 'yaml';
+import { probeCanvasCompiler, verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const releaseDirectory = resolve(process.argv[2] || 'release');
 const requireSignedArtifacts = process.argv.includes('--signed');
@@ -317,6 +318,7 @@ async function smokePackagedRuntime(architecture) {
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_PORT: '0',
       BRIDGE_TOKEN: bridgeToken,
+      CANVAS_ASSET_SECRET: 'release-verifier-canvas-asset-secret',
       BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -495,6 +497,7 @@ for (const architecture of architectures) {
     `${name} updater cache identity is stale`,
   );
   assert(statSync(sidecarPath).isFile(), `${name} sidecar bundle is missing`);
+  verifyCanvasRuntime(join(resourcesPath, 'sidecar', 'canvas-runtime'), name);
   assert(statSync(sparkleFrameworkPath).isDirectory(), `${name} Sparkle framework is missing`);
   assert(statSync(sparkleAddonPath).isFile(), `${name} Sparkle native bridge is missing`);
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', sparkleFrameworkPath]);
@@ -581,6 +584,10 @@ for (const architecture of architectures) {
 }
 
 for (const architecture of architectures) await smokePackagedRuntime(architecture);
+
+for (const { appPath, name } of architectures) {
+  process.stdout.write(probeCanvasCompiler(appPath, name));
+}
 
 for (const architecture of architectures) {
   const dmgPath = join(releaseDirectory, `droidex-${architecture.name}.dmg`);

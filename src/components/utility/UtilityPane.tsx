@@ -4,8 +4,7 @@ import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import type { UtilityPanelState, UtilityTab, UtilityTool } from '../../lib/utilityPanel';
 import { useStoreSelector } from '../../hooks/useStore';
-import { WINDOW_CONTROLS_LEAD_PX } from '../../lib/windowChrome';
-import { viewRowHoldsWindowControls } from '../../features/tabs/tabStrip';
+import { viewRowLeadPx } from '../../features/tabs/tabStrip';
 import { PaneResizeHandle } from './PaneResizeHandle';
 import { UtilityToolGrid, UtilityToolMenu } from './UtilityToolPicker';
 import { UTILITY_TOOL_OPTIONS, utilityToolOption } from './utilityToolOptions';
@@ -23,6 +22,7 @@ export function UtilityPane({
   onClosePane,
   renderTab,
   expanded = false,
+  header,
 }: {
   panel: UtilityPanelState;
   width: number;
@@ -36,13 +36,19 @@ export function UtilityPane({
   onClosePane: () => void;
   renderTab: (tab: UtilityTab) => ReactNode;
   expanded?: boolean;
+  /**
+   * A tool that owns the window's top row itself, in place of the tab strip:
+   * the expanded Canvas board names the canvas there (spec §4). Hiding the pane
+   * stays beside it.
+   */
+  header?: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
   // Expanded, the pane owns the view's top row, where the traffic lights and
   // the sidebar toggle may sit too.
-  const holdsWindowControls = useStoreSelector(viewRowHoldsWindowControls);
-  const leadPx = expanded && holdsWindowControls ? WINDOW_CONTROLS_LEAD_PX : undefined;
+  const rowLeadPx = useStoreSelector(viewRowLeadPx);
+  const leadPx = expanded && rowLeadPx !== null ? rowLeadPx : undefined;
   const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId) ?? null;
   const openSingletons = new Set(panel.tabs.map((tab) => tab.tool));
   const availableTools = UTILITY_TOOL_OPTIONS.map((option) => option.tool).filter(
@@ -60,6 +66,7 @@ export function UtilityPane({
     >
       {!expanded && (
         <PaneResizeHandle
+          label="Resize utility pane"
           width={width}
           min={minWidth}
           max={maxWidth}
@@ -73,66 +80,70 @@ export function UtilityPane({
         className="flex h-9 shrink-0 items-center gap-1 pl-2 pr-1.5"
         style={leadPx === undefined ? undefined : { paddingLeft: leadPx }}
       >
-        <div
-          role="tablist"
-          aria-label="Open utility tools"
-          className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
-        >
-          {panel.tabs.map((tab) => {
-            const Icon = utilityToolOption(tab.tool).icon;
-            const active = tab.id === panel.activeTabId;
-            return (
-              <div
-                key={tab.id}
-                className={`group flex h-control-sm max-w-44 shrink-0 select-none items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
-                  active
-                    ? 'bg-active text-primary'
-                    : 'text-muted hover:bg-elevated hover:text-primary'
-                }`}
-              >
-                <button
-                  role="tab"
-                  aria-selected={active}
-                  title={tab.label}
-                  onClick={() => {
-                    onActivateTab(tab.id);
-                  }}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm"
-                >
-                  <Icon className="size-icon-sm shrink-0" />
-                  <span className="truncate">{tab.label}</span>
-                </button>
-                <Tooltip label={`Close ${tab.label}`} placement="bottom">
-                  <button
-                    type="button"
-                    aria-label={`Close ${tab.label}`}
-                    className="ml-0.5 rounded-sm p-1 text-muted opacity-50 transition hover:bg-active hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onCloseTab(tab);
-                    }}
+        {header ?? (
+          <>
+            <div
+              role="tablist"
+              aria-label="Open utility tools"
+              className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+            >
+              {panel.tabs.map((tab) => {
+                const Icon = utilityToolOption(tab.tool).icon;
+                const active = tab.id === panel.activeTabId;
+                return (
+                  <div
+                    key={tab.id}
+                    className={`group flex h-control-sm max-w-44 shrink-0 select-none items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
+                      active
+                        ? 'bg-active text-primary'
+                        : 'text-muted hover:bg-elevated hover:text-primary'
+                    }`}
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Tooltip>
-              </div>
-            );
-          })}
-        </div>
+                    <button
+                      role="tab"
+                      aria-selected={active}
+                      title={tab.label}
+                      onClick={() => {
+                        onActivateTab(tab.id);
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm"
+                    >
+                      <Icon className="size-icon-sm shrink-0" />
+                      <span className="truncate">{tab.label}</span>
+                    </button>
+                    <Tooltip label={`Close ${tab.label}`} placement="bottom">
+                      <button
+                        type="button"
+                        aria-label={`Close ${tab.label}`}
+                        className="ml-0.5 rounded-sm p-1 text-muted opacity-50 transition hover:bg-active hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onCloseTab(tab);
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Tooltip>
+                  </div>
+                );
+              })}
+            </div>
 
-        <Tooltip label="Open another tool" placement="bottom">
-          <Button
-            ref={addRef}
-            variant="ghost"
-            size="sm"
-            icon={Plus}
-            aria-label="Open another tool"
-            aria-expanded={menuOpen}
-            onClick={() => {
-              setMenuOpen((open) => !open);
-            }}
-          />
-        </Tooltip>
+            <Tooltip label="Open another tool" placement="bottom">
+              <Button
+                ref={addRef}
+                variant="ghost"
+                size="sm"
+                icon={Plus}
+                aria-label="Open another tool"
+                aria-expanded={menuOpen}
+                onClick={() => {
+                  setMenuOpen((open) => !open);
+                }}
+              />
+            </Tooltip>
+          </>
+        )}
         <Tooltip label="Hide utility pane" placement="bottom">
           <Button
             variant="ghost"

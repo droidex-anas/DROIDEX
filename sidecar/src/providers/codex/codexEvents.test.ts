@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { CodexEventMapper, mcpServerFailure } from './codexEvents.js';
+import { CodexEventMapper, mcpServerStatus } from './codexEvents.js';
 import { OpenPrompts } from './codexApprovals.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import type { SteerOutcome } from '../session.js';
+import { CodexSession } from './codexSession.js';
 import { codexSession, fakeClient } from './codexTestSupport.js';
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 
 // Exactly what `codex app-server` sends for a server whose command is missing.
 const FAILED = {
@@ -16,28 +18,85 @@ const FAILED = {
     'MCP client for `broken_probe` failed to start: MCP startup failed: No such file or directory (os error 2)',
   failureReason: null,
 };
-const STARTING = { ...FAILED, status: 'starting', error: null };
 
-test('a failed MCP server is read once per server, and its startup is not', () => {
+test('Design guidance uses Codex developer instructions on creation and resume without changing user input', async () => {
+  for (const resumeId of [undefined, 'thread-1']) {
+    const opened: Record<string, unknown>[] = [];
+    let turnInput: unknown;
+    let markStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const { client, notifications } = fakeClient((method, params) => {
+      if (method === 'config/read') return { config: { developer_instructions: null } };
+      if (method === 'thread/start' || method === 'thread/resume') {
+        opened.push(params);
+        return { thread: { id: 'thread-1' }, model: 'model' };
+      }
+      if (method !== 'turn/start') return undefined;
+      turnInput = params.input;
+      markStarted();
+      return { turn: { id: 'turn-1' } };
+    });
+    const session = new CodexSession({
+      appSessionId: 'design-app',
+      client,
+      cwd: '/workspace',
+      autonomy: 'low',
+      sessionPurpose: 'design',
+      model: {},
+      interactions: {
+        requestApproval: () => Promise.reject(new Error('unused')),
+        requestQuestion: async () => ({ cancelled: true, answers: [] }),
+        isActive: () => true,
+        cancelPending: () => undefined,
+      },
+    });
+    try {
+      await session.open(resumeId);
+      assert.equal(opened[0].developerInstructions, DESIGN_SESSION_GUIDANCE);
+      assert.equal('baseInstructions' in opened[0], false);
+      await session.setModel({ modelId: 'another-model' });
+      const stream = session.stream('Create a settings frame');
+      const next = stream.next();
+      await started;
+      assert.deepEqual(turnInput, [{ type: 'text', text: 'Create a settings frame' }]);
+      notifications.get('turn/completed')?.({
+        threadId: 'thread-1',
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+      const result = await next;
+      assert.equal(result.done, false);
+      assert.deepEqual(result.value, { done: true });
+      assert.equal((await stream.next()).done, true);
+    } finally {
+      await session.close();
+    }
+  }
+});
+
+test('failed MCP servers are reported once, together, when every server has settled', () => {
   const mapper = new CodexEventMapper('app-1');
+  const update = (name: string, status: string) =>
+    mapper.mcpStatusEvents(mcpServerStatus({ ...FAILED, name, status })!);
 
-  assert.equal(mcpServerFailure(STARTING), undefined);
-  assert.deepEqual(mcpServerFailure(FAILED), { name: 'broken_probe', detail: FAILED.error });
+  assert.deepEqual(mcpServerStatus(FAILED), { name: 'broken_probe', status: 'failed' });
+  assert.deepEqual(update('figma', 'starting'), []);
+  assert.deepEqual(update('broken_probe', 'starting'), []);
+  assert.deepEqual(update('docs', 'starting'), []);
+  assert.deepEqual(update('figma', 'failed'), []);
+  assert.deepEqual(update('docs', 'ready'), []);
 
-  const rows = mapper.mcpFailureEvents(mcpServerFailure(FAILED)!);
+  const rows = update('broken_probe', 'failed');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].transcript?.kind, 'status');
   assert.equal(rows[0].transcript?.isError, undefined);
   assert.equal(rows[0].transcript?.transient, undefined);
-  assert.match(rows[0].transcript?.text ?? '', /broken_probe/);
+  assert.equal(rows[0].transcript?.text, 'Some MCP servers didn’t start: figma, broken_probe.');
 
   // The same server failing again is the same fact, not a second row.
-  assert.deepEqual(mapper.mcpFailureEvents(mcpServerFailure(FAILED)!), []);
-  assert.equal(mapper.mcpFailureEvents({ name: 'other' }).length, 1);
-  assert.equal(
-    mapper.mcpFailureEvents({ name: 'other-2' })[0].transcript?.text,
-    'MCP server "other-2" failed to start.',
-  );
+  assert.deepEqual(update('figma', 'failed'), []);
+  assert.equal(update('late', 'failed')[0].transcript?.text, 'An MCP server didn’t start: late.');
 });
 
 test('Codex function outputs retain their tool identity and screenshot without inventing a call', () => {

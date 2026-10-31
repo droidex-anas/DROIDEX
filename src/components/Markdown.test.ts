@@ -233,10 +233,10 @@ test('small JSON fences keep token highlighting and large ones stay plain', asyn
 
   const smallHtml = renderToStaticMarkup(createElement(Markdown, null, small));
   const largeHtml = renderToStaticMarkup(createElement(Markdown, null, large));
-  // Keys read by accent, string values by green.
-  assert.match(smallHtml, /--accent\)">&quot;accent&quot;/);
-  assert.match(smallHtml, /--success\)">&quot;droid&quot;/);
-  assert.doesNotMatch(largeHtml, /--success/);
+  // Keys and string values take their own code tokens.
+  assert.match(smallHtml, /--code-function\)">&quot;accent&quot;/);
+  assert.match(smallHtml, /--code-string\)">&quot;droid&quot;/);
+  assert.doesNotMatch(largeHtml, /--code-string/);
   assert.match(largeHtml, /k1199/);
 });
 
@@ -251,8 +251,8 @@ test('fences in a language the highlighter knows render as tokens', async () => 
   await import('./PrismCode');
   const html = render();
 
-  assert.match(html, /--warning\)">const</);
-  assert.match(html, /--success\)">&quot;droid&quot;/);
+  assert.match(html, /--code-keyword\)">const</);
+  assert.match(html, /--code-string\)">&quot;droid&quot;/);
   // Selecting the card copies its text: blank lines must not double.
   const codeText = /<code[^>]*>([\s\S]*?)<\/code>/.exec(html)?.[1].replace(/<[^>]+>/g, '');
   assert.equal(codeText, 'const answer = &quot;droid&quot;;\n\nexport { answer };');

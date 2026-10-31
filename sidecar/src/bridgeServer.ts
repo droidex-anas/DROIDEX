@@ -6,8 +6,11 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 import { assertValidBridgeCommand } from './bridgeCommandValidation.js';
+import { CanvasCommandError } from './canvas/canvasError.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
+import { serveCanvasSourceExport } from './canvas/canvasExport.js';
+import { serveDesignSystemExport } from './canvas/designSystemExport.js';
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeResetMessage,
@@ -21,6 +24,7 @@ import {
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
+import { serveCanvasImageImport, type CanvasImages } from './canvas/canvasImageRoute.js';
 import { serveProfileUsage } from './usage/profileRoute.js';
 
 const HOST = '127.0.0.1';
@@ -28,21 +32,34 @@ const SOFT_CLIENT_BUFFER_BYTES = 512 * 1024;
 const HARD_CLIENT_BUFFER_BYTES = 8 * 1024 * 1024;
 const CLIENT_CLOSE_DRAIN_MS = 250;
 // Commands a client may send before it is caught up and let in, by count and
-// by size.
-const MAX_EARLY_COMMANDS = 256;
+// by size. A renderer flushes at most `MAX_QUEUED_COMMANDS` (256, in
+// `src/lib/bridge.ts`) the moment its socket opens, so the count is that cap
+// plus room for the commands a reconnect sends live, such as re-watching each
+// open canvas. Keep the two coupled: no well-behaved renderer may reach it.
+const MAX_EARLY_COMMANDS = 320;
 const MAX_EARLY_BYTES = 8 * 1024 * 1024;
 
 export interface BridgeServer {
   readonly port: number;
   readonly ready: Promise<void>;
   broadcast(event: ServerEvent): void;
+  /**
+   * Notified when a renderer page's socket goes away, so an owner holding
+   * per-page state can release it. A client that connected without a page ID
+   * is never reported, because nothing could have been held for it.
+   */
+  onPageGone(listener: (pageId: string) => void): () => void;
   close(): Promise<void>;
 }
 
 export function startBridgeServer(options: {
   requestedPort: number;
   token: string;
-  onCommand: (command: ClientCommand) => Promise<void>;
+  canvasImages?: CanvasImages;
+  canvasExportToken?: string;
+  // `pageId` identifies the renderer page the command came from, when it sent
+  // one, so an owner can scope per-page state to it.
+  onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
   getProfileUsage?: () => unknown;
   onChildHistoryWatch?: (
@@ -52,9 +69,10 @@ export function startBridgeServer(options: {
   onChildHistoryDisconnect?: (owner: object) => void;
 }): BridgeServer {
   const clients = new Set<WebSocket>();
+  const pageGoneListeners = new Set<(pageId: string) => void>();
   const voiceOwners = new VoiceConnectionOwners((appSessionId) => {
     void options
-      .onCommand({ type: 'voice.stop', appSessionId })
+      .onCommand({ type: 'voice.stop', appSessionId }, null)
       .then(() => {
         broadcast({ type: 'voice.state', appSessionId, status: 'closed' });
       })
@@ -68,6 +86,9 @@ export function startBridgeServer(options: {
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
+    if (serveCanvasImageImport(req, res, options.canvasImages)) return;
+    if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
+    if (serveDesignSystemExport(req, res, options.canvasExportToken)) return;
     if (serveProfileUsage(req, res, options.token, options.getProfileUsage)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
     if (serveHealth(req, res, options.token)) return;
@@ -162,6 +183,7 @@ export function startBridgeServer(options: {
       early = null;
       clients.delete(ws);
       voiceOwners.disconnected(ws);
+      if (pageId) reportPageGone(pageId);
       options.onChildHistoryDisconnect?.(ws);
     };
     ws.on('close', disconnect);
@@ -306,12 +328,9 @@ export function startBridgeServer(options: {
         options.onChildHistoryWatch(ws, command);
       } else if (command.type === 'voice.start' || command.type === 'voice.stop')
         await runVoiceCommand(command, pageId);
-      else await options.onCommand(command);
+      else await options.onCommand(command, pageId);
     } catch (err) {
-      sendDirectWire(ws, {
-        type: 'error',
-        message: err instanceof Error ? err.message : String(err),
-      });
+      sendDirectWire(ws, { type: 'error', ...commandFailure(err) });
     }
   }
 
@@ -322,7 +341,8 @@ export function startBridgeServer(options: {
     pageId: string | null,
   ): Promise<void> {
     if (command.type === 'voice.stop') {
-      if (voiceOwners.stopped(command.appSessionId, pageId ?? '')) await options.onCommand(command);
+      if (voiceOwners.stopped(command.appSessionId, pageId ?? ''))
+        await options.onCommand(command, pageId);
       return;
     }
     if (!pageId) throw new Error('Voice requires a renderer page ID. Reload DROIDEX.');
@@ -330,7 +350,7 @@ export function startBridgeServer(options: {
     voiceOwners.startBegan(appSessionId, pageId, attempt);
     // A failed start has already been reported to its chat by the voice owner;
     // here it only means this page does not take the call.
-    const started = await options.onCommand(command).then(
+    const started = await options.onCommand(command, pageId).then(
       () => true,
       () => false,
     );
@@ -439,14 +459,38 @@ export function startBridgeServer(options: {
     return closePromise;
   }
 
+  function onPageGone(listener: (pageId: string) => void): () => void {
+    pageGoneListeners.add(listener);
+    return () => pageGoneListeners.delete(listener);
+  }
+
+  /** One listener's failure must not keep the others from cleaning up. */
+  function reportPageGone(pageId: string): void {
+    for (const listener of pageGoneListeners) {
+      try {
+        listener(pageId);
+      } catch (error) {
+        console.error('A bridge page-gone listener failed:', error);
+      }
+    }
+  }
+
   return {
     get port() {
       return boundPort;
     },
     ready,
     broadcast,
+    onPageGone,
     close,
   };
+}
+
+/** A Canvas rejection keeps its stable code (spec §8); anything else is plain. */
+function commandFailure(error: unknown): { code?: string; message: string } {
+  if (error instanceof CanvasCommandError)
+    return { code: `canvas.${error.code}`, message: error.message };
+  return { message: error instanceof Error ? error.message : String(error) };
 }
 
 function maxBufferedAmount(clients: Iterable<WebSocket>): number {

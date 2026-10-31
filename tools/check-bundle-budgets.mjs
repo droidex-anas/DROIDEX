@@ -154,6 +154,37 @@ import { join } from 'node:path';
 // 1_457_268, the steer change 1_461_815 and the side chat change 1_460_242, so
 // the two together leave ~3.2KB of headroom.
 //
+// Raised from 1_434_000 to 1_442_000 for Canvas design mode (05e). After
+// merging image imports and the source editor, the entry measures 1_441_307
+// against published canvas/integration a778be89e at 1_433_893: +7_414 bytes.
+// The switcher paints at first frame, and App's workspace branches, the store's
+// Design state and attachment obligations, and the composer's shared-layout
+// frame belong to that app frame. The Design home, canvases sidebar, board
+// header, chat bootstrap and attached-chats menu stay lazy.
+//
+// The attached-chats menu lives in the 360 px chat column's header (spec §4);
+// the app frame reads which canvas its board shows. The remaining 693 bytes
+// of entry headroom is deliberately tight: 05b-05d board work belongs in the
+// Canvas chunk. This reconciliation keeps the accepted limit unchanged.
+//
+// initialCssBytes raised from 101_500 to 103_200 for the Canvas source drawer.
+// The Canvas pane alone measures 100_978, already 522 under the old line before
+// the drawer, and the drawer's own chrome is ~1_350: the file list, the editor's
+// gutter and overlay metrics, the conflict and discard bars, and the build-issue
+// list. Trimming its one-off utilities to the shared scale recovered only 42
+// bytes, and the panel's layout is what the rest buys. The merged CSS measures
+// 102_189. The entry JS of 1_433_651 stays under its own 1_434_000 line,
+// because everything the drawer loads is in the lazy Canvas chunks
+// (CanvasSourcePanel ~10.7KB, its editor and Prism beyond that). The new
+// headroom is ~1KB, in line with past CSS raises.
+//
+// Lowered from 1_442_000 to 1_388_000 for the Canvas entry bundle diet.
+// The entry measured 1_441_899 before and 1_348_029 after moving the Sentry
+// renderer SDK behind the automatic-diagnostics preference. The local session
+// log and app context stay eager; no first-frame Chat surface moved. Canvas
+// feature modules remain outside the entry. The 39_971 bytes of headroom cover
+// the remaining Canvas slices without carrying an optional SDK at startup.
+//
 // Raised from 1_468_000 to 1_486_000 for the design-system primitives: every
 // menu, popover and tooltip now positions through @floating-ui/react (~23.5KB
 // minified for the parts used), replacing the hand-rolled popover maths. The

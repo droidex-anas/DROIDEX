@@ -25,6 +25,15 @@ type ReconnectScheduler = (callback: () => void, delayMs: number) => void;
 const UNSUPPORTED_PROTOCOL_CLOSE_CODE = 1002;
 type WireValidation = typeof bridgeWireValidation;
 
+/**
+ * How many commands this bridge holds while it is disconnected. The sidecar
+ * holds strictly more frames than this while it admits a socket
+ * (`MAX_EARLY_COMMANDS` in `sidecar/src/bridgeServer.ts`), so flushing a
+ * full queue on reconnect can never be mistaken for a flood. Keep the two
+ * coupled: raising this one requires raising that one.
+ */
+const MAX_QUEUED_COMMANDS = 256;
+
 interface TurnBaselineAdopter {
   gitAdoptTurnBaseline: (dir: string, clientRef: string, appSessionId: string) => Promise<unknown>;
 }
@@ -38,8 +47,12 @@ export class Bridge {
   private ws: BridgeSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly batchListeners = new Set<BatchListener>();
+  private readonly reconnectListeners = new Set<() => void>();
+  /** Whether a socket has ever been admitted, so the first open is not a reconnect. */
+  private admitted = false;
   private readonly runtimeReplacedListeners = new Set<RuntimeReplacedListener>();
   private queue: ClientCommand[] = [];
+  private queueFull = false;
   // Requests sent on the socket now open, before its first answer: they reach
   // the sidecar that answers this connection, whichever one that is.
   private sentRequestIds: Set<string> | null = null;
@@ -103,10 +116,18 @@ export class Bridge {
       const first = this.firstCommand();
       const pending = first ? [first, ...this.queue] : this.queue;
       this.queue = [];
+      this.queueFull = false;
       this.sentRequestIds = new Set();
       pending.forEach((command) => {
         this.sendOpen(ws, command);
       });
+      const reconnected = this.admitted;
+      this.admitted = true;
+      // A same-generation replay resume publishes no event of its own, so a
+      // subscription the sidecar held per connection can only be restored from
+      // here. Fired after the queue so a listener's commands follow the
+      // caller's own.
+      if (reconnected) for (const listener of this.reconnectListeners) listener();
     };
     ws.onmessage = (message) => {
       if (this.ws !== ws || typeof message.data !== 'string') return;
@@ -267,9 +288,31 @@ export class Bridge {
     this.firstCommand = build;
   }
 
-  send(command: ClientCommand): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.sendOpen(this.ws, command);
-    else this.queue.push(command);
+  /**
+   * Sends the command, or queues it while this bridge is offline. False means it
+   * was refused because the queue is full: nothing already queued is dropped to
+   * make room, because a Stop the user asked for outranks whatever came after
+   * it. A caller with nowhere to report that may ignore it, which is the outcome
+   * a dropped command always had, and never an error thrown out of a render.
+   */
+  send(command: ClientCommand): boolean {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.sendOpen(this.ws, command);
+      return true;
+    }
+    if (this.queue.length >= MAX_QUEUED_COMMANDS) {
+      // Once per full queue, not once per refusal: a UI that keeps trying while
+      // the runtime is down would otherwise bury everything else in the log.
+      if (!this.queueFull) {
+        this.queueFull = true;
+        console.warn(
+          `Bridge is offline and holding ${String(MAX_QUEUED_COMMANDS)} commands; refused ${command.type} and will refuse more until it reconnects.`,
+        );
+      }
+      return false;
+    }
+    this.queue.push(command);
+    return true;
   }
 
   private sendOpen(ws: BridgeSocket, command: ClientCommand): void {
@@ -282,6 +325,15 @@ export class Bridge {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
     this.ws.send(JSON.stringify(command));
     return true;
+  }
+
+  /**
+   * Notified after every reconnected socket is admitted, including a resume the
+   * sidecar answered by replaying events. Not fired for the first connection.
+   */
+  onReconnected(listener: () => void): () => void {
+    this.reconnectListeners.add(listener);
+    return () => this.reconnectListeners.delete(listener);
   }
 
   subscribe(listener: Listener): () => void {

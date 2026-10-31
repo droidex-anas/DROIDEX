@@ -10,6 +10,17 @@ const TRAILING_SPACE_PX = 8;
 // Above this share of the line, an indent would leave too little room to type,
 // so the selections take a line of their own instead.
 const MAX_LINE_SHARE = 0.55;
+// The composer's field sets the lead and trail its draft is inset by.
+const FLOATING_STYLE = {
+  color: SKILL,
+  left: 'var(--composer-lead)',
+  transition: 'left 240ms var(--ease-smooth-out)',
+};
+const ROW_STYLE = {
+  color: SKILL,
+  paddingLeft: 'var(--composer-lead)',
+  paddingRight: 'var(--composer-trail)',
+};
 
 export interface DraftSelection {
   key: string;
@@ -76,15 +87,15 @@ export function DraftSelections({
   return (
     <div
       ref={rowRef}
-      // Sharing the line means floating over it: left-4/top-3 and the 20px line
-      // box match the textarea's px-4 pt-3 and text-sm. Too wide for that, and
-      // the selections become an ordinary row above the draft.
+      // Sharing the line means floating over it: the field's lead, top-4 and the
+      // 20px line box match the draft's first line. Too wide for that, and the
+      // selections become an ordinary row above the draft.
       className={
         sharesFirstLine
-          ? 'pointer-events-none absolute left-4 top-3 z-10 flex h-5 items-center gap-2 text-sm font-medium leading-5'
-          : 'flex flex-wrap items-center gap-2 px-4 pt-3 text-sm font-medium leading-5'
+          ? 'pointer-events-none absolute top-4 z-10 flex h-5 items-center gap-2 text-sm font-medium leading-5'
+          : 'flex flex-wrap items-center gap-2 pt-4 text-sm font-medium leading-5'
       }
-      style={{ color: SKILL }}
+      style={sharesFirstLine ? FLOATING_STYLE : ROW_STYLE}
     >
       {items.map((item) => {
         const Icon = item.icon;

@@ -1,9 +1,10 @@
 // The chat area: the active tab's chat, or its tiles side by side, each with
 // its own transcript and composer. A chat or a tile dragged over a tile can
-// split it, take its place or swap with it.
+// split it, take its place or swap with it; a design opens in a tab instead.
 
 import {
   memo,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -13,6 +14,8 @@ import {
 } from 'react';
 import ChatView from '../../components/ChatView';
 import PromptInput from '../../components/PromptInput';
+import { equalNewChatHome, selectNewChatHome } from '../../components/chatViewState';
+import { NewChatStarters } from '../../components/NewChatHome';
 import { ComposerHeight } from '../../components/composer/ComposerHeight';
 import {
   shallowEqual,
@@ -21,8 +24,11 @@ import {
   type AppState,
 } from '../../hooks/useStore';
 import { useSessionHistory } from '../../hooks/useSessionHistory';
+import { isRemoteClient } from '../../lib/desktop';
 import { isEmbedded } from '../../lib/embed';
-import { activeGrid } from './tabStrip';
+import { LazyLibrarySeedChip } from '../../lib/lazySurfaces';
+import { DESIGN_PLACEHOLDER } from '../canvas/designStarters';
+import { activeGrid, activeProduct } from './tabStrip';
 import { CloseTileButton, type TileChrome } from './TileChrome';
 import { TileDivider } from './TileDivider';
 import { endPlaceDrag, usePlaceDrag } from './tileDrag';
@@ -50,6 +56,8 @@ function selectTileSource(state: AppState) {
     grid: isEmbedded() ? null : activeGrid(state.tabStrip),
     activeAppSessionId: state.activeAppSessionId,
     tabId: state.tabStrip.activeTabId,
+    // Design takes drops over its whole area; its chat never splits.
+    takesDrops: activeProduct(state) === 'chat',
   };
 }
 
@@ -141,6 +149,15 @@ const TilePane = memo(function TilePane({
   // App loads the focused chat's history; the other tiles load their own.
   useSessionHistory(focused || isEmbedded() || availability !== 'ready' ? null : appSessionId);
   const tile: TileChrome | undefined = tileId ? { id: tileId, focused, atTop, atLeft } : undefined;
+  // A new chat centres this same composer between its heading and its
+  // starting points, so the first send only has to carry it down.
+  const home = useStoreSelector(
+    (current) => selectNewChatHome(current, appSessionId, tileId),
+    equalNewChatHome,
+  );
+  const [starterPreview, setStarterPreview] = useState<string | null>(null);
+  const designHome = home?.kind === 'design';
+  const homePlaceholder = starterPreview ?? (designHome ? DESIGN_PLACEHOLDER : null);
   if (availability !== 'ready') {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -189,8 +206,29 @@ const TilePane = memo(function TilePane({
           appSessionId={appSessionId}
           rightInset={rightInset && !underBrowser}
           compact={underBrowser}
+          centered={home !== null}
+          {...(home && homePlaceholder ? { placeholder: homePlaceholder } : {})}
+          {...(designHome && home.canvasId === null
+            ? {
+                designTools: (
+                  <Suspense fallback={null}>
+                    <LazyLibrarySeedChip />
+                  </Suspense>
+                ),
+              }
+            : {})}
         />
       </ComposerHeight>
+      {home && (
+        <NewChatStarters
+          start={home}
+          // Design never shares a tab, so only a lone page can switch to it.
+          switchable={
+            tileId === null && !isEmbedded() && !isRemoteClient() && home.kind !== 'project'
+          }
+          onPreview={setStarterPreview}
+        />
+      )}
     </>
   );
 });
@@ -296,6 +334,9 @@ export function ChatTiles({
         return;
       case 'show':
         dispatch({ type: 'DROP_CHAT', tileId: target, appSessionId: result.appSessionId });
+        return;
+      case 'tab':
+        dispatch({ type: 'OPEN_TAB', page: { kind: 'chat', appSessionId: result.appSessionId } });
     }
   };
 
@@ -334,7 +375,7 @@ export function ChatTiles({
               underBrowser={underBrowser && focused}
               composerHost={focused ? composerHost : null}
             />
-            {drag && !isObscured && (
+            {drag && source.takesDrops && !isObscured && (
               <TileDropTarget
                 grid={grid}
                 drag={drag}

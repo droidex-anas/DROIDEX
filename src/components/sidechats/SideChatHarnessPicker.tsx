@@ -66,15 +66,14 @@ export function SideChatHarnessPicker({
         placement="bottom-start"
         width={320}
       >
-        <HarnessSegments
-          provider={provider}
-          statuses={statuses}
-          locked={false}
-          onSelect={(kind) => {
-            onChange({ provider: kind });
-          }}
-        />
-        <div className="px-2 pb-2 pt-2">
+        <div className="flex min-h-0 flex-col gap-1.5 p-1.5">
+          <HarnessSegments
+            provider={provider}
+            statuses={statuses}
+            onSelect={(kind) => {
+              onChange({ provider: kind });
+            }}
+          />
           <ModelCatalogList
             models={catalog}
             hasRealModels={catalog.length > 0}

@@ -12,6 +12,7 @@ const DEFAULT_RESTART_BACKOFF_MS = 250;
 const DEFAULT_MAX_RESTART_BACKOFF_MS = 5_000;
 
 function createSidecarSupervisor(options) {
+  const canvasAssetSecret = crypto.randomBytes(32).toString('hex');
   const spawnProcess = options.spawnProcess || spawn;
   const output = options.stdout || process.stdout;
   const errorOutput = options.stderr || process.stderr;
@@ -36,6 +37,7 @@ function createSidecarSupervisor(options) {
 
   let child = null;
   let bridgeInfo = null;
+  let canvasExportToken = null;
   let pendingStart = null;
   let activeRun = null;
   let lifecycle = 'stopped';
@@ -130,11 +132,14 @@ function createSidecarSupervisor(options) {
     processAlive = true;
     bridgeResponsive = false;
     const token = crypto.randomBytes(32).toString('hex');
+    canvasExportToken = crypto.randomBytes(32).toString('hex');
     const env = {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_PORT: process.env.BRIDGE_PORT || '0',
       BRIDGE_TOKEN: token,
+      CANVAS_ASSET_SECRET: canvasAssetSecret,
+      CANVAS_EXPORT_TOKEN: canvasExportToken,
       DROIDEX_USER_DATA_DIR: options.userData(),
       BRIDGE_EXIT_ON_STDIN_CLOSE: '1',
     };
@@ -145,6 +150,12 @@ function createSidecarSupervisor(options) {
     const historyDir = options.historyDir?.();
     if (historyDir) env.DROIDEX_HISTORY_DIR = historyDir;
     else delete env.DROIDEX_HISTORY_DIR;
+    // The design compiler resolves esbuild, Tailwind, PostCSS and React from
+    // the runtime a packaged app owns. An unpackaged run has none, and an
+    // ambient value must not point a checkout at someone else's tree.
+    const canvasRuntimeDir = options.canvasRuntimeDir?.();
+    if (canvasRuntimeDir) env.DROIDEX_CANVAS_RUNTIME_DIR = canvasRuntimeDir;
+    else delete env.DROIDEX_CANVAS_RUNTIME_DIR;
     // The 'ipc' channel is main's private line to this run of the sidecar.
     const nextChild = spawnProcess(process.execPath, [options.entryPath()], {
       cwd: options.cwd(),
@@ -372,7 +383,15 @@ function createSidecarSupervisor(options) {
     });
   }
 
-  return { start, getBridgeInfo, stop, snapshot, subscribe };
+  return {
+    start,
+    getBridgeInfo,
+    canvasAssetSecret: () => canvasAssetSecret,
+    canvasExportToken: () => canvasExportToken,
+    stop,
+    snapshot,
+    subscribe,
+  };
 }
 
 async function defaultRequestHealth({ port, token, timeoutMs }) {

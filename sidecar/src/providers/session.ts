@@ -10,6 +10,8 @@ import type {
   ProviderUsage,
   ReasoningEffort,
   SessionInteractionMode,
+  SessionPurpose,
+  SessionSummary,
   UsageMeter,
   VoiceNarration,
 } from '../protocol.js';
@@ -24,6 +26,7 @@ export interface ProviderOpenInput {
   // A queued thread already owns its application identity before the provider opens.
   appSessionId?: string;
   cwd: string;
+  sessionPurpose?: SessionPurpose;
   interactionMode: SessionInteractionMode;
   autonomy: Autonomy;
   modelId?: string;
@@ -32,6 +35,8 @@ export interface ProviderOpenInput {
   contextWindowTokens?: ContextWindowTokens;
   mcpServers: McpServerConfig[];
   inAppMcpServers?: SdkMcpServer[];
+  /** Claude's session-local PreToolUse binds a read to this turn's Canvas lease. */
+  canvasScopeForRead?: () => string | undefined;
   interactions: ProviderInteractions;
   // Set only when the session opens on Droid.
   droidLaunch?: DroidLaunchSettings;
@@ -42,12 +47,14 @@ export interface ProviderResumeInput {
   // DROIDEX's own identity for the session, which a resumed provider session
   // does not carry and which stamps everything the session streams.
   appSessionId: string;
+  sessionPurpose?: SessionPurpose;
   // The provider's own resume handle when it differs from providerSessionId
   // (a Codex thread id); absent for providers that resume by session id.
   resumeId?: string;
   cwd?: string;
   mcpServers?: McpServerConfig[];
   inAppMcpServers?: SdkMcpServer[];
+  canvasScopeForRead?: () => string | undefined;
   // The stored launch settings, for a provider that keeps no session file of
   // its own and therefore cannot read them back. Droid reads its own.
   modelId?: string;
@@ -173,6 +180,9 @@ export interface ProviderSession {
   // The provider's own handle for reopening this conversation, when it differs
   // from providerSessionId. Only Codex, which mints its own thread ids, has one.
   readonly resumeId?: string;
+  // Set when a provider fixes its tools as a new conversation starts: whether
+  // that start declared the Canvas tools. A resumed session leaves it unset.
+  readonly canvasTools?: SessionSummary['canvasTools'];
   // The live agent process, when the provider runs one, so it can be tracked.
   readonly process?: { pid: number; isAlive(): boolean };
   // For a runtime that can end outside a turn. Never rejects; a failure carries

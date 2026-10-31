@@ -143,6 +143,18 @@ export default function Toaster() {
               <span className="mt-px flex size-icon-md shrink-0">{GLYPH[t.variant]}</span>
             )}
             <p className="min-w-0 flex-1 break-words text-body-strong text-primary">{t.message}</p>
+            {t.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  t.action?.run();
+                  dismissToast(t.id);
+                }}
+                className="-my-0.5 h-6 shrink-0 rounded-sm bg-text/[0.06] px-2 text-label text-primary transition-colors hover:bg-text/[0.11] active:scale-97"
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               type="button"
               aria-label="Dismiss"

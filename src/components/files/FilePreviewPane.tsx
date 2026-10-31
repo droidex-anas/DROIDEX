@@ -18,13 +18,12 @@ import {
   sanitizeDocxPreview,
 } from '../../lib/filePreview';
 import { Markdown } from '../Markdown';
-import { CODE_THEME } from '../codeTheme';
+import { CODE_THEME, HIGHLIGHT_CHAR_LIMIT } from '../codeTheme';
 import { Button } from '../ui/Button';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 import { pathFileName } from '../../lib/pathDisplay';
 
 const TEXT_CHAR_LIMIT = 250_000;
-const HIGHLIGHT_CHAR_LIMIT = 120_000;
 const TABLE_ROW_LIMIT = 500;
 const TABLE_COL_LIMIT = 50;
 const PDF_RENDER_SCALE = 1.4;

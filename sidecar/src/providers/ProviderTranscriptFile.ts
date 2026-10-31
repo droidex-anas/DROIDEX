@@ -43,6 +43,8 @@ type ContentBlock =
       input: unknown;
       pollsChildSessionId?: string;
       interrupted?: true;
+      canvasActivity?: TranscriptEvent['canvasActivity'];
+      canvasOccurrenceId?: string;
     }
   | {
       type: 'tool_result';
@@ -54,6 +56,7 @@ type ContentBlock =
       is_error?: boolean;
       pollsChildSessionId?: string;
       interrupted?: true;
+      canvasActivity?: TranscriptEvent['canvasActivity'];
     };
 
 interface PendingMessage {
@@ -404,6 +407,7 @@ function headLine(summary: SessionSummary): ProviderSessionStart {
     interactionMode: summary.interactionMode,
     permissionSemanticsRevision: PERMISSION_SEMANTICS_REVISION,
     ...(summary.resumeId ? { resumeId: summary.resumeId } : {}),
+    ...(summary.canvasTools ? { canvasTools: summary.canvasTools } : {}),
     ...(summary.modelId ? { modelId: summary.modelId } : {}),
     ...(summary.reasoningEffort ? { reasoningEffort: summary.reasoningEffort } : {}),
     ...(summary.fastMode !== undefined ? { fastMode: summary.fastMode } : {}),
@@ -438,6 +442,9 @@ function assistantBlock(event: TranscriptEvent): ContentBlock | null {
       input: event.toolArgs,
       ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
       ...(event.interrupted ? { interrupted: true } : {}),
+      ...(event.canvasActivity
+        ? { canvasActivity: event.canvasActivity, canvasOccurrenceId: event.id }
+        : {}),
     };
   }
   if (event.text === undefined || (!event.text && event.textUpdate?.kind !== 'snapshot'))
@@ -468,6 +475,7 @@ function toolResultBlock(event: TranscriptEvent): ContentBlock | null {
     ...(event.isError ? { is_error: true } : {}),
     ...(event.pollsChildSessionId ? { pollsChildSessionId: event.pollsChildSessionId } : {}),
     ...(event.interrupted ? { interrupted: true } : {}),
+    ...(event.canvasActivity ? { canvasActivity: event.canvasActivity } : {}),
   };
 }
 

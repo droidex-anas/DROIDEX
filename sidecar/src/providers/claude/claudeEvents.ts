@@ -14,11 +14,12 @@ import type { TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
 import { toolResultParts } from '../../toolResultImages.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
-import { ClaudeMessageContent, type ClaudeContent } from './claudeMessageContent.js';
+import { ClaudeMessageContent, toolBlock, type ClaudeContent } from './claudeMessageContent.js';
 import { claudeCatalogModelId } from './claudeModels.js';
 import { usageRefusal } from './claudeRateLimits.js';
 import type { UsageLimitError } from '../usageLimit.js';
 import type { ProviderChildSession } from '../session.js';
+import { canvasToolProvenance } from '../../canvas/canvasToolPresentation.js';
 
 let sequence = 0;
 // A distinct suffix from normalize.ts's ids so two providers can never mint the
@@ -168,13 +169,14 @@ export class ClaudeEventMapper {
     const model = message.message.model;
     if (!message.parent_tool_use_id && model && model !== '<synthetic>')
       this.observedModelId = model;
-    const { streamed, content } = this.content.assistant(message);
+    const canvasToolUseId = failedCanvasToolUseId(message);
+    const { streamed, content } = this.content.assistant(message, canvasToolUseId);
     const events =
       message.parent_tool_use_id && model && model !== '<synthetic>'
         ? this.subagents.observe(message.parent_tool_use_id, { modelId: model })
         : [];
     events.push(...this.contentEvents(content, message.parent_tool_use_id));
-    if (message.error) events.push(...this.failedRequest(message, streamed));
+    if (message.error) events.push(...this.failedRequest(message, streamed, canvasToolUseId));
     return events;
   }
 
@@ -210,12 +212,25 @@ export class ClaudeEventMapper {
 
   // The CLI answers a failed request with a message of its own. A usage
   // refusal on the main thread fails the turn instead of adding a row; any
-  // other failure is one error row, in the conversation it happened in.
+  // other failure is one error row, in the conversation it happened in. A
+  // failed Canvas call's body is that call's result, so it stays correlated.
   private failedRequest(
     message: Extract<SDKMessage, { type: 'assistant' }>,
     streamed: boolean,
+    canvasToolUseId: string | undefined,
   ): NormalizedEvent[] {
     const error = message.error ?? 'unknown';
+    if (canvasToolUseId)
+      return [
+        {
+          ...this.childOwner(message.parent_tool_use_id),
+          transcript: this.transcript('tool_result', {
+            text: messageText(message.message.content) || error,
+            isError: true,
+            toolUseId: canvasToolUseId,
+          }),
+        },
+      ];
     const text = (streamed ? '' : messageText(message.message.content)) || error;
     const mainThread = !message.parent_tool_use_id;
     const refusal =
@@ -342,8 +357,10 @@ export class ClaudeEventMapper {
     // keeps only the fields that label the call.
     const toolArgs = isSpawnToolName(name) && isRecord(input) ? slimChildSessionArgs(input) : input;
     const pollsChildSessionId = this.subagents.pollsChildSessionId(name, input);
+    const toolProvenance = canvasToolProvenance(name, id);
     return {
       ...this.childOwner(parentToolUseId),
+      ...(toolProvenance ? { toolProvenance } : {}),
       transcript: this.transcript('tool_call', {
         toolName: name,
         toolArgs,
@@ -398,6 +415,18 @@ export class ClaudeEventMapper {
 
 // Claude Code moves a chat off a model the account needs usage credits for,
 // for the rest of the session. The SDK does not type this frame.
+// A failed request that carries exactly one Canvas call is that call's failure.
+function failedCanvasToolUseId(
+  message: Extract<SDKMessage, { type: 'assistant' }>,
+): string | undefined {
+  if (!message.error || message.error === 'rate_limit') return undefined;
+  const canvasToolUseIds = message.message.content.flatMap((block) => {
+    const tool = toolBlock(block);
+    return tool && canvasToolProvenance(tool.name, tool.id) ? [tool.id] : [];
+  });
+  return canvasToolUseIds.length === 1 ? canvasToolUseIds[0] : undefined;
+}
+
 function consentFallback(
   message: Record<string, unknown>,
 ): { from: string; to: string } | undefined {

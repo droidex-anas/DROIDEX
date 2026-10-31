@@ -4,6 +4,7 @@ import { mergeChildSessionSpawn } from '../lib/childSessions';
 import { classifyEvent } from '../lib/transcript';
 import { hasTodoPayload, isChildSessionTool, isImageGenerationTool } from '../lib/tools';
 import type { TranscriptEvent } from '../types/bridge';
+import { canvasArtifactRows, type CanvasArtifactItem } from './chatFeedArtifacts';
 import type { TurnChangesItem, TurnFile } from './TurnChangesPanel';
 
 // A status line that signals compaction is in progress (not the completion
@@ -101,6 +102,7 @@ export type FeedItem =
   // `ended` once a later turn has begun: the card's work is over then.
   | { type: 'browser'; key: string; events: TranscriptEvent[]; ended: boolean }
   | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number }
+  | CanvasArtifactItem
   | TurnChangesItem;
 
 function sameFileChange(a: FileChange, b: FileChange): boolean {
@@ -184,7 +186,7 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'error' && b.type === 'error') {
     return a.event === b.event && a.attempts === b.attempts;
   }
-  // message | status | child session each carry one event.
+  // message | status | child session | canvas artifact each carry one event.
   return (a as { event: TranscriptEvent }).event === (b as { event: TranscriptEvent }).event;
 }
 
@@ -241,7 +243,8 @@ export function buildFeed(
   events: TranscriptEvent[],
   { childSessionCards = false, groupChildSessions = false }: BuildFeedOptions = {},
 ): FeedItem[] {
-  events = events.filter((e) => !isCancellationArtifact(e));
+  const artifacts = canvasArtifactRows(events.filter((e) => !isCancellationArtifact(e)));
+  events = artifacts.events;
   const items: FeedItem[] = [];
   // toolUseId → index of its spawn item, so streaming deltas collapse into one.
   const childSessionIndex = new Map<string, number>();
@@ -325,6 +328,12 @@ export function buildFeed(
   let i = 0;
   while (i < events.length) {
     const ev = events[i];
+    const card = artifacts.cards.get(ev);
+    if (card) {
+      items.push(card);
+      i++;
+      continue;
+    }
     // A result reclaimed by an earlier group (its call was split from it by a
     // child session spawn) must not also start a new group here.
     if (ev.kind === 'tool_result' && claimed.has(ev)) {
@@ -403,7 +412,7 @@ export function buildFeed(
           // fold a successful edit result into the run so consecutive edits group
           // into one card. A failed result breaks out so it can surface.
           if (t.kind === 'tool_result') {
-            if (t.isError) break;
+            if (t.isError || artifacts.cards.has(t)) break;
             i++;
             continue;
           }
@@ -506,9 +515,9 @@ export function buildFeed(
         i++;
         continue;
       }
-      // A generated image breaks the group for the same reason a spawn does:
-      // it is content with its own card, not a step in the run.
-      if (t.kind === 'tool_call' && isImageGenerationTool(t.toolName)) break;
+      // Like a spawn, an image or a Canvas artifact is content with its own card.
+      if ((t.kind === 'tool_call' && isImageGenerationTool(t.toolName)) || artifacts.cards.has(t))
+        break;
       // A child session spawn must break the group so the outer loop can render it
       // as its own card instead of folding it into the generic tools group.
       if (childSessionCards && t.kind === 'tool_call' && isChildSessionTool(t.toolName, t.toolArgs))

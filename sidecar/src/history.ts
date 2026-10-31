@@ -49,6 +49,7 @@ import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
 import { altDroidHome, DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
 import { sessionNoticesRevision } from './sessionNotices.js';
+import { canvasToolBindingsRevision } from './canvas/canvasToolBindings.js';
 
 const SUMMARY_ROWS_SQL = `
   SELECT app_sessions.*, settings.value_json AS droid_profile_json
@@ -1071,7 +1072,8 @@ function transcriptReaderFor(
     cached.sizeBytes === stat.size &&
     cached.appSessionId === appSessionId &&
     cached.role === role &&
-    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId)
+    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId) &&
+    cached.reader.canvasBindingsRevision === canvasToolBindingsRevision(appSessionId)
   ) {
     transcriptReaders.delete(path);
     transcriptReaders.set(path, cached);
@@ -1576,6 +1578,7 @@ function summarizeSessionFile(
   const cachedLaunch = launch ? { launchSettings: launch } : {};
   if (!start) return { summary: null, ...cachedLaunch };
   const classification = classifyStoredSession(start);
+  // A Droid file carries no binding, so it reads as Droid without migration.
   const provider = providerKind(start.provider) ?? DEFAULT_PROVIDER;
   // App-owned transcripts persist the prompt and provider binding before a reply.
   const isDurable = hasCompletedConversation || (provider !== DEFAULT_PROVIDER && hasPrompt);
@@ -1591,10 +1594,13 @@ function summarizeSessionFile(
       appSessionId: providerSessionId,
       providerSessionId,
       missionId: classification.missionId,
-      // A Droid file carries no binding, so it reads as Droid without migration.
       provider,
       ...(droidProfile ? { droidProfile } : {}),
       ...(start.resumeId ? { resumeId: start.resumeId } : {}),
+      // A Codex thread stored without the record started before Canvas existed.
+      ...(provider === 'codex'
+        ? { canvasTools: start.canvasTools === 'at_start' ? 'at_start' : 'none' }
+        : {}),
       sessionPurpose: classification.sessionPurpose,
       interactionMode: classification.interactionMode,
       role: classification.role,

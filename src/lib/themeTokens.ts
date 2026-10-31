@@ -72,6 +72,52 @@ const STATUS_COLORS = {
   danger: { dark: '#cf5d54', light: '#b3312a' },
 } as const;
 
+// A design board's selection reads by hue in both schemes, as a design tool's
+// does: the neutral accent is near-white or near-black, so an accent outline
+// around a frame reads as a hard box rather than "this one is selected".
+// `line` draws the outline and handles and fills the size badge, whose `text`
+// keeps AA on it; `label` is the blue a selected name is written in, AA on the
+// board and its raised chrome in every built-in preset. On dark, a blue light
+// enough for that is too light to carry white, so the two part.
+export const SELECTION_COLORS = {
+  dark: { line: '#1d6cff', label: '#7cb2ff', text: '#ffffff' },
+  light: { line: '#1a64dc', label: '#1a64dc', text: '#ffffff' },
+} as const;
+
+// The seven colours a board annotation can be drawn in, by the token names the
+// canvas stores. Muted, so a sketch never shouts over the designs it marks up,
+// yet each keeps AA for text on the board and its raised chrome in every
+// built-in preset, because a text label is drawn in it. A custom board these
+// cannot read on pulls them toward its text colour (see annotationColors).
+const ANNOTATION_STROKES = {
+  dark: {
+    ink: '#d8d4cf',
+    red: '#f49a90',
+    orange: '#e8a46c',
+    yellow: '#d8bd5c',
+    green: '#86c08a',
+    blue: '#92b6f2',
+    violet: '#c8abee',
+  },
+  light: {
+    ink: '#3a3632',
+    red: '#b4362c',
+    orange: '#a34e17',
+    yellow: '#806408',
+    green: '#367339',
+    blue: '#2f62b5',
+    violet: '#7446a8',
+  },
+} as const;
+
+// Code reads in one small, muted palette wherever it is shown: the Canvas
+// source drawer, the files preview and transcript JSON. Four hues and a grey;
+// each hue keeps AA for 12px code on the code ground and on the transcript's
+// code cards in every built-in preset.
+const SYNTAX_COLORS = {
+  dark: { keyword: '#b9a3dc', string: '#9dbf8e', number: '#d6ac78', function: '#8eb3dc' },
+  light: { keyword: '#7b4799', string: '#356842', number: '#895117', function: '#305f95' },
+} as const;
 const SOFT_FILL_ALPHA = { dark: 0.12, light: 0.08 } as const;
 const DIVIDER_ALPHA = {
   dark: { divider: 0.07, strong: 0.12 },
@@ -179,6 +225,64 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     '--diff-del-gutter': diff.delGutter,
     '--diff-hunk-bg': diff.hunkBg,
     '--diff-hunk-fg': diff.hunkFg,
+    '--selection': SELECTION_COLORS[scheme].line,
+    '--selection-label': SELECTION_COLORS[scheme].label,
+    '--on-selection': SELECTION_COLORS[scheme].text,
+    ...codeTokens(theme),
+    ...annotationTokens(theme),
+  };
+}
+
+function codeTokens(theme: { bg: string; surface: string; fg: string }): ThemeTokens {
+  return Object.fromEntries(
+    Object.entries(codeColors(theme)).map(([name, color]) => [`--code-${name}`, color]),
+  );
+}
+
+function annotationTokens(theme: { bg: string; surface: string; fg: string }): ThemeTokens {
+  return Object.fromEntries(
+    Object.entries(annotationColors(theme)).flatMap(([name, { stroke, fill }]) => [
+      [`--annotation-${name}`, stroke],
+      [`--annotation-${name}-fill`, fill],
+    ]),
+  );
+}
+
+/**
+ * Each annotation colour's stroke and the fill a note of that colour sits on:
+ * the stroke washed into the board, far enough that body text reads on it.
+ * A stroke pulls toward the theme's text until it reads on the harder of the
+ * board and its raised chrome, and a fill washes further into the board until
+ * the text reads on it. A board whose raised chrome crowds the stroke (mid-grey
+ * with light text) admits no colour that reads on both, so the pull keeps to
+ * the board, where the marks are drawn.
+ */
+export function annotationColors(theme: { bg: string; surface: string; fg: string }) {
+  const bgIsDark = isDarkCanvas(theme.bg);
+  const raised = raisedSurfaceColor(theme);
+  return Object.fromEntries(
+    Object.entries(ANNOTATION_STROKES[bgIsDark ? 'dark' : 'light']).map(([name, tuned]) => {
+      const ground =
+        contrastRatio(tuned, theme.bg) < contrastRatio(tuned, raised) ? theme.bg : raised;
+      const stroke = pullToContrast(tuned, theme.fg, ground, AA_TEXT);
+      const wash = mixHex(stroke, theme.bg, bgIsDark ? 0.78 : 0.75);
+      return [name, { stroke, fill: pullToContrast(wash, theme.bg, theme.fg, AA_TEXT) }];
+    }),
+  );
+}
+
+// The ground source sits on, a few percent off the raised drawer that holds it
+// rather than a block of its own. Comments are as quiet as AA allows on the
+// harder of that ground and the transcript's elevated code cards.
+export function codeColors(theme: { bg: string; surface: string; fg: string }) {
+  const bgIsDark = isDarkCanvas(theme.bg);
+  const bg = mixHex(raisedSurfaceColor(theme), theme.bg, bgIsDark ? 0.35 : 0.5);
+  const elevated = elevatedSurfaceColor(theme);
+  const ground = contrastRatio(theme.fg, bg) < contrastRatio(theme.fg, elevated) ? bg : elevated;
+  return {
+    bg,
+    comment: mixToContrast(theme.fg, ground, AA_TEXT),
+    ...SYNTAX_COLORS[bgIsDark ? 'dark' : 'light'],
   };
 }
 
@@ -256,7 +360,7 @@ export function elevatedSurfaceColor(theme: { bg: string; surface: string }): st
 // a grey hole in the page, so they lift to near-white and rely on the shadow's
 // ring for their edge. Dark themes already lighten upward, so they share the
 // elevated rung.
-function raisedSurfaceColor(theme: { bg: string; surface: string }): string {
+export function raisedSurfaceColor(theme: { bg: string; surface: string }): string {
   return isDarkCanvas(theme.bg)
     ? elevatedSurfaceColor(theme)
     : mixHex(theme.surface, '#ffffff', 0.6);
@@ -268,17 +372,23 @@ function raisedSurfaceColor(theme: { bg: string; surface: string }): string {
  * already reads comes back unchanged, so only the presets that need it shift.
  */
 export function readableStatusColor(hex: string, ground: string): string {
-  if (contrastRatio(hex, ground) >= AA_TEXT) return hex;
   const extreme =
     contrastRatio('#000000', ground) > contrastRatio('#ffffff', ground) ? '#000000' : '#ffffff';
+  return pullToContrast(hex, extreme, ground, AA_TEXT);
+}
+
+// Blend `hex` toward `pull` only as far as `ratio` contrast against `ground`
+// needs, so a shade that already reads comes back unchanged.
+function pullToContrast(hex: string, pull: string, ground: string, ratio: number): string {
+  if (contrastRatio(hex, ground) >= ratio) return hex;
   let fails = 0;
   let reads = 1;
   for (let i = 0; i < 12; i++) {
     const middle = (fails + reads) / 2;
-    if (contrastRatio(mixHex(hex, extreme, middle), ground) >= AA_TEXT) reads = middle;
+    if (contrastRatio(mixHex(hex, pull, middle), ground) >= ratio) reads = middle;
     else fails = middle;
   }
-  return mixHex(hex, extreme, reads);
+  return mixHex(hex, pull, reads);
 }
 
 // Blend `hex` as far toward `target` as `ratio` contrast against `target`

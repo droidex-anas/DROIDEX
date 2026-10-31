@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/index.ts",
+    "src/canvas/compilerWorker.ts",
     "src/remote/host.ts",
     "src/usage/usageWorker.ts",
     "src/testing/isolatedTestEnv.ts",
@@ -9,5 +10,16 @@
     "regression/**/*.test.ts"
   ],
   "project": ["src/**/*.ts", "regression/**/*.ts"],
-  "ignoreBinaries": ["open"]
+  "ignoreBinaries": ["open"],
+  "ignoreDependencies": [
+    "esbuild",
+    "lucide-react",
+    "postcss",
+    "postcss-value-parser",
+    "react",
+    "react-dom",
+    "react-is",
+    "recharts",
+    "tailwindcss"
+  ]
 }

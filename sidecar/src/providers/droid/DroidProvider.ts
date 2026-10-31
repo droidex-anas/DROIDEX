@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 
+import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 import type { Autonomy } from '../../protocol.js';
 import { normalizeAutonomy } from '../../values.js';
 import type { FactoryRuntime, FactorySession } from '../../DroidRuntime.js';
@@ -38,6 +39,7 @@ export class DroidProvider implements Provider {
     mcpServers,
     interactions,
     droidLaunch,
+    sessionPurpose,
     droidProfile,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Ordinary chats adopt Droid's id; queued threads bring their own. The daemon
@@ -57,6 +59,7 @@ export class DroidProvider implements Provider {
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
       autonomyLevel: autonomy,
       mcpServers,
+      ...(sessionPurpose === 'design' ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE } : {}),
       ...droidLaunch,
       droidProfile,
       ...droidInteractionHandlers(ref, interactions),
@@ -91,7 +94,15 @@ export class DroidProvider implements Provider {
 
   async resume(
     providerSessionId: string,
-    { appSessionId, interactions, cwd, mcpServers, autonomy, droidProfile }: ProviderResumeInput,
+    {
+      appSessionId,
+      interactions,
+      cwd,
+      mcpServers,
+      autonomy,
+      sessionPurpose,
+      droidProfile,
+    }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     // Droid resumes by session id, so the generic resume handle is not needed.
     let providerSession: DroidProviderSession | undefined = undefined;
@@ -104,6 +115,7 @@ export class DroidProvider implements Provider {
     const session = await this.runtime.loadSession(providerSessionId, {
       cwd,
       mcpServers,
+      ...(sessionPurpose === 'design' ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE } : {}),
       droidProfile,
       ...droidInteractionHandlers(ref, interactions),
     });

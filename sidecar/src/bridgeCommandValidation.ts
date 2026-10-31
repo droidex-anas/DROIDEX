@@ -2,6 +2,9 @@ import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
 import { providerKind } from './providers/providerKind.js';
+import { canvasError } from './canvas/canvasError.js';
+import { assertCanvasTurnContext } from './canvas/canvasTurnContext.js';
+import { sessionCanvasIntentSchema } from './canvas/schema.js';
 
 export function assertValidBridgeCommand(command: unknown): void {
   if (typeof command !== 'object' || command === null) throw new Error('Invalid bridge command.');
@@ -10,6 +13,8 @@ export function assertValidBridgeCommand(command: unknown): void {
   assertValidSteerId(command);
   assertValidInteractionResponse(command);
   assertValidChatPreferences(command);
+  if ('canvas' in command) command.canvas = parseCanvasIntent(command);
+  if ('canvasContext' in command) assertCanvasTurnContext(command.canvasContext);
   assertValidUsageRefresh(command);
   assertValidChildHistoryWatch(command);
 }
@@ -51,6 +56,15 @@ function assertValidChatPreferences(command: object): void {
     if (!settingsCommand)
       throw new Error('A context window only applies to top-level session settings.');
   }
+}
+
+function parseCanvasIntent(command: { canvas: unknown }): unknown {
+  if (!('type' in command) || command.type !== 'session.create')
+    throw canvasError('invalid_input', 'Canvas intent only applies to session creation.');
+  const intent = sessionCanvasIntentSchema.safeParse(command.canvas);
+  if (!intent.success)
+    throw canvasError('invalid_input', intent.error.issues[0]?.message ?? 'Invalid Canvas intent.');
+  return intent.data;
 }
 
 // Account reads can start a harness process, so their switches are validated here.

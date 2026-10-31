@@ -77,20 +77,18 @@ export default function useModelPicker({
 
   const childMode = childTarget !== undefined;
 
-  // A chat composer picks its harness here too: free choice on a new draft,
-  // fixed once the session exists. Mission and child pickers have no say in it.
-  const showHarness = singleAgent && !childMode;
-  const harnessLocked = state.activeSessionAppSessionId !== undefined;
+  // A new chat's composer picks its harness here too. A chat keeps the harness
+  // it was created on, so once it exists there is none to pick; Mission and
+  // child pickers have no say in it either.
+  const showHarness = singleAgent && !childMode && state.activeSessionAppSessionId === undefined;
 
   // The harness selector disables harnesses on a stale status, so refresh as it
-  // opens. A locked harness has nothing to choose, and a refresh re-probes every CLI.
-  const refreshesHarnesses = showHarness && !harnessLocked;
+  // opens; a refresh re-probes every CLI.
   useEffect(() => {
-    if (refreshesHarnesses) refreshProviders();
-  }, [refreshesHarnesses]);
+    if (showHarness) refreshProviders();
+  }, [showHarness]);
 
   const selectHarness = (provider: ProviderKind) => {
-    if (harnessLocked || provider === state.provider) return;
     dispatch({ type: 'SET_DRAFT_PROVIDER', provider });
     // The catalog swaps with the harness; a stale filter would hide it.
     setQuery('');
@@ -290,7 +288,6 @@ export default function useModelPicker({
     provider: state.provider,
     providerStatuses: state.providerStatuses,
     showHarness,
-    harnessLocked,
     selectHarness,
     childMode,
     childReady,

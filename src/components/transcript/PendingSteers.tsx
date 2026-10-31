@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useSyncExternalStore } from 'react';
 import { threadReports } from '../../features/projects/threadNotices';
-import { useStoreDispatch, useStoreSelector, type QueuedPrompt } from '../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import type { QueuedPrompt } from '../../lib/promptQueue';
 import { sendSteerNow, withdrawSteer } from '../../lib/commands';
 import {
   beginSteerWithdrawal,

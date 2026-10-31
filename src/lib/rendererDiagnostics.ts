@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/electron/renderer';
+import type * as Sentry from '@sentry/electron/renderer';
 
 interface AutomaticDiagnosticsPreference {
   enabled: boolean;
@@ -22,12 +22,20 @@ const MAX_BREADCRUMBS = 50;
 const SESSION_LOG_CAPACITY = 50;
 const ALLOWED_BREADCRUMB_CATEGORIES = new Set(['app', 'session', 'bridge', 'navigation']);
 
-let isInitialized = false;
+let sentry: Pick<typeof Sentry, 'addBreadcrumb' | 'setContext'> | null = null;
+let initialization: Promise<void> | null = null;
 let currentAppState: DiagnosticsAppState = {};
 const sessionLog: DiagnosticsBreadcrumb[] = [];
 
-export async function initializeRendererDiagnostics(): Promise<void> {
-  if (isInitialized) return;
+export function initializeRendererDiagnostics(): Promise<void> {
+  if (sentry) return Promise.resolve();
+  initialization ??= initializeAutomaticDiagnostics().finally(() => {
+    initialization = null;
+  });
+  return initialization;
+}
+
+async function initializeAutomaticDiagnostics(): Promise<void> {
   let enabled = false;
   try {
     enabled = (await getAutomaticDiagnostics()).enabled;
@@ -36,14 +44,16 @@ export async function initializeRendererDiagnostics(): Promise<void> {
   }
   if (!enabled) return;
 
-  Sentry.init({
+  // The local log is eager; only enabled automatic reports need the SDK.
+  const { init, addBreadcrumb, setContext } = await import('@sentry/electron/renderer');
+  init({
     sendDefaultPii: false,
     maxBreadcrumbs: MAX_BREADCRUMBS,
     tracesSampleRate: 0,
     beforeBreadcrumb: filterBreadcrumb,
   });
-  isInitialized = true;
-  Sentry.setContext('app', currentAppState as Record<string, unknown>);
+  sentry = { addBreadcrumb, setContext };
+  sentry.setContext('app', { ...currentAppState });
 }
 
 /**
@@ -65,21 +75,17 @@ export function addDiagnosticsBreadcrumb(
   };
   sessionLog.push(entry);
   if (sessionLog.length > SESSION_LOG_CAPACITY) sessionLog.shift();
-  if (isInitialized) {
-    Sentry.addBreadcrumb({
-      category,
-      message,
-      level,
-      type: 'default',
-    });
-  }
+  sentry?.addBreadcrumb({
+    category,
+    message,
+    level,
+    type: 'default',
+  });
 }
 
 export function setDiagnosticsContext(state: DiagnosticsAppState): void {
   currentAppState = { ...state };
-  if (isInitialized) {
-    Sentry.setContext('app', state as Record<string, unknown>);
-  }
+  sentry?.setContext('app', { ...currentAppState });
 }
 
 export function getSessionLog(): DiagnosticsBreadcrumb[] {
@@ -94,7 +100,8 @@ export function getCurrentAppState(): DiagnosticsAppState {
 export function __resetDiagnosticsForTest(): void {
   sessionLog.length = 0;
   currentAppState = {};
-  isInitialized = false;
+  sentry = null;
+  initialization = null;
 }
 
 export async function getAutomaticDiagnostics(): Promise<AutomaticDiagnosticsPreference> {

@@ -16,9 +16,10 @@ export interface ProviderApprovalRequest {
   signature?: string;
   // A cancelled callback must not create a card after an async policy check.
   signal?: AbortSignal;
-  // The MCP server and tool, when the request is for one. The policies for
-  // DROIDEX's own servers approve their tools by the chat's autonomy.
-  mcpTool?: { serverName: string; toolName: string };
+  // The MCP server and tool of every tool the request covers, when each is one.
+  // The policies for DROIDEX's own servers approve their tools by the chat's
+  // autonomy, and a request only when they approve every tool in it.
+  mcpTools?: { serverName: string; toolName: string }[];
   /** Provider-verified action the owner could perform without a permission prompt. */
   canApproveFor?: (actor: SessionSummary) => boolean;
 }

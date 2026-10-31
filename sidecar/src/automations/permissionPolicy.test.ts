@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AUTOMATION_MCP_SERVER_NAME,
-  mcpPermissionTarget,
+  mcpPermissionTargets,
   shouldAttachAutomationMcp,
   shouldAutoApproveAutomationTool,
 } from './permissionPolicy.js';
@@ -59,5 +59,19 @@ test('conflicting explicit and namespaced MCP server names are rejected', () => 
     ],
   };
 
-  assert.equal(mcpPermissionTarget(params), null);
+  assert.deepEqual(mcpPermissionTargets(params), []);
+});
+
+test('a permission bundle names every MCP tool, or none when it carries any other tool', () => {
+  const canvasWrite = {
+    details: { type: 'mcp_tool', serverName: 'droidex-canvas', toolName: 'canvas_write' },
+  };
+  const canvasRead = { details: { type: 'mcp_tool', toolName: 'droidex-canvas___canvas_read' } };
+  const command = { details: { type: 'exec', command: 'pwd' } };
+
+  assert.deepEqual(mcpPermissionTargets({ toolUses: [canvasWrite, canvasRead] }), [
+    { serverName: 'droidex-canvas', toolName: 'canvas_write' },
+    { serverName: 'droidex-canvas', toolName: 'canvas_read' },
+  ]);
+  assert.deepEqual(mcpPermissionTargets({ toolUses: [canvasWrite, command] }), []);
 });

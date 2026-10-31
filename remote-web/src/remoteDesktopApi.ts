@@ -142,6 +142,42 @@ export function createRemoteDesktopApi(
     onNativeBrowserAgentPress: noSubscription,
     onNativeBrowserFrame: noSubscription,
     onNativeBrowserClosed: noSubscription,
+
+    // Canvas previews are guests of the laptop's window, and its images and
+    // exports go through the laptop's own file choosers.
+    canvasPreviewUrl: null,
+    canvasPreviewBind: () => Promise.resolve(false),
+    canvasPreviewTerminate: () => Promise.resolve(false),
+    canvasPreviewCapture: () =>
+      Promise.resolve({
+        ok: false,
+        error: {
+          code: 'capture_unavailable',
+          message: 'Capturing a design is only available on your laptop.',
+        },
+      }),
+    canvasPreviewCancelCapture: () => Promise.resolve(false),
+    canvasThumbnailRead: () => Promise.resolve(null),
+    canvasImageSave: () =>
+      Promise.resolve({
+        ok: false,
+        code: 'capture_unavailable',
+        message: 'Saving a design image is only available on your laptop.',
+      }),
+    canvasPickImage: laptopOnly('Adding Canvas images'),
+    canvasDropImage: laptopOnly('Adding Canvas images'),
+    canvasExportSource: () =>
+      Promise.resolve({
+        ok: false,
+        code: 'storage_failed',
+        message: 'Exporting Canvas source is only available on your laptop.',
+      }),
+    canvasExportDesignSystem: () =>
+      Promise.resolve({
+        ok: false,
+        code: 'storage_failed',
+        message: 'Exporting a design system is only available on your laptop.',
+      }),
   };
   // The forwarded methods return whatever the laptop's handlers return, which
   // is exactly what the desktop window receives over IPC.

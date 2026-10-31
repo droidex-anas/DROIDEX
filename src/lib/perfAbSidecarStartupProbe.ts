@@ -88,12 +88,14 @@ async function measureOnce(
   bridgeProtocol: number | undefined,
 ): Promise<{ readyMs: number; firstSessionsListMs: number }> {
   const token = randomBytes(32).toString('hex');
+  const canvasAssetSecret = randomBytes(32).toString('hex');
   const spawnAt = performance.now();
   const child = spawn(process.execPath, [entry], {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       BRIDGE_TOKEN: token,
+      CANVAS_ASSET_SECRET: canvasAssetSecret,
       BRIDGE_PORT: '0',
       DROIDEX_USER_DATA_DIR: home,
       HOME: home,

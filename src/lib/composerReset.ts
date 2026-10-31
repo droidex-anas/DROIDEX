@@ -1,7 +1,7 @@
 // The composer consumes a seed once by comparing ids, so two seeds created in
 // the same millisecond must still differ: the id is a monotonic sequence rather
 // than a timestamp.
-import type { QueuedPrompt } from '../hooks/useStore';
+import type { QueuedPrompt } from './promptQueue';
 
 let seedSequence = 0;
 

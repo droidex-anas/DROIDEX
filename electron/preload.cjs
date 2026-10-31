@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { CANVAS_PREVIEW_URL } = require('./canvasPreview.cjs');
 const { createDesktopApi } = require('./desktopApi.cjs');
 
 function on(channel, handler) {
@@ -112,6 +113,21 @@ function subscribeTerminalPort(id) {
   return channel;
 }
 
+function canvasImageReply(reply) {
+  if (reply.ok) return reply.asset;
+  throw { code: reply.error.code, message: reply.error.message };
+}
+
+function canvasDroppedFilePath(file) {
+  try {
+    const filePath = webUtils.getPathForFile(file);
+    if (filePath) return filePath;
+  } catch {
+    // A synthetic or invalid File has no selected local path.
+  }
+  throw { code: 'invalid_input', message: 'Drop an image from your computer.' };
+}
+
 contextBridge.exposeInMainWorld('droidex', {
   ...createDesktopApi({ invoke: (channel, payload) => ipcRenderer.invoke(channel, payload), on }),
   // Absolute path behind a dropped/pasted File ('' for clipboard snapshots).
@@ -123,5 +139,30 @@ contextBridge.exposeInMainWorld('droidex', {
       return '';
     }
   },
+  canvasPickImage: async (canvasId) => {
+    const reply = await ipcRenderer.invoke('canvas-pick-image', { canvasId });
+    return reply === null ? null : canvasImageReply(reply);
+  },
+  canvasDropImage: async (canvasId, file) => {
+    const filePath = canvasDroppedFilePath(file);
+    return canvasImageReply(await ipcRenderer.invoke('canvas-drop-image', { canvasId, filePath }));
+  },
+  // The owned source every Canvas preview guest loads, and the only way the
+  // board can ask main to end one. Main owns the registry of guests it
+  // attached, so an ID it does not recognise is refused.
+  canvasPreviewUrl: CANVAS_PREVIEW_URL,
+  canvasPreviewBind: (guestId, canvasId) =>
+    ipcRenderer.invoke('canvas-preview-bind', { guestId, canvasId }),
+  canvasPreviewTerminate: (guestId) => ipcRenderer.invoke('canvas-preview-terminate', { guestId }),
+  canvasPreviewCapture: (request) => ipcRenderer.invoke('canvas-preview-capture', request),
+  canvasPreviewCancelCapture: (requestId) =>
+    ipcRenderer.invoke('canvas-preview-cancel-capture', { requestId }),
+  canvasThumbnailRead: (canvasId, designId, revisionId) =>
+    ipcRenderer.invoke('canvas-thumbnail-read', { canvasId, designId, revisionId }),
+  canvasImageSave: (canvasId, designId, revisionId, suggestedName) =>
+    ipcRenderer.invoke('canvas-image-save', { canvasId, designId, revisionId, suggestedName }),
+  canvasExportSource: (canvasId, ref) =>
+    ipcRenderer.invoke('canvas-export-source', { canvasId, ref }),
+  canvasExportDesignSystem: (ref) => ipcRenderer.invoke('canvas-export-design-system', { ref }),
   terminalSubscribe: (id) => subscribeTerminalPort(id),
 });

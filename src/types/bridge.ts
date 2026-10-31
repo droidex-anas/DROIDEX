@@ -1,3 +1,4 @@
+import type { CanvasCommand, CanvasEvent, CanvasTurnContext } from '../features/canvas/protocol';
 import type { ProjectCommand, ProjectEvent } from '../features/projects/protocol';
 // Bridge protocol shared between the Node sidecar and the React frontend.
 // The frontend keeps a mirror copy at src/types/bridge.ts — keep them in sync.
@@ -202,6 +203,9 @@ export interface SessionSummary {
   // Provider-owned handle for resuming this conversation, when the provider
   // does not let us pin its session id (Codex threads). Absent for Droid.
   resumeId?: string;
+  // Absent means the agent receives the Canvas tools each time it opens. 'none'
+  // is a Codex thread started without them, which no resume can add.
+  canvasTools?: 'at_start' | 'none';
   sessionPurpose: SessionPurpose;
   interactionMode: SessionInteractionMode;
   role: 'primary' | 'user';
@@ -284,6 +288,20 @@ export interface TranscriptEvent {
   toolName?: string;
   toolArgs?: unknown;
   toolUseId?: string;
+  // Safe Canvas tool snapshot. Tool-call merges prefer the latest activity,
+  // but missing or untargeted snapshots cannot replace a targeted activity.
+  canvasActivity?: {
+    toolUseId: string;
+    action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme';
+    designIds: string[];
+    state: 'running' | 'completed' | 'failed';
+    message: string;
+    // The canvas a create or write changed, as its reply named it.
+    canvasId?: string;
+    title?: string;
+    // This create gave an unattached chat its canvas: the chat's first artifact.
+    firstArtifact?: true;
+  };
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already
   // tracking: polling that agent for output, or stopping it. The same tool
@@ -306,6 +324,8 @@ export interface TranscriptEvent {
   browserRefs?: BrowserTranscriptReference[];
   // Side-chat answers the user attached to this prompt.
   sideChatReplies?: string[];
+  // Names of the canvas frames the user pinned to this prompt.
+  canvasFrames?: string[];
   steered?: boolean;
   // Links the delivered user row to its pending steer, including ordinary-turn fallback.
   steerId?: string;
@@ -706,6 +726,7 @@ export type PermissionOutcome =
 
 // ── Frontend -> Sidecar ──────────────────────────────────────────────
 export type ClientCommand =
+  | CanvasCommand
   | ProjectCommand
   | AutomationBridgeCommand
   | McpClientCommand
@@ -744,11 +765,15 @@ export type ClientCommand =
       type: 'session.create';
       droidProfile?: 'alt';
       clientRef: string;
+      // Establishes Design purpose; commit attachment before publication and the first turn.
+      canvas?: { canvasId: string | null; name?: string; mutationId: string };
       cwd?: string;
       title: string;
       goal: string;
       // Catalog rows staged with the first prompt, as on a send.
       mentions?: ProviderMention[];
+      // What the first prompt pinned, as `session.send` carries it.
+      canvasContext?: CanvasTurnContext;
       sessionPurpose: SessionPurpose;
       // Omitted means the default provider.
       provider?: ProviderKind;
@@ -778,6 +803,10 @@ export type ClientCommand =
       // the renderer chose for its own row. Absent, a send while a turn runs
       // waits for the turn to end.
       steerId?: string;
+      // What the Canvas pane had selected when this prompt was composed. It
+      // travels beside the text and is never concatenated into it (spec §9);
+      // the turn that runs this prompt mints its lease from it.
+      canvasContext?: CanvasTurnContext;
     }
   // Stops the running turn so a steer the model has not taken in yet goes first.
   | { type: 'session.sendNow'; appSessionId: string; steerId: string }
@@ -1015,6 +1044,7 @@ interface ChildErrorEvent {
 export type VoiceNarration = 'brief' | 'commentary';
 
 export type ServerEvent =
+  | CanvasEvent
   | ProjectEvent
   | { type: 'voice.answer'; appSessionId: string; sdp: string; attempt: string }
   | { type: 'voice.state'; appSessionId: string; status: 'live' | 'closed' }

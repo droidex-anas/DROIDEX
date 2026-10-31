@@ -13,9 +13,11 @@ const APPLE = typeof navigator !== 'undefined' && navigator.userAgent.includes('
 export type ShortcutAction =
   | 'toggleSidebar'
   | 'toggleUtilityPane'
+  | 'toggleProduct'
   | 'openCommandPalette'
   | 'openSettings'
   | 'newTab'
+  | 'newDesignTab'
   | 'closeTab'
   | 'reopenClosedTab'
   | 'nextTab'
@@ -37,9 +39,15 @@ export interface ShortcutDefinition {
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { action: 'toggleSidebar', label: 'Toggle sidebar', defaultChord: 'Meta+\\' },
   { action: 'toggleUtilityPane', label: 'Toggle utility pane', defaultChord: 'Meta+J' },
+  {
+    action: 'toggleProduct',
+    label: 'Switch between Chat and Design',
+    defaultChord: 'Meta+Shift+M',
+  },
   { action: 'openCommandPalette', label: 'Command palette', defaultChord: 'Meta+K' },
   { action: 'openSettings', label: 'Open settings', defaultChord: 'Meta+,' },
   { action: 'newTab', label: 'New tab', defaultChord: 'Meta+T' },
+  { action: 'newDesignTab', label: 'New design', defaultChord: 'Meta+Alt+T' },
   { action: 'closeTab', label: 'Close tab', defaultChord: 'Meta+W' },
   { action: 'reopenClosedTab', label: 'Reopen closed tab', defaultChord: 'Meta+Shift+T' },
   { action: 'nextTab', label: 'Next tab', defaultChord: 'Meta+Shift+]' },
@@ -252,10 +260,14 @@ export function nativeBrowserChords(bindings: ShortcutBindings): NativeBrowserCh
   return [...bound, ...TYPED_TOOL_CHORDS];
 }
 
+export function hasPrimaryModifier(event: Pick<MouseEvent, 'metaKey' | 'ctrlKey'>): boolean {
+  return APPLE ? event.metaKey : event.ctrlKey;
+}
+
 /** Browser convention: a primary-modifier click or a middle click opens a new tab. */
 export function opensInNewTab(event: Pick<MouseEvent, 'button' | 'metaKey' | 'ctrlKey'>): boolean {
   if (event.button === 1) return true;
-  return event.button === 0 && (APPLE ? event.metaKey : event.ctrlKey);
+  return event.button === 0 && hasPrimaryModifier(event);
 }
 
 /** Other actions already bound to the same chord as `action`. */

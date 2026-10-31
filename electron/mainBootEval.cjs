@@ -75,6 +75,7 @@ function createElectronStub(options) {
   };
   const defaultSession = {
     protocol,
+    setProxy: () => Promise.resolve(),
     setPermissionRequestHandler() {},
     setPermissionCheckHandler() {},
     setDevicePermissionHandler() {},

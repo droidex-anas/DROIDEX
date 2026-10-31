@@ -240,6 +240,22 @@ test('loadChatMetadata caps preferences without evicting hidden-chat tombstones'
   assert.deepEqual(loadStored(tombstones), tombstones);
 });
 
+test('loading and writing at capacity preserve old Design identity outside the preference budget', () => {
+  const stored: ChatMetadataMap = { design: { design: true } };
+  for (let index = 0; index < 1000; index += 1) stored[`chat-${index}`] = { pinnedAt: index };
+  const loaded = loadStored(stored);
+  assert.equal(loaded.design?.design, true);
+  assert.equal(Object.keys(loaded).length, 1001);
+
+  const written = pinChat(stored, 'new-chat', 1001);
+  assert.ok(written);
+  assert.equal(written.design?.design, true);
+  assert.equal(written['chat-0'], undefined);
+  assert.equal(written['new-chat']?.pinnedAt, 1001);
+  assert.equal(Object.keys(written).length, 1001);
+  assert.deepEqual(loadStored(written), written);
+});
+
 test('runtime updates cap preferences without evicting hidden-chat tombstones', () => {
   // The load-time cap alone left a gap: metadata created after startup grew
   // the map (and the stored payload) past the bound until the next restart.

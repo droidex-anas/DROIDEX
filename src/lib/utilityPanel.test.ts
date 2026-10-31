@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   activateUtilityTab,
   closeUtilityTab,
+  isExpandableTool,
   openUtilityTool,
   persistUtilityPanels,
   removeSessionPanel,
@@ -23,6 +24,33 @@ test('singleton tools activate their existing tab and unknown tab ids are reject
   assert.equal(reopened.activeTabId, 'tab-1');
   assert.equal(reopened.open, true);
   assert.equal(activateUtilityTab(reopened, 'missing'), reopened);
+});
+
+test('Canvas is one expandable pane per chat that an Open can re-point at a frame', () => {
+  let id = 0;
+  const createId = () => `tab-${String(++id)}`;
+  const opened = openUtilityTool(undefined, 'canvas', createId, { frameId: 'design-1' });
+  assert.deepEqual(opened.tabs, [
+    { id: 'tab-1', tool: 'canvas', label: 'Canvas', frameId: 'design-1' },
+  ]);
+  assert.equal(isExpandableTool('canvas'), true);
+  // The same frame again is the pane already on screen.
+  assert.equal(openUtilityTool(opened, 'canvas', createId, { frameId: 'design-1' }), opened);
+
+  const retargeted = openUtilityTool(opened, 'canvas', createId, { frameId: 'design-2' });
+  assert.equal(retargeted.tabs.length, 1);
+  assert.equal(retargeted.tabs[0].frameId, 'design-2');
+
+  // A canvas reconstructs from durable state, so unlike a terminal it persists.
+  // The frame an Open asked for does not: it is a request, not a preference.
+  const restored = { id: 'tab-1', tool: 'canvas' as const, label: 'Canvas' };
+  const persisted = persistUtilityPanels({ session: opened });
+  assert.deepEqual(persisted, {
+    session: { open: true, tabs: [restored], activeTabId: 'tab-1' },
+  });
+  assert.deepEqual(sanitizeUtilityPanels(persisted), {
+    session: { open: true, tabs: [restored], activeTabId: 'tab-1' },
+  });
 });
 
 test('terminal tabs are independent and closing the active tab chooses its neighbor', () => {

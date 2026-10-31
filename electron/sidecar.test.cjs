@@ -28,6 +28,7 @@ function harness(children, extras = {}) {
     cwd: () => '/app',
     userData: () => '/profiles/droidex',
     historyDir: extras.historyDir,
+    canvasRuntimeDir: extras.canvasRuntimeDir,
     stdout: new PassThrough(),
     stderr: extras.stderr || new PassThrough(),
     now: () => nowMs,
@@ -86,6 +87,9 @@ test('sidecar binds an OS-assigned port and shares one concurrent startup', asyn
   assert.equal(calls[0].options.env.BRIDGE_PORT, '0');
   assert.equal(calls[0].options.env.ELECTRON_RUN_AS_NODE, '1');
   assert.match(calls[0].options.env.BRIDGE_TOKEN, /^[a-f0-9]{64}$/);
+  assert.match(calls[0].options.env.CANVAS_EXPORT_TOKEN, /^[a-f0-9]{64}$/);
+  assert.equal(supervisor.canvasExportToken(), calls[0].options.env.CANVAS_EXPORT_TOKEN);
+  assert.notEqual(supervisor.canvasExportToken(), calls[0].options.env.BRIDGE_TOKEN);
   assert.equal(calls[0].options.env.DROIDEX_USER_DATA_DIR, '/profiles/droidex');
 
   child.stdout.write('SIDECAR_READY 43123\n');
@@ -106,6 +110,23 @@ test('history isolation uses the launcher directory and strips ambient overrides
     const { supervisor, calls } = harness([child], { historyDir });
     const started = supervisor.start();
     assert.equal(calls[0].options.env.DROIDEX_HISTORY_DIR, historyDir?.());
+    child.stdout.write('SIDECAR_READY 43123\n');
+    await started;
+  }
+});
+
+test('the Canvas runtime is passed only when the app owns one', async (t) => {
+  const previous = process.env.DROIDEX_CANVAS_RUNTIME_DIR;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_CANVAS_RUNTIME_DIR;
+    else process.env.DROIDEX_CANVAS_RUNTIME_DIR = previous;
+  });
+  process.env.DROIDEX_CANVAS_RUNTIME_DIR = '/ambient/canvas-runtime';
+  for (const canvasRuntimeDir of [undefined, () => '/resources/sidecar/canvas-runtime']) {
+    const child = fakeChild();
+    const { supervisor, calls } = harness([child], { canvasRuntimeDir });
+    const started = supervisor.start();
+    assert.equal(calls[0].options.env.DROIDEX_CANVAS_RUNTIME_DIR, canvasRuntimeDir?.());
     child.stdout.write('SIDECAR_READY 43123\n');
     await started;
   }

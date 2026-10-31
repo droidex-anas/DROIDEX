@@ -74,7 +74,9 @@ export class ClaudeProvider implements Provider {
     contextWindowTokens,
     autonomy,
     interactionMode,
+    sessionPurpose,
     mcpServers,
+    canvasScopeForRead,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Claude pins the supplied id for a new conversation.
     return await this.open({
@@ -82,11 +84,13 @@ export class ClaudeProvider implements Provider {
       cwd: sessionCwd(cwd),
       autonomy,
       interactionMode,
+      sessionPurpose,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       fastMode: fastMode ?? false,
       ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
+      canvasScopeForRead,
       interactions,
     });
   }
@@ -103,7 +107,9 @@ export class ClaudeProvider implements Provider {
       contextWindowTokens,
       autonomy,
       interactionMode,
+      sessionPurpose,
       mcpServers,
+      canvasScopeForRead,
     }: ProviderResumeInput,
   ): Promise<ProviderSession> {
     return await this.open({
@@ -111,11 +117,13 @@ export class ClaudeProvider implements Provider {
       cwd: sessionCwd(cwd),
       autonomy: autonomy ?? 'off',
       interactionMode: interactionMode ?? 'auto',
+      sessionPurpose,
       ...(modelId ? { modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       fastMode: fastMode ?? false,
       ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
       mcpServers: sdkMcpServers(mcpServers),
+      canvasScopeForRead,
       interactions,
       resumeId: providerSessionId,
     });

@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
-import { Ellipsis, GitFork, Spinner } from '@droidex/icons';
+import { Ellipsis, GitFork, Sketch, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
 import { opensInNewTab } from '../lib/shortcuts';
@@ -65,6 +65,8 @@ export interface SessionRowProps {
   // Linked pull request state, with its check rollup as the icon's dot. List
   // rows lead with it; inbox rows show it beside the title.
   pr?: { kind: PrKind; checks?: PrChecksRollup | null };
+  // A chat a design send created, which opens as a design.
+  design: boolean;
   renaming: boolean;
   now: number;
   onSelect: (appSessionId: string) => void;
@@ -94,6 +96,7 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.session.reasoningEffort === next.session.reasoningEffort &&
     prev.pr?.kind === next.pr?.kind &&
     prev.pr?.checks === next.pr?.checks &&
+    prev.design === next.design &&
     prev.renaming === next.renaming &&
     prev.now === next.now &&
     prev.onSelect === next.onSelect &&
@@ -117,6 +120,7 @@ export const SessionRow = memo(function SessionRow({
   activityStatus,
   detail,
   pr,
+  design,
   renaming,
   now,
   onSelect,
@@ -271,6 +275,7 @@ export const SessionRow = memo(function SessionRow({
     if (working) return spinner;
     if (WAITING_ON_USER.has(activityStatus)) return <ActivityStatusGlyph status={activityStatus} />;
     if (prIcon) return prIcon;
+    if (design) return <Sketch className="size-icon-sm" role="img" aria-label="Design" />;
     if (session.lineage?.kind === 'fork') {
       return <GitFork className="size-icon-sm" role="img" aria-label="Forked chat" />;
     }
@@ -318,7 +323,7 @@ export const SessionRow = memo(function SessionRow({
         // Mission Control fills the whole area, so a mission never tiles.
         draggable={!isEmbedded() && session.sessionPurpose !== 'mission-control'}
         onDragStart={(e) => {
-          startPlaceDrag(e, { kind: 'chat', appSessionId: session.appSessionId });
+          startPlaceDrag(e, { kind: 'chat', appSessionId: session.appSessionId, design });
         }}
         onDragEnd={endPlaceDrag}
         onClick={(e) => {

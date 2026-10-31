@@ -97,7 +97,11 @@ module.exports = {
     buildResources: 'assets/brand',
   },
   files: ['package.json', 'dist/**', 'electron/**', '!**/*.test.*', '!**/*.map'],
-  asarUnpack: ['node_modules/node-pty/**', 'node_modules/@droidex/sparkle-updater/**'],
+  asarUnpack: [
+    'node_modules/node-pty/**',
+    'node_modules/@droidex/sparkle-updater/**',
+    'node_modules/@napi-rs/canvas-*/**',
+  ],
   extraFiles: [
     {
       from: 'vendor/sparkle/distribution/Sparkle.framework',
@@ -108,6 +112,24 @@ module.exports = {
     // The Electron host spawns the sidecar as resources/sidecar/dist/sidecar.mjs
     // (see sidecarEntry in electron/main.cjs). The bundle is self-contained.
     { from: 'sidecar/dist', to: 'sidecar/dist', filter: ['**/*'] },
+    // The Canvas compiler's own esbuild, Tailwind, PostCSS and React, staged
+    // per architecture by tools/stage-canvas-runtime.mjs. The host passes the
+    // parent directory to the sidecar as DROIDEX_CANVAS_RUNTIME_DIR, so a
+    // packaged design compile never resolves outside it and never downloads
+    // anything. `from` names the node_modules itself because electron-builder
+    // drops a copied directory's own top-level node_modules.
+    {
+      from: 'sidecar/canvas-runtime/${arch}/node_modules',
+      to: 'sidecar/canvas-runtime/node_modules',
+      filter: ['**/*'],
+    },
+    // The manifest the compiler checks before it accepts a request. It sits
+    // beside that node_modules rather than inside it, so it needs a file set of
+    // its own; the one above cannot reach it.
+    {
+      from: 'sidecar/canvas-runtime/${arch}/manifest.json',
+      to: 'sidecar/canvas-runtime/manifest.json',
+    },
   ],
   npmRebuild: true,
   mac: {

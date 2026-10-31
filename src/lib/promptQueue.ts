@@ -1,4 +1,33 @@
-import type { BrowserTranscriptReference, TranscriptEvent } from '../types/bridge';
+import type { FramePin } from '../features/canvas/framePins';
+import type { CanvasTurnContext } from '../features/canvas/protocol';
+import type {
+  BrowserTranscriptReference,
+  DesignReference,
+  ProviderMention,
+  TranscriptEvent,
+} from '../types/bridge';
+
+interface QueuedDesignContext {
+  browserKey: string;
+  references: DesignReference[];
+}
+
+export interface QueuedPrompt {
+  id: string;
+  text: string;
+  skills: string[];
+  files: string[];
+  /** Catalog rows the harness receives beside the text rather than inside it. */
+  mentions?: ProviderMention[];
+  /** The staged rows' catalog identities, so editing restores the same chips. */
+  rowKeys?: string[];
+  sideChatReplies?: string[];
+  /** Canvas frames pinned to this request, as they were when it was queued. */
+  framePins?: readonly FramePin[];
+  /** What it runs under, fixed when it was queued: a later kit choice reaches only later prompts. */
+  canvasContext?: CanvasTurnContext;
+  design?: QueuedDesignContext;
+}
 
 export const newQueueId = () => `q-${String(Date.now())}-${Math.random().toString(36).slice(2, 7)}`;
 

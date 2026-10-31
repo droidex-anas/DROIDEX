@@ -16,12 +16,16 @@ import {
   type ThemePreset,
 } from './theme';
 import {
+  SELECTION_COLORS,
   SKILL_COLORS,
   ULTRA_COLORS,
   UPDATE_COLORS,
+  annotationColors,
+  codeColors,
   contrastRatio,
   deriveThemeTokens,
   elevatedSurfaceColor,
+  raisedSurfaceColor,
   readableStatusColor,
   relativeLuminance,
   surfaceStep,
@@ -294,12 +298,100 @@ describe('fixed label colors', () => {
     }
   });
 
+  it('keeps a board selection readable on every built-in board and its chrome', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const { line, label, text } = SELECTION_COLORS[scheme];
+        const board = preset[scheme].bg;
+        for (const ground of [board, raisedSurfaceColor(preset[scheme])]) {
+          assert.ok(
+            contrastRatio(label, ground) >= 4.5,
+            `${preset.id} ${scheme} selected label should reach 4.5:1 on ${ground}`,
+          );
+        }
+        // An outline is not text: WCAG asks 3:1 of it against the board.
+        assert.ok(contrastRatio(line, board) >= 3, `${preset.id} ${scheme} selection outline`);
+        assert.ok(contrastRatio(text, line) >= 4.5, `${scheme} size badge text`);
+      }
+    }
+  });
+
+  it('keeps every annotation colour readable on the board, and note text on its fill', () => {
+    // Custom boards in the mid tones the tuned palettes cannot read on.
+    const custom = {
+      'grey dark': { bg: '#5a5a5a', fg: '#f5f5f5', surface: '#626262' },
+      'grey light': { bg: '#8c8c8c', fg: '#111111', surface: '#949494' },
+      'tan light': { bg: '#d9c7a3', fg: '#2a2116', surface: '#e2d2b2' },
+    };
+    const boards = [
+      ...BUILT_IN_THEMES.flatMap((preset) =>
+        (['light', 'dark'] as const).map(
+          (scheme) => [`${preset.id} ${scheme}`, preset[scheme]] as const,
+        ),
+      ),
+      ...Object.entries(custom),
+    ];
+    for (const [board, variant] of boards) {
+      const colors = Object.entries(annotationColors(variant));
+      assert.equal(colors.length, 7);
+      for (const [name, { stroke, fill }] of colors) {
+        // A text label is drawn in the stroke, so it is held to text contrast.
+        for (const ground of [variant.bg, raisedSurfaceColor(variant)]) {
+          assert.ok(
+            contrastRatio(stroke, ground) >= 4.5,
+            `${board} ${name} stroke should reach 4.5:1 on ${ground}`,
+          );
+        }
+        assert.ok(
+          contrastRatio(variant.fg, fill) >= 4.5,
+          `${board} note text should reach 4.5:1 on its ${name} fill`,
+        );
+      }
+    }
+  });
+
   it('keeps the update pill label readable on both of its blues', () => {
     for (const blue of [UPDATE_COLORS.base, UPDATE_COLORS.hover]) {
       assert.ok(
         contrastRatio('#ffffff', blue) >= 4.5,
         `update pill label should reach 4.5:1 on ${blue}`,
       );
+    }
+  });
+});
+
+describe('codeColors', () => {
+  it('keeps every syntax token at WCAG AA on every code ground', () => {
+    // The drawer's code ground, plus the canvas and elevated tones the
+    // transcript's code cards sit between.
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const variant = preset[scheme];
+        const { bg, ...tokens } = codeColors(variant);
+        for (const ground of [bg, variant.bg, elevatedSurfaceColor(variant)]) {
+          for (const [name, color] of Object.entries(tokens)) {
+            assert.ok(
+              contrastRatio(color, ground) >= 4.5,
+              `${preset.id} ${scheme} ${name} ${color} should reach 4.5:1 on ${ground}`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('sets the code ground only a few percent off the drawer around it', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const ratio = contrastRatio(
+          codeColors(preset[scheme]).bg,
+          raisedSurfaceColor(preset[scheme]),
+        );
+        assert.ok(
+          ratio > 1.01 && ratio < 1.25,
+          `${preset.id} ${scheme} code ground at ${String(ratio)}`,
+        );
+      }
     }
   });
 });

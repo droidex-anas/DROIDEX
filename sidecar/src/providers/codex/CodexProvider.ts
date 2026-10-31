@@ -71,6 +71,7 @@ export class CodexProvider implements Provider {
     reasoningEffort,
     fastMode,
     autonomy,
+    sessionPurpose,
     inAppMcpServers,
   }: ProviderOpenInput): Promise<ProviderSession> {
     // Codex's thread id is the separate resume handle, never the application identity.
@@ -78,6 +79,7 @@ export class CodexProvider implements Provider {
       appSessionId: appSessionId ?? randomUUID(),
       cwd,
       autonomy,
+      sessionPurpose,
       model: {
         ...(modelId ? { modelId } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
@@ -98,6 +100,7 @@ export class CodexProvider implements Provider {
       reasoningEffort,
       fastMode,
       autonomy,
+      sessionPurpose,
       resumeId,
       inAppMcpServers,
     }: ProviderResumeInput,
@@ -112,6 +115,7 @@ export class CodexProvider implements Provider {
         providerSessionId,
         cwd: cwd ?? tmpdir(),
         autonomy: autonomy ?? 'off',
+        sessionPurpose,
         model: {
           ...(modelId ? { modelId } : {}),
           ...(reasoningEffort ? { reasoningEffort } : {}),

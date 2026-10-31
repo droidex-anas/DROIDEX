@@ -25,6 +25,12 @@ import type {
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
 import type {
+  CanvasErrorCode,
+  DesignSystemVersionRef,
+  OwnedAsset,
+  RevisionRef,
+} from '../features/canvas/protocol';
+import type {
   CommitOptions,
   CreateBranchOptions,
   CreatePrOptions,
@@ -75,6 +81,33 @@ export interface SidecarSupervisorSnapshot {
   reason?: string;
   port?: number;
 }
+
+export interface CanvasPreviewCaptureRequest {
+  requestId: string;
+  guestId: number;
+  canvasId: string;
+  designId: string;
+  revisionId: string;
+  generation: number;
+  width: number;
+  height: number;
+  scaleFactor: number;
+}
+
+export type CanvasPreviewCaptureResult =
+  | { ok: true; mediaType: 'image/png'; bytes: Uint8Array }
+  | { ok: false; error: { code: 'capture_unavailable'; message: string } };
+
+/** Both host exports answer this way, so a refusal reaches the renderer as its own message. */
+export type CanvasExportResult =
+  | { ok: true; filesWritten: number }
+  | { ok: false; cancelled: true }
+  | { ok: false; code: CanvasErrorCode; message: string };
+
+export type CanvasImageSaveResult =
+  | { ok: true }
+  | { ok: false; cancelled: true }
+  | { ok: false; code: 'capture_unavailable' | 'storage_failed'; message: string };
 
 export interface TerminalSessionInfo {
   id: string;
@@ -256,6 +289,8 @@ export interface DroidexApi {
   onSidecarStatus: (handler: (status: SidecarSupervisorSnapshot) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   pickFiles: () => Promise<string[]>;
+  canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
+  canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
   listDirectories: (path: string) => Promise<DirectoryListing>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
@@ -270,6 +305,27 @@ export interface DroidexApi {
   setApiKey: (key: string) => Promise<void>;
   listFiles: (dir: string) => Promise<string[]>;
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
+  /** Null where previews cannot run, such as a Remote browser. */
+  canvasPreviewUrl: string | null;
+  canvasPreviewBind: (guestId: number, canvasId: string) => Promise<boolean>;
+  canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
+  canvasPreviewCapture: (
+    request: CanvasPreviewCaptureRequest,
+  ) => Promise<CanvasPreviewCaptureResult>;
+  canvasPreviewCancelCapture: (requestId: string) => Promise<boolean>;
+  canvasThumbnailRead: (
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+  ) => Promise<Uint8Array | null>;
+  canvasImageSave: (
+    canvasId: string,
+    designId: string,
+    revisionId: string,
+    suggestedName: string,
+  ) => Promise<CanvasImageSaveResult>;
+  canvasExportSource: (canvasId: string, ref: RevisionRef) => Promise<CanvasExportResult>;
+  canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<CanvasExportResult>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
   onPowerTier: (handler: (snapshot: DesktopPowerTierSnapshot) => void) => () => void;
@@ -539,6 +595,15 @@ export async function saveAttachment(name: string, dataUrl: string): Promise<str
   return requireDesktopApi('File attachments need the desktop app.').saveAttachment(name, dataUrl);
 }
 
+// Imports a dropped image into the canvas as an owned asset. Main rejects with
+// a curated { code, message } that never names the file's path.
+export async function importCanvasImage(canvasId: string, file: File): Promise<OwnedAsset> {
+  return requireDesktopApi('Reference images need the desktop app.').canvasDropImage(
+    canvasId,
+    file,
+  );
+}
+
 // Absolute path behind a dropped or pasted File, or '' when there is none
 // (clipboard snapshot, plain browser). A real path is attached by reference
 // instead of being copied into the temp store.
@@ -760,4 +825,74 @@ export async function editorIcon(editor: EditorId): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** The owned source every Canvas live preview guest loads (spec §6). */
+export function canvasPreviewUrl(): string | null {
+  return desktopApi()?.canvasPreviewUrl ?? null;
+}
+
+export async function bindCanvasPreviewGuest(guestId: number, canvasId: string): Promise<boolean> {
+  const api = desktopApi();
+  if (!api) return false;
+  return api.canvasPreviewBind(guestId, canvasId);
+}
+
+/**
+ * Asks main to end one preview guest. Main owns the registry of guests it
+ * attached, so it refuses an ID it does not recognise and never consults the
+ * guest; false means nothing was ended.
+ */
+export async function terminateCanvasPreviewGuest(guestId: number): Promise<boolean> {
+  const api = desktopApi();
+  if (!api) return false;
+  return api.canvasPreviewTerminate(guestId);
+}
+
+export async function captureCanvasPreview(
+  request: CanvasPreviewCaptureRequest,
+): Promise<CanvasPreviewCaptureResult> {
+  const api = desktopApi();
+  if (!api)
+    return {
+      ok: false,
+      error: { code: 'capture_unavailable', message: 'Open this design in DROIDEX to capture it.' },
+    };
+  return api.canvasPreviewCapture(request);
+}
+
+export async function cancelCanvasPreviewCapture(requestId: string): Promise<void> {
+  await desktopApi()?.canvasPreviewCancelCapture(requestId);
+}
+
+export async function readCanvasThumbnail(
+  canvasId: string,
+  designId: string,
+  revisionId: string,
+): Promise<Uint8Array | null> {
+  return (await desktopApi()?.canvasThumbnailRead(canvasId, designId, revisionId)) ?? null;
+}
+
+export async function saveCanvasImage(
+  canvasId: string,
+  designId: string,
+  revisionId: string,
+  suggestedName: string,
+): Promise<CanvasImageSaveResult> {
+  const api = desktopApi();
+  if (!api)
+    return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
+  return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
+}
+
+/** Opens the host's folder chooser, then writes one kit version there. */
+export async function exportDesignSystem(ref: DesignSystemVersionRef): Promise<CanvasExportResult> {
+  const api = desktopApi();
+  if (!api)
+    return {
+      ok: false,
+      code: 'storage_failed',
+      message: 'Open DROIDEX to export a design system.',
+    };
+  return api.canvasExportDesignSystem(ref);
 }

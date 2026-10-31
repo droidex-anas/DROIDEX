@@ -130,6 +130,60 @@ test('a non-mergeable event lands behind its own source and ahead of nothing els
   );
 });
 
+test('coalesced tool calls keep the latest targeted Canvas activity', () => {
+  const activity: NonNullable<TranscriptEvent['canvasActivity']> = {
+    toolUseId: 'canvas-call',
+    action: 'write',
+    designIds: [],
+    state: 'running',
+    message: 'Writing Canvas',
+  };
+  const cases = [
+    { previous: [], next: ['design-1'], expected: ['design-1'], message: 'Updating Canvas' },
+    {
+      previous: ['design-1'],
+      next: ['design-2'],
+      expected: ['design-2'],
+      message: 'Updating Canvas',
+    },
+    { previous: ['design-1'], next: [], expected: ['design-1'], message: 'Writing Canvas' },
+    { previous: ['design-1'], next: undefined, expected: ['design-1'], message: 'Writing Canvas' },
+  ];
+
+  for (const { previous, next, expected, message } of cases) {
+    const { coalescer, delivered } = createCoalescer();
+    coalescer.accept(
+      childDelta('canvas-first', 'child-1', {
+        kind: 'tool_call',
+        text: undefined,
+        toolName: 'Canvas',
+        toolUseId: activity.toolUseId,
+        canvasActivity: { ...activity, designIds: previous },
+      }),
+    );
+    coalescer.accept(
+      childDelta('canvas-later', 'child-1', {
+        kind: 'tool_call',
+        text: undefined,
+        toolUseId: activity.toolUseId,
+        canvasActivity:
+          next === undefined
+            ? undefined
+            : { ...activity, designIds: next, message: 'Updating Canvas' },
+        ts: 2,
+      }),
+    );
+    coalescer.flushAll();
+
+    assert.equal(delivered.length, 1);
+    assert.deepEqual(delivered[0]?.canvasActivity, {
+      ...activity,
+      designIds: expected,
+      message,
+    });
+  }
+});
+
 test('endTurn forgets the source so its buffered tail cannot be published twice', () => {
   const { coalescer, delivered } = createCoalescer({ windowMs: 1_000 });
 

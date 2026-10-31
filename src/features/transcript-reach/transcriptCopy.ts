@@ -47,6 +47,8 @@ export function copyTextForFeedItem(item: FeedItem): string {
       return browserPageOf(item.events)?.url ?? '';
     case 'turnChanges':
       return item.files.map((file) => file.path).join('\n');
+    case 'canvas_artifact':
+      return item.activity.message;
   }
 }
 

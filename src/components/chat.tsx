@@ -63,6 +63,8 @@ export const ThreadReportNotice = lazy(async () => {
   return { default: module.ThreadReportNotice };
 });
 
+const CanvasArtifactCard = lazy(() => import('../features/canvas/CanvasArtifactCard'));
+
 const ThreadsWaiting = lazy(async () => {
   const module = await import('../features/projects/ThreadsWaiting');
   return { default: module.ThreadsWaiting };
@@ -516,6 +518,12 @@ export const FeedItemView = memo(function FeedItemView({
           output={item.result?.text}
           running={live && !item.result}
         />
+      );
+    case 'canvas_artifact':
+      return (
+        <Suspense fallback={null}>
+          <CanvasArtifactCard appSessionId={item.event.appSessionId} activity={item.activity} />
+        </Suspense>
       );
     case 'browser':
       return <BrowserCard events={item.events} working={!item.ended && (sessionLive ?? live)} />;

@@ -16,6 +16,12 @@ import {
 } from './sessionTranscriptParser.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
 import { readSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
+import {
+  CanvasToolPresentation,
+  canvasToolProvenance,
+  type CanvasToolBinding,
+} from './canvas/canvasToolPresentation.js';
+import { canvasToolBindingsRevision, readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 import { storedMessageAnchors } from './providers/ProviderTranscriptAnchors.js';
 
 // Stored-row shapes are owned by the parser module but re-exported here so
@@ -93,19 +99,25 @@ export function parseFullSessionTranscript(
   role: SessionRole,
 ): TranscriptEvent[] {
   const stat = statSync(path);
-  const window = readSessionRawWindow(path, stat.size);
   const events: TranscriptEvent[] = [];
-  if (window.trimmed) {
+  if (stat.size > MAX_SESSION_BYTES) {
     events.push(oversizedStatusEvent(appSessionId, providerSessionId, role, stat.mtimeMs));
-  }
-  for (const raw of window.text.split(/\r?\n/)) {
-    const trimmed = raw.trim();
-    if (!trimmed) continue;
-    try {
-      const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
-      events.push(...parseSessionLineEvents(appSessionId, providerSessionId, role, stored));
-    } catch {
-      /* skip partial/corrupt JSONL rows */
+    events.push(
+      ...new SessionTranscriptReader(appSessionId, providerSessionId, path, role).readTail(),
+    );
+  } else {
+    const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
+    for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      try {
+        const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
+        events.push(
+          ...parseSessionLineEvents(appSessionId, providerSessionId, role, stored, { canvas }),
+        );
+      } catch {
+        /* skip partial/corrupt JSONL rows */
+      }
     }
   }
   const notices = readSessionNotices(appSessionId, providerSessionId, role);
@@ -203,9 +215,11 @@ export class SessionTranscriptReader {
   readonly mtimeMs: number;
   readonly sizeBytes: number;
   readonly noticesRevision: string;
+  readonly canvasBindingsRevision: string;
   private readonly notices: TranscriptEvent[];
   private readonly lineStarts: number[];
   private readonly parsedLines = new Map<number, ParsedLine>();
+  private readonly canvasBindings: CanvasToolBinding[];
 
   constructor(
     private readonly appSessionId: string,
@@ -219,9 +233,30 @@ export class SessionTranscriptReader {
     this.sizeBytes = stat.size;
     this.lineStarts = scanLineStarts(path, stat.size);
     this.noticesRevision = sessionNoticesRevision(providerSessionId);
+    this.canvasBindingsRevision = canvasToolBindingsRevision(appSessionId);
+    this.canvasBindings = readCanvasToolBindings(appSessionId);
     this.notices = this.noticesRevision
       ? readSessionNotices(appSessionId, providerSessionId, role)
       : [];
+  }
+
+  // Eager history keeps its byte cap, but result provenance can precede it.
+  readTail(): TranscriptEvent[] {
+    const firstLine = this.lineStarts.findIndex(
+      (start) => start > this.sizeBytes - MAX_SESSION_BYTES,
+    );
+    if (firstLine < 0) return [];
+    const file: LazyFile = { fd: null };
+    const events: TranscriptEvent[] = [];
+    try {
+      for (let line = firstLine; line < this.lineStarts.length; line += 1) {
+        for (const candidate of this.parseLine(file, line).events)
+          events.push(this.projectEvent(file, line, candidate));
+      }
+    } finally {
+      if (file.fd !== null) closeSync(file.fd);
+    }
+    return events;
   }
 
   // Serve up to `limit` events ending at `from` (or the segment tail),
@@ -315,7 +350,7 @@ export class SessionTranscriptReader {
             collected[messageIndex] = appendMessageChunk(candidate, collected[messageIndex]);
           else {
             if (candidate.textUpdate) messageIndexes.set(candidate.id, collected.length);
-            collected.push(candidate);
+            collected.push(this.projectEvent(file, line, candidate));
           }
           if (candidate.spoken) seenSpoken.add(candidate.id);
         }
@@ -332,6 +367,28 @@ export class SessionTranscriptReader {
         ? { older: { line, skip, ...(this.notices.length ? { notice } : {}) } }
         : {}),
     };
+  }
+
+  private projectEvent(file: LazyFile, line: number, candidate: TranscriptEvent): TranscriptEvent {
+    if (candidate.kind !== 'tool_call' && candidate.kind !== 'tool_result') return candidate;
+    const canvas = new CanvasToolPresentation(this.canvasBindings);
+    if (candidate.kind === 'tool_call' || !candidate.toolUseId)
+      return canvas.project(candidate, undefined, candidate.id);
+    // Resolve against the preceding occurrence, not whichever page was visited
+    // last. Calls outside the requested page remain available through the memo.
+    for (let index = line; index >= 0; index -= 1) {
+      const { events } = this.parseLine(file, index);
+      const before = index === line ? events.indexOf(candidate) : events.length;
+      for (let block = before - 1; block >= 0; block -= 1) {
+        const call = events[block];
+        if (call.kind !== 'tool_call' || call.toolUseId !== candidate.toolUseId) continue;
+        const provenance = canvasToolProvenance(call.toolName, call.toolUseId);
+        if (!provenance && !call.canvasActivity) return candidate;
+        canvas.project(call, provenance, call.id);
+        return canvas.project(candidate, undefined, call.id);
+      }
+    }
+    return canvas.project(candidate);
   }
 
   private parseLine(file: LazyFile, index: number): ParsedLine {
@@ -358,7 +415,7 @@ export class SessionTranscriptReader {
             this.providerSessionId,
             this.role,
             stored,
-            { fullText: this.fullText },
+            { fullText: this.fullText, canvas: null },
           );
           anchors = storedMessageAnchors(stored, index);
           events = lineEvents;

@@ -1,3 +1,4 @@
+import { isCanvasEvent } from '../features/canvas/wireValidation';
 import { isProjectView, isProjectResult } from '../features/projects/validation';
 import type {
   BridgeResetMessage,
@@ -147,6 +148,12 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       return Array.isArray(value.projects) && value.projects.every(isProjectView);
     case 'project.result':
       return isProjectResult(value);
+    case 'canvas.summaries':
+    case 'canvas.snapshot':
+    case 'canvas.change':
+    case 'canvas.result':
+    case 'canvas.captureRequest':
+      return isCanvasEvent(value);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
     case 'runtime.updated':
@@ -415,6 +422,7 @@ function isSessionSummary(value: unknown): boolean {
     hasNumbers(value, ['tokensIn', 'tokensOut', 'contextTokens', 'createdAt', 'updatedAt']) &&
     isOptionalString(value.interruptReason) &&
     isOptionalString(value.resumeId) &&
+    isOptionalCanvasTools(value.canvasTools) &&
     (value.droidProfile === undefined ||
       (value.provider === 'droid' && value.droidProfile === 'alt')) &&
     isOptionalBoolean(value.fastMode) &&
@@ -511,7 +519,25 @@ function isTranscriptEvent(value: unknown): boolean {
     (value.transient === undefined || value.transient === true) &&
     isOptionalString(value.forkPointId) &&
     isOptionalString(value.steerId) &&
-    (value.sideChatReplies === undefined || stringArray(value.sideChatReplies))
+    (value.sideChatReplies === undefined || stringArray(value.sideChatReplies)) &&
+    (value.canvasFrames === undefined || stringArray(value.canvasFrames)) &&
+    (value.canvasActivity === undefined || isCanvasActivity(value.canvasActivity))
+  );
+}
+
+// An artifact card opens the canvas and frame this names, so it is checked whole.
+function isCanvasActivity(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasStrings(value, ['toolUseId', 'message']) &&
+    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme'].includes(
+      value.action as string,
+    ) &&
+    ['running', 'completed', 'failed'].includes(value.state as string) &&
+    stringArray(value.designIds) &&
+    isOptionalString(value.canvasId) &&
+    isOptionalString(value.title) &&
+    (value.firstArtifact === undefined || value.firstArtifact === true)
   );
 }
 
@@ -741,6 +767,10 @@ function isOptionalString(value: unknown): boolean {
 
 function isOptionalContextWindow(value: unknown): boolean {
   return value === undefined || value === 200000 || value === 1000000;
+}
+
+function isOptionalCanvasTools(value: unknown): boolean {
+  return value === undefined || value === 'at_start' || value === 'none';
 }
 
 function isOptionalBoolean(value: unknown): boolean {

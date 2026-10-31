@@ -1,5 +1,7 @@
 node_modules/
 sidecar/node_modules/
+# Staged by tools/stage-canvas-runtime.mjs for packaging
+sidecar/canvas-runtime/
 src-tauri/target/
 dist/
 release/

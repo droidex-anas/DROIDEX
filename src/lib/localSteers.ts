@@ -1,4 +1,4 @@
-import type { QueuedPrompt } from '../hooks/useStore';
+import type { QueuedPrompt } from './promptQueue';
 
 // Steers this window sent and the sidecar has not listed yet. The composer
 // shows the bubble the moment the user presses send; the sidecar's list of

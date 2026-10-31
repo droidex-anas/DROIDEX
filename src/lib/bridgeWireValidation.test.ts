@@ -11,6 +11,28 @@ function assertRejected(event: unknown): void {
   assert.equal(isServerEvent(event), false, JSON.stringify(event));
 }
 
+test('canvas asset replies accept owned images and reject malformed metadata', () => {
+  const asset = {
+    assetId: 'a'.repeat(64),
+    mediaType: 'image/png',
+    byteLength: 512,
+    width: 32,
+    height: 16,
+  };
+  const result = { type: 'canvas.result', requestId: 'assets-1', ok: true };
+  assertAccepted({ ...result, reply: { kind: 'assets', assets: [asset] } });
+  assertAccepted({ ...result, reply: { kind: 'assets', assets: [] } });
+  for (const malformed of [
+    { ...asset, assetId: 'not-an-image-digest' },
+    { ...asset, mediaType: 'image/svg+xml' },
+    { ...asset, byteLength: 0 },
+    { ...asset, width: 1.5 },
+    { ...asset, height: 8193 },
+  ]) {
+    assertRejected({ ...result, reply: { kind: 'assets', assets: [malformed] } });
+  }
+});
+
 test('interaction wire validation preserves rich questions and approval eligibility', () => {
   const request = {
     appSessionId: 'app',
@@ -358,6 +380,29 @@ test('transient transcript events accept only the literal true or an absent flag
   }
   for (const transient of ['false', false, 1, null]) {
     assertRejected({ type: 'event.appended', event: { ...event, transient } });
+  }
+  // A prompt's pinned frames are names the bubble maps over, so nothing else gets in.
+  assertAccepted({ type: 'event.appended', event: { ...event, canvasFrames: ['Pricing · Wide'] } });
+  for (const canvasFrames of ['Pricing · Wide', [1], [null], {}]) {
+    assertRejected({ type: 'event.appended', event: { ...event, canvasFrames } });
+  }
+  // An artifact card opens the canvas and frame its activity names.
+  const canvasActivity = {
+    toolUseId: 'call-1',
+    action: 'create',
+    designIds: ['design-1'],
+    state: 'completed',
+    message: 'Created Hey',
+    canvasId: 'canvas-1',
+    title: 'Hey',
+    firstArtifact: true,
+  };
+  assertAccepted({ type: 'event.appended', event: { ...event, canvasActivity } });
+  for (const wrong of [{ canvasId: 1 }, { designIds: 'design-1' }, { firstArtifact: false }]) {
+    assertRejected({
+      type: 'event.appended',
+      event: { ...event, canvasActivity: { ...canvasActivity, ...wrong } },
+    });
   }
 });
 

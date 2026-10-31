@@ -15,6 +15,7 @@ const OPTIONAL_SURFACE_IMPORTS = [
   './components/browser/BrowserFocusWorkspace',
   './components/terminal/TerminalWorkspace',
   './components/files/FilesWorkspace',
+  './features/canvas/CanvasWorkspace',
 ] as const;
 
 // The import declarations are the contract here: a static import puts the

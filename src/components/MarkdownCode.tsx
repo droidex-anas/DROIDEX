@@ -117,38 +117,38 @@ function HighlightJson({ code }: { code: string }) {
         // makes this a key is two tokens on, across (at most) whitespace.
         if (tokens[i + 1].trim() === '' && tokens[i + 2] === ':') {
           return (
-            <span key={i} style={{ color: 'var(--accent)' }}>
+            <span key={i} style={{ color: 'var(--code-function)' }}>
               {token}
             </span>
           );
         }
         return (
-          <span key={i} style={{ color: 'var(--success)' }}>
+          <span key={i} style={{ color: 'var(--code-string)' }}>
             {token}
           </span>
         );
       }
       if (token === 'true' || token === 'false')
         return (
-          <span key={i} style={{ color: 'var(--warning)' }}>
+          <span key={i} style={{ color: 'var(--code-number)' }}>
             {token}
           </span>
         );
       if (token === 'null')
         return (
-          <span key={i} style={{ color: 'var(--text-muted)' }}>
+          <span key={i} style={{ color: 'var(--code-keyword)' }}>
             {token}
           </span>
         );
       if (/^-?\d/.exec(token))
         return (
-          <span key={i} style={{ color: 'var(--warning)' }}>
+          <span key={i} style={{ color: 'var(--code-number)' }}>
             {token}
           </span>
         );
-      if (/^[{}[\],:!]$/.test(token))
+      if (/^[{}[\],!]$/.test(token))
         return (
-          <span key={i} style={{ color: 'var(--text-muted)' }}>
+          <span key={i} style={{ color: 'var(--code-comment)' }}>
             {token}
           </span>
         );

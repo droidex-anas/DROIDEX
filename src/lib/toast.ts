@@ -1,10 +1,17 @@
 export type ToastVariant = 'success' | 'error' | 'info';
 
+/** One button beside the message; running it also dismisses the toast. */
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
 export interface ToastItem {
   id: number;
   message: string;
   variant: ToastVariant;
   ttl: number;
+  action?: ToastAction;
 }
 
 type Listener = (toasts: ToastItem[]) => void;
@@ -77,12 +84,13 @@ export function pushToast(
   message: string,
   variant: ToastVariant = 'info',
   ttl = DEFAULT_TTL_MS,
+  action?: ToastAction,
 ): number {
   // The same notice raised again while it is still showing stays one toast.
   const shown = toasts.find((t) => t.message === message && t.variant === variant);
   if (shown) return shown.id;
   const id = nextId++;
-  toasts = [...toasts, { id, message, variant, ttl }];
+  toasts = [...toasts, { id, message, variant, ttl, ...(action ? { action } : {}) }];
   emit();
   if (ttl > 0) scheduleDismiss(id, ttl);
   return id;

@@ -24,4 +24,5 @@ test('lazy Suspense fallbacks render skeleton status regions', () => {
   assert.match(renderToStaticMarkup(createElement(PullRequestsSkeleton)), /Loading pull requests/);
   assert.match(renderToStaticMarkup(utilityToolFallback('terminal')), /Loading utility workspace/);
   assert.match(renderToStaticMarkup(utilityToolFallback('files')), /Loading files/);
+  assert.match(renderToStaticMarkup(utilityToolFallback('canvas')), /Loading canvas/);
 });

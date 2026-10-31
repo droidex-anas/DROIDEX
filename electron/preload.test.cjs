@@ -61,6 +61,9 @@ function loadApi(invokeResult) {
       }
     },
     require(name) {
+      // The preview guest's owned source has one owner; the preload reads it
+      // from there rather than repeating the URL.
+      if (name === './canvasPreview.cjs') return require('./canvasPreview.cjs');
       if (name === './desktopApi.cjs') return require('./desktopApi.cjs');
       if (name !== 'electron') throw new Error(`Unexpected preload dependency: ${name}`);
       return {
@@ -80,6 +83,12 @@ function loadApi(invokeResult) {
   });
   return { api, calls, listeners, removedListeners, posts, channels };
 }
+
+test('the preview guest URL comes from the module that serves it', () => {
+  const { api } = loadApi();
+
+  assert.equal(api.canvasPreviewUrl, require('./canvasPreview.cjs').CANVAS_PREVIEW_URL);
+});
 
 // Each row is one exposed method: the channel it invokes and the exact payload
 // it sends. Methods that take no renderer input must send no payload at all.
@@ -114,6 +123,12 @@ const invokeContract = [
     ['notes.pdf', 'data:application/pdf;base64,Zg=='],
     'save-attachment',
     { name: 'notes.pdf', dataUrl: 'data:application/pdf;base64,Zg==' },
+  ],
+  [
+    'canvasImageSave',
+    ['cv_01', 'dsg_01', 'rev_01', 'design', new Uint8Array([1, 2, 3])],
+    'canvas-image-save',
+    { canvasId: 'cv_01', designId: 'dsg_01', revisionId: 'rev_01', suggestedName: 'design' },
   ],
   ['setAutomaticDiagnostics', [false], 'diagnostics-preference-set', { enabled: false }],
   ['setHardwareAcceleration', [false], 'hardware-acceleration-preference-set', { enabled: false }],

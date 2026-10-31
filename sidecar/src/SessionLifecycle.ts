@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto';
 import { accessSync, constants } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { CanvasTurnContext } from './canvas/protocol.js';
+import type { CanvasTurnLeases, CanvasTurns } from './canvas/canvasTurnContext.js';
 import type { FactorySession } from './DroidRuntime.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import { sessionFilePath } from './history.js';
@@ -57,6 +59,7 @@ import type {
   ProviderSession,
   SteerOutcome,
 } from './providers/session.js';
+import { SessionCreateAdmission } from './SessionCreateAdmission.js';
 
 const MAX_AUTOMATIC_SESSION_RUNTIMES = 20;
 const MAX_RECENT_STEER_OUTCOMES = 64;
@@ -118,6 +121,10 @@ export interface SessionPrompt {
   // The sender's guard on a message from another chat. Once it turns false the
   // prompt is dropped wherever it waits, as a Stop drops it.
   isCurrent?: () => boolean;
+  // What the Canvas pane had selected when this prompt was composed. It stays
+  // with the prompt wherever it waits, so a later selection change cannot
+  // retarget it, and the turn that runs it mints its lease from this.
+  canvasContext?: CanvasTurnContext;
   delivery?: SteeredReportDelivery;
 }
 
@@ -158,8 +165,12 @@ export interface LiveSession extends LiveTurnState {
   closeMode?: SessionCloseMode;
   closePromise?: Promise<void>;
   turnPromise?: Promise<void>;
+  // The Canvas leases the running turn holds (spec §6), revoked wherever that
+  // turn ends so a lease never outlives the turn that pinned it.
+  canvasTurn?: CanvasTurnLeases;
   restartBeforeNextTurn?: boolean;
   providerClosePromise?: Promise<void>;
+  createAdmission?: SessionCreateAdmission;
   mcpServers: LocalMcpResource[];
   // Running MCP handles reused when compaction swaps the provider session.
   mcpConfigs: McpServerConfig[];
@@ -172,7 +183,14 @@ type LifecycleError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionLifecycleDependencies {
   onUserPrompt?: (appSessionId: string) => void;
-  beforeFirstTurn?: ((session: SessionSummary, clientRef: string) => Promise<void>) | undefined;
+  beforeFirstTurn?:
+    | ((
+        session: SessionSummary,
+        clientRef: string,
+        canvas: SessionCreateCommand['canvas'],
+        admission: SessionCreateAdmission,
+      ) => Promise<void>)
+    | undefined;
   onSessionAvailable?: ((appSessionId: string) => void) | undefined;
   // A scheduled runtime slot was released without a session closing.
   onScheduledCapacityChanged?: (() => void) | undefined;
@@ -180,6 +198,7 @@ export interface SessionLifecycleDependencies {
   providerDefaultModelId?: (kind: ProviderKind) => string | undefined;
   registry: SessionRegistry<LiveSession>;
   ensureConnected: () => void;
+  whenSessionHistoryReady: () => Promise<void>;
   getFactoryDefaults: () => Promise<FactoryDefaultSettings>;
   maxContextTokensForModel: (modelId?: string) => number | undefined;
   startLocalMcpServers: (
@@ -203,6 +222,7 @@ export interface SessionLifecycleDependencies {
   applyPendingSessionSettings: (appSessionId: string) => Promise<boolean>;
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
+  canvasTurns: Pick<CanvasTurns, 'beginTurn' | 'endSession' | 'activeScope'>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
   context: Pick<
     SessionContext,
@@ -249,7 +269,8 @@ export class SessionLifecycle {
     Map<string, Pick<SessionPrompt, 'text' | 'mentions'> | 'delivered'>
   >();
   private readonly resumeOperations = new Map<string, Promise<LiveSession | undefined>>();
-  private readonly canceledResumes = new Set<string>();
+  private closeGeneration = 0;
+  private readonly closedAt = new Map<string, number>();
   // A close after a native copy is announced cancels that fork's first open,
   // but must not prevent a deliberate resume after the attempt ends.
   private readonly forkOpens = new Map<string, 'pending' | 'closed'>();
@@ -323,6 +344,7 @@ export class SessionLifecycle {
     requestedAppSessionId?: string,
     releaseCreateReservation?: () => void,
   ): Promise<void> {
+    if (command.canvas) command = { ...command, sessionPurpose: 'design' };
     const d = this.dependencies;
     d.ensureConnected();
     const appCwd = command.cwd ?? '';
@@ -377,10 +399,12 @@ export class SessionLifecycle {
       this.requireOpenAdmission();
       const mcp = await d.startLocalMcpServers(ref, kind, appCwd);
       pendingMcpServers = mcp.servers;
+      this.requireOpenAdmission();
       const providerSession = await provider.create({
         appSessionId: requestedAppSessionId,
         ...(command.droidProfile ? { droidProfile: command.droidProfile } : {}),
         cwd: runtimeCwd,
+        sessionPurpose: command.sessionPurpose,
         interactionMode,
         autonomy,
         ...primary,
@@ -389,6 +413,9 @@ export class SessionLifecycle {
           : {}),
         contextWindowTokens: command.contextWindowTokens,
         mcpServers: mcp.configs,
+        ...(kind === 'claude'
+          ? { canvasScopeForRead: () => d.canvasTurns.activeScope(ref.id)?.scopeId }
+          : {}),
         interactions: d.interactionsFor(ref),
         ...(kind === 'droid'
           ? {
@@ -432,6 +459,7 @@ export class SessionLifecycle {
         autonomy,
         provider: kind,
         ...(providerSession.resumeId ? { resumeId: providerSession.resumeId } : {}),
+        ...(providerSession.canvasTools ? { canvasTools: providerSession.canvasTools } : {}),
         ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
         ...(autoCompactionArmed ? { compactionTokenLimit } : {}),
         now: Date.now(),
@@ -442,6 +470,15 @@ export class SessionLifecycle {
       ref.id = appSessionId;
       const liveSession = createLiveSession(summary, providerSession, droid, mcp);
       pendingLiveSession = liveSession;
+      const admission = new SessionCreateAdmission(
+        () =>
+          !d.isShutdownStarted() &&
+          d.registry.getLive(appSessionId) === liveSession &&
+          liveSession.session === providerSession &&
+          !liveSession.closeMode &&
+          !providerSession.isClosed,
+      );
+      liveSession.createAdmission = admission;
       this.subscribeAutomaticCompaction(liveSession);
       await d.registry.register(liveSession, () => {
         this.requireOpenAdmission();
@@ -456,24 +493,18 @@ export class SessionLifecycle {
       providerSession.restoreChildren?.(children);
       this.subscribeBackgroundEvents(liveSession);
       // Commit dependent ownership before the provider can execute its first task.
-      if (d.beforeFirstTurn) {
-        await d.beforeFirstTurn(summary, command.clientRef);
-        this.requireOpenAdmission();
-        if (
-          d.registry.getLive(appSessionId) !== liveSession ||
-          liveSession.closeMode ||
-          providerSession.isClosed
-        ) {
-          throw new Error('The session closed before its first turn.');
-        }
-      }
+      await d.beforeFirstTurn?.(summary, command.clientRef, command.canvas, admission);
+      this.requireOpenAdmission();
+      admission.requireCurrent();
       d.emit({ type: 'session.created', clientRef: command.clientRef, session: summary });
+      admission.admit();
+      liveSession.createAdmission = undefined;
       // A chat can open with nothing to say: voice mode creates the session so
       // the conversation has a thread to attach to, and the first request
       // arrives spoken. Driving an empty prompt would run a turn about nothing.
       const prompt = branch
         ? sessionPrompt(branch.prompt)
-        : sessionPrompt(command.goal, command.mentions);
+        : sessionPrompt(command.goal, command.mentions, undefined, command.canvasContext);
       if (prompt.text.trim() || prompt.mentions?.length) {
         void this.driveInBackground(appSessionId, prompt);
       }
@@ -491,13 +522,18 @@ export class SessionLifecycle {
 
   async resume(requestedAppSessionId: string, automatic = false): Promise<LiveSession | undefined> {
     const d = this.dependencies;
+    const isAdmitted = this.captureCloseAdmission(requestedAppSessionId);
+    // Resolve the stable identity only after the native history overlay is ready.
+    await d.whenSessionHistoryReady();
+    if (!isAdmitted(requestedAppSessionId)) return undefined;
     const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
     const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
+    if (!isAdmitted(appSessionId)) return undefined;
     const liveSession = d.registry.getLive(appSessionId);
     const closing = liveSession?.providerClosePromise ?? liveSession?.closePromise;
     if (closing) {
       await closing;
-      if (d.isShutdownStarted()) return undefined;
+      if (!isAdmitted(appSessionId)) return undefined;
     }
     if (this.isCloseRequested(appSessionId)) return undefined;
     const pending = this.resumeOperations.get(appSessionId);
@@ -505,27 +541,34 @@ export class SessionLifecycle {
     if (automatic && !d.registry.getLive(appSessionId) && !this.canStartAutomaticRuntime())
       return undefined;
 
-    const operation = this.resumeOnce(requestedAppSessionId).finally(() => {
-      if (this.resumeOperations.get(appSessionId) !== operation) return;
-      this.resumeOperations.delete(appSessionId);
-      this.canceledResumes.delete(appSessionId);
-      // A resume that produced a runtime spent the slot it was holding, and
-      // registering it already announced the session. One that failed or was
-      // cancelled hands the slot back silently, so say so.
-      if (!d.registry.getLive(appSessionId)) d.onScheduledCapacityChanged?.();
-    });
+    const operation = this.resumeOnce(requestedAppSessionId, appSessionId, isAdmitted).finally(
+      () => {
+        if (this.resumeOperations.get(appSessionId) !== operation) return;
+        this.resumeOperations.delete(appSessionId);
+        // A resume that produced a runtime spent the slot it was holding, and
+        // registering it already announced the session. One that failed or was
+        // cancelled hands the slot back silently, so say so.
+        if (!d.registry.getLive(appSessionId)) d.onScheduledCapacityChanged?.();
+      },
+    );
     this.resumeOperations.set(appSessionId, operation);
     return operation;
   }
 
-  private async resumeOnce(requestedAppSessionId: string): Promise<LiveSession | undefined> {
+  private async resumeOnce(
+    requestedAppSessionId: string,
+    appSessionId: string,
+    isAdmitted: (appSessionId: string) => boolean,
+  ): Promise<LiveSession | undefined> {
     const d = this.dependencies;
+    if (!isAdmitted(appSessionId)) return undefined;
     d.ensureConnected();
-    const historical = d.registry.getCanonicalSummary(requestedAppSessionId);
-    const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
+    const historical = d.registry.getCanonicalSummary(appSessionId);
     const providerSessionId = historical?.providerSessionId ?? requestedAppSessionId;
     const existing = d.registry.getLive(appSessionId);
     if (existing) {
+      const admission = existing.createAdmission;
+      if (admission && (!(await admission.ready) || !admission.isCurrent())) return undefined;
       const projectedSummary =
         d.registry.resolveSummary(appSessionId) ??
         d.applyPendingSettingsToSummary({ ...existing.summary });
@@ -540,7 +583,7 @@ export class SessionLifecycle {
 
     const requireCurrentResume = (): void => {
       this.requireOpenAdmission();
-      if (this.canceledResumes.has(appSessionId) || this.isCloseRequested(appSessionId))
+      if (!isAdmitted(appSessionId) || this.isCloseRequested(appSessionId))
         throw new OpenAdmissionClosedError();
       if (
         historical &&
@@ -555,6 +598,12 @@ export class SessionLifecycle {
     let pendingSession: ProviderSession | undefined;
     let pendingLiveSession: LiveSession | undefined;
     try {
+      if (!historical && d.registry.hasPersistedSession(requestedAppSessionId)) {
+        throw new Error(
+          "This chat's provider conversation is missing or incomplete, so it cannot be resumed safely. " +
+            'Start a new chat; for an existing canvas, choose New chat with this canvas.',
+        );
+      }
       const transcriptPath = sessionFilePath(providerSessionId);
       if (transcriptPath) {
         try {
@@ -576,10 +625,14 @@ export class SessionLifecycle {
       requireCurrentResume();
       const providerSession = await provider.resume(providerSessionId, {
         appSessionId,
+        sessionPurpose: historical?.sessionPurpose,
         ...resumeHandle(historical),
         ...(historical?.droidProfile ? { droidProfile: historical.droidProfile } : {}),
         interactions: d.interactionsFor(ref),
         ...(mcp.inAppServers ? { inAppMcpServers: mcp.inAppServers } : {}),
+        ...(kind === 'claude'
+          ? { canvasScopeForRead: () => d.canvasTurns.activeScope(appSessionId)?.scopeId }
+          : {}),
         cwd: runtimeCwd,
         modelId: historical?.modelId,
         reasoningEffort: historical?.reasoningEffort,
@@ -816,8 +869,12 @@ export class SessionLifecycle {
     text: string,
     mentions?: ProviderMention[],
     steerId?: string,
+    canvasContext?: CanvasTurnContext,
   ): Promise<void> {
-    await this.sendPrompt(requestedAppSessionId, sessionPrompt(text, mentions, steerId));
+    await this.sendPrompt(
+      requestedAppSessionId,
+      sessionPrompt(text, mentions, steerId, canvasContext),
+    );
   }
 
   // A redelivered prompt keeps what it was sent with, so one nobody typed is
@@ -864,6 +921,7 @@ export class SessionLifecycle {
   private async steer(liveSession: LiveSession, prompt: SessionPrompt): Promise<boolean> {
     const appSessionId = liveSession.summary.appSessionId;
     const session = liveSession.session;
+    const canvasTurn = liveSession.canvasTurn;
     const steerId = prompt.steerId;
     const stops = this.stopCount(appSessionId);
     const turn = liveSession.turnPromise;
@@ -926,6 +984,15 @@ export class SessionLifecycle {
       outcome === 'withdrawn' ? 'withdrawn' : 'delivered',
     );
     if (outcome === true) prompt.delivery?.acknowledged?.();
+    // The original turn may have settled or its provider been replaced while
+    // steer delivery awaited. Only that turn's handle can mint this lease.
+    if (
+      outcome !== 'withdrawn' &&
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === session &&
+      liveSession.canvasTurn === canvasTurn
+    )
+      canvasTurn?.addSteer(prompt.canvasContext);
     if (outcome !== 'withdrawn')
       await this.dependencies.appendSteer(appSessionId, prompt.text, steerId);
     if (
@@ -1027,6 +1094,9 @@ export class SessionLifecycle {
       return;
     }
     liveSession.interruptingToSend = true;
+    // As for a Stop: the turn's authority ends before the interrupt is awaited,
+    // and one the provider refuses leaves the turn running without it.
+    liveSession.canvasTurn?.revoke();
     this.dependencies.appendProgress(appSessionId, 'Stopping the turn to send now...');
     // A refusal is reported first, so the turn settling after it sees it.
     const interrupt = liveSession.session.interrupt().catch((error: unknown) => {
@@ -1059,7 +1129,7 @@ export class SessionLifecycle {
   ): Promise<AdmittedPrompt | 'held' | undefined> {
     if (this.waitForRelaunch(id, prompt)) return 'held';
     const stops = this.stopCount(id);
-    const liveSession = await this.prepareToSend(id);
+    const liveSession = await this.prepareTurn(id);
     if (this.stopCount(id) !== stops || isWithdrawn(prompt)) return undefined;
     if (!liveSession) {
       if (this.waitForRelaunch(id, prompt)) return 'held';
@@ -1116,6 +1186,10 @@ export class SessionLifecycle {
       !liveSession.closeMode &&
       liveSession.session === session;
     liveSession.interrupting = true;
+    // Before the external cleanup await: a Stop ends the turn's authority at
+    // once, even while the provider is still unwinding it. A Stop the provider
+    // refuses leaves the turn running without one, which is the safe direction.
+    liveSession.canvasTurn?.revoke();
     try {
       await liveSession.session.interrupt();
     } catch (error) {
@@ -1172,6 +1246,7 @@ export class SessionLifecycle {
   async close(requestedId: string, mode: SessionCloseMode = 'discard-pending'): Promise<void> {
     // A resume in flight is filed under the chat's own id.
     const appSessionId = this.chatKey(requestedId);
+    this.closedAt.set(appSessionId, ++this.closeGeneration);
     // Closing a chat for good takes back whatever was about to be sent to it.
     if (mode === 'discard-pending') {
       this.noteStop(appSessionId);
@@ -1180,7 +1255,6 @@ export class SessionLifecycle {
       relaunch?.waiting.splice(0);
     }
     const pendingResume = this.resumeOperations.get(appSessionId);
-    if (pendingResume) this.canceledResumes.add(appSessionId);
     if (mode === 'discard-pending' && this.forkOpens.has(appSessionId))
       this.forkOpens.set(appSessionId, 'closed');
     const liveSession = this.dependencies.registry.getLive(appSessionId);
@@ -1194,6 +1268,9 @@ export class SessionLifecycle {
   }
 
   private beginClose(liveSession: LiveSession, mode: SessionCloseMode): CloseOperation {
+    // Before any external cleanup await, and before a resume can mint again.
+    liveSession.createAdmission?.cancel();
+    this.dependencies.canvasTurns.endSession(liveSession.summary.appSessionId);
     if (mode === 'discard-pending') {
       liveSession.closeMode = mode;
       liveSession.pendingSends = [];
@@ -1258,6 +1335,15 @@ export class SessionLifecycle {
       }
     };
 
+    await liveSession.createAdmission?.drain(() => {
+      d.emitError({
+        appSessionId: liveSession.summary.appSessionId,
+        code: 'canvas.close_pending',
+        message:
+          "Close is waiting for this chat's Canvas write to finish. If storage remains stuck, restart DROIDEX to recover the saved board.",
+        recoverable: true,
+      });
+    });
     await run(() => d.stopVoiceSession(liveSession.summary.appSessionId));
 
     // First, while every provider process of this session is still alive and
@@ -1323,9 +1409,16 @@ export class SessionLifecycle {
   }
 
   async closeAll(): Promise<void> {
+    const snapshot = this.dependencies.registry.liveSessionsSnapshot();
+    // A failed process kill skips beginClose below, but cannot leave a tool
+    // lease usable while shutdown waits or after it reports the failure.
+    for (const liveSession of snapshot) {
+      liveSession.createAdmission?.cancel();
+      this.dependencies.canvasTurns.endSession(liveSession.summary.appSessionId);
+    }
     this.forkOpens.clear();
     if (this.dependencies.isShutdownStarted()) {
-      for (const liveSession of this.dependencies.registry.liveSessionsSnapshot())
+      for (const liveSession of snapshot)
         clearTimeout(this.deferredCloses.get(liveSession)?.retryTimer);
     }
     // One concurrent kill pass before the serialized closes. Each close kills
@@ -1333,9 +1426,7 @@ export class SessionLifecycle {
     // session closes), but paying the kill grace one session at a time would
     // overrun the sidecar's force-exit budget and leave the last session's
     // dev server running — and its history unflushed.
-    const live = this.dependencies.registry
-      .liveSessionsSnapshot()
-      .map((liveSession) => liveSession.summary.appSessionId);
+    const live = snapshot.map((liveSession) => liveSession.summary.appSessionId);
     const killed = await Promise.allSettled(
       live.map((id) => this.dependencies.agentProcesses.killSession(id)),
     );
@@ -1445,7 +1536,8 @@ export class SessionLifecycle {
     });
     // A turn the provider started by itself is the session's turn like any
     // other: it streams, it can be stopped, and a typed prompt waits behind it.
-    const delegated = session.onDelegatedTurn?.((running, end) => {
+    let delegatedCanvasTurn: CanvasTurnLeases | undefined;
+    const applyDelegated = (running: boolean, end: DelegatedTurnEnd | undefined): void => {
       if (!isCurrent()) return;
       if (running) {
         liveSession.streaming = true;
@@ -1460,6 +1552,13 @@ export class SessionLifecycle {
         // reopens it for a turn the provider started: without this the spoken
         // request's work is dropped as post-turn noise.
         this.dependencies.eventFlow.beginTurn(appSessionId, appSessionId);
+        // Nobody composed this turn, so it pins nothing; it still owns steers.
+        // A typed turn still running keeps the leases it pinned.
+        delegatedCanvasTurn?.revoke();
+        delegatedCanvasTurn = liveSession.turnPromise
+          ? undefined
+          : this.dependencies.canvasTurns.beginTurn(appSessionId, undefined);
+        if (delegatedCanvasTurn) liveSession.canvasTurn = delegatedCanvasTurn;
         this.dependencies.registry.updateSummary(appSessionId, {
           phase: 'running',
           streaming: true,
@@ -1469,6 +1568,9 @@ export class SessionLifecycle {
         return;
       }
       liveSession.delegatedTurnOpen = false;
+      delegatedCanvasTurn?.revoke();
+      if (liveSession.canvasTurn === delegatedCanvasTurn) liveSession.canvasTurn = undefined;
+      delegatedCanvasTurn = undefined;
       // Its rows are all in: anything later is noise, as after a typed turn's
       // end. A typed turn still draining its rows closes the source itself.
       if (!liveSession.turnPromise)
@@ -1510,6 +1612,16 @@ export class SessionLifecycle {
             liveSession.delegatedTurnSettled = undefined;
           resolve?.();
         });
+    };
+    const admission = liveSession.createAdmission;
+    const delegated = session.onDelegatedTurn?.((running, end) => {
+      if (!admission) {
+        applyDelegated(running, end);
+        return;
+      }
+      admission.onDelegatedTurn(() => {
+        applyDelegated(running, end);
+      });
     });
     if (events ?? delegated)
       liveSession.unsubscribe = () => {
@@ -1637,7 +1749,7 @@ export class SessionLifecycle {
     if (target) void this.dependencies.context.refresh(target);
   }
 
-  private async prepareToSend(appSessionId: string): Promise<LiveSession | undefined> {
+  async prepareTurn(appSessionId: string): Promise<LiveSession | undefined> {
     let liveSession = this.dependencies.registry.getLive(appSessionId);
     // A send that lands while the runtime is being released must wait for that
     // close and reopen, not vanish. Retirement makes this window reachable.
@@ -1658,11 +1770,21 @@ export class SessionLifecycle {
       this.dependencies.emitError({ appSessionId, message });
       return undefined;
     }
+    const admission = liveSession.createAdmission;
+    if (admission && (!(await admission.ready) || !admission.isCurrent())) return undefined;
     if (liveSession.streaming && liveSession.summary.provider === 'claude') return liveSession;
+    const provider = liveSession.session;
     const settingsApplied = await this.dependencies.applyPendingSessionSettings(
       liveSession.summary.appSessionId,
     );
-    return settingsApplied && !liveSession.closeMode ? liveSession : undefined;
+    return settingsApplied &&
+      !liveSession.closeMode &&
+      this.dependencies.registry.getLive(appSessionId) === liveSession &&
+      liveSession.session === provider &&
+      !provider.isClosed &&
+      !this.dependencies.isShutdownStarted()
+      ? liveSession
+      : undefined;
   }
 
   private async cleanupFailedOpen(
@@ -1670,6 +1792,17 @@ export class SessionLifecycle {
     session: ProviderSession | undefined,
     liveSession: LiveSession | undefined,
   ): Promise<void> {
+    const admission = liveSession?.createAdmission;
+    admission?.cancel();
+    if (liveSession && session && liveSession.session !== session) {
+      if (liveSession.createAdmission === admission) liveSession.createAdmission = undefined;
+      await runBestEffortAsync(() => session.close());
+      return;
+    }
+    if (liveSession?.closePromise) {
+      await liveSession.closePromise;
+      return;
+    }
     if (
       liveSession &&
       this.dependencies.registry.getLive(liveSession.summary.appSessionId) === liveSession
@@ -1734,6 +1867,11 @@ export class SessionLifecycle {
       delivery?.declined('stale');
       return;
     }
+    const admission = liveSession.createAdmission;
+    if (admission && (!(await admission.ready) || !admission.isCurrent())) {
+      delivery?.declined('stale');
+      return;
+    }
     if (liveSession.summary.provider === 'claude' && !liveSession.closeMode) {
       await d.waitForSettingsMutations?.(appSessionId);
       if (d.isShutdownStarted() || this.stopCount(appSessionId) !== stops) {
@@ -1787,9 +1925,11 @@ export class SessionLifecycle {
     const d = this.dependencies;
     const stableAppSessionId = liveSession.summary.appSessionId;
     let turn: Promise<void> | undefined;
+    const canvasTurn = d.canvasTurns.beginTurn(stableAppSessionId, prompt.canvasContext);
     try {
       this.rememberSteerOutcome(liveSession, prompt, 'delivered');
       liveSession.streaming = true;
+      liveSession.canvasTurn = canvasTurn;
       // Persist resumed activity immediately so the chat stays near the top
       // even if the app closes mid-turn. The renderer suppresses unread while
       // streaming; completion advances the timestamp again for review.
@@ -1810,6 +1950,10 @@ export class SessionLifecycle {
       });
       await turn;
     } finally {
+      // First in the finally: the turn's authority ends before anything here
+      // awaits, and before the queue can advance to the next turn.
+      canvasTurn.revoke();
+      if (liveSession.canvasTurn === canvasTurn) liveSession.canvasTurn = undefined;
       delivery?.declined('unknown');
       // This turn's rows are all in. One the provider started meanwhile, and
       // still running, keeps the source open; one that ended left it to us,
@@ -1979,6 +2123,15 @@ export class SessionLifecycle {
     return this.stops.get(this.chatKey(id)) ?? 0;
   }
 
+  // A close can arrive while reconciliation has not yet exposed the stable id.
+  captureCloseAdmission(requestedId: string): (appSessionId: string) => boolean {
+    const generation = this.closeGeneration;
+    return (appSessionId) =>
+      !this.dependencies.isShutdownStarted() &&
+      (this.closedAt.get(requestedId) ?? 0) <= generation &&
+      (this.closedAt.get(appSessionId) ?? 0) <= generation;
+  }
+
   private noteStop(id: string): void {
     this.stops.set(this.chatKey(id), this.stopCount(id) + 1);
   }
@@ -2014,11 +2167,13 @@ function sessionPrompt(
   text: string,
   mentions?: ProviderMention[],
   steerId?: string,
+  canvasContext?: CanvasTurnContext,
 ): SessionPrompt {
   return {
     text,
     ...(mentions?.length ? { mentions } : {}),
     ...(steerId ? { steerId } : {}),
+    ...(canvasContext ? { canvasContext } : {}),
     order: ++promptOrder,
   };
 }

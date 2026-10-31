@@ -94,14 +94,14 @@ export default function AutonomySelector({
         aria-busy={pending}
         aria-label={`Autonomy: ${AUTONOMY_LABELS[value]}`}
         title={title}
-        className={`flex h-control-sm shrink-0 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${tone}`}
+        className={`flex h-control-sm min-w-0 items-center gap-1.5 rounded-full px-2.5 text-caption transition-colors ${tone}`}
       >
         {pending ? (
           <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow" />
         ) : (
           <Glyph className="size-icon-sm shrink-0" strokeWidth={GLYPH_STROKE} />
         )}
-        <span>{AUTONOMY_LABELS[value]}</span>
+        <span className="truncate">{AUTONOMY_LABELS[value]}</span>
       </button>
 
       <Menu

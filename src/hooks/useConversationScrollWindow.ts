@@ -85,6 +85,7 @@ export function useConversationScrollWindow({
   viewportLayoutRef,
 }: ConversationScrollWindowOptions): {
   onScroll: () => void;
+  onListResize: () => void;
   jumpToLatest: () => void;
   isAwayFromLatest: boolean;
   requestOlderHistory: (limit?: number) => void;
@@ -597,6 +598,16 @@ export function useConversationScrollWindow({
   });
   useEffect(() => disposeContentResizeBinding, [disposeContentResizeBinding]);
 
+  // The list measures a row that grew on its own (streamed text revealing)
+  // inside its ResizeObserver callback, and the content observer above only
+  // hears of the taller list a frame later. Following here, in the same
+  // callback, keeps a pinned tail from painting one frame short.
+  const onListResize = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element || !isPinned.current || disclosureAnchor.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [scrollRef]);
+
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
@@ -642,6 +653,7 @@ export function useConversationScrollWindow({
 
   return {
     onScroll,
+    onListResize,
     jumpToLatest,
     isAwayFromLatest: awayKey !== null && awayKey === visibleConversationKey,
     requestOlderHistory,

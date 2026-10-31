@@ -1,3 +1,5 @@
+import type { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import { runCompaction } from './compaction.js';
 import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
 import type { ServerEvent } from './protocol.js';
@@ -27,7 +29,7 @@ export type CompactionExecutionResult =
 export interface SessionCompactionExecutionDependencies {
   registry: Pick<
     SessionRegistry<LiveSession>,
-    'getLive' | 'resolveSummary' | 'replaceProvider' | 'updateSummary'
+    'getLive' | 'getCanonicalSummary' | 'hasPersistedSession' | 'replaceProvider' | 'updateSummary'
   >;
   context: Pick<SessionContext, 'refresh' | 'preserveUsage' | 'recordCompaction'>;
   timeline: Pick<SessionTimeline, 'appendCompaction' | 'appendStatus'>;
@@ -45,6 +47,7 @@ export interface SessionCompactionExecutionDependencies {
     | 'stopTurn'
   >;
   agentProcesses: Pick<AgentProcessMonitor, 'track' | 'untrack' | 'adoptDescendantsAsRoots'>;
+  canvasTurns: Pick<CanvasTurns, 'endSession'>;
   interactionsFor(ref: { id: string }): ProviderInteractions;
   emitError(error: Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>): void;
   // The replacement provider's runtime can die like the one it replaced.
@@ -65,11 +68,13 @@ export class SessionCompactionExecution {
 
   async compact(
     appSessionId: string,
-    customInstructions?: string,
+    customInstructions: string | undefined,
+    isAdmitted: () => boolean,
   ): Promise<CompactionExecutionResult> {
+    if (!isAdmitted()) return { kind: 'ready-to-settle' };
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (liveSession) return this.compactLiveSession(liveSession, customInstructions);
-    await this.compactHistoricalSession(appSessionId, customInstructions);
+    await this.compactHistoricalSession(appSessionId, customInstructions, isAdmitted);
     return { kind: 'ready-to-settle' };
   }
 
@@ -77,6 +82,7 @@ export class SessionCompactionExecution {
     liveSession: LiveSession,
     customInstructions: string | undefined,
   ): Promise<CompactionExecutionResult> {
+    liveSession.createAdmission?.requireProviderChange();
     const appSessionId = liveSession.summary.appSessionId;
     const isCurrent = () => this.effects.primaryTarget(liveSession).isCurrent();
     const preCompactSessionId = liveSession.summary.providerSessionId;
@@ -146,6 +152,7 @@ export class SessionCompactionExecution {
     providerSessionId: string,
     carryover: UsageOffset,
   ): Promise<void> {
+    liveSession.createAdmission?.requireProviderChange();
     const appSessionId = liveSession.summary.appSessionId;
     let provider: DroidProviderSession | undefined;
     const ref = {
@@ -160,6 +167,9 @@ export class SessionCompactionExecution {
       ...droidInteractionHandlers(ref, this.dependencies.interactionsFor(ref)),
       cwd: liveSession.summary.cwd,
       mcpServers: liveSession.mcpConfigs,
+      ...(liveSession.summary.sessionPurpose === 'design'
+        ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE }
+        : {}),
       droidProfile: liveSession.summary.droidProfile,
     });
     const replacementPid = this.dependencies.runtime.processIdOf(replacement);
@@ -197,6 +207,10 @@ export class SessionCompactionExecution {
         if (!adopted)
           throw new Error('Could not preserve processes before replacing the provider.');
       }
+      // The replacement speaks for this chat from here on, so the leases the
+      // old provider session could still have served end before it closes.
+      liveSession.createAdmission?.requireProviderChange();
+      this.dependencies.canvasTurns.endSession(appSessionId);
       await oldSession.close();
       if (!target.isCurrent()) return;
       if (liveSession.summary.autonomy !== autonomy)
@@ -273,18 +287,36 @@ export class SessionCompactionExecution {
   private async compactHistoricalSession(
     requestedAppSessionId: string,
     customInstructions: string | undefined,
+    isAdmitted: () => boolean,
   ): Promise<void> {
-    const historical = this.dependencies.registry.resolveSummary(requestedAppSessionId);
+    const historical = this.dependencies.registry.getCanonicalSummary(requestedAppSessionId);
     const appSessionId = historical?.appSessionId ?? requestedAppSessionId;
     const oldProviderSessionId = historical?.providerSessionId ?? requestedAppSessionId;
+    const isCurrent = (): boolean =>
+      isAdmitted() &&
+      !this.dependencies.registry.getLive(appSessionId) &&
+      (!historical ||
+        this.dependencies.registry.getCanonicalSummary(appSessionId)?.providerSessionId ===
+          oldProviderSessionId);
     let session: FactorySession | undefined;
     try {
+      if (!historical && this.dependencies.registry.hasPersistedSession(requestedAppSessionId)) {
+        throw new Error(
+          "This chat's provider conversation is missing or incomplete, so it cannot be compacted safely. " +
+            'Start a new chat; for an existing canvas, choose New chat with this canvas.',
+        );
+      }
       session = await this.dependencies.runtime.loadSession(oldProviderSessionId, {
         droidProfile: historical?.droidProfile,
+        ...(historical?.sessionPurpose === 'design'
+          ? { systemPromptAppend: DESIGN_SESSION_GUIDANCE }
+          : {}),
       });
+      if (!isCurrent()) return;
       const result: unknown = await session.compactSession(
         customInstructions ? { customInstructions } : {},
       );
+      if (!isCurrent()) return;
       const providerSessionId =
         result !== null &&
         typeof result === 'object' &&
@@ -296,6 +328,7 @@ export class SessionCompactionExecution {
       if (providerSessionId !== oldProviderSessionId && historical)
         await this.persistHistoricalProvider(appSessionId, providerSessionId);
     } catch (error) {
+      if (!isCurrent()) return;
       this.dependencies.emitError({
         providerSessionId: oldProviderSessionId,
         appSessionId,

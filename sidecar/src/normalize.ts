@@ -22,7 +22,7 @@ import type {
   TranscriptEvent,
 } from './protocol.js';
 import { toolResultParts } from './toolResultImages.js';
-import { trimmedString as str } from './values.js';
+import { trimmedString as str, uniqueStrings } from './values.js';
 import {
   detectChildSession,
   backgroundTaskCompletionProviderSessionId,
@@ -33,6 +33,7 @@ import {
   type ChildSessionSignal,
 } from './subagentSignals.js';
 import { parseSkillActivation, type SkillActivation } from './skillSignals.js';
+import { canvasToolProvenance, type ToolProvenance } from './canvas/canvasToolPresentation.js';
 
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
@@ -77,6 +78,7 @@ function transcript(
 
 export interface NormalizedEvent {
   transcript?: TranscriptEvent;
+  toolProvenance?: ToolProvenance;
   features?: BridgeFeature[];
   progress?: NormalizedProgressEntry[];
   missionState?: string;
@@ -206,6 +208,8 @@ export function normalizeStreamEvent(
         (ev as { toolUse?: { id?: string; name?: string; input?: Record<string, unknown> } })
           .toolUse ?? {};
       const toolUseId = toolUseIdFrom(toolUse.id, eventToolUseId);
+      if (!toolUseId && !toolUse.name) return null;
+      const toolProvenance = canvasToolProvenance(toolUse.name, toolUseId);
       const childSession = detectChildSession(
         toolUse.name,
         toolUse.input ?? {},
@@ -221,12 +225,14 @@ export function normalizeStreamEvent(
           // (matching the replay path, which derives one block per tool-use).
           ...(toolUseId ? { toolUseId } : {}),
         }),
+        ...(toolProvenance ? { toolProvenance } : {}),
         ...(childSession ? { childSession } : {}),
       };
     }
     case 'tool_result': {
       const isTask = isTaskToolName(ev.toolName);
       const toolUseId = toolUseIdFrom((ev as { toolUseId?: string }).toolUseId, eventToolUseId);
+      const toolProvenance = canvasToolProvenance(ev.toolName, toolUseId);
       const taskUpdate = ev.isError ? undefined : taskResultChildUpdate(ev.toolName, ev.content);
       const resultProviderSessionId = subagentSessionId ?? taskUpdate?.providerSessionId;
       const resultTranscript = () =>
@@ -255,12 +261,18 @@ export function normalizeStreamEvent(
         // the feed, not the bridge, decides whether the body is worth showing.
         return isTask && !ev.isError ? signal : { ...signal, transcript: resultTranscript() };
       }
-      return { transcript: resultTranscript() };
+      return {
+        transcript: resultTranscript(),
+        ...(toolProvenance ? { toolProvenance } : {}),
+      };
     }
     case 'error': {
       const details = droidErrorDetails(ev.message);
       return {
-        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', details),
+        transcript: transcript(appSessionId, sourceProviderSessionId, role, 'error', {
+          ...details,
+          ...(eventToolUseId ? { toolUseId: eventToolUseId } : {}),
+        }),
       };
     }
     case 'mission_features_changed':
@@ -508,6 +520,7 @@ export function classifyPermission(
   requestId: string,
   params: RequestPermissionRequestParams,
 ): PermissionRequest {
+  if (params.toolUses.length > 1) return classifyPermissionBundle(appSessionId, requestId, params);
   const c = primaryConfirmation(params);
   const type = typeof c.type === 'string' ? c.type : 'other';
   let title = 'Permission required';
@@ -594,6 +607,30 @@ export function classifyPermission(
   };
 }
 
+// One answer covers every tool in a bundle, so the card names them all and
+// shows each one's own detail rather than presenting the first as the whole.
+function classifyPermissionBundle(
+  appSessionId: string,
+  requestId: string,
+  params: RequestPermissionRequestParams,
+): PermissionRequest {
+  const tools = params.toolUses.map((toolUse) =>
+    classifyPermission(appSessionId, requestId, { ...params, toolUses: [toolUse] }),
+  );
+  const kind = tools.every((tool) => tool.kind === tools[0].kind) ? tools[0].kind : 'other';
+  return {
+    appSessionId,
+    requestId,
+    kind,
+    title: uniqueStrings(tools.map((tool) => tool.title)).join(', '),
+    detail: tools
+      .map((tool) => (tool.detail ? `${tool.title}\n${tool.detail}` : tool.title))
+      .join('\n\n'),
+    canAlwaysAllow: false,
+    raw: params,
+  };
+}
+
 export function confirmationType(params: RequestPermissionRequestParams): string {
   const type = primaryConfirmation(params).type;
   return typeof type === 'string' ? type : 'other';
@@ -601,9 +638,14 @@ export function confirmationType(params: RequestPermissionRequestParams): string
 
 // Stable key identifying "the same action" so an app-level allowlist can honor
 // "Always allow" even when the underlying agent does not persist the grant.
-// An empty string means the request is not eligible for always-allow caching.
+// An empty string means the request is not eligible for always-allow caching,
+// as no bundle is: a grant keyed by one of its tools would let a later bundle
+// carry other tools through under it. Nor is a call from a Droid script: the
+// daemon reads "always" for a script as allowing every command of its impact.
 export function permissionSignature(params: RequestPermissionRequestParams): string {
+  if (params.toolUses.length > 1) return '';
   const c = primaryConfirmation(params);
+  if (c.inScript === true) return '';
   const type = typeof c.type === 'string' ? c.type : 'other';
   switch (type) {
     case 'exec': {

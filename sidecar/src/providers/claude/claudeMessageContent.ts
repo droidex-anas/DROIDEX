@@ -11,6 +11,7 @@ interface ToolBlock {
   id: string;
   name: string;
   json: string;
+  reported?: boolean;
 }
 
 interface MessageState {
@@ -71,9 +72,11 @@ export class ClaudeMessageContent {
       }
       case 'content_block_stop': {
         const tool = state.blocks.get(event.index);
-        return tool
-          ? [{ kind: 'tool_call', id: tool.id, name: tool.name, input: parseToolInput(tool.json) }]
-          : [];
+        if (!tool || tool.reported) return [];
+        tool.reported = true;
+        return [
+          { kind: 'tool_call', id: tool.id, name: tool.name, input: parseToolInput(tool.json) },
+        ];
       }
       // Keep the completed message until the next native id: its per-block
       // assistant frames can arrive after message_stop and must not repeat it.
@@ -82,7 +85,12 @@ export class ClaudeMessageContent {
     }
   }
 
-  assistant(message: Assistant): { streamed: boolean; content: ClaudeContent[] } {
+  // A started tool waits for its block stop, unless `reportToolUseId` names it:
+  // a failed request can end that call before the stop arrives.
+  assistant(
+    message: Assistant,
+    reportToolUseId?: string,
+  ): { streamed: boolean; content: ClaudeContent[] } {
     const state = this.state(message.parent_tool_use_id);
     if (state.id !== message.message.id) {
       state.id = message.message.id;
@@ -90,13 +98,17 @@ export class ClaudeMessageContent {
       state.blocks.clear();
     }
     state.modelId = message.message.model;
-    const reported = new Set([...state.blocks.values()].flatMap((tool) => (tool ? [tool.id] : [])));
+    const started = new Map(
+      [...state.blocks.values()].flatMap((tool) => (tool ? [[tool.id, tool] as const] : [])),
+    );
     const content: ClaudeContent[] = [];
     for (const block of message.message.content) {
       const tool = toolBlock(block);
       if (tool) {
-        if (!reported.has(tool.id))
-          content.push({ kind: 'tool_call', ...tool, input: Reflect.get(block, 'input') });
+        const startedTool = started.get(tool.id);
+        if (startedTool && (startedTool.reported || tool.id !== reportToolUseId)) continue;
+        if (startedTool) startedTool.reported = true;
+        content.push({ kind: 'tool_call', ...tool, input: Reflect.get(block, 'input') });
         continue;
       }
       if (message.error) continue;
@@ -129,7 +141,7 @@ export class ClaudeMessageContent {
   }
 }
 
-function toolBlock(block: { type: string }): { id: string; name: string } | undefined {
+export function toolBlock(block: { type: string }): { id: string; name: string } | undefined {
   if (!TOOL_BLOCK_TYPES.has(block.type)) return undefined;
   const { id, name } = block as unknown as { id: string; name: string };
   return { id, name };

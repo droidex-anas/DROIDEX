@@ -127,6 +127,36 @@ test('failed provider adoption marks the session interrupted instead of running'
   assert.equal(statuses.length, 1);
 });
 
+test('failed history reconciliation reaps old processes without overwriting session metadata', async (t) => {
+  const { journal } = scratchJournal(t);
+  const identity = runningIdentity('design-chat');
+  journal.write({ sessions: [identity], children: [], processes: [] });
+  const actions: string[] = [];
+  const failure = new Error('History reconciliation failed');
+  const adoption = createAdoption(journal, {
+    reapProcesses: async () => {
+      actions.push('reap');
+    },
+    historyReady: async () => {
+      throw failure;
+    },
+    lifecycle: {
+      continueTurn: () => undefined,
+      resume: async () => {
+        actions.push('resume');
+        return undefined;
+      },
+    },
+    persistSummaries: () => {
+      actions.push('persist');
+    },
+  });
+
+  await assert.rejects(adoption.adopt(), failure);
+  assert.deepEqual(actions, ['reap']);
+  assert.deepEqual(journal.read().sessions, [identity]);
+});
+
 test('adoption waits for stored provenance and never invents a harness for a missing session', async (t) => {
   const { journal } = scratchJournal(t);
   journal.write({

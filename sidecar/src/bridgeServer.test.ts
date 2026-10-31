@@ -152,6 +152,55 @@ function resumeQuery(batch: ServerEventBatch): string {
   return `&resumeGeneration=${encodeURIComponent(batch.generation)}&resumeSeq=${String(batch.lastSeq)}`;
 }
 
+test('only Electron main can submit a validated Canvas image import', async (t) => {
+  const imports: string[] = [];
+  const server = startBridgeServer({
+    requestedPort: 0,
+    token: 'renderer-token',
+    canvasImages: {
+      secret: 'main-only-secret',
+      importImage: async (request) => {
+        imports.push(request.filePath);
+        return {
+          assetId: request.digest,
+          mediaType: 'image/png',
+          byteLength: 1,
+          width: 1,
+          height: 1,
+        };
+      },
+    },
+    onCommand: async () => undefined,
+  });
+  await server.ready;
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${String(server.port)}/canvas/import-image`;
+  const request = {
+    canvasId: 'canvas-one',
+    filePath: '/chosen/image.png',
+    digest: 'a'.repeat(64),
+    width: 1,
+    height: 1,
+  };
+  const send = (body: object, secret: string) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-canvas-secret': secret },
+      body: JSON.stringify(body),
+    });
+
+  assert.equal((await send(request, 'renderer-token')).status, 401);
+  const invalid = await send({ ...request, width: 9000 }, 'main-only-secret');
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(await invalid.json(), {
+    code: 'invalid_input',
+    message: 'The image could not be imported. Choose it again.',
+  });
+  assert.deepEqual(imports, []);
+  assert.equal((await send(request, 'main-only-secret')).status, 200);
+  assert.deepEqual(imports, ['/chosen/image.png']);
+});
+
 test('voice ownership moves only on a successful start, and only the owner can stop', async (t) => {
   const commands: string[] = [];
   const harness = await bridgeServer(t, async (command) => {
@@ -515,6 +564,207 @@ test('fast mode rejects non-booleans before command dispatch', async (t) => {
     JSON.stringify({ type: 'session.updateSettings', appSessionId: 'app', fastMode: false }),
   );
   await waitFor(() => commands === 1);
+});
+
+test('a command sent while a slow resume is admitting still reaches the sidecar', async (t) => {
+  const commands: ClientCommand[] = [];
+  const release = deferred();
+  const harness = await bridgeServer(
+    t,
+    async (command) => {
+      commands.push(command);
+    },
+    async () => {
+      // A runtime snapshot that takes its time is all it takes: the renderer
+      // flushes its queue the moment its socket opens, long before this resolves.
+      await release.promise;
+      return emptySnapshot();
+    },
+  );
+  harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
+
+  // A cursor from another generation, so admission goes through the snapshot.
+  const socket = new WebSocket(bridgeUrl(harness, '&resumeGeneration=gone&resumeSeq=0'));
+  t.after(() => closeSocket(socket));
+  await socketOpen(socket);
+  socket.send(JSON.stringify({ type: 'canvas.subscribe', requestId: 'req-1', canvasId: 'cv_01' }));
+  // Nothing is admitted yet, so nothing has been dispatched either.
+  await waitFor(() => true);
+  assert.equal(commands.length, 0);
+
+  release.resolve();
+  await waitFor(() => commands.length === 1);
+  assert.deepEqual(commands.at(0), {
+    type: 'canvas.subscribe',
+    requestId: 'req-1',
+    canvasId: 'cv_01',
+  });
+
+  // Admission is over; the socket carries commands directly from here.
+  socket.send(JSON.stringify({ type: 'runtime.status' }));
+  await waitFor(() => commands.length === 2);
+  assert.equal(commands.at(1)?.type, 'runtime.status');
+});
+
+test('a full renderer queue flushed into a slow admission arrives whole and in order', async (t) => {
+  // The renderer's own cap (MAX_QUEUED_COMMANDS in src/lib/bridge.ts). The
+  // server must admit a full flush of it, so this is the coupling between them.
+  const RENDERER_QUEUE_CAP = 256;
+  const arrived: string[] = [];
+  const release = deferred();
+  const harness = await bridgeServer(
+    t,
+    async (command) => {
+      if (command.type === 'session.interrupt') arrived.push(command.appSessionId);
+    },
+    async () => {
+      await release.promise;
+      return emptySnapshot();
+    },
+  );
+  harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
+
+  // What a reconnect sends live once its queue is flushed: re-watching each
+  // canvas a pane has open, which arrives in the same admission window.
+  const LIVE_ON_RECONNECT = 8;
+  const total = RENDERER_QUEUE_CAP + LIVE_ON_RECONNECT;
+
+  const socket = new WebSocket(bridgeUrl(harness, '&resumeGeneration=gone&resumeSeq=0'));
+  t.after(() => closeSocket(socket));
+  await socketOpen(socket);
+  for (let index = 0; index < total; index += 1)
+    socket.send(
+      JSON.stringify({ type: 'session.interrupt', appSessionId: `app-${String(index)}` }),
+    );
+
+  // Released only once every frame is on the wire and the server has had turns
+  // to read it, so all of them are held rather than arriving after admission.
+  await waitFor(() => socket.bufferedAmount === 0);
+  await yieldTurns();
+  release.resolve();
+  await waitFor(() => arrived.length === total);
+  assert.deepEqual(
+    arrived,
+    Array.from({ length: total }, (_, index) => `app-${String(index)}`),
+  );
+  assert.equal(socket.readyState, WebSocket.OPEN);
+});
+
+test('a client that floods a slow admission is closed as a policy violation', async (t) => {
+  const release = deferred();
+  const harness = await bridgeServer(t, undefined, async () => {
+    await release.promise;
+    return emptySnapshot();
+  });
+  harness.broadcast({ type: 'mission.progress', appSessionId: 'app', entries: [] });
+
+  const socket = new WebSocket(bridgeUrl(harness, '&resumeGeneration=gone&resumeSeq=0'));
+  t.after(() => closeSocket(socket));
+  await socketOpen(socket);
+  const closed = socketCloseCode(socket);
+  // More than any renderer can hold plus the live commands a reconnect sends.
+  for (let index = 0; index < 400; index += 1)
+    socket.send(JSON.stringify({ type: 'runtime.status' }));
+  await waitFor(() => socket.bufferedAmount === 0);
+  await yieldTurns();
+
+  // 1008 is a policy violation, not an invitation to retry the same flood.
+  assert.equal(await closed, 1008);
+  release.resolve();
+});
+
+/** Event-loop turns, so a socket the server owns can read what was just sent. */
+async function yieldTurns(turns = 5): Promise<void> {
+  for (let turn = 0; turn < turns; turn += 1)
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function emptySnapshot(): BridgeRuntimeSnapshot {
+  return {
+    runtime: { mode: 'cli_auth', droidPath: '/bin/droid', apiKeyConfigured: false },
+    sessions: [],
+    children: [],
+    processes: {},
+    persistence: { durable: true, hadUnflushedWork: false },
+    interrupted: [],
+  };
+}
+
+test('a malformed pinned Canvas context is refused with its stable code and nothing else', async (t) => {
+  const commands: ClientCommand[] = [];
+  const harness = await bridgeServer(t, async (command) => {
+    commands.push(command);
+  });
+  const { socket, received } = await connect(t, harness);
+  const send = (canvasContext: unknown) => {
+    socket.send(
+      JSON.stringify({ type: 'session.send', appSessionId: 'chat-one', text: 'hi', canvasContext }),
+    );
+  };
+
+  send({ designs: [{ designId: '../etc', revisionId: null }], elements: [], designSystem: null });
+  await waitFor(() => received.length > 0);
+  const refusal = JSON.parse(received[0]) as { type: string; code?: string; message: string };
+  assert.equal(refusal.type, 'error');
+  assert.equal(refusal.code, 'canvas.invalid_input');
+  // The first refinement message, never the payload (spec §8).
+  assert.match(refusal.message, /^A Canvas identifier is 1 to \d+ characters/);
+  assert.equal(refusal.message.includes('../etc'), false);
+  assert.equal(commands.length, 0);
+
+  // A well-formed context reaches the session layer beside the prompt text.
+  const designSystem = { id: 'droidex', version: 1, mode: 'light' };
+  send({ designs: [{ designId: 'dsg_hey', revisionId: null }], elements: [], designSystem });
+  await waitFor(() => commands.length > 0);
+  const [command] = commands;
+  assert.ok(command.type === 'session.send');
+  assert.deepEqual(command.canvasContext?.designs, [{ designId: 'dsg_hey', revisionId: null }]);
+  assert.equal(command.text, 'hi');
+});
+
+test('session creation validates Canvas intent before admitting the command', async (t) => {
+  const commands: ClientCommand[] = [];
+  const harness = await bridgeServer(t, async (command) => {
+    commands.push(command);
+  });
+  const { socket } = await connect(t, harness);
+  for (const canvas of [
+    null,
+    { canvasId: null },
+    { canvasId: '../outside', mutationId: 'm' },
+    { canvasId: null, mutationId: 'x'.repeat(129) },
+    { canvasId: null, mutationId: 'm', name: 'x'.repeat(121) },
+    { canvasId: null, mutationId: 'm', name: 'bad\u0000name' },
+  ]) {
+    const received = new Promise<string>((resolve) =>
+      socket.once('message', (raw) => resolve(String(raw))),
+    );
+    socket.send(JSON.stringify({ type: 'session.create', clientRef: 'design', canvas }));
+    const refusal = JSON.parse(await received);
+    assert.equal(refusal.type, 'error');
+    assert.equal(refusal.code, 'canvas.invalid_input');
+  }
+  assert.equal(commands.length, 0);
+  socket.send(
+    JSON.stringify({
+      type: 'session.create',
+      canvas: { canvasId: null, mutationId: 'create-1', name: ' Pricing ' },
+    }),
+  );
+  await waitFor(() => commands.length === 1);
+  const [command] = commands;
+  assert.ok(command.type === 'session.create');
+  assert.deepEqual(command.canvas, { canvasId: null, mutationId: 'create-1', name: 'Pricing' });
 });
 
 function socketOpen(socket: WebSocket): Promise<void> {

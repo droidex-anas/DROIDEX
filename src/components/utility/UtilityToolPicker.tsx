@@ -11,6 +11,7 @@ const TOOL_SURFACES: Record<UtilityTool, LazySurface> = {
   browser: 'browser',
   terminal: 'terminal',
   files: 'files',
+  canvas: 'canvas',
   agents: 'agents',
   threads: 'threads',
   side: 'sideChats',

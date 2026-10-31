@@ -2,28 +2,25 @@ import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '../../ty
 import { ModelIcon } from '../../components/ModelIcon';
 import { harnessChoice, PROVIDER_MARKS } from './providerIdentity';
 
-// The harness column of the model popover: one mark per CLI a chat can run on.
-// A new draft switches freely; once the chat exists its harness is fixed, so
-// the other marks stay visible but stop accepting input.
+// The harness column of the classic model popover: one mark per CLI a new chat
+// can run on.
 export default function HarnessRail({
   current,
   statuses,
-  locked,
   onSelect,
 }: {
   current: ProviderKind;
   statuses: ProviderStatus[];
-  locked: boolean;
   onSelect: (provider: ProviderKind) => void;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label="Harness"
-      className="flex w-11 shrink-0 flex-col items-center gap-1 py-2"
+      className="flex w-11 shrink-0 flex-col items-center gap-1 py-1.5"
     >
       {PROVIDER_KINDS.map((provider) => {
-        const { selected, disabled, title } = harnessChoice(provider, current, statuses, locked);
+        const { selected, disabled, title } = harnessChoice(provider, current, statuses);
         let tone = 'text-muted hover:bg-elevated dark:hover:bg-surface/60 hover:text-primary';
         if (selected) tone = 'bg-active text-primary dark:bg-surface';
         else if (disabled) tone = 'cursor-not-allowed text-muted/40';

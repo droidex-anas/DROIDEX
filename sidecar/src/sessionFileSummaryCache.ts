@@ -9,7 +9,7 @@ interface PersistedSessionFileSummary {
 }
 
 // Bump when admission or summary rules change so cached rows are rebuilt.
-export const SESSION_FILE_SUMMARY_CACHE_VERSION = 3;
+export const SESSION_FILE_SUMMARY_CACHE_VERSION = 4;
 
 export const SESSION_FILE_REASONING_EFFORTS: Record<ReasoningEffort, true> = {
   off: true,
@@ -103,6 +103,7 @@ function hasOptionalSummaryFields(summary: Record<string, unknown>): boolean {
     optionalRecordKeyOf(summary, 'validatorReasoningEffort', SESSION_FILE_REASONING_EFFORTS) &&
     optionalRecordOneOf(summary, 'contextAccuracy', ['exact', 'estimated']) &&
     optionalRecordOneOf(summary, 'workspaceKind', ['folder', 'none']) &&
+    optionalRecordOneOf(summary, 'canvasTools', ['at_start', 'none']) &&
     optionalRecordOneOf(summary, 'droidProfile', ['alt']) &&
     optionalFiniteNumber(summary, [
       'queuedSends',

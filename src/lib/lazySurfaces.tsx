@@ -39,6 +39,42 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../components/agents/AgentsWorkspace');
     return { default: module.AgentsWorkspace };
   },
+  canvas: async () => {
+    const module = await import('../features/canvas/CanvasWorkspace');
+    return { default: module.CanvasWorkspace };
+  },
+  recentCanvases: async () => {
+    const module = await import('../features/canvas/DesignHome');
+    return { default: module.RecentCanvases };
+  },
+  librarySeedChip: async () => {
+    const module = await import('../features/canvas/DesignHome');
+    return { default: module.LibrarySeedChip };
+  },
+  canvasHeader: async () => {
+    const module = await import('../features/canvas/CanvasHeader');
+    return { default: module.CanvasHeader };
+  },
+  attachedChatsMenu: async () => {
+    const module = await import('../features/canvas/AttachedChatsMenu');
+    return { default: module.AttachedChatsMenu };
+  },
+  designColumnHeader: async () => {
+    const module = await import('../features/canvas/DesignColumnHeader');
+    return { default: module.DesignColumnHeader };
+  },
+  canvasColumnTabs: async () => {
+    const module = await import('../features/canvas/CanvasColumnTabs');
+    return { default: module.CanvasColumnTabs };
+  },
+  canvasTabName: async () => {
+    const module = await import('../features/canvas/CanvasTabName');
+    return { default: module.CanvasTabName };
+  },
+  canvasChatBootstrap: async () => {
+    const module = await import('../features/canvas/CanvasChatBootstrap');
+    return { default: module.CanvasChatBootstrap };
+  },
   threads: async () => {
     const module = await import('../features/projects/ThreadsWorkspace');
     return { default: module.ThreadsWorkspace };
@@ -72,6 +108,15 @@ export const LazyBrowserFocusWorkspace = lazy(LAZY_SURFACE_LOADERS.browser);
 export const LazyTerminalWorkspace = lazy(LAZY_SURFACE_LOADERS.terminal);
 export const LazyFilesWorkspace = lazy(LAZY_SURFACE_LOADERS.files);
 export const LazyAgentsWorkspace = lazy(LAZY_SURFACE_LOADERS.agents);
+export const LazyCanvasWorkspace = lazy(LAZY_SURFACE_LOADERS.canvas);
+export const LazyRecentCanvases = lazy(LAZY_SURFACE_LOADERS.recentCanvases);
+export const LazyLibrarySeedChip = lazy(LAZY_SURFACE_LOADERS.librarySeedChip);
+export const LazyCanvasHeader = lazy(LAZY_SURFACE_LOADERS.canvasHeader);
+export const LazyAttachedChatsMenu = lazy(LAZY_SURFACE_LOADERS.attachedChatsMenu);
+export const LazyDesignColumnHeader = lazy(LAZY_SURFACE_LOADERS.designColumnHeader);
+export const LazyCanvasColumnTabs = lazy(LAZY_SURFACE_LOADERS.canvasColumnTabs);
+export const LazyCanvasChatBootstrap = lazy(LAZY_SURFACE_LOADERS.canvasChatBootstrap);
+export const LazyCanvasTabName = lazy(LAZY_SURFACE_LOADERS.canvasTabName);
 export const LazyThreadsWorkspace = lazy(LAZY_SURFACE_LOADERS.threads);
 export const LazyThreadAttentionNotifier = lazy(LAZY_SURFACE_LOADERS.threadNotifier);
 export const LazySideChatsWorkspace = lazy(LAZY_SURFACE_LOADERS.sideChats);
@@ -87,6 +132,8 @@ export function utilityToolFallback(tool: UtilityTool) {
       return <UtilityPaneSkeleton />;
     case 'files':
       return <PanelSkeleton title="files" />;
+    case 'canvas':
+      return <PanelSkeleton title="canvas" />;
     case 'agents':
     case 'threads':
     case 'side':

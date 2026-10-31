@@ -62,8 +62,9 @@ flowchart LR
 - `SessionCompaction` owns compaction-limit policy, provider arming, automatic notification transitions and watchdogs, and live or historical manual compaction. Child automatic settlements validate the captured parent, runtime, turn, and configuration generations before publishing or mutating state.
 - `SessionInteractions` owns permission and question correlation, equivalent-signature grants, and the Spec-to-Auto transition. After successful Registry unregister, Lifecycle calls `forgetSession()`, which discards module-owned state without resolving callbacks or emitting events. PR 4 introduces no deterministic shutdown settlement; that behavior remains deferred.
 - Approval and question requests carry stable `requestId`s. The renderer keeps each session's pending requests in arrival order and settles only the matching id; consumers display the first pending request. Questions retain headers, option descriptions, and multiple selections as `{ selected: string[], custom?: string }` answers. Claude serializes selections into its question-text keyed answer map; Codex keeps arrays; Droid receives its scalar answer at its adapter boundary.
-- Approval `detail` carries concrete tool input separately from the provider's explanatory `title`; file changes may carry `diff`. `canAlwaysAllow` requires a grant signature and provider permission, and `SessionInteractions` enforces it on both grant reuse and settlement. `refuse` declines an action without interrupting Claude or Codex; `cancel` stops the turn. Droid's SDK exposes only `Cancel` for refusal.
+- Approval `detail` carries concrete tool input separately from the provider's explanatory `title`; file changes may carry `diff`. `canAlwaysAllow` requires a grant signature and provider permission, and `SessionInteractions` enforces it on both grant reuse and settlement. `refuse` declines an action without interrupting Claude or Codex; `cancel` stops the turn. Droid's SDK exposes only `Cancel` for refusal. Droid CLI 0.119 asks once for a whole Script tool call; the Droid transport expands that request into its calls' own confirmations before the SDK validates it, so the bundle rules give the one answer and a script call is never always-allowed.
 - `SessionEventFlow` owns stream and notification normalization, per-app/per-source terminal gating, and transcript-before-side-effect ordering. It has one callback into Manager for the coupled policy that remains there.
+- Canvas tool calls are identified by their reserved MCP server, tool name, and tool-use ID. `SessionEventFlow` projects their arguments and results to `CanvasActivity` before recording or emitting them. App-owned provider files store the projected rows and the live call's occurrence ID, preserving saved frame names and revisions across reload. Droid's native file stays provider-owned, with safe occurrence-specific correlations stored beside the app profile. Backward and oversized eager replay resolve each result against its preceding call, including calls outside the page or byte window, without sharing mutable projection state across pages.
 - `SessionLifecycle` owns primary-session create, resume, lazy resume, send queueing, pending steers, Send now, interruption, and ordered cleanup. Parent close calls one semantic `ChildSessions.closeParent()` operation rather than maintaining another child map.
 - Provider `steer(text, mentions, steerId)` resolves `true` for confirmed consumption, `false` for definitive refusal and report recovery or user-prompt requeue, `withdrawn` for confirmed take-back, or `unconfirmed` when consumption or cancellation cannot be established. Unconfirmed handoffs never replay.
 - `session.withdrawSteer` carries `appSessionId`, `steerId`, and a `requestId`; `session.steerWithdrawn` echoes those identities with `withdrawn` and, on success, the full prompt text and mentions. True means the model cannot see the prompt: app-owned queued prompts are removed immediately; Claude harness-held steers require `cancelAsyncMessage` confirmation or a matching cancelled lifecycle frame. That confirmation survives provider shutdown. Codex and Droid harness-held steers return false. Lifecycle retains the latest 64 withdrawn or delivered outcomes per live session so repeated requests replay the receipt. The renderer keeps a lost withdrawal marked and retries once per bridge reconnect; it never infers withdrawal from the pending list. Pending summary rows publish `canWithdraw`; only listed steers offer Send now or take-back. Send now retains harness ownership until settlement even while the prompt also waits in `pendingSends`. Confirmed withdrawal settles the original steer without delivery or fallback requeue.
@@ -400,6 +401,264 @@ than accessing the renderer's modules. Library-owned canvases must not also
 use `createCanvas`.
 Generation guidance and examples live in `sidecar/src/appPrompt.ts`.
 
+### Canvas storage and bridge
+
+`CanvasWorkspace` owns the durable manifests, source revisions, attachments and
+serialized commits. Opening canonicalizes the physical Canvas root and claims
+its SQLite writer lease before loading heads or sweeping temporaries. Linked
+roots therefore share one writer, even across separate profiles. A live owner
+refuses a second open with `storage_failed`; an atomic lease transaction
+reclaims only an owner whose process is known to have exited. Malformed leases
+or uncertain process liveness are refused rather than guessed. Close rejects
+queued commits and new mutations immediately, independently of active I/O.
+It still waits for admitted staging and active durable writes before releasing
+the lease; a failed open releases it too.
+
+A Design draft sends its canvas intent and durable create mutation ID in
+`session.create`. Canvas intent establishes `sessionPurpose: 'design'` before
+the provider and per-session tools start. Purpose is stored in the session
+summary and restored on resume and provider replacement. Resume, historical
+compaction and startup adoption wait for boot history reconciliation before reading
+canonical metadata, so native-file classification cannot overwrite the app-owned
+purpose. A close during readiness cancels admission even before the stable identity
+is available; pending readiness still reserves scheduled runtime capacity. An
+app-owned chat with a missing or incomplete provider conversation refuses resume
+or compaction with recovery instructions and retains its metadata; it is never
+reopened as a fabricated Chat.
+Design sessions run
+in the user's project folder, with that folder framed as read-only context
+unless the user explicitly requests repository edits.
+The sidecar composes project membership and Canvas attachment
+in `beforeFirstTurn`, after registering the chat and before `session.created`
+or the first prompt. New canvases and saved-canvas attachments share this path;
+a failed attachment fails the session open and releases its runtime. The first
+turn therefore leases the committed attachment. Resume publication, typed sends,
+voice starts and delegated turns wait on the same pending create; compaction
+cannot replace its provisional provider. Every admission rechecks the captured
+runtime before applying results. Admission applies the latest pending delegated
+state before typed work starts; delegated notifications cannot settle a running
+typed turn or advance its queue.
+Closing cancels that create before cleanup. The Canvas queue releases cancelled
+work that has not started, independently of unrelated writes. Canvas checks the
+captured runtime generation before each attachment write, and close drains only
+this create's started commit before a replacement can register. A write still
+draining after five seconds emits an actionable diagnostic; its fence never
+times out. Already-published boards remain durable.
+The renderer keeps unsent `canvasDraft` separate from submitted
+`canvasChatRequests`, which only track
+chats whose panes need opening. The lazy bootstrap reads the committed attachment
+and opens the pane. Explicit pane creation and
+attaching an existing chat remain Canvas bridge actions with durable replay.
+
+The Canvas bridge owns watches by renderer page. Unsubscribe and page loss
+remove watches synchronously. Removing the last pane watching a canvas cancels
+its queued and running builds through `cancelCanvas` only when `CanvasScopes`
+holds no active turn lease for that canvas. Accepted builds remain wanted while
+an agent turn owns the canvas, even with its pane closed. Cancellation leaves
+another watched canvas and another pane on the same canvas alone.
+A subscribe captures its own subscription identity before awaiting storage.
+Unsubscribe, page loss or a replacement subscription invalidates that identity,
+so a late answer cannot reinstall a watch or schedule rebuilds for a closed pane.
+Artifact reads capture the current subscribers and turn leases before awaiting
+storage. A cache miss admits a rebuild only if a captured subscription or a
+captured turn lease covering the design is still current after the read.
+Replacement panes and turns cannot revive an abandoned read. Reads without a
+live owner can still serve cached artifacts but admit no recovery work.
+
+Canvas compiler slots stay occupied until their child processes physically exit.
+IPC failure retires the same child; new compile or edit requests wait for its exit
+and recheck cancellation and final shutdown before starting a replacement. A
+shutdown acknowledgement, live-child close, or delivered kill cannot release
+capacity. Only a PID-less failed spawn may settle on close. Shutdown revokes
+turn and watch authority and closes workspace publication synchronously before
+awaiting process and storage cleanup. Already-renamed durable mutations finish
+successfully; build publication checks the captured job at the final manifest rename.
+
+### Canvas agent tools
+
+Each chat gets one local `droidex-canvas` MCP server with seven tools: read, create,
+write, inspect, arrange, annotate, and theme. Annotations are the board's own layer,
+versioned apart from frames; `canvas_read` relates each one to the frames it is
+over, near or points at, and an agent may change only the annotations its chat drew. `CanvasTurns` mints a scope when a turn starts;
+call `canvas_read` with no arguments first to obtain that chat's newest live lease.
+Reads may then name a returned `scopeId` to retain its pinned references across
+steers; Claude's read hook relies on this to bind retries to their original lease.
+Never invent a scope ID. Unknown IDs and IDs issued to another chat return
+`invalid_input` with this recovery step; known revoked IDs return `scope_expired`.
+`CanvasTurns` retains issued IDs and their chat owners for the live provider era,
+without retaining revoked scope payloads. `endSession` drops that chat's issued
+IDs, so requests naming its closed era return `invalid_input`. Every mutation
+requires its explicit `scopeId`; retries keep the original scope and cannot
+borrow a later turn's authority. Named leases expire when their turn or provider ends.
+
+`designSessionGuidance.ts` owns the concise Design brief. Droid receives it
+through process-local `exec --append-system-prompt`, Claude through the
+`claude_code` preset's system-prompt append, and Codex through native thread
+developer instructions on start and resume, appended to the effective configured
+developer instructions for that project. The Canvas MCP initialize result carries
+only concise tool discovery and scope recovery instructions for Design sessions.
+Codex dynamic tools do not initialize
+MCP; Droid's measured MCP path did not demonstrate instruction delivery, so each
+provider's native channel owns framing. Framing is never injected into user prompts,
+normalized conversation events, or DROIDEX history/export; model-generated quotations
+may remain in conversation content. Provider-native logs may retain their model context. This is workflow guidance, not a filesystem
+sandbox: ordinary provider permission and autonomy controls still apply, and an
+explicit user request may authorize repository edits.
+
+Read replies revalidate that lease after awaited work. Mutation owners check it
+at publication; a mutation already published durably returns its receipt even
+if shutdown revokes the turn while the final flush finishes.
+Theme apply validates source token mappings after replay and revision checks.
+A validation refusal has no publication receipt, so its diagnostics revalidate
+the captured lease before delivery. Authored kit saves cannot claim extraction
+provenance; extracted kits retain their source-owned provenance.
+`canvas_inspect` reads build diagnostics or requests capture, not the canvas summary.
+`canvas_write` refuses a tree that cannot be a design (`designEntry.ts`: no `main.tsx`,
+or an HTML page in its place) before staging a revision, then waits
+for that revision's build, at most the build deadline plus queueing, and answers a
+compact report: status, diagnostics with file and line, the last working revision and
+the next step. The compiler also fails a design that renders a component or calls a
+hook it never imports or declares.
+Once a design bundles, `designSystemAdherence.ts` reads its own files, never the
+kit's, for hard-coded colours (hex, colour functions, named colours, Tailwind palette
+and arbitrary colour classes), font families the kit does not provide, and a design
+that uses none of the kit's primitives; a `--ds-*` token set in source is an override,
+noted once. The canvas manifest's `designSystemAdherence` rule (`off`, default `guide`,
+or `strict`) is set by an attached chat with `canvas.setDesignSystemAdherence` and
+reported in `CanvasSummary`; a change rebuilds every frame with source, and a cached
+outcome holds only under the rule it was built with. Under `guide` the findings ride a
+ready build as the report's `designSystem` notes; under `strict` they fail it. A turn's
+opening `canvas_read` carries the pinned kit's name, mode, token and primitive names and
+guidance (`designSystemBrief.ts`, under 21 KiB) and the canvas's rule; `canvas_theme`
+reads full kits. Once the build is ready, the write waits 1.5 s for
+an open pane to start the preview and then one 13 s deadline for it to render. The pane reports
+`loading`, `rendered` or `failed` through `canvas.reportPreview`; `CanvasPreviewReports`
+keeps the latest per design, so a design that compiles and then throws reaches the
+agent as `render_failed`. Reports are the pane's word, never canonical state. Read,
+create and inspect return the same compact frames, without element maps.
+`CanvasWorkspace` owns board
+mutations, including retry receipts and attachment bootstrap; the design-system
+store owns immutable kit versions. Droid and Claude use
+the per-chat loopback endpoint; Codex declares the same tools through dynamic
+tools on thread start. A Codex summary's `canvasTools` records whether its thread
+started with them; a thread started without them never gains them on resume, so
+its pane and unwritten artifact cards offer a new chat on the canvas instead.
+Claude's session-local `PreToolUse` hook pins both
+`canvas_read` and `canvas_inspect` tool-use IDs to their original leases. Child
+runtimes do not inherit the parent's Canvas endpoint without an assigned child
+scope.
+
+An inspect screenshot reuses the preview capture below; the sidecar holds no
+pixels. It needs the frame's current revision to have a ready build, then
+`CanvasCaptures` broadcasts `canvas.captureRequest` naming that exact revision
+and waits for `canvas.reportCapture` from the pages watching the canvas when it
+asked. A page answers from its registered live preview of that revision through
+`captureCanvasImage`, or refuses. The first valid PNG, at most 8 MiB, returns to
+the model as image content beside the build facts; Codex receives it as an
+`inputImage` data URL. No watching page, every watching page refusing or leaving,
+or seven seconds without an answer return `capture_unavailable`. Revoking the
+turn's lease aborts the wait, and a read revalidates its lease before delivery,
+so a capture that settles after its turn ended is dropped. Writes and turn
+settlement never wait on a capture. Element capture remains `capture_unavailable`.
+
+### Canvas live previews
+
+A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
+crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
+the privileged `droidex-canvas-preview` scheme, the one guest document, its
+restrictive CSP, the trusted intermediate and the registry of guests main
+attached. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
+and content-addressed kit fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
+app window alone and installs `will-attach-webview` before that window loads
+anything, so renderer content can only ever attach the owned source, with any
+requested preload deleted and Node, nested Node and nested guests off.
+
+The intermediate holds the compiled design in an opaque-origin
+`sandbox="allow-scripts"` iframe, so generated `top.postMessage` reaches the
+intermediate rather than the chat renderer and the three documents hold three
+processes. Generated code gets no preload and no Electron API. The board drives
+a preview through the webview element's `executeJavaScript` with two audited
+literals in `src/features/canvas/previewDocument.ts`: one hands over the
+artifact and the instance identity, the other drains a bounded queue of
+`ready`/`resize`/`diagnostics` events as one validated JSON snapshot.
+`previewRuntime.ts` keeps exactly one poll in flight per guest on a bounded
+cadence and revalidates the instance after every await, so a replaced preview
+can never be reached by the guest it replaced.
+
+Guests live in their own in-memory session, not the app's. CSP cannot bound
+WebRTC — `connect-src` does not govern ICE and Chromium never shipped the
+`webrtc` directive — so that session is where the network is closed: every TCP
+connection resolves through a proxy at `127.0.0.1:1` with `<-loopback>` so
+loopback is not bypassed, non-proxied UDP is refused, and every permission is
+denied. The partition is forced at attachment rather than trusted from the
+element, and `will-attach-webview` refuses any guest while that session is still
+being configured, because an unconfigured session routes directly. Every path
+that can create the app window waits on the same setup, so no guest can exist
+before it.
+
+Main owns termination, through three paths that each wait for no guest reply:
+the renderer asks through a narrow `canvas-preview-terminate` IPC; main ends a
+guest on its own `unresponsive` event; and main probes the generated frame with
+a literal every two seconds, ending the guest when a probe misses a three-second
+deadline. That last one is the only thing that sees a design which stops running
+after it reported ready, since the intermediate stays responsive and the design
+is a process of its own. The renderer, for its part, settles its own lifecycle
+from the element's `render-process-gone`, `destroyed` and `crashed` events rather
+than waiting out a poll deadline.
+
+The artifact itself travels over the ordinary bridge: `canvas.readArtifact`
+answers one revision's document, read from the derived build cache by
+`sidecar/src/canvas/canvasBuildCache.ts`. Every build state carries the
+registry's per-design `generation`, so a board can tell a build that moved from a
+frame an arrange merely re-sent, and a rebuild of identical source — which is
+content-addressed to the same artifact ID — still reads as a new attempt.
+
+Canvas source selection is derived by `sidecar/src/canvas/sourceElements.ts` with the
+TypeScript parser bundled into the owned compiler process. That process instruments native
+JSX before handing derived files to esbuild; its existing deadline contains expensive parsing.
+Canonical source is never rewritten by instrumentation; it remains the input to Tailwind.
+Revision-scoped element IDs, UTF-16 source ranges and bounded diagnostics accompany a
+successful compile into its cached ready outcome and frame. Designs above 8,192 native JSX
+sites still render, with selection unavailable for that revision. Ready cache outcomes bind the
+element map to the saved source with a digest. A changed map or source, or an element range
+outside canonical source, forces a rebuild. Inline source maps preserve canonical locations
+through bundling
+without shipping host runtime paths or canonical source content in the final artifact map.
+Direct edits reparse that source and
+replace one literal AST range; computed/shared sites require an agent edit and stale
+references require reselection. `canvas.editElement` sets text, or one whitelisted style
+property as a spacing, size, colour, typography, layout or opacity change. A style value is a
+pinned kit token's name, or a raw value that resolves to the kit token with that value and stays
+raw only when the kit has none; the reply and the edit's ledger record carry that resolution, so
+a retry answers it unchanged. The edit commits through the workspace's revision
+compare-and-swap. Image edits remain unavailable until the asset store can verify ownership.
+
+The source drawer keeps drafts and save operations in the feature-local
+`canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the
+pane retains them. Deliberate Close discards the entire canvas source lifetime;
+a late save callback can settle only its captured lifetime and operation.
+
+A transport failure keeps the exact write and mutation ID for **Try that save
+again**, even after typing, a frame switch or a head update. A server refusal
+uses the client's typed error contract and releases that request for a new
+save. New typing remains unsaved after replay. A historical receipt proves its
+write committed; it never replaces a newer head already read by the drawer.
+Compare exposes the competing source as read-only text in a focusable scroller.
+
+For image imports, preload passes a native dropped `File` path or main opens its
+own picker. Main checks the 10 MiB limit and matching extension, decodes PNG/JPEG
+with `nativeImage` and WebP with `@napi-rs/canvas`, then checks the 8192-pixel
+dimension limit. Its private loopback route sends the
+selected path with a digest and decoded dimensions to the sidecar; the sidecar
+rejects a changed file and stores accepted bytes by hash under the canvas. Each
+asset has a durable metadata record, and `canvas.listAssets` recovers its ID
+even when the import reply or original file is lost.
+`canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
+when an artifact is read. Main binds each preview's generated frame to its
+canvas and refuses asset requests from another canvas, an unbound guest or the
+default session. Kit WOFF2 data is stored once under the profile and referenced
+from generated CSS through the same preview scheme.
+
 ### Electron main gauges
 
 - `electron/performanceMetrics.cjs` collects live WebContents, live PTYs, and
@@ -539,7 +798,15 @@ and [Remote and Profile](remote.md).
 
 ## Build path
 
-`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs`, `sidecar/dist/historyPersistenceWorker.mjs`, `sidecar/dist/usageWorker.mjs`, and the Remote host bundle; Electron uses the main sidecar unless `SIDECAR_ENTRY` is set and packages the bundles from `sidecar/dist`.
+`npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus the `historyPersistenceWorker.mjs`, `compilerWorker.mjs` and `usageWorker.mjs` entries and the Remote host bundle beside it; Electron uses the main sidecar unless `SIDECAR_ENTRY` is set and packages the bundles from `sidecar/dist`.
+
+Packaging adds one more resource beside that bundle. The design compiler loads esbuild, Tailwind, PostCSS, React and Recharts at run time, and a packaged app may not resolve them from a checkout or download them, so `npm run canvas:runtime` stages one complete runtime per architecture under `sidecar/canvas-runtime/<arch>` and `extraResources` copies the matching one to `resources/sidecar/canvas-runtime`. The design allowlist exposes only `recharts`; the compiler resolves its ESM entry through the same runtime anchor so unused chart exports can be removed. `electron/main.cjs` derives that directory from its own resources and hands it to the sidecar as `DROIDEX_CANVAS_RUNTIME_DIR`; `sidecar/src/canvas/canvasRuntime.ts` is the only reader, anchoring the compiler's `require` there and naming the owned `ESBUILD_BINARY_PATH` the forked compiler receives. Without that variable a checkout resolves from `sidecar/node_modules` exactly as it does in development, unless a staged runtime's manifest is sitting beside the compiler, which means a packaged app lost the variable and compiles nothing. A relative value is a malformed host and is refused outright.
+
+Canvas source export is a host action. Electron main opens the destination chooser, then calls a schema-validated sidecar HTTP route with a per-process `CANVAS_EXPORT_TOKEN` that never reaches the renderer or agent children. `canvasExport.ts` reads one immutable revision and its pinned kit, copies only referenced owned images, and refuses collisions and linked destination paths. The ordinary Canvas WebSocket exposes no destination path or export command. The exported project includes source, kit files and fonts, pinned build dependencies, and a local build/preview script. Design-system export from the Manage design systems dialog takes the same path on its own route: `designSystemExport.ts` writes one kit version's files under `src/`, its examples, its guidance as `DESIGN.md` and its light and dark tokens as `modes.css`, through the same empty-folder writer.
+
+The dialog's other actions are Canvas WebSocket commands answered by `designSystemCommands.ts` without a canvas or scope, because kits are global: list, read one version, save a copy with `copiedFrom` provenance, and import a pasted DESIGN.md, CSS variables or a Tailwind config. Every save goes through `saveDesignSystem`, the owner `canvas_theme` saves through, and a new kit is named by its mutation ID so a retried save finds the version it published. `designSystemImport.ts` maps familiar token names onto the `--ds-*` contract the shared primitives read and keeps every other token under its own name; a read reports those as `unmapped`. `designSystemTokens.ts` owns the root and `data-mode` token rule, hex expansion and the competing-value report for both extraction and import; the importer's wider selectors build on it, and both refuse competing values. Imports parse CSS with PostCSS and read a config's literals only (`configLiterals.ts`), never running it, and keep the TypeScript parser out of the sidecar's main process. Pasted nesting, token count and value nesting are bounded before any recursive reader runs, so an oversized paste is refused as `invalid_input`. The renderer reaches these commands through `canvasClient.designSystems`, and the export answers its IPC call with a result rather than a throw.
+
+Anchoring `require` is not a boundary on its own: node resolution also walks ancestor `node_modules`, `NODE_PATH` and the user's global folders, and a transitive `require` inside a package cannot be intercepted. The boundary is that the tree is exactly what staging produced. Staging writes `canvas-runtime/manifest.json` listing every file it placed with its size, and the compiler child walks the runtime under a root canonicalised once: every entry has to be a regular file the manifest lists at the staged size, or a directory the manifest has files under, and anything else — a symbolic link, an unlisted file, an unlisted directory — refuses the runtime. Comparing the tree to the manifest rather than the manifest to the tree is what catches an entry nobody staged, such as a nested `node_modules` link that changes resolution without touching a listed file. Only then is anything loaded, through the one `require` built from that same canonical root, which is also the resolver a design's imports go through; the fork drops `NODE_PATH` and `NODE_OPTIONS`. A runtime that fails answers every request with one curated unavailable sentence and loads nothing at all, including on the shutdown path. `npm run canvas:probe` compiles the design kit's own example through that contract with the network refused, then requires damaged copies and misnamed roots to compile nothing and to resolve no module outside the runtime for the whole of a graceful shutdown, and checks that `npm run release:verify:mac`'s own copy of the rule refuses every tree the compiler refuses, for each fixture it exercises. That gate also `require`s esbuild, Tailwind and PostCSS in a child process, because a tree can agree with its own manifest and still be short of a dependency one of them needs; `npm run canvas:runtime` runs the same gate, so an incomplete staging input fails where it was made. It proves those pinned packages load through CommonJS from the owned root, with nothing resolved outside it by that loader; it is not a sandbox, and the manifest sizes remain the only account of what the files contain. The one entry staging never places that the runtime tolerates is a regular `.DS_Store`: Finder writes it into any folder a user opens, and the app's signature omits it, so refusing it would disable Canvas over a still-valid app.
 
 ## Update path
 

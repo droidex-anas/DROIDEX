@@ -204,6 +204,7 @@ export function buildCreatedSessionSummary(input: {
   provider: ProviderKind;
   // The provider's own handle for reopening the conversation, when it keeps one.
   resumeId?: string;
+  canvasTools?: SessionSummary['canvasTools'];
   maxContextTokens?: number;
   compactionTokenLimit?: number;
   now: number;
@@ -218,6 +219,7 @@ export function buildCreatedSessionSummary(input: {
     ...(command.droidProfile ? { droidProfile: command.droidProfile } : {}),
     ...(input.provider !== DEFAULT_PROVIDER ? { fastMode: command.fastMode ?? false } : {}),
     ...(input.resumeId ? { resumeId: input.resumeId } : {}),
+    ...(input.canvasTools ? { canvasTools: input.canvasTools } : {}),
     sessionPurpose: command.sessionPurpose,
     interactionMode: input.interactionMode,
     role: 'primary',

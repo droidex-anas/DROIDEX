@@ -62,6 +62,16 @@ test('utility tools are session scoped and opening one hides Context', () => {
   assert.equal(state.utilityPanels['session-a'].tabs[0].tool, 'browser');
 });
 
+test('opening a tool for a background chat leaves the active chat Context open', () => {
+  const state = reducer(activeState('session-a'), {
+    type: 'OPEN_UTILITY_TOOL',
+    tool: 'files',
+    appSessionId: 'session-b',
+  });
+  assert.equal(state.rightPanelOpen, true);
+  assert.equal(state.utilityPanels['session-b'].open, true);
+});
+
 test('opening Context collapses the active session utility pane without closing tabs', () => {
   let state = reducer(activeState('session-a'), {
     type: 'OPEN_UTILITY_TOOL',
@@ -103,6 +113,32 @@ test('an explicit session id keeps delayed tab closes and updates scoped to thei
   });
   assert.equal(closed.utilityPanels['session-a'].tabs.length, 0);
   assert.equal(closed.utilityPanels['session-b'].tabs[0].id, 'terminal-b');
+});
+
+test('a removed chat rejects late Canvas open and attachment callbacks', () => {
+  let state = reducer(initialState, { type: 'SESSION_LIST', sessions: [chat('removed')] });
+  state = reducer(state, { type: 'OPEN_UTILITY_TOOL', tool: 'canvas', appSessionId: 'removed' });
+  state = reducer(state, {
+    type: 'SET_CANVAS_ATTACHMENT',
+    appSessionId: 'removed',
+    canvasId: 'canvas-old',
+  });
+  state = reducer(state, { type: 'SESSION_CLOSED', appSessionId: 'removed' });
+  assert.equal(state.utilityPanels.removed?.open, true);
+
+  state = reducer(state, { type: 'SESSION_LIST', sessions: [] });
+  assert.equal(state.utilityPanels.removed, undefined);
+  assert.equal(state.canvasAttachments.removed, undefined);
+
+  state = reducer(state, {
+    type: 'BATCH',
+    actions: [
+      { type: 'OPEN_UTILITY_TOOL', tool: 'canvas', appSessionId: 'removed' },
+      { type: 'SET_CANVAS_ATTACHMENT', appSessionId: 'removed', canvasId: 'canvas-late' },
+    ],
+  });
+  assert.equal(state.utilityPanels.removed, undefined);
+  assert.equal(state.canvasAttachments.removed, undefined);
 });
 
 test('legacy Review and Browser actions route through utility tabs', () => {

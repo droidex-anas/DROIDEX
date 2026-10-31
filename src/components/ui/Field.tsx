@@ -67,8 +67,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   variant?: InputVariant;
   /** Outside a Field; inside one, the Field's error decides. */
   invalid?: boolean;
-  /** Fixed text before the value, such as the `@` of a username. */
-  leading?: string;
+  /** Fixed content before the value, such as the `@` of a username or a colour swatch. */
+  leading?: ReactNode;
 }
 
 function inputFill(invalid: boolean, variant: InputVariant) {

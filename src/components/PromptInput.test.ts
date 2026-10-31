@@ -3,7 +3,12 @@ import test from 'node:test';
 import { shouldStopTurnStarting } from './PromptInput';
 import type { TranscriptEvent } from '../types/bridge';
 import { hasAppContextForTranscript } from '../lib/composePrompt';
-import { shouldResumeQueuedPromptAfterUpdate } from './composer/useQueuedPromptDelivery';
+import {
+  queuedSend,
+  shouldResumeQueuedPromptAfterUpdate,
+} from './composer/useQueuedPromptDelivery';
+import { chooseDesignSystem, designSystemChoice } from '../features/canvas/designSystemChoices';
+import { canvasContextOf } from '../features/canvas/framePins';
 import { initialState, reducer } from '../hooks/useStore';
 import { createComposerTranscriptSelector } from './composer/composerTranscript';
 import { withUpdatedTranscript } from '../lib/transcriptStoreMemory';
@@ -108,6 +113,32 @@ test('an idle queued prompt resumes only when an update window returns control',
   assert.equal(shouldResumeQueuedPromptAfterUpdate(false, false, false, true, 'presented'), false);
   assert.equal(shouldResumeQueuedPromptAfterUpdate(true, false, true, true, 'presented'), false);
   assert.equal(shouldResumeQueuedPromptAfterUpdate(true, false, false, false, 'presented'), false);
+});
+
+test('request A queued under kit v1 stays pinned when the user selects v2 before A executes', () => {
+  const kit = (version: number) => ({
+    ref: { id: 'kit_ocean', version, mode: 'dark' as const },
+    name: 'Ocean',
+  });
+  const composed = () =>
+    canvasContextOf([], {
+      designSystem: designSystemChoice('cv_queue')?.ref ?? null,
+      imageAssetIds: [],
+    });
+  chooseDesignSystem('cv_queue', kit(1));
+  const requestA = {
+    id: 'q-a',
+    text: 'Make it calmer',
+    skills: [],
+    files: [],
+    canvasContext: composed(),
+  };
+
+  chooseDesignSystem('cv_queue', kit(2));
+
+  assert.deepEqual(queuedSend(requestA, false).options.canvasContext?.designSystem, kit(1).ref);
+  assert.deepEqual(composed()?.designSystem, kit(2).ref);
+  chooseDesignSystem('cv_queue', null);
 });
 
 test('queued primary delivery reads App context from the primary transcript', () => {

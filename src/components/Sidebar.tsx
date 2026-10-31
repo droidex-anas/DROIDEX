@@ -25,6 +25,7 @@ import {
   chatDisplayTitle,
   isChatHidden,
   isChatPinned,
+  isDesignChat,
   linkedPr,
   type ChatPullRequest,
   pinnedChats,
@@ -282,6 +283,7 @@ export default function Sidebar({
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
         pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}
+        design={isDesignChat(chatMetadata[m.appSessionId])}
         attention={sessionAttention(
           m.appSessionId,
           state.pendingPermissions,
@@ -309,13 +311,13 @@ export default function Sidebar({
         WebkitBackdropFilter: 'var(--sidebar-blur)',
       }}
     >
-      {/* Empty titlebar strip so traffic lights never collide with chrome. */}
+      {/* Titlebar strip, under the window's floating controls. */}
       <div data-electron-drag-region className="h-9 shrink-0" />
 
-      {/* Brand row: wordmark left; ghost icon actions right (session search
-          palette + unread-only filter). */}
+      {/* Brand row: the wordmark, then ghost icon actions right (session
+          search palette + unread-only filter). */}
       <div className="px-3 pb-1 pt-0.5 flex items-center justify-between">
-        <BrandMark size={13} className="text-primary" />
+        <BrandMark size={13} className="pl-2 text-primary" />
         <div className="flex items-center gap-0.5">
           <Tooltip label="Search chats, messages, and PRs" placement="bottom">
             <Button
@@ -340,7 +342,7 @@ export default function Sidebar({
       </div>
 
       {/* Navigation rows sit at session-row scale so the sidebar reads as one
-          list instead of a banner above it. */}
+              list instead of a banner above it. */}
       <div className="px-2 pb-1.5">
         {/* The plus overlays the row's trailing edge, like a session row's menu. */}
         <div className="relative">

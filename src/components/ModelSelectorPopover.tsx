@@ -26,7 +26,8 @@ const AGENTS: { kind: AgentKind; label: string; hint: string }[] = [
   { kind: 'validator', label: 'Validator', hint: 'Verifies the work' },
 ];
 
-// The classic model picker's panel; the composer floats it above the model chip.
+// The model picker for Mission Control's roles and for an exact child: each
+// row carries its effort, since neither has the chat's reasoning chip.
 export default function ModelSelectorPopover({
   appSessionId,
   singleAgent = false,
@@ -51,7 +52,6 @@ export default function ModelSelectorPopover({
     provider,
     providerStatuses,
     showHarness,
-    harnessLocked,
     selectHarness,
     childMode,
     childReady,
@@ -81,7 +81,7 @@ export default function ModelSelectorPopover({
       // Leave ←/→ to the search caret while there is text to move through.
       const inSearch = e.target instanceof HTMLInputElement && e.target.value.length > 0;
       const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
-      if (inSearch && horizontal) return;
+      if (horizontal && inSearch) return;
       e.preventDefault();
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (childTarget && !childReady) return;
@@ -113,16 +113,10 @@ export default function ModelSelectorPopover({
     <div style={{ width, maxWidth: MAX_WIDTH }} className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
         {showHarness && (
-          <HarnessRail
-            current={provider}
-            statuses={providerStatuses}
-            locked={harnessLocked}
-            onSelect={selectHarness}
-          />
+          <HarnessRail current={provider} statuses={providerStatuses} onSelect={selectHarness} />
         )}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-3 px-3 pt-3 pb-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 p-1.5">
+          <div className="flex items-center justify-between gap-3 px-2 pt-1">
             <span className="shrink-0 text-label text-secondary">
               {childTarget ? childTarget.label : singleAgent ? 'Model' : 'Models'}
             </span>
@@ -142,71 +136,65 @@ export default function ModelSelectorPopover({
             )}
           </div>
 
-          {/* Agent tabs */}
           {!singleAgent && !childTarget && (
-            <div className="px-3">
-              <div className="flex gap-1 rounded-lg bg-elevated p-0.5 dark:bg-bg/60">
-                {AGENTS.map((a) => {
-                  const on = a.kind === agent;
-                  return (
-                    <button
-                      key={a.kind}
-                      onClick={() => {
-                        setAgent(a.kind);
-                      }}
-                      className={`flex-1 truncate rounded-md px-2 py-1.5 text-label transition-colors ${
-                        on ? 'bg-raised text-primary' : 'text-muted hover:text-secondary'
-                      }`}
-                    >
-                      {a.label}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="flex shrink-0 gap-0.5 rounded-md bg-elevated p-0.5 dark:bg-bg/60">
+              {AGENTS.map((a) => {
+                const on = a.kind === agent;
+                return (
+                  <button
+                    key={a.kind}
+                    onClick={() => {
+                      setAgent(a.kind);
+                    }}
+                    className={`h-control-sm flex-1 truncate rounded-sm px-2 text-label transition-colors ${
+                      on ? 'bg-raised text-primary' : 'text-muted hover:text-secondary'
+                    }`}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          {/* Model search + list */}
-          <div className="flex min-h-0 flex-col px-2 pt-2 pb-2">
-            <div className="flex shrink-0 items-center gap-1.5">
-              <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-field px-3 dark:bg-bg/50">
-                <Search className="size-icon-sm shrink-0 text-muted" />
-                <Input
-                  variant="embedded"
-                  autoFocus
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                  }}
-                  placeholder="Search models"
-                  aria-label="Search models"
-                />
-              </div>
-              {catOptions.length > 0 && (
-                <ModelCategoryFilter
-                  options={catOptions}
-                  selected={cat}
-                  open={filterOpen}
-                  onOpenChange={setFilterOpen}
-                  onSelect={setCat}
-                />
-              )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div className="flex h-control-md min-w-0 flex-1 items-center gap-2 rounded-md bg-field px-2 dark:bg-bg/50">
+              <Search className="size-icon-sm shrink-0 text-muted" />
+              <Input
+                variant="embedded"
+                autoFocus
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                }}
+                placeholder="Search models"
+                aria-label="Search models"
+              />
             </div>
-
-            <ModelCatalogList
-              models={models}
-              hasRealModels={hasRealModels}
-              provider={provider}
-              selectedModelId={selectedRowId}
-              reasoning={effReasoning}
-              query={query}
-              onSelectModel={updateModel}
-              onSelectReasoning={updateReasoning}
-              disabled={disabled}
-              reasoningLocked={childMode}
-              showReasoning={showsReasoning}
-            />
+            {catOptions.length > 0 && (
+              <ModelCategoryFilter
+                options={catOptions}
+                selected={cat}
+                open={filterOpen}
+                onOpenChange={setFilterOpen}
+                onSelect={setCat}
+              />
+            )}
           </div>
+
+          <ModelCatalogList
+            models={models}
+            hasRealModels={hasRealModels}
+            provider={provider}
+            selectedModelId={selectedRowId}
+            reasoning={effReasoning}
+            query={query}
+            onSelectModel={updateModel}
+            onSelectReasoning={updateReasoning}
+            disabled={disabled}
+            reasoningLocked={childMode}
+            showReasoning={showsReasoning}
+          />
         </div>
       </div>
     </div>

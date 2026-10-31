@@ -7,7 +7,7 @@ import {
   type RequestPermissionRequestParams,
 } from '@factory/droid-sdk';
 
-import { mcpPermissionTarget } from '../../automations/permissionPolicy.js';
+import { mcpPermissionTargets } from '../../automations/permissionPolicy.js';
 import { classifyPermission, confirmationType, permissionSignature } from '../../normalize.js';
 import type { Autonomy, PermissionOutcome, SessionQuestion } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
@@ -68,7 +68,6 @@ async function requestApproval(
   interactions: ProviderInteractions,
 ): Promise<PermissionOutcome> {
   const signature = permissionSignature(params);
-  const mcpTool = mcpPermissionTarget(params);
   return await interactions.requestApproval({
     request: classifyPermission(appSessionId, nextInteractionRequestId(), params),
     confirmationType: confirmationType(params),
@@ -88,7 +87,7 @@ async function requestApproval(
         );
       }),
     ...(signature ? { signature } : {}),
-    ...(mcpTool ? { mcpTool } : {}),
+    mcpTools: mcpPermissionTargets(params),
   });
 }
 

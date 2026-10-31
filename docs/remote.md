@@ -55,7 +55,8 @@ advice.
 A trusted browser has the same control as the laptop window, so approve only
 browsers you own and keep trust durations short on shared machines. A few
 features drive the laptop's own screen and stay there: built-in browser panes,
-native file dialogs, app updates and relaunch, and Remote pairing settings.
+Design and its live previews, native file dialogs, app updates and relaunch,
+and Remote pairing settings.
 
 On iPhone, add the web client to the home screen, pair a trusted device, then
 choose **Enable approval notifications**. Web Push carries a generic notice;
