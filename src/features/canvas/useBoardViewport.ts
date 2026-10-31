@@ -55,8 +55,10 @@ export function useBoardViewport(
   frames: readonly { rect: FrameRect }[],
   /** Spec §11's timings; a zero `focusMs` is reduced motion asking for none. */
   motion: CanvasMotion,
+  /** Where a board returning from a document was left; it opens there instead of fitting. */
+  restored: Viewport | undefined,
 ): BoardViewport {
-  const [viewport, setViewport] = useState<Viewport>(IDENTITY);
+  const [viewport, setViewport] = useState<Viewport>(restored ?? IDENTITY);
   const [scrolling, setScrolling] = useState(false);
   const [size, setSize] = useState<Point>({ x: 0, y: 0 });
 
@@ -66,7 +68,7 @@ export function useBoardViewport(
   const heading = useRef<Viewport | null>(null);
   const scroll = useRef<ScrollGesture>({ active: false, suppressed: false, idle: null });
   const measured = useRef<Point>({ x: 0, y: 0 });
-  const opening = useRef({ fitted: false, navigated: false });
+  const opening = useRef({ fitted: restored !== undefined, navigated: false });
   // What the listeners below need from the current render. They are registered
   // once, or run from an animation frame, so they cannot close over it. The
   // frames are also how a resize finds something to fit.

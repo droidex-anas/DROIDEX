@@ -141,6 +141,29 @@ test('a removed chat rejects late Canvas open and attachment callbacks', () => {
   assert.equal(state.canvasAttachments.removed, undefined);
 });
 
+test('a document target retargets the one canvas tab, and a frame target clears it', () => {
+  const open = (target: { frameId?: string; designSystemId?: string }) => ({
+    type: 'OPEN_UTILITY_TOOL' as const,
+    tool: 'canvas' as const,
+    appSessionId: 'design',
+    canvasId: null,
+    frameId: target.frameId ?? null,
+    ...(target.designSystemId
+      ? { designSystemId: target.designSystemId, designSystemVersion: null }
+      : {}),
+  });
+  let state = reducer(initialState, { type: 'SESSION_LIST', sessions: [chat('design')] });
+  state = reducer(state, open({}));
+  state = reducer(state, open({ designSystemId: 'droidex' }));
+  assert.equal(state.utilityPanels.design.tabs.length, 1);
+  assert.equal(state.utilityPanels.design.tabs[0].designSystemId, 'droidex');
+
+  state = reducer(state, open({ frameId: 'frame-a' }));
+  assert.equal(state.utilityPanels.design.tabs.length, 1);
+  assert.equal(state.utilityPanels.design.tabs[0].designSystemId, null);
+  assert.equal(state.utilityPanels.design.tabs[0].frameId, 'frame-a');
+});
+
 test('legacy Review and Browser actions route through utility tabs', () => {
   let state = reducer(activeState('session-a'), {
     type: 'SET_REVIEW_OPEN',

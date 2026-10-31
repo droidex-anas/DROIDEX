@@ -100,6 +100,10 @@ export interface CanvasBoardProps {
   onToggleChat?: (frame: CanvasFrame) => void;
   /** What the selected frame's toolbar does to the canvas. */
   frameActions: FrameActions;
+  /** Where the board was left for a document; it reopens there instead of fitting. */
+  restoredViewport?: Viewport;
+  /** Hands the viewport over as the board unmounts, so Back from a document can restore it. */
+  onLeave?: (viewport: Viewport) => void;
 }
 
 export function CanvasBoard({
@@ -118,6 +122,8 @@ export function CanvasBoard({
   pinnedIds,
   onToggleChat,
   frameActions,
+  restoredViewport,
+  onLeave,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -125,7 +131,7 @@ export function CanvasBoard({
   // The frames the board opened with are simply there; later ones arrive.
   const [openedWith] = useState(() => new Set(frames.map((frame) => frame.designId)));
 
-  const view = useBoardViewport(board, frames, motion);
+  const view = useBoardViewport(board, frames, motion, restoredViewport);
   const { fitTo } = view;
   const [overlayCapture, setOverlayCapture] = useState(interaction.mode !== 'interact');
   // What the callbacks the gesture machine holds read, since they cannot close
@@ -225,6 +231,13 @@ export function CanvasBoard({
     focusLabel,
     onRemoveFrames,
   });
+
+  useEffect(() => {
+    const reads = latest;
+    return () => {
+      onLeave?.(reads.current.viewport);
+    };
+  }, [onLeave]);
 
   useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame, focusLabel }), [
     focusFrame,
