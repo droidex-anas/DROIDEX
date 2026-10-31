@@ -78,9 +78,9 @@ Rules the sidecar's schema enforces:
 | Token usage note | at most 400 bytes |
 | Note label | filename-like, `[a-z0-9][a-z0-9-]*\.md`, at most 48 characters, unique in the document |
 | Note body | markdown, at most 8 KiB |
-| Preview | at most 24 per version, cover included; `example` names a file in `examples`; `width` 240–1440 and `height` 120–1200 CSS px; note at most 1 KiB |
+| Preview | at most 24 per version, cover included; title unique in the document, since §11 changes a preview by its title; id never `cover` or `typography`, which §14 uses as preview targets; `example` names a file in `examples`; `width` 240–1440 and `height` 120–1200 CSS px; note at most 1 KiB |
 | Example file | at most 64 KiB each, 512 KiB for all examples; the existing per-file source limits still apply |
-| Assets | at most 48 per version |
+| Assets | at most 48 per version; name unique in the document, since §11 changes an asset by its name |
 | Agent-read text | `kitGuidance` output at most 16 KiB, the existing `maxGuidanceBytes` |
 | Whole version | the stored JSON, without examples and files, at most 256 KiB |
 
@@ -301,14 +301,14 @@ Renderer commands, answered by `designSystemCommands.ts` without a canvas or sco
 | Command | Reply |
 | --- | --- |
 | `canvas.listDesignSystems` | `designSystems`: summaries with `savedAt`, `cover`, `proposal`; deleted kits excluded |
-| `canvas.readDesignSystem { ref: { id, version } }` | `designSystem`: `{ id, version, latestVersion, name, kind, cover, sections, examples: string[], unmapped, provenance, savedAt, savedBy, proposal }` without source; `proposal` is `{ baseVersion, proposedAt, appSessionId, cover, sections } \| null` |
+| `canvas.readDesignSystem { ref: { id, version } }` | `designSystem`: `{ id, version, latestVersion, name, kind, cover, sections, examples: string[], unmapped, provenance, savedAt, savedBy, proposal }` without source; `proposal` is `{ baseVersion, proposedAt, appSessionId, name, cover, sections } \| null`, `name` because a proposal may rename the kit |
 | `canvas.saveDesignSystem { mutationId, id, baseVersion, name, cover, sections }` | `designSystemSaved { ref, diagnostics }`, or `revision_conflict { latestVersion }` |
 | `canvas.listDesignSystemVersions { id }` | `designSystemVersions`: `{ version, savedAt, savedBy }[]` newest first |
 | `canvas.restoreDesignSystemVersion { mutationId, id, version, onto }` | `designSystemSaved`, or `revision_conflict { latestVersion }` |
 | `canvas.acceptDesignSystemProposal { mutationId, id, onto }` | `designSystemSaved`; `onto` is the version the user saw as latest |
 | `canvas.discardDesignSystemProposal { id }` | `ok` |
 | `canvas.setDesignSystemDeleted { mutationId, id, deleted }` | `ok` |
-| `canvas.readKitPreview { ref: { id, version, mode }, item }` | `kitPreview`: the artifact; `item` is a preview id or `cover` or `typography` |
+| `canvas.readKitPreview { ref: { id, version, mode }, item }` | `kitPreview`: the artifact; `item` is a preview id or `cover` or `typography`, two ids §2 keeps from previews |
 | `canvas.saveKitCapture { ref, item, png }` / `canvas.readKitCapture { ref, item }` | `ok` / `kitCapture { png \| null }` |
 | `canvas.copyDesignSystem`, `canvas.importDesignSystem` | unchanged commands; replies now carry the document |
 
