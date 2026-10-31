@@ -52,14 +52,23 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
     await generated('document.fonts.ready.then(() => true)');
     await focusHost(app);
 
+    // A press reaches the design's process after mouse.click returns, so a
+    // control the previous press reveals (a tab's panel, the dialog's buttons)
+    // can still be hidden, with an empty box at the origin. Wait until it shows.
     const click = async (expression: string): Promise<void> => {
-      const rect = await generated(`(() => {
-        const target = ${expression};
-        if (!target) throw new Error('Missing kit control');
-        target.scrollIntoView({ block: 'center' });
-        const { x, y, width, height } = target.getBoundingClientRect();
-        return { x, y, width, height };
-      })()`);
+      let rect: unknown;
+      await expect
+        .poll(async () => {
+          rect = await generated(`(() => {
+            const target = ${expression};
+            if (!target) throw new Error('Missing kit control');
+            target.scrollIntoView({ block: 'center' });
+            const { x, y, width, height } = target.getBoundingClientRect();
+            return { x, y, width, height };
+          })()`);
+          return isRect(rect) && rect.width > 0 && rect.height > 0;
+        })
+        .toBe(true);
       assert.ok(isRect(rect));
       assert.ok(rect.y >= 0 && rect.y + rect.height <= 300);
       await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
@@ -84,15 +93,17 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
     await click(
       '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',
     );
+    await expect
+      .poll(() => active())
+      .toEqual({
+        open: true,
+        tag: 'BUTTON',
+        text: 'Close',
+        placeholder: null,
+        inDialog: true,
+        hasFocus: true,
+      });
     assert.deepEqual(await layout(), layoutBeforeDialog);
-    assert.deepEqual(await active(), {
-      open: true,
-      tag: 'BUTTON',
-      text: 'Close',
-      placeholder: null,
-      inDialog: true,
-      hasFocus: true,
-    });
     await page.keyboard.press('Tab');
     assert.equal(
       await generated(
@@ -115,14 +126,16 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
       'Try it',
     );
     await page.keyboard.press('Escape');
-    assert.deepEqual(await active(), {
-      open: false,
-      tag: 'BUTTON',
-      text: 'How it works',
-      placeholder: null,
-      inDialog: false,
-      hasFocus: true,
-    });
+    await expect
+      .poll(() => active())
+      .toEqual({
+        open: false,
+        tag: 'BUTTON',
+        text: 'How it works',
+        placeholder: null,
+        inDialog: false,
+        hasFocus: true,
+      });
 
     await click(
       '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',
@@ -144,7 +157,7 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
     await click(
       '[...document.querySelectorAll("button")].find(button => button.textContent?.includes("Get started"))',
     );
-    assert.equal(await generated('document.querySelector("input")?.disabled'), true);
+    await expect.poll(() => generated('document.querySelector("input")?.disabled')).toBe(true);
     await click('document.querySelectorAll("[role=tab]")[1]');
     await click(
       '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',

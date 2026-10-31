@@ -5,8 +5,8 @@
 // only source of assistant text and thinking. The CLI also emits an `assistant`
 // snapshot for each block as it finishes, carrying that block's full text, so
 // re-emitting a snapshot would double every sentence in the chat. The snapshot
-// backfills one case only: a message that streamed nothing at all (an aborted
-// or synthetic frame), which is visible nowhere else.
+// backfills a text/thinking kind that never streamed, including synthetic or
+// aborted frames. Native message ids keep those additive blocks together.
 import type { ModelInfo, SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
@@ -14,25 +14,12 @@ import type { TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
 import { toolResultParts } from '../../toolResultImages.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
+import { ClaudeMessageContent, toolBlock, type ClaudeContent } from './claudeMessageContent.js';
 import { claudeCatalogModelId } from './claudeModels.js';
 import { usageRefusal } from './claudeRateLimits.js';
 import type { UsageLimitError } from '../usageLimit.js';
+import type { ProviderChildSession } from '../session.js';
 import { canvasToolProvenance } from '../../canvas/canvasToolPresentation.js';
-
-const TOOL_BLOCK_TYPES = new Set(['tool_use', 'server_tool_use', 'mcp_tool_use']);
-
-interface ToolBlock {
-  id: string;
-  name: string;
-  json: string;
-  emitted?: boolean;
-}
-
-// One content block of the message currently streaming. Its presence is what
-// tells the assistant snapshot that this message already reached the transcript.
-interface BlockState {
-  tool?: ToolBlock;
-}
 
 let sequence = 0;
 // A distinct suffix from normalize.ts's ids so two providers can never mint the
@@ -40,9 +27,7 @@ let sequence = 0;
 const nextId = (): string => `${Date.now().toString(36)}-c${(sequence++).toString(36)}`;
 
 export class ClaudeEventMapper {
-  // Content blocks of the message currently streaming, per conversation: a
-  // subagent's frames carry their own block indices under its tool_use id.
-  private readonly blocks = new Map<string, Map<number, BlockState>>();
+  private readonly content = new ClaudeMessageContent();
   // Tool results already in the transcript for this turn, so the result's
   // authoritative denial list only has to cover the ones that never streamed.
   private readonly reportedResults = new Set<string>();
@@ -74,6 +59,10 @@ export class ClaudeEventMapper {
     this.observedModelId = undefined;
   }
 
+  restoreChildren(children: readonly ProviderChildSession[]): void {
+    this.subagents.restore(children);
+  }
+
   // Resets state scoped to the turn that is starting, not the long-lived
   // background task identity the session may still be tracking across turns.
   beginTurn(turnId: string | undefined): void {
@@ -96,6 +85,8 @@ export class ClaudeEventMapper {
   }
 
   map(message: SDKMessage, fastMode = false): NormalizedEvent[] {
+    const parentToolUseId = 'parent_tool_use_id' in message ? message.parent_tool_use_id : null;
+    if (this.subagents.dropWorkflowOutput(parentToolUseId)) return [];
     switch (message.type) {
       case 'stream_event':
         return this.streamEvent(message.event, message.parent_tool_use_id);
@@ -138,18 +129,20 @@ export class ClaudeEventMapper {
       const from = claudeCatalogModelId(fallback.from, this.models);
       return [{ harnessModelSwitch: { from, to, cause: 'usage_limit' } }];
     }
-    return this.subagents.map(message, this.modelId ?? this.observedModelId);
+    return this.subagents.map(message);
   }
 
   private streamEvent(
     event: Extract<SDKMessage, { type: 'stream_event' }>['event'],
     parentToolUseId: string | null,
   ): NormalizedEvent[] {
-    const blocks = this.blocksFor(parentToolUseId);
+    const content = this.content.stream(event, parentToolUseId);
     switch (event.type) {
       case 'message_start': {
-        blocks.clear();
-        if (parentToolUseId) return [];
+        if (parentToolUseId)
+          return event.message.model && event.message.model !== '<synthetic>'
+            ? this.subagents.observe(parentToolUseId, { modelId: event.message.model })
+            : [];
         if (event.message.model) this.observedModelId = event.message.model;
         const usage = event.message.usage;
         this.call = {
@@ -165,49 +158,9 @@ export class ClaudeEventMapper {
         if (parentToolUseId) return [];
         this.call.output = event.usage.output_tokens;
         return [this.usage()];
-      // The message is over, so the next `assistant` frame that arrives with no
-      // stream events of its own is one this mapper has not reported yet.
-      case 'message_stop':
-        blocks.clear();
-        return [];
-      case 'content_block_start': {
-        const tool = toolBlock(event.content_block);
-        blocks.set(event.index, tool ? { tool: { ...tool, json: '' } } : {});
-        return [];
-      }
-      case 'content_block_delta':
-        return this.contentDelta(blocks, event.index, event.delta, parentToolUseId);
-      case 'content_block_stop': {
-        const tool = blocks.get(event.index)?.tool;
-        if (!tool || tool.emitted) return [];
-        tool.emitted = true;
-        return [this.toolCall(tool.id, tool.name, parseToolInput(tool.json), parentToolUseId)];
-      }
       default:
-        return [];
+        return this.contentEvents(content, parentToolUseId);
     }
-  }
-
-  private contentDelta(
-    blocks: Map<number, BlockState>,
-    index: number,
-    delta: { type: string; text?: string; thinking?: string; partial_json?: string },
-    parentToolUseId: string | null,
-  ): NormalizedEvent[] {
-    if (delta.type === 'input_json_delta') {
-      const tool = blocks.get(index)?.tool;
-      if (tool) tool.json += delta.partial_json ?? '';
-      return [];
-    }
-    // A start always comes first in practice; recording the block here keeps the
-    // snapshot rule right even if one is ever missed.
-    if (!blocks.has(index)) blocks.set(index, {});
-    const owner = this.childOwner(parentToolUseId);
-    if (delta.type === 'text_delta' && delta.text)
-      return [{ ...owner, transcript: this.answerText(delta.text, parentToolUseId) }];
-    if (delta.type === 'thinking_delta' && delta.thinking)
-      return [{ ...owner, transcript: this.transcript('thinking', { text: delta.thinking }) }];
-    return [];
   }
 
   private assistantSnapshot(
@@ -216,56 +169,44 @@ export class ClaudeEventMapper {
     const model = message.message.model;
     if (!message.parent_tool_use_id && model && model !== '<synthetic>')
       this.observedModelId = model;
-    const blocks = this.blocksFor(message.parent_tool_use_id);
-    // The snapshot's content is the block that just finished, not the message so
-    // far, so it cannot be matched positionally against the stream. Streamed
-    // text is already in the transcript. Tool calls wait for their
-    // block stop, unless an error snapshot needs their correlation first.
-    const streamed = blocks.size > 0;
-    const startedTools = new Map<string, ToolBlock>();
-    for (const block of blocks.values()) {
-      if (block.tool) startedTools.set(block.tool.id, block.tool);
-    }
-    const canvasTools = message.message.content
-      .map(toolBlock)
-      .filter((tool) => tool && canvasToolProvenance(tool.name, tool.id));
-    const canvasTool =
-      message.error && message.error !== 'rate_limit' && canvasTools.length === 1
-        ? canvasTools[0]
-        : undefined;
-    const events: NormalizedEvent[] = [];
-    for (const block of message.message.content) {
-      const tool = toolBlock(block);
-      if (tool) {
-        const started = startedTools.get(tool.id);
-        if (!started || (tool.id === canvasTool?.id && !started.emitted)) {
-          if (started) started.emitted = true;
-          events.push(
-            this.toolCall(
-              tool.id,
-              tool.name,
-              (block as { input?: unknown }).input,
-              message.parent_tool_use_id,
-            ),
-          );
-        }
+    const canvasToolUseId = failedCanvasToolUseId(message);
+    const { streamed, content } = this.content.assistant(message, canvasToolUseId);
+    const events =
+      message.parent_tool_use_id && model && model !== '<synthetic>'
+        ? this.subagents.observe(message.parent_tool_use_id, { modelId: model })
+        : [];
+    events.push(...this.contentEvents(content, message.parent_tool_use_id));
+    if (message.error) events.push(...this.failedRequest(message, streamed, canvasToolUseId));
+    return events;
+  }
+
+  private contentEvents(
+    content: ClaudeContent[],
+    parentToolUseId: string | null,
+  ): NormalizedEvent[] {
+    if (content.length === 0) return [];
+    const modelId = this.content.modelId(parentToolUseId);
+    const events = parentToolUseId
+      ? this.subagents.observe(parentToolUseId, {
+          transcriptAvailable: true,
+          ...(modelId && modelId !== '<synthetic>' ? { modelId } : {}),
+        })
+      : [];
+    for (const block of content) {
+      if (block.kind === 'tool_call') {
+        events.push(this.toolCall(block.id, block.name, block.input, parentToolUseId));
         continue;
       }
-      // A failed request's text explains the failure, so it is the error row's.
-      if (streamed || message.error) continue;
-      const owner = this.childOwner(message.parent_tool_use_id);
-      if (block.type === 'text' && block.text)
-        events.push({
-          ...owner,
-          transcript: this.answerText(block.text, message.parent_tool_use_id),
-        });
-      if (block.type === 'thinking' && block.thinking)
-        events.push({
-          ...owner,
-          transcript: this.transcript('thinking', { text: block.thinking }),
-        });
+      const textUpdate: TranscriptEvent['textUpdate'] = {
+        messageId: block.messageId,
+        kind: 'delta',
+      };
+      const transcript =
+        block.kind === 'text'
+          ? { ...this.answerText(block.text, parentToolUseId), textUpdate }
+          : this.transcript('thinking', { text: block.text, textUpdate });
+      events.push({ ...this.childOwner(parentToolUseId), transcript });
     }
-    if (message.error) events.push(...this.failedRequest(message, streamed, canvasTool?.id));
     return events;
   }
 
@@ -310,7 +251,7 @@ export class ClaudeEventMapper {
     const content = message.message.content;
     if (typeof content === 'string') return [];
     const owner = this.childOwner(message.parent_tool_use_id);
-    return content.flatMap((block) => {
+    const events = content.flatMap((block) => {
       if (block.type !== 'tool_result') return [];
       this.reportedResults.add(block.tool_use_id);
       const { text, images } = toolResultParts(block.content);
@@ -329,6 +270,12 @@ export class ClaudeEventMapper {
         }),
       };
     });
+    return message.parent_tool_use_id && events.length
+      ? [
+          ...this.subagents.observe(message.parent_tool_use_id, { transcriptAvailable: true }),
+          ...events,
+        ]
+      : events;
   }
 
   private fastModeNotice(
@@ -404,8 +351,7 @@ export class ClaudeEventMapper {
     input: unknown,
     parentToolUseId: string | null,
   ): NormalizedEvent {
-    // Nested tool calls must not change the parent's spawn correlation.
-    if (!parentToolUseId) this.subagents.noteToolUse(name, id);
+    this.subagents.noteToolUse(name, id, parentToolUseId);
     // A spawn's input is the subagent's whole brief. The subagent's own pane
     // already receives that brief as a prompt row, so the parent's transcript
     // keeps only the fields that label the call.
@@ -434,15 +380,6 @@ export class ClaudeEventMapper {
         contextTokens: this.call.input + this.call.output,
       },
     };
-  }
-
-  private blocksFor(parentToolUseId: string | null): Map<number, BlockState> {
-    const key = parentToolUseId ?? '';
-    const existing = this.blocks.get(key);
-    if (existing) return existing;
-    const created = new Map<number, BlockState>();
-    this.blocks.set(key, created);
-    return created;
   }
 
   // A subagent's own messages arrive inside the parent's stream, tagged with the
@@ -478,6 +415,18 @@ export class ClaudeEventMapper {
 
 // Claude Code moves a chat off a model the account needs usage credits for,
 // for the rest of the session. The SDK does not type this frame.
+// A failed request that carries exactly one Canvas call is that call's failure.
+function failedCanvasToolUseId(
+  message: Extract<SDKMessage, { type: 'assistant' }>,
+): string | undefined {
+  if (!message.error || message.error === 'rate_limit') return undefined;
+  const canvasToolUseIds = message.message.content.flatMap((block) => {
+    const tool = toolBlock(block);
+    return tool && canvasToolProvenance(tool.name, tool.id) ? [tool.id] : [];
+  });
+  return canvasToolUseIds.length === 1 ? canvasToolUseIds[0] : undefined;
+}
+
 function consentFallback(
   message: Record<string, unknown>,
 ): { from: string; to: string } | undefined {
@@ -499,25 +448,5 @@ function messageText(
 // with the rest of this adapter's knowledge of the SDK, never in the renderer.
 const INTERRUPTION_NOTICE = /the user (?:doesn't|does not) want to proceed with this tool use/i;
 
-// The tool-use block shapes share id/name; the SDK's own union splits them by
-// server/mcp provenance, which the transcript does not distinguish.
-function toolBlock(block: { type: string }): { id: string; name: string } | undefined {
-  if (!TOOL_BLOCK_TYPES.has(block.type)) return undefined;
-  const { id, name } = block as unknown as { id: string; name: string };
-  return { id, name };
-}
-
-// A tool whose input never finished streaming (an interrupt, or a block the
-// model left open) still deserves its row, so a partial payload reads as no
-// arguments rather than failing the turn.
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
-
-function parseToolInput(json: string): unknown {
-  if (!json) return {};
-  try {
-    return JSON.parse(json) as unknown;
-  } catch {
-    return {};
-  }
-}

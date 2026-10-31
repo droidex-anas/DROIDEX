@@ -5,12 +5,8 @@
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
-import { assertValidInteractionResponse } from './interactionResponses.js';
-import { assertValidResponseFormat } from './appPrompt.js';
-import { assertValidMentions } from './providers/catalog.js';
-import { CanvasCommandError, canvasError } from './canvas/canvasError.js';
-import { assertCanvasTurnContext } from './canvas/canvasTurnContext.js';
-import { sessionCanvasIntentSchema } from './canvas/schema.js';
+import { assertValidBridgeCommand } from './bridgeCommandValidation.js';
+import { CanvasCommandError } from './canvas/canvasError.js';
 import { BridgeEventBatcher, type BridgeEventBatchMetadata } from './bridgeEventBatcher.js';
 import { BridgeReplayBuffer, type SerializedEventBatch } from './bridgeReplayBuffer.js';
 import { serveCanvasSourceExport } from './canvas/canvasExport.js';
@@ -25,7 +21,6 @@ import {
   type ServerEventBatch,
   type ServerWireMessage,
 } from './protocol.js';
-import { providerKind } from './providers/providerKind.js';
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
@@ -67,6 +62,11 @@ export function startBridgeServer(options: {
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
   getProfileUsage?: () => unknown;
+  onChildHistoryWatch?: (
+    owner: object,
+    command: Extract<ClientCommand, { type: 'child.watchHistory' }>,
+  ) => void;
+  onChildHistoryDisconnect?: (owner: object) => void;
 }): BridgeServer {
   const clients = new Set<WebSocket>();
   const pageGoneListeners = new Set<(pageId: string) => void>();
@@ -184,6 +184,7 @@ export function startBridgeServer(options: {
       clients.delete(ws);
       voiceOwners.disconnected(ws);
       if (pageId) reportPageGone(pageId);
+      options.onChildHistoryDisconnect?.(ws);
     };
     ws.on('close', disconnect);
     ws.on('error', disconnect);
@@ -319,28 +320,13 @@ export function startBridgeServer(options: {
       return;
     }
     try {
-      if (typeof parsed === 'object' && parsed !== null) {
-        if ('responseFormat' in parsed) assertValidResponseFormat(parsed.responseFormat);
-        if ('mentions' in parsed) assertValidMentions(parsed);
-        assertValidSteerId(parsed);
-        assertValidInteractionResponse(parsed);
-        assertValidChatPreferences(parsed);
-        if ('canvas' in parsed) {
-          if (!('type' in parsed) || parsed.type !== 'session.create')
-            throw canvasError('invalid_input', 'Canvas intent only applies to session creation.');
-          const intent = sessionCanvasIntentSchema.safeParse(parsed.canvas);
-          if (!intent.success)
-            throw canvasError(
-              'invalid_input',
-              intent.error.issues[0]?.message ?? 'Invalid Canvas intent.',
-            );
-          parsed.canvas = intent.data;
-        }
-        if ('canvasContext' in parsed) assertCanvasTurnContext(parsed.canvasContext);
-        assertValidUsageRefresh(parsed);
-      }
+      assertValidBridgeCommand(parsed);
       const command = parsed as ClientCommand;
-      if (command.type === 'voice.start' || command.type === 'voice.stop')
+      if (command.type === 'child.watchHistory') {
+        if (!options.onChildHistoryWatch)
+          throw new Error('Child history observation is unavailable.');
+        options.onChildHistoryWatch(ws, command);
+      } else if (command.type === 'voice.start' || command.type === 'voice.stop')
         await runVoiceCommand(command, pageId);
       else await options.onCommand(command, pageId);
     } catch (err) {
@@ -505,55 +491,6 @@ function commandFailure(error: unknown): { code?: string; message: string } {
   if (error instanceof CanvasCommandError)
     return { code: `canvas.${error.code}`, message: error.message };
   return { message: error instanceof Error ? error.message : String(error) };
-}
-
-// Optional on a send; queue actions name the steer they are for.
-function assertValidSteerId(command: object): void {
-  const withdrawing = 'type' in command && command.type === 'session.withdrawSteer';
-  const required = withdrawing || ('type' in command && command.type === 'session.sendNow');
-  if (!required && !('steerId' in command)) return;
-  const steerId = 'steerId' in command ? command.steerId : undefined;
-  if (typeof steerId !== 'string' || !steerId) throw new Error('Invalid steer id.');
-  if (withdrawing) {
-    if (
-      !('appSessionId' in command) ||
-      typeof command.appSessionId !== 'string' ||
-      !command.appSessionId
-    )
-      throw new Error('Invalid app session id.');
-    if (!('requestId' in command) || typeof command.requestId !== 'string' || !command.requestId)
-      throw new Error('Invalid withdrawal request id.');
-  }
-}
-
-function assertValidChatPreferences(command: object): void {
-  const settingsCommand =
-    'type' in command &&
-    (command.type === 'session.create' || command.type === 'session.updateSettings');
-  if ('droidProfile' in command) {
-    if (!('type' in command) || command.type !== 'session.create' || command.droidProfile !== 'alt')
-      throw new Error('A Droid profile can only be selected when creating a session.');
-  }
-  if ('fastMode' in command) {
-    if (typeof command.fastMode !== 'boolean') throw new Error('fastMode must be a boolean.');
-    if (!settingsCommand) throw new Error('Fast mode only applies to top-level session settings.');
-  }
-  if ('contextWindowTokens' in command) {
-    if (command.contextWindowTokens !== 200000 && command.contextWindowTokens !== 1000000)
-      throw new Error('contextWindowTokens must be 200000 or 1000000.');
-    if (!settingsCommand)
-      throw new Error('A context window only applies to top-level session settings.');
-  }
-}
-
-// A read of a harness account can start that harness's process, so the
-// harness and both switches must be exactly what the sidecar expects.
-function assertValidUsageRefresh(command: object): void {
-  if (!('type' in command) || command.type !== 'usage.refresh') return;
-  const { provider, panelOpen, immediate } = command as Record<string, unknown>;
-  if (!providerKind(provider)) throw new Error('usage.refresh needs a known harness.');
-  if (typeof panelOpen !== 'boolean' || typeof immediate !== 'boolean')
-    throw new Error('usage.refresh needs panelOpen and immediate as booleans.');
 }
 
 function maxBufferedAmount(clients: Iterable<WebSocket>): number {

@@ -141,6 +141,7 @@ export function createHarness(
       },
       attachParent: (appSessionId) => {
         record('cleanup', 'children.attach', appSessionId);
+        return [];
       },
       closeParent: (appSessionId) => closeChildren(appSessionId),
     },

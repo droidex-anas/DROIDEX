@@ -5,16 +5,14 @@ import type { ChildSessionActivity, ChildSessionTarget } from '../../lib/childSe
 import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
 import { AgentSummaryLine } from './AgentSummaryLine';
 import { agentDisclosureMotion, AgentRowList, foldedAgentRows } from './AgentRowList';
-import { AgentLifecycleLine } from './AgentLifecycleLine';
-import { agentLifecycleLines, agentMonitorMeta, agentMonitorTitle } from './agentMonitorModel';
+import { agentMonitorMeta, agentMonitorTitle } from './agentMonitorModel';
 import { useAgentWave } from './useAgentWave';
 
 /* The agent monitor: one card for a turn's agents, whichever harness ran them.
    Collapsed it is a header strip over a summary line; expanding glides the
    summary's count pills into the rows they stand for and staggers the rows in
-   behind them. A quiet lifecycle line brackets the card — what started, and
-   what finished — derived from the children's statuses, because the wire
-   carries no lifecycle event to render instead. MessageFeed only renders the
+   behind them. The header states the wave's lifecycle, so no line brackets the
+   card in the transcript. MessageFeed only renders the
    card when the caller passes its data, so Mission Control keeps its per-spawn
    lines. */
 
@@ -60,73 +58,66 @@ export function AgentMonitorCard({
   // A running wave is open: the card exists to show what the agents are doing.
   const showRows = expanded || wave.inFlight;
   const visibleRows = foldedAgentRows(wave.rows, showAllRows);
-  const lifecycle = agentLifecycleLines(wave.rows);
 
   return (
-    <div className="space-y-2">
-      {lifecycle.started ? <AgentLifecycleLine rows={wave.rows} text={lifecycle.started} /> : null}
-      <div
-        data-testid="agent-monitor-card"
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') setExpanded(false);
+    <div
+      data-testid="agent-monitor-card"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') setExpanded(false);
+      }}
+      className="w-full overflow-hidden rounded-xl bg-surface"
+    >
+      <button
+        type="button"
+        onClick={() => {
+          setExpanded((value) => !value);
         }}
-        className="w-full overflow-hidden rounded-xl bg-surface"
+        aria-expanded={showRows}
+        aria-controls={bodyId}
+        className="group block w-full text-left"
       >
-        <button
-          type="button"
-          onClick={() => {
-            setExpanded((value) => !value);
-          }}
-          aria-expanded={showRows}
-          aria-controls={bodyId}
-          className="group block w-full text-left"
-        >
-          <span className="flex items-center justify-between gap-3 bg-elevated/50 px-4 py-2.5 transition-colors duration-150 ease-out group-hover:bg-elevated">
-            <span className="truncate text-body-strong text-secondary transition-colors duration-150 ease-out group-hover:text-primary">
-              {agentMonitorTitle(wave.rows)}
-            </span>
-            <span className="shrink-0 truncate text-caption text-muted">
-              {agentMonitorMeta({
-                counts: wave.counts,
-                total: wave.rows.length,
-                inFlight: wave.inFlight,
-              })}
-            </span>
+        <span className="flex items-center justify-between gap-3 bg-elevated/50 px-4 py-2.5 transition-colors duration-150 ease-out group-hover:bg-elevated">
+          <span className="truncate text-body-strong text-secondary transition-colors duration-150 ease-out group-hover:text-primary">
+            {agentMonitorTitle(wave.rows)}
           </span>
-          <AgentSummaryLine
-            wave={wave}
-            showCounts={!showRows}
-            className="px-4 pb-3 pt-2.5"
-            {...(reduceMotion ? {} : { morphId })}
-          />
-        </button>
-        <AnimatePresence initial={false}>
-          {showRows ? (
-            <motion.div
-              key="rows"
-              id={bodyId}
-              {...agentDisclosureMotion(reduceMotion)}
-              className="overflow-hidden"
-            >
-              <AgentRowList
-                rows={visibleRows}
-                elapsedMs={wave.elapsedMs}
-                reduceMotion={reduceMotion}
-                foldedCount={wave.rows.length - visibleRows.length}
-                onShowAll={() => {
-                  setShowAllRows(true);
-                }}
-                {...(provider !== undefined ? { provider } : {})}
-                {...(reduceMotion ? {} : { morphId })}
-                {...(onOpen !== undefined ? { onOpen } : {})}
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
-      {lifecycle.finished ? (
-        <AgentLifecycleLine rows={wave.rows} text={lifecycle.finished} />
-      ) : null}
+          <span className="shrink-0 truncate text-caption text-muted">
+            {agentMonitorMeta({
+              counts: wave.counts,
+              total: wave.rows.length,
+              inFlight: wave.inFlight,
+            })}
+          </span>
+        </span>
+        <AgentSummaryLine
+          wave={wave}
+          showCounts={!showRows}
+          className="px-4 pb-3 pt-2.5"
+          {...(reduceMotion ? {} : { morphId })}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {showRows ? (
+          <motion.div
+            key="rows"
+            id={bodyId}
+            {...agentDisclosureMotion(reduceMotion)}
+            className="overflow-hidden"
+          >
+            <AgentRowList
+              rows={visibleRows}
+              elapsedMs={wave.elapsedMs}
+              reduceMotion={reduceMotion}
+              foldedCount={wave.rows.length - visibleRows.length}
+              onShowAll={() => {
+                setShowAllRows(true);
+              }}
+              {...(provider !== undefined ? { provider } : {})}
+              {...(reduceMotion ? {} : { morphId })}
+              {...(onOpen !== undefined ? { onOpen } : {})}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

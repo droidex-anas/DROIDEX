@@ -346,23 +346,26 @@ test('a turn that used the browser gets one Browser card outside the Worked fold
     toolUseId: 'b2',
     text: '[Plans · https://example.com/plans]',
   });
-  const settled = groupTurns(
-    buildFeed([
-      userMsg('check the pricing page'),
-      open,
-      opened,
-      grep(),
-      click,
-      clicked,
-      asst('done'),
-    ]),
-    false,
+  const completed = buildFeed([
+    userMsg('check the pricing page'),
+    open,
+    opened,
+    grep(),
+    click,
+    clicked,
+    asst('done'),
+  ]);
+  assert.equal(groupTurns(completed, true).at(-1)?.type, 'message');
+  assert.deepEqual(
+    groupTurns(running, false).map((it) => it.type),
+    ['message', 'worked', 'browser'],
   );
+  const settled = groupTurns(completed, false);
   assert.deepEqual(
     settled.map((it) => it.type),
-    ['message', 'worked', 'browser', 'message'],
+    ['message', 'worked', 'message', 'browser'],
   );
-  const card = settled[2] as Extract<FeedItem, { type: 'browser' }>;
+  const card = settled[3] as Extract<FeedItem, { type: 'browser' }>;
   assert.equal(browserPageOf(card.events)?.title, 'Plans');
   assert.equal(browserStepInFlight(card.events), null);
   // A later turn that uses the browser gets its own card, and the earlier

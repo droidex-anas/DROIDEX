@@ -1,16 +1,15 @@
-// Durable transcript for a session whose provider keeps no session file of its
-// own (everything except Droid). Scrollback and the sidebar both come from the
-// stored-JSONL reader, so this writer emits exactly what that reader parses:
-// one session_start head line, then one stored message line per settled
-// message, at <userData>/provider-sessions/<appSessionId>.jsonl.
+// App-owned transcript for Claude and Codex sessions. Scrollback and the
+// sidebar use the stored-JSONL reader, so the writer emits its exact shapes:
+// one session_start head, then message lines at
+// <userData>/provider-sessions/<appSessionId>.jsonl. Child chunks persist immediately.
 //
 // The reader is the contract. sessionFileHead.ts needs the head line plus a
-// completed user/assistant exchange to admit a sidebar row, history.ts reads
+// first durable prompt to admit a sidebar row, history.ts reads
 // cwd, title, the model settings and the provider binding off the head, and
 // sessionTranscriptParser.ts maps the content blocks below back to transcript
 // events. Changing a shape here without reading those three is a silent
 // "session is empty after restart" bug.
-import { appendFile, copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, mkdir, open, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
@@ -19,6 +18,7 @@ import type { ContextWindowTokens, SessionSummary, TranscriptEvent } from '../pr
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
 import { STEER_MESSAGE_PREFIX } from '../sessionTranscriptParser.js';
 import { storedNoticeLine } from '../sessionNotices.js';
+import { ProviderTranscriptAnchors } from './ProviderTranscriptAnchors.js';
 
 // The head line: a StoredSessionStart plus the settings readSessionModelSettings
 // reads off the same record. Without modelId the restored session has no launch
@@ -34,8 +34,8 @@ interface ProviderSessionStart extends StoredSessionStart {
 }
 
 type ContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'thinking'; thinking: string }
+  | { type: 'text'; text: string; textUpdate?: TranscriptEvent['textUpdate'] }
+  | { type: 'thinking'; thinking: string; textUpdate?: TranscriptEvent['textUpdate'] }
   | {
       type: 'tool_use';
       id?: string;
@@ -75,6 +75,7 @@ export class ProviderTranscriptFile {
   // reported to the caller that wrote it, and the lines after it still go out.
   private writes: Promise<void> = Promise.resolve();
   private readonly children = new Map<string, ProviderTranscriptFile>();
+  private anchors = new ProviderTranscriptAnchors();
 
   // Reads the summary when it writes rather than holding a copy: the registry
   // replaces the summary object on every update, and the head line goes out
@@ -195,12 +196,20 @@ export class ProviderTranscriptFile {
   // it, when it is not. The queue carries on either way: one failed line must
   // not cost the session the lines after it, or hold its close.
   private writeLine(line: object): Promise<void> {
-    const contents = serialize(line);
     const attempt = this.writes.then(async () => {
-      await appendFile(this.path, (await this.headIfMissing()) + contents);
+      const head = await this.headIfMissing();
+      const lineBreak = head || this.headWritten ? '' : await lineBreakIfUnterminated(this.path);
+      const anchored = await this.anchors.prepare(line, this.path, head !== '');
+      await appendFile(this.path, head + lineBreak + serialize(anchored.line));
+      anchored.commit();
       this.headWritten = true;
     });
-    this.writes = attempt.catch(() => undefined);
+    // A failed append can leave part of its line on disk, so the next write
+    // learns the file's state from the file again.
+    this.writes = attempt.catch(() => {
+      this.headWritten = false;
+      this.anchors = new ProviderTranscriptAnchors();
+    });
     return attempt;
   }
 
@@ -223,10 +232,22 @@ export class ProviderTranscriptFile {
 // Adjacent stream deltas must replay as one text or thinking row.
 function addBlock(blocks: ContentBlock[], block: ContentBlock): void {
   const previous = blocks.at(-1);
-  if (block.type === 'text' && previous?.type === 'text') previous.text += block.text;
-  else if (block.type === 'thinking' && previous?.type === 'thinking')
-    previous.thinking += block.thinking;
-  else blocks.push(block);
+  if (
+    block.type === 'text' &&
+    previous?.type === 'text' &&
+    block.textUpdate?.messageId === previous.textUpdate?.messageId
+  ) {
+    previous.text = block.textUpdate?.kind === 'snapshot' ? block.text : previous.text + block.text;
+    if (block.textUpdate?.kind === 'snapshot') previous.textUpdate = block.textUpdate;
+  } else if (
+    block.type === 'thinking' &&
+    previous?.type === 'thinking' &&
+    block.textUpdate?.messageId === previous.textUpdate?.messageId
+  ) {
+    previous.thinking =
+      block.textUpdate?.kind === 'snapshot' ? block.thinking : previous.thinking + block.thinking;
+    if (block.textUpdate?.kind === 'snapshot') previous.textUpdate = block.textUpdate;
+  } else blocks.push(block);
 }
 
 async function hasContent(path: string): Promise<boolean> {
@@ -235,6 +256,21 @@ async function hasContent(path: string): Promise<boolean> {
   } catch (error) {
     if (isMissingFile(error)) return false;
     throw error;
+  }
+}
+
+// A crash can leave the last saved line half-written; a new line must not join
+// it, or it is lost with it and every later message anchor is off by one.
+async function lineBreakIfUnterminated(path: string): Promise<string> {
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return '';
+    const last = Buffer.alloc(1);
+    await file.read(last, 0, 1, size - 1);
+    return last[0] === 0x0a ? '' : '\n';
+  } finally {
+    await file.close();
   }
 }
 
@@ -411,9 +447,20 @@ function assistantBlock(event: TranscriptEvent): ContentBlock | null {
         : {}),
     };
   }
-  if (!event.text) return null;
-  if (event.kind === 'text') return { type: 'text', text: event.text };
-  if (event.kind === 'thinking') return { type: 'thinking', thinking: event.text };
+  if (event.text === undefined || (!event.text && event.textUpdate?.kind !== 'snapshot'))
+    return null;
+  if (event.kind === 'text')
+    return {
+      type: 'text',
+      text: event.text,
+      ...(event.textUpdate ? { textUpdate: event.textUpdate } : {}),
+    };
+  if (event.kind === 'thinking')
+    return {
+      type: 'thinking',
+      thinking: event.text,
+      ...(event.textUpdate ? { textUpdate: event.textUpdate } : {}),
+    };
   return null;
 }
 

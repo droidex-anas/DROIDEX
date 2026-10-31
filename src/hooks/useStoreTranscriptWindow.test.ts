@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
 import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
-import { initialState, reducer, type AppState } from './useStore';
+import { initialState, reducer, type Action, type AppState } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';
 import { childSummary } from '../test/childSummary';
 
@@ -461,6 +461,79 @@ test('a late child history page is released after the user switches to a sibling
   assert.equal(retained.at(-1)?.id, page.at(-1)?.id);
   assert.equal(next.childHistory.active['child-a'].isLoaded, false);
   assert.equal(next.historyLoaded.active, true);
+});
+
+test('agent history stays intact while visible and releases when the reader leaves', () => {
+  const primary = events('active', 2);
+  const page = childEvents('child-a', 1_400);
+  const state = stateWithTranscript('active', primary, {
+    sessions: { active: session('active'), other: session('other') },
+    childSessions: {
+      active: {
+        'child-a': childSession('active', 'child-a'),
+        'child-b': childSession('active', 'child-b'),
+      },
+    },
+    childHistory: {
+      active: { 'child-a': childHistoryEntry({ status: 'loading', isLoaded: false }) },
+    },
+    utilityPanels: {
+      active: {
+        open: true,
+        activeTabId: 'agents',
+        tabs: [
+          { id: 'agents', tool: 'agents', label: 'Subagents', agentId: 'child-a' },
+          { id: 'files', tool: 'files', label: 'Files' },
+        ],
+      },
+    },
+  });
+  const history: Action = {
+    type: 'SESSION_HISTORY',
+    appSessionId: 'active',
+    childSessionId: 'child-a',
+    progress: [],
+    transcripts: page,
+    mode: 'replace',
+    hasMore: false,
+  };
+  const loaded = reducer(state, history);
+  assert.equal(loaded.selectedChild, null);
+  assert.equal(loaded.childHistory.active['child-a'].isLoaded, true);
+  assert.deepEqual(
+    loaded.transcripts.active.filter((event) => event.sourceSessionId === 'child-a'),
+    page,
+  );
+  const departures: Action[] = [
+    { type: 'UPDATE_UTILITY_TAB', tabId: 'agents', agentId: null },
+    { type: 'UPDATE_UTILITY_TAB', tabId: 'agents', agentId: 'child-b' },
+    { type: 'ACTIVATE_UTILITY_TAB', tabId: 'files' },
+    { type: 'CLOSE_UTILITY_TAB', tabId: 'agents' },
+    { type: 'SET_UTILITY_PANEL_OPEN', open: false },
+    { type: 'OPEN_UTILITY_TOOL', tool: 'browser' },
+    { type: 'SET_ACTIVE_SESSION', id: 'other' },
+  ];
+  for (const action of departures) {
+    const next = reducer(loaded, action);
+    const retained = next.transcripts.active.filter((event) => event.sourceSessionId === 'child-a');
+    assert.equal(next.selectedChild, null);
+    assert.deepEqual(
+      next.transcripts.active.filter((event) => event.role === 'primary'),
+      primary,
+    );
+    assert.equal(next.childHistory.active['child-a'].isLoaded, false, action.type);
+    assert.equal(retained.at(-1)?.id, page.at(-1)?.id);
+    assert.ok(retained.length < page.length, action.type);
+  }
+  const closed = reducer(loaded, { type: 'SET_UTILITY_PANEL_OPEN', open: false });
+  assert.equal(reducer(closed, history).childHistory.active['child-a'].isLoaded, false);
+  const selected = {
+    ...loaded,
+    selectedChild: { parentAppSessionId: 'active', childSessionId: 'child-a' },
+  };
+  const paneClosed = reducer(selected, { type: 'SET_UTILITY_PANEL_OPEN', open: false });
+  assert.equal(paneClosed.transcripts.active, selected.transcripts.active);
+  assert.equal(paneClosed.childHistory.active['child-a'].isLoaded, true);
 });
 
 test('invisible recent-page refresh restores a paging cursor without duplicates', () => {

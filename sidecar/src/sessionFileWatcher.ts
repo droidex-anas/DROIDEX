@@ -41,6 +41,9 @@ export interface SessionFileWatcherOptions {
   // explained by them, or with null when unexplained events (a removed
   // directory tree, foreign files) require a full reconcile.
   onExternalChange: (changes: SessionFileChange[] | null) => void;
+  // Every write to a session file this app is not running, unbatched, for a
+  // reader that follows one file faster than the list reconcile can.
+  onSessionFileWrite?: (providerSessionId: string) => void;
   now?: () => number;
   schedule?: (callback: () => void, delayMs: number) => NodeJS.Timeout;
   cancel?: (timer: NodeJS.Timeout) => void;
@@ -220,7 +223,10 @@ export function startSessionFileWatcher(
           return;
         }
         pendingPaths.set(target.id, target.sessionFile);
-        arm(reportedSessionIds.has(target.id) ? batchWindowMs : FIRST_SIGHTING_MS);
+        const reported = reportedSessionIds.has(target.id);
+        arm(reported ? batchWindowMs : FIRST_SIGHTING_MS);
+        // A file not yet reported is not indexed yet, so it cannot be read by id.
+        if (reported) options.onSessionFileWrite?.(target.id);
         return;
       }
       if (filename) pendingUnknown.add(filename);

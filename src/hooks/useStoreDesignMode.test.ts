@@ -120,6 +120,27 @@ test('each tab keeps its own product, and a design draft keeps its canvas promis
   assert.deepEqual(backOnDesign.draftChat?.canvas, { canvasId: null });
 });
 
+test('a Remote browser opens a chat wherever the window would open a design', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: { droidex: { remoteBrowser: {} } },
+  });
+  try {
+    const designTab = reducer(initialState, { type: 'OPEN_NEW_TAB', product: 'design' });
+    assert.equal(activeProduct(designTab), 'chat');
+    // A design chat started on the laptop still opens as one, but its "+" opens a chat.
+    const onDesign = sendDraft(designHome(initialState), 'ref-design', 'session-design');
+    assert.equal(activeProduct(onDesign), 'design');
+    const next = reducer(onDesign, { type: 'OPEN_NEW_TAB', product: activeProduct(onDesign) });
+    assert.equal(activeProduct(next), 'chat');
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'window', descriptor);
+    else Reflect.deleteProperty(globalThis, 'window');
+  }
+});
+
 test('a design send stays a design while it is created, and its chat opens as one', () => {
   const home = designHome(initialState);
   const sent = send(home, 'ref-design');

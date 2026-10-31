@@ -45,6 +45,7 @@ export interface ChildSpawnObservation {
   // See ChildSessionSummary.tokensUsed: this child's own spend, live-only.
   tokensUsed?: number;
   transcriptAvailable?: boolean;
+  streamFidelity?: StreamFidelity;
 }
 export interface ChildParentLease {
   summary: SessionSummary;
@@ -258,6 +259,7 @@ export function applyObservedChild(
   child.activity = observed.activity ?? child.activity;
   child.tokensUsed = observed.tokensUsed ?? child.tokensUsed;
   child.transcriptAvailable = observed.transcriptAvailable ?? true;
+  child.streamFidelity = observed.streamFidelity ?? child.streamFidelity;
   child.startedAt ??= now;
   return { previousPrompt, previousStatus };
 }

@@ -11,6 +11,12 @@ import type { ChildParentLease, ChildRuntimeTarget, ChildSettings } from './Chil
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import type { SettledAgent } from './childWaveWake.js';
 
+export interface ChildFileHistorySource {
+  isCurrent(): boolean;
+  containsProvider(providerSessionId: string): boolean;
+  refresh(isSelected: () => boolean): Promise<void>;
+}
+
 export type ChildOperation = 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
 
 export type ChildSettingsTarget = ChildRuntimeTarget & {
@@ -55,6 +61,8 @@ export interface ChildSessionsDependencies {
   >;
   // True transfers the wave to the parent turn; false retains it for retry.
   onAgentWaveSettled(parentAppSessionId: string, agents: readonly SettledAgent[]): boolean;
+  onParentClosing?(parentAppSessionId: string): void;
+  onParentAttached?(parentAppSessionId: string): void;
   resolveDefaultSettings(
     summary: SessionSummary,
     initResult: SessionInitResult,

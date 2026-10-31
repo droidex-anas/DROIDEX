@@ -3,7 +3,7 @@
 // the board up docked on that frame. It reads only the canvas's own snapshot,
 // never the design's source.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import './canvasAnimations.css';
 import './canvasBloom.css';
 import './canvasArtifactCard.css';
@@ -12,6 +12,7 @@ import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreSelector } from '../../hooks/useStore';
 import { useBoardOnScreen } from './boardOnScreen';
 import { canvasClient } from './canvasClient';
+import { coverRevision, useCanvasCover } from './canvasCovers';
 import { CanvasToolsRecovery } from './CanvasPaneStates';
 import { lacksCanvasTools } from './canvasState';
 import { FrameThumbnail } from './FrameThumbnail';
@@ -30,7 +31,7 @@ export default function CanvasArtifactCard({
 }) {
   const { canvasId, designIds } = activity;
   const designId = designIds.at(0) ?? null;
-  const frame = useCanvasFrame(canvasId, designId);
+  const { frame, pictured } = useCanvasFrame(canvasId, designId);
   const agentWorking = useSessionLive(appSessionId);
   const toolsMissing = useStoreSelector((current) =>
     lacksCanvasTools(current.sessions[appSessionId]),
@@ -62,7 +63,7 @@ export default function CanvasArtifactCard({
         aria-label={`Open ${title} on the canvas`}
       >
         <span className="canvas-artifact-sheet">
-          <Sheet canvasId={canvasId} frame={frame} status={status} />
+          <Sheet canvasId={canvasId} frame={frame} status={status} pictured={pictured} />
         </span>
         <span className="canvas-artifact-footer">
           <span className="canvas-artifact-text">
@@ -93,22 +94,23 @@ export default function CanvasArtifactCard({
   );
 }
 
-/** The frame as its canvas has it: undefined until the canvas loads, null once it is gone. */
-function useCanvasFrame(canvasId: string, designId: string | null): CanvasFrame | null | undefined {
+/**
+ * The frame as its canvas has it (undefined until the canvas loads, null once
+ * it is gone), and whether it is the frame the canvas's cover pictures.
+ */
+function useCanvasFrame(
+  canvasId: string,
+  designId: string | null,
+): { frame: CanvasFrame | null | undefined; pictured: boolean } {
   // A canvas this page already watches (the board beside a design chat) has
   // the frame at hand, so the card opens on its stage, not its loading line.
-  const [frame, setFrame] = useState<CanvasFrame | null | undefined>(() => {
-    const snapshot = canvasClient.snapshotOf(canvasId);
-    return snapshot ? frameIn(snapshot, designId) : undefined;
-  });
-  useEffect(
-    () =>
-      canvasClient.subscribeCanvas(canvasId, (snapshot) => {
-        setFrame(frameIn(snapshot, designId));
-      }),
-    [canvasId, designId],
-  );
-  return frame;
+  const [snapshot, setSnapshot] = useState(() => canvasClient.snapshotOf(canvasId));
+  useEffect(() => canvasClient.subscribeCanvas(canvasId, setSnapshot), [canvasId]);
+  if (!snapshot) return { frame: undefined, pictured: false };
+  return {
+    frame: frameIn(snapshot, designId),
+    pictured: coverRevision(snapshot.frames)?.designId === designId,
+  };
 }
 
 function frameIn(snapshot: CanvasSnapshot, designId: string | null): CanvasFrame | null {
@@ -122,15 +124,18 @@ function metaNote(frame: CanvasFrame | null | undefined): string {
 }
 
 /** The frame's last picture, or what the sheet says without one. Main keeps a
-    picture once the board has run that revision. */
+    picture once the board has run that revision, for this app run only; the
+    frame the canvas's cover shows falls back to that cover across runs. */
 function Sheet({
   canvasId,
   frame,
   status,
+  pictured,
 }: {
   canvasId: string;
   frame: CanvasFrame | null | undefined;
   status: FrameStatus | null;
+  pictured: boolean;
 }) {
   if (!frame || !status) return null;
   const { stage, revisionId } = status;
@@ -148,7 +153,22 @@ function Sheet({
       canvasId={canvasId}
       designId={frame.designId}
       revisionId={revisionId}
-      fallback={note}
+      fallback={pictured ? <Cover canvasId={canvasId} fallback={note} /> : note}
+    />
+  );
+}
+
+function Cover({ canvasId, fallback }: { canvasId: string; fallback: ReactNode }) {
+  const cover = useCanvasCover(canvasId);
+  if (cover === undefined) return null;
+  if (cover === null) return fallback;
+  // The cover is the top of the frame cut to the tile's shape, as on the Design home.
+  return (
+    <img
+      className="canvas-state-reveal h-full w-full object-cover object-top"
+      src={cover}
+      alt=""
+      draggable={false}
     />
   );
 }

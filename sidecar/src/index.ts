@@ -91,6 +91,12 @@ const server = startBridgeServer({
     await queueUsageSessions([]);
     return await usage.snapshot();
   },
+  onChildHistoryWatch: (owner, command) => {
+    manager.setChildHistoryWatch(owner, command);
+  },
+  onChildHistoryDisconnect: (owner) => {
+    manager.clearChildHistoryWatch(owner);
+  },
 });
 
 // Canvas leases live beside the workspace that checks them: the pane registers

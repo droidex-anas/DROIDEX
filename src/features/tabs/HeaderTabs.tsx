@@ -3,6 +3,7 @@ import { Reorder } from 'framer-motion';
 import { Clock, Columns, Plus, Sketch, Spinner, SquarePen, X } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { chatDisplayTitle, isDesignChat } from '../../lib/chatMetadata';
+import { isRemoteClient } from '../../lib/desktop';
 import { LazyCanvasTabName } from '../../lib/lazySurfaces';
 import { sessionIsLive } from '../../lib/sessions';
 import { PRIMARY_MODIFIER_LABEL, formatChord, hasPrimaryModifier } from '../../lib/shortcuts';
@@ -371,17 +372,16 @@ const TabList = memo(function TabList() {
 });
 
 // The strip's "+" opens the focused product's kind of tab; a primary-modifier
-// click opens the other one.
+// click opens the other one. A Remote browser only opens chats (newDraft).
 function NewTabButton() {
   const dispatch = useStoreDispatch();
-  const product = useStoreSelector(activeProduct);
+  const remote = isRemoteClient();
+  const product = useStoreSelector((state) => (remote ? 'chat' : activeProduct(state)));
   const chord = useStoreSelector((state) => state.shortcutBindings.newTab);
   const other: ProductMode = product === 'chat' ? 'design' : 'chat';
+  const otherHint = remote ? '' : ` · ${PRIMARY_MODIFIER_LABEL}-click for a ${other}`;
   return (
-    <Tooltip
-      label={`New ${product} (${formatChord(chord)}) · ${PRIMARY_MODIFIER_LABEL}-click for a ${other}`}
-      placement="bottom"
-    >
+    <Tooltip label={`New ${product} (${formatChord(chord)})${otherHint}`} placement="bottom">
       <Button
         variant="ghost"
         size="sm"

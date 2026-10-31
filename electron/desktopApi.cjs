@@ -139,6 +139,7 @@ function createDesktopApi({ invoke, on }) {
     onNativeBrowserLoadFailed: (handler) => on('native-browser-load-failed', handler),
     onNativeBrowserWorking: (handler) => on('native-browser-working', handler),
     onNativeBrowserAgentPoint: (handler) => on('native-browser-agent-point', handler),
+    onNativeBrowserAgentPress: (handler) => on('native-browser-agent-press', handler),
     onNativeBrowserFrame: (handler) => on('native-browser-frame', handler),
     onNativeBrowserClosed: (handler) => on('native-browser-closed', handler),
     onNativeBrowserShortcut: (handler) => on('native-browser-shortcut', handler),

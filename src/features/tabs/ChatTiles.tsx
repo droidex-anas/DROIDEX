@@ -24,11 +24,12 @@ import {
   type AppState,
 } from '../../hooks/useStore';
 import { useSessionHistory } from '../../hooks/useSessionHistory';
+import { isRemoteClient } from '../../lib/desktop';
 import { isEmbedded } from '../../lib/embed';
 import { LazyLibrarySeedChip } from '../../lib/lazySurfaces';
 import { DESIGN_PLACEHOLDER } from '../canvas/designStarters';
 import { activeGrid, activeProduct } from './tabStrip';
-import type { TileChrome } from './TileChrome';
+import { CloseTileButton, type TileChrome } from './TileChrome';
 import { TileDivider } from './TileDivider';
 import { endPlaceDrag, usePlaceDrag } from './tileDrag';
 import { TileDropTarget } from './TileDropTarget';
@@ -138,8 +139,15 @@ const TilePane = memo(function TilePane({
   underBrowser: boolean;
   composerHost: RefObject<HTMLElement | null> | null;
 }) {
+  const availability = useStoreSelector((state) => {
+    if (appSessionId === null || Object.hasOwn(state.sessions, appSessionId)) return 'ready';
+    if (state.connection === 'error') return 'unavailable';
+    return state.connection !== 'connected' || state.listConfirmedSessionIds === null
+      ? 'loading'
+      : 'unavailable';
+  });
   // App loads the focused chat's history; the other tiles load their own.
-  useSessionHistory(focused || isEmbedded() ? null : appSessionId);
+  useSessionHistory(focused || isEmbedded() || availability !== 'ready' ? null : appSessionId);
   const tile: TileChrome | undefined = tileId ? { id: tileId, focused, atTop, atLeft } : undefined;
   // A new chat centres this same composer between its heading and its
   // starting points, so the first send only has to carry it down.
@@ -150,6 +158,33 @@ const TilePane = memo(function TilePane({
   const [starterPreview, setStarterPreview] = useState<string | null>(null);
   const designHome = home?.kind === 'design';
   const homePlaceholder = starterPreview ?? (designHome ? DESIGN_PLACEHOLDER : null);
+  if (availability !== 'ready') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {tile && (
+          <div
+            data-electron-drag-region={tile.atTop ? true : undefined}
+            className="flex h-10 shrink-0 items-center justify-end px-4"
+          >
+            <CloseTileButton tileId={tile.id} title="conversation" />
+          </div>
+        )}
+        <div
+          role={availability === 'loading' ? 'status' : 'alert'}
+          className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center"
+        >
+          <p className="text-body-strong text-primary">
+            {availability === 'loading' ? 'Loading conversation…' : 'Conversation unavailable'}
+          </p>
+          {availability === 'unavailable' && (
+            <p className="max-w-md text-body text-muted">
+              Reopen this conversation from its workspace or project once it is available.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
   // Under an expanded browser only the composer shows; the transcript keeps
   // its place, hidden, so the same composer and its draft stay mounted.
   return (
@@ -188,7 +223,9 @@ const TilePane = memo(function TilePane({
         <NewChatStarters
           start={home}
           // Design never shares a tab, so only a lone page can switch to it.
-          switchable={tileId === null && !isEmbedded() && home.kind !== 'project'}
+          switchable={
+            tileId === null && !isEmbedded() && !isRemoteClient() && home.kind !== 'project'
+          }
           onPreview={setStarterPreview}
         />
       )}

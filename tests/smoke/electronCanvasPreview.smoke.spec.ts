@@ -836,8 +836,11 @@ export default function Hey() {
     // Drained raw as well as through the production reader: the renderer trims an
     // over-long field, so checking only its output would pass even if the
     // intermediate still cut by code unit and handed over 616 bytes.
+    // The throw can be reported before the resize its own render caused, so the
+    // drain waits for both: the diagnostic, and the grown (h-96) paragraph.
     let raw = '';
     let message = '';
+    let height = 0;
     await expect
       .poll(
         async () => {
@@ -845,6 +848,7 @@ export default function Hey() {
           const snapshot = readPreviewSnapshot(answer, instance);
           assert.ok(snapshot, 'the guest answered with a snapshot for this instance');
           for (const event of snapshot.events) {
+            if (event.event === 'resize') height = event.height;
             if (event.event !== 'diagnostics') continue;
             for (const diagnostic of event.diagnostics)
               if (diagnostic.message.includes('界')) {
@@ -852,7 +856,7 @@ export default function Hey() {
                 raw = rawDiagnostic(answer);
               }
           }
-          return message.length > 0;
+          return message.length > 0 && height === 384;
         },
         { timeout: 20_000, intervals: [100] },
       )

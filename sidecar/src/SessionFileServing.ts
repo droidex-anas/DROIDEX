@@ -20,6 +20,8 @@ interface SessionFileServingDependencies {
   retryPendingLaunchSettings: (providerSessionIds?: string[]) => void;
   listSummaries: (options?: SessionListFilterOptions) => SessionListPage;
   emitList: (page: SessionListPage) => void;
+  onFilesReconciled?: (changes: SessionFileChange[] | null) => void;
+  onSessionFileWrite?: (providerSessionId: string) => void;
 }
 
 const ignoreError = (): undefined => undefined;
@@ -123,6 +125,9 @@ export class SessionFileServing {
         const watcher = this.dependencies.startWatcher({
           ...(root !== undefined ? { root } : {}),
           isLiveSession: this.dependencies.isLiveSession,
+          ...(this.dependencies.onSessionFileWrite
+            ? { onSessionFileWrite: this.dependencies.onSessionFileWrite }
+            : {}),
           onExternalChange: (changes) => {
             if (this.dependencies.isShutdownStarted()) return;
             if (!this.bootReconciled) {
@@ -201,6 +206,7 @@ export class SessionFileServing {
     this.dependencies.retryPendingLaunchSettings(
       changes?.map(({ providerSessionId }) => providerSessionId),
     );
+    this.dependencies.onFilesReconciled?.(changes);
     this.emit(this.lastListOptions);
   }
 }

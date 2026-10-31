@@ -20,6 +20,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { NormalizedEvent } from './normalize.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 import { transcriptToMarkdown } from './sessionMarkdown.js';
+import { RESTART_CONTINUE_PROMPT } from './sessionAdoption.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'droid-transcript-'));
 let fileCount = 0;
@@ -154,12 +155,25 @@ test("a page boundary may split one line's events across pages", () => {
 });
 
 test('corrupt lines are skipped without losing their neighbors', () => {
-  const path = writeSession([assistant('a1'), '{not json', assistant('a2')]);
-  const all = collectAll(path, 10);
-  assert.deepEqual(
-    all.map((e) => e.text),
-    ['a1', 'a2'],
-  );
+  const badIdentity = JSON.stringify({
+    type: 'message',
+    id: 'bad-identity',
+    timestamp: new Date(clock).toISOString(),
+    message: {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'lost', textUpdate: { kind: 'delta' }, messageStartLine: 1 }],
+    },
+  });
+  const path = writeSession([assistant('a1'), '{not json', badIdentity, assistant('a2')]);
+  for (const events of [
+    collectAll(path, 10),
+    parseFullSessionTranscript('app', 'provider', path, 'primary'),
+  ]) {
+    assert.deepEqual(
+      events.map((e) => e.text),
+      ['a1', 'a2'],
+    );
+  }
 });
 
 test('Canvas results with reused tool IDs project by occurrence regardless of page traversal', () => {
@@ -426,6 +440,7 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
     userMessage('shared prompt', 'both'),
     userMessage('Skill "review" activated: PR #100', 'user_only'),
     userMessage(notification),
+    userMessage(RESTART_CONTINUE_PROMPT),
     assistant('Review started'),
   ]);
 
