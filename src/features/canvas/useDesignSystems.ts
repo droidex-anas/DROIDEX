@@ -19,7 +19,9 @@ export function useDesignSystems() {
     dispatch({ type: 'listing' });
     canvasClient.designSystems.list().then(
       (systems) => {
-        if (active) dispatch({ type: 'listed', systems });
+        // Auto has no style of its own to show, copy or export.
+        if (active)
+          dispatch({ type: 'listed', systems: systems.filter((kit) => kit.kind !== 'auto') });
       },
       (error: unknown) => {
         if (active) dispatch({ type: 'listFailed', message: canvasMessage(error) });

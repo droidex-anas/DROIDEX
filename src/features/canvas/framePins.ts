@@ -4,7 +4,7 @@
 // sends and clears them. Neither owns the other, so they live here, by chat.
 
 import { useSyncExternalStore } from 'react';
-import { DEFAULT_DESIGN_SYSTEM } from './designSystemChoices';
+import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
 import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
 
 /** The sidecar's limit on the designs one request may pin. */
@@ -168,20 +168,20 @@ function publishChanged(appSessionId: string, held: readonly FramePin[], next: F
 
 /** What a request on a canvas carries beside its frames. */
 export interface CanvasRequestPins {
-  /** The user's choice for the canvas; null runs under the frames' own kit, else DROIDEX. */
+  /** The user's choice for the canvas; null runs under the frames' own kit, else Auto. */
   designSystem: DesignSystemRef | null;
   imageAssetIds: readonly string[];
 }
 
 /**
  * The kit a request runs under: the user's choice for the canvas, else the
- * first pinned frame's kit, else DROIDEX. The composer's chip names the same.
+ * first pinned frame's kit, else Auto. The composer's chip names the same.
  */
 export function requestDesignSystem(
   pins: readonly FramePin[],
   chosen: DesignSystemRef | null,
 ): DesignSystemRef {
-  return chosen ?? pins.at(0)?.designSystem ?? DEFAULT_DESIGN_SYSTEM.ref;
+  return chosen ?? pins.at(0)?.designSystem ?? AUTO_DESIGN_SYSTEM.ref;
 }
 
 /**

@@ -16,7 +16,7 @@ import { ADHERENCE_CODES } from './canvasDiagnostics.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { kitPrimitives } from './designSystemBrief.js';
-import type { DesignSystem } from './designSystems.js';
+import { AUTO_DESIGN_SYSTEM_REF, type DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './protocol.js';
 
 export type AdherenceResult =
@@ -85,13 +85,15 @@ interface Place {
 /**
  * Checks `files` against `system` under `rule`. Guide passes with its findings;
  * strict fails on any finding other than the override note; off checks nothing.
+ * Auto is no standard to stray from, so a design under it is never checked.
  */
 export function checkDesignSystemAdherence(
   files: SourceFiles,
   system: DesignSystem,
   rule: DesignSystemAdherence,
 ): AdherenceResult {
-  if (rule === 'off') return { status: 'passed', diagnostics: [] };
+  if (rule === 'off' || system.id === AUTO_DESIGN_SYSTEM_REF.id)
+    return { status: 'passed', diagnostics: [] };
   const kit = readKit(system);
   if (!kit.ok) return { status: 'failed', diagnostics: [kit.diagnostic] };
   const check = new DesignCheck(kit.kit);

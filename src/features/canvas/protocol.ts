@@ -21,12 +21,12 @@ export interface DesignSystemVersionRef {
   version: number;
 }
 
-/** A row of the design-system list: presets first, then each user kit's latest version. */
+/** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
 export interface DesignSystemSummary {
   id: string;
   version: number;
   name: string;
-  kind: 'preset' | 'user';
+  kind: 'auto' | 'preset' | 'user';
   swatches: {
     light: { surface: string; accent: string };
     dark: { surface: string; accent: string };

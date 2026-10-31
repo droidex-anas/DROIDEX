@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   chooseDesignSystem,
-  DEFAULT_DESIGN_SYSTEM,
+  AUTO_DESIGN_SYSTEM,
   designSystemChoice,
   NEW_CANVAS_KEY,
   oweCreatedCanvasChoice,
@@ -33,9 +33,9 @@ function onCanvas(key: string) {
   return { designSystem: designSystemChoice(key)?.ref ?? null, imageAssetIds: [] };
 }
 
-test('a canvas runs under DROIDEX until the user picks a kit, and returns to it on removal', () => {
+test('a canvas runs under Auto until the user picks a kit, and returns to it on removal', () => {
   assert.equal(designSystemChoice('cv_1'), null);
-  assert.deepEqual(canvasContextOf([], onCanvas('cv_1'))?.designSystem, DEFAULT_DESIGN_SYSTEM.ref);
+  assert.deepEqual(canvasContextOf([], onCanvas('cv_1'))?.designSystem, AUTO_DESIGN_SYSTEM.ref);
 
   chooseDesignSystem('cv_1', ocean);
   assert.deepEqual(canvasContextOf([], onCanvas('cv_1'))?.designSystem, ocean.ref);
@@ -47,7 +47,7 @@ test('a canvas runs under DROIDEX until the user picks a kit, and returns to it 
 
   chooseDesignSystem('cv_1', null);
   assert.equal(designSystemChoice('cv_1'), null);
-  assert.deepEqual(canvasContextOf([], onCanvas('cv_1'))?.designSystem, DEFAULT_DESIGN_SYSTEM.ref);
+  assert.deepEqual(canvasContextOf([], onCanvas('cv_1'))?.designSystem, AUTO_DESIGN_SYSTEM.ref);
 });
 
 test('an explicit choice outranks the pinned frames’ own kit, and images travel by asset ID', () => {

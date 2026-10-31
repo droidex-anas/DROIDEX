@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { expect, test } from '@playwright/test';
 import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
-import { DEFAULT_DESIGN_SYSTEM_REF } from '../../sidecar/src/canvas/designSystems';
+import { AUTO_DESIGN_SYSTEM_REF } from '../../sidecar/src/canvas/designSystems';
 import { MAX_TILE_BASE64_LENGTH } from '../../src/features/canvas/wireValidation';
 import { compileDesign, mountZoomedPreview } from './canvasPreviewHost';
 import { withCanvasBridge, withCanvasHost } from './canvasSmoke';
@@ -35,7 +35,7 @@ test('a real capture becomes the item thumbnail the Design home picker shows', a
           input: {
             mutationId: 'library-smoke-frame',
             frames: [
-              { name: 'Hero', width: 640, height: 400, designSystem: DEFAULT_DESIGN_SYSTEM_REF },
+              { name: 'Hero', width: 640, height: 400, designSystem: AUTO_DESIGN_SYSTEM_REF },
             ],
           },
         });

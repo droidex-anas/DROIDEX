@@ -30,7 +30,7 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
-import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
+import { readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
 import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
 import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
 import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js';
@@ -250,7 +250,7 @@ function compileInput(files?: CompileInput['files']): CompileInput {
     revisionId: 'canvas-compiler-probe',
     generation: 1,
     files: files ?? { 'main.tsx': example },
-    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystem: { id: DROIDEX_DESIGN_SYSTEM.id, version: DROIDEX_DESIGN_SYSTEM.version, mode: 'dark' },
     designSystemAdherence: 'guide',
   };
 }

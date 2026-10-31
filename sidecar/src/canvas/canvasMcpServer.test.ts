@@ -19,13 +19,14 @@ import {
 import { saveLibraryItem } from './canvasLibrary.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
-import { DEFAULT_DESIGN_SYSTEM_REF, readDesignSystem } from './designSystems.js';
+import { readDesignSystem } from './designSystems.js';
 import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
   DESIGN_SESSION_GUIDANCE,
 } from './designSessionGuidance.js';
 
-const frame = { name: 'Hey', width: 720, height: 520, designSystem: DEFAULT_DESIGN_SYSTEM_REF };
+const droidexKit = { id: 'droidex', version: 1, mode: 'dark' } as const;
+const frame = { name: 'Hey', width: 720, height: 520, designSystem: droidexKit };
 
 /** One frame made through canvas_create, and where it landed. */
 async function createFrame(call: Harness['call'], scopeId: string | undefined, mutationId: string) {
@@ -173,7 +174,7 @@ test('theme listing is bounded and saving requires a client mutation ID', async 
   assert.equal(listed.ok, true);
   assert.equal(listed.systems?.length, 1);
   const system = {
-    ...(await readDesignSystem(DEFAULT_DESIGN_SYSTEM_REF)),
+    ...(await readDesignSystem(droidexKit)),
     id: 'mutation-required-kit',
   };
   assert.equal(
@@ -209,13 +210,13 @@ test('read binds the newest steer, an earlier named lease stays pinned, and anot
   const first = h.turns.beginTurn('chat-one', {
     designs: [{ designId: 'first', revisionId: null }],
     elements: [],
-    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystem: droidexKit,
   });
   const oldId = (await h.call('canvas_read', {})).scopeId;
   first.addSteer({
     designs: [{ designId: 'steered', revisionId: null }],
     elements: [],
-    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystem: droidexKit,
   });
   assert.deepEqual(
     (await h.call('canvas_read', {})).pinned?.designs.map((ref) => ref.designId),
@@ -276,7 +277,7 @@ test('a frame-scoped turn cannot inspect another frame on the same canvas', asyn
   const scoped = h.turns.beginTurn('chat-one', {
     designs: [{ designId: allowed.designId, revisionId: null }],
     elements: [],
-    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystem: droidexKit,
   });
   const summary = await h.call('canvas_read', {});
   assert.equal(summary.ok, true);
@@ -619,7 +620,7 @@ for (const name of [
         mutationId: 'published-theme',
         designId,
         expectedRevisionId: revisionId,
-        ref: { ...DEFAULT_DESIGN_SYSTEM_REF, mode: 'dark' },
+        ref: { ...droidexKit, mode: 'dark' },
       },
     };
     held.arm();
@@ -775,7 +776,7 @@ test('a delayed theme validation refusal cannot disclose source after its turn i
     mutationId: 'validation-apply',
     designId,
     expectedRevisionId: source.receipt.revisionId,
-    ref: { ...DEFAULT_DESIGN_SYSTEM_REF, mode: 'dark' },
+    ref: { ...droidexKit, mode: 'dark' },
   });
   await reached.promise;
   h.turns.endSession('chat-one');

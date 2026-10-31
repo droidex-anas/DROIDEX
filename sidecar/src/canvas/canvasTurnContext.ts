@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 
 import { canvasError, EXPIRED_TURN, UNKNOWN_SCOPE } from './canvasError.js';
 import type { CanvasScopes } from './canvasScopes.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from './designSystems.js';
+import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
 import type { CanvasScope, CanvasTurnContext } from './protocol.js';
 import { canvasTurnContextSchema } from './schema.js';
 
@@ -52,7 +52,7 @@ export class CanvasTurns {
 
   /**
    * Mints the lease a turn runs under, from the references its prompt pinned. A
-   * prompt without chips uses the default kit and the whole canvas.
+   * prompt without chips runs under Auto on the whole canvas.
    */
   beginTurn(appSessionId: string, context: CanvasTurnContext | undefined): CanvasTurnLeases {
     const chat = this.chat(appSessionId);
@@ -156,7 +156,7 @@ export class CanvasTurns {
 }
 
 function emptyContext(): CanvasTurnContext {
-  return { designs: [], elements: [], designSystem: DEFAULT_DESIGN_SYSTEM_REF };
+  return { designs: [], elements: [], designSystem: AUTO_DESIGN_SYSTEM_REF };
 }
 
 /**

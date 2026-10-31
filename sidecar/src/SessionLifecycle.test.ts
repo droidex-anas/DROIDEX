@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { CanvasTurnContext } from './canvas/protocol.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
+import { AUTO_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
 import { canvasRoot, quietBuilds } from './testing/canvasStorageSupport.js';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -2240,13 +2240,11 @@ test('an ordinary chat can create its first canvas during its initial turn', asy
   await provider.waitForPrompts(1);
   const scope = turnLease(h, 'ordinary');
   assert.equal(scope.canvasId, null);
-  assert.deepEqual(scope.context.designSystem, DEFAULT_DESIGN_SYSTEM_REF);
+  assert.deepEqual(scope.context.designSystem, AUTO_DESIGN_SYSTEM_REF);
 
   const created = await workspace.create(scope, {
     mutationId: 'ordinary-create',
-    frames: [
-      { name: 'Ordinary', width: 720, height: 720, designSystem: DEFAULT_DESIGN_SYSTEM_REF },
-    ],
+    frames: [{ name: 'Ordinary', width: 720, height: 720, designSystem: AUTO_DESIGN_SYSTEM_REF }],
   });
   assert.equal(workspace.attachedCanvasId('ordinary'), created.canvasId);
   assert.equal(h.canvasTurns.requireScope(scope.scopeId).canvasId, created.canvasId);

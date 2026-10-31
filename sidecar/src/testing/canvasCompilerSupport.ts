@@ -2,10 +2,10 @@ import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
 import type { CompileInput, CompilerRequest } from '../canvas/compiler.js';
-import { DEFAULT_DESIGN_SYSTEM_REF } from '../canvas/designSystems.js';
+import { DROIDEX_DESIGN_SYSTEM } from '../canvas/presets/droidex.js';
 import type { SourceFiles } from '../canvas/protocol.js';
 
-/** One design's compile request on the default kit, with the kit rule off unless named. */
+/** One design's compile request on the DROIDEX kit, with the kit rule off unless named. */
 export function compileInput(
   files: SourceFiles,
   designSystemAdherence: CompileInput['designSystemAdherence'] = 'off',
@@ -15,7 +15,11 @@ export function compileInput(
     revisionId: 'revision-1',
     generation: 1,
     files,
-    designSystem: DEFAULT_DESIGN_SYSTEM_REF,
+    designSystem: {
+      id: DROIDEX_DESIGN_SYSTEM.id,
+      version: DROIDEX_DESIGN_SYSTEM.version,
+      mode: 'dark',
+    },
     designSystemAdherence,
   };
 }

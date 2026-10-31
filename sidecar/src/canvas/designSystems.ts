@@ -10,6 +10,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -117,7 +118,7 @@ const summarySchema = z
     id: canvasIdentifierSchema,
     version: z.number().int().positive().safe(),
     name: z.string().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
-    kind: z.enum(['preset', 'user']),
+    kind: z.enum(['auto', 'preset', 'user']),
     swatches: z.object({ light: swatchesSchema, dark: swatchesSchema }).strict(),
   })
   .strict();
@@ -151,21 +152,27 @@ const SUMMARY_HEADER_BYTES = 8192;
 
 // Parsing snapshots the authored kits and validates their limits at startup.
 const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [
+  AUTO_DESIGN_SYSTEM,
   DROIDEX_DESIGN_SYSTEM,
   OPENAI_INSPIRED_DESIGN_SYSTEM,
   CLAUDE_INSPIRED_DESIGN_SYSTEM,
 ].map((system) => designSystemSchema.parse(system));
 
-/** The kit a new design starts from when nothing else is selected. */
-export const DEFAULT_DESIGN_SYSTEM_REF: DesignSystemRef = {
-  id: DROIDEX_DESIGN_SYSTEM.id,
-  version: DROIDEX_DESIGN_SYSTEM.version,
-  mode: 'dark',
+/**
+ * What a request runs under when the user chose no kit and pinned no frame:
+ * the agent takes the style from the prompt and the canvas instead.
+ */
+export const AUTO_DESIGN_SYSTEM_REF: DesignSystemRef = {
+  id: AUTO_DESIGN_SYSTEM.id,
+  version: AUTO_DESIGN_SYSTEM.version,
+  mode: 'light',
 };
 
-/** Presets followed by the latest published user version; reads only metadata headers. */
+/** Auto, the presets, then the latest published user version; reads only metadata headers. */
 export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
-  const summaries = BUILT_IN_DESIGN_SYSTEMS.map((system) => summarize(system, 'preset'));
+  const summaries = BUILT_IN_DESIGN_SYSTEMS.map((system) =>
+    summarize(system, system.id === AUTO_DESIGN_SYSTEM.id ? 'auto' : 'preset'),
+  );
   const root = systemsRoot();
   try {
     await refuseLinkedPath(join(root, '_'));
