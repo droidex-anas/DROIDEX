@@ -4,8 +4,11 @@ import {
   chooseDesignSystem,
   AUTO_DESIGN_SYSTEM,
   designSystemChoice,
+  followLatest,
+  forgetDesignSystem,
   NEW_CANVAS_KEY,
   oweCreatedCanvasChoice,
+  recentDesignSystems,
   settleCreatedCanvasChoice,
   type DesignSystemChoice,
 } from './designSystemChoices';
@@ -91,4 +94,51 @@ test('the canvas a Design home send makes keeps the kit that send was pinned to'
   oweCreatedCanvasChoice('ref-2');
   settleCreatedCanvasChoice('ref-2', 'cv_plain');
   assert.equal(designSystemChoice('cv_plain'), null);
+});
+
+test('choices follow their kit’s latest version, and recent names each kit once, newest first', () => {
+  chooseDesignSystem('cv_made', null);
+  chooseDesignSystem('cv_a', ocean);
+  chooseDesignSystem('cv_b', linen);
+  chooseDesignSystem('cv_c', ocean);
+  chooseDesignSystem('cv_d', AUTO_DESIGN_SYSTEM);
+  assert.deepEqual(
+    recentDesignSystems().map((kit) => kit.name),
+    ['Ocean', 'Linen'],
+  );
+
+  const swatch = { surface: '#fff', accent: '#000' };
+  followLatest([
+    {
+      ...ocean.ref,
+      version: 4,
+      name: 'Deep ocean',
+      kind: 'user',
+      swatches: { light: swatch, dark: swatch },
+    },
+  ]);
+  assert.deepEqual(designSystemChoice('cv_a'), {
+    ref: { id: 'kit_ocean', version: 4, mode: 'dark' },
+    name: 'Deep ocean',
+  });
+  assert.deepEqual(designSystemChoice('cv_b'), linen);
+  // Following keeps each canvas's place in the recent order.
+  assert.deepEqual(
+    recentDesignSystems(1).map((kit) => kit.name),
+    ['Deep ocean'],
+  );
+});
+
+test('deleting a kit returns the canvases that chose it to Auto, and Undo gives them back', () => {
+  chooseDesignSystem('cv_e', linen);
+  chooseDesignSystem('cv_f', linen);
+  const deleted = forgetDesignSystem('kit_linen');
+  assert.equal(designSystemChoice('cv_e'), null);
+  assert.equal(designSystemChoice('cv_f'), null);
+
+  // A canvas the user moved on meanwhile keeps its new choice.
+  chooseDesignSystem('cv_f', ocean);
+  deleted.restore();
+  assert.deepEqual(designSystemChoice('cv_e'), linen);
+  assert.deepEqual(designSystemChoice('cv_f'), ocean);
 });

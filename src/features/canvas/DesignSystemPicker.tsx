@@ -1,46 +1,38 @@
-// The design system a canvas's next requests are pinned to (spec §10), and the
-// picker that changes it: search, a light or dark preview, Auto, the presets,
-// then the user's kits. It sits in the composer's toolbar on a canvas chat and
-// in Design; a choice shows as a chip that removes back to Auto.
+// The design system a canvas's next requests are pinned to (spec §9), as a chip
+// in the composer's quiet row. The chip opens the shown kit's document where
+// the chat has a canvas area, and the picker where there is no document to
+// show; its chevron opens the picker everywhere. A chosen kit clears to Auto.
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Palette } from 'lucide-react';
-import { Check, Search, X } from '@droidex/icons';
+import { ChevronDown, X } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { cn } from '../../components/ui/cn';
 import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import {
   chooseDesignSystem,
+  followLatest,
+  NEW_CANVAS_KEY,
   useDesignSystemChoice,
   type DesignSystemChoice,
 } from './designSystemChoices';
-import { KitSwatches } from './DesignSystemList';
-import {
-  activeRow,
-  choiceOf,
-  kitKey,
-  pickerRows,
-  rowAfterKey,
-  shownKit,
-} from './designSystemPickerRows';
-import { sameKit, type KitList } from './designSystemsState';
-import { useFramePins, type FramePin } from './framePins';
-import { MenuHeading, MenuNote } from './menuRows';
-import { PreviewModeToggle, type PreviewMode } from './PreviewModeToggle';
-import type { DesignSystemRef, DesignSystemSummary } from './protocol';
-import { useManageDesignSystems } from './useManageDesignSystems';
+import { choiceOf, shownKit } from './designSystemPickerRows';
+import type { KitList } from './designSystemsState';
+import { DesignSystemPickerPanel, PICKER_WIDTH_PX } from './DesignSystemPickerPanel';
+import { useFramePins } from './framePins';
+import { KitThumbnail } from './KitThumbnail';
+import { NewDesignSystemDialog } from './NewDesignSystemDialog';
+import { useOpenCanvasPane } from './openCanvasPane';
+import type { PreviewMode } from './PreviewModeToggle';
+import type { DesignSystemSource, DesignSystemSummary } from './protocol';
 
-const PICKER_WIDTH_PX = 280;
+const CHIP_BUTTON =
+  'flex h-full cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-active/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring';
 
-/** The control bound to a canvas's stored choice and the frames its chat has pinned. */
+/** `value` null runs under the pinned frames' kit, else Auto. */
 export function CanvasDesignSystem({
   canvasKey,
   appSessionId,
@@ -48,54 +40,193 @@ export function CanvasDesignSystem({
   canvasKey: string;
   appSessionId: string | null;
 }) {
-  const choice = useDesignSystemChoice(canvasKey);
+  const value = useDesignSystemChoice(canvasKey);
   const pins = useFramePins(appSessionId);
+  const openCanvasPane = useOpenCanvasPane();
+  const { list, reread, retry } = useKitList();
+  const [open, setOpen] = useState(false);
+  const [composing, setComposing] = useState<{
+    kind: DesignSystemSource['kind'];
+    mode: PreviewMode;
+  } | null>(null);
+  const chipRef = useRef<HTMLDivElement>(null);
+  // Either the name or the chevron opened the picker; that one takes focus back.
+  const openerRef = useRef<HTMLButtonElement | null>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+  }, []);
+
+  const systems = list.status === 'listed' ? list.systems : null;
+  const shown = shownKit(pins, value, systems);
+  const listed = systems?.find((kit) => kit.id === shown.ref.id) ?? null;
+  // A deleted kit stays chosen until the user picks or removes it; its requests
+  // reach the agent as unavailable rather than quietly running under another.
+  const isUnavailable = systems !== null && listed === null;
+  const openDocument =
+    appSessionId !== null && canvasKey !== NEW_CANVAS_KEY
+      ? (id: string) => {
+          openCanvasPane({ appSessionId, canvasId: canvasKey, designSystem: { id } });
+        }
+      : null;
+  const documentKit = openDocument && listed && listed.kind !== 'auto' ? listed : null;
+
+  const togglePicker = (opener: HTMLButtonElement) => {
+    openerRef.current = opener;
+    if (!open) reread();
+    setOpen(!open);
+  };
+
+  const create = async (mutationId: string, name: string, source: DesignSystemSource) => {
+    if (!composing) return;
+    const saved = await canvasClient.designSystems.import(mutationId, name, source);
+    chooseDesignSystem(canvasKey, { ref: { ...saved.ref, mode: composing.mode }, name });
+    setComposing(null);
+    reread();
+    openDocument?.(saved.ref.id);
+  };
+
   return (
-    <DesignSystemControl
-      value={choice}
-      pins={pins}
-      onChange={(next) => {
-        chooseDesignSystem(canvasKey, next);
-      }}
-    />
+    // Grows from nothing into the row's spare room, so the name truncates
+    // before the model's, and never narrower than its icon and buttons.
+    <div
+      ref={chipRef}
+      className={cn(
+        'flex h-control-sm max-w-fit grow basis-0 items-center rounded-md',
+        value ? 'min-w-24 bg-active/60' : 'min-w-14',
+      )}
+    >
+      <button
+        type="button"
+        aria-haspopup={documentKit ? undefined : 'dialog'}
+        aria-expanded={documentKit ? undefined : open}
+        aria-label={
+          documentKit
+            ? `Design system: ${shown.name}. Open its document`
+            : `Design system: ${shown.name}${isUnavailable ? ', unavailable' : ''}. Change it`
+        }
+        title={
+          isUnavailable
+            ? `${shown.name} is no longer saved. Pick another design system.`
+            : undefined
+        }
+        onClick={(event) => {
+          if (documentKit) openDocument?.(documentKit.id);
+          else togglePicker(event.currentTarget);
+        }}
+        className={cn(CHIP_BUTTON, 'min-w-0 gap-1.5 overflow-hidden pl-2 pr-1.5')}
+      >
+        <ChipName shown={shown} listed={listed} isUnavailable={isUnavailable} />
+      </button>
+      {value && (
+        <Tooltip label="Use Auto">
+          <button
+            type="button"
+            aria-label={`Remove ${value.name} and use Auto`}
+            onClick={() => {
+              chooseDesignSystem(canvasKey, null);
+            }}
+            className={cn(CHIP_BUTTON, 'w-5')}
+          >
+            <X aria-hidden className="size-3" strokeWidth={2.5} />
+          </button>
+        </Tooltip>
+      )}
+      <Tooltip label="Change design system">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label="Change design system"
+          onClick={(event) => {
+            togglePicker(event.currentTarget);
+          }}
+          className={cn(CHIP_BUTTON, 'w-5')}
+        >
+          <ChevronDown aria-hidden className="size-3" />
+        </button>
+      </Tooltip>
+      <Popover
+        open={open}
+        onClose={close}
+        anchorRef={openerRef}
+        alignRef={chipRef}
+        placement="bottom-start"
+        width={PICKER_WIDTH_PX}
+        label="Design system"
+      >
+        <DesignSystemPickerPanel
+          list={list}
+          onRetry={retry}
+          current={shown.ref}
+          onPick={(kit, mode) => {
+            close();
+            chooseDesignSystem(canvasKey, choiceOf(kit, mode));
+          }}
+          onOpen={
+            openDocument &&
+            ((kit) => {
+              close();
+              openDocument(kit.id);
+            })
+          }
+          onCompose={(kind, mode) => {
+            close();
+            setComposing({ kind, mode });
+          }}
+        />
+      </Popover>
+      {composing && (
+        <NewDesignSystemDialog
+          key={composing.kind}
+          kind={composing.kind}
+          onCreate={create}
+          onClose={() => {
+            setComposing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ChipName({
+  shown,
+  listed,
+  isUnavailable,
+}: {
+  shown: DesignSystemChoice;
+  listed: DesignSystemSummary | null;
+  isUnavailable: boolean;
+}) {
+  return (
+    <>
+      {listed && listed.kind !== 'auto' ? (
+        <KitThumbnail kit={listed} mode={shown.ref.mode} size="chip" />
+      ) : (
+        <Palette aria-hidden className="size-icon-sm shrink-0" />
+      )}
+      <span className="max-w-40 truncate">{shown.name}</span>
+      {isUnavailable && <span className="truncate text-warning">· unavailable</span>}
+    </>
   );
 }
 
 /**
- * `value` null runs under the pinned frames' kit, else Auto. The control
- * owns its popover, the kit list and the Manage dialog.
+ * The kits, read once connected, to name a pinned frame's kit and notice a
+ * deleted one, and again on every open, so a kit saved since shows. Each read
+ * moves the canvases' choices to their kits' latest versions.
  */
-export function DesignSystemControl({
-  value,
-  pins,
-  onChange,
-}: {
-  value: DesignSystemChoice | null;
-  pins: readonly FramePin[];
-  onChange: (choice: DesignSystemChoice | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const close = useCallback(() => {
-    setOpen(false);
-  }, []);
-  const manage = useManageDesignSystems();
+function useKitList(): { list: KitList; reread: () => void; retry: () => void } {
   const [list, setList] = useState<KitList>({ status: 'loading' });
   const [reads, setReads] = useState(0);
   const isConnected = useStoreSelector((state) => state.connection === 'connected');
-  const shown = shownKit(pins, value, list.status === 'listed' ? list.systems : null);
-  // A deleted kit stays chosen until the user picks or removes it; its requests
-  // reach the agent as unavailable rather than quietly running under another.
-  const isUnavailable =
-    list.status === 'listed' && !list.systems.some((kit) => sameKit(kit, shown.ref));
 
-  // Read once connected, to name a pinned frame's kit and notice a deleted one,
-  // and on every open, so a kit saved in Manage design systems shows next time.
   useEffect(() => {
     if (!isConnected) return;
     let active = true;
     canvasClient.designSystems.list().then(
       (systems) => {
+        followLatest(systems);
         if (active) setList({ status: 'listed', systems });
       },
       (error: unknown) => {
@@ -107,262 +238,13 @@ export function DesignSystemControl({
     };
   }, [reads, isConnected]);
 
-  return (
-    // Grows from nothing into the row's spare room, so the name truncates
-    // before the model's, and never narrower than its icon and clear button.
-    <div
-      className={`flex h-control-sm max-w-fit grow basis-0 items-center rounded-md ${
-        value ? 'min-w-11 bg-active/60' : 'min-w-control-sm'
-      }`}
-    >
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={`Design system: ${shown.name}${isUnavailable ? ', unavailable' : ''}. Change it`}
-        title={
-          isUnavailable
-            ? `${shown.name} is no longer saved. Pick another design system.`
-            : "Design system for this canvas's requests"
-        }
-        onClick={() => {
-          if (!open) setReads((count) => count + 1);
-          setOpen(!open);
-        }}
-        className="flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted transition-colors hover:bg-active/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        <Palette aria-hidden className="size-icon-sm shrink-0" />
-        <span className="max-w-40 truncate">{shown.name}</span>
-        {isUnavailable && <span className="truncate text-warning">· unavailable</span>}
-      </button>
-      {value && (
-        <button
-          type="button"
-          aria-label={`Remove ${value.name} and use Auto`}
-          title="Use Auto"
-          onClick={() => {
-            onChange(null);
-          }}
-          className="-ml-1 mr-1 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-active hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          <X aria-hidden className="h-2.5 w-2.5" strokeWidth={3} />
-        </button>
-      )}
-      <Popover
-        open={open}
-        onClose={close}
-        anchorRef={triggerRef}
-        placement="bottom-start"
-        width={PICKER_WIDTH_PX}
-        label="Design system"
-      >
-        <PickerPanel
-          list={list}
-          onRetry={() => {
-            setList({ status: 'loading' });
-            setReads((count) => count + 1);
-          }}
-          current={shown.ref}
-          onPick={(kit, mode) => {
-            close();
-            onChange(choiceOf(kit, mode));
-          }}
-          onManage={() => {
-            close();
-            manage.open();
-          }}
-        />
-      </Popover>
-      {manage.dialog}
-    </div>
-  );
-}
-
-function PickerPanel({
-  list,
-  onRetry,
-  current,
-  onPick,
-  onManage,
-}: {
-  list: KitList;
-  onRetry: () => void;
-  current: DesignSystemRef;
-  onPick: (kit: DesignSystemSummary, mode: PreviewMode) => void;
-  onManage: () => void;
-}) {
-  const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<PreviewMode>(current.mode);
-  const [movedTo, setMovedTo] = useState<string | null>(null);
-
-  const searching = query.trim() !== '';
-  const { auto, presets, yours } = pickerRows(list.status === 'listed' ? list.systems : [], query);
-  const rows = [...auto, ...presets, ...yours];
-  const active = activeRow(rows, movedTo, current, searching);
-  const activeId = active ? optionId(active) : undefined;
-
-  useEffect(() => {
-    if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
-  }, [activeId]);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      if (active) onPick(active, mode);
-      return;
-    }
-    const next = rowAfterKey(rows, active, event.key);
-    if (!next) return;
-    event.preventDefault();
-    setMovedTo(kitKey(next));
+  const reread = useCallback(() => {
+    setReads((count) => count + 1);
+  }, []);
+  // A reread keeps the last list on screen; a retry shows the read again.
+  const retry = () => {
+    setList({ status: 'loading' });
+    reread();
   };
-
-  const option = (kit: DesignSystemSummary) => (
-    <KitOption
-      key={kitKey(kit)}
-      kit={kit}
-      mode={mode}
-      isActive={kit === active}
-      isCurrent={sameKit(kit, current)}
-      onHover={() => {
-        setMovedTo(kitKey(kit));
-      }}
-      onPick={() => {
-        onPick(kit, mode);
-      }}
-    />
-  );
-
-  return (
-    <>
-      <div className="flex shrink-0 items-center gap-2 px-2.5 pb-1.5 pt-2.5">
-        <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-elevated/60 px-2 py-1">
-          <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-muted" />
-          <input
-            autoFocus
-            role="combobox"
-            aria-expanded
-            aria-controls="design-system-options"
-            aria-activedescendant={activeId}
-            aria-label="Search design systems"
-            placeholder="Search"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setMovedTo(null);
-            }}
-            onKeyDown={onKeyDown}
-            className="w-full min-w-0 bg-transparent text-label font-normal text-primary placeholder:text-muted focus:outline-none"
-          />
-        </label>
-        <PreviewModeToggle mode={mode} onChange={setMode} />
-      </div>
-
-      <div
-        id="design-system-options"
-        role="listbox"
-        aria-label="Design systems"
-        className="min-h-0 flex-1 overflow-y-auto px-1 pb-1"
-      >
-        {list.status === 'loading' && <MenuNote role="status">Reading design systems…</MenuNote>}
-        {list.status === 'failed' && (
-          <div role="alert" className="flex flex-col items-start gap-2 px-2.5 pb-2 pt-1">
-            <p className="text-label font-normal text-danger">{list.message}</p>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="cursor-pointer rounded-lg bg-active px-2.5 py-1 text-label text-primary transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            >
-              Try again
-            </button>
-          </div>
-        )}
-        {list.status === 'listed' && searching && rows.length === 0 && (
-          <MenuNote>No design system by that name.</MenuNote>
-        )}
-        {auto.map(option)}
-        {presets.length > 0 && <OptionGroup label="Presets">{presets.map(option)}</OptionGroup>}
-        {list.status === 'listed' && (yours.length > 0 || !searching) && (
-          <OptionGroup label="Yours">
-            {yours.length > 0 ? (
-              yours.map(option)
-            ) : (
-              <MenuNote>None yet. Make one in Manage design systems.</MenuNote>
-            )}
-          </OptionGroup>
-        )}
-      </div>
-
-      <div className="shrink-0 bg-elevated/30 p-1">
-        <button
-          type="button"
-          onClick={onManage}
-          className="flex h-8 w-full cursor-pointer items-center rounded-lg px-2.5 text-left text-label font-normal text-primary transition-colors hover:bg-accent/10 focus-visible:bg-accent/10 focus-visible:outline-none"
-        >
-          Manage design systems…
-        </button>
-      </div>
-    </>
-  );
-}
-
-function OptionGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div role="group" aria-label={label}>
-      <MenuHeading>{label}</MenuHeading>
-      {children}
-    </div>
-  );
-}
-
-function optionId(kit: DesignSystemSummary): string {
-  return `design-system-${kitKey(kit)}`;
-}
-
-function KitOption({
-  kit,
-  mode,
-  isActive,
-  isCurrent,
-  onHover,
-  onPick,
-}: {
-  kit: DesignSystemSummary;
-  mode: PreviewMode;
-  isActive: boolean;
-  isCurrent: boolean;
-  onHover: () => void;
-  onPick: () => void;
-}) {
-  return (
-    <div
-      id={optionId(kit)}
-      role="option"
-      aria-selected={isActive}
-      onMouseMove={onHover}
-      // Keeps focus in the search field, which owns the keyboard.
-      onMouseDown={(event) => {
-        event.preventDefault();
-      }}
-      onClick={onPick}
-      className={`flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2.5 transition-colors ${
-        isActive ? 'bg-accent/10' : ''
-      }`}
-    >
-      <span
-        className={`min-w-0 flex-1 truncate text-label text-primary ${isCurrent ? 'font-medium' : 'font-normal'}`}
-      >
-        {kit.name}
-      </span>
-      {kit.kind === 'auto' ? (
-        <span className="shrink-0 text-label font-normal text-muted">From your prompt</span>
-      ) : (
-        <KitSwatches kit={kit} mode={mode} />
-      )}
-      <span className="flex w-3.5 shrink-0 justify-center">
-        {isCurrent && <Check aria-label="Current" className="h-3.5 w-3.5 text-accent" />}
-      </span>
-    </div>
-  );
+  return { list, reread, retry };
 }

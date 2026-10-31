@@ -884,15 +884,3 @@ export async function saveCanvasImage(
     return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
   return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
 }
-
-/** Opens the host's folder chooser, then writes one kit version there. */
-export async function exportDesignSystem(ref: DesignSystemVersionRef): Promise<CanvasExportResult> {
-  const api = desktopApi();
-  if (!api)
-    return {
-      ok: false,
-      code: 'storage_failed',
-      message: 'Open DROIDEX to export a design system.',
-    };
-  return api.canvasExportDesignSystem(ref);
-}

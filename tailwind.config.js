@@ -142,9 +142,10 @@ export default {
       // button press, the 1.5px ring (focus, invalid fields) and the smooth-out
       // curve for anything that moves or opens.
       scale: { 97: '0.97' },
-      // The browser preview card's box, where the page picture is fitted, and a
-      // canvas tile, whose frame picture is cut to the same shape.
-      aspectRatio: { browser: '16 / 10', tile: '16 / 10' },
+      // The browser preview card's box, where the page picture is fitted, a
+      // canvas tile, whose frame picture is cut to the same shape, and a kit's
+      // thumbnail in the design-system picker and chip.
+      aspectRatio: { browser: '16 / 10', tile: '16 / 10', kit: '5 / 2' },
       ringWidth: { 1.5: '1.5px' },
       transitionTimingFunction: { 'smooth-out': 'var(--ease-smooth-out)' },
       // Floating layers stack popovers < dialogs < toasts < tooltips.

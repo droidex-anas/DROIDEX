@@ -1,9 +1,10 @@
-// The New menu's two forms: a DESIGN.md to write, paste or upload, or CSS
+// The New design system dialog's two forms: a DESIGN.md to write, paste or upload, or CSS
 // variables or a Tailwind config to paste. The sidecar maps what it can onto
 // the shared primitives and keeps the rest, so the form only collects text.
 
 import { useId, useRef, useState } from 'react';
 import { Upload } from '@droidex/icons';
+import { DialogTitle } from '../../components/ui/Dialog';
 import { FIELD_CLASS, PRIMARY_BUTTON_CLASS, QUIET_BUTTON_CLASS } from './CanvasDialog';
 import { canvasMessage, CanvasRequestError } from './client';
 import type { DesignSystemSource } from './protocol';
@@ -90,13 +91,10 @@ export function NewDesignSystemForm({
         event.preventDefault();
         void submit();
       }}
-      aria-labelledby={`${nameId}-title`}
-      className="flex min-h-0 flex-1 flex-col gap-3 px-6 pb-5 pt-5"
+      className="flex min-h-0 flex-1 flex-col gap-3"
     >
-      <div className="pr-8">
-        <h3 id={`${nameId}-title`} className="text-subheading text-primary">
-          {copy.title}
-        </h3>
+      <div>
+        <DialogTitle>{copy.title}</DialogTitle>
         <p className="mt-1 text-label font-normal leading-5 text-muted">{copy.hint}</p>
       </div>
       <label htmlFor={nameId} className="text-label text-primary">
