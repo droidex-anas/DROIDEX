@@ -292,6 +292,12 @@ export interface DroidexApi {
   pickFiles: () => Promise<string[]>;
   canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
   canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
+  canvasPickKitImage: () => Promise<OwnedAsset | null>;
+  canvasDropKitImage: (file: File) => Promise<OwnedAsset>;
+  /** A kit image's bytes, or null when the store does not hold that image intact. */
+  canvasReadKitImage: (
+    assetId: string,
+  ) => Promise<{ mime: OwnedAsset['mediaType']; data: Uint8Array } | null>;
   listDirectories: (path: string) => Promise<DirectoryListing>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;

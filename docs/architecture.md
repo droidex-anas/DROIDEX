@@ -568,7 +568,7 @@ crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
 the privileged `droidex-canvas-preview` scheme, the one guest document, its
 restrictive CSP, the trusted intermediate and the registry of guests main
 attached. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
-and content-addressed kit fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
+and content-addressed kit images and fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
 app window alone and installs `will-attach-webview` before that window loads
 anything, so renderer content can only ever attach the owned source, with any
 requested preload deleted and Node, nested Node and nested guests off.

@@ -40,7 +40,11 @@ const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
-const { mayRequestPreviewAsset, readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const {
+  mayRequestPreviewAsset,
+  readCanvasPreviewAsset,
+  readKitImage,
+} = require('./canvasPreviewAssets.cjs');
 const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
@@ -635,13 +639,18 @@ function previewGuestSession() {
   return session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION);
 }
 
+function kitStoreRoot() {
+  return path.join(app.getPath('userData'), 'canvases', 'design-systems');
+}
+
 function registerCanvasPreviewProtocol() {
   const document = canvasPreview.canvasPreviewDocument();
-  const assetRequest = /^droidex-canvas-preview:\/\/preview\/(?:asset|font)\//;
+  const assetRequest = /^droidex-canvas-preview:\/\/preview\/(?:asset|kit-asset|font)\//;
   const serve = async (request) => {
     if (assetRequest.test(request.url)) {
       const asset = await readCanvasPreviewAsset(request.url, {
         canvasRoot: path.join(app.getPath('userData'), 'canvases'),
+        kitRoot: kitStoreRoot(),
         fontRoot: path.join(app.getPath('userData'), 'canvas-fonts'),
         secret: sidecarSupervisor.canvasAssetSecret(),
       });
@@ -732,18 +741,34 @@ function registerIpc() {
     const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : result.filePaths;
   });
-  ipcMain.handle('canvas-pick-image', async (event, { canvasId }) => {
-    assertMainRenderer(event);
+  const pickImage = async (owner) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    return canvasImageImportResult(importCanvasImage, canvasId, result.filePaths[0]);
+    return canvasImageImportResult(importCanvasImage, owner, result.filePaths[0]);
+  };
+  ipcMain.handle('canvas-pick-image', (event, { canvasId }) => {
+    assertMainRenderer(event);
+    return pickImage({ kind: 'canvas', canvasId });
   });
   ipcMain.handle('canvas-drop-image', (event, { canvasId, filePath }) => {
     assertMainRenderer(event);
-    return canvasImageImportResult(importCanvasImage, canvasId, filePath);
+    return canvasImageImportResult(importCanvasImage, { kind: 'canvas', canvasId }, filePath);
+  });
+  ipcMain.handle('canvas-pick-kit-image', (event) => {
+    assertMainRenderer(event);
+    return pickImage({ kind: 'kit' });
+  });
+  ipcMain.handle('canvas-drop-kit-image', (event, { filePath }) => {
+    assertMainRenderer(event);
+    return canvasImageImportResult(importCanvasImage, { kind: 'kit' }, filePath);
+  });
+  // The document shows kit images from here: up to 10 MiB is too large for the bridge socket.
+  ipcMain.handle('canvas-read-kit-image', (event, { assetId }) => {
+    assertMainRenderer(event);
+    return readKitImage(kitStoreRoot(), assetId);
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.

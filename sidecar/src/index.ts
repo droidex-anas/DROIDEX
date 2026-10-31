@@ -5,6 +5,7 @@ import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { importKitImage } from './canvas/kitAssets.js';
 import { KitPreviews } from './canvas/kitPreviews.js';
 import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
 import { ProjectService } from './projects/ProjectService.js';
@@ -75,6 +76,7 @@ const server = startBridgeServer({
   canvasImages: {
     secret: CANVAS_ASSET_SECRET,
     importImage: async (request) => (await canvasReady).importCanvasImage(request),
+    importKitImage,
   },
   canvasExportToken: CANVAS_EXPORT_TOKEN,
   onCommand: async (command, pageId) => {

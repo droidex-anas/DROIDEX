@@ -95,8 +95,8 @@ export async function buildDesignStylesheet(
 // anything legitimate to reach for.
 const LOADING_AT_RULES = new Set(['config', 'plugin', 'import', 'use', 'forward']);
 
-// A preview loads with no network. Its only URL resources are owned images and
-// locally installed kit fonts served by the preview host.
+// A preview loads with no network. Its only URL resources are owned images, kit
+// images and locally installed kit fonts, all served by the preview host.
 const RESOURCE_SETS = new Set(['image-set', '-webkit-image-set']);
 const REFERENCE_IN_MESSAGE = 80;
 
@@ -146,7 +146,7 @@ function refuseExternalResources(
     if (reference === null) return;
     refusals.push({
       code: 'css_error',
-      message: `"${declaration.prop}" refers to ${shorten(reference)}, which is outside the design. Use data: or an owned canvas-asset: image.`,
+      message: `"${declaration.prop}" refers to ${shorten(reference)}, which is outside the design. Use data:, an owned canvas-asset: image or a kit-asset: image.`,
       ...locate(declaration),
     });
   });
@@ -191,7 +191,7 @@ function isOwnedResource(reference: string): boolean {
   const value = decodeCssEscapes(reference).trim().toLowerCase();
   return (
     value.startsWith('data:') ||
-    /^canvas-asset:[0-9a-f]{64}$/.test(value) ||
+    /^(canvas|kit)-asset:[0-9a-f]{64}$/.test(value) ||
     /^droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}$/.test(value)
   );
 }
