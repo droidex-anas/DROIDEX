@@ -52,6 +52,8 @@ export const KIT_ENTRY = 'index.tsx';
 export const DESIGN_SYSTEM_LIMITS = {
   maxGuidanceBytes: 16 * 1024,
   maxNameLength: 120,
+  maxProjectFiles: 8,
+  maxProjectPathLength: 1024,
 } as const;
 
 const ENTRY_MESSAGE = `A design system must provide ${KIT_ENTRY}, which exports its primitives.`;
@@ -79,7 +81,8 @@ const designSystemObjectSchema = z
     sections: documentSectionsSchema,
     files: kitFilesSchema,
     examples: sourceFilesSchema,
-    // Extracted from a canvas revision, or saved as a copy of another kit version.
+    // Extracted from a canvas revision, saved as a copy of another kit version,
+    // or read from a project folder's files.
     provenance: z
       .union([
         z
@@ -91,6 +94,19 @@ const designSystemObjectSchema = z
           })
           .strict(),
         z.object({ copiedFrom: designSystemVersionRefSchema }).strict(),
+        z
+          .object({
+            project: z
+              .object({
+                name: z.string().min(1).max(255),
+                files: z
+                  .array(z.string().min(1).max(DESIGN_SYSTEM_LIMITS.maxProjectPathLength))
+                  .min(1)
+                  .max(DESIGN_SYSTEM_LIMITS.maxProjectFiles),
+              })
+              .strict(),
+          })
+          .strict(),
       ])
       .optional(),
   })

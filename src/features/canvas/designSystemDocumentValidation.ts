@@ -22,6 +22,10 @@ export const MAX_KIT_NAME_LENGTH = 120;
 // a kit holds as many examples as a design holds files.
 const MAX_SOURCE_PATH_LENGTH = 256;
 const MAX_EXAMPLES = 64;
+// `DESIGN_SYSTEM_LIMITS`' project fields: the files a kit was read from.
+const MAX_PROJECT_NAME_LENGTH = 255;
+const MAX_PROJECT_FILES = 8;
+const MAX_PROJECT_PATH_LENGTH = 1024;
 const TOKEN_KINDS = new Set<unknown>([
   'colors',
   'typography',
@@ -236,6 +240,16 @@ function isCover(value: unknown): boolean {
 function isKitProvenance(value: unknown): boolean {
   if (!record(value)) return false;
   if (value.copiedFrom !== undefined) return isKitVersion(value.copiedFrom);
+  if (value.project !== undefined)
+    return (
+      record(value.project) &&
+      boundedText(value.project.name, MAX_PROJECT_NAME_LENGTH) &&
+      Array.isArray(value.project.files) &&
+      value.project.files.length > 0 &&
+      boundedList(value.project.files, MAX_PROJECT_FILES, (file) =>
+        boundedText(file, MAX_PROJECT_PATH_LENGTH),
+      )
+    );
   return (
     id(value.sourceCanvasId) &&
     record(value.revision) &&

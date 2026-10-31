@@ -140,7 +140,9 @@ export function selectorScopes(
 /**
  * Records one custom property in each scope it applies to. Hex shorthand is
  * expanded, so `#abc` and `#aabbcc` agree; a different value in a scope that
- * already has one is reported as competing, and callers refuse it.
+ * already has one is reported as competing, and callers refuse it. A `var()`
+ * of the token's own name, as a Tailwind config's `sm: 'var(--shadow-sm)'`
+ * beside the stylesheet that sets it, gives way to the real value.
  */
 export function declareToken(
   scopes: Record<TokenScope, Record<string, string>>,
@@ -153,9 +155,16 @@ export function declareToken(
     (_match, hex: string) =>
       '#' + hex.replace(/[\da-f]/gi, (digit) => digit.repeat(2)).toLowerCase(),
   );
+  const selfReference = `var(${name})`;
   for (const scope of targets) {
     const tokens = scopes[scope];
-    if (Object.hasOwn(tokens, name) && tokens[name] !== value)
+    const earlier = Object.hasOwn(tokens, name) ? tokens[name] : undefined;
+    if (earlier === undefined || earlier === selfReference) {
+      tokens[name] = value;
+      continue;
+    }
+    if (value === selfReference) continue;
+    if (earlier !== value)
       diagnostics.push({
         code: 'ambiguous_token',
         message: `${name} has competing ${scope} values. Choose one explicitly.`,

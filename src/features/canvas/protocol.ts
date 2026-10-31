@@ -56,7 +56,8 @@ export interface DesignSystemVersionEntry {
 
 export type DesignSystemProvenance =
   | { sourceCanvasId: string; revision: { designId: string; revisionId: string } }
-  | { copiedFrom: { id: string; version: number } };
+  | { copiedFrom: { id: string; version: number } }
+  | { project: { name: string; files: string[] } };
 
 /** What deleting a canvas would end, which the renderer discloses before the user confirms. */
 export interface CanvasRemovalPreview {

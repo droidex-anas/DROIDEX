@@ -1,6 +1,6 @@
-// Reads a pasted DESIGN.md's blocks, CSS variables or a Tailwind config into
-// declared tokens, each with its light, dark or shared value and the line that
-// set it. Nothing here runs the source: CSS is parsed by PostCSS, and a config
+// Reads a DESIGN.md's blocks, CSS variables or a Tailwind config, pasted or
+// read from a project, into declared tokens, each with its light, dark or
+// shared value and the place that set it. Nothing here runs the source: CSS is parsed by PostCSS, and a config
 // is read for its literals only.
 
 import postcss, {
@@ -22,10 +22,31 @@ import type { CanvasDiagnostic } from './protocol.js';
 
 export type Mode = 'light' | 'dark';
 
-/** Each scope's token values, and the line that first declared each name. */
+/** Where a source's text sits: the project file it came from, if any, and the lines above it. */
+export interface TextOrigin {
+  file?: string;
+  lineOffset: number;
+}
+
+/** A line of a source, in its project file when it has one. */
+interface SourcePlace {
+  file?: string;
+  line: number;
+}
+
+/** Each scope's token values, and the place that first declared each name. */
 export interface Declared {
   scopes: Record<TokenScope, Record<string, string>>;
-  lines: Map<string, number>;
+  places: Map<string, SourcePlace>;
+}
+
+function placeIn(origin: TextOrigin, line: number): SourcePlace {
+  const at = origin.lineOffset + line;
+  return origin.file === undefined ? { line: at } : { file: origin.file, line: at };
+}
+
+function fileOf(origin: TextOrigin): { file?: string } {
+  return origin.file === undefined ? {} : { file: origin.file };
 }
 
 // Recursive readers see a pasted source only after its nesting is bounded.
@@ -61,7 +82,7 @@ export function fencedBlocks(markdown: string): { language: string; text: string
 /** Collects root and mode custom properties; answers the refusal when the stylesheet does not parse. */
 export function readCss(
   text: string,
-  lineOffset: number,
+  origin: TextOrigin,
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
 ): CanvasDiagnostic | null {
@@ -70,26 +91,31 @@ export function readCss(
     root = postcss.parse(text, { from: undefined, map: false });
   } catch (error) {
     if (!(error instanceof postcss.CssSyntaxError)) throw error;
-    const at = error.line === undefined ? '' : ` at line ${String(error.line + lineOffset)}`;
-    return { code: 'css_error', message: `Fix this stylesheet${at}: ${error.reason}.` };
+    const at = error.line === undefined ? '' : ` at line ${String(error.line + origin.lineOffset)}`;
+    return {
+      code: 'css_error',
+      message: `Fix this stylesheet${at}: ${error.reason}.`,
+      ...fileOf(origin),
+    };
   }
   if (ruleDepth(root) > MAX_STYLESHEET_NESTING)
     return {
       code: 'invalid_input',
       message: 'That stylesheet nests its rules too deeply to read.',
+      ...fileOf(origin),
     };
   root.walkDecls((declaration) => {
     if (!declaration.prop.startsWith('--')) return;
-    const line = lineOffset + (declaration.source?.start?.line ?? 1);
+    const place = placeIn(origin, declaration.source?.start?.line ?? 1);
     const name = tokenName(declaration.prop);
     const scopes = declarationScopes(declaration);
     if (name === null || scopes.length === 0)
       diagnostics.push({
         code: 'manual_interpretation_required',
         message: `${declaration.prop} is set outside :root, html, @theme and the light and dark rules, so it was not imported.`,
-        line,
+        ...place,
       });
-    else declare(declared, { name, value: declaration.value, targets: scopes, line }, diagnostics);
+    else declare(declared, { name, value: declaration.value, targets: scopes, place }, diagnostics);
   });
   return null;
 }
@@ -173,21 +199,29 @@ const TAILWIND_SECTIONS = new Map([
 /** Reads literal theme values; the config is parsed, never run. Answers a refusal for a config too deep to read. */
 export function readTailwind(
   text: string,
-  lineOffset: number,
+  origin: TextOrigin,
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
 ): CanvasDiagnostic | null {
   const config = readConfigTheme(text);
   if (config.status === 'tooDeep')
-    return { code: 'invalid_input', message: 'That config nests its values too deeply to read.' };
+    return {
+      code: 'invalid_input',
+      message: 'That config nests its values too deeply to read.',
+      ...fileOf(origin),
+    };
   const theme = config.theme;
   if (theme?.kind !== 'object') {
-    diagnostics.push({ code: 'no_tokens', message: 'That config has no literal theme object.' });
+    diagnostics.push({
+      code: 'no_tokens',
+      message: 'That config has no literal theme object.',
+      ...fileOf(origin),
+    });
     return null;
   }
   // `theme.extend` overrides `theme` for the same name, as Tailwind merges them,
   // so values are gathered first and each name is declared once.
-  const values = new Map<string, { value: string; line: number }>();
+  const values = new Map<string, { value: string; place: SourcePlace }>();
   const collect = (value: ConfigValue, name: string, path: string, section: string): void => {
     if (value.kind === 'object') {
       for (const entry of value.entries) {
@@ -203,13 +237,13 @@ export function readTailwind(
       return;
     }
     const literal = literalValue(value, section);
-    const tokenLine = lineOffset + value.line;
-    if (literal !== null) values.set(name, { value: literal, line: tokenLine });
+    const place = placeIn(origin, value.line);
+    if (literal !== null) values.set(name, { value: literal, place });
     else
       diagnostics.push({
         code: 'manual_interpretation_required',
         message: `${path} is computed in the config. Paste its values as CSS variables instead.`,
-        line: tokenLine,
+        ...place,
       });
   };
   const extend = theme.entries.find((entry) => entry.key === 'extend')?.value;
@@ -224,9 +258,9 @@ export function readTailwind(
         collect(value, `--${prefix}`, `${path}.${key}`, key);
     }
   }
-  for (const [rawName, { value, line }] of values) {
+  for (const [rawName, { value, place }] of values) {
     const name = tokenName(rawName);
-    if (name !== null) declare(declared, { name, value, targets: ['shared'], line }, diagnostics);
+    if (name !== null) declare(declared, { name, value, targets: ['shared'], place }, diagnostics);
   }
   return null;
 }
@@ -257,13 +291,18 @@ export function tokenName(raw: string): string | null {
 // Pasted values may wrap across lines; a token value is a single line.
 function declare(
   declared: Declared,
-  token: { name: string; value: string; targets: TokenScope[]; line: number },
+  token: { name: string; value: string; targets: TokenScope[]; place: SourcePlace },
   diagnostics: CanvasDiagnostic[],
 ): void {
-  if (!declared.lines.has(token.name)) declared.lines.set(token.name, token.line);
+  const { name, targets, place } = token;
+  // A token's place follows its value past a reference to its own name.
+  const referencesItself = (scope: TokenScope) =>
+    Object.hasOwn(declared.scopes[scope], name) && declared.scopes[scope][name] === `var(${name})`;
+  if (!declared.places.has(name) || targets.some(referencesItself))
+    declared.places.set(name, place);
   declareToken(
     declared.scopes,
-    { ...token, value: token.value.replace(/\s+/g, ' ').trim() },
+    { name, targets, ...place, value: token.value.replace(/\s+/g, ' ').trim() },
     diagnostics,
   );
 }
