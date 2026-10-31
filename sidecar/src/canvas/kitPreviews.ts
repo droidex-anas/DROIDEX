@@ -34,7 +34,10 @@ const SHUTTING_DOWN = 'DROIDEX is shutting down.';
 
 export class KitPreviews {
   private compiler: KitCompiler | null = null;
-  private readonly answers = new Map<string, Promise<Answer>>();
+  /** Answers about the source, most recently read last. */
+  private readonly kept = new Map<string, KitPreview>();
+  /** Compiles still running, so a second read joins one rather than starting another. */
+  private readonly pending = new Map<string, Promise<Answer>>();
   private readonly running = new Set<AbortController>();
   private readonly ending = new Set<Promise<void>>();
   private readonly fork: () => KitCompiler;
@@ -48,36 +51,56 @@ export class KitPreviews {
 
   /** The preview `item` names in that kit version and mode. */
   async read(ref: DesignSystemRef, item: string): Promise<KitPreview> {
+    this.refuseClosed();
     const key = JSON.stringify([ref.id, ref.version, ref.mode, item]);
-    const answer = this.answers.get(key) ?? this.compile(ref, item);
-    // Map order is recency: a read moves its key to the end, the front is evicted.
-    this.answers.delete(key);
-    this.answers.set(key, answer);
-    if (this.answers.size > MAX_KEPT_PREVIEWS) {
-      const oldest = this.answers.keys().next().value;
-      if (oldest !== undefined) this.answers.delete(oldest);
+    const kept = this.kept.get(key);
+    if (kept) {
+      this.keep(key, kept);
+      return kept;
     }
-    try {
-      const { preview, kept } = await answer;
-      if (!kept) this.forget(key, answer);
-      return preview;
-    } catch (error) {
-      this.forget(key, answer);
-      throw error;
-    }
+    const { preview } = await (this.pending.get(key) ?? this.start(key, ref, item));
+    this.refuseClosed();
+    return preview;
   }
 
-  /** Cancels every compile and ends the compiler; nothing compiles after this. */
+  /** Refuses every read and cancels every compile; nothing compiles after this. */
   async close(): Promise<void> {
     this.closed = true;
+    this.kept.clear();
     for (const abort of this.running) abort.abort();
     if (this.compiler) this.end(this.compiler);
     while (this.ending.size > 0) await Promise.all([...this.ending]);
   }
 
+  private start(key: string, ref: DesignSystemRef, item: string): Promise<Answer> {
+    const answer = this.compile(ref, item);
+    this.pending.set(key, answer);
+    void answer.then(
+      ({ preview, kept }) => {
+        this.pending.delete(key);
+        if (kept && !this.closed) this.keep(key, preview);
+      },
+      () => this.pending.delete(key),
+    );
+    return answer;
+  }
+
+  /** Map order is recency: a kept key moves to the end, and the front is evicted. */
+  private keep(key: string, preview: KitPreview): void {
+    this.kept.delete(key);
+    this.kept.set(key, preview);
+    if (this.kept.size <= MAX_KEPT_PREVIEWS) return;
+    const oldest = this.kept.keys().next().value;
+    if (oldest !== undefined) this.kept.delete(oldest);
+  }
+
+  private refuseClosed(): void {
+    if (this.closed) throw canvasError('scope_expired', SHUTTING_DOWN);
+  }
+
   private async compile(ref: DesignSystemRef, item: string): Promise<Answer> {
     const example = kitExample(await readDesignSystem(ref), item);
-    if (this.closed) throw canvasError('scope_expired', SHUTTING_DOWN);
+    this.refuseClosed();
     const compiler = (this.compiler ??= this.fork());
     const abort = new AbortController();
     let overdue = false;
@@ -103,10 +126,6 @@ export class KitPreviews {
       cancelDeadline();
       this.running.delete(abort);
     }
-  }
-
-  private forget(key: string, answer: Promise<Answer>): void {
-    if (this.answers.get(key) === answer) this.answers.delete(key);
   }
 
   /** The next compile forks a fresh process; this one is ended once. */

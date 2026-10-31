@@ -8,6 +8,9 @@ import {
   type CompiledDesign,
 } from './compiler.js';
 import { KitPreviews } from './kitPreviews.js';
+import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
+import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import type { DesignSystemRef } from './protocol.js';
 
 pinScratchProfile();
@@ -16,18 +19,38 @@ const LIGHT: DesignSystemRef = { id: 'droidex', version: 1, mode: 'light' };
 const DARK: DesignSystemRef = { ...LIGHT, mode: 'dark' };
 
 /** A compiler that answers each compile with what `answer` returns, counting them. */
-function countingPreviews(answer: (input: CompileInput) => CompiledDesign) {
+function countingPreviews(
+  answer: (input: CompileInput) => CompiledDesign | Promise<CompiledDesign>,
+) {
   const compiled: CompileInput[] = [];
   const previews = new KitPreviews({
     compiler: () => ({
-      compile: (input) => {
+      compile: async (input) => {
         compiled.push(input);
-        return Promise.resolve(answer(input));
+        return answer(input);
       },
       terminate: () => Promise.resolve(),
     }),
   });
   return { previews, compiled };
+}
+
+/** Every preview the shipped kits have, in both modes. */
+function presetPreviews(): { ref: DesignSystemRef; item: string }[] {
+  const systems = [
+    DROIDEX_DESIGN_SYSTEM,
+    OPENAI_INSPIRED_DESIGN_SYSTEM,
+    CLAUDE_INSPIRED_DESIGN_SYSTEM,
+  ];
+  return systems.flatMap(({ id, version, sections }) =>
+    (['light', 'dark'] as const).flatMap((mode) =>
+      sections.flatMap((section) =>
+        section.items.flatMap((entry) =>
+          entry.kind === 'preview' ? [{ ref: { id, version, mode }, item: entry.id }] : [],
+        ),
+      ),
+    ),
+  );
 }
 
 const design = (html: string): CompiledDesign => ({
@@ -48,7 +71,7 @@ test("a kit's cover and typography specimen compile into preview documents", asy
   }
 });
 
-test('a preview compiles once per version, mode and item while it is kept', async () => {
+test('a preview compiles once per version, mode and item while it is pending or kept', async () => {
   const { previews, compiled } = countingPreviews(() => design('<html></html>'));
 
   const [first, second] = await Promise.all([
@@ -62,6 +85,24 @@ test('a preview compiles once per version, mode and item while it is kept', asyn
 
   assert.equal(compiled.length, 3);
   await previews.close();
+
+  // More compiles in flight than the cache keeps: a reread still joins its own.
+  const held: (() => void)[] = [];
+  const slow = countingPreviews(
+    () => new Promise((resolve) => held.push(() => resolve(design('<html></html>')))),
+  );
+  const targets = presetPreviews();
+  assert.ok(targets.length > 32);
+  const reads = targets.map(({ ref, item }) => slow.previews.read(ref, item));
+  reads.push(slow.previews.read(targets[0].ref, targets[0].item));
+  for (let turn = 0; held.length < targets.length && turn < 1000; turn++)
+    await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(slow.compiled.length, targets.length);
+
+  // A compile that settles after close answers no one.
+  await slow.previews.close();
+  for (const release of held) release();
+  for (const read of reads) await assert.rejects(read, { code: 'scope_expired' });
 });
 
 test("a source's diagnostics are kept, a lost compiler is tried again", async () => {
@@ -91,5 +132,5 @@ test("a source's diagnostics are kept, a lost compiler is tried again", async ()
 
   await assert.rejects(previews.read(LIGHT, 'no-such-preview'), { code: 'invalid_input' });
   await previews.close();
-  await assert.rejects(previews.read(DARK, 'cover'), { code: 'scope_expired' });
+  await assert.rejects(previews.read(LIGHT, 'typography'), { code: 'scope_expired' });
 });
