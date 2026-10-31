@@ -5,7 +5,12 @@
 
 import valueParser from 'postcss-value-parser';
 import { buildDocument, CONTRACT_TOKEN_NAMES, type DocumentPart } from './buildDocument.js';
-import { designSystemSchema, type DesignSystem, type DesignSystemSource } from './designSystems.js';
+import {
+  DESIGN_SYSTEM_LIMITS,
+  designSystemSchema,
+  type DesignSystem,
+  type DesignSystemSource,
+} from './designSystems.js';
 import { DOCUMENT_LIMITS, kitModes, tokenValueSchema } from './designSystemDocument.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import {
@@ -133,7 +138,7 @@ function tokenRefusal(declared: Declared, diagnostics: CanvasDiagnostic[]): Refu
   );
 }
 
-/** The whole text becomes the kit's design.md note; its css and config blocks set tokens. */
+/** The whole text becomes the kit's design.md notes; its css and config blocks set tokens. */
 function readDesignMd(
   text: string,
   declared: Declared,
@@ -141,9 +146,9 @@ function readDesignMd(
 ): SourceRead {
   if (text.trim() === '') return refused('Write or paste a DESIGN.md first.');
   const body = `${text.trim()}\n`;
-  if (Buffer.byteLength(body) > DOCUMENT_LIMITS.maxNoteBytes)
+  if (Buffer.byteLength(body) > DESIGN_SYSTEM_LIMITS.maxGuidanceBytes)
     return refused(
-      `A DESIGN.md holds at most ${String(DOCUMENT_LIMITS.maxNoteBytes / 1024)} KiB. Shorten it; it is never truncated.`,
+      `A DESIGN.md holds at most ${String(DESIGN_SYSTEM_LIMITS.maxGuidanceBytes / 1024)} KiB. Shorten it; it is never truncated.`,
     );
   for (const block of fencedBlocks(text)) {
     let failure: CanvasDiagnostic | null = null;

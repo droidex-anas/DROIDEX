@@ -12,6 +12,8 @@ import { CompilerWorker } from './compiler.js';
 import { buildDocument, type DocumentPart } from './buildDocument.js';
 import { kitModes } from './designSystemDocument.js';
 import {
+  DESIGN_SYSTEM_LIMITS,
+  designSystemSchema,
   listDesignSystems,
   listDesignSystemVersions,
   readDesignSystem,
@@ -467,21 +469,24 @@ test('a deleted kit leaves the list but stays readable, and restoring it lists i
   assert.equal(await isListed(), true);
 });
 
-test('a v1.6 version reads as a document under its own number, builds, and saves on as one', async (t) => {
+test('a v1.6 version at its old limits reads as a valid document, builds, and saves on as one', async (t) => {
   const directory = join(canvasDir(), 'design-systems', 'legacy-kit');
   await mkdir(directory, { recursive: true });
   const modes = {
     light: { '--ds-canvas': '#ffffff', '--ds-accent': '#1d4ed8', '--brand-ink': '#111111' },
     dark: { '--ds-canvas': '#0b0b0c', '--ds-accent': '#93c5fd', '--brand-ink': '#eeeeee' },
   };
-  // Longer than one note holds, so it continues in a second.
-  const guidance = Array.from(
-    { length: 200 },
-    (_, line) => `Rule ${String(line)}: keep it quiet.\n`,
-  )
+  // v1.6 allowed 16 KiB of guidance, 64 examples, 256 KiB each and 1 MiB together.
+  const guidance = Array.from({ length: 1000 }, (_, line) => `Rule ${String(line)}: be quiet.\n\n`)
     .join('')
-    .repeat(2);
-  const { files, examples } = userKit('legacy-kit');
+    .slice(0, DESIGN_SYSTEM_LIMITS.maxGuidanceBytes);
+  const { files, examples: kitExamples } = userKit('legacy-kit');
+  const examples: Record<string, string> = {
+    ...kitExamples,
+    'Large.tsx': `// ${'x'.repeat(256 * 1024 - 4)}\n`,
+  };
+  while (Object.keys(examples).length < CANVAS_LIMITS.maxSourceFilesPerDesign)
+    examples[`Filler${String(Object.keys(examples).length)}.tsx`] = `// ${'x'.repeat(12 * 1024)}\n`;
   const swatches = {
     light: { surface: '#ffffff', accent: '#1d4ed8' },
     dark: { surface: '#0b0b0c', accent: '#93c5fd' },
@@ -499,15 +504,18 @@ test('a v1.6 version reads as a document under its own number, builds, and saves
     { ...summary, cover: false, savedAt: null, proposal: false },
   );
   const converted = await readDesignSystem({ id: 'legacy-kit', version: 1, mode: 'light' });
+  assert.ok(designSystemSchema.safeParse(converted).success);
   assert.deepEqual(kitModes(converted.sections), modes);
+  // Longer than one note holds, so it continues between paragraphs in the next.
   const notes = converted.sections[0]?.items.flatMap((item) =>
     item.kind === 'note' ? [item] : [],
   );
   assert.deepEqual(
     notes?.map((note) => note.label),
-    ['guidance.md', 'guidance-2.md'],
+    ['guidance.md', 'guidance-2.md', 'guidance-3.md'],
   );
   assert.equal(notes?.map((note) => note.body).join(''), guidance);
+  assert.ok(notes?.slice(0, -1).every((note) => note.body.endsWith('\n\n')));
   assert.deepEqual([converted.files, converted.examples, converted.cover], [files, examples, null]);
 
   const compiler = new CompilerWorker();

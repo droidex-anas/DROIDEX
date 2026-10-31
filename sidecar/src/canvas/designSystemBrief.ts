@@ -1,8 +1,8 @@
 // The pinned kit as a turn's first canvas_read carries it, so the agent can
 // follow the kit without fetching it: name, mode, token names, the primitives
 // its entry exports and its guidance. Token values, files and examples stay
-// with canvas_theme. Guidance is capped at 16 KiB by the kit schema and the name
-// lists share 4 KiB, so with the kit name a brief stays under 21 KiB.
+// with canvas_theme. The kit schema caps the notes and usage notes the guidance
+// carries at 16 KiB, not counting its headings, and the name lists share 4 KiB.
 
 import { CanvasCommandError } from './canvasError.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';

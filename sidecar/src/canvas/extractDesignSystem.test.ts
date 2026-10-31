@@ -2,8 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import postcss from 'postcss';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
-import { DOCUMENT_LIMITS, kitGuidance, kitModes } from './designSystemDocument.js';
-import { readDesignSystem, saveDesignSystem, type DesignSystem } from './designSystems.js';
+import { kitModes } from './designSystemDocument.js';
+import {
+  DESIGN_SYSTEM_LIMITS,
+  readDesignSystem,
+  saveDesignSystem,
+  type DesignSystem,
+} from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -220,14 +225,21 @@ test('extraction refuses missing mode counterparts and ambiguous values rather t
   }
 });
 
-test('extraction refuses a DESIGN.md over one note in UTF-8 without truncating it', () => {
-  const guidance = 'é'.repeat(DOCUMENT_LIMITS.maxNoteBytes / 2);
+test('extraction refuses guidance over 16 KiB in UTF-8 without truncating it', () => {
+  const guidance = 'é'.repeat(DESIGN_SYSTEM_LIMITS.maxGuidanceBytes / 2);
   const accepted = extractDesignSystem({ 'DESIGN.md': guidance }, input);
   assert.equal(accepted.status, 'extracted');
   if (accepted.status !== 'extracted') return;
-  const { name, sections } = accepted.system;
-  assert.ok(kitGuidance(name, sections).includes(`### design.md\n\n${guidance}`));
+  // Longer than one note holds, so it continues in design-2.md.
+  const notes = accepted.system.sections[0]?.items.flatMap((item) =>
+    item.kind === 'note' ? [item] : [],
+  );
+  assert.deepEqual(
+    notes?.map((note) => note.label),
+    ['design.md', 'design-2.md'],
+  );
+  assert.equal(notes?.map((note) => note.body).join(''), guidance);
   const refused = extractDesignSystem({ 'DESIGN.md': guidance + 'é' }, input);
   assert.equal(refused.status, 'refused');
-  assert.match(refused.diagnostics[0]?.message ?? '', /8192 bytes/);
+  assert.match(refused.diagnostics[0]?.message ?? '', /16 KiB/);
 });

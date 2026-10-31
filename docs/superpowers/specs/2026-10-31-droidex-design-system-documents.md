@@ -79,12 +79,12 @@ Rules the sidecar's schema enforces:
 | Note label | filename-like, `[a-z0-9][a-z0-9-]*\.md`, at most 48 characters, unique in the document |
 | Note body | markdown, at most 8 KiB |
 | Preview | at most 24 per version, cover included; title unique in the document, since §11 changes a preview by its title; id never `cover` or `typography`, which §14 uses as preview targets; `example` names a file in `examples`; `width` 240–1440 and `height` 120–1200 CSS px; note at most 1 KiB |
-| Example file | at most 64 KiB each, 512 KiB for all examples; the existing per-file source limits still apply |
+| Example file | the existing source limits: at most 256 KiB each, 1 MiB and 64 files for all examples |
 | Assets | at most 48 per version; name unique in the document, since §11 changes an asset by its name |
-| Agent-read text | `kitGuidance` output at most 16 KiB, the existing `maxGuidanceBytes` |
+| Agent-read text | the notes and usage notes `kitGuidance` passes on at most 16 KiB together, the existing `maxGuidanceBytes`; the headings it adds are not counted |
 | Whole version | the stored JSON, without examples and files, at most 256 KiB |
 
-How the 16 KiB guidance relates: it is no longer a field anyone writes. It is the document's own text as the agent reads it, and saving refuses a document whose text would pass 16 KiB, naming the largest note. The opening `canvas_read` brief therefore stays under its present 21 KiB. Prose that should not cost the agent's attention does not belong in a kit.
+How the 16 KiB guidance relates: it is no longer a field anyone writes. It is the document's own text as the agent reads it, and saving refuses a document whose notes and usage notes would pass 16 KiB together, naming the largest note. A builder (§15, imports, extraction) continues a note longer than 8 KiB in `name-2.md` and on, breaking between paragraphs or before a heading, so a 16 KiB DESIGN.md or v1.6 guidance is kept whole. The opening `canvas_read` brief is that text, its headings and the 4 KiB name lists. Prose that should not cost the agent's attention does not belong in a kit.
 
 **Ordering.** The stored arrays are the order; the sidecar keeps exactly what was saved. Builders (presets, imports, the project flow, the v1.6 conversion in §15) use the canonical order: notes (titled Overview), Colors, Typography, Spacing, Corner radius, Shadows, Motion, Other tokens (`tokens`), Components, Assets. A section added later, by the user or the agent, is inserted before the first existing section that comes after it in that order. The user can then move sections up or down. Items keep the order they were added in and can be moved within their section.
 
@@ -316,7 +316,7 @@ Event: `designSystemsChanged { id }` after every save, accept, discard, proposal
 
 ## 15. Kits saved by v1.6
 
-v1.6.0 and v1.6.1 shipped Design in beta with user kits saved as `{ modes, guidance }`. The beta label allows the format to change; it does not allow losing those kits. `designSystems.ts` reads a v1.6 version file through one converter: tokens grouped by the contract's names into the canonical sections (unknown names into Other tokens), `guidance` as one `guidance.md` note by the user, examples kept, no cover. It presents the same version number, so frames pinned to it keep building; the next save writes the new shape. The converter and its test are deleted in the first release after the one that ships this feature.
+v1.6.0 and v1.6.1 shipped Design in beta with user kits saved as `{ modes, guidance }`. The beta label allows the format to change; it does not allow losing those kits. `designSystems.ts` reads a v1.6 version file through one converter: tokens grouped by the contract's names into the canonical sections (unknown names into Other tokens), `guidance` as a `guidance.md` note by the user (continued in `guidance-2.md` and on past 8 KiB), examples kept, no cover. It presents the same version number, so frames pinned to it keep building; the next save writes the new shape. The converter and its test are deleted in the first release after the one that ships this feature.
 
 ## 16. Out of scope
 

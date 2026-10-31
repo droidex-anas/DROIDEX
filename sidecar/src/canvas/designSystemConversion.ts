@@ -5,8 +5,8 @@
 // first release after the one that ships design system documents.
 
 import { z } from 'zod';
-import { buildDocument, type DocumentPart } from './buildDocument.js';
-import { DOCUMENT_LIMITS, tokenNameSchema, tokenValueSchema } from './designSystemDocument.js';
+import { buildDocument } from './buildDocument.js';
+import { tokenNameSchema, tokenValueSchema } from './designSystemDocument.js';
 import type { DesignSystem } from './designSystems.js';
 import { canvasIdentifierSchema, sourceFilesSchema } from './schema.js';
 
@@ -82,46 +82,15 @@ export function convertLegacyVersion(value: unknown): DesignSystem | null {
     version: system.version,
     name: system.name,
     cover: null,
-    sections: buildDocument({ tokens: system.modes, overview: guidanceNotes(system.guidance) }),
+    sections: buildDocument({
+      tokens: system.modes,
+      overview:
+        system.guidance.trim() === ''
+          ? []
+          : [{ kind: 'note', label: 'guidance.md', body: system.guidance }],
+    }),
     files: system.files,
     examples: system.examples,
     ...(system.provenance ? { provenance: system.provenance } : {}),
   };
-}
-
-// v1.6 guidance held up to 16 KiB and a note holds 8, so a long one continues
-// in guidance-2.md and on, split between lines (or, for one overlong line,
-// between characters).
-function guidanceNotes(guidance: string): DocumentPart[] {
-  if (guidance.trim() === '') return [];
-  const bodies = splitWithin(guidance.split(/(?<=\n)/), DOCUMENT_LIMITS.maxNoteBytes);
-  return bodies.map((body, index) => ({
-    kind: 'note',
-    label: index === 0 ? 'guidance.md' : `guidance-${String(index + 1)}.md`,
-    body,
-  }));
-}
-
-function splitWithin(parts: string[], maxBytes: number): string[] {
-  const chunks: string[] = [];
-  let chunk = '';
-  let bytes = 0;
-  for (const part of parts) {
-    const size = Buffer.byteLength(part, 'utf8');
-    if (size > maxBytes) {
-      chunks.push(...splitWithin([chunk, ...Array.from(part)], maxBytes));
-      chunk = chunks.pop() ?? '';
-      bytes = Buffer.byteLength(chunk, 'utf8');
-      continue;
-    }
-    if (bytes + size > maxBytes) {
-      chunks.push(chunk);
-      chunk = '';
-      bytes = 0;
-    }
-    chunk += part;
-    bytes += size;
-  }
-  chunks.push(chunk);
-  return chunks;
 }

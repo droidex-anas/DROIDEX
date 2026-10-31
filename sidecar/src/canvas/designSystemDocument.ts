@@ -20,8 +20,6 @@ export const DOCUMENT_LIMITS = {
   maxAssets: 48,
   previewWidthPx: { min: 240, max: 1440 },
   previewHeightPx: { min: 120, max: 1200 },
-  maxExampleBytes: 64 * 1024,
-  maxExamplesBytes: 512 * 1024,
   /** The stored version without its files and examples. */
   maxDocumentBytes: 256 * 1024,
 } as const;
@@ -268,6 +266,22 @@ export function kitGuidance(name: string, sections: DocumentSection[]): string {
     if (usage.length > 0) blocks.push(usage.join('\n'));
   }
   return blocks.join('\n\n');
+}
+
+/**
+ * What the 16 KiB text cap counts: the notes and usage notes `kitGuidance`
+ * passes on, without the headings it adds around them.
+ */
+export function writtenTextBytes(sections: DocumentSection[]): number {
+  let bytes = 0;
+  for (const section of sections)
+    for (const item of section.items) {
+      if (item.kind === 'note') bytes += Buffer.byteLength(item.body, 'utf8');
+      if (item.kind === 'group')
+        for (const token of item.tokens) bytes += Buffer.byteLength(token.note ?? '', 'utf8');
+      if (item.kind === 'preview') bytes += Buffer.byteLength(item.note ?? '', 'utf8');
+    }
+  return bytes;
 }
 
 /** The label of the note that costs the agent the most, for a refusal to name. */

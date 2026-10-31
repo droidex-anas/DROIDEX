@@ -1,9 +1,10 @@
 // The canonical builder every document that is not typed by hand comes from:
 // presets, imports, extraction and the v1.6 conversion (design system documents
 // spec §2). Contract tokens land in their sections and groups by name, any other
-// token in Other tokens, and the sections follow the canonical order.
+// token in Other tokens, and the sections follow the canonical order. A note
+// longer than one holds continues in name-2.md and on, so nothing is cut.
 
-import type { DocumentSection } from './designSystemDocument.js';
+import { DOCUMENT_LIMITS, type DocumentSection } from './designSystemDocument.js';
 
 type TokenKind = Exclude<DocumentSection['kind'], 'notes' | 'components' | 'assets'>;
 type DocumentItem = DocumentSection['items'][number];
@@ -94,7 +95,7 @@ export function buildDocument(source: DocumentSource): DocumentSection[] {
       kind: 'notes',
       id: 'overview',
       title: 'Overview',
-      items: source.overview.map((part) => item(part, ids)),
+      items: source.overview.flatMap((part) => items(part, ids)),
     });
 
   const { light, dark } = source.tokens;
@@ -134,22 +135,52 @@ export function buildDocument(source: DocumentSource): DocumentSection[] {
       kind: 'components',
       id: 'components',
       title: 'Components',
-      items: source.components.map((part) => item(part, ids)),
+      items: source.components.flatMap((part) => items(part, ids)),
     });
   return sections;
 }
 
-function item(
+function items(
   part: DocumentPart,
   ids: Set<string>,
-): Extract<DocumentItem, { kind: 'note' | 'preview' }> {
-  if (part.kind === 'note')
+): Extract<DocumentItem, { kind: 'note' | 'preview' }>[] {
+  if (part.kind === 'preview') return [{ ...part, id: uniqueId(ids, part.title) }];
+  const stem = part.label.slice(0, -'.md'.length);
+  return noteBodies(part.body, DOCUMENT_LIMITS.maxNoteBytes).map((body, index) => {
+    const label = index === 0 ? part.label : `${stem}-${String(index + 1)}.md`;
     return {
-      ...part,
-      id: uniqueId(ids, `${part.label.slice(0, -'.md'.length)}-note`),
+      kind: 'note',
+      label,
+      body,
+      id: uniqueId(ids, `${label.slice(0, -'.md'.length)}-note`),
       author: 'user',
     };
-  return { ...part, id: uniqueId(ids, part.title) };
+  });
+}
+
+// Where a long note breaks, coarsest first: between paragraphs or before a
+// heading, then between lines, then between characters.
+const NOTE_BREAKS = [/(?<=\n\n)|(?<=\n)(?=#{1,6} )/, /(?<=\n)/, /(?:)/u];
+
+function noteBodies(text: string, maxBytes: number, level = 0): string[] {
+  const bodies: string[] = [];
+  let body = '';
+  let bytes = 0;
+  for (const piece of text.split(NOTE_BREAKS[level])) {
+    const size = Buffer.byteLength(piece, 'utf8');
+    if (bytes + size <= maxBytes) {
+      body += piece;
+      bytes += size;
+      continue;
+    }
+    if (body !== '') bodies.push(body);
+    const parts = size <= maxBytes ? [piece] : noteBodies(piece, maxBytes, level + 1);
+    body = parts.pop() ?? '';
+    bytes = Buffer.byteLength(body, 'utf8');
+    bodies.push(...parts);
+  }
+  bodies.push(body);
+  return bodies;
 }
 
 function uniqueId(ids: Set<string>, text: string): string {

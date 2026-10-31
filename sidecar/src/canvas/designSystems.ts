@@ -18,11 +18,11 @@ import { convertLegacyVersion, legacySummary } from './designSystemConversion.js
 import {
   DOCUMENT_LIMITS,
   documentSectionsSchema,
-  kitGuidance,
   kitModes,
   largestNote,
   tokenValueSchema,
   withNoteAuthors,
+  writtenTextBytes,
 } from './designSystemDocument.js';
 import {
   deletionReceiptPath,
@@ -64,21 +64,6 @@ const kitFilesSchema = sourceFilesSchema.refine((files) => Object.hasOwn(files, 
   message: ENTRY_MESSAGE,
 });
 
-const examplesSchema = sourceFilesSchema
-  .refine(
-    (files) =>
-      Object.values(files).every(
-        (content) => Buffer.byteLength(content, 'utf8') <= DOCUMENT_LIMITS.maxExampleBytes,
-      ),
-    { message: 'An example file is at most 64 KiB. Split it.' },
-  )
-  .refine(
-    (files) =>
-      Object.values(files).reduce((bytes, content) => bytes + Buffer.byteLength(content), 0) <=
-      DOCUMENT_LIMITS.maxExamplesBytes,
-    { message: 'A design system holds at most 512 KiB of examples. Remove some.' },
-  );
-
 const coverSchema = z
   .discriminatedUnion('kind', [
     z.object({ kind: z.literal('preview'), example: sourcePathSchema }).strict(),
@@ -94,7 +79,7 @@ const designSystemObjectSchema = z
     cover: coverSchema,
     sections: documentSectionsSchema,
     files: kitFilesSchema,
-    examples: examplesSchema,
+    examples: sourceFilesSchema,
     // Extracted from a canvas revision, or saved as a copy of another kit version.
     provenance: z
       .union([
@@ -131,8 +116,7 @@ function versionProblem(system: z.infer<typeof designSystemObjectSchema>): strin
   if (missing !== undefined) return `No example ${missing} exists. Add it or name another one.`;
   if (examples.length > DOCUMENT_LIMITS.maxPreviews)
     return `A design system has at most ${String(DOCUMENT_LIMITS.maxPreviews)} previews, its cover included.`;
-  const guidanceBytes = Buffer.byteLength(kitGuidance(system.name, system.sections), 'utf8');
-  if (guidanceBytes > DESIGN_SYSTEM_LIMITS.maxGuidanceBytes)
+  if (writtenTextBytes(system.sections) > DESIGN_SYSTEM_LIMITS.maxGuidanceBytes)
     return `The design system's text is over 16 KiB. Shorten its notes, starting with ${largestNote(system.sections) ?? 'the longest'}.`;
   const documentBytes = Buffer.byteLength(
     JSON.stringify({ ...system, files: undefined, examples: undefined }),
