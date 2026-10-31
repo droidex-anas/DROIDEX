@@ -25,7 +25,6 @@ import {
   writtenTextBytes,
 } from './designSystemDocument.js';
 import {
-  deletionReceiptPath,
   exists,
   flushAncestors,
   isMissing,
@@ -33,7 +32,7 @@ import {
   readSavedFile,
   refuseLinkedPath,
   savedVersions,
-  setMarker,
+  setTombstone,
   systemsRoot,
   tombstonePath,
   versionPath,
@@ -445,11 +444,7 @@ export async function setDesignSystemDeleted(
 ): Promise<void> {
   if (designSystemKind(id) !== 'user') throw canvasError('preset_read_only', BUILT_IN_MESSAGE);
   if ((await latestVersion(id)) === 0) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
-  const receipt = deletionReceiptPath(id, mutationId);
-  if (!(await exists(receipt))) {
-    await setMarker(tombstonePath(id), deleted);
-    await setMarker(receipt, true);
-  }
+  await setTombstone(id, deleted, mutationId);
   announceDesignSystemChange(id);
 }
 

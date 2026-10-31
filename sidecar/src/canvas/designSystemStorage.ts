@@ -37,8 +37,25 @@ export function tombstonePath(id: string): string {
   return join(kitDirectory(id), 'deleted');
 }
 
-export function deletionReceiptPath(id: string, mutationId: string): string {
-  return join(kitDirectory(id), `${identifier(mutationId)}.applied`);
+// One kit's deletes and Undos run one at a time: a duplicate that passed its
+// receipt check beside the original could otherwise land after a later Undo.
+const tombstoneWrites = new Map<string, Promise<void>>();
+
+/** Sets or clears a kit's tombstone once per mutation ID; a repeat changes nothing. */
+export function setTombstone(id: string, deleted: boolean, mutationId: string): Promise<void> {
+  const receipt = join(kitDirectory(id), `${identifier(mutationId)}.applied`);
+  const write = async () => {
+    if (await exists(receipt)) return;
+    await setMarker(tombstonePath(id), deleted);
+    await setMarker(receipt, true);
+  };
+  const written = (tombstoneWrites.get(id) ?? Promise.resolve()).then(write);
+  const settled = written.catch(() => undefined);
+  tombstoneWrites.set(id, settled);
+  void settled.then(() => {
+    if (tombstoneWrites.get(id) === settled) tombstoneWrites.delete(id);
+  });
+  return written;
 }
 
 /** The kit's saved version numbers, unordered; none when it was never saved. */
@@ -126,7 +143,7 @@ export async function writeVersion(
 }
 
 /** Creates or removes an empty marker file in a kit's directory, then flushes it. */
-export async function setMarker(path: string, present: boolean): Promise<void> {
+async function setMarker(path: string, present: boolean): Promise<void> {
   try {
     await refuseLinkedPath(path);
     if (present) await writeNew(path, '').catch(ignoreCode('EEXIST'));

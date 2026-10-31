@@ -452,7 +452,7 @@ test("each note a save changes becomes its saver's, and the history lists who sa
   );
 });
 
-test('a deleted kit leaves the list but stays readable, and restoring it lists it again', async () => {
+test('a deleted kit leaves the list but stays readable, and restoring it lists it again', async (t) => {
   const kit = userKit('deleted-kit');
   const ref = await save(kit);
   const isListed = async () => (await listDesignSystems()).some((entry) => entry.id === kit.id);
@@ -466,6 +466,28 @@ test('a deleted kit leaves the list but stays readable, and restoring it lists i
   assert.equal(await isListed(), true);
   // A delete whose answer was lost and is retried after its Undo is not applied again.
   await setDesignSystemDeleted(kit.id, true, 'delete-once');
+  assert.equal(await isListed(), true);
+
+  // A duplicate that overlaps its delete waits for it, so it cannot land after the Undo.
+  const tombstone = join(canvasDir(), 'design-systems', kit.id, 'deleted');
+  const releaseDuplicate = deferred();
+  let tombstoneOpens = 0;
+  const open = fs.open;
+  const mockedOpen = t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+    if (args[0] === tombstone && ++tombstoneOpens === 2) await releaseDuplicate.promise;
+    return open(...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    mockedOpen.mock.restore();
+    syncBuiltinESMExports();
+  });
+  const first = setDesignSystemDeleted(kit.id, true, 'delete-twice');
+  const duplicate = setDesignSystemDeleted(kit.id, true, 'delete-twice');
+  await first;
+  await setDesignSystemDeleted(kit.id, false, 'undo-twice');
+  releaseDuplicate.resolve();
+  await duplicate;
   assert.equal(await isListed(), true);
 });
 
