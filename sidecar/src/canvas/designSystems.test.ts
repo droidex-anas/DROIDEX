@@ -545,6 +545,7 @@ test('a v1.6 version at its old limits reads as a valid document, builds, and sa
   for (const mode of ['light', 'dark'] as const) {
     const design = await compiler.compile(
       {
+        kind: 'design',
         designId: 'pinned',
         revisionId: 'revision-1',
         generation: 1,

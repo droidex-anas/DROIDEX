@@ -45,6 +45,7 @@ test('a saved token-only extraction compiles all six shared primitives with styl
   for (const mode of ['light', 'dark'] as const) {
     const compiled = await worker.compile(
       {
+        kind: 'design',
         designId: input.from.designId,
         revisionId: input.from.revisionId,
         generation: 1,
@@ -111,6 +112,7 @@ test('extraction keeps owned tokens and primitive modules, reports inherited val
   t.after(() => worker.terminate());
   const compiled = await worker.compile(
     {
+      kind: 'design',
       designId: input.from.designId,
       revisionId: input.from.revisionId,
       generation: 1,
@@ -143,6 +145,7 @@ export function Badge() { return <span className='b'><Label /></span>; }`,
   t.after(() => worker.terminate());
   const compiled = await worker.compile(
     {
+      kind: 'design',
       designId: input.from.designId,
       revisionId: input.from.revisionId,
       generation: 1,

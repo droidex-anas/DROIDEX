@@ -4,7 +4,7 @@ const { mkdtemp, mkdir, rm, writeFile } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const test = require('node:test');
-const { readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const { mayRequestPreviewAsset, readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
@@ -35,4 +35,19 @@ test('the preview host serves an image only under its owning canvas', async (t) 
     await readCanvasPreviewAsset(reference('canvas-b').replace('canvas-b', 'canvas-a'), options),
     null,
   );
+});
+
+test('a kit guest reads fonts and no canvas image; an unbound guest reads nothing', () => {
+  const font = `droidex-canvas-preview://preview/font/${'a'.repeat(64)}`;
+  const image = `droidex-canvas-preview://preview/asset/canvas-a/${'b'.repeat(64)}?sig=c`;
+  const canvasA = { kind: 'canvas', canvasId: 'canvas-a' };
+  const kit = { kind: 'kit' };
+
+  assert.equal(mayRequestPreviewAsset(canvasA, image), true);
+  assert.equal(mayRequestPreviewAsset({ kind: 'canvas', canvasId: 'canvas-b' }, image), false);
+  assert.equal(mayRequestPreviewAsset(canvasA, font), true);
+  assert.equal(mayRequestPreviewAsset(kit, font), true);
+  assert.equal(mayRequestPreviewAsset(kit, image), false);
+  assert.equal(mayRequestPreviewAsset(null, font), false);
+  assert.equal(mayRequestPreviewAsset(null, image), false);
 });

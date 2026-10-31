@@ -10,6 +10,18 @@ const { join } = require('node:path');
 const HASH = '[0-9a-f]{64}';
 const CANVAS_ASSET = new RegExp(`^/asset/([A-Za-z0-9_-]{1,128})/(${HASH})$`);
 const KIT_FONT = new RegExp(`^/font/(${HASH})$`);
+const IMAGE_CANVAS = /^\/asset\/([A-Za-z0-9_-]{1,128})\//;
+
+/**
+ * Whether a guest with this binding may request this preview URL: any bound
+ * guest reads kit fonts, and only a guest bound to a canvas reads its images.
+ */
+function mayRequestPreviewAsset(binding, requestUrl) {
+  if (binding === null) return false;
+  const image = IMAGE_CANVAS.exec(new URL(requestUrl).pathname);
+  if (!image) return true;
+  return binding.kind === 'canvas' && image[1] === binding.canvasId;
+}
 
 async function readCanvasPreviewAsset(requestUrl, { canvasRoot, fontRoot, secret }) {
   const url = new URL(requestUrl);
@@ -73,4 +85,4 @@ function imageMediaType(data) {
   return null;
 }
 
-module.exports = { readCanvasPreviewAsset, imageMediaType };
+module.exports = { readCanvasPreviewAsset, mayRequestPreviewAsset, imageMediaType };

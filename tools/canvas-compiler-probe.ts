@@ -26,7 +26,7 @@ import { join, relative, resolve } from 'node:path';
 import process from 'node:process';
 import {
   RUNTIME_UNAVAILABLE,
-  type CompileInput,
+  type DesignCompileInput,
   type CompilerRequest,
   type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
@@ -242,10 +242,11 @@ function probeTarget(appPath: string | undefined): ProbeTarget {
   };
 }
 
-function compileInput(files?: CompileInput['files']): CompileInput {
+function compileInput(files?: DesignCompileInput['files']): DesignCompileInput {
   const example = DROIDEX_DESIGN_SYSTEM.examples['cover.tsx'];
   if (files === undefined && example === undefined) fail('the design kit ships no cover');
   return {
+    kind: 'design',
     designId: 'canvas-compiler-probe',
     revisionId: 'canvas-compiler-probe',
     generation: 1,

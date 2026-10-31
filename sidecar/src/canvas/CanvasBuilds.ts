@@ -16,7 +16,7 @@ import { CanvasBuildStates, designKey } from './canvasBuildStates.js';
 import type { BuildCommit, BuildTarget, CanvasBuildHost } from './canvasBuildHost.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasManifest } from './canvasManifest.js';
-import type { CompiledDesign, CompileInput } from './compiler.js';
+import type { CompiledDesign, DesignCompileInput } from './compiler.js';
 import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesses.js';
 import type { BuildResult } from './canvasBuildCache.js';
 import type {
@@ -355,7 +355,8 @@ export class CanvasBuilds {
     job: RunningBuild,
     files: SourceFiles,
   ): Promise<CompiledDesign> {
-    const input: CompileInput = {
+    const input: DesignCompileInput = {
+      kind: 'design',
       designId: job.designId,
       revisionId: job.revisionId,
       generation: job.generation,
@@ -489,7 +490,7 @@ export class CanvasBuilds {
   }
 }
 
-const realDeadline: BuildDeadline = (onOverdue) => {
+export const realDeadline: BuildDeadline = (onOverdue) => {
   // A pending build must not be a reason the sidecar stays up.
   const timer = setTimeout(onOverdue, CANVAS_LIMITS.buildDeadlineMs).unref();
   return () => {

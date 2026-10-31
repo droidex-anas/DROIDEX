@@ -30,7 +30,9 @@ import {
   type SourceFiles,
 } from './schema.js';
 
-export interface CompileInput {
+/** One frame revision's compile. */
+export interface DesignCompileInput {
+  kind: 'design';
   designId: string;
   revisionId: string;
   /** The owning lifecycle generation, carried back so a result can be pinned. */
@@ -40,6 +42,16 @@ export interface CompileInput {
   /** The canvas's rule at the time the build started. */
   designSystemAdherence: DesignSystemAdherence;
 }
+
+/** One example of a kit version: no revision to select in, no kit to be held to. */
+export interface KitPreviewCompileInput {
+  kind: 'kitPreview';
+  system: DesignSystemRef;
+  /** The example's source, compiled as the entry of a one-file design. */
+  example: string;
+}
+
+export type CompileInput = DesignCompileInput | KitPreviewCompileInput;
 
 export interface CompiledDesign {
   /** sha256 of `html`, so identical input names one artifact. */

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { CanvasBuilds } from './canvas/CanvasBuilds.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { KitPreviews } from './canvas/kitPreviews.js';
 import type { CanvasScope } from './canvas/protocol.js';
 import type { ServerEvent } from './protocol.js';
 import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
@@ -132,7 +133,7 @@ test('shutdown refuses an admitted pane arrange before build storage drains', as
     fs,
   });
   const ready = Promise.resolve(workspace);
-  store.closing.push(() => shutdownCanvas(builds, scopes, ready, workspace));
+  store.closing.push(() => shutdownCanvas(builds, new KitPreviews(), scopes, ready, workspace));
   const { canvasId } = await workspace.createCanvas('app-1', 'create-shutdown-canvas');
   const scope: CanvasScope = {
     origin: 'user',
@@ -202,7 +203,7 @@ test('shutdown refuses an admitted pane arrange before build storage drains', as
     shutdownSessions: async () => undefined,
     shutdownAutomations: async () => undefined,
     shutdownCanvas: () =>
-      shutdownCanvas(builds, scopes, ready, workspace).then(() => {
+      shutdownCanvas(builds, new KitPreviews(), scopes, ready, workspace).then(() => {
         canvasClosed = true;
       }),
     shutdownUsage: async () => undefined,

@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
+import { documentIdSchema } from './designSystemDocument.js';
 import { DESIGN_SYSTEM_LIMITS, designSystemSchema } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
@@ -14,6 +15,7 @@ import {
   canvasIdentifierSchema,
   canvasNameSchema,
   createFramesInputSchema,
+  designSystemRefSchema,
   designSystemVersionRefSchema,
   designSystemAdherenceSchema,
   editElementInputSchema,
@@ -274,6 +276,31 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       mutationId: canvasIdentifierSchema,
       ...kitName,
       source: designSystemSourceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readKitPreview'),
+      ...request,
+      ref: designSystemRefSchema,
+      item: documentIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.saveKitCapture'),
+      ...request,
+      ref: designSystemRefSchema,
+      item: documentIdSchema,
+      png: base64Schema(MAX_COVER_BASE64_LENGTH),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readKitCapture'),
+      ...request,
+      ref: designSystemRefSchema,
+      item: documentIdSchema,
     })
     .strict(),
   z

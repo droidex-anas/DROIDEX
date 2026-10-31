@@ -30,6 +30,7 @@ import type {
 } from './canvasAnnotationSchema.js';
 import type { DocumentSection } from './designSystemDocument.js';
 import type { DesignSystemDocumentView } from './designSystemCommands.js';
+import type { KitPreview } from './kitPreviews.js';
 import type {
   DesignSystemCover,
   DesignSystemSource,
@@ -496,6 +497,18 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
+  // A kit version's previews in one mode. `item` is a preview's id, `cover` or
+  // `typography`. A capture is a base64 PNG the document took from a live
+  // preview; a later one replaces it.
+  | { type: 'canvas.readKitPreview'; requestId: string; ref: DesignSystemRef; item: string }
+  | {
+      type: 'canvas.saveKitCapture';
+      requestId: string;
+      ref: DesignSystemRef;
+      item: string;
+      png: string;
+    }
+  | { type: 'canvas.readKitCapture'; requestId: string; ref: DesignSystemRef; item: string }
   // The local library (spec §7). A new item is named by its mutationId, so a
   // retried save finds the copy it already made. `thumbnail` is a base64 PNG
   // of that revision, which the item keeps as its own; a listing carries none,
@@ -575,6 +588,8 @@ export type CanvasReply =
   // Import diagnostics name what could not become a token; unmapped tokens are
   // read from the saved kit instead.
   | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
+  | { kind: 'kitPreview'; preview: KitPreview }
+  | { kind: 'kitCapture'; png: string | null }
   | { kind: 'libraryItem'; item: LibraryItem }
   | { kind: 'libraryItems'; items: LibraryItem[] }
   | { kind: 'libraryThumbnail'; png: string | null }

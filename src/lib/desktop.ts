@@ -307,7 +307,7 @@ export interface DroidexApi {
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
   /** Null where previews cannot run, such as a Remote browser. */
   canvasPreviewUrl: string | null;
-  canvasPreviewBind: (guestId: number, canvasId: string) => Promise<boolean>;
+  canvasPreviewBind: (guestId: number, binding: PreviewGuestBinding) => Promise<boolean>;
   canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
   canvasPreviewCapture: (
     request: CanvasPreviewCaptureRequest,
@@ -832,10 +832,16 @@ export function canvasPreviewUrl(): string | null {
   return desktopApi()?.canvasPreviewUrl ?? null;
 }
 
-export async function bindCanvasPreviewGuest(guestId: number, canvasId: string): Promise<boolean> {
+/** What a preview guest may read: one canvas's images and kit fonts, or kit fonts only. */
+export type PreviewGuestBinding = { kind: 'canvas'; canvasId: string } | { kind: 'kit' };
+
+export async function bindCanvasPreviewGuest(
+  guestId: number,
+  binding: PreviewGuestBinding,
+): Promise<boolean> {
   const api = desktopApi();
   if (!api) return false;
-  return api.canvasPreviewBind(guestId, canvasId);
+  return api.canvasPreviewBind(guestId, binding);
 }
 
 /**

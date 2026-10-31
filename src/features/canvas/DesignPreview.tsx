@@ -265,7 +265,7 @@ export function PreviewGuestFrame({
       const guestId = guest.getWebContentsId();
       let bound = false;
       try {
-        bound = await bindCanvasPreviewGuest(guestId, canvasId);
+        bound = await bindCanvasPreviewGuest(guestId, { kind: 'canvas', canvasId });
       } catch (error) {
         console.error('A Canvas preview could not be bound to its canvas:', error);
       }

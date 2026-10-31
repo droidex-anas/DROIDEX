@@ -66,6 +66,8 @@ const REPLY_KINDS = new Set([
   'designSystem',
   'designSystemVersions',
   'designSystemSaved',
+  'kitPreview',
+  'kitCapture',
   'libraryItem',
   'libraryItems',
   'libraryThumbnail',
@@ -90,7 +92,7 @@ const MAX_REVISION_DIFF_BYTES = 256 * 1024;
 // `LIBRARY_LIST_LIMIT` in the sidecar's canvasLibrary.ts.
 const MAX_LIBRARY_ITEMS = 50;
 // A tile's picture: `MAX_THUMBNAIL_BASE64_LENGTH` in the sidecar's canvasLibrary.ts
-// and `MAX_COVER_BASE64_LENGTH` in its canvasCovers.ts.
+// and `MAX_COVER_BASE64_LENGTH` in its canvasCovers.ts, which kit captures share.
 export const MAX_TILE_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
 // The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
 const MAX_FRAME_DIMENSION_PX = 8192;
@@ -195,8 +197,11 @@ function isReply(value: unknown): boolean {
       return isLibraryItem(value.item);
     case 'libraryItems':
       return boundedList(value.items, MAX_LIBRARY_ITEMS, isLibraryItem);
+    case 'kitPreview':
+      return isKitPreview(value.preview);
     case 'libraryThumbnail':
     case 'cover':
+    case 'kitCapture':
       return (
         value.png === null ||
         (typeof value.png === 'string' && value.png.length <= MAX_TILE_BASE64_LENGTH)
@@ -309,6 +314,14 @@ function isArtifact(value: unknown): boolean {
     typeof value.html === 'string' &&
     value.html.length > 0 &&
     value.html.length <= MAX_ARTIFACT_BYTES
+  );
+}
+
+function isKitPreview(value: unknown): boolean {
+  if (!record(value)) return false;
+  if (value.status === 'ready') return isArtifact(value.artifact);
+  return (
+    value.status === 'failed' && boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
   );
 }
 

@@ -67,7 +67,8 @@ function textOfAtMost(maxBytes: number, what: string) {
   });
 }
 
-const idSchema = z.string().regex(/^[a-z0-9-]{1,48}$/, ID_MESSAGE);
+/** A section or item id, which also names a preview's capture file. */
+export const documentIdSchema = z.string().regex(/^[a-z0-9-]{1,48}$/, ID_MESSAGE);
 const titleSchema = z.string().trim().min(1).max(DOCUMENT_LIMITS.maxTitleLength);
 const tokenNoteSchema = textOfAtMost(DOCUMENT_LIMITS.maxTokenNoteBytes, 'A usage note').optional();
 const itemNoteSchema = textOfAtMost(
@@ -78,7 +79,7 @@ const itemNoteSchema = textOfAtMost(
 const noteSchema = z
   .object({
     kind: z.literal('note'),
-    id: idSchema,
+    id: documentIdSchema,
     label: z
       .string()
       .max(48, LABEL_MESSAGE)
@@ -103,7 +104,7 @@ const tokenSchema = z.union([
 const tokenGroupSchema = z
   .object({
     kind: z.literal('group'),
-    id: idSchema,
+    id: documentIdSchema,
     title: titleSchema,
     tokens: z.array(tokenSchema).max(DOCUMENT_LIMITS.maxTokens),
   })
@@ -113,7 +114,7 @@ const { previewWidthPx, previewHeightPx } = DOCUMENT_LIMITS;
 const previewSchema = z
   .object({
     kind: z.literal('preview'),
-    id: idSchema,
+    id: documentIdSchema,
     title: titleSchema,
     example: sourcePathSchema,
     width: z.number().int().min(previewWidthPx.min).max(previewWidthPx.max),
@@ -125,14 +126,14 @@ const previewSchema = z
 const assetSchema = z
   .object({
     kind: z.literal('asset'),
-    id: idSchema,
+    id: documentIdSchema,
     name: titleSchema,
     assetId: z.string().regex(/^[0-9a-f]{64}$/),
     note: itemNoteSchema,
   })
   .strict();
 
-const sectionFields = { id: idSchema, title: titleSchema };
+const sectionFields = { id: documentIdSchema, title: titleSchema };
 const items = <Item extends z.ZodTypeAny>(item: Item) =>
   z.array(item).max(DOCUMENT_LIMITS.maxItemsPerSection);
 const noteOrPreview = z.discriminatedUnion('kind', [noteSchema, previewSchema]);
