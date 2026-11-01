@@ -90,8 +90,8 @@ function documentFamilies(faces: KitFontFace[]): Map<string, string> {
 function fontFace(face: KitFontFace, families: ReadonlyMap<string, string>): FontFace[] {
   const family = families.get(face.family.toLowerCase());
   if (family === undefined) return [];
-  const bytes = Uint8Array.from(atob(face.woff2), (character) => character.charCodeAt(0));
   try {
+    const bytes = Uint8Array.from(atob(face.woff2), (character) => character.charCodeAt(0));
     return [
       new FontFace(family, bytes, {
         style: face.style,
@@ -100,7 +100,7 @@ function fontFace(face: KitFontFace, families: ReadonlyMap<string, string>): Fon
       }),
     ];
   } catch {
-    // A descriptor the browser does not accept leaves the face out.
+    // Data or a descriptor the browser does not accept leaves the face out.
     return [];
   }
 }

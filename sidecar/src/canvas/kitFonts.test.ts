@@ -33,6 +33,8 @@ test("a kit's document gets the WOFF2 faces its stylesheets embed, and none it w
     /* @font-face { font-family: Commented; src: url(data:font/woff2;base64,${inter}); } */
     @font-face { font-family: Fetched; src: url(https://fonts.example/brand.woff2); }
     @font-face { font-family: Fake; src: url(data:font/woff2;base64,${notAFont}); }
+    @font-face { font-family: Padded; src: url(data:font/woff2;base64,${inter.slice(0, 8)}=${inter.slice(8)}); }
+    @font-face { font-family: Quoted; src: url('data:font/woff2;base64,${inter}'); }
     @font-face {
       font-family: 'Brand Sans';
       font-weight: 700;
@@ -43,6 +45,13 @@ test("a kit's document gets the WOFF2 faces its stylesheets embed, and none it w
   `;
   const kit = await readDesignSystem(ref);
   assert.deepEqual(readKitFonts({ ...kit, files: { ...kit.files, 'tokens.css': brand } }), [
+    {
+      family: 'Quoted',
+      style: 'normal',
+      weight: 'normal',
+      unicodeRange: 'U+0-10FFFF',
+      woff2: inter,
+    },
     { family: 'Brand Sans', style: 'normal', weight: '700', unicodeRange: 'U+0-7F', woff2: inter },
   ]);
 });

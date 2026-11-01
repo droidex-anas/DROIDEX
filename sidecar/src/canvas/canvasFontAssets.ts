@@ -7,14 +7,14 @@ import { lstat, mkdir, open, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { droidexUserDataDir } from '../droidexPaths.js';
 
-const FONT_URL = /url\(data:font\/woff2;base64,([A-Za-z0-9+/=]+)\)/gi;
+const FONT_URL = /url\(\s*(['"]?)data:font\/woff2;base64,([A-Za-z0-9+/=]+)\1\s*\)/gi;
 const MAX_FONT_BYTES = 1024 * 1024;
 
 export async function hostKitFonts(css: string): Promise<string> {
   const matches = [...css.matchAll(FONT_URL)];
   if (matches.length === 0) return css;
   const replacements = new Map<string, string>();
-  for (const [reference, encoded] of matches) {
+  for (const [reference, , encoded] of matches) {
     const bytes = woff2Bytes(encoded);
     if (!bytes) throw new Error('Kit font is not a valid WOFF2 file of at most 1 MiB.');
     const fontId = createHash('sha256').update(bytes).digest('hex');
@@ -26,15 +26,21 @@ export async function hostKitFonts(css: string): Promise<string> {
 
 /** The base64 of the first valid WOFF2 file an `@font-face` `src` embeds, or null. */
 export function embeddedWoff2(src: string): string | null {
-  for (const [, encoded] of src.matchAll(FONT_URL)) if (woff2Bytes(encoded)) return encoded;
+  for (const [, , encoded] of src.matchAll(FONT_URL)) if (woff2Bytes(encoded)) return encoded;
   return null;
 }
 
 function woff2Bytes(encoded: string): Buffer | null {
-  if (encoded.length > 4 * Math.ceil(MAX_FONT_BYTES / 3)) return null;
+  if (encoded.length > 4 * Math.ceil(MAX_FONT_BYTES / 3) || !isBase64(encoded)) return null;
   const bytes = Buffer.from(encoded, 'base64');
   if (bytes.length < 4 || bytes.length > MAX_FONT_BYTES) return null;
   return bytes.toString('ascii', 0, 4) === 'wOF2' ? bytes : null;
+}
+
+/** Base64 `atob` decodes as `Buffer` does: padding only at the end and a length it can have. */
+function isBase64(encoded: string): boolean {
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return false;
+  return encoded.endsWith('=') ? encoded.length % 4 === 0 : encoded.length % 4 !== 1;
 }
 
 async function saveFont(fontId: string, bytes: Buffer): Promise<void> {
