@@ -64,6 +64,13 @@ export function changedTokenValues(
   return changed;
 }
 
+/** What a note's label reads as: "1-rules.md" is "Rules", "design-engineering.md" "Design engineering". */
+export function noteTitle(label: string): string {
+  const stem = label.replace(/\.md$/, '');
+  const words = stem.replace(/^\d+-/, '').replaceAll('-', ' ').trim() || stem;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** The names a new or renamed token, note or preview may not take. */
 export function documentNames(sections: DocumentSection[]) {
   const tokenNames = new Set<string>();

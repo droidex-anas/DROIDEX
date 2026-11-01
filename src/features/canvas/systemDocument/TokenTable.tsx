@@ -202,7 +202,7 @@ const TokenRow = memo(function TokenRow({
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
           <span
             className={cn(
-              'truncate font-mono text-code',
+              'truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -386,14 +386,14 @@ function ValueCell({
             ),
           );
         }}
-        className="font-mono text-code text-secondary"
+        className="text-body tabular-nums text-secondary"
       />
     );
   else
     shown = (
       <span
         className={cn(
-          'truncate font-mono text-code',
+          'truncate text-body tabular-nums',
           isRemoved ? 'text-muted line-through' : 'text-secondary',
         )}
       >

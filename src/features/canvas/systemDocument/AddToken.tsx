@@ -93,7 +93,7 @@ export function AddToken({
             setName(event.target.value);
             setProblem(null);
           }}
-          className="w-1/3 text-code"
+          className="w-1/3"
         />
         <Input
           variant="compact"
@@ -105,7 +105,7 @@ export function AddToken({
             setValue(event.target.value);
             setProblem(null);
           }}
-          className="flex-1 text-code"
+          className="flex-1 tabular-nums"
         />
         <Button type="submit" variant="secondary" size="sm">
           Add

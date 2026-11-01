@@ -1,8 +1,9 @@
-// The nav's search (spec §5): tokens match by name or value, notes by label or
-// text, previews and assets by title. Sections with no match drop out.
+// The nav's search (spec §5): tokens match by name or value, notes by label,
+// the title it reads as or text, previews and assets by title. Sections with no
+// match drop out.
 
 import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
-import { tokenKey, withItems, type DocumentItem } from './documentSections';
+import { noteTitle, tokenKey, withItems, type DocumentItem } from './documentSections';
 
 export function searchSections(sections: DocumentSection[], query: string): DocumentSection[] {
   const needle = query.trim().toLowerCase();
@@ -19,7 +20,9 @@ export function searchSections(sections: DocumentSection[], query: string): Docu
           return tokens.length > 0 ? [{ ...item, tokens }] : [];
         }
         case 'note':
-          return matches(item.label) || matches(item.body) ? [item] : [];
+          return matches(item.label) || matches(noteTitle(item.label)) || matches(item.body)
+            ? [item]
+            : [];
         case 'preview':
           return matches(item.title) ? [item] : [];
         case 'asset':

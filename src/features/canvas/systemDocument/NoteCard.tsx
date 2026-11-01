@@ -1,6 +1,7 @@
-// A note of the document (spec §5, §6): a raised card headed by its file-like
-// label, with an Agent badge when the agent wrote it, and its markdown at the
-// reading measure. Edit turns it into its label field and a text area.
+// A note of the document (spec §5, §6): a raised card headed by the title its
+// file-like label reads as, with an Agent badge when the agent wrote it, and
+// its markdown at the reading measure. Edit turns it into its label field and a
+// text area.
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Pencil } from '@droidex/icons';
@@ -9,12 +10,13 @@ import { ProseFileLinks } from '../../../components/transcript/ProseFileLink';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
 import { pushEscapeLayer } from '../../../components/ui/escapeStack';
 import type { DocumentNote } from '../designSystemDocumentProtocol';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import type { DraftChange } from './documentDraft';
-import type { DraftMark } from './documentSections';
+import { noteTitle, type DraftMark } from './documentSections';
 import { UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const NOTE_LABEL = /^[a-z0-9][a-z0-9-]*\.md$/;
@@ -58,6 +60,7 @@ export function NoteCard({
   const [expanded, setExpanded] = useState(() => !isCollapsed(kitId, note.id));
   const [editing, setEditing] = useState(isNew);
   const isRemoved = mark === 'removed';
+  const title = noteTitle(note.label);
 
   const toggle = () => {
     rememberCollapsed(kitId, note.id, expanded);
@@ -77,14 +80,16 @@ export function NoteCard({
           onClick={toggle}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2.5 text-left text-muted transition-colors duration-quick ease-out enabled:hover:text-secondary disabled:cursor-default"
         >
-          <span
-            className={cn(
-              'truncate font-mono text-code',
-              isRemoved ? 'text-muted line-through' : 'text-primary',
-            )}
-          >
-            {note.label}
-          </span>
+          <Tooltip label={note.label} className="min-w-0">
+            <span
+              className={cn(
+                'min-w-0 truncate text-body-strong',
+                isRemoved ? 'text-muted line-through' : 'text-primary',
+              )}
+            >
+              {title}
+            </span>
+          </Tooltip>
           {note.author === 'agent' && <Badge tone="accent">Agent</Badge>}
           <span className="flex-1" />
           {!isRemoved && !editing && (
@@ -99,11 +104,11 @@ export function NoteCard({
         </button>
         {onChange &&
           (isRemoved ? (
-            <UndoRemove label={note.label} removedKey={note.id} onChange={onChange} />
+            <UndoRemove label={title} removedKey={note.id} onChange={onChange} />
           ) : (
             !editing && (
               <ActionMenu
-                label={`${note.label} actions`}
+                label={`${title} actions`}
                 actions={[
                   {
                     label: 'Edit',
@@ -215,11 +220,10 @@ function NoteEditor({
           setLabel(event.target.value);
           setProblem(null);
         }}
-        className="text-code"
       />
       <textarea
         ref={bodyRef}
-        aria-label={`Text of ${note.label}`}
+        aria-label={`Text of ${noteTitle(note.label)}`}
         value={body}
         rows={8}
         placeholder="Markdown the agent reads as one of this kit's rules"
