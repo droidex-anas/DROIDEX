@@ -210,7 +210,7 @@ test('a compound value one token holds is on the kit, and a number in a style ob
     'main.tsx': `import { Card } from '@droidex/design-system';
 export default () => (
   <Card style={{ borderRadius: '4px 8px' }}>
-    <p style={{ padding: 13, margin: -16, gap: 0, fontSize: 13 }}>Plans</p>
+    <p style={{ padding: 13, margin: -7, gap: 0, fontSize: 13 }}>Plans</p>
     <p style={{ padding: 8 * 2, fontSize: 14 + 2 }}>Total</p>
     <svg><text fontSize={13}>1</text></svg>
     <Chart layout={{ padding: 13 }} />
@@ -220,6 +220,7 @@ export default () => (
   };
   const result = checkDesignSystemAdherence(files, kit, 'strict');
   assert.deepEqual(places(result.diagnostics), [
+    'design_system_spacing main.tsx:4',
     'design_system_spacing main.tsx:4',
     'design_system_type main.tsx:4',
   ]);

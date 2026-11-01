@@ -316,7 +316,7 @@ function styleNumberProperty(literal: ts.NumericLiteral): string | null {
   const assignment = value.parent;
   if (!ts.isPropertyAssignment(assignment) || assignment.initializer !== value) return null;
   if (!isStyleObject(assignment.parent)) return null;
-  return styledProperty(literal);
+  return styledProperty(value);
 }
 
 function isStyleObject(object: ts.Node): boolean {
