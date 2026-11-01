@@ -1,6 +1,7 @@
 // The save bar (spec §6): the draft's change count with Discard and Save, or,
 // when another version was saved since the draft's base, Discard mine and Save
-// over it. useSaveDraft owns saving; the bar shows it.
+// over it. useSaveDraft owns saving; the bar shows it. In a review of the
+// agent's proposal (§11) the bar is ProposalBar, with Discard and Accept.
 
 import { useRef, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
@@ -9,6 +10,10 @@ import { pushToast } from '../../../lib/toast';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage, CanvasRequestError } from '../client';
 import { currentDraft, discardDraft, type DocumentDraft } from './documentDraft';
+import type { ProposalDecision } from './proposalReview';
+
+const BAR_CLASS =
+  'sticky bottom-4 mx-8 mb-4 flex animate-fade-in items-center gap-2 rounded-lg bg-raised py-2 pl-4 pr-2 shadow-lg';
 
 export type SaveState =
   | { status: 'idle' }
@@ -88,11 +93,7 @@ export function SaveBar({
 }) {
   const conflict = state.status === 'conflict' ? state.latestVersion : null;
   return (
-    <div
-      role="region"
-      aria-label="Unsaved changes"
-      className="sticky bottom-4 mx-8 mb-4 flex items-center gap-2 rounded-lg bg-raised py-2 pl-4 pr-2 shadow-lg"
-    >
+    <div role="region" aria-label="Unsaved changes" className={BAR_CLASS}>
       <p role="status" className="min-w-0 flex-1 truncate text-body text-primary">
         {conflict === null
           ? `${String(count)} unsaved ${count === 1 ? 'change' : 'changes'}`
@@ -113,6 +114,57 @@ export function SaveBar({
           {conflict === null ? 'Save' : `Save over v${String(conflict)}`}
         </Button>
       </Tooltip>
+    </div>
+  );
+}
+
+/**
+ * `latestVersion` is the version on screen, which the proposal replaces;
+ * the proposal is stale when it was made on an earlier one.
+ */
+export function ProposalBar({
+  latestVersion,
+  isStale,
+  hasDraft,
+  decision,
+  onAccept,
+  onDiscard,
+}: {
+  latestVersion: number;
+  isStale: boolean;
+  /** Accept waits for the user's own edits to be saved or discarded. */
+  hasDraft: boolean;
+  decision: ProposalDecision;
+  onAccept: () => void;
+  onDiscard: () => void;
+}) {
+  const latest = `v${String(latestVersion)}`;
+  let status = 'Agent proposal';
+  if (hasDraft) status = 'Agent proposal · Save or discard your edits first';
+  else if (isStale) status = `Agent proposal · ${latest} was saved since`;
+  return (
+    <div role="region" aria-label="Agent proposal" className={BAR_CLASS}>
+      <p role="status" className="min-w-0 flex-1 truncate text-body text-primary">
+        {status}
+      </p>
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={decision === 'discarding'}
+        disabled={decision !== 'idle'}
+        onClick={onDiscard}
+      >
+        Discard
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        loading={decision === 'accepting'}
+        disabled={decision !== 'idle' || hasDraft}
+        onClick={onAccept}
+      >
+        {isStale ? `Accept over ${latest}` : `Accept as v${String(latestVersion + 1)}`}
+      </Button>
     </div>
   );
 }

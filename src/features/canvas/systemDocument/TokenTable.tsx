@@ -16,7 +16,7 @@ import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
 import { modeValue, tokenValueProblem } from './specimenStyle';
 import { LiveSwatch, Specimen, Swatch } from './TokenSpecimens';
-import { UndoRemove, UnsavedMark } from './UnsavedMark';
+import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TOKEN_NOTE_BYTES = 400;
 const MAX_TITLE_LENGTH = 120;
@@ -87,6 +87,7 @@ export function TokenTable({
             {group.title}
           </h3>
         )}
+        <AddedLabel mark={marks.get(group.id)} />
         <span className="flex-1" />
         {onChange &&
           (isRemoved ? (

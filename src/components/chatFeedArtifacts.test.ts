@@ -114,3 +114,44 @@ test('replay that batches calls before results keeps the card and the other tool
   const group = items.at(-1);
   assert.deepEqual(group?.type === 'tools' && group.events, [readCall, readResult]);
 });
+
+function themeTool(toolUseId: string, designSystem?: Activity['designSystem']): TranscriptEvent[] {
+  const activity = { toolUseId, action: 'theme' as const, designIds: [], message: 'theme done' };
+  return [
+    ev({
+      kind: 'tool_call',
+      toolName: 'canvas_theme',
+      toolUseId,
+      canvasActivity: { ...activity, state: 'running' },
+    }),
+    ev({
+      kind: 'tool_result',
+      toolUseId,
+      text: '{}',
+      canvasActivity: {
+        ...activity,
+        state: 'completed',
+        ...(designSystem ? { designSystem } : {}),
+      },
+    }),
+  ];
+}
+
+test('a kit the turn saved or proposed is one chip per kit and outcome, and a read is none', () => {
+  const proposed = { id: 'acme', version: 1, status: 'proposed' as const };
+  const events = [
+    user('Make a design system, then refine it'),
+    ...themeTool('read'),
+    ...themeTool('save', { id: 'acme', version: 1, status: 'saved' }),
+    ...themeTool('propose', proposed),
+    ...themeTool('propose-again', proposed),
+    answer('Saved Acme and proposed a change to it.'),
+  ];
+  const chips = buildGroupedFeed(events, false).flatMap((item) =>
+    item.type === 'canvas_artifact' && item.activity.action === 'theme'
+      ? [`${item.activity.designSystem.status}:${item.activity.toolUseId}`]
+      : [],
+  );
+
+  assert.deepEqual(chips, ['saved:save', 'proposed:propose']);
+});

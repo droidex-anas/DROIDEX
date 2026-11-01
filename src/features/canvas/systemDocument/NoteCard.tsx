@@ -15,7 +15,7 @@ import type { DocumentNote } from '../designSystemDocumentProtocol';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import type { DraftChange } from './documentDraft';
 import type { DraftMark } from './documentSections';
-import { UndoRemove, UnsavedMark } from './UnsavedMark';
+import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const NOTE_LABEL = /^[a-z0-9][a-z0-9-]*\.md$/;
 const MAX_LABEL_LENGTH = 48;
@@ -86,6 +86,7 @@ export function NoteCard({
             {note.label}
           </span>
           {note.author === 'agent' && <Badge tone="accent">Agent</Badge>}
+          <AddedLabel mark={mark} />
           <span className="flex-1" />
           {!isRemoved && !editing && (
             <ChevronDown

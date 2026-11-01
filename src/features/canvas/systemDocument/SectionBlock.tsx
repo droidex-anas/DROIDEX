@@ -1,7 +1,7 @@
 // One section of the document (spec §5, §6): a heading with its count and
 // menu, then its notes, token groups, previews and assets in reading order.
 
-import { useRef, type CSSProperties } from 'react';
+import { useContext, useRef, type CSSProperties } from 'react';
 import { ArrowDown, ArrowUp, Pencil, Plus, Trash } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
@@ -21,7 +21,8 @@ import type { KitPreviewing } from './KitPreviewTile';
 import { NoteCard } from './NoteCard';
 import { TokenTable } from './TokenTable';
 import { TypeSpecimen, type TypeSpecimenSize } from './TypeSpecimen';
-import { UndoRemove, UnsavedMark } from './UnsavedMark';
+import { IN_ADDED_SECTION, ProposalMarks } from './proposalReview';
+import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TITLE_LENGTH = 120;
 
@@ -69,6 +70,7 @@ export function SectionBlock({
   editing: SectionEditing | null;
 }) {
   const titleRef = useRef<InlineFieldHandle>(null);
+  const proposal = useContext(ProposalMarks);
   const mark = marks.get(section.id);
   const isRemoved = mark === 'removed';
   const onChange = editing?.onChange ?? null;
@@ -247,6 +249,7 @@ export function SectionBlock({
           )}
           {!isRemoved && <span className="shrink-0 text-caption text-muted">{count}</span>}
         </h2>
+        <AddedLabel mark={mark} />
         <span className="flex-1" />
         {editing &&
           (isRemoved ? (
@@ -267,18 +270,22 @@ export function SectionBlock({
         (section.items.length === 0 ? (
           <EmptySection editing={editing} holdsTokens={holdsTokens} />
         ) : (
-          <div className="flex flex-col gap-6">
-            {itemRuns(section.items).map((run) =>
-              run.kind === 'assets' ? (
-                <div key={run.items[0].id} className="grid grid-cols-3 gap-4">
-                  {run.items.map(renderItem)}
-                </div>
-              ) : (
-                renderItem(run.item)
-              ),
-            )}
-            {typeSpecimen && <TypeSpecimen size={typeSpecimen} previewing={previewing} />}
-          </div>
+          <ProposalMarks.Provider
+            value={proposal && mark === 'added' ? IN_ADDED_SECTION : proposal}
+          >
+            <div className="flex flex-col gap-6">
+              {itemRuns(section.items).map((run) =>
+                run.kind === 'assets' ? (
+                  <div key={run.items[0].id} className="grid grid-cols-3 gap-4">
+                    {run.items.map(renderItem)}
+                  </div>
+                ) : (
+                  renderItem(run.item)
+                ),
+              )}
+              {typeSpecimen && <TypeSpecimen size={typeSpecimen} previewing={previewing} />}
+            </div>
+          </ProposalMarks.Provider>
         ))}
     </section>
   );
@@ -377,6 +384,7 @@ function AssetTile({
         >
           {asset.name}
         </span>
+        <AddedLabel mark={mark} />
         {onChange &&
           (isRemoved ? (
             <UndoRemove label={asset.name} removedKey={asset.id} onChange={onChange} />

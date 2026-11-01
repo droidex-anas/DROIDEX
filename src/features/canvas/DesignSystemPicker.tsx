@@ -3,7 +3,7 @@
 // the chat has a canvas area, and the picker where there is no document to
 // show; its chevron opens the picker everywhere. A chosen kit clears to Auto.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Palette } from 'lucide-react';
 import { ChevronDown, X } from '@droidex/icons';
 import { Button } from '../../components/ui/Button';
@@ -13,17 +13,14 @@ import { cn } from '../../components/ui/cn';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
 import { lacksCanvasTools } from './canvasState';
-import { canvasMessage } from './client';
 import {
   AUTO_DESIGN_SYSTEM,
   chooseDesignSystem,
-  followLatest,
   NEW_CANVAS_KEY,
   useDesignSystemChoice,
   type DesignSystemChoice,
 } from './designSystemChoices';
 import { choiceOf, shownKit } from './designSystemPickerRows';
-import type { KitList } from './designSystemsState';
 import { DesignSystemPickerPanel, PICKER_WIDTH_PX } from './DesignSystemPickerPanel';
 import { useFramePins } from './framePins';
 import { KitThumbnail } from './KitThumbnail';
@@ -31,6 +28,7 @@ import { NewDesignSystemDialog } from './NewDesignSystemDialog';
 import { useOpenCanvasPane } from './openCanvasPane';
 import type { PreviewMode } from './PreviewModeToggle';
 import type { DesignSystemSource, DesignSystemSummary } from './protocol';
+import { useKitList } from './useKitList';
 
 const FROM_PROJECT_PROMPT = 'Create a design system from this project.';
 
@@ -228,44 +226,4 @@ function useFromProject(appSessionId: string | null, close: () => void): (() => 
     close();
     dispatch({ type: 'SEED_COMPOSER', appSessionId, text: FROM_PROJECT_PROMPT });
   };
-}
-
-/**
- * The kits, read once connected, to name a pinned frame's kit and notice a
- * deleted one, and again on every open and every kit change. Each read moves
- * the canvases' choices to their kits' latest versions.
- */
-function useKitList(): { list: KitList; reread: () => void; retry: () => void } {
-  const [list, setList] = useState<KitList>({ status: 'loading' });
-  const [reads, setReads] = useState(0);
-  const isConnected = useStoreSelector((state) => state.connection === 'connected');
-
-  useEffect(() => {
-    if (!isConnected) return;
-    let active = true;
-    canvasClient.designSystems.list().then(
-      (systems) => {
-        if (!active) return;
-        followLatest(systems);
-        setList({ status: 'listed', systems });
-      },
-      (error: unknown) => {
-        if (active) setList({ status: 'failed', message: canvasMessage(error) });
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [reads, isConnected]);
-
-  const reread = useCallback(() => {
-    setReads((count) => count + 1);
-  }, []);
-  useEffect(() => canvasClient.subscribeDesignSystems(reread), [reread]);
-  // A reread keeps the last list on screen; a retry shows the read again.
-  const retry = () => {
-    setList({ status: 'loading' });
-    reread();
-  };
-  return { list, reread, retry };
 }
