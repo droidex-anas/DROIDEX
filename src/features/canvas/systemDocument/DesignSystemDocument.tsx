@@ -282,9 +282,7 @@ function KitDocument({
       },
       onAddImages:
         section.kind === 'assets' && !isRemoved(section.id)
-          ? (images) => {
-              addImages(view, section.id, images, change);
-            }
+          ? (images) => addImages(view, section.id, images, change)
           : null,
     };
   };

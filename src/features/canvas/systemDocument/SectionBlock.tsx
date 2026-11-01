@@ -38,8 +38,8 @@ export interface SectionEditing {
   onChange: (change: DraftChange) => void;
   /** Adds an item at the section's end, or before the item `before` names. */
   onAdd: (kind: 'note' | 'group', before?: string) => void;
-  /** Adds imported images to the section; null where it takes none. */
-  onAddImages: ((images: ImportedImage[]) => void) | null;
+  /** Adds imported images to the section and returns how many did not fit; null where it takes none. */
+  onAddImages: ((images: ImportedImage[]) => number) | null;
 }
 
 export function SectionBlock({

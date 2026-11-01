@@ -23,6 +23,13 @@ export interface ImportedImage {
   name: string;
 }
 
+/** One pick or drop: the images main imported and the files it did not. */
+interface ImageBatch {
+  images: ImportedImage[];
+  unsupported: number;
+  failures: unknown[];
+}
+
 /**
  * A view's image requests. Each result goes to the view's callback as it is
  * when the request settles, so a view that has left or turned read-only takes
@@ -69,18 +76,27 @@ export function useImageRequests<T>(deliver: ((result: T) => void) | null): Imag
 
 /**
  * Imports images from main's picker or from files dropped on the section, and
- * reports each batch's refusals in one toast. `onImported` is null where the
- * kit cannot change, which turns both off: `pick` is null and drops pass through.
+ * reports everything a batch could not add, the kit's image limit included, in
+ * one toast as it lands. `onImported` adds the images and returns how many did
+ * not fit; it is null where the kit cannot change, which turns both off: `pick`
+ * is null and drops pass through.
  */
-export function useKitImageImport(onImported: ((images: ImportedImage[]) => void) | null) {
+export function useKitImageImport(onImported: ((images: ImportedImage[]) => number) | null) {
   const [pending, setPending] = useState(0);
   const [isOver, setOver] = useState(false);
-  const requests = useImageRequests(onImported);
+  const requests = useImageRequests(
+    onImported &&
+      ((batch: ImageBatch) => {
+        const overCap = batch.images.length > 0 ? onImported(batch.images) : 0;
+        const refusal = refusalMessage(batch, overCap);
+        if (refusal) pushToast(refusal, 'error');
+      }),
+  );
 
-  const run = (task: Promise<ImportedImage[]>) => {
+  const run = (task: Promise<ImageBatch>) => {
     if (!onImported) return;
     setPending((count) => count + 1);
-    void requests.add(task.then((images) => (images.length > 0 ? images : null))).finally(() => {
+    void requests.add(task).finally(() => {
       setPending((count) => count - 1);
     });
   };
@@ -94,7 +110,13 @@ export function useKitImageImport(onImported: ((images: ImportedImage[]) => void
     pick:
       onImported &&
       (() => {
-        run(pickImage().then((asset) => (asset ? [{ asset, name: 'Image' }] : [])));
+        run(
+          pickImage().then((asset) => ({
+            images: asset ? [{ asset, name: 'Image' }] : [],
+            unsupported: 0,
+            failures: [],
+          })),
+        );
       }),
     dropHandlers: {
       onDragOver: (event: DragEvent) => {
@@ -118,21 +140,22 @@ export function useKitImageImport(onImported: ((images: ImportedImage[]) => void
   };
 }
 
-/** Adds imported images to a section as asset entries, stopping at the kit's image limit. */
+/**
+ * Adds imported images to a section as asset entries, stopping at the kit's
+ * image limit, and returns how many did not fit.
+ */
 export function addImages(
   view: DesignSystemDocumentView,
   sectionId: string,
   images: ImportedImage[],
   change: (next: DraftChange) => void,
-) {
-  for (const { asset, name } of images) {
+): number {
+  for (const [added, { asset, name }] of images.entries()) {
     const item = freshAsset(currentDraft(view.id) ?? draftOf(view), asset.assetId, name);
-    if (!item) {
-      pushToast(FULL_KIT_MESSAGE, 'error');
-      return;
-    }
+    if (!item) return images.length - added;
     change({ kind: 'addItem', sectionId, item });
   }
+  return 0;
 }
 
 /** Main's image picker into the kit store; a failure is reported and reads as no image. */
@@ -145,30 +168,33 @@ export async function pickImage(): Promise<OwnedAsset | null> {
   }
 }
 
-async function importDropped(files: File[]): Promise<ImportedImage[]> {
-  const images = files.filter((file) => IMAGE_TYPES.has(file.type));
+async function importDropped(files: File[]): Promise<ImageBatch> {
+  const supported = files.filter((file) => IMAGE_TYPES.has(file.type));
   const settled = await Promise.allSettled(
-    images.map(async (file) => ({ asset: await importKitImage(file), name: fileStem(file.name) })),
+    supported.map(async (file) => ({
+      asset: await importKitImage(file),
+      name: fileStem(file.name),
+    })),
   );
-  const failures = settled.flatMap((result) =>
-    result.status === 'rejected' ? [result.reason as unknown] : [],
-  );
-  const refusal = refusalMessage(files.length - images.length, failures);
-  if (refusal) pushToast(refusal, 'error');
-  return settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  return {
+    images: settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
+    unsupported: files.length - supported.length,
+    failures: settled.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason as unknown] : [],
+    ),
+  };
 }
 
-function refusalMessage(unsupported: number, failures: unknown[]): string | null {
-  const skipped = unsupported + failures.length;
-  if (skipped === 0) return null;
-  if (unsupported === 0 && failures.length === 1) return importFailure(failures[0]);
-  const files = skipped === 1 ? '1 file' : `${String(skipped)} files`;
-  if (failures.length === 0) return `${files} skipped: not PNG, JPEG or WebP.`;
+function refusalMessage({ unsupported, failures }: ImageBatch, overCap: number): string | null {
   const reasons = [
     unsupported > 0 ? 'Only PNG, JPEG and WebP images can be added.' : null,
-    importFailure(failures[0]),
-  ];
-  return `${files} skipped. ${reasons.filter((reason) => reason !== null).join(' ')}`;
+    failures.length > 0 ? importFailure(failures[0]) : null,
+    overCap > 0 ? FULL_KIT_MESSAGE : null,
+  ].filter((reason) => reason !== null);
+  const skipped = unsupported + failures.length + overCap;
+  if (skipped === 0) return null;
+  if (skipped === 1) return reasons[0];
+  return `${String(skipped)} files were not added. ${reasons.join(' ')}`;
 }
 
 function fileStem(fileName: string): string {
