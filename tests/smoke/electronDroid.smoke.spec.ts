@@ -458,6 +458,9 @@ test('[E1] Authenticated desktop round trip', async () => {
     XDG_DATA_HOME: profile.data,
     APPDATA: profile.roamingAppData,
     LOCALAPPDATA: profile.localAppData,
+    // Electron main takes its profile from here, so an inherited value would
+    // point this run at another instance's profile.
+    DROIDEX_USER_DATA_DIR: profile.userData,
     // Claude Code's updater installs into XDG_DATA_HOME and links the launcher
     // to it; from this profile that would leave the launcher dangling once the
     // profile is deleted.
@@ -476,7 +479,7 @@ test('[E1] Authenticated desktop round trip', async () => {
   let app: ElectronApplication | undefined;
   try {
     app = await electron.launch({
-      args: [path.resolve('electron/main.cjs'), `--user-data-dir=${profile.userData}`],
+      args: [path.resolve('electron/main.cjs')],
       cwd: process.cwd(),
       env: launchEnv,
     });
