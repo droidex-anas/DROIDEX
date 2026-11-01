@@ -3,7 +3,7 @@
 // side; the other kinds show one value and a specimen in the previewed mode,
 // or a shadow's in both.
 
-import { memo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, useRef, useState, type CSSProperties } from 'react';
 import { Copy, MessageSquareText } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
@@ -13,18 +13,15 @@ import type { DocumentToken, TokenGroup, TokenKind } from '../designSystemDocume
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddToken } from './AddToken';
-import { CellSwatch } from './ColorSwatchInput';
 import type { DraftChange } from './documentDraft';
 import { bareTokenName, tokenKey, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
-import { ShadowValue } from './ShadowValue';
-import { parseShadow } from './shadowLayers';
 import { modeValue } from './specimenStyle';
-import { LiveSwatch, Specimen } from './TokenSpecimens';
+import { Specimen } from './TokenSpecimens';
 import { drawsSpecimen, tokenShape, type TokenShape } from './tokenShape';
-import { TokenValue } from './TokenValue';
 import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
+import { ValueCell } from './ValueCell';
 
 const MAX_TOKEN_NOTE_BYTES = 400;
 const MAX_TITLE_LENGTH = 120;
@@ -200,6 +197,12 @@ const TokenRow = memo(function TokenRow({
 }) {
   const isRemoved = mark === 'removed';
   const edit = isRemoved ? null : onChange;
+  const setValue =
+    edit &&
+    ((mode: PreviewMode, value: string) => {
+      const values = 'value' in token ? { value } : { ...valuesOf(token), [mode]: value };
+      edit({ kind: 'setToken', token: tokenWith(token, values) });
+    });
   const valueCell = (which: 'value' | PreviewMode) => (
     <ValueCell
       token={token}
@@ -209,13 +212,7 @@ const TokenRow = memo(function TokenRow({
       kitId={kitId}
       specimens={specimens}
       isRemoved={isRemoved}
-      onSet={
-        edit
-          ? (next) => {
-              edit({ kind: 'setToken', token: next });
-            }
-          : null
-      }
+      onSet={setValue}
     />
   );
 
@@ -382,88 +379,6 @@ function TokenActions({
         />
       )}
     </>
-  );
-}
-
-const MODE_LABEL: Record<PreviewMode, string> = { light: 'Light', dark: 'Dark' };
-
-function ValueCell({
-  token,
-  which,
-  kind,
-  shape,
-  kitId,
-  specimens,
-  isRemoved,
-  onSet,
-}: {
-  token: DocumentToken;
-  which: 'value' | PreviewMode;
-  kind: TokenKind;
-  shape: TokenShape;
-  kitId: string;
-  specimens: Specimens;
-  isRemoved: boolean;
-  onSet: ((token: DocumentToken) => void) | null;
-}) {
-  const mode: PreviewMode = which === 'dark' ? 'dark' : 'light';
-  const isColorTable = kind === 'colors';
-  // Other tables name the mode only on a row that separates them.
-  const modeLabel = !isColorTable && which !== 'value' ? MODE_LABEL[which] : null;
-  const value = modeValue(token, mode);
-  const label = `${which === 'value' ? 'Value' : `${MODE_LABEL[which]} value`} of ${bareTokenName(token.name)}`;
-  const onCommit =
-    onSet &&
-    ((text: string) => {
-      onSet(
-        tokenWith(token, 'value' in token ? { value: text } : { ...valuesOf(token), [mode]: text }),
-      );
-    });
-  const layers = shape === 'shadow' ? parseShadow(value) : null;
-
-  let shown: ReactNode;
-  // Colours always show both modes; a one-value colour edits its value from Light.
-  if (isColorTable && 'value' in token && which === 'dark')
-    shown = <span className="truncate text-caption text-muted">Same as light</span>;
-  else if (layers)
-    shown = (
-      <ShadowValue
-        value={value}
-        layers={layers}
-        kind={kind}
-        label={label}
-        surfaces={which === 'value' ? [specimens.light, specimens.dark] : [specimens[which]]}
-        isRemoved={isRemoved}
-        onCommit={onCommit}
-      />
-    );
-  else
-    shown = (
-      <TokenValue
-        value={value}
-        kind={kind}
-        label={label}
-        isRemoved={isRemoved}
-        leading={shape === 'color' ? (text) => <LiveSwatch value={text} /> : undefined}
-        onCommit={onCommit}
-      />
-    );
-
-  return (
-    <span className="flex min-h-control-md min-w-0 items-center gap-2">
-      {modeLabel && <span className="w-8 shrink-0 text-caption text-muted">{modeLabel}</span>}
-      {shape === 'color' && (
-        <CellSwatch
-          kitId={kitId}
-          token={token}
-          mode={mode}
-          label={label}
-          style={specimens[mode]}
-          onCommit={onCommit}
-        />
-      )}
-      {shown}
-    </span>
   );
 }
 
