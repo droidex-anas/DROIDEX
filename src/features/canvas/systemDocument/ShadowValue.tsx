@@ -175,14 +175,18 @@ function ShadowEditor({
 }) {
   // Rows keep their fields' typing when a row above them is removed.
   const [rows, setRows] = useState(() => layers.map((layer, id) => ({ id, layer })));
+  // The layers as they opened, written as the edit would be: a value written
+  // another way, such as colour first, stays as written unless a layer changes.
+  const [opening] = useState(() => formatShadow(layers));
   const nextId = useRef(layers.length);
   const addRef = useRef<HTMLButtonElement>(null);
   const edited = formatShadow(rows.map(({ layer }) => layer));
-  const problem = edited === value ? null : tokenValueProblem(kind, edited);
+  const isChanged = edited !== opening;
+  const problem = isChanged ? tokenValueProblem(kind, edited) : null;
   const isEditable = onCommit !== null;
 
   const close = () => {
-    if (onCommit && problem === null && edited !== value) onCommit(edited);
+    if (onCommit && isChanged && problem === null) onCommit(edited);
     onClose();
   };
   useImperativeHandle(ref, () => ({ close }));
