@@ -148,6 +148,14 @@ test('the renderer accepts every design system reply and event the sidecar sends
     proposal: null,
   };
   const fromProject = { name: 'acme', files: ['tailwind.config.ts', 'src/index.css'] };
+  const proposal = {
+    baseVersion: 3,
+    proposedAt: '2026-10-31T12:05:00.000Z',
+    appSessionId: 'app-1',
+    name: 'Paper two',
+    cover: null,
+    sections: DROIDEX_DOCUMENT_SECTIONS,
+  };
   const events: CanvasEvent[] = [
     {
       type: 'canvas.result',
@@ -183,6 +191,12 @@ test('the renderer accepts every design system reply and event the sidecar sends
       requestId: 'req_03',
       ok: true,
       reply: { kind: 'designSystem', system: { ...paper, provenance: { project: fromProject } } },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_03',
+      ok: true,
+      reply: { kind: 'designSystem', system: { ...paper, proposal } },
     },
     {
       type: 'canvas.result',

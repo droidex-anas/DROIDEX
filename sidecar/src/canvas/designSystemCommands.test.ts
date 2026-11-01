@@ -10,6 +10,7 @@ import { CompilerWorker } from './compiler.js';
 import type { DesignSystemDocumentView } from './designSystemCommands.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
+import { proposeDesignSystem } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem, type DesignSystemSource } from './designSystems.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -418,6 +419,64 @@ test('the document saves on its latest version, restores an older one and is ann
   assert.deepEqual(canvas.events.slice(before), [
     { type: 'canvas.designSystemsChanged', id: 'studio' },
   ]);
+});
+
+test('the document reads an agent proposal, and accept and discard answer and are announced', async (t) => {
+  const canvas = await harness(t);
+  await canvas.handle({
+    type: 'canvas.copyDesignSystem',
+    requestId: 'copy',
+    mutationId: 'reviewed',
+    source: { id: 'droidex', version: 1 },
+    name: 'Reviewed',
+  });
+  const propose = async (mutationId: string, name: string, baseVersion: number) => {
+    const kit = await readDesignSystem({ id: 'reviewed', version: baseVersion });
+    await proposeDesignSystem(
+      { ...kit, name },
+      { mutationId, baseVersion, appSessionId: 'chat-one', beforePublish: () => undefined },
+    );
+  };
+  await propose('first', 'Reviewed by the agent', 1);
+  const proposal = (await readKit(canvas, { id: 'reviewed', version: 1 })).proposal;
+  assert.deepEqual(
+    [proposal?.baseVersion, proposal?.appSessionId, proposal?.name],
+    [1, 'chat-one', 'Reviewed by the agent'],
+  );
+
+  const changed = (from: number) =>
+    canvas.events.slice(from).filter((event) => event.type === 'canvas.designSystemsChanged');
+  let before = canvas.events.length;
+  await canvas.handle({
+    type: 'canvas.acceptDesignSystemProposal',
+    requestId: 'accept',
+    mutationId: 'accept',
+    id: 'reviewed',
+    onto: 1,
+  });
+  assert.deepEqual(okReply(canvas, 'accept'), {
+    kind: 'designSystemSaved',
+    ref: { id: 'reviewed', version: 2 },
+    diagnostics: [],
+  });
+  const accepted = await readKit(canvas, { id: 'reviewed', version: 2 });
+  assert.deepEqual(
+    [accepted.name, accepted.savedBy, accepted.proposal],
+    ['Reviewed by the agent', { actor: 'agent', appSessionId: 'chat-one' }, null],
+  );
+
+  assert.ok(changed(before).length > 0, 'an accept tells the lists to refresh');
+
+  await propose('second', 'Never accepted', 2);
+  before = canvas.events.length;
+  await canvas.handle({
+    type: 'canvas.discardDesignSystemProposal',
+    requestId: 'discard',
+    id: 'reviewed',
+  });
+  assert.deepEqual(okReply(canvas, 'discard'), { kind: 'ok' });
+  assert.deepEqual(changed(before), [{ type: 'canvas.designSystemsChanged', id: 'reviewed' }]);
+  assert.equal((await readKit(canvas, { id: 'reviewed', version: 2 })).proposal, null);
 });
 
 async function exportFolder(t: TestContext): Promise<{ parent: string; destination: string }> {

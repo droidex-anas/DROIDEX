@@ -97,6 +97,28 @@ export class DesignSystemRequests {
     reply(event, 'ok');
   }
 
+  /** Saves the agent's proposal as the version after `onto`, the newest the user saw. */
+  async acceptProposal(mutationId: string, id: string, onto: number): Promise<SavedDesignSystem> {
+    const event = await this.send({
+      type: 'canvas.acceptDesignSystemProposal',
+      requestId: requestId(),
+      mutationId,
+      id,
+      onto,
+    });
+    const { ref, diagnostics } = reply(event, 'designSystemSaved');
+    return { ref, diagnostics };
+  }
+
+  async discardProposal(id: string): Promise<void> {
+    const event = await this.send({
+      type: 'canvas.discardDesignSystemProposal',
+      requestId: requestId(),
+      id,
+    });
+    reply(event, 'ok');
+  }
+
   /** `mutationId` names the copy; reuse it to retry a save whose answer was lost. */
   async copy(
     mutationId: string,

@@ -103,8 +103,20 @@ export interface DesignSystemDocumentView {
   /** When and by whom this version was saved; a built-in kit was never saved. */
   savedAt: string | null;
   savedBy: SavedBy | null;
-  /** An agent proposal waiting for review; none until proposals exist. */
-  proposal: null;
+  /** The agent proposal waiting for review, if there is one. */
+  proposal: DesignSystemProposal | null;
+}
+
+/** A kit's pending agent proposal: the version it was made on and the document it proposes. */
+export interface DesignSystemProposal {
+  baseVersion: number;
+  proposedAt: string;
+  /** The chat whose agent proposed it. */
+  appSessionId: string;
+  /** A proposal may rename the kit. */
+  name: string;
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
 }
 
 /** A new kit's source from the dialog's New menu. */
@@ -594,6 +606,16 @@ export type CanvasCommand =
       id: string;
       deleted: boolean;
     }
+  // An agent's pending proposal: accept saves it as the version after `onto`,
+  // the newest the user saw, and discard removes it.
+  | {
+      type: 'canvas.acceptDesignSystemProposal';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      onto: number;
+    }
+  | { type: 'canvas.discardDesignSystemProposal'; requestId: string; id: string }
   | {
       type: 'canvas.copyDesignSystem';
       requestId: string;

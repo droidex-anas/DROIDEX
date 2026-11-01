@@ -263,6 +263,22 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.acceptDesignSystemProposal'),
+      ...request,
+      mutationId: canvasIdentifierSchema,
+      id: canvasIdentifierSchema,
+      onto: kitVersionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.discardDesignSystemProposal'),
+      ...request,
+      id: canvasIdentifierSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.copyDesignSystem'),
       ...request,
       mutationId: canvasIdentifierSchema,

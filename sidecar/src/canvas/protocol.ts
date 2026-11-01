@@ -483,6 +483,16 @@ export type CanvasCommand =
       id: string;
       deleted: boolean;
     }
+  // An agent's pending proposal: accept saves it as the version after `onto`,
+  // the newest the user saw, and discard removes it.
+  | {
+      type: 'canvas.acceptDesignSystemProposal';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      onto: number;
+    }
+  | { type: 'canvas.discardDesignSystemProposal'; requestId: string; id: string }
   | {
       type: 'canvas.copyDesignSystem';
       requestId: string;
