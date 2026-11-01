@@ -149,9 +149,9 @@ class DesignCheck {
         this.classes({ file, line: line() }, node.text);
         const property = styledProperty(node);
         if (property !== null) this.value({ file, line: line() }, property, node.text);
-      } else if (ts.isNumericLiteral(node) && Number(node.text) !== 0 && inStyleObject(node)) {
+      } else if (ts.isNumericLiteral(node) && Number(node.text) !== 0) {
         // React styles a bare number in these properties as that many pixels.
-        const property = styledProperty(node);
+        const property = styleNumberProperty(node);
         if (property !== null && scaleOfProperty(property) !== null)
           this.value({ file, line: line() }, property, `${node.text}px`);
       }
@@ -303,10 +303,27 @@ function styledProperty(literal: ts.Node): string | null {
   return text.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
-/** A value in an object, as React's `style`; a JSX attribute's number is no pixel count. */
-function inStyleObject(literal: ts.Node): boolean {
-  const value = styledValue(literal);
-  return value !== null && ts.isPropertyAssignment(value.parent);
+/**
+ * The CSS property a number is written directly as, in a `style` object:
+ * `style={{ padding: 12 }}`. An operand such as `8 * 2`, a JSX attribute and
+ * other objects' numbers are not pixel styles.
+ */
+function styleNumberProperty(literal: ts.NumericLiteral): string | null {
+  const parent = literal.parent;
+  const negated =
+    ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.MinusToken;
+  const value = negated ? parent : literal;
+  const assignment = value.parent;
+  if (!ts.isPropertyAssignment(assignment) || assignment.initializer !== value) return null;
+  if (!isStyleObject(assignment.parent)) return null;
+  return styledProperty(literal);
+}
+
+function isStyleObject(object: ts.Node): boolean {
+  let holder = object.parent;
+  while (ts.isParenthesizedExpression(holder) || ts.isJsxExpression(holder)) holder = holder.parent;
+  if (!ts.isJsxAttribute(holder) && !ts.isPropertyAssignment(holder)) return false;
+  return ts.isIdentifier(holder.name) && holder.name.text === 'style';
 }
 
 /** The outermost expression a literal is part of the value of, or null for a condition. */
@@ -315,7 +332,6 @@ function styledValue(literal: ts.Node): ts.Node | null {
   while (
     ts.isConditionalExpression(node.parent) ||
     ts.isParenthesizedExpression(node.parent) ||
-    ts.isPrefixUnaryExpression(node.parent) ||
     ts.isBinaryExpression(node.parent) ||
     ts.isTemplateExpression(node.parent) ||
     ts.isTemplateSpan(node.parent) ||
