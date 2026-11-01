@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type {
+  DocumentAsset,
   DocumentNote,
   DocumentSection,
   DocumentToken,
@@ -11,6 +12,7 @@ import {
   currentDraft,
   discardDraft,
   editDraft,
+  freshAsset,
   type DocumentDraft,
 } from './documentDraft';
 import {
@@ -239,6 +241,34 @@ test('an item added before another lands in its gap; an unknown anchor appends',
     'note-5',
   ]);
   discardDraft('gaps');
+});
+
+test('an imported image takes a name no asset has, removed ones included, until the version is full', () => {
+  const assetId = 'a'.repeat(64);
+  const assets = (items: DocumentAsset[]): DocumentSection[] => [
+    { kind: 'assets', id: 'assets', title: 'Assets', items },
+  ];
+  const logo: DocumentAsset = { kind: 'asset', id: 'logo', name: 'Logo', assetId };
+  editDraft({ ...kitAt('assets', 1), sections: assets([logo]) }, { kind: 'remove', key: 'logo' });
+
+  const imported = freshAsset(draftOfKit('assets'), assetId, 'Logo');
+  assert.equal(imported?.name, 'Logo 2');
+  assert.notEqual(imported?.id, 'logo');
+
+  const full = Array.from(
+    { length: 48 },
+    (_, n): DocumentAsset => ({
+      kind: 'asset',
+      id: `image-${String(n)}`,
+      name: `Image ${String(n)}`,
+      assetId,
+    }),
+  );
+  assert.equal(
+    freshAsset({ ...draftOfKit('assets'), sections: assets(full) }, assetId, 'Logo'),
+    null,
+  );
+  discardDraft('assets');
 });
 
 test('a newer read keeps the draft on its base until Discard', () => {

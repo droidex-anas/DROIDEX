@@ -2,7 +2,8 @@
 // menu, then its notes, token groups, previews and assets in reading order.
 
 import { useContext, useRef, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Pencil, Trash } from '@droidex/icons';
+import { ArrowDown, ArrowUp, Pencil, Trash, Upload } from '@droidex/icons';
+import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import type {
   DocumentAsset,
@@ -13,10 +14,12 @@ import type {
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddRow } from './AddRow';
+import { AssetGrid, ImageDropCue } from './AssetsSection';
 import type { DraftChange } from './documentDraft';
 import type { DocumentItem, DraftMark } from './documentSections';
 import { PreviewItem } from './DocumentPreview';
 import { InlineField, type InlineFieldHandle } from './InlineField';
+import { useKitImageImport, type ImportedImage } from './kitImageImport';
 import type { KitPreviewing } from './KitPreviewTile';
 import { NoteCard } from './NoteCard';
 import { TokenTable } from './TokenTable';
@@ -35,6 +38,8 @@ export interface SectionEditing {
   onChange: (change: DraftChange) => void;
   /** Adds an item at the section's end, or before the item `before` names. */
   onAdd: (kind: 'note' | 'group', before?: string) => void;
+  /** Adds imported images to the section; null where it takes none. */
+  onAddImages: ((images: ImportedImage[]) => void) | null;
 }
 
 export function SectionBlock({
@@ -48,6 +53,7 @@ export function SectionBlock({
   tokenNames,
   noteLabels,
   previewTitles,
+  assetNames,
   previewing,
   typeSpecimen,
   justAdded,
@@ -63,6 +69,7 @@ export function SectionBlock({
   tokenNames: ReadonlySet<string>;
   noteLabels: ReadonlySet<string>;
   previewTitles: ReadonlySet<string>;
+  assetNames: ReadonlySet<string>;
   previewing: KitPreviewing;
   /** The saved version's type specimen, which follows this section's groups. */
   typeSpecimen: TypeSpecimenSize | null;
@@ -77,6 +84,7 @@ export function SectionBlock({
   const onChange = editing?.onChange ?? null;
   const tokenKind = tokenKindOf(section);
   const holdsTokens = tokenKind !== null;
+  const imports = useKitImageImport(editing?.onAddImages ?? null);
 
   const itemActions = (id: string): MenuAction[] => {
     if (!editing) return [];
@@ -111,6 +119,9 @@ export function SectionBlock({
 
   const sectionActions = (edit: SectionEditing): MenuAction[] => [
     { label: 'Rename', icon: Pencil, run: () => titleRef.current?.edit() },
+    ...(imports.pick
+      ? [{ label: 'Add image…', icon: Upload, disabled: imports.isImporting, run: imports.pick }]
+      : []),
     {
       label: 'Move up',
       icon: ArrowUp,
@@ -137,7 +148,7 @@ export function SectionBlock({
     },
   ];
 
-  const renderItem = (item: DocumentItem) => {
+  const renderItem = (item: StandaloneItem) => {
     const itemMark = marks.get(item.id);
     switch (item.kind) {
       case 'note':
@@ -184,25 +195,31 @@ export function SectionBlock({
             onChange={onChange}
           />
         );
-      case 'asset':
-        return (
-          <AssetTile
-            key={item.id}
-            asset={item}
-            mark={itemMark}
-            actions={itemActions(item.id)}
-            onChange={onChange}
-          />
-        );
     }
   };
+
+  const renderRun = (run: ItemRun) =>
+    run.kind === 'assets' ? (
+      <AssetGrid
+        key={run.items[0].id}
+        assets={run.items}
+        marks={marks}
+        assetNames={assetNames}
+        actionsFor={itemActions}
+        onChange={onChange}
+      />
+    ) : (
+      renderItem(run.item)
+    );
 
   return (
     <section
       data-section-id={section.id}
       aria-label={section.title}
-      className="flex scroll-mt-4 flex-col gap-4"
+      className="relative flex scroll-mt-4 flex-col gap-4"
+      {...imports.dropHandlers}
     >
+      {imports.isOver && <ImageDropCue />}
       <header className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={mark} />
         <h2
@@ -256,14 +273,29 @@ export function SectionBlock({
       {!isRemoved &&
         (section.items.length === 0 ? (
           <div className="flex items-center gap-3">
-            <p className="text-body text-muted">Nothing in this section yet.</p>
+            <p className="text-body text-muted">
+              {imports.pick ? 'Drop PNG, JPEG or WebP images here.' : 'Nothing in this section yet.'}
+            </p>
             {editing && (
-              <AddRow
-                offers={{ note: true, group: holdsTokens }}
-                onAdd={(kind) => {
-                  editing.onAdd(kind);
-                }}
-              />
+              <div className="flex gap-1">
+                <AddRow
+                  offers={{ note: true, group: holdsTokens }}
+                  onAdd={(kind) => {
+                    editing.onAdd(kind);
+                  }}
+                />
+                {imports.pick && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={Upload}
+                    loading={imports.isImporting}
+                    onClick={imports.pick}
+                  >
+                    Image…
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         ) : (
@@ -271,7 +303,7 @@ export function SectionBlock({
             value={proposal && mark === 'added' ? IN_ADDED_SECTION : proposal}
           >
             <div className="flex flex-col gap-6">
-              {blocksWithAddRows(section, editing, holdsTokens, renderItem)}
+              {blocksWithAddRows(section, editing, holdsTokens, renderRun)}
               {typeSpecimen && <TypeSpecimen size={typeSpecimen} previewing={previewing} />}
             </div>
           </ProposalMarks.Provider>
@@ -285,7 +317,7 @@ function blocksWithAddRows(
   section: DocumentSection,
   editing: SectionEditing | null,
   holdsTokens: boolean,
-  renderItem: (item: DocumentItem) => ReactNode,
+  renderRun: (run: ItemRun) => ReactNode,
 ): ReactNode[] {
   const offers = { note: true, group: holdsTokens };
   const blocks: ReactNode[] = [];
@@ -302,15 +334,7 @@ function blocksWithAddRows(
           }}
         />,
       );
-    blocks.push(
-      run.kind === 'assets' ? (
-        <div key={run.items[0].id} className="grid grid-cols-3 gap-4">
-          {run.items.map(renderItem)}
-        </div>
-      ) : (
-        renderItem(run.item)
-      ),
-    );
+    blocks.push(renderRun(run));
   }
   if (editing)
     blocks.push(
@@ -333,7 +357,8 @@ function tokenKindOf(section: DocumentSection): TokenKind | null {
 
 // Assets read as a grid, so neighbouring assets share one; everything else
 // stands alone in the column.
-type ItemRun = { kind: 'assets'; items: DocumentAsset[] } | { kind: 'item'; item: DocumentItem };
+type StandaloneItem = Exclude<DocumentItem, DocumentAsset>;
+type ItemRun = { kind: 'assets'; items: DocumentAsset[] } | { kind: 'item'; item: StandaloneItem };
 
 function itemRuns(items: DocumentItem[]): ItemRun[] {
   const runs: ItemRun[] = [];
@@ -346,49 +371,3 @@ function itemRuns(items: DocumentItem[]): ItemRun[] {
   return runs;
 }
 
-// Kit images reach only preview guests (spec §8), so the tile stands in for one.
-function AssetTile({
-  asset,
-  mark,
-  actions,
-  onChange,
-}: {
-  asset: DocumentAsset;
-  mark: DraftMark | undefined;
-  actions: MenuAction[];
-  onChange: ((change: DraftChange) => void) | null;
-}) {
-  const isRemoved = mark === 'removed';
-  return (
-    <figure data-item-id={asset.id} className="flex min-w-0 scroll-mt-4 flex-col gap-1.5">
-      <div
-        role="img"
-        aria-label={asset.name}
-        className="flex aspect-square items-center justify-center rounded-lg bg-surface text-caption text-muted"
-      >
-        Image
-      </div>
-      <figcaption className="relative flex min-h-control-sm items-center gap-1.5">
-        <UnsavedMark mark={mark} />
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate text-body',
-            isRemoved ? 'text-muted line-through' : 'text-primary',
-          )}
-        >
-          {asset.name}
-        </span>
-        <AddedLabel mark={mark} />
-        {onChange &&
-          (isRemoved ? (
-            <UndoRemove label={asset.name} removedKey={asset.id} onChange={onChange} />
-          ) : (
-            <ActionMenu label={`${asset.name} actions`} actions={actions} />
-          ))}
-      </figcaption>
-      {!isRemoved && asset.note !== undefined && (
-        <p className="text-caption text-muted">{asset.note}</p>
-      )}
-    </figure>
-  );
-}

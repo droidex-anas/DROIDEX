@@ -199,9 +199,9 @@ Done: The user imports PNG/JPEG/WebP into a kit through picker or drop; images a
 
 **Files:** create `sidecar/src/canvas/kitAssets.ts` (+ test, following `canvasAssets.ts`), `canvasImageRoute.ts` (a kit target on the private loopback route), `electron/canvasImageImport.cjs` (+ test), `electron/canvasPreviewAssets.cjs` (`kit-asset:` for bound guests), compiler/stylesheet resolution of `kit-asset:`; renderer create `systemDocument/AssetsSection.tsx`, Replace with image in `DocumentCover.tsx`.
 
-- [ ] Same validation and limits as canvas images; content-addressed; metadata record; no agent import path.
-- [ ] Assets grid per §5; rename, note, remove (entry only).
-- [ ] Tests: import validation reuse, `kit-asset:` served to canvas and kit guests and refused to unbound ones, offline render.
+- [x] Same validation and limits as canvas images; content-addressed; metadata record; no agent import path.
+- [x] Assets grid per §5; rename, note, remove (entry only).
+- [x] Tests: import validation reuse, `kit-asset:` served to canvas and kit guests and refused to unbound ones, offline render.
 
 ## Slice 3a: acceptance and documentation
 

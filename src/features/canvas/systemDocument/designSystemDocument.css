@@ -25,6 +25,11 @@
   outline: 1.5px solid var(--focus-ring);
 }
 
+/* Asset tiles keep a readable size and fill the column's width in whole tiles. */
+.kit-asset-grid {
+  grid-template-columns: repeat(auto-fill, minmax(theme('spacing.40'), 1fr));
+}
+
 /* A kit tile's layers cross-fade as icon and text swaps do: a capture as it
    arrives, and the live guest once it has painted. */
 @keyframes kit-tile-reveal {

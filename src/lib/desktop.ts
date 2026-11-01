@@ -611,6 +611,25 @@ export async function importCanvasImage(canvasId: string, file: File): Promise<O
   );
 }
 
+// Kit images (design system documents spec §8) enter the kit store only through
+// main's picker or a drop; main rejects with a curated { code, message }.
+export async function pickKitImage(): Promise<OwnedAsset | null> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasPickKitImage();
+}
+
+export async function importKitImage(file: File): Promise<OwnedAsset> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasDropKitImage(file);
+}
+
+// Main reads a kit image's bytes for the document: one can pass the bridge socket's buffer.
+export async function readKitImage(
+  assetId: string,
+): Promise<{ mime: OwnedAsset['mediaType']; data: Uint8Array } | null> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasReadKitImage(
+    assetId,
+  );
+}
+
 // Absolute path behind a dropped or pasted File, or '' when there is none
 // (clipboard snapshot, plain browser). A real path is attached by reference
 // instead of being copied into the temp store.
