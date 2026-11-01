@@ -21,6 +21,8 @@ const SPECIMEN_PROPERTY: Partial<Record<DocumentSection['kind'], string>> = {
 // Kinds without a specimen still hold values CSS must accept for one of these.
 const ACCEPTING_PROPERTIES: Partial<Record<TokenKind, string[]>> = {
   typography: ['font-size', 'font-family', 'font-weight', 'line-height', 'letter-spacing'],
+  size: ['width', 'height', 'aspect-ratio'],
+  'z-index': ['z-index'],
   motion: ['transition-duration', 'transition-timing-function'],
 };
 
@@ -30,6 +32,8 @@ const KIND_NOUN: Record<TokenKind, string> = {
   spacing: 'length',
   radius: 'corner radius',
   shadows: 'shadow',
+  size: 'size',
+  'z-index': 'stacking order',
   motion: 'duration or easing',
   tokens: 'value',
 };

@@ -11,7 +11,7 @@ export const DOCUMENT_LIMITS = {
   maxSections: 16,
   maxItemsPerSection: 64,
   maxTitleLength: 120,
-  maxTokens: 128,
+  maxTokens: 256,
   maxTokenValueLength: 160,
   maxTokenNoteBytes: 400,
   maxNoteBytes: 8 * 1024,
@@ -27,12 +27,14 @@ export const DOCUMENT_LIMITS = {
 // §14 asks for these as preview targets beside the previews' own ids.
 const RESERVED_PREVIEW_IDS = new Set(['cover', 'typography']);
 
-const TOKEN_KINDS = [
+export const TOKEN_KINDS = [
   'colors',
   'typography',
   'spacing',
   'radius',
   'shadows',
+  'size',
+  'z-index',
   'motion',
   'tokens',
 ] as const;

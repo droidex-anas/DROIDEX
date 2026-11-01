@@ -22,6 +22,13 @@ export interface DesignSystemVersionRef {
   version: number;
 }
 
+/** The proposal a kit has waiting, in one mode; a new proposal gets a new `proposalId`. */
+export interface DesignSystemProposalRef {
+  id: string;
+  proposalId: string;
+  mode: DesignSystemRef['mode'];
+}
+
 /** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
 export interface DesignSystemSummary {
   id: string;
@@ -103,8 +110,22 @@ export interface DesignSystemDocumentView {
   /** When and by whom this version was saved; a built-in kit was never saved. */
   savedAt: string | null;
   savedBy: SavedBy | null;
-  /** An agent proposal waiting for review; none until proposals exist. */
-  proposal: null;
+  /** The agent proposal waiting for review, if there is one. */
+  proposal: DesignSystemProposal | null;
+}
+
+/** A kit's pending agent proposal: the version it was made on and the document it proposes. */
+export interface DesignSystemProposal {
+  /** A proposal is never changed, only replaced by one with another ID. */
+  proposalId: string;
+  baseVersion: number;
+  proposedAt: string;
+  /** The chat whose agent proposed it. */
+  appSessionId: string;
+  /** A proposal may rename the kit. */
+  name: string;
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
 }
 
 /** A new kit's source from the dialog's New menu. */
@@ -603,6 +624,23 @@ export type CanvasCommand =
       id: string;
       deleted: boolean;
     }
+  // The agent proposal the user reviewed, while it is still the one waiting:
+  // accept saves it as the version after `onto`, the newest the user saw, and
+  // discard removes it.
+  | {
+      type: 'canvas.acceptDesignSystemProposal';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      proposalId: string;
+      onto: number;
+    }
+  | {
+      type: 'canvas.discardDesignSystemProposal';
+      requestId: string;
+      id: string;
+      proposalId: string;
+    }
   | {
       type: 'canvas.copyDesignSystem';
       requestId: string;
@@ -617,10 +655,15 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
-  // A kit version's previews in one mode. `item` is a preview's id, `cover` or
-  // `typography`. A capture is a base64 PNG the document took from a live
-  // preview; a later one replaces it.
-  | { type: 'canvas.readKitPreview'; requestId: string; ref: DesignSystemRef; item: string }
+  // A kit version's previews in one mode, or a waiting proposal's. `item` is a
+  // preview's id, `cover` or `typography`. A capture is a base64 PNG the
+  // document took from a saved version's live preview; a later one replaces it.
+  | {
+      type: 'canvas.readKitPreview';
+      requestId: string;
+      ref: DesignSystemRef | DesignSystemProposalRef;
+      item: string;
+    }
   | {
       type: 'canvas.saveKitCapture';
       requestId: string;

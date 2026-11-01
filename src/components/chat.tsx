@@ -64,6 +64,7 @@ export const ThreadReportNotice = lazy(async () => {
 });
 
 const CanvasArtifactCard = lazy(() => import('../features/canvas/CanvasArtifactCard'));
+const KitChip = lazy(() => import('../features/canvas/KitChip'));
 
 const ThreadsWaiting = lazy(async () => {
   const module = await import('../features/projects/ThreadsWaiting');
@@ -522,7 +523,11 @@ export const FeedItemView = memo(function FeedItemView({
     case 'canvas_artifact':
       return (
         <Suspense fallback={null}>
-          <CanvasArtifactCard appSessionId={item.event.appSessionId} activity={item.activity} />
+          {item.activity.action === 'theme' ? (
+            <KitChip appSessionId={item.event.appSessionId} activity={item.activity} />
+          ) : (
+            <CanvasArtifactCard appSessionId={item.event.appSessionId} activity={item.activity} />
+          )}
         </Suspense>
       );
     case 'browser':

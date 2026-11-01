@@ -40,7 +40,7 @@ import {
   commandLifecycle,
   isSlashCommand,
   MessageQueue,
-  turnFailure,
+  resultFailure,
   type SteeringQuery,
 } from './claudeMessages.js';
 import { sessionOptions, claudeEffort } from './claudeOptions.js';
@@ -81,6 +81,14 @@ export class ClaudeSession implements ProviderSession {
   private readonly abort = new AbortController();
   private resolveClosed: (error?: Error) => void = () => undefined;
   private failure?: Error;
+  // A nonzero exit with output still unread: finish waits for the pump to
+  // drain it, so the error result that explains the death is not lost.
+  private exitError?: Error;
+  private exitFallback?: ReturnType<typeof setTimeout>;
+  // Set when a turn, typed or delegated, ends on its own error: the process
+  // death that follows it is that failure's fallout, not a new one to report
+  // through 'closed'. Any turn that starts after it clears the claim.
+  private turnFailureOwned = false;
   private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
   private readonly query: SteeringQuery;
@@ -119,6 +127,7 @@ export class ClaudeSession implements ProviderSession {
   private turnQueue?: MessageQueue<TurnItem>;
   // The usage refusal the provider-started turn was given, read at its result.
   private delegatedRefusal?: UsageLimitError;
+  private delegatedAuthFailure?: string;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private readonly delegatedListeners = new Set<
     (running: boolean, end?: DelegatedTurnEnd) => void
@@ -245,11 +254,13 @@ export class ClaudeSession implements ProviderSession {
     this.requireTurnCanStart();
     const turnId = randomUUID();
     this.activeTurnId = turnId;
+    this.turnFailureOwned = false;
     this.mapper.beginTurn(turnId);
     const turnQueue = (this.turnQueue = new MessageQueue<TurnItem>());
     // Read with the messages, not off the mapper: the pump maps ahead of this
     // loop, so the mapper may already hold the next turn's refusal.
     let refusal: UsageLimitError | undefined;
+    let authFailure: string | undefined;
     let reportedPlanningModel = false;
     let ended = false;
     // A result taken off the queue means the CLI has finished the turn, even if
@@ -282,6 +293,7 @@ export class ClaudeSession implements ProviderSession {
         }
         const { message, events } = next.value;
         refusal ??= next.value.refusal;
+        authFailure ??= next.value.authFailure;
         if (message.type === 'result') resultTaken = true;
         if (message.type === 'assistant' && !reportedPlanningModel) {
           const notice = this.permissions.planning
@@ -306,11 +318,20 @@ export class ClaudeSession implements ProviderSession {
         if (message.type === 'result' && (this.turnAnswered || answersTurn(message, turnId))) {
           const refused = refusal;
           refusal = undefined;
-          if (refused) throw refused;
+          if (refused) {
+            this.turnFailureOwned = true;
+            throw refused;
+          }
+          const authFailed = authFailure;
+          authFailure = undefined;
           // A stopped turn settles quietly: the CLI still reports the
           // interruption as an error result carrying an internal diagnostic.
-          if (message.subtype !== 'success' && this.interruptedTurnId !== turnId)
-            throw new Error(turnFailure(message.subtype, message.errors));
+          const failure =
+            this.interruptedTurnId === turnId ? undefined : resultFailure(message, authFailed);
+          if (failure) {
+            this.turnFailureOwned = true;
+            throw failure;
+          }
           this.turnAnswered = true;
           for (const uuid of message.user_message_uuids ?? []) this.settleSteer(uuid, true);
         }
@@ -482,6 +503,7 @@ export class ClaudeSession implements ProviderSession {
     // Mapping stays in wire order, including model and spawn-link observations.
     const events = this.mapper.map(message, this.fastMode);
     const refusal = this.mapper.takeRefusal();
+    const authFailure = this.mapper.takeAuthFailure();
     const turnEvents: NormalizedEvent[] = [];
     for (const event of events) {
       if (event.childSession || event.childOwner) {
@@ -489,15 +511,15 @@ export class ClaudeSession implements ProviderSession {
       } else turnEvents.push(event);
     }
     if (this.delegatedTurnRunning) {
-      this.forwardDelegated({ message, events: turnEvents, refusal });
+      this.forwardDelegated({ message, events: turnEvents, refusal, authFailure });
       return;
     }
     if (this.discardUntilResult && message.type === 'result') this.discardUntilResult = false;
-    this.turnQueue?.push({ message, events: turnEvents, refusal });
+    this.turnQueue?.push({ message, events: turnEvents, refusal, authFailure });
   }
 
   private continueAfterTurn(items: TurnItem[]): void {
-    for (const { message, events, refusal } of items) {
+    for (const { message, events, refusal, authFailure } of items) {
       if (!this.delegatedTurnRunning && startsDelegatedTurn(message)) {
         // Already mapped, spawns included: only the fork point is dropped.
         this.mapper.forgetForkPoint();
@@ -505,23 +527,32 @@ export class ClaudeSession implements ProviderSession {
       }
       // Mapped while our turn was current, so they carry its fork point.
       if (this.delegatedTurnRunning)
-        this.forwardDelegated({ message, events: events.map(withoutForkPoint), refusal });
+        this.forwardDelegated({
+          message,
+          events: events.map(withoutForkPoint),
+          refusal,
+          authFailure,
+        });
     }
   }
 
   // A turn Claude Code started itself reaches the chat as it happens.
-  private forwardDelegated({ message, events, refusal }: TurnItem): void {
+  private forwardDelegated({ message, events, refusal, authFailure }: TurnItem): void {
     for (const event of events) for (const listener of this.backgroundListeners) listener(event);
     this.delegatedRefusal ??= refusal;
+    this.delegatedAuthFailure ??= authFailure;
     if (message.type !== 'result') return;
     // A usage refusal still ends the turn with a result, as a typed turn's does.
     const refused = this.delegatedRefusal;
     this.delegatedRefusal = undefined;
+    const authFailed = this.delegatedAuthFailure;
+    this.delegatedAuthFailure = undefined;
     if (refused) this.endDelegatedTurn(refused);
-    else if (message.subtype !== 'success')
-      this.endDelegatedTurn(new Error(turnFailure(message.subtype, message.errors)), true);
-    else if (message.is_error) this.endDelegatedTurn(new Error(message.result), true);
-    else this.endDelegatedTurn();
+    else {
+      const failure = resultFailure(message, authFailed);
+      if (failure) this.endDelegatedTurn(failure, true);
+      else this.endDelegatedTurn();
+    }
   }
 
   // A stopped turn settles quietly, as a typed one does, however it ended.
@@ -542,7 +573,11 @@ export class ClaudeSession implements ProviderSession {
   private setDelegatedTurn(running: boolean, end?: DelegatedTurnEnd): void {
     if (this.delegatedTurnRunning === running) return;
     this.delegatedTurnRunning = running;
-    if (running) this.delegatedRefusal = undefined;
+    if (running) {
+      this.delegatedRefusal = undefined;
+      this.delegatedAuthFailure = undefined;
+      this.turnFailureOwned = false;
+    } else this.turnFailureOwned = end?.status === 'failed';
     for (const listener of this.delegatedListeners) listener(running, end);
   }
 
@@ -659,33 +694,50 @@ export class ClaudeSession implements ProviderSession {
 
   private childClosed(error?: Error): void {
     if (this.abort.signal.aborted) return;
-    if (!this.initializing) {
-      this.finish(error);
+    if (this.initializing) {
+      // Initialization owns the startup diagnostic, even if exit arrives first.
+      void this.initialized.then(
+        () => {
+          this.finish(error);
+        },
+        () => undefined,
+      );
       return;
     }
-    // Initialization owns the startup diagnostic, even if exit arrives first.
-    void this.initialized.then(
-      () => {
-        this.finish(error);
-      },
-      () => undefined,
-    );
+    if (!error) {
+      this.finish();
+      return;
+    }
+    // Exit and close both report the same death.
+    if (this.exitError) return;
+    // A dying CLI can leave its last frames unread, and the error result among
+    // them is what explains the death. The pump drains them and finishes from
+    // there; the fallback covers output that never becomes readable.
+    this.exitError = error;
+    this.exitFallback = setTimeout(() => {
+      this.finish(error);
+    }, 2000);
+    this.exitFallback.unref();
   }
 
   private finish(error?: Error): void {
     if (this.abort.signal.aborted) return;
-    this.failure = error;
+    if (this.exitFallback) clearTimeout(this.exitFallback);
+    const failure = this.exitError ?? error;
+    this.failure = failure;
     this.abort.abort();
     this.catalog.close();
     this.prompts.close();
-    this.turnQueue?.close(error);
+    this.turnQueue?.close(failure);
     this.backgroundListeners.clear();
     this.delegatedListeners.clear();
     // The SDK closes stdin and escalates SIGTERM to SIGKILL itself.
     try {
       this.query.close();
     } finally {
-      this.resolveClosed(error);
+      // A turn that failed with its own diagnostic owns the death that follows
+      // it; reporting the exit again would read as a second failure.
+      this.resolveClosed(this.turnFailureOwned ? undefined : failure);
     }
   }
 }
@@ -705,6 +757,7 @@ interface TurnItem {
   message: SDKMessage;
   events: NormalizedEvent[];
   refusal?: UsageLimitError | undefined;
+  authFailure?: string | undefined;
 }
 
 function withoutForkPoint(event: NormalizedEvent): NormalizedEvent {

@@ -76,6 +76,11 @@ const userDataOverride = configuredUserData?.trim() ? configuredUserData : undef
 if (userDataOverride && !path.isAbsolute(userDataOverride)) {
   throw new Error('DROIDEX_USER_DATA_DIR must be an absolute path.');
 }
+// Dev builds all show in the Dock as the same "Electron" tile; the window title
+// (listed in the tile's menu) and the Dock badge say which one this is.
+const devInstance = app.isPackaged ? null : describeDevInstance();
+// Set only by quit paths that know their cause; a Dock, menu or signal quit leaves it null.
+let quitReason = null;
 const buildMetadata = readBuildMetadata();
 const terminalManager = createTerminalManager({
   defaultCwd: async () => {
@@ -240,10 +245,18 @@ try {
   );
 }
 app.setPath('userData', userDataPath);
+if (!app.isPackaged) {
+  // Electron turns SIGTERM, SIGINT and SIGHUP into the same clean exit 0 as a
+  // Dock or menu Quit; this makes it log "Handling shutdown for signal N" first.
+  app.commandLine.appendSwitch('enable-logging');
+  app.commandLine.appendSwitch('log-level', '2');
+  app.commandLine.appendSwitch('vmodule', 'electron_browser_main_parts_posix=1');
+}
 // One app per profile. A second copy on the same profile, such as a dev build
 // an agent launches without its own DROIDEX_USER_DATA_DIR, would boot a sidecar
 // that reaps every agent process this one recorded.
 if (!app.requestSingleInstanceLock()) {
+  logExit('another instance already owns this profile');
   app.exit(0);
   return;
 }
@@ -332,6 +345,8 @@ app.whenReady().then(async () => {
   // Pin the DROIDEX mark on the dock/taskbar up front so OS notifications
   // inherit it instead of the bare Electron atom in dev builds.
   applyAppIcon();
+  if (devInstance && process.platform === 'darwin' && app.dock)
+    app.dock.setBadge(devInstance.badge);
   // Repaint the icon when the OS appearance flips while 'system' is selected.
   nativeTheme.on('updated', () => {
     if (appIconMode === 'system') applyAppIcon();
@@ -348,10 +363,14 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (!remoteAccess.isEnabled()) sidecarSupervisor.stop();
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin') {
+    quitReason = 'all windows closed';
+    app.quit();
+  }
 });
 
 app.on('before-quit', () => {
+  logExit(quitReason ?? 'Quit from the app menu, the Dock, or a signal logged above');
   void remoteAccess.close().catch(() => console.error('[remote] Could not flush local state'));
   sidecarSupervisor.stop();
   githubVcs.cancelSetup();
@@ -390,7 +409,7 @@ function createMainWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 600,
-    title: APP_NAME,
+    title: devInstance?.title ?? APP_NAME,
     icon: path.join(__dirname, 'assets', process.platform === 'darwin' ? 'icon.icns' : 'icon.png'),
     backgroundColor: process.platform === 'darwin' ? '#00000000' : '#0a0a0a',
     vibrancy: process.platform === 'darwin' ? 'under-window' : undefined,
@@ -408,6 +427,7 @@ function createMainWindow() {
       webviewTag: true,
     },
   });
+  if (devInstance) mainWindow.on('page-title-updated', (event) => event.preventDefault());
   installWebviewAttachment(mainWindow.webContents);
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
@@ -1516,7 +1536,26 @@ function setOnboarding(patch) {
   return run;
 }
 
+function describeDevInstance() {
+  const startUrl = process.env.ELECTRON_START_URL;
+  const port = startUrl && URL.canParse(startUrl) ? new URL(startUrl).port : '';
+  const profile = userDataOverride ? path.basename(userDataOverride) : '';
+  if (!port && !profile) return null;
+  const name = [port && `:${port}`, profile].filter(Boolean).join(' ');
+  return { title: `${APP_NAME} dev ${name}`, badge: port || profile };
+}
+
+function logExit(reason) {
+  console.warn(
+    '[lifecycle] pid %d exiting after %ds: %s',
+    process.pid,
+    Math.round(process.uptime()),
+    reason,
+  );
+}
+
 function relaunchApp() {
+  logExit('relaunch requested');
   app.relaunch();
   app.exit(0);
 }

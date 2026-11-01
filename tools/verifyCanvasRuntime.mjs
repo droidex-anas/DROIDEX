@@ -71,7 +71,11 @@ const RUNTIME_SPECIFIERS = [
   'react-dom/client',
   'lucide-react/dist/esm/lucide-react.js',
   'recharts/es6/index.js',
+  'simple-icons/index.mjs',
 ];
+// EXPORT_HIDDEN_ENTRIES in canvasRuntime.ts: `require` cannot name these, so
+// they are found at their path inside the runtime.
+const EXPORT_HIDDEN_ENTRIES = ['simple-icons/index.mjs'];
 
 /**
  * Throws on the first thing wrong with the runtime at `runtimePath`, which must
@@ -216,6 +220,7 @@ function proveLoadable(root, binary) {
 }
 
 const LOAD_PROBE = `
+import { existsSync } from 'node:fs';
 import Module, { createRequire } from 'node:module';
 
 const root = process.argv[1];
@@ -238,7 +243,12 @@ Module._resolveFilename = function (specifier, ...rest) {
 };
 
 const runtimeRequire = createRequire(root + '/' + ${JSON.stringify(ANCHOR_FILE)});
+const exportHidden = new Set(${JSON.stringify(EXPORT_HIDDEN_ENTRIES)});
 for (const specifier of ${JSON.stringify(RUNTIME_SPECIFIERS)}) {
+  if (exportHidden.has(specifier)) {
+    if (!existsSync(inside + specifier)) refuse(specifier + ' does not resolve');
+    continue;
+  }
   try {
     runtimeRequire.resolve(specifier);
   } catch {

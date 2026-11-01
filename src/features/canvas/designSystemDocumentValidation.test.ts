@@ -43,7 +43,7 @@ test('both boundaries accept the DROIDEX document and refuse the same ones past 
   assert.deepEqual(acceptedBy(DROIDEX_DOCUMENT_SECTIONS), { sidecar: true, renderer: true });
 
   const [overview, colors, shadows, components] = DROIDEX_DOCUMENT_SECTIONS;
-  const manyNames = Array.from({ length: 125 }, (_, index) => `--other-${String(index)}`);
+  const manyNames = Array.from({ length: 253 }, (_, index) => `--other-${String(index)}`);
   const copiedLabel = {
     ...overview,
     items: [...overview.items, { ...overview.items[0], id: 'rules-copy' }],
@@ -55,7 +55,7 @@ test('both boundaries accept the DROIDEX document and refuse the same ones past 
     ),
   };
   const refused: Record<string, DocumentSection[]> = {
-    'more than 128 tokens': [...DROIDEX_DOCUMENT_SECTIONS, tokenSection('other', manyNames)],
+    'more than 256 tokens': [...DROIDEX_DOCUMENT_SECTIONS, tokenSection('other', manyNames)],
     'a token in two sections': [
       ...DROIDEX_DOCUMENT_SECTIONS,
       tokenSection('other', ['--ds-accent']),
@@ -148,6 +148,15 @@ test('the renderer accepts every design system reply and event the sidecar sends
     proposal: null,
   };
   const fromProject = { name: 'acme', files: ['tailwind.config.ts', 'src/index.css'] };
+  const proposal = {
+    proposalId: '7b0c3f52-8f3e-4f0e-9a51-2d6f4c1e9b10',
+    baseVersion: 3,
+    proposedAt: '2026-10-31T12:05:00.000Z',
+    appSessionId: 'app-1',
+    name: 'Paper two',
+    cover: null,
+    sections: DROIDEX_DOCUMENT_SECTIONS,
+  };
   const events: CanvasEvent[] = [
     {
       type: 'canvas.result',
@@ -183,6 +192,12 @@ test('the renderer accepts every design system reply and event the sidecar sends
       requestId: 'req_03',
       ok: true,
       reply: { kind: 'designSystem', system: { ...paper, provenance: { project: fromProject } } },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_03',
+      ok: true,
+      reply: { kind: 'designSystem', system: { ...paper, proposal } },
     },
     {
       type: 'canvas.result',

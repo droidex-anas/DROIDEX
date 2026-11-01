@@ -4,9 +4,9 @@
 // token in Other tokens, and the sections follow the canonical order. A note
 // longer than one holds continues in name-2.md and on, so nothing is cut.
 
-import { DOCUMENT_LIMITS, type DocumentSection } from './designSystemDocument.js';
+import { DOCUMENT_LIMITS, TOKEN_KINDS, type DocumentSection } from './designSystemDocument.js';
 
-type TokenKind = Exclude<DocumentSection['kind'], 'notes' | 'components' | 'assets'>;
+type TokenKind = (typeof TOKEN_KINDS)[number];
 type DocumentItem = DocumentSection['items'][number];
 
 export type DocumentPart =
@@ -28,15 +28,21 @@ export interface DocumentSource {
   components?: DocumentPart[];
 }
 
-const TOKEN_SECTIONS: { kind: TokenKind; title: string }[] = [
-  { kind: 'colors', title: 'Colors' },
-  { kind: 'typography', title: 'Typography' },
-  { kind: 'spacing', title: 'Spacing' },
-  { kind: 'radius', title: 'Corner radius' },
-  { kind: 'shadows', title: 'Shadows' },
-  { kind: 'motion', title: 'Motion' },
-  { kind: 'tokens', title: 'Other tokens' },
-];
+/** What a section is called when a builder or an agent's change creates it. */
+export const SECTION_TITLES: Record<DocumentSection['kind'], string> = {
+  notes: 'Overview',
+  colors: 'Colors',
+  typography: 'Typography',
+  spacing: 'Spacing',
+  radius: 'Corner radius',
+  shadows: 'Shadows',
+  size: 'Size',
+  'z-index': 'Z index',
+  motion: 'Motion',
+  tokens: 'Other tokens',
+  components: 'Components',
+  assets: 'Assets',
+};
 
 /** The tokens Button, Input, Card, Badge, Tabs and Dialog read, grouped as a document shows them. */
 const CONTRACT_GROUPS: { kind: TokenKind; title: string; names: string[] }[] = [
@@ -88,13 +94,13 @@ export const CONTRACT_TOKEN_NAMES: ReadonlySet<string> = new Set(
 
 export function buildDocument(source: DocumentSource): DocumentSection[] {
   // Section ids are fixed, and the two §14 preview targets are never an item's.
-  const ids = new Set(['overview', 'components', 'cover', ...TOKEN_SECTIONS.map((s) => s.kind)]);
+  const ids = new Set(['overview', 'components', 'cover', ...TOKEN_KINDS]);
   const sections: DocumentSection[] = [];
   if (source.overview?.length)
     sections.push({
       kind: 'notes',
       id: 'overview',
-      title: 'Overview',
+      title: SECTION_TITLES.notes,
       items: source.overview.flatMap((part) => items(part, ids)),
     });
 
@@ -118,7 +124,7 @@ export function buildDocument(source: DocumentSource): DocumentSection[] {
       names: names.filter((name) => !CONTRACT_TOKEN_NAMES.has(name)),
     },
   ];
-  for (const { kind, title } of TOKEN_SECTIONS) {
+  for (const kind of TOKEN_KINDS) {
     const items = groups
       .filter((group) => group.kind === kind && group.names.length > 0)
       .map((group) => ({
@@ -127,14 +133,14 @@ export function buildDocument(source: DocumentSource): DocumentSection[] {
         title: group.title,
         tokens: group.names.map(token),
       }));
-    if (items.length > 0) sections.push({ kind, id: kind, title, items });
+    if (items.length > 0) sections.push({ kind, id: kind, title: SECTION_TITLES[kind], items });
   }
 
   if (source.components?.length)
     sections.push({
       kind: 'components',
       id: 'components',
-      title: 'Components',
+      title: SECTION_TITLES.components,
       items: source.components.flatMap((part) => items(part, ids)),
     });
   return sections;
@@ -183,7 +189,8 @@ function noteBodies(text: string, maxBytes: number, level = 0): string[] {
   return bodies;
 }
 
-function uniqueId(ids: Set<string>, text: string): string {
+/** A slug of `text` that no id in `ids` has yet, added to them. */
+export function uniqueId(ids: Set<string>, text: string): string {
   const base =
     text
       .toLowerCase()

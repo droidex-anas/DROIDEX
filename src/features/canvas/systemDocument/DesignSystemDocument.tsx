@@ -1,6 +1,7 @@
 // A design system's document in the canvas area, in place of the board (spec
-// §4-§6, §10): a header, a section nav and the document column. The user's own
-// kits edit in place through a draft; presets and older versions read only.
+// §4-§6, §10, §11): a header, a section nav and the document column. The
+// user's own kits edit in place through a draft, and show the agent's proposal
+// for review; presets and older versions read only.
 
 import {
   useCallback,
@@ -16,11 +17,10 @@ import { Copy } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { useStoreSelector } from '../../../hooks/useStore';
 import { resolveScheme } from '../../../lib/theme';
-import { canvasClient } from '../canvasClient';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
-import type { DesignSystemDocumentView, DesignSystemProvenance } from '../protocol';
+import type { DesignSystemDocumentView } from '../protocol';
 import { PreviewModeButton, type PreviewMode } from '../PreviewModeToggle';
 import { revealFile, revealSection } from './columnScroll';
 import { DocumentCover } from './DocumentCover';
@@ -49,8 +49,18 @@ import {
   type DraftMark,
 } from './documentSections';
 import { kitFiles, type KitFile } from './kitFiles';
-import { SaveBar, useSaveDraft } from './SaveBar';
 import type { KitPreviewing } from './KitPreviewTile';
+import { ProposalLine } from './ProposalLine';
+import {
+  endReview,
+  IN_REVIEW,
+  ProposalMarks,
+  startReview,
+  useIsReviewing,
+  useProposalDecision,
+} from './proposalReview';
+import { ProvenanceLine } from './ProvenanceLine';
+import { ProposalBar, SaveBar, useSaveDraft } from './SaveBar';
 import { SectionBlock, type SectionEditing } from './SectionBlock';
 import { specimenProperties } from './specimenStyle';
 import { typeSpecimenSize } from './TypeSpecimen';
@@ -149,6 +159,8 @@ function KitDocument({
   const wide = useIsWide(rootRef);
   const duplicate = useDuplicate(view, appSessionId);
   const saving = useSaveDraft(view.id);
+  const isReviewing = useIsReviewing(view.id);
+  const decision = useProposalDecision(view, onShow);
 
   const change = useCallback(
     (next: DraftChange) => {
@@ -157,18 +169,28 @@ function KitDocument({
     },
     [view],
   );
-  const isDrafting = draft !== null;
-  useEffect(() => {
-    if (!isDrafting) keepFocusIn(scrollRef);
-  }, [isDrafting]);
   const isLatest = view.version === view.latestVersion;
   const canEdit = view.kind === 'user' && isLatest;
-  // A draft shows only over the latest version of the user's own kit.
-  const editing = canEdit ? draft : null;
-  const onChange = canEdit ? change : null;
+  // A draft and a proposal show only over the latest version of the user's own
+  // kit, and the proposal under review shows in place of the draft.
+  const proposal = canEdit ? view.proposal : null;
+  const reviewed = isReviewing ? proposal : null;
+  const isEditable = canEdit && reviewed === null;
+  const editing = isEditable ? draft : null;
+  const onChange = isEditable ? change : null;
   const base = editing?.base ?? view;
-  const working = editing ?? draftOf(view);
-  const marks = editing ? draftDiff(base.sections, editing.sections) : NO_MARKS;
+  const working = reviewed ?? editing ?? draftOf(view);
+  const changed = reviewed ?? editing;
+  const marks = changed ? draftDiff(base.sections, changed.sections) : NO_MARKS;
+  const proposalCount = useMemo(
+    () => (proposal ? changeCount({ ...proposal, base: view }) : 0),
+    [proposal, view],
+  );
+  const isDrafting = draft !== null;
+  const isInReview = reviewed !== null;
+  useEffect(() => {
+    keepFocusIn(scrollRef);
+  }, [isDrafting, isInReview]);
   const isRemoved = (key: string) => marks.get(key) === 'removed';
   const shown =
     marks.size > 0 ? withRemoved(base.sections, working.sections, marks) : working.sections;
@@ -188,16 +210,19 @@ function KitDocument({
   const baseTokens = new Map(
     Array.from(tokensByName(base.sections), ([name, { token }]) => [name, token]),
   );
-  // Previews build from the version the draft is based on, and show the draft's values live.
+  // Previews build from the version a draft changes and show its values live,
+  // and from the proposal itself under review.
   const draftTokens = useMemo(
-    () => (editing ? changedTokenValues(editing.base.sections, editing.sections, mode) : NO_TOKENS),
-    [editing, mode],
+    () => (editing ? changedTokenValues(base.sections, editing.sections, mode) : NO_TOKENS),
+    [base.sections, editing, mode],
   );
-  const slots = useKitPreviewSlots(scrollRef, base);
+  const built = reviewed ?? base;
+  const slots = useKitPreviewSlots(scrollRef, built);
   const typeface = useKitTypeface(base, working.sections, mode);
-  const typeSpecimen = typeSpecimenSize(base.sections);
+  const typeSpecimen = typeSpecimenSize(built.sections);
   const previewing: KitPreviewing = {
     kit: { id: base.id, version: base.version, mode },
+    proposalId: reviewed?.proposalId ?? null,
     draftTokens,
     specimen: specimens[mode],
     ...slots,
@@ -250,7 +275,7 @@ function KitDocument({
   const saveOnShortcut = (event: KeyboardEvent) => {
     if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
     event.preventDefault();
-    if (!canEdit) return;
+    if (!isEditable) return;
     // Leaving the focused field first keeps what it holds in the draft, which
     // may be the edit that starts it.
     scrollRef.current?.focus({ preventScroll: true });
@@ -270,7 +295,7 @@ function KitDocument({
     query,
     onQueryChange: setQuery,
     onJump: jump,
-    onAddSection: canEdit ? addNotesSection : null,
+    onAddSection: isEditable ? addNotesSection : null,
     files: kitFiles(working.sections, working.cover, view.examples),
     onOpenFile: openFile,
   };
@@ -296,7 +321,7 @@ function KitDocument({
             {!wide && <SectionsMenu {...navProps} labelled={room.navWords} />}
             <PreviewModeButton mode={mode} onChange={setMode} />
             <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
-            {isLatest && !editing && !isChosen && (
+            {isLatest && !editing && !reviewed && !isChosen && (
               <UseInCanvas
                 short={!room.fullPrimary}
                 onUse={() => {
@@ -310,6 +335,19 @@ function KitDocument({
           </>
         )}
       </DocumentHeader>
+      <ProposalLine
+        proposal={proposal}
+        count={proposalCount}
+        isReviewing={isInReview}
+        decision={decision.decision}
+        onReview={() => {
+          startReview(view.id);
+        }}
+        onCloseReview={() => {
+          endReview(view.id);
+        }}
+        onDiscard={decision.discard}
+      />
       {!isLatest && <OlderVersionNotice key={view.version} view={view} onShow={onShow} />}
       {isLatest && view.kind === 'preset' && (
         <DocumentNotice text="Presets are read-only">
@@ -329,41 +367,53 @@ function KitDocument({
           tabIndex={-1}
           className="design-system-document-column min-h-0 min-w-0 flex-1 overflow-y-auto px-4 outline-none"
         >
-          {/* One measure for everything in the document, so all of it shares both edges. */}
-          <div className="mx-auto flex max-w-2xl flex-col gap-8 pb-8 pt-2" style={typeface}>
-            <div className="flex flex-col gap-2">
-              <DocumentCover
-                appSessionId={appSessionId}
-                name={working.name}
-                cover={working.cover}
-                previewing={previewing}
-                canRegenerate={canEdit}
-              />
-              <ProvenanceLine provenance={view.provenance} unmapped={view.unmapped.length} />
+          <ProposalMarks.Provider value={reviewed && IN_REVIEW}>
+            {/* One measure for everything in the document, so all of it shares both edges. */}
+            <div className="mx-auto flex max-w-2xl flex-col gap-8 pb-8 pt-2" style={typeface}>
+              <div className="flex flex-col gap-2">
+                <DocumentCover
+                  appSessionId={appSessionId}
+                  name={working.name}
+                  cover={working.cover}
+                  previewing={previewing}
+                  canRegenerate={isEditable}
+                />
+                <ProvenanceLine provenance={view.provenance} unmapped={view.unmapped.length} />
+              </div>
+              {visible.map((section) => (
+                <SectionBlock
+                  key={section.id}
+                  section={section}
+                  count={itemCount(section, isRemoved)}
+                  kitId={view.id}
+                  mode={mode}
+                  specimens={specimens}
+                  marks={marks}
+                  baseTokens={baseTokens}
+                  tokenNames={names.tokenNames}
+                  noteLabels={names.noteLabels}
+                  previewTitles={names.previewTitles}
+                  previewing={previewing}
+                  typeSpecimen={section.kind === 'typography' ? typeSpecimen : null}
+                  justAdded={justAdded}
+                  editing={sectionEditing(section)}
+                />
+              ))}
+              {query !== '' && visible.length === 0 && (
+                <p className="text-body text-muted">Nothing in this design system matches.</p>
+              )}
             </div>
-            {visible.map((section) => (
-              <SectionBlock
-                key={section.id}
-                section={section}
-                count={itemCount(section, isRemoved)}
-                kitId={view.id}
-                mode={mode}
-                specimens={specimens}
-                marks={marks}
-                baseTokens={baseTokens}
-                tokenNames={names.tokenNames}
-                noteLabels={names.noteLabels}
-                previewTitles={names.previewTitles}
-                previewing={previewing}
-                typeSpecimen={section.kind === 'typography' ? typeSpecimen : null}
-                justAdded={justAdded}
-                editing={sectionEditing(section)}
-              />
-            ))}
-            {query !== '' && visible.length === 0 && (
-              <p className="text-body text-muted">Nothing in this design system matches.</p>
-            )}
-          </div>
+          </ProposalMarks.Provider>
+          {reviewed && (
+            <ProposalBar
+              latestVersion={view.latestVersion}
+              isStale={reviewed.baseVersion < view.latestVersion}
+              hasDraft={isDrafting}
+              decision={decision.decision}
+              onAccept={decision.accept}
+              onDiscard={decision.discard}
+            />
+          )}
           {editing && (
             <SaveBar
               count={changeCount(editing)}
@@ -378,62 +428,6 @@ function KitDocument({
       </div>
     </div>
   );
-}
-
-function ProvenanceLine({
-  provenance,
-  unmapped,
-}: {
-  provenance: DesignSystemProvenance | null;
-  unmapped: number;
-}) {
-  const origin = useProvenanceOrigin(provenance);
-  const parts = [
-    origin,
-    unmapped > 0 ? `${String(unmapped)} ${unmapped === 1 ? 'token' : 'tokens'} not mapped` : null,
-  ].filter((part) => part !== null);
-  if (parts.length === 0) return null;
-  return <p className="text-caption text-muted">{parts.join(' · ')}</p>;
-}
-
-function useProvenanceOrigin(provenance: DesignSystemProvenance | null): string | null {
-  const [sourceName, setSourceName] = useState<string | null>(null);
-  const copiedFrom =
-    provenance !== null && 'copiedFrom' in provenance ? provenance.copiedFrom : null;
-  const copiedFromId = copiedFrom?.id ?? null;
-  const sourceCanvasId =
-    provenance !== null && 'sourceCanvasId' in provenance ? provenance.sourceCanvasId : null;
-
-  useEffect(() => {
-    let named: Promise<string | null> | null = null;
-    if (copiedFromId !== null)
-      named = canvasClient.designSystems
-        .list()
-        .then((kits) => kits.find((kit) => kit.id === copiedFromId)?.name ?? null);
-    else if (sourceCanvasId !== null)
-      named = canvasClient
-        .listCanvases()
-        .then(
-          (canvases) => canvases.find((canvas) => canvas.canvasId === sourceCanvasId)?.name ?? null,
-        );
-    if (!named) return;
-    let live = true;
-    // A name that cannot be read leaves the line without it.
-    named.then(
-      (name) => {
-        if (live) setSourceName(name);
-      },
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [copiedFromId, sourceCanvasId]);
-
-  if (copiedFrom)
-    return `Copy of ${sourceName ?? 'another design system'} v${String(copiedFrom.version)}`;
-  if (sourceCanvasId) return `Extracted from ${sourceName ?? 'a canvas'}`;
-  return null;
 }
 
 /**

@@ -1,7 +1,7 @@
 // Reads a DESIGN.md's blocks, CSS variables or a Tailwind config, pasted or
 // read from a project, into declared tokens, each with its light, dark or
-// shared value and the place that set it. Nothing here runs the source: CSS is parsed by PostCSS, and a config
-// is read for its literals only.
+// shared value and the place that set it. Nothing here runs the source: CSS is
+// parsed by PostCSS, and a config is read for its literals only.
 
 import postcss, {
   type AtRule,
@@ -67,12 +67,12 @@ export function declarePlaceholders(declared: Declared, diagnostics: CanvasDiagn
       declare(declared, { name, value: `var(${name})`, targets: ['shared'], place }, diagnostics);
 }
 
-function placeIn(origin: TextOrigin, line: number): SourcePlace {
+export function placeIn(origin: TextOrigin, line: number): SourcePlace {
   const at = origin.lineOffset + line;
   return origin.file === undefined ? { line: at } : { file: origin.file, line: at };
 }
 
-function fileOf(origin: TextOrigin): { file?: string } {
+export function fileOf(origin: TextOrigin): { file?: string } {
   return origin.file === undefined ? {} : { file: origin.file };
 }
 
@@ -318,7 +318,7 @@ export function tokenName(raw: string): string | null {
 }
 
 // Pasted values may wrap across lines; a token value is a single line.
-function declare(
+export function declare(
   declared: Declared,
   token: { name: string; value: string; targets: TokenScope[]; place: SourcePlace },
   diagnostics: CanvasDiagnostic[],

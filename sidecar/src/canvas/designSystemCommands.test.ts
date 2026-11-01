@@ -10,6 +10,7 @@ import { CompilerWorker } from './compiler.js';
 import type { DesignSystemDocumentView } from './designSystemCommands.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
+import { proposeDesignSystem } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem, type DesignSystemSource } from './designSystems.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
@@ -98,9 +99,9 @@ test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared prim
   const kit = await readKit(canvas, ref);
   assert.equal(kit.modes.light['--ds-accent'], '#8a5a1f');
   assert.equal(kit.modes.dark['--ds-accent'], '#e3a857');
-  // Kept under its own name in both modes, and reported rather than dropped.
-  assert.deepEqual(kit.unmapped, ['--brand-ink']);
-  assert.equal(kit.modes.dark['--brand-ink'], '#2b2118');
+  // Kept under its own name in the kit's namespace, and reported rather than dropped.
+  assert.deepEqual(kit.unmapped, ['--ds-brand-ink']);
+  assert.equal(kit.modes.dark['--ds-brand-ink'], '#2b2118');
   // The agent reads the whole DESIGN.md as one of the kit's notes.
   const saved = await readDesignSystem(ref);
   assert.ok(kitGuidance(saved.name, saved.sections).includes('### design.md'));
@@ -148,7 +149,7 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
     css.modes.light['--ds-danger'],
     kitModes(DROIDEX_DESIGN_SYSTEM.sections).light['--ds-danger'],
   );
-  assert.deepEqual(css.unmapped, ['--chart-1']);
+  assert.deepEqual(css.unmapped, ['--ds-chart-1']);
 
   const fromConfig = await importKit(canvas, 'from-config', {
     kind: 'cssOrTailwind',
@@ -161,7 +162,7 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
   const config = await readKit(canvas, fromConfig.ref);
   assert.equal(config.modes.dark['--ds-accent'], '#123456');
   assert.equal(config.modes.light['--ds-radius-lg'], '14px');
-  assert.deepEqual(config.unmapped, ['--color-brand-500']);
+  assert.deepEqual(config.unmapped, ['--ds-color-brand-500']);
 
   // A stylesheet that does not parse saves nothing.
   await canvas.handle({
@@ -201,7 +202,7 @@ test('references resolve however deep they fan out, and what cannot be read is n
     kind: 'cssOrTailwind',
     text,
   });
-  assert.equal((await readKit(canvas, ref)).modes.dark['--level-0'], '1px');
+  assert.equal((await readKit(canvas, ref)).modes.dark['--ds-level-0'], '1px');
   assert.deepEqual(
     diagnostics.map(({ message }) => message.split(' was not imported. ')[0].slice(0, 12)),
     ['--loop-a', '--loop-b', '--long-long-'],
@@ -257,7 +258,7 @@ test('pasted sources are bounded before they are read, and competing values are 
   );
   assert.deepEqual(await refusal('long-chain', `:root{${chain.join('')}}`), {
     code: 'invalid_input',
-    message: 'That source declares 3000 tokens; a kit holds at most 128.',
+    message: 'That source declares 3000 tokens; a kit holds at most 256.',
   });
   assert.deepEqual(
     await refusal('competing', ':root { --primary: #123; }\n:root { --primary: #456; }'),
@@ -418,6 +419,69 @@ test('the document saves on its latest version, restores an older one and is ann
   assert.deepEqual(canvas.events.slice(before), [
     { type: 'canvas.designSystemsChanged', id: 'studio' },
   ]);
+});
+
+test('the document reads an agent proposal, and accept and discard answer and are announced', async (t) => {
+  const canvas = await harness(t);
+  await canvas.handle({
+    type: 'canvas.copyDesignSystem',
+    requestId: 'copy',
+    mutationId: 'reviewed',
+    source: { id: 'droidex', version: 1 },
+    name: 'Reviewed',
+  });
+  const propose = async (mutationId: string, name: string, baseVersion: number) => {
+    const kit = await readDesignSystem({ id: 'reviewed', version: baseVersion });
+    await proposeDesignSystem(
+      { ...kit, name },
+      { mutationId, baseVersion, appSessionId: 'chat-one', beforePublish: () => undefined },
+    );
+  };
+  await propose('first', 'Reviewed by the agent', 1);
+  const proposal = (await readKit(canvas, { id: 'reviewed', version: 1 })).proposal;
+  assert.deepEqual(
+    [proposal?.baseVersion, proposal?.appSessionId, proposal?.name],
+    [1, 'chat-one', 'Reviewed by the agent'],
+  );
+  assert.ok(proposal);
+
+  const changed = (from: number) =>
+    canvas.events.slice(from).filter((event) => event.type === 'canvas.designSystemsChanged');
+  let before = canvas.events.length;
+  await canvas.handle({
+    type: 'canvas.acceptDesignSystemProposal',
+    requestId: 'accept',
+    mutationId: 'accept',
+    id: 'reviewed',
+    proposalId: proposal.proposalId,
+    onto: 1,
+  });
+  assert.deepEqual(okReply(canvas, 'accept'), {
+    kind: 'designSystemSaved',
+    ref: { id: 'reviewed', version: 2 },
+    diagnostics: [],
+  });
+  const accepted = await readKit(canvas, { id: 'reviewed', version: 2 });
+  assert.deepEqual(
+    [accepted.name, accepted.savedBy, accepted.proposal],
+    ['Reviewed by the agent', { actor: 'agent', appSessionId: 'chat-one' }, null],
+  );
+
+  assert.ok(changed(before).length > 0, 'an accept tells the lists to refresh');
+
+  await propose('second', 'Never accepted', 2);
+  const second = (await readKit(canvas, { id: 'reviewed', version: 2 })).proposal;
+  assert.ok(second);
+  before = canvas.events.length;
+  await canvas.handle({
+    type: 'canvas.discardDesignSystemProposal',
+    requestId: 'discard',
+    id: 'reviewed',
+    proposalId: second.proposalId,
+  });
+  assert.deepEqual(okReply(canvas, 'discard'), { kind: 'ok' });
+  assert.deepEqual(changed(before), [{ type: 'canvas.designSystemsChanged', id: 'reviewed' }]);
+  assert.equal((await readKit(canvas, { id: 'reviewed', version: 2 })).proposal, null);
 });
 
 async function exportFolder(t: TestContext): Promise<{ parent: string; destination: string }> {

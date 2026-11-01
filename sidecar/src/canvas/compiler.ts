@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
 import { canvasError } from './canvasError.js';
+import type { DesignSystem } from './designSystems.js';
 import type {
   CanvasDiagnostic,
   DesignSystemAdherence,
@@ -43,10 +44,11 @@ export interface DesignCompileInput {
   designSystemAdherence: DesignSystemAdherence;
 }
 
-/** One example of a kit version: no revision to select in, no kit to be held to. */
+/** One example under a kit, saved or not: no revision to select in, no kit to be held to. */
 export interface KitPreviewCompileInput {
   kind: 'kitPreview';
-  system: DesignSystemRef;
+  kit: Pick<DesignSystem, 'files' | 'sections'>;
+  mode: DesignSystemRef['mode'];
   /** The example's source, compiled as the entry of a one-file design. */
   example: string;
 }

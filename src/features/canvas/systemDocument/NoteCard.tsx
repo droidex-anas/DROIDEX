@@ -15,7 +15,7 @@ import type { DraftChange } from './documentDraft';
 import { noteLabel, noteTitle, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NoteBodyEditor } from './NoteBodyEditor';
-import { UndoRemove, UnsavedMark } from './UnsavedMark';
+import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const NOTE_LABEL = /^[a-z0-9][a-z0-9-]*\.md$/;
 const MAX_LABEL_LENGTH = 48;
@@ -132,6 +132,7 @@ export function NoteCard({
             </span>
           </Tooltip>
         )}
+        <AddedLabel mark={mark} />
         <span className="flex-1" />
         {!isRemoved && (
           <button

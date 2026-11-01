@@ -1,15 +1,25 @@
 // A kit's previews (design system documents spec §7): one example of one kit
-// version, compiled in one mode through the same compiler as frames, with no
-// revision to select in and no adherence. Versions are immutable, so an answer
-// about the source is kept in memory and compiled once while it is kept.
+// version or of the proposal waiting for review, compiled in one mode through
+// the same compiler as frames, with no revision to select in and no adherence.
+// Versions and proposals are immutable, so an answer about the source is kept
+// in memory and compiled once while it is kept. An agent's unsaved kit is
+// checked through the same compiler and never kept.
 
 import { realDeadline, type BuildDeadline } from './CanvasBuilds.js';
 import { buildFailure } from './canvasBuildFailures.js';
+import { boundDiagnostics } from './canvasDiagnostics.js';
 import { canvasError } from './canvasError.js';
-import { CompilerWorker } from './compiler.js';
+import { CompilerWorker, type KitPreviewCompileInput } from './compiler.js';
+import { DESIGN_ENTRY } from './designEntry.js';
 import type { DocumentSection } from './designSystemDocument.js';
-import { readDesignSystem, type DesignSystem } from './designSystems.js';
-import type { CanvasDiagnostic, DesignSystemRef, PreviewArtifact } from './protocol.js';
+import { readProposedSystem } from './designSystemProposals.js';
+import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
+import type {
+  CanvasDiagnostic,
+  DesignSystemProposalRef,
+  DesignSystemRef,
+  PreviewArtifact,
+} from './protocol.js';
 
 /** What a preview tile loads, or the diagnostics it shows instead. */
 export type KitPreview =
@@ -31,6 +41,13 @@ interface Answer {
 
 const MAX_KEPT_PREVIEWS = 32;
 const SHUTTING_DOWN = 'DROIDEX is shutting down.';
+// A side-effect import, which the TypeScript loader keeps, so the kit's entry is bundled.
+const KIT_ENTRY_CHECK = `import '@droidex/design-system';
+
+export default function KitEntry() {
+  return null;
+}
+`;
 
 export class KitPreviews {
   private compiler: KitCompiler | null = null;
@@ -49,10 +66,11 @@ export class KitPreviews {
     this.deadline = deps.deadline ?? realDeadline;
   }
 
-  /** The preview `item` names in that kit version and mode. */
-  async read(ref: DesignSystemRef, item: string): Promise<KitPreview> {
+  /** The preview `item` names in that kit version or proposal, in its mode. */
+  async read(ref: DesignSystemRef | DesignSystemProposalRef, item: string): Promise<KitPreview> {
     this.refuseClosed();
-    const key = JSON.stringify([ref.id, ref.version, ref.mode, item]);
+    const source = 'proposalId' in ref ? ref.proposalId : ref.version;
+    const key = JSON.stringify([ref.id, source, ref.mode, item]);
     const kept = this.kept.get(key);
     if (kept) {
       this.keep(key, kept);
@@ -61,6 +79,37 @@ export class KitPreviews {
     const { preview } = await (this.pending.get(key) ?? this.start(key, ref, item));
     this.refuseClosed();
     return preview;
+  }
+
+  /**
+   * Compiles a kit that may not be saved yet: its entry, then each of its
+   * examples once. Returns the failures' diagnostics, none when everything
+   * builds. One stylesheet carries both modes and the mode is only the
+   * document's `data-mode`, so one compile answers for both.
+   */
+  async check(
+    kit: Pick<DesignSystem, 'files' | 'sections' | 'examples'>,
+  ): Promise<CanvasDiagnostic[]> {
+    const source = { files: kit.files, sections: kit.sections };
+    const entries: [string, string][] = [[KIT_ENTRY, KIT_ENTRY_CHECK]];
+    for (const [name, example] of Object.entries(kit.examples))
+      entries.push([`examples/${name}`, example]);
+    const diagnostics: CanvasDiagnostic[] = [];
+    for (const [file, example] of entries) {
+      this.refuseClosed();
+      const { preview } = await this.compile({
+        kind: 'kitPreview',
+        kit: source,
+        mode: 'light',
+        example,
+      });
+      if (preview.status === 'ready') continue;
+      // The entry stands in for the example it compiled; the kit's own files keep their paths.
+      for (const diagnostic of preview.diagnostics)
+        diagnostics.push(diagnostic.file === DESIGN_ENTRY ? { ...diagnostic, file } : diagnostic);
+    }
+    this.refuseClosed();
+    return boundDiagnostics(diagnostics);
   }
 
   /** Refuses every read and cancels every compile; nothing compiles after this. */
@@ -72,8 +121,12 @@ export class KitPreviews {
     while (this.ending.size > 0) await Promise.all([...this.ending]);
   }
 
-  private start(key: string, ref: DesignSystemRef, item: string): Promise<Answer> {
-    const answer = this.compile(ref, item);
+  private start(
+    key: string,
+    ref: DesignSystemRef | DesignSystemProposalRef,
+    item: string,
+  ): Promise<Answer> {
+    const answer = this.compileItem(ref, item);
     this.pending.set(key, answer);
     void answer.then(
       ({ preview, kept }) => {
@@ -98,9 +151,19 @@ export class KitPreviews {
     if (this.closed) throw canvasError('scope_expired', SHUTTING_DOWN);
   }
 
-  private async compile(ref: DesignSystemRef, item: string): Promise<Answer> {
-    const example = kitExample(await readDesignSystem(ref), item);
+  private async compileItem(
+    ref: DesignSystemRef | DesignSystemProposalRef,
+    item: string,
+  ): Promise<Answer> {
+    const system =
+      'proposalId' in ref ? await readProposedSystem(ref) : await readDesignSystem(ref);
+    const example = kitExample(system, item);
     this.refuseClosed();
+    const kit = { files: system.files, sections: system.sections };
+    return this.compile({ kind: 'kitPreview', kit, mode: ref.mode, example });
+  }
+
+  private async compile(input: KitPreviewCompileInput): Promise<Answer> {
     const compiler = (this.compiler ??= this.fork());
     const abort = new AbortController();
     let overdue = false;
@@ -112,10 +175,7 @@ export class KitPreviews {
     });
     this.running.add(abort);
     try {
-      const { artifactId, html } = await compiler.compile(
-        { kind: 'kitPreview', system: ref, example },
-        abort.signal,
-      );
+      const { artifactId, html } = await compiler.compile(input, abort.signal);
       return { preview: { status: 'ready', artifact: { artifactId, html } }, kept: true };
     } catch (error) {
       const failure = buildFailure(error, overdue);

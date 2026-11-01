@@ -9,7 +9,7 @@ import { boundedList, boundedText, count, id, isAppSessionId, record } from './w
 const MAX_SECTIONS = 16;
 const MAX_ITEMS_PER_SECTION = 64;
 const MAX_TITLE_LENGTH = 120;
-const MAX_TOKENS = 128;
+const MAX_TOKENS = 256;
 const MAX_TOKEN_VALUE_LENGTH = 160;
 const MAX_TOKEN_NOTE_BYTES = 400;
 const MAX_NOTE_BYTES = 8 * 1024;
@@ -32,6 +32,8 @@ const TOKEN_KINDS = new Set<unknown>([
   'spacing',
   'radius',
   'shadows',
+  'size',
+  'z-index',
   'motion',
   'tokens',
 ]);
@@ -209,7 +211,28 @@ export function isKitDocument(value: unknown): boolean {
     (value.provenance === null || isKitProvenance(value.provenance)) &&
     (value.savedAt === null || isTimestamp(value.savedAt)) &&
     (value.savedBy === null || isSavedBy(value.savedBy)) &&
-    value.proposal === null
+    (value.proposal === null || isKitProposal(value.proposal))
+  );
+}
+
+function isKitProposal(value: unknown): boolean {
+  return (
+    hasOnlyKeys(value, [
+      'proposalId',
+      'baseVersion',
+      'proposedAt',
+      'appSessionId',
+      'name',
+      'cover',
+      'sections',
+    ]) &&
+    id(value.proposalId) &&
+    count(value.baseVersion) &&
+    isTimestamp(value.proposedAt) &&
+    isAppSessionId(value.appSessionId) &&
+    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
+    isCover(value.cover) &&
+    isDocumentSections(value.sections)
   );
 }
 

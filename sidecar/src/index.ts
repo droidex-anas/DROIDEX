@@ -104,6 +104,7 @@ const server = startBridgeServer({
 // one per mutation request, and each turn's lease is registered here.
 const canvasScopes = new CanvasScopes();
 let canvasWorkspace: CanvasWorkspace | undefined;
+const kitPreviews = new KitPreviews();
 const canvasTurns = new CanvasTurns(
   canvasScopes,
   (appSessionId) => canvasWorkspace?.attachedCanvasId(appSessionId) ?? null,
@@ -125,6 +126,7 @@ const manager = new SessionManager(
     canvasTurns,
     canvasWorkspace: () => canvasReady,
     canvasCapture: (canvasId, ref, signal) => canvasBridge.capture(canvasId, ref, signal),
+    kitPreviews,
     onUserPrompt: (appSessionId) => {
       void projects?.userContinued(appSessionId).catch(reportProjectError);
     },
@@ -211,7 +213,6 @@ void canvasReady.catch((error: unknown) => {
   });
 });
 const canvasAdmission = new AbortController();
-const kitPreviews = new KitPreviews();
 const canvasBridge = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,

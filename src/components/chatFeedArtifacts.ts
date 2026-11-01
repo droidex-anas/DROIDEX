@@ -1,19 +1,29 @@
 // A Canvas create or write that produced frames is what the turn made, not a
 // step along the way, so it becomes its own card in the transcript (spec §4).
 // A design gets one card per turn: the create and the writes that fill it are
-// one artifact, and a call that failed or made nothing gets no card.
+// one artifact, and a call that failed or made nothing gets no card. A design
+// system the agent saved, proposed or applied is one too, shown as its chip
+// once per turn for each kit and outcome (design system documents spec §9).
 
 import type { TranscriptEvent } from '../types/bridge';
 
+type Activity = NonNullable<TranscriptEvent['canvasActivity']>;
+
 /** A completed create or write's activity, which names the canvas it changed. */
-export type CanvasArtifact = NonNullable<TranscriptEvent['canvasActivity']> & { canvasId: string };
+export type CanvasArtifact = Activity & { action: 'create' | 'write'; canvasId: string };
+
+/** A completed theme call's activity, which names the kit it saved, proposed or applied. */
+export type KitArtifact = Activity & {
+  action: 'theme';
+  designSystem: NonNullable<Activity['designSystem']>;
+};
 
 export interface CanvasArtifactItem {
   type: 'canvas_artifact';
   key: string;
   /** The completed result the card stands for. */
   event: TranscriptEvent;
-  activity: CanvasArtifact;
+  activity: CanvasArtifact | KitArtifact;
 }
 
 export interface CanvasArtifactRows {
@@ -27,10 +37,10 @@ export function canvasArtifactRows(events: TranscriptEvent[]): CanvasArtifactRow
   const resultOf = new Map<TranscriptEvent, ArtifactResult>();
   // Tool-use IDs can repeat across turns, so a result pairs with the latest call before it.
   const calls = new Map<string, TranscriptEvent>();
-  let shownDesignIds = new Set<string>();
+  let shown = new Set<string>();
   for (const event of events) {
     if (event.author === 'user') {
-      shownDesignIds = new Set();
+      shown = new Set();
       continue;
     }
     if (!event.toolUseId) continue;
@@ -38,9 +48,10 @@ export function canvasArtifactRows(events: TranscriptEvent[]): CanvasArtifactRow
       calls.set(event.toolUseId, event);
       continue;
     }
-    if (!isArtifact(event) || event.canvasActivity.designIds.every((id) => shownDesignIds.has(id)))
-      continue;
-    for (const id of event.canvasActivity.designIds) shownDesignIds.add(id);
+    if (!isArtifact(event)) continue;
+    const keys = shownKeys(event.canvasActivity);
+    if (keys.every((key) => shown.has(key))) continue;
+    for (const key of keys) shown.add(key);
     resultOf.set(event, event);
     const call = calls.get(event.toolUseId);
     if (call) resultOf.set(call, event);
@@ -65,14 +76,20 @@ export function canvasArtifactRows(events: TranscriptEvent[]): CanvasArtifactRow
   return { events: kept, cards };
 }
 
-type ArtifactResult = TranscriptEvent & { canvasActivity: CanvasArtifact };
+type ArtifactResult = TranscriptEvent & { canvasActivity: CanvasArtifact | KitArtifact };
 
 function isArtifact(event: TranscriptEvent): event is ArtifactResult {
   const activity = event.canvasActivity;
+  if (event.kind !== 'tool_result' || activity?.state !== 'completed') return false;
+  if (activity.action === 'theme') return activity.designSystem !== undefined;
   return (
-    event.kind === 'tool_result' &&
-    activity?.state === 'completed' &&
-    (activity.action === 'create' || activity.action === 'write') &&
-    activity.canvasId !== undefined
+    (activity.action === 'create' || activity.action === 'write') && activity.canvasId !== undefined
   );
+}
+
+// Design ids never contain a colon, so a kit's key cannot name a design.
+function shownKeys(activity: CanvasArtifact | KitArtifact): string[] {
+  if (activity.action !== 'theme') return activity.designIds;
+  const { id, status } = activity.designSystem;
+  return [`kit:${id}:${status}`];
 }

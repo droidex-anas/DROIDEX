@@ -18,7 +18,7 @@ const MAX_FILE_BYTES = 256 * 1024;
 export interface ProjectSource {
   /** Relative to the project folder. */
   path: string;
-  kind: 'tailwind' | 'css' | 'designMd';
+  kind: 'tailwind' | 'css' | 'tokens' | 'designMd';
 }
 
 type ProjectFile = ImportSource & { file: string };

@@ -51,7 +51,7 @@ type Section =
   | { kind: 'components'; id: string; title: string; items: (Note | Preview)[] }
   | { kind: 'assets'; id: string; title: string; items: (Note | Asset)[] };
 
-type TokenKind = 'colors' | 'typography' | 'spacing' | 'radius' | 'shadows' | 'motion' | 'tokens';
+type TokenKind = 'colors' | 'typography' | 'spacing' | 'radius' | 'shadows' | 'size' | 'z-index' | 'motion' | 'tokens';
 
 interface Note { kind: 'note'; id: string; label: string; body: string; author: 'user' | 'agent' }
 interface TokenGroup { kind: 'group'; id: string; title: string; tokens: Token[] }
@@ -74,7 +74,7 @@ Rules the sidecar's schema enforces:
 | Sections | at most 16; at most one section of each token kind, one `components` and one `assets`; any number of `notes` sections |
 | Items per section | at most 64 |
 | Section and item ids | `[a-z0-9-]{1,48}`, unique within the version |
-| Tokens | at most 128 in the whole document (the old per-mode limit), names `--[a-z0-9]+(-[a-z0-9]+)*`, unique in the document, values as today (160 characters, no `;{}<>`, comment or line break) |
+| Tokens | at most 256 in the whole document, enough for a product's full system beside the primitives' tokens, names `--[a-z0-9]+(-[a-z0-9]+)*`, unique in the document, values as today (160 characters, no `;{}<>`, comment or line break) |
 | Token usage note | at most 400 bytes |
 | Note label | filename-like, `[a-z0-9][a-z0-9-]*\.md`, at most 48 characters, unique in the document |
 | Note body | markdown, at most 8 KiB |
@@ -86,7 +86,7 @@ Rules the sidecar's schema enforces:
 
 How the 16 KiB guidance relates: it is no longer a field anyone writes. It is the document's own text as the agent reads it, and saving refuses a document whose notes and usage notes would pass 16 KiB together, naming the largest note. A builder (§15, imports, extraction) continues a note longer than 8 KiB in `name-2.md` and on, breaking between paragraphs or before a heading, so a 16 KiB DESIGN.md or v1.6 guidance is kept whole. The opening `canvas_read` brief is that text, its headings and the 4 KiB name lists. Prose that should not cost the agent's attention does not belong in a kit.
 
-**Ordering.** The stored arrays are the order; the sidecar keeps exactly what was saved. Builders (presets, imports, the project flow, the v1.6 conversion in §15) use the canonical order: notes (titled Overview), Colors, Typography, Spacing, Corner radius, Shadows, Motion, Other tokens (`tokens`), Components, Assets. A section added later, by the user or the agent, is inserted before the first existing section that comes after it in that order. The user can then move sections up or down. Items keep the order they were added in and can be moved within their section.
+**Ordering.** The stored arrays are the order; the sidecar keeps exactly what was saved. Builders (presets, imports, the project flow, the v1.6 conversion in §15) use the canonical order: notes (titled Overview), Colors, Typography, Spacing, Corner radius, Shadows, Size, Z index (`z-index`), Motion, Other tokens (`tokens`), Components, Assets. A section added later, by the user or the agent, is inserted before the first existing section that comes after it in that order. The user can then move sections up or down. Items keep the order they were added in and can be moved within their section.
 
 **Note authors.** The sidecar sets `author` on save from who saved: `user` for a note the user changed, `agent` for one an agent save or an accepted proposal changed. It is never read from input. The document does not show who wrote a note.
 
@@ -243,7 +243,7 @@ Changes use the document's natural keys (token name, note label, preview title, 
 
 What a save does:
 
-- **New kit** (the id is unused): built from its `from` base, the changes applied, validated, then `index.tsx` and every example compiled in both modes. A failure refuses with diagnostics (file, line, message). Success saves v1 with `savedBy: agent` and returns `{ status: 'saved', ref, diagnostics }`.
+- **New kit** (the id is unused): built from its `from` base, the changes applied, validated, then `index.tsx` and every example compiled once each, since the mode never changes whether a build compiles. A failure refuses with diagnostics (file, line, message). Success saves v1 with `savedBy: agent` and returns `{ status: 'saved', ref, diagnostics }`.
 - **Existing user kit**: the same validation and build, then the result becomes the kit's pending proposal against `baseVersion`, replacing an earlier one. It returns `{ status: 'proposed', id, baseVersion, diagnostics }`. The tool's message says the user reviews it and that builds keep the current version until then.
 - A preset id refuses with `preset_read_only` and suggests `from: { copy }`. A deleted kit refuses with `invalid_input`. A `baseVersion` that is not the latest refuses with `revision_conflict` and the latest number, so the agent reads again.
 
@@ -265,6 +265,7 @@ The agent explores with its own tools: the Tailwind config, CSS variable files, 
 kit: { id: 'acme', from: { project: [
   { path: 'tailwind.config.ts', kind: 'tailwind' },
   { path: 'src/index.css', kind: 'css' },
+  { path: 'src/lib/themeTokens.ts', kind: 'tokens' },
   { path: 'DESIGN.md', kind: 'designMd' },
 ] } },
 changes: [/* notes on rules and conventions found, token usage notes, component and demo previews */],
@@ -273,9 +274,9 @@ cover: 'preview',
 ```
 
 - **DROIDEX reads the files, not the agent.** Each path is relative to the session's project folder: no `..`, no absolute paths, the final component not a symbolic link, the real path inside the folder, a regular UTF-8 file of at most 256 KiB, at most 8 sources. So the provenance is true.
-- **The existing readers do the mapping.** CSS through `designSystemSources.ts` and the root/`data-mode` rule in `designSystemTokens.ts` (shared with `extractDesignSystem`), Tailwind configs through `configLiterals.ts`, `DESIGN.md` fences and text as today. `designSystemImport.ts` maps familiar names onto the `--ds-*` contract and keeps the rest as Other tokens. The document's builder places mapped tokens in their canonical sections; a `DESIGN.md`'s prose becomes a `design.md` note. Then the agent's changes apply on top.
+- **The existing readers do the mapping.** CSS through `designSystemSources.ts` and the root/`data-mode` rule in `designSystemTokens.ts` (shared with `extractDesignSystem`), Tailwind configs through `configLiterals.ts`, `DESIGN.md` fences and text as today. A `tokens` source (a JS, TS or JSON theme module) reads its top-level bindings as literals through `configLiterals.ts`: nested objects flatten into hyphenated names, `light` and `dark` entries set that mode's value, a `value` entry unwraps, and a list of `{ name, value }` records names each token by its record (a name another value already holds widens by its family, reported as renamed); computed values are reported, never dropped quietly. `designSystemImport.ts` maps familiar names onto the `--ds-*` contract and keeps the rest as Other tokens under their own names in the kit's namespace (`--bg` is `--ds-bg`, unless that is a primitive's token), so an agent's change to `--ds-bg` moves and completes the imported token instead of adding a second one. The document's builder places mapped tokens in their canonical sections; a `DESIGN.md`'s prose becomes a `design.md` note. Then the agent's changes apply on top.
 - **Provenance** gains a third kind, `{ project: { name, files } }`: the project folder's name, taken from the session, and the paths DROIDEX parsed.
-- **Not read.** Theme modules other than Tailwind configs (a `theme.ts`, a styled-components theme) are not parsed. The agent may transcribe their values as token changes; provenance does not list them as read. The project's components are not imported as kit code: the agent describes them in notes and previews them with the kit's primitives. Kit `files` may change only if they still build with the allowed imports (`react`, `lucide-react`, the kit module), so imports of project paths fail the save.
+- **Not read.** What a token module computes (a `theme.ts` whose values come from function calls, a styled-components theme's helpers) is reported as computed, and the agent sets it with token changes. The project's components are not imported as kit code: the agent describes them in notes and previews them with the kit's primitives. Kit `files` may change only if they still build with the allowed imports (`react`, `lucide-react`, the kit module), so imports of project paths fail the save.
 - **What the user sees**: the agent's “Created design system” chip; the document's provenance line with counts (“6 tokens not mapped · 2 values not read”), and the importer's diagnostics (scoped rules, computed config values, unresolved references, single-mode tokens) listed under Other tokens.
 
 ## 13. Turn context and adherence
@@ -302,15 +303,15 @@ Renderer commands, answered by `designSystemCommands.ts` without a canvas or sco
 | Command | Reply |
 | --- | --- |
 | `canvas.listDesignSystems` | `designSystems`: summaries with `savedAt`, `cover`, `proposal`; deleted kits excluded |
-| `canvas.readDesignSystem { ref: { id, version } }` | `designSystem`: `{ id, version, latestVersion, name, kind, cover, sections, examples: string[], unmapped, provenance, savedAt, savedBy, proposal }` without source; `proposal` is `{ baseVersion, proposedAt, appSessionId, name, cover, sections } \| null`, `name` because a proposal may rename the kit |
+| `canvas.readDesignSystem { ref: { id, version } }` | `designSystem`: `{ id, version, latestVersion, name, kind, cover, sections, examples: string[], unmapped, provenance, savedAt, savedBy, proposal }` without source; `proposal` is `{ proposalId, baseVersion, proposedAt, appSessionId, name, cover, sections } \| null`, `name` because a proposal may rename the kit; every proposal gets a new `proposalId`, and review, accept and discard name the one the user saw |
 | `canvas.saveDesignSystem { mutationId, id, baseVersion, name, cover, sections }` | `designSystemSaved { ref, diagnostics }`, or `revision_conflict { latestVersion }` |
 | `canvas.listDesignSystemVersions { id }` | `designSystemVersions`: `{ version, savedAt, savedBy }[]` newest first |
 | `canvas.restoreDesignSystemVersion { mutationId, id, version, onto }` | `designSystemSaved`, or `revision_conflict { latestVersion }` |
-| `canvas.acceptDesignSystemProposal { mutationId, id, onto }` | `designSystemSaved`; `onto` is the version the user saw as latest |
-| `canvas.discardDesignSystemProposal { id }` | `ok` |
+| `canvas.acceptDesignSystemProposal { mutationId, id, proposalId, onto }` | `designSystemSaved`; `onto` is the version the user saw as latest. A proposal no longer waiting is refused: `revision_conflict { latestVersion }` when a save won the race, else `invalid_input`; a retried accept that already saved leaves a later proposal in place |
+| `canvas.discardDesignSystemProposal { id, proposalId }` | `ok`; removes only that proposal, so one that replaced it stays for review |
 | `canvas.setDesignSystemDeleted { mutationId, id, deleted }` | `ok` |
-| `canvas.readKitPreview { ref: { id, version, mode }, item }` | `kitPreview`: the artifact; `item` is a preview id or `cover` or `typography`, two ids §2 keeps from previews |
-| `canvas.saveKitCapture { ref, item, png }` / `canvas.readKitCapture { ref, item }` | `ok` / `kitCapture { png \| null }` |
+| `canvas.readKitPreview { ref: { id, version, mode } \| { id, proposalId, mode }, item }` | `kitPreview`: the artifact; `item` is a preview id or `cover` or `typography`, two ids §2 keeps from previews. A proposal ref builds from the proposal's own source, so the review screen shows the proposed cover and previews, added ones included; a proposal no longer waiting is `invalid_input` |
+| `canvas.saveKitCapture { ref, item, png }` / `canvas.readKitCapture { ref, item }` | `ok` / `kitCapture { png \| null }`; `ref` is a saved version, never a proposal |
 | `canvas.copyDesignSystem`, `canvas.importDesignSystem` | unchanged commands; replies now carry the document |
 
 Event: `designSystemsChanged { id }` after every save, accept, discard, proposal and delete, so lists, choices and open documents refresh.

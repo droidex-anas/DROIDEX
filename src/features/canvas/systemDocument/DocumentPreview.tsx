@@ -12,7 +12,7 @@ import type { DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { KitPreviewTile, type KitPreviewing } from './KitPreviewTile';
 import { NotePopover } from './NotePopover';
-import { UndoRemove, UnsavedMark } from './UnsavedMark';
+import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TITLE_LENGTH = 120;
 const MAX_PREVIEW_NOTE_BYTES = 1024;
@@ -71,6 +71,7 @@ export function PreviewItem({
             {preview.title}
           </span>
         )}
+        <AddedLabel mark={mark} />
         <span className="flex-1" />
         {onChange && isRemoved && (
           <UndoRemove label={preview.title} removedKey={preview.id} onChange={onChange} />
