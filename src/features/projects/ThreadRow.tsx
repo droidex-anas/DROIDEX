@@ -64,11 +64,13 @@ export function ThreadRow({
 export function AttentionThreadRow({
   row,
   primary,
+  active,
   reduceMotion,
   onOpen,
 }: {
   row: ThreadRowModel;
   primary: boolean;
+  active: boolean;
   reduceMotion: boolean;
   onOpen: (appSessionId: string) => void;
 }) {
@@ -83,11 +85,14 @@ export function AttentionThreadRow({
       transition={{ duration: INLINE_CARD_DURATION_S, ease: INLINE_CARD_EASE }}
       data-testid="thread-row"
       data-thread-status={row.status}
-      className="group flex items-center gap-2.5 rounded-md py-2 pl-1 pr-1 transition-colors hover:bg-elevated/50"
+      className={`group flex items-center gap-2.5 rounded-md py-2 pl-1 pr-1 transition-colors ${
+        active ? 'bg-active' : 'hover:bg-elevated/50'
+      }`}
     >
       <button
         type="button"
         title={row.title}
+        aria-current={active ? 'true' : undefined}
         onClick={open}
         className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left"
       >

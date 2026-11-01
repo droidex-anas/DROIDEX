@@ -227,13 +227,17 @@ test('a runtime that cannot answer for projects still lets the chat list paint',
 });
 
 test('a streaming thread blocked on an approval shows the block, not the spinner', () => {
-  const [worker] = threadRows(project, {
+  const signals = {
     sessions: { main: session('main'), worker: session('worker') },
-    attention: (id) => (id === 'worker' ? 'approval' : null),
+    attention: (id: string) => (id === 'worker' ? 'approval' : null),
     digests: {},
-  });
+  } as const;
+  const [worker] = threadRows(project, signals);
   assert.equal(worker?.status, 'approval');
   assert.equal(worker?.live, false);
+  assert.equal(worker?.detail, 'Needs approval');
+  const [asking] = threadRows(project, { ...signals, asking: () => 'Run npm install?' });
+  assert.equal(asking?.detail, 'Run npm install?');
 });
 
 test('Alt account labels remain visible from queued spawn through the live thread', () => {

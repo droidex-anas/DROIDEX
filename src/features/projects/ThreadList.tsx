@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { LayoutGroup, useReducedMotion } from 'framer-motion';
 import { ListTodo, MessageSquareText, type IconComponent } from '@droidex/icons';
@@ -71,6 +71,7 @@ export function ThreadList({
   onOpenThread: (appSessionId: string) => void;
 }) {
   const reduceMotion = useReducedMotion() === true;
+  const tabsId = useId();
   // A long history starts folded so what is happening now stays in view.
   const [folded, setFolded] = useState<ReadonlySet<string>>(
     () => new Set(rows.length > HISTORY_FOLD ? ['ready'] : []),
@@ -168,6 +169,7 @@ export function ThreadList({
           <AttentionCard
             label={attention.label}
             rows={attention.rows}
+            activeAppSessionId={activeAppSessionId}
             reduceMotion={reduceMotion}
             onOpenThread={onOpenThread}
           />
@@ -209,6 +211,7 @@ export function ThreadList({
       </ProjectSummary>
       {hasPlan && (
         <ViewTabs
+          id={tabsId}
           view={view}
           threadCount={rows.length}
           planLabel={`${String(finishedSteps(plan))}/${String(plan.length)}`}
@@ -217,8 +220,9 @@ export function ThreadList({
       )}
       <div
         ref={scrollRef}
+        id={hasPlan ? `${tabsId}-panel` : undefined}
         role={hasPlan ? 'tabpanel' : undefined}
-        aria-label={hasPlan ? VIEW_LABELS[view] : undefined}
+        aria-labelledby={hasPlan ? `${tabsId}-${view}` : undefined}
         className="min-h-0 flex-1 overflow-y-auto pb-3"
       >
         <LayoutGroup>
@@ -281,38 +285,39 @@ function ProjectNotice({
   done: ProjectDone | undefined;
   onResume: (() => void) | undefined;
 }) {
-  if (held)
-    return (
-      <div className="mt-3 flex items-center gap-3">
-        <p className="min-w-0 flex-1 text-body text-secondary">
-          {uncertain > 0
-            ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
-            : 'Paused. Work and queued messages are kept.'}
-        </p>
-        {onResume && (
-          <Button variant="secondary" size="sm" onClick={onResume}>
-            Resume
-          </Button>
-        )}
-      </div>
-    );
-  if (leadStopped)
-    return (
-      <p className="mt-3 text-body text-secondary">
-        Lead stopped. The team keeps working; reports wait until you message it.
-      </p>
-    );
-  if (done)
-    return (
-      // Pulled into the row gutter so its mark sits on the panel's 20px edge.
-      <div className="-mx-2 mt-3 flex items-start gap-2.5 rounded-lg bg-surface px-2 py-2.5">
-        <span className="mt-0.5 shrink-0">
-          <ActivityStatusGlyph status="settled" />
-        </span>
-        <p className="min-w-0 text-body text-secondary">{done.outcome}</p>
-      </div>
-    );
-  return null;
+  return (
+    <>
+      {held ? (
+        <div className="mt-3 flex items-center gap-3">
+          <p className="min-w-0 flex-1 text-body text-secondary">
+            {uncertain > 0
+              ? 'A message may already have reached its thread before DROIDEX stopped. Resuming does not send it again.'
+              : 'Paused. Work and queued messages are kept.'}
+          </p>
+          {onResume && (
+            <Button variant="secondary" size="sm" onClick={onResume}>
+              Resume
+            </Button>
+          )}
+        </div>
+      ) : (
+        leadStopped && (
+          <p className="mt-3 text-body text-secondary">
+            Lead stopped. The team keeps working; reports wait until you message it.
+          </p>
+        )
+      )}
+      {done && (
+        // Pulled into the row gutter so its mark sits on the panel's 20px edge.
+        <div className="-mx-2 mt-3 flex items-start gap-2.5 rounded-lg bg-surface px-2 py-2.5">
+          <span className="mt-0.5 shrink-0">
+            <ActivityStatusGlyph status="settled" />
+          </span>
+          <p className="min-w-0 text-body text-secondary">{done.outcome}</p>
+        </div>
+      )}
+    </>
+  );
 }
 
 const VIEW_LABELS: Record<ThreadListView, string> = { threads: 'Threads', plan: 'Plan' };
@@ -325,11 +330,14 @@ const VIEWS: readonly ThreadListView[] = ['threads', 'plan'];
 /* Two tab chips in the shape the utility pane's own tabs use, so the Plan reads
    as a place to go rather than a figure in a status bar. */
 function ViewTabs({
+  id,
   view,
   threadCount,
   planLabel,
   onViewChange,
 }: {
+  /** Prefix for the tab ids and the panel id they control. */
+  id: string;
   view: ThreadListView;
   threadCount: number;
   planLabel: string;
@@ -350,19 +358,21 @@ function ViewTabs({
       onKeyDown={onKeyDown}
       className="flex shrink-0 items-center gap-1 px-3 pb-1 pt-3"
     >
-      {VIEWS.map((id) => {
-        const selected = view === id;
-        const Icon = VIEW_ICONS[id];
+      {VIEWS.map((option) => {
+        const selected = view === option;
+        const Icon = VIEW_ICONS[option];
         return (
           <button
-            key={id}
+            key={option}
+            id={`${id}-${option}`}
             type="button"
             role="tab"
-            data-view={id}
+            data-view={option}
             aria-selected={selected}
+            aria-controls={`${id}-panel`}
             tabIndex={selected ? 0 : -1}
             onClick={() => {
-              onViewChange(id);
+              onViewChange(option);
             }}
             className={`flex h-control-sm select-none items-center gap-1.5 rounded-md px-2 text-label transition-colors ${
               selected
@@ -371,9 +381,9 @@ function ViewTabs({
             }`}
           >
             <Icon className="size-icon-sm shrink-0" aria-hidden="true" />
-            <span>{VIEW_LABELS[id]}</span>
+            <span>{VIEW_LABELS[option]}</span>
             <span className="text-caption tabular-nums text-muted">
-              {id === 'threads' ? threadCount : planLabel}
+              {option === 'threads' ? threadCount : planLabel}
             </span>
           </button>
         );
@@ -387,11 +397,13 @@ function ViewTabs({
 function AttentionCard({
   label,
   rows,
+  activeAppSessionId,
   reduceMotion,
   onOpenThread,
 }: {
   label: string;
   rows: readonly ThreadRowModel[];
+  activeAppSessionId: string | null | undefined;
   reduceMotion: boolean;
   onOpenThread: (appSessionId: string) => void;
 }) {
@@ -409,6 +421,7 @@ function AttentionCard({
             key={row.appSessionId}
             row={row}
             primary={index === 0}
+            active={row.appSessionId === activeAppSessionId}
             reduceMotion={reduceMotion}
             onOpen={onOpenThread}
           />

@@ -192,10 +192,8 @@ function threadDetail(
   }
   // What it wants from the user comes first, even mid-turn: a thread can be
   // generating and still be stopped on an approval. The mark names the state.
-  if (BLOCKED.includes(status)) {
-    const said = asked ?? digest?.snippet;
-    return said === undefined || said === '' ? ACTIVITY_LABELS[status] : said;
-  }
+  if (BLOCKED.includes(status))
+    return nonEmpty(asked ?? digest?.snippet) ?? ACTIVITY_LABELS[status];
   if (live) return digest?.activity ?? 'Working';
   if (thread.waiting) return join('Asked the chat that started it', digest?.snippet);
   return digest?.snippet ?? ACTIVITY_LABELS[status];
@@ -215,6 +213,10 @@ const clockFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute
 
 function clockTime(ts: number): string {
   return clockFormat.format(ts);
+}
+
+function nonEmpty(text: string | undefined): string | undefined {
+  return text === '' ? undefined : text;
 }
 
 function join(lead: string, snippet: string | undefined): string {
