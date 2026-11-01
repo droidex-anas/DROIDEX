@@ -4,7 +4,7 @@
 
 import { canvasError } from './canvasError.js';
 import type { DocumentSection } from './designSystemDocument.js';
-import { importDesignSystem, unmappedKitTokens } from './designSystemImport.js';
+import { importDesignSystem, pastedSource, unmappedKitTokens } from './designSystemImport.js';
 import {
   designSystemKind,
   listDesignSystems,
@@ -129,7 +129,7 @@ export async function answerDesignSystemCommand(
       return saved(ref, []);
     }
     case 'canvas.importDesignSystem': {
-      const imported = importDesignSystem(command.source, {
+      const imported = importDesignSystem([pastedSource(command.source)], {
         id: command.mutationId,
         name: command.name,
       });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { DesignSystemDocumentView } from '../../../sidecar/src/canvas/designSystemCommands.js';
 import { documentSectionsSchema } from '../../../sidecar/src/canvas/designSystemDocument.js';
 import type { CanvasEvent } from '../../../sidecar/src/canvas/protocol.js';
 import { DROIDEX_DOCUMENT_SECTIONS } from '../../../sidecar/src/testing/droidexDocument.js';
@@ -131,6 +132,22 @@ test('both boundaries trim and refuse the same token values, titles, example pat
 });
 
 test('the renderer accepts every design system reply and event the sidecar sends', () => {
+  const paper: DesignSystemDocumentView = {
+    id: 'paper',
+    version: 2,
+    latestVersion: 3,
+    name: 'Paper',
+    kind: 'user',
+    cover: { kind: 'preview', example: 'cover.tsx' },
+    sections: DROIDEX_DOCUMENT_SECTIONS,
+    examples: ['cover.tsx'],
+    unmapped: ['--brand-ink'],
+    provenance: { copiedFrom: { id: 'droidex', version: 1 } },
+    savedAt: '2026-10-31T12:00:00.000Z',
+    savedBy: { actor: 'agent', appSessionId: 'app-1' },
+    proposal: null,
+  };
+  const fromProject = { name: 'acme', files: ['tailwind.config.ts', 'src/index.css'] };
   const events: CanvasEvent[] = [
     {
       type: 'canvas.result',
@@ -159,24 +176,13 @@ test('the renderer accepts every design system reply and event the sidecar sends
       type: 'canvas.result',
       requestId: 'req_03',
       ok: true,
-      reply: {
-        kind: 'designSystem',
-        system: {
-          id: 'paper',
-          version: 2,
-          latestVersion: 3,
-          name: 'Paper',
-          kind: 'user',
-          cover: { kind: 'preview', example: 'cover.tsx' },
-          sections: DROIDEX_DOCUMENT_SECTIONS,
-          examples: ['cover.tsx'],
-          unmapped: ['--brand-ink'],
-          provenance: { copiedFrom: { id: 'droidex', version: 1 } },
-          savedAt: '2026-10-31T12:00:00.000Z',
-          savedBy: { actor: 'agent', appSessionId: 'app-1' },
-          proposal: null,
-        },
-      },
+      reply: { kind: 'designSystem', system: paper },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_03',
+      ok: true,
+      reply: { kind: 'designSystem', system: { ...paper, provenance: { project: fromProject } } },
     },
     {
       type: 'canvas.result',

@@ -1,22 +1,32 @@
-// Whether a design follows the kit it pins (spec §10). It reads the design's own
-// files once they bundle, never the kit's, and looks for three things only:
-// a hard-coded colour where a --ds-* token belongs, a font family the kit does
-// not provide, and a design that uses none of the kit's primitives. A --ds-*
-// token set in source is a deliberate override, noted once and never flagged.
+// Whether a design follows the kit it pins (spec §10; design system documents
+// spec §13). It reads the design's own files once they bundle, never the kit's,
+// and takes its rules from the kit's token sections: a hard-coded colour
+// (colors), a font family or a font size outside the kit (typography), a corner
+// radius, spacing or shadow literal no token holds (radius, spacing, shadows),
+// and a design that uses none of the kit's primitives. A kit without a section
+// gets no check for it. A --ds-* token set in source is a deliberate override,
+// noted once and never flagged.
 //
-// Colours are read where they style something: CSS declarations and Tailwind
-// classes anywhere, and literal values of colour-like JSX attributes and style
+// Values are read where they style something: CSS declarations and Tailwind
+// classes anywhere, and literal values of style-like JSX attributes and style
 // properties (`fill`, `stroke`, `color`, `backgroundColor`, ...). Prose, data
 // and computed values are not read, and a `var()` fallback is not a literal.
 
-import postcss, { CssSyntaxError, type Root } from 'postcss';
+import postcss from 'postcss';
 import valueParser from 'postcss-value-parser';
 import ts from 'typescript';
 import { ADHERENCE_CODES } from './canvasDiagnostics.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { DESIGN_ENTRY } from './designEntry.js';
-import { kitPrimitives } from './designSystemBrief.js';
-import { kitModes } from './designSystemDocument.js';
+import {
+  fontFamilies,
+  isShadowLiteral,
+  lengthWords,
+  offScale,
+  readKit,
+  type Kit,
+  type ScaleKind,
+} from './designSystemAdherenceKit.js';
 import { AUTO_DESIGN_SYSTEM_REF, type DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './protocol.js';
 
@@ -47,35 +57,16 @@ const PALETTE_CLASS =
   /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
 const ARBITRARY_CLASS = /^-?([a-z][\w-]*?)-\[(.+)\](?:\/\S+)?$/;
 const TAILWIND_FONT_CLASS = /^font-(?:sans|serif|mono)$/;
-// Families that name no font file: CSS keywords and the platform's generic stacks.
-const GENERIC_FAMILIES = new Set([
-  'inherit',
-  'initial',
-  'unset',
-  'revert',
-  'serif',
-  'sans-serif',
-  'monospace',
-  'cursive',
-  'fantasy',
-  'system-ui',
-  'ui-serif',
-  'ui-sans-serif',
-  'ui-monospace',
-  'ui-rounded',
-  'math',
-  'emoji',
-  'fangsong',
-]);
+const SPACING_PROPERTY = /^(?:padding|margin)(?:-|$)|^(?:row-|column-)?gap$/;
+const SPACING_CLASS = /^(?:[pm][xytrblse]?|gap(?:-[xy])?|space-[xy])$/;
+const RADIUS_CLASS = /^rounded(?:-[a-z]{1,2})?$/;
 
-/** The pinned kit as the check reads it. */
-interface Kit {
-  tokens: Set<string>;
-  families: Set<string>;
-  fontTokens: string[];
-  classes: Set<string>;
-  primitives: string[];
-}
+const SCALE_WORDING: Record<ScaleKind, { code: string; noun: string }> = {
+  type: { code: ADHERENCE_CODES.type, noun: 'font size' },
+  radius: { code: ADHERENCE_CODES.radius, noun: 'corner radius' },
+  spacing: { code: ADHERENCE_CODES.spacing, noun: 'spacing value' },
+  shadow: { code: ADHERENCE_CODES.shadow, noun: 'shadow' },
+};
 
 /** Where a finding is: a design file and a 1-based line. */
 interface Place {
@@ -117,49 +108,6 @@ export function checkDesignSystemAdherence(
   return { status: 'passed', diagnostics: note ? [...violations, note] : violations };
 }
 
-/**
- * A saved kit's CSS is first parsed here, before the stylesheet build reviews it,
- * so a syntax error is reported as that build would: the kit file and its line.
- */
-function readKit(
-  system: DesignSystem,
-): { ok: true; kit: Kit } | { ok: false; diagnostic: CanvasDiagnostic } {
-  const families = new Set(GENERIC_FAMILIES);
-  const fontTokens: string[] = [];
-  const modes = kitModes(system.sections);
-  for (const [name, value] of Object.entries({ ...modes.light, ...modes.dark })) {
-    if (!name.startsWith('--ds-font')) continue;
-    fontTokens.push(name);
-    for (const family of fontFamilies(value)) families.add(family.toLowerCase());
-  }
-  const classes = new Set<string>();
-  for (const [path, css] of Object.entries(system.files)) {
-    if (!path.endsWith('.css')) continue;
-    let root: Root;
-    try {
-      root = postcss.parse(css);
-    } catch (error) {
-      if (!(error instanceof CssSyntaxError)) throw error;
-      const file = `${KIT_SPECIFIER}/${path}`;
-      const at = error.line === undefined ? { file } : { file, line: error.line };
-      return { ok: false, diagnostic: { code: 'css_error', message: error.reason, ...at } };
-    }
-    root.walkAtRules('font-face', (rule) => {
-      rule.walkDecls('font-family', (declaration) => {
-        for (const family of fontFamilies(declaration.value)) families.add(family.toLowerCase());
-      });
-    });
-    root.walkRules((rule) => {
-      for (const match of rule.selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) classes.add(match[1]);
-    });
-  }
-  const tokens = new Set(Object.keys(modes.light));
-  return {
-    ok: true,
-    kit: { tokens, families, fontTokens, classes, primitives: kitPrimitives(system) },
-  };
-}
-
 /** One design's findings, and whether any of its files reaches for the kit. */
 class DesignCheck {
   readonly findings: CanvasDiagnostic[] = [];
@@ -196,11 +144,16 @@ class DesignCheck {
           this.usesKit = true;
         return;
       }
+      const line = () => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
       if (isTextLiteral(node)) {
-        const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-        this.classes({ file, line }, node.text);
+        this.classes({ file, line: line() }, node.text);
         const property = styledProperty(node);
-        if (property !== null) this.value({ file, line }, property, node.text);
+        if (property !== null) this.value({ file, line: line() }, property, node.text);
+      } else if (ts.isNumericLiteral(node) && Number(node.text) !== 0) {
+        // React styles a bare number in these properties as that many pixels.
+        const property = styleNumberProperty(node);
+        if (property !== null && scaleOfProperty(property) !== null)
+          this.value({ file, line: line() }, property, `${node.text}px`);
       }
       ts.forEachChild(node, visit);
     };
@@ -216,6 +169,17 @@ class DesignCheck {
       for (const family of fontFamilies(value)) this.font(place, family, family);
       return;
     }
+    const shadows = this.kit.scales.shadow;
+    if (property === 'box-shadow' && shadows) {
+      // A shadow token carries its colour, so a literal shadow is one finding.
+      if (isShadowLiteral(shadows, value)) this.scaleFinding(place, 'shadow', value.trim());
+      return;
+    }
+    const kind = scaleOfProperty(property);
+    if (kind)
+      for (const literal of offScale(this.kit.scales[kind], value))
+        this.scaleFinding(place, kind, literal);
+    if (!this.kit.checksColors) return;
     if (!property.startsWith('--') && !COLOR_PROPERTY.test(property)) return;
     for (const literal of colorLiterals(value))
       this.add(ADHERENCE_CODES.color, place, literal, this.colorMessage(literal, property, null));
@@ -227,34 +191,60 @@ class DesignCheck {
       if (this.kit.classes.has(utility)) this.usesKit = true;
       const palette = PALETTE_CLASS.exec(utility);
       if (palette) {
+        if (!this.kit.checksColors) continue;
         const message = this.colorMessage(utility, palette[1], palette[1]);
         this.add(ADHERENCE_CODES.color, place, utility, message);
         continue;
       }
       if (TAILWIND_FONT_CLASS.test(utility)) {
+        if (!this.kit.fonts) continue;
         const message = `${utility} sets Tailwind's own font stack, not the kit's. Use font-[family-name:var(--ds-font-sans)] or inherit the kit font.`;
         this.add(ADHERENCE_CODES.font, place, utility, message);
         continue;
       }
       const arbitrary = ARBITRARY_CLASS.exec(utility);
-      if (!arbitrary) continue;
-      const [, prefix, raw] = arbitrary;
-      const value = raw.replace(/_/g, ' ').replace(/^[a-z-]+:(?!\/)/, '');
-      if (prefix === 'font') {
-        // `font-[600]` is a weight.
-        for (const family of fontFamilies(value))
-          if (!/^\d+$/.test(family)) this.font(place, family, utility);
-      } else if (colorLiterals(value).length > 0) {
-        this.add(ADHERENCE_CODES.color, place, utility, this.colorMessage(utility, prefix, prefix));
-      }
+      if (arbitrary) this.arbitraryClass(place, utility, arbitrary[1], arbitrary[2]);
     }
   }
 
+  /** A `prefix-[value]` class: a font, a scale value or a colour the kit may not define. */
+  private arbitraryClass(place: Place, utility: string, prefix: string, raw: string): void {
+    const value = raw.replace(/_/g, ' ').replace(/^[a-z-]+:(?!\/)/, '');
+    if (prefix === 'font') {
+      // `font-[600]` is a weight.
+      for (const family of fontFamilies(value))
+        if (!/^\d+$/.test(family)) this.font(place, family, utility);
+      return;
+    }
+    const kind = scaleOfClass(prefix, value);
+    if (kind) {
+      const scale = this.kit.scales[kind];
+      const strays =
+        kind === 'shadow' ? isShadowLiteral(scale, value) : offScale(scale, value).length > 0;
+      if (strays) this.scaleFinding(place, kind, utility);
+      return;
+    }
+    if (this.kit.checksColors && colorLiterals(value).length > 0)
+      this.add(ADHERENCE_CODES.color, place, utility, this.colorMessage(utility, prefix, prefix));
+  }
+
   private font(place: Place, family: string, literal: string): void {
-    if (this.kit.families.has(family.toLowerCase())) return;
-    const tokens = this.kit.fontTokens.map((token) => `var(${token})`).join(' or ');
+    const fonts = this.kit.fonts;
+    if (!fonts || fonts.families.has(family.toLowerCase())) return;
+    const tokens = fonts.tokens.map((token) => `var(${token})`).join(' or ');
     const message = `The kit does not provide the font "${family}". Use ${tokens || 'the kit font'} instead.`;
     this.add(ADHERENCE_CODES.font, place, literal, message);
+  }
+
+  /** A literal, or the class that holds it, that no token of the kit's scale for it equals. */
+  private scaleFinding(place: Place, kind: ScaleKind, literal: string): void {
+    const scale = this.kit.scales[kind];
+    if (!scale) return;
+    const { code, noun } = SCALE_WORDING[kind];
+    const shown = scale.tokens.slice(0, 6).map((token) => `var(${token})`);
+    if (scale.tokens.length > shown.length) shown.push('…');
+    const message = `${literal} is a ${noun} the kit does not define. Use one of its tokens (${shown.join(', ')}) instead.`;
+    this.add(code, place, literal, message);
   }
 
   /** Names the semantic token a utility or property most often wants, when the kit has it. */
@@ -313,6 +303,29 @@ function styledProperty(literal: ts.Node): string | null {
   return text.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
+/**
+ * The CSS property a number is written directly as, in a `style` object:
+ * `style={{ padding: 12 }}`. An operand such as `8 * 2`, a JSX attribute and
+ * other objects' numbers are not pixel styles.
+ */
+function styleNumberProperty(literal: ts.NumericLiteral): string | null {
+  const parent = literal.parent;
+  const negated =
+    ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.MinusToken;
+  const value = negated ? parent : literal;
+  const assignment = value.parent;
+  if (!ts.isPropertyAssignment(assignment) || assignment.initializer !== value) return null;
+  if (!isStyleObject(assignment.parent)) return null;
+  return styledProperty(value);
+}
+
+function isStyleObject(object: ts.Node): boolean {
+  let holder = object.parent;
+  while (ts.isParenthesizedExpression(holder) || ts.isJsxExpression(holder)) holder = holder.parent;
+  if (!ts.isJsxAttribute(holder) && !ts.isPropertyAssignment(holder)) return false;
+  return ts.isIdentifier(holder.name) && holder.name.text === 'style';
+}
+
 /** The outermost expression a literal is part of the value of, or null for a condition. */
 function styledValue(literal: ts.Node): ts.Node | null {
   let node = literal;
@@ -365,16 +378,21 @@ function colorLiterals(value: string): string[] {
   return found;
 }
 
-/** Each family a `font-family` value names, unquoted, ignoring `var()`. */
-function fontFamilies(value: string): string[] {
-  const named = valueParser(value)
-    .nodes.filter((node) => !(node.type === 'function' && node.value.toLowerCase() === 'var'))
-    .map((node) => valueParser.stringify(node))
-    .join('');
-  return named
-    .split(',')
-    .map((family) => family.trim().replace(/^(['"])(.*)\1$/, '$2'))
-    .filter((family) => family.length > 0);
+function scaleOfProperty(property: string): Exclude<ScaleKind, 'shadow'> | null {
+  if (property === 'font-size') return 'type';
+  if (/(?:^|-)radius$/.test(property)) return 'radius';
+  if (SPACING_PROPERTY.test(property)) return 'spacing';
+  return null;
+}
+
+/** The scale an arbitrary utility sets, or null for one this check reads as a colour. */
+function scaleOfClass(prefix: string, value: string): ScaleKind | null {
+  if (prefix === 'text') return lengthWords(value).length > 0 ? 'type' : null;
+  if (RADIUS_CLASS.test(prefix)) return 'radius';
+  if (SPACING_CLASS.test(prefix)) return 'spacing';
+  // `shadow-[#000]` sets a shadow's colour; a shadow has offsets too.
+  if (prefix === 'shadow') return /\s/.test(value.trim()) ? 'shadow' : null;
+  return null;
 }
 
 /** One note naming every kit token the design sets for itself. */
