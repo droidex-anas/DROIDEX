@@ -1,14 +1,12 @@
 // The version button and its history (spec §10): every saved version, newest
-// first, with who saved it and when. Choosing an older one shows it read-only.
+// first, with when it was saved. Choosing an older one shows it read-only.
 
 import { useRef, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Menu } from '../../../components/ui/Menu';
-import { useStoreSelector, type AppState } from '../../../hooks/useStore';
-import { chatDisplayTitle } from '../../../lib/chatMetadata';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage } from '../client';
-import type { DesignSystemVersionEntry, SavedBy } from '../protocol';
+import type { DesignSystemVersionEntry } from '../protocol';
 
 type VersionList =
   | { status: 'loading' }
@@ -100,19 +98,11 @@ export function VersionMenu({
 }
 
 function VersionLabel({ entry }: { entry: DesignSystemVersionEntry }) {
-  const author = useStoreSelector((state) => authorName(state, entry.savedBy));
   return (
     <span className="min-w-0 truncate tabular-nums">
-      v{entry.version} · {author} · {savedAgo(entry.savedAt, Date.now())}
+      v{entry.version} · {savedAgo(entry.savedAt, Date.now())}
     </span>
   );
-}
-
-function authorName(state: AppState, savedBy: SavedBy): string {
-  if (savedBy.actor === 'user') return 'You';
-  const { appSessionId } = savedBy;
-  if (!(appSessionId in state.sessions)) return 'Agent';
-  return `Agent in ${chatDisplayTitle(state.sessions[appSessionId], state.chatMetadata[appSessionId])}`;
 }
 
 function savedAgo(savedAt: string, now: number): string {

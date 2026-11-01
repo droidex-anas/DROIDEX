@@ -1,11 +1,10 @@
-// The document's top row (spec §5): Back to the board, the kit's name, its
-// version history and whose it is on the left; the caller's controls on the
+// The document's top row (spec §5): Back to the board, the kit's name and its
+// version history on the left; the caller's controls on the
 // right. DocumentNotice is the quiet line under it for a kit that is read-only,
 // and OlderVersionNotice that line over an older version.
 
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ArrowLeft } from '@droidex/icons';
-import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { pushToast } from '../../../lib/toast';
@@ -20,14 +19,13 @@ import { VersionMenu } from './VersionMenu';
 const MAX_NAME_LENGTH = 120;
 
 /**
- * What the header keeps as its row narrows. It drops, in order, the
- * Preset/Yours badge, the mode toggle's words, the Board and Sections labels,
+ * What the header keeps as its row narrows. It drops, in order, the mode
+ * toggle's words, the Board and Sections labels,
  * most of the primary action's label and last the version button; the name
  * truncates throughout. Widths are the row's content box, chosen so the row
  * never overflows with every control present.
  */
 export interface HeaderRoom {
-  badge: boolean;
   modeWords: boolean;
   navWords: boolean;
   fullPrimary: boolean;
@@ -36,7 +34,6 @@ export interface HeaderRoom {
 
 function headerRoom(widthPx: number): HeaderRoom {
   return {
-    badge: widthPx >= 720,
     modeWords: widthPx >= 640,
     navWords: widthPx >= 560,
     fullPrimary: widthPx >= 440,
@@ -110,7 +107,6 @@ export function DocumentHeader({
         )}
       </div>
       {room.version && <VersionMenu id={view.id} shown={view.version} onShow={onShowVersion} />}
-      {room.badge && <Badge>{view.kind === 'preset' ? 'Preset' : 'Yours'}</Badge>}
       <div className="ml-auto flex shrink-0 items-center gap-2">{children(room)}</div>
     </header>
   );

@@ -1,13 +1,11 @@
 // A note of the document (spec §5, §6): a raised card headed by the title its
-// file-like label reads as, with an Agent badge when the agent wrote it, and
-// its markdown at the reading measure. Edit turns it into its label field and a
-// text area.
+// file-like label reads as, and its markdown at the reading measure. Edit turns
+// it into its label field and a text area.
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Pencil } from '@droidex/icons';
 import { Markdown } from '../../../components/Markdown';
 import { ProseFileLinks } from '../../../components/transcript/ProseFileLink';
-import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
 import { Tooltip } from '../../../components/ui/Tooltip';
@@ -91,7 +89,6 @@ export function NoteCard({
               {title}
             </span>
           </Tooltip>
-          {note.author === 'agent' && <Badge tone="accent">Agent</Badge>}
           <span className="flex-1" />
           {!isRemoved && !editing && (
             <ChevronDown
