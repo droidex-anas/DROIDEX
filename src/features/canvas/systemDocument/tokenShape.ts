@@ -46,7 +46,7 @@ export function tokenShape(value: string, kind: TokenKind, groupTitle: string): 
   return named;
 }
 
-/** Whether a row of this shape draws a specimen beside its value; a colour draws its swatch in the value. */
-export function drawsSpecimen(shape: TokenShape): shape is 'shadow' | 'radius' | 'length' {
-  return shape === 'shadow' || shape === 'radius' || shape === 'length';
+/** Whether a row of this shape draws a specimen beside its value; a colour's swatch and a shadow's tiles sit in the value. */
+export function drawsSpecimen(shape: TokenShape): shape is 'radius' | 'length' {
+  return shape === 'radius' || shape === 'length';
 }

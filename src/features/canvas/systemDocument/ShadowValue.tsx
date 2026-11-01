@@ -1,6 +1,7 @@
-// A shadow token's value (spec §5): a short line about its layers that opens
-// an editor with a row for each, under tiles of the shadow as it is edited.
-// Edits are kept when the editor closes, as a usage note's are.
+// A shadow token's value (spec §5): tiles of the shadow in each mode it is
+// for, then a short line about its layers that opens an editor with a row for
+// each. Edits are kept when the editor closes, as a usage note's are. A shadow
+// whose layers cannot be read shows its text instead.
 
 import { useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { Plus, Trash } from '@droidex/icons';
@@ -8,9 +9,10 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
 import { Popover } from '../../../components/ui/Popover';
 import type { TokenKind } from '../designSystemDocumentProtocol';
-import { formatShadow, shadowSummary, type ShadowLayer } from './shadowLayers';
+import { formatShadow, parseShadow, shadowSummary, type ShadowLayer } from './shadowLayers';
 import { isPaintable, tokenValueProblem } from './specimenStyle';
 import { ShadowTile } from './TokenSpecimens';
+import { TokenValue } from './TokenValue';
 
 type LengthField = 'x' | 'y' | 'blur' | 'spread';
 
@@ -22,6 +24,57 @@ const LENGTH_FIELDS: { field: LengthField; label: string; name: string; min?: nu
 ];
 
 export function ShadowValue({
+  name,
+  value,
+  kind,
+  label,
+  surfaces,
+  isRemoved,
+  onCommit,
+}: {
+  name: string;
+  value: string;
+  kind: TokenKind;
+  /** What the value is, such as "Light value of shadow-md". */
+  label: string;
+  /** The kit's specimen tokens in each mode the value is for, which the tiles paint. */
+  surfaces: CSSProperties[];
+  isRemoved: boolean;
+  /** Null for a value that cannot be edited. */
+  onCommit: ((value: string) => void) | null;
+}) {
+  const layers = parseShadow(value);
+  return (
+    <>
+      <span className="flex shrink-0 gap-1">
+        {surfaces.map((style, index) => (
+          <ShadowTile key={index} shadow={`var(${name})`} style={style} size="row" />
+        ))}
+      </span>
+      {layers ? (
+        <LayersButton
+          value={value}
+          layers={layers}
+          kind={kind}
+          label={label}
+          surfaces={surfaces}
+          isRemoved={isRemoved}
+          onCommit={onCommit}
+        />
+      ) : (
+        <TokenValue
+          value={value}
+          kind={kind}
+          label={label}
+          isRemoved={isRemoved}
+          onCommit={onCommit}
+        />
+      )}
+    </>
+  );
+}
+
+function LayersButton({
   value,
   layers,
   kind,
@@ -34,12 +87,9 @@ export function ShadowValue({
   /** `value` parsed. */
   layers: ShadowLayer[];
   kind: TokenKind;
-  /** What the value is, such as "Light value of shadow-md". */
   label: string;
-  /** The kit's specimen tokens in each mode the value is for, which the editor's tiles paint. */
   surfaces: CSSProperties[];
   isRemoved: boolean;
-  /** Null for a value that cannot be edited. */
   onCommit: ((value: string) => void) | null;
 }) {
   const buttonRef = useRef<HTMLButtonElement>(null);

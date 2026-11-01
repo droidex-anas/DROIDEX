@@ -1,7 +1,7 @@
 // A token group (spec §5, §6): its title and a data table of its tokens, each
 // named bare and drawn with what it holds. Colours show both modes side by
-// side; the other kinds show one value and a specimen in the previewed mode,
-// or a shadow's in both.
+// side; the other kinds show one value, a shadow with tiles of both modes in
+// it, and a length or corner with a specimen in the previewed mode beside it.
 
 import { memo, useRef, useState, type CSSProperties } from 'react';
 import { Copy, MessageSquareText } from '@droidex/icons';
@@ -254,7 +254,7 @@ const TokenRow = memo(function TokenRow({
         <td className="py-2 pr-3">
           {drawsSpecimen(shape) && (
             <span className="flex min-h-control-md items-center">
-              <Specimen shape={shape} name={token.name} specimens={specimens} mode={mode} />
+              <Specimen shape={shape} name={token.name} style={specimens[mode]} />
             </span>
           )}
         </td>

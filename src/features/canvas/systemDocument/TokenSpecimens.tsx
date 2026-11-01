@@ -3,7 +3,6 @@
 // them as custom properties on `style`.
 
 import type { CSSProperties } from 'react';
-import type { PreviewMode } from '../PreviewModeToggle';
 import { isPaintable } from './specimenStyle';
 
 export function Swatch({ name, style }: { name: string; style: CSSProperties }) {
@@ -33,13 +32,11 @@ export function LiveSwatch({ value }: { value: string }) {
 export function Specimen({
   shape,
   name,
-  specimens,
-  mode,
+  style,
 }: {
-  shape: 'shadow' | 'radius' | 'length';
+  shape: 'radius' | 'length';
   name: string;
-  specimens: Record<PreviewMode, CSSProperties>;
-  mode: PreviewMode;
+  style: CSSProperties;
 }) {
   const paint = `var(${name})`;
   if (shape === 'length')
@@ -47,28 +44,20 @@ export function Specimen({
       <span
         aria-hidden="true"
         className="h-2 max-w-full rounded-full bg-accent/60"
-        style={{ ...specimens[mode], width: paint }}
+        style={{ ...style, width: paint }}
       />
     );
-  if (shape === 'radius')
-    return (
-      <span
-        aria-hidden="true"
-        className="size-8 bg-accent/15"
-        style={{ ...specimens[mode], borderRadius: paint }}
-      />
-    );
-  // A shadow is made for the surface under it, so both modes show at once.
   return (
-    <span className="flex gap-1.5">
-      <ShadowTile shadow={paint} style={specimens.light} size="row" />
-      <ShadowTile shadow={paint} style={specimens.dark} size="row" />
-    </span>
+    <span
+      aria-hidden="true"
+      className="size-8 bg-accent/15"
+      style={{ ...style, borderRadius: paint }}
+    />
   );
 }
 
 const TILE_SIZE = {
-  row: { tile: 'h-9 w-11 rounded-md', card: 'h-4 w-6 rounded-sm' },
+  row: { tile: 'h-8 w-11 rounded-md', card: 'h-4 w-6 rounded-sm' },
   editor: { tile: 'h-20 flex-1 rounded-lg', card: 'h-9 w-16 rounded-md' },
 };
 

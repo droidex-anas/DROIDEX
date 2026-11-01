@@ -1,6 +1,6 @@
 // One value of a token row (spec §5, §6): a colour's swatch and text, a
-// shadow's layers, or the value as text. A row that separates its modes has
-// one for each.
+// shadow's tiles and layers, or the value as text. A row that separates its
+// modes has one for each.
 
 import type { CSSProperties, ReactNode } from 'react';
 import type { DocumentToken, TokenKind } from '../designSystemDocumentProtocol';
@@ -8,7 +8,6 @@ import type { PreviewMode } from '../PreviewModeToggle';
 import { CellSwatch } from './ColorSwatchInput';
 import { bareTokenName } from './documentSections';
 import { ShadowValue } from './ShadowValue';
-import { parseShadow } from './shadowLayers';
 import { modeValue } from './specimenStyle';
 import { LiveSwatch } from './TokenSpecimens';
 import type { TokenShape } from './tokenShape';
@@ -48,20 +47,21 @@ export function ValueCell({
     ((text: string) => {
       onSet(mode, text);
     });
-  const layers = shape === 'shadow' ? parseShadow(value) : null;
+  // A shadow is made for the surface under it, so a value for both modes shows on both.
+  const modes: PreviewMode[] = which === 'value' ? ['light', 'dark'] : [which];
 
   let shown: ReactNode;
   // Colours always show both modes; a one-value colour edits its value from Light.
   if (isColorTable && 'value' in token && which === 'dark')
     shown = <span className="truncate text-caption text-muted">Same as light</span>;
-  else if (layers)
+  else if (shape === 'shadow')
     shown = (
       <ShadowValue
+        name={token.name}
         value={value}
-        layers={layers}
         kind={kind}
         label={label}
-        surfaces={which === 'value' ? [specimens.light, specimens.dark] : [specimens[which]]}
+        surfaces={modes.map((tileMode) => specimens[tileMode])}
         isRemoved={isRemoved}
         onCommit={onCommit}
       />
