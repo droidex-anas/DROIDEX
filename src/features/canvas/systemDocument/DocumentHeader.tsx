@@ -1,11 +1,10 @@
-// The document's top row (spec §5): Back to the board, the kit's name, its
-// version history and whose it is on the left; the caller's controls on the
+// The document's top row (spec §5): Back to the board, the kit's name and its
+// version history on the left; the caller's controls on the
 // right. DocumentNotice is the quiet line under it for a kit that is read-only,
 // and OlderVersionNotice that line over an older version.
 
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ArrowLeft } from '@droidex/icons';
-import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { pushToast } from '../../../lib/toast';
@@ -20,15 +19,12 @@ import { VersionMenu } from './VersionMenu';
 const MAX_NAME_LENGTH = 120;
 
 /**
- * What the header keeps as its row narrows. It drops, in order, the
- * Preset/Yours badge, the mode toggle's words, the Board and Sections labels,
- * most of the primary action's label and last the version button; the name
- * truncates throughout. Widths are the row's content box, chosen so the row
- * never overflows with every control present.
+ * What the header keeps as its row narrows. It drops, in order, the Board and
+ * Sections labels, most of the primary action's label and last the version
+ * button; the name truncates throughout. Widths are the row's content box,
+ * chosen so the row never overflows with every control present.
  */
 export interface HeaderRoom {
-  badge: boolean;
-  modeWords: boolean;
   navWords: boolean;
   fullPrimary: boolean;
   version: boolean;
@@ -36,8 +32,6 @@ export interface HeaderRoom {
 
 function headerRoom(widthPx: number): HeaderRoom {
   return {
-    badge: widthPx >= 720,
-    modeWords: widthPx >= 640,
     navWords: widthPx >= 560,
     fullPrimary: widthPx >= 440,
     version: widthPx >= 340,
@@ -70,16 +64,25 @@ export function DocumentHeader({
       ref={headerRef}
       className="design-system-document-header flex h-12 shrink-0 items-center gap-2 px-4"
     >
+      {/* Board's padding hangs, so its arrow starts on the edge the notice and a narrow column share. */}
       {room.navWords ? (
-        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="-ml-2.5">
           Board
         </Button>
       ) : (
         <Tooltip label="Board" placement="bottom">
-          <Button variant="ghost" size="sm" icon={ArrowLeft} aria-label="Board" onClick={onBack} />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ArrowLeft}
+            aria-label="Board"
+            onClick={onBack}
+            className="-ml-1.5"
+          />
         </Tooltip>
       )}
-      <div className="flex min-w-0 items-center gap-2">
+      {/* The margin keeps the unsaved dot's place between Board and the name. */}
+      <div className="relative ml-3.5 flex min-w-0 items-center">
         <UnsavedMark
           mark={renamed ? 'changed' : undefined}
           was={renamed ? `Was ${view.name}` : undefined}
@@ -101,7 +104,6 @@ export function DocumentHeader({
         )}
       </div>
       {room.version && <VersionMenu id={view.id} shown={view.version} onShow={onShowVersion} />}
-      {room.badge && <Badge>{view.kind === 'preset' ? 'Preset' : 'Yours'}</Badge>}
       <div className="ml-auto flex shrink-0 items-center gap-2">{children(room)}</div>
     </header>
   );
@@ -183,7 +185,7 @@ export function OlderVersionNotice({
 
   return (
     <DocumentNotice
-      text={`Viewing v${String(view.version)} · latest is v${String(view.latestVersion)}`}
+      text={`Viewing version ${String(view.version)} · latest is version ${String(view.latestVersion)}`}
     >
       <Button
         variant="ghost"
@@ -204,7 +206,7 @@ export function OlderVersionNotice({
             void restore();
           }}
         >
-          Restore as v{view.latestVersion + 1}
+          Restore as version {view.latestVersion + 1}
         </Button>
       )}
     </DocumentNotice>

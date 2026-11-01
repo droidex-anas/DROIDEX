@@ -21,10 +21,10 @@ import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPa
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
 import type { DesignSystemDocumentView } from '../protocol';
-import { PreviewModeButton, PreviewModeToggle, type PreviewMode } from '../PreviewModeToggle';
+import { PreviewModeButton, type PreviewMode } from '../PreviewModeToggle';
+import { revealFile, revealSection } from './columnScroll';
 import { DocumentCover } from './DocumentCover';
 import {
-  addableSectionKinds,
   changeCount,
   currentDraft,
   draftOf,
@@ -47,8 +47,8 @@ import {
   tokensByName,
   withRemoved,
   type DraftMark,
-  type SectionKind,
 } from './documentSections';
+import { kitFiles, type KitFile } from './kitFiles';
 import type { KitPreviewing } from './KitPreviewTile';
 import { ProposalLine } from './ProposalLine';
 import {
@@ -66,10 +66,11 @@ import { specimenProperties } from './specimenStyle';
 import { typeSpecimenSize } from './TypeSpecimen';
 import { useDesignSystemDocument } from './useDesignSystemDocument';
 import { useKitPreviewSlots } from './useKitPreviewSlots';
+import { useKitTypeface } from './useKitTypeface';
 import './designSystemDocument.css';
 
 // Below this canvas width the nav folds into the header's Sections menu.
-const NAV_FOLD_WIDTH_PX = 960;
+const NAV_FOLD_WIDTH_PX = 720;
 const NO_MARKS: ReadonlyMap<string, DraftMark> = new Map();
 const NO_TOKENS: Readonly<Record<string, string>> = {};
 
@@ -217,39 +218,39 @@ function KitDocument({
   );
   const built = reviewed ?? base;
   const slots = useKitPreviewSlots(scrollRef, built);
+  const typeface = useKitTypeface(base, working.sections, mode);
   const typeSpecimen = typeSpecimenSize(built.sections);
   const previewing: KitPreviewing = {
     kit: { id: base.id, version: base.version, mode },
     proposalId: reviewed?.proposalId ?? null,
     draftTokens,
+    specimen: specimens[mode],
     ...slots,
   };
 
-  // Scrolls the column alone: scrollIntoView would also scroll the pane's
-  // clipped ancestors and push the header out of the window.
   const jump = (id: string) => {
-    const column = scrollRef.current;
-    const section = column?.querySelector<HTMLElement>(`[data-section-id="${id}"]`);
-    if (!column || !section) return;
-    const top =
-      section.getBoundingClientRect().top -
-      column.getBoundingClientRect().top +
-      column.scrollTop -
-      parseFloat(getComputedStyle(section).scrollMarginTop);
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    column.scrollTo({ top, behavior: reduceMotion ? 'auto' : 'smooth' });
-    section.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+    if (scrollRef.current) revealSection(scrollRef.current, id);
   };
 
-  const addItem = (sectionId: string, kind: 'note' | 'group') => {
+  // A file shows only with the search cleared, so it reveals a frame later.
+  const openFile = ({ shownAt }: KitFile) => {
+    if (shownAt === null) return;
+    setQuery('');
+    requestAnimationFrame(() => {
+      if (scrollRef.current) revealFile(scrollRef.current, shownAt);
+    });
+  };
+
+  const addItem = (sectionId: string, kind: 'note' | 'group', before?: string) => {
     const current = currentDraft(view.id) ?? draftOf(view);
     const item = kind === 'note' ? freshNote(current) : freshGroup(current, 'New group');
-    change({ kind: 'addItem', sectionId, item });
+    change({ kind: 'addItem', sectionId, item, before });
     setJustAdded(item.id);
   };
 
-  const addSection = (kind: SectionKind) => {
-    const section = freshSection(currentDraft(view.id) ?? draftOf(view), kind);
+  // The nav's "+ Section" row adds a notes section with the typed title.
+  const addNotesSection = (title: string) => {
+    const section = { ...freshSection(currentDraft(view.id) ?? draftOf(view), 'notes'), title };
     change({ kind: 'addSection', section });
     setQuery('');
     requestAnimationFrame(() => {
@@ -265,8 +266,8 @@ function KitDocument({
       canMoveUp: at > 0,
       canMoveDown: at >= 0 && at < working.sections.length - 1,
       onChange,
-      onAdd: (kind) => {
-        addItem(section.id, kind);
+      onAdd: (kind, before) => {
+        addItem(section.id, kind, before);
       },
     };
   };
@@ -284,6 +285,7 @@ function KitDocument({
   const navProps: DocumentNavProps = {
     entries: visible.map((section) => ({
       id: section.id,
+      kind: section.kind,
       title: section.title,
       count: itemCount(section, isRemoved),
       isMarked: isMarked(section, marks),
@@ -293,8 +295,9 @@ function KitDocument({
     query,
     onQueryChange: setQuery,
     onJump: jump,
-    addable: isEditable ? addableSectionKinds(working.sections) : null,
-    onAddSection: addSection,
+    onAddSection: isEditable ? addNotesSection : null,
+    files: kitFiles(working.sections, working.cover, view.examples),
+    onOpenFile: openFile,
   };
 
   return (
@@ -316,11 +319,7 @@ function KitDocument({
         {(room) => (
           <>
             {!wide && <SectionsMenu {...navProps} labelled={room.navWords} />}
-            {room.modeWords ? (
-              <PreviewModeToggle mode={mode} onChange={setMode} />
-            ) : (
-              <PreviewModeButton mode={mode} onChange={setMode} />
-            )}
+            <PreviewModeButton mode={mode} onChange={setMode} />
             <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
             {isLatest && !editing && !reviewed && !isChosen && (
               <UseInCanvas
@@ -366,16 +365,16 @@ function KitDocument({
         <div
           ref={scrollRef}
           tabIndex={-1}
-          className="design-system-document-column min-h-0 min-w-0 flex-1 overflow-y-auto outline-none"
+          className="design-system-document-column min-h-0 min-w-0 flex-1 overflow-y-auto px-4 outline-none"
         >
           <ProposalMarks.Provider value={reviewed && IN_REVIEW}>
-            <div className="flex flex-col gap-8 px-8 pb-8 pt-2">
+            {/* One measure for everything in the document, so all of it shares both edges. */}
+            <div className="mx-auto flex max-w-2xl flex-col gap-8 pb-8 pt-2" style={typeface}>
               <div className="flex flex-col gap-2">
                 <DocumentCover
                   appSessionId={appSessionId}
                   name={working.name}
                   cover={working.cover}
-                  specimen={specimens[mode]}
                   previewing={previewing}
                   canRegenerate={isEditable}
                 />

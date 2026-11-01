@@ -1,21 +1,25 @@
 // A token group (spec §5, §6): its title and a data table of its tokens, each
-// drawn with what it holds. Colours show both modes side by side; the other
-// kinds show one value and a specimen in the previewed mode.
+// named bare and drawn with what it holds. Colours show both modes side by
+// side; the other kinds show one value and a specimen in the previewed mode.
 
 import { memo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { MessageSquareText } from '@droidex/icons';
+import { Copy, MessageSquareText } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
+import { pushToast } from '../../../lib/toast';
 import type { DocumentToken, TokenGroup, TokenKind } from '../designSystemDocumentProtocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddToken } from './AddToken';
+import { CellSwatch } from './ColorSwatchInput';
 import type { DraftChange } from './documentDraft';
-import { tokenKey, type DraftMark } from './documentSections';
+import { bareTokenName, tokenKey, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
-import { modeValue, tokenValueProblem } from './specimenStyle';
-import { LiveSwatch, Specimen, Swatch } from './TokenSpecimens';
+import { modeValue } from './specimenStyle';
+import { LiveSwatch, Specimen } from './TokenSpecimens';
+import { TokenValue } from './TokenValue';
 import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TOKEN_NOTE_BYTES = 400;
@@ -27,6 +31,7 @@ type TokenValues = { value: string } | { light: string; dark: string };
 export function TokenTable({
   group,
   kind,
+  kitId,
   mode,
   specimens,
   marks,
@@ -38,6 +43,7 @@ export function TokenTable({
 }: {
   group: TokenGroup;
   kind: TokenKind;
+  kitId: string;
   mode: PreviewMode;
   /** The kit's specimen tokens as custom properties, per mode. */
   specimens: Specimens;
@@ -59,14 +65,13 @@ export function TokenTable({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex min-h-control-md items-center gap-2">
+      <div className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={marks.get(group.id)} />
         {onChange && !isRemoved ? (
           <InlineField
             ref={titleRef}
             value={group.title}
             label={`Title of the ${group.title} group`}
-            initiallyEditing={isNew}
             check={(text) =>
               text.length > 0 && text.length <= MAX_TITLE_LENGTH
                 ? null
@@ -75,12 +80,12 @@ export function TokenTable({
             onCommit={(title) => {
               onChange({ kind: 'retitle', id: group.id, title });
             }}
-            className="text-body-strong text-primary"
+            className="kit-heading-font text-body-strong text-primary"
           />
         ) : (
           <h3
             className={cn(
-              'truncate text-body-strong',
+              'kit-heading-font truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -104,10 +109,7 @@ export function TokenTable({
           <thead>
             <tr className="text-caption text-muted">
               <th scope="col" className="w-1/3 pb-1 pt-1.5 font-normal">
-                <span className="flex items-center gap-2">
-                  <UnsavedMark mark={undefined} />
-                  Name
-                </span>
+                Name
               </th>
               {isColor ? (
                 <>
@@ -139,6 +141,7 @@ export function TokenTable({
                 key={token.name}
                 token={token}
                 kind={kind}
+                kitId={kitId}
                 mode={mode}
                 specimens={specimens}
                 mark={marks.get(tokenKey(token.name))}
@@ -151,7 +154,13 @@ export function TokenTable({
         </table>
       )}
       {onChange && !isRemoved && (
-        <AddToken groupId={group.id} kind={kind} tokenNames={tokenNames} onChange={onChange} />
+        <AddToken
+          groupId={group.id}
+          kind={kind}
+          tokenNames={tokenNames}
+          initiallyOpen={isNew}
+          onChange={onChange}
+        />
       )}
     </div>
   );
@@ -161,6 +170,7 @@ export function TokenTable({
 const TokenRow = memo(function TokenRow({
   token,
   kind,
+  kitId,
   mode,
   specimens,
   mark,
@@ -170,6 +180,7 @@ const TokenRow = memo(function TokenRow({
 }: {
   token: DocumentToken;
   kind: TokenKind;
+  kitId: string;
   mode: PreviewMode;
   specimens: Specimens;
   mark: DraftMark | undefined;
@@ -184,6 +195,7 @@ const TokenRow = memo(function TokenRow({
       token={token}
       which={which}
       kind={kind}
+      kitId={kitId}
       specimens={specimens}
       isRemoved={isRemoved}
       onSet={
@@ -199,16 +211,18 @@ const TokenRow = memo(function TokenRow({
   return (
     <tr className="group/row align-top">
       <td className="py-2 pr-3">
-        <span className="flex min-h-control-md items-center gap-2">
+        <span className="relative flex min-h-control-md items-center">
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
-          <span
-            className={cn(
-              'truncate text-body',
-              isRemoved ? 'text-muted line-through' : 'text-primary',
-            )}
-          >
-            {token.name}
-          </span>
+          <Tooltip label={`var(${token.name})`} className="min-w-0">
+            <span
+              className={cn(
+                'kit-body-font block truncate text-body-strong',
+                isRemoved ? 'text-muted line-through' : 'text-primary',
+              )}
+            >
+              {bareTokenName(token.name)}
+            </span>
+          </Tooltip>
         </span>
       </td>
       {kind === 'colors' ? (
@@ -240,7 +254,7 @@ const TokenRow = memo(function TokenRow({
           <span className="flex min-h-control-md items-center justify-end">
             {onChange && (
               <UndoRemove
-                label={token.name}
+                label={bareTokenName(token.name)}
                 removedKey={tokenKey(token.name)}
                 onChange={onChange}
               />
@@ -264,8 +278,20 @@ function TokenActions({
 }) {
   const noteRef = useRef<HTMLButtonElement>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+  const name = bareTokenName(token.name);
   const set = (next: DocumentToken) => {
     onChange?.({ kind: 'setToken', token: next });
+  };
+  const reference = `var(${token.name})`;
+  const copy: MenuAction = {
+    label: 'Copy reference',
+    icon: Copy,
+    run: () => {
+      navigator.clipboard.writeText(reference).then(
+        () => pushToast(`Copied ${reference}`),
+        () => pushToast(`${reference} could not be copied.`, 'error'),
+      );
+    },
   };
   const split: MenuAction =
     'value' in token
@@ -292,40 +318,42 @@ function TokenActions({
             size="sm"
             icon={MessageSquareText}
             aria-label={
-              token.note === undefined
-                ? `Add a usage note to ${token.name}`
-                : `Usage note of ${token.name}`
+              token.note === undefined ? `Add a usage note to ${name}` : `Usage note of ${name}`
             }
             aria-expanded={noteOpen}
             onClick={() => {
               setNoteOpen((open) => !open);
             }}
             className={cn(
+              'last:-mr-1.5',
               token.note === undefined &&
                 'opacity-0 focus-visible:opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 aria-expanded:opacity-100',
             )}
           />
         )}
-        {onChange && (
-          <ActionMenu
-            label={`${token.name} actions`}
-            actions={[
-              split,
-              {
-                label: 'Remove',
-                danger: true,
-                run: () => {
-                  onChange({ kind: 'remove', key: tokenKey(token.name) });
-                },
-              },
-            ]}
-          />
-        )}
+        <ActionMenu
+          label={`${name} actions`}
+          actions={
+            onChange
+              ? [
+                  copy,
+                  split,
+                  {
+                    label: 'Remove',
+                    danger: true,
+                    run: () => {
+                      onChange({ kind: 'remove', key: tokenKey(token.name) });
+                    },
+                  },
+                ]
+              : [copy]
+          }
+        />
       </span>
       {noteOpen && (
         <NotePopover
           anchorRef={noteRef}
-          title={`Usage note · ${token.name}`}
+          title={`Usage note · ${name}`}
           note={token.note}
           maxBytes={MAX_TOKEN_NOTE_BYTES}
           onChange={
@@ -350,6 +378,7 @@ function ValueCell({
   token,
   which,
   kind,
+  kitId,
   specimens,
   isRemoved,
   onSet,
@@ -357,6 +386,7 @@ function ValueCell({
   token: DocumentToken;
   which: 'value' | PreviewMode;
   kind: TokenKind;
+  kitId: string;
   specimens: Specimens;
   isRemoved: boolean;
   onSet: ((token: DocumentToken) => void) | null;
@@ -366,45 +396,41 @@ function ValueCell({
   // Other kinds name the mode only on a row that separates them.
   const modeLabel = !isColor && which !== 'value' ? MODE_LABEL[which] : null;
   const value = modeValue(token, mode);
-  const fieldLabel = which === 'value' ? 'Value' : `${MODE_LABEL[which]} value`;
+  const label = `${which === 'value' ? 'Value' : `${MODE_LABEL[which]} value`} of ${bareTokenName(token.name)}`;
+  const setValue = (text: string) => {
+    onSet?.(
+      tokenWith(token, 'value' in token ? { value: text } : { ...valuesOf(token), [mode]: text }),
+    );
+  };
 
   let shown: ReactNode;
   // Colours always show both modes; a one-value colour edits its value from Light.
   if (isColor && 'value' in token && which === 'dark')
     shown = <span className="truncate text-caption text-muted">Same as light</span>;
-  else if (onSet)
-    shown = (
-      <InlineField
-        value={value}
-        label={`${fieldLabel} of ${token.name}`}
-        check={(text) => tokenValueProblem(kind, text)}
-        leading={isColor ? (text) => <LiveSwatch value={text} /> : undefined}
-        onCommit={(text) => {
-          onSet(
-            tokenWith(
-              token,
-              'value' in token ? { value: text } : { ...valuesOf(token), [mode]: text },
-            ),
-          );
-        }}
-        className="text-body tabular-nums text-secondary"
-      />
-    );
   else
     shown = (
-      <span
-        className={cn(
-          'truncate text-body tabular-nums',
-          isRemoved ? 'text-muted line-through' : 'text-secondary',
-        )}
-      >
-        {value}
-      </span>
+      <TokenValue
+        value={value}
+        kind={kind}
+        label={label}
+        isRemoved={isRemoved}
+        leading={isColor ? (text) => <LiveSwatch value={text} /> : undefined}
+        onCommit={onSet === null ? null : setValue}
+      />
     );
 
   return (
     <span className="flex min-h-control-md min-w-0 items-center gap-2">
-      {isColor && <Swatch name={token.name} style={specimens[mode]} />}
+      {isColor && (
+        <CellSwatch
+          kitId={kitId}
+          token={token}
+          mode={mode}
+          label={label}
+          style={specimens[mode]}
+          onCommit={onSet === null ? null : setValue}
+        />
+      )}
       {modeLabel && <span className="w-8 shrink-0 text-caption text-muted">{modeLabel}</span>}
       {shown}
     </span>

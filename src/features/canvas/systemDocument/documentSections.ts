@@ -5,6 +5,7 @@
 import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
 import { isTokenName, isTokenValue } from '../designSystemDocumentValidation';
 import type { PreviewMode } from '../PreviewModeToggle';
+import type { DesignSystemCover } from '../protocol';
 import { modeValue } from './specimenStyle';
 
 export type DocumentItem = DocumentSection['items'][number];
@@ -62,6 +63,36 @@ export function changedTokenValues(
     if (isTokenName(name) && isTokenValue(value)) changed[name] = value;
   }
   return changed;
+}
+
+// A kit's tokens share the --ds- namespace beside Tailwind's and the app's own.
+const KIT_TOKEN_PREFIX = '--ds-';
+
+/** What the document calls a token: `--ds-accent` is "accent"; a name outside the kit's namespace reads whole. */
+export function bareTokenName(name: string): string {
+  return name.startsWith(KIT_TOKEN_PREFIX) ? name.slice(KIT_TOKEN_PREFIX.length) : name;
+}
+
+/** The token a typed bare name stands for: "accent" is `--ds-accent`; a name typed with its dashes stays as typed. */
+export function fullTokenName(bare: string): string {
+  return bare.startsWith('--') ? bare : KIT_TOKEN_PREFIX + bare;
+}
+
+/** What a note's label reads as: "1-rules.md" is "Rules", "design-engineering.md" "Design engineering". */
+export function noteTitle(label: string): string {
+  const stem = label.replace(/\.md$/, '');
+  const words = stem.replace(/^\d+-/, '').replaceAll('-', ' ').trim() || stem;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The label a typed note title writes to: "My rules" is "my-rules.md". */
+export function noteLabel(title: string): string {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${slug}.md`;
 }
 
 /** The names a new or renamed token, note or preview may not take. */
@@ -150,6 +181,59 @@ function markTokens(
   }
   for (const [name, { holder }] of baseTokens)
     if (!nextTokens.has(name) && nextItems.has(holder)) marks.set(tokenKey(name), 'removed');
+}
+
+const MAX_NAMED_TOKENS = 3;
+// What a change summary counts rather than names, in the order it lists them.
+const COUNTED_NOUNS = ['note', 'preview', 'image', 'group', 'section'] as const;
+const ITEM_NOUNS: Record<DocumentItem['kind'], (typeof COUNTED_NOUNS)[number]> = {
+  note: 'note',
+  preview: 'preview',
+  asset: 'image',
+  group: 'group',
+};
+
+interface SummarizedVersion {
+  name: string;
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
+}
+
+/**
+ * One line for what `next` changes against `base`, as the version history
+ * lists it: a few tokens by bare name and everything else counted
+ * ("Accent, radius-card, 1 note").
+ */
+export function changeSummary(base: SummarizedVersion, next: SummarizedVersion): string {
+  const items = new Map([...itemsById(base.sections), ...itemsById(next.sections)]);
+  const tokens: string[] = [];
+  const counts = new Map<string, number>();
+  for (const key of draftDiff(base.sections, next.sections).keys()) {
+    const token = tokenNameOf(key);
+    if (token !== null) {
+      tokens.push(bareTokenName(token));
+      continue;
+    }
+    const item = items.get(key)?.item;
+    const noun = item ? ITEM_NOUNS[item.kind] : 'section';
+    counts.set(noun, (counts.get(noun) ?? 0) + 1);
+  }
+  const parts: string[] = [];
+  if (base.name !== next.name) parts.push('name');
+  if (JSON.stringify(base.cover) !== JSON.stringify(next.cover)) parts.push('cover');
+  if (tokens.length > MAX_NAMED_TOKENS) parts.push(counted(tokens.length, 'token'));
+  else parts.push(...tokens);
+  for (const noun of COUNTED_NOUNS) {
+    const count = counts.get(noun);
+    if (count !== undefined) parts.push(counted(count, noun));
+  }
+  if (parts.length === 0) return 'No changes';
+  const line = parts.join(', ');
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
+function counted(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 /** Whether the section, or anything in it, has a mark. */

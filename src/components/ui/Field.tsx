@@ -69,6 +69,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;
   /** Fixed content before the value, such as the `@` of a username or a colour swatch. */
   leading?: ReactNode;
+  /** Fixed content after the value, such as the unit of a number. */
+  trailing?: ReactNode;
 }
 
 function inputFill(invalid: boolean, variant: InputVariant) {
@@ -83,6 +85,7 @@ export function Input({
   variant = 'default',
   invalid,
   leading,
+  trailing,
   className,
   ...rest
 }: InputProps) {
@@ -90,6 +93,7 @@ export function Input({
   const isInvalid = field?.invalid ?? invalid ?? false;
   const fill = inputFill(isInvalid, variant);
   const hovers = fill === 'bg-field';
+  const hasAffix = leading !== undefined || trailing !== undefined;
   const input = (
     <input
       ref={ref}
@@ -98,7 +102,7 @@ export function Input({
       aria-invalid={isInvalid || undefined}
       {...rest}
       className={
-        leading === undefined
+        !hasAffix
           ? cn(
               'w-full min-w-0 text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
               VARIANT[variant],
@@ -110,10 +114,10 @@ export function Input({
       }
     />
   );
-  if (leading === undefined) return input;
-  // The leading text sits in the same line box as the value, so both share
-  // one baseline at every size. The label wrapper lets a click on it focus
-  // the input; index.css draws the focus ring on the wrapper.
+  if (!hasAffix) return input;
+  // Affixes sit in the same line box as the value, so they share one
+  // baseline at every size. The label wrapper lets a click on them focus the
+  // input; index.css draws the focus ring on the wrapper.
   return (
     <label
       className={cn(
@@ -125,10 +129,18 @@ export function Input({
         className,
       )}
     >
-      <span aria-hidden="true" className="shrink-0 select-none text-muted">
-        {leading}
-      </span>
+      <Affix>{leading}</Affix>
       {input}
+      <Affix className="pl-1">{trailing}</Affix>
     </label>
+  );
+}
+
+function Affix({ className, children }: { className?: string; children: ReactNode }) {
+  if (children === undefined) return null;
+  return (
+    <span aria-hidden="true" className={cn('shrink-0 select-none text-muted', className)}>
+      {children}
+    </span>
   );
 }

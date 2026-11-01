@@ -331,6 +331,13 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.readKitFonts'),
+      ...request,
+      ref: designSystemVersionRefSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.saveLibraryItem'),
       ...request,
       mutationId: canvasIdentifierSchema,

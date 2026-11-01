@@ -1,7 +1,7 @@
 // The save bar (spec §6): the draft's change count with Discard and Save, or,
 // when another version was saved since the draft's base, Discard mine and Save
-// over it. useSaveDraft owns saving; the bar shows it. In a review of the
-// agent's proposal (§11) the bar is ProposalBar, with Discard and Accept.
+// over it. useSaveDraft owns saving; the bar shows it. In a review of a
+// proposal (§11) the bar is ProposalBar, with Discard and Accept.
 
 import { useRef, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
@@ -13,7 +13,7 @@ import { currentDraft, discardDraft, type DocumentDraft } from './documentDraft'
 import type { ProposalDecision } from './proposalReview';
 
 const BAR_CLASS =
-  'sticky bottom-4 mx-8 mb-4 flex animate-fade-in items-center gap-2 rounded-lg bg-raised py-2 pl-4 pr-2 shadow-lg';
+  'sticky bottom-4 mx-auto mb-4 flex max-w-2xl animate-fade-in items-center gap-2 rounded-lg bg-raised py-2 pl-4 pr-2 shadow-lg';
 
 export type SaveState =
   | { status: 'idle' }
@@ -97,7 +97,7 @@ export function SaveBar({
       <p role="status" className="min-w-0 flex-1 truncate text-body text-primary">
         {conflict === null
           ? `${String(count)} unsaved ${count === 1 ? 'change' : 'changes'}`
-          : `v${String(conflict)} was saved while you edited`}
+          : `Version ${String(conflict)} was saved while you edited`}
       </p>
       <Button variant="ghost" size="sm" disabled={state.status === 'saving'} onClick={onDiscard}>
         {conflict === null ? 'Discard' : 'Discard mine'}
@@ -111,7 +111,7 @@ export function SaveBar({
           aria-keyshortcuts="Meta+S"
           onClick={onSave}
         >
-          {conflict === null ? 'Save' : `Save over v${String(conflict)}`}
+          {conflict === null ? 'Save' : `Save over version ${String(conflict)}`}
         </Button>
       </Tooltip>
     </div>
@@ -139,11 +139,11 @@ export function ProposalBar({
   onDiscard: () => void;
 }) {
   const latest = `v${String(latestVersion)}`;
-  let status = 'Agent proposal';
-  if (hasDraft) status = 'Agent proposal · Save or discard your edits first';
-  else if (isStale) status = `Agent proposal · ${latest} was saved since`;
+  let status = 'Proposal';
+  if (hasDraft) status = 'Proposal · Save or discard your edits first';
+  else if (isStale) status = `Proposal · ${latest} was saved since`;
   return (
-    <div role="region" aria-label="Agent proposal" className={BAR_CLASS}>
+    <div role="region" aria-label="Proposal" className={BAR_CLASS}>
       <p role="status" className="min-w-0 flex-1 truncate text-body text-primary">
         {status}
       </p>

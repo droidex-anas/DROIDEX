@@ -1,7 +1,6 @@
 // The Typography section's specimen (spec §5): the type tokens of what the
-// previews build from, each on one line of sample text the kit renders, since
-// its fonts load only inside preview guests. The sidecar's `typographySpecimen`
-// lays it out.
+// previews build from, each on one line of sample text the kit renders. The
+// sidecar's `typographySpecimen` lays it out.
 
 import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
 import { KitPreviewTile, type KitPreviewing } from './KitPreviewTile';

@@ -122,21 +122,40 @@ export default function PricingCard() {
 const COVER_TSX = `import { ArrowRight, Circle } from 'lucide-react';
 import { Button, Card, Input } from '@droidex/design-system';
 
+const SUGGESTIONS = [
+  'Three days in Lisbon under $900',
+  'Rainy-day museums and galleries',
+  'Where locals eat past 10pm',
+  'Day trip to Sintra by train',
+];
+
 export default function Cover() {
   return (
-    <main className="flex h-screen flex-col items-center justify-center gap-8 overflow-hidden bg-[color:var(--ds-canvas)] px-16 text-center">
+    <main className="flex h-screen flex-col items-center overflow-hidden bg-[color:var(--ds-canvas)] px-16 pt-16 text-center">
       <div className="flex items-center gap-2">
         <Circle size={22} aria-hidden="true" className="text-[color:var(--ds-accent)]" />
         <span className="text-[length:var(--ds-text-lg)] font-semibold">OpenAI-inspired</span>
       </div>
-      <h1 className="max-w-xl">Clear answers, plenty of room.</h1>
-      <Card className="flex w-full max-w-xl items-end gap-3 text-left">
-        <div className="flex-1">
-          <Input label="Ask anything" placeholder="Plan a three-day trip to Lisbon" />
+      <h1 className="mt-6 max-w-2xl [--ds-text-xl:2.75rem]">Clear answers, plenty of room.</h1>
+      <Card className="mt-10 flex w-full max-w-2xl flex-col gap-5 p-6 text-left">
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <Input label="Ask anything" placeholder="Plan a three-day trip to Lisbon" />
+          </div>
+          <Button aria-label="Send">
+            <ArrowRight size={16} aria-hidden="true" />
+          </Button>
         </div>
-        <Button aria-label="Send">
-          <ArrowRight size={16} aria-hidden="true" />
-        </Button>
+        <ul className="flex flex-col gap-2.5">
+          {SUGGESTIONS.map((suggestion) => (
+            <li
+              key={suggestion}
+              className="rounded-[var(--ds-radius-md)] bg-[color:var(--ds-elevated)] px-4 py-2.5 text-[color:var(--ds-fg-muted)]"
+            >
+              {suggestion}
+            </li>
+          ))}
+        </ul>
       </Card>
     </main>
   );

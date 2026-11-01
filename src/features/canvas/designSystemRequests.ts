@@ -13,6 +13,7 @@ import type {
   DesignSystemSummary,
   DesignSystemVersionEntry,
   DesignSystemVersionRef,
+  KitFontFace,
   KitPreview,
 } from './protocol';
 import type { DocumentSection } from './designSystemDocumentProtocol';
@@ -200,5 +201,11 @@ export class DesignSystemRequests {
       item,
     });
     return reply(event, 'kitCapture').png;
+  }
+
+  /** The fonts the version's stylesheets embed as WOFF2 data; a face of any other source is left out. */
+  async readFonts(ref: DesignSystemVersionRef): Promise<KitFontFace[]> {
+    const event = await this.send({ type: 'canvas.readKitFonts', requestId: requestId(), ref });
+    return reply(event, 'kitFonts').faces;
   }
 }

@@ -125,17 +125,26 @@ export default function SettingsPanel() {
 const COVER_TSX = `import { ArrowRight, Sparkles } from 'lucide-react';
 import { Badge, Button, Card } from '@droidex/design-system';
 
+const SESSIONS = [
+  { name: 'Design review', state: 'Waiting for you' },
+  { name: 'Quarterly report', state: 'Running' },
+  { name: 'Welcome tour', state: 'Almost done' },
+  { name: 'Assets sync', state: 'Queued' },
+  { name: 'Beta invites', state: 'Queued' },
+  { name: 'Import from Figma', state: 'Queued' },
+];
+
 export default function Cover() {
   return (
-    <main className="flex h-screen items-center gap-12 overflow-hidden bg-[color:var(--ds-canvas)] px-16">
-      <div className="flex flex-1 flex-col gap-6">
+    <main className="flex h-screen overflow-hidden bg-[color:var(--ds-canvas)] px-16">
+      <div className="flex flex-1 flex-col justify-end gap-6 pb-16 pr-16">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-[var(--ds-radius-md)] bg-[color:var(--ds-accent)] text-[color:var(--ds-accent-fg)]">
             <Sparkles size={20} aria-hidden="true" />
           </span>
           <span className="text-[length:var(--ds-text-lg)] font-semibold tracking-tight">DROIDEX</span>
         </div>
-        <h1 className="max-w-md">Quiet surfaces for focused work.</h1>
+        <h1 className="max-w-md [--ds-text-xl:3rem]">Quiet surfaces for focused work.</h1>
         <p className="max-w-md text-[color:var(--ds-fg-muted)]">
           Warm paper, graphite text and one amber action per view.
         </p>
@@ -147,11 +156,19 @@ export default function Cover() {
           <Button variant="secondary">Read the rules</Button>
         </div>
       </div>
-      <Card className="flex w-96 flex-col gap-4">
-        <Badge>Today</Badge>
-        <h2>Three sessions running</h2>
-        <p className="text-[color:var(--ds-fg-muted)]">Two waiting for you, one almost done.</p>
-        <Button variant="quiet">Open sessions</Button>
+      <Card className="mt-24 flex w-[28rem] shrink-0 flex-col gap-5 self-start p-6">
+        <div className="flex items-center justify-between">
+          <h2>Three sessions running</h2>
+          <Badge>Today</Badge>
+        </div>
+        <ul className="flex flex-col gap-6">
+          {SESSIONS.map((session) => (
+            <li key={session.name} className="flex items-center justify-between gap-6 py-1.5">
+              <span>{session.name}</span>
+              <span className="text-[color:var(--ds-fg-muted)]">{session.state}</span>
+            </li>
+          ))}
+        </ul>
       </Card>
     </main>
   );

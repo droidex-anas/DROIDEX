@@ -94,7 +94,7 @@ function ThemeColorRow({
           setOpen((o) => !o);
         }}
         title={`Pick ${label.toLowerCase()}`}
-        className="flex h-control-md min-w-32 shrink-0 items-center gap-2 rounded-md px-2.5 font-mono text-code-sm transition duration-150 ease-out hover:opacity-90 active:scale-97"
+        className="flex h-control-md min-w-32 shrink-0 items-center gap-2 rounded-md px-2.5 text-caption tabular-nums transition duration-150 ease-out hover:opacity-90 active:scale-97"
         style={{
           backgroundColor: value,
           color: ink,

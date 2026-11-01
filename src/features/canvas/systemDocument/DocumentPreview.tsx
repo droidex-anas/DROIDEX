@@ -47,8 +47,8 @@ export function PreviewItem({
   };
 
   return (
-    <figure className="flex flex-col gap-2">
-      <figcaption className="flex min-h-control-md items-center gap-2">
+    <figure data-item-id={preview.id} className="flex scroll-mt-4 flex-col gap-2">
+      <figcaption className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={mark} />
         {edit ? (
           <InlineField
@@ -59,12 +59,12 @@ export function PreviewItem({
             onCommit={(title) => {
               edit({ kind: 'setItem', item: { ...preview, title } });
             }}
-            className="text-body-strong text-primary"
+            className="kit-heading-font text-body-strong text-primary"
           />
         ) : (
           <span
             className={cn(
-              'truncate text-body-strong',
+              'kit-heading-font truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -101,7 +101,7 @@ export function PreviewItem({
         )}
       </figcaption>
       {!isRemoved && preview.note !== undefined && (
-        <p className="max-w-2xl whitespace-pre-wrap text-body text-secondary">{preview.note}</p>
+        <p className="whitespace-pre-wrap text-body text-secondary">{preview.note}</p>
       )}
       {!isRemoved && (
         <KitPreviewTile

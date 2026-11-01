@@ -9,6 +9,22 @@
   scrollbar-gutter: stable;
 }
 
+/* The kit's own words, set in its type once useKitTypeface has loaded it. An
+   unset property inherits, so until then they keep the app's. */
+.kit-body-font {
+  font-family: var(--kit-body-font);
+}
+
+.kit-heading-font {
+  font-family: var(--kit-heading-font);
+}
+
+/* The swatch's invisible colour input takes keyboard focus; the ring goes on
+   the swatch it covers. */
+.kit-colour-swatch:has(input:focus-visible) {
+  outline: 1.5px solid var(--focus-ring);
+}
+
 /* A kit tile's layers cross-fade as icon and text swaps do: a capture as it
    arrives, and the live guest once it has painted. */
 @keyframes kit-tile-reveal {

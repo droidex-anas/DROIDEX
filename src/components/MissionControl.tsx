@@ -741,10 +741,8 @@ function ActionRow({
       className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left ${clickable ? 'hover:bg-elevated/60 cursor-pointer' : 'cursor-default'}`}
       title={detail || undefined}
     >
-      <span className="text-[12px] font-medium text-secondary shrink-0">{CAT_LABEL[cat]}</span>
-      <span className="text-[12px] font-mono text-muted truncate">
-        {displayDetail || event.toolName}
-      </span>
+      <span className="text-label text-secondary shrink-0">{CAT_LABEL[cat]}</span>
+      <span className="text-caption text-muted truncate">{displayDetail || event.toolName}</span>
       {clickable && <FileDiff className="w-3 h-3 ml-auto shrink-0 text-muted/60" />}
     </button>
   );

@@ -18,21 +18,18 @@ export function DocumentCover({
   appSessionId,
   name,
   cover,
-  specimen,
   previewing,
   canRegenerate,
 }: {
   appSessionId: string;
   name: string;
   cover: DesignSystemCover;
-  /** The kit's specimen tokens in the previewed mode. */
-  specimen: CSSProperties;
   previewing: KitPreviewing;
   /** The kit can change, so its menu can put a request for a new cover into the composer. */
   canRegenerate: boolean;
 }) {
   const dispatch = useStoreDispatch();
-  const swatches = <SurfaceAndAccent specimen={specimen} />;
+  const swatches = <SurfaceAndAccent specimen={previewing.specimen} />;
   return (
     <figure className="flex flex-col gap-2">
       <figcaption className="flex min-h-control-md items-center gap-2">

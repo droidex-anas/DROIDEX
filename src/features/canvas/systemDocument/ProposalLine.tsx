@@ -1,4 +1,4 @@
-// The line under the header while the agent's proposal waits (spec §11): the
+// The line under the header while a proposal waits (spec §11): the
 // chat it came from and how much it changes, with Discard and Review, or Close
 // review while it is shown. It opens and closes with the expand motion, and
 // keeps its last words while it closes.
@@ -90,6 +90,6 @@ export function ProposalLine({
 function lineText(chat: string | null, count: number): string {
   const changes = `${String(count)} ${count === 1 ? 'change' : 'changes'}`;
   return chat === null
-    ? `The agent proposed changes · ${changes}`
-    : `The agent proposed changes in ${chat} · ${changes}`;
+    ? `Proposed changes · ${changes}`
+    : `Proposed changes in ${chat} · ${changes}`;
 }

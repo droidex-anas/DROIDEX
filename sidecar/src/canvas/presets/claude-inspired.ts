@@ -97,27 +97,42 @@ export default function ReadingView() {
 `;
 
 const COVER_TSX = `import { ArrowRight, Feather } from 'lucide-react';
-import { Button } from '@droidex/design-system';
+import { Badge, Button } from '@droidex/design-system';
 
 export default function Cover() {
   return (
-    <main className="flex h-screen items-center gap-16 overflow-hidden bg-[color:var(--ds-canvas)] px-16">
-      <div className="flex flex-1 flex-col gap-6">
+    <main className="relative flex h-screen overflow-hidden bg-[color:var(--ds-canvas)] px-16">
+      <div className="flex w-[26rem] shrink-0 flex-col justify-center gap-6">
         <div className="flex items-center gap-3 text-[color:var(--ds-accent)]">
           <Feather size={24} aria-hidden="true" />
           <span className="font-[family-name:var(--ds-font-heading)] text-[length:var(--ds-text-lg)] text-[color:var(--ds-fg)]">
             Claude-inspired
           </span>
         </div>
-        <h1 className="max-w-lg">Room to think, and words worth reading.</h1>
+        <h1 className="[--ds-text-xl:2.75rem]">Room to think, and words worth reading.</h1>
         <Button className="w-fit">
           Start writing
           <ArrowRight size={16} aria-hidden="true" />
         </Button>
       </div>
-      <blockquote className="max-w-sm rounded-[var(--ds-radius-lg)] bg-[color:var(--ds-raised)] p-8 font-[family-name:var(--ds-font-heading)] text-[length:var(--ds-text-lg)] shadow-[var(--ds-shadow-md)]">
-        “The first draft is just you telling yourself the story.”
-      </blockquote>
+      <article className="absolute right-16 top-0 flex w-[30rem] flex-col gap-5 bg-[color:var(--ds-raised)] px-10 pb-10 pt-14 shadow-[var(--ds-shadow-md)]">
+        <Badge>Essay · 6 min read</Badge>
+        <h2>On writing things down</h2>
+        <p>
+          Most of what we know at the end of a day is gone by the next morning. A few lines before
+          closing the laptop turns a busy day into one you can return to.
+        </p>
+        <blockquote className="font-[family-name:var(--ds-font-heading)] text-[length:var(--ds-text-lg)]">
+          “The first draft is just you telling yourself the story.”
+        </blockquote>
+        <p>
+          Keep the note where you will see it first: what changed, what is still open, and what you
+          would do first tomorrow.
+        </p>
+        <p className="text-[color:var(--ds-fg-muted)]">
+          A note kept is a decision you no longer have to make twice.
+        </p>
+      </article>
     </main>
   );
 }

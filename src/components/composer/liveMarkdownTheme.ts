@@ -1,5 +1,7 @@
-// How the composer's live markdown looks. The class names come from
-// liveMarkdownDecorations; the sizes and weights mirror the transcript's
+// How live markdown looks where it is written. The class names come from
+// liveMarkdownDecorations. markdownStyles is the shared half — the composer's
+// field and a note's in-place editor both use it; composerField is the
+// composer's own geometry. The sizes and weights mirror the transcript's
 // rendered markdown so a draft previews the message it will become.
 
 import { EditorView } from '@codemirror/view';
@@ -12,26 +14,10 @@ const textTint = (pct: number) => `color-mix(in srgb, var(--text) ${String(pct)}
 
 const FIELD_EASE = '240ms var(--ease-smooth-out)';
 
-export const liveMarkdownTheme = EditorView.theme({
-  // The composer sets the field's geometry. The foot is room under the draft
-  // for the + and the send, outside the scroller so a long draft never runs
-  // under them; every part eases, so the first send closes the field up.
-  '&': {
-    fontSize: '14px',
-    minHeight: 'var(--composer-min-height)',
-    maxHeight: '200px',
-    paddingBottom: 'var(--composer-foot)',
-    transition: `min-height ${FIELD_EASE}, padding ${FIELD_EASE}`,
-  },
+export const markdownStyles = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'inherit', lineHeight: '20px', overflow: 'auto' },
-  '.cm-content': {
-    fontFamily: 'inherit',
-    padding:
-      '16px var(--composer-trail) 16px calc(var(--composer-lead) + var(--composer-indent, 0px))',
-    caretColor: 'var(--accent)',
-    transition: `padding ${FIELD_EASE}`,
-  },
+  '.cm-scroller': { fontFamily: 'inherit' },
+  '.cm-content': { caretColor: 'var(--accent)' },
   // CodeMirror ships a fixed #888 placeholder, which is unreadable on a light
   // canvas; the muted token is derived to stay legible in either scheme.
   '.cm-placeholder': { color: 'var(--text-muted)' },
@@ -131,3 +117,24 @@ export const liveMarkdownTheme = EditorView.theme({
     verticalAlign: 'middle',
   },
 });
+
+const composerField = EditorView.theme({
+  // The foot is room under the draft for the + and the send, outside the
+  // scroller so a long draft never runs under them; every part eases, so the
+  // first send closes the field up.
+  '&': {
+    fontSize: '14px',
+    minHeight: 'var(--composer-min-height)',
+    maxHeight: '200px',
+    paddingBottom: 'var(--composer-foot)',
+    transition: `min-height ${FIELD_EASE}, padding ${FIELD_EASE}`,
+  },
+  '.cm-scroller': { lineHeight: '20px', overflow: 'auto' },
+  '.cm-content': {
+    padding:
+      '16px var(--composer-trail) 16px calc(var(--composer-lead) + var(--composer-indent, 0px))',
+    transition: `padding ${FIELD_EASE}`,
+  },
+});
+
+export const liveMarkdownTheme = [composerField, markdownStyles];

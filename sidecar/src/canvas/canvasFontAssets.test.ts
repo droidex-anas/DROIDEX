@@ -28,5 +28,7 @@ test('kit fonts become one host asset each instead of artifact data URLs', async
   assert.ok(Buffer.byteLength(source) - Buffer.byteLength(hosted) > 100_000);
   assert.equal((await readdir(join(profile, 'canvas-fonts'))).length, 2);
   assert.equal(await hostKitFonts(source), hosted);
+  const quoted = await hostKitFonts(inter.css.replace(/url\((data:[^)]*)\)/, 'url("$1")'));
+  assert.equal(quoted.includes('data:font/woff2;base64,'), false);
   assert.equal((await readdir(join(profile, 'canvas-fonts'))).length, 2);
 });
