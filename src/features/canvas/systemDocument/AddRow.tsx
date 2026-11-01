@@ -52,14 +52,10 @@ export function AddRow({
   );
   if (!between) return <div className="flex gap-1">{buttons}</div>;
   // The row fills the column's gap without adding to it: its negative margins
-  // cancel its height, and the hairline and buttons show on hover or focus.
+  // cancel its height, and the buttons show on hover or focus.
   return (
-    <div className="group/add relative -my-3 flex h-6 items-center">
-      <span
-        aria-hidden="true"
-        className="absolute inset-x-0 top-1/2 h-px bg-divider opacity-0 transition-opacity duration-quick ease-out group-hover/add:opacity-100 group-focus-within/add:opacity-100"
-      />
-      <span className="relative ml-4 flex gap-0.5 rounded-md bg-bg px-1 opacity-0 transition-opacity duration-quick ease-out group-hover/add:opacity-100 group-focus-within/add:opacity-100">
+    <div className="group/add -my-3 flex h-6 items-center">
+      <span className="ml-5 flex gap-0.5 opacity-0 transition-opacity duration-quick ease-out group-hover/add:opacity-100 group-focus-within/add:opacity-100">
         {buttons}
       </span>
     </div>

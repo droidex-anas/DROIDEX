@@ -3,7 +3,8 @@
 // notes section in user kits, and the kit's files. Under about 720 px the same
 // nav opens from the header's Sections button instead.
 
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import {
   BookOpen,
   Box,
@@ -158,26 +159,37 @@ const MAX_TITLE_LENGTH = 120;
 // The nav's last row in a user kit: "+ Section" becomes a title field, and
 // Enter adds a notes section with that title (spec §5).
 function AddSectionRow({ onAddSection }: { onAddSection: (title: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
+  // The typed title while the field is open, null while "+ Section" shows.
+  const [title, setTitle] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const isOpen = title !== null;
+
+  // Closing the field hands focus back to the "+ Section" it replaced.
+  const close = () => {
+    flushSync(() => {
+      setTitle(null);
+    });
+    triggerRef.current?.focus();
+  };
+  const closeOnEscape = useEffectEvent(close);
 
   // Escape closes the field before it reaches the popover or the document.
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     inputRef.current?.focus();
     return pushEscapeLayer(() => {
-      setOpen(false);
-      setTitle('');
+      closeOnEscape();
     });
-  }, [open]);
+  }, [isOpen]);
 
-  if (!open)
+  if (title === null)
     return (
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => {
-          setOpen(true);
+          setTitle('');
         }}
         className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 text-body text-muted transition-colors hover:bg-elevated hover:text-primary"
       >
@@ -190,8 +202,7 @@ function AddSectionRow({ onAddSection }: { onAddSection: (title: string) => void
       onSubmit={(event) => {
         event.preventDefault();
         const trimmed = title.trim();
-        setOpen(false);
-        setTitle('');
+        close();
         if (trimmed.length > 0) onAddSection(trimmed);
       }}
     >
