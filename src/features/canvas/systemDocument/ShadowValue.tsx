@@ -3,7 +3,14 @@
 // each. Edits are kept when the editor closes, as a usage note's are. A shadow
 // whose layers cannot be read shows its text instead.
 
-import { useRef, useState, type CSSProperties, type RefObject } from 'react';
+import {
+  useImperativeHandle,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Ref,
+  type RefObject,
+} from 'react';
 import { Plus, Trash } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
@@ -93,6 +100,7 @@ function LayersButton({
   onCommit: ((value: string) => void) | null;
 }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const editorRef = useRef<ShadowEditorHandle>(null);
   const [open, setOpen] = useState(false);
   const summary = shadowSummary(layers);
 
@@ -110,7 +118,9 @@ function LayersButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
-          setOpen((isOpen) => !isOpen);
+          // A second press closes the editor as Escape does, keeping its edit.
+          if (open) editorRef.current?.close();
+          else setOpen(true);
         }}
         className="kit-body-font -mx-1 truncate rounded-sm px-1 text-left text-body tabular-nums text-secondary transition-colors duration-quick ease-out hover:bg-elevated"
       >
@@ -121,6 +131,7 @@ function LayersButton({
       </button>
       {open && (
         <ShadowEditor
+          ref={editorRef}
           anchorRef={buttonRef}
           value={value}
           layers={layers}
@@ -137,7 +148,12 @@ function LayersButton({
   );
 }
 
+interface ShadowEditorHandle {
+  close: () => void;
+}
+
 function ShadowEditor({
+  ref,
   anchorRef,
   value,
   layers,
@@ -147,6 +163,7 @@ function ShadowEditor({
   onCommit,
   onClose,
 }: {
+  ref: Ref<ShadowEditorHandle>;
   anchorRef: RefObject<HTMLElement | null>;
   value: string;
   layers: ShadowLayer[];
@@ -168,6 +185,7 @@ function ShadowEditor({
     if (onCommit && problem === null && edited !== value) onCommit(edited);
     onClose();
   };
+  useImperativeHandle(ref, () => ({ close }));
   const update = (id: number, change: Partial<ShadowLayer>) => {
     setRows((current) =>
       current.map((row) => (row.id === id ? { id, layer: { ...row.layer, ...change } } : row)),
