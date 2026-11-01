@@ -53,6 +53,7 @@ import { SaveBar, useSaveDraft } from './SaveBar';
 import type { KitPreviewing } from './KitPreviewTile';
 import { SectionBlock, type SectionEditing } from './SectionBlock';
 import { specimenProperties } from './specimenStyle';
+import { typeSpecimenSize } from './TypeSpecimen';
 import { useDesignSystemDocument } from './useDesignSystemDocument';
 import { useKitPreviewSlots } from './useKitPreviewSlots';
 import './designSystemDocument.css';
@@ -192,6 +193,7 @@ function KitDocument({
     [editing, mode],
   );
   const slots = useKitPreviewSlots(scrollRef, base);
+  const typeSpecimen = typeSpecimenSize(base.sections);
   const previewing: KitPreviewing = {
     kit: { id: base.id, version: base.version, mode },
     draftTokens,
@@ -354,6 +356,7 @@ function KitDocument({
                 noteLabels={names.noteLabels}
                 previewTitles={names.previewTitles}
                 previewing={previewing}
+                typeSpecimen={section.kind === 'typography' ? typeSpecimen : null}
                 justAdded={justAdded}
                 editing={sectionEditing(section)}
               />

@@ -3,8 +3,14 @@
 // document column, nearest its centre first. The others show their capture.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { NO_PREVIEW_SLOTS, reducePreviewSlots } from '../previewSlots';
+import {
+  documentSlotOrder,
+  MAX_LIVE_PREVIEWS,
+  NO_PREVIEW_SLOTS,
+  reducePreviewSlots,
+} from '../previewSlots';
 import type { DesignSystemDocumentView } from '../protocol';
+import { typeSpecimenSize } from './TypeSpecimen';
 
 const NONE: readonly string[] = [];
 
@@ -22,7 +28,8 @@ export function useKitPreviewSlots(
   const inView = useRef(new Set<string>());
   const watch = useRef<Watch | null>(null);
   const callbacks = useRef(new Map<string, (element: HTMLElement | null) => void>());
-  const [visible, setVisible] = useState(NONE);
+  const live = useRef(NONE);
+  const [nearest, setNearest] = useState(NONE);
   const [retained, setRetained] = useState(NO_PREVIEW_SLOTS);
 
   useEffect(() => {
@@ -33,12 +40,13 @@ export function useKitPreviewSlots(
       frame = null;
       const box = column.getBoundingClientRect();
       const centre = box.top + box.height / 2;
-      const distance = (item: string) => {
+      const distances = new Map<string, number>();
+      for (const item of inView.current) {
         const tile = tiles.current.get(item)?.getBoundingClientRect();
-        return tile ? Math.abs(tile.top + tile.height / 2 - centre) : Infinity;
-      };
-      const nearest = [...inView.current].sort((left, right) => distance(left) - distance(right));
-      setVisible((current) => (sameOrder(current, nearest) ? current : nearest));
+        if (tile) distances.set(item, Math.abs(tile.top + tile.height / 2 - centre));
+      }
+      const claims = documentSlotOrder(distances, live.current).slice(0, MAX_LIVE_PREVIEWS);
+      setNearest((current) => (sameOrder(current, claims) ? current : claims));
     };
     const remeasure = () => {
       frame ??= requestAnimationFrame(measure);
@@ -90,18 +98,21 @@ export function useKitPreviewSlots(
     return callback;
   }, []);
 
+  // Claiming as selected puts the nearest tiles ahead of the ones already live.
   const slots = reducePreviewSlots(retained, {
     designIds: runnableItems(version),
-    visible,
+    visible: nearest,
     interacted: null,
-    selected: NONE,
+    selected: nearest,
   });
   if (slots !== retained) setRetained(slots);
+  live.current = slots.live;
   return { live: slots.live, observe };
 }
 
 function runnableItems({ cover, sections }: Pick<DesignSystemDocumentView, 'cover' | 'sections'>) {
   const items = cover?.kind === 'preview' ? ['cover'] : [];
+  if (typeSpecimenSize(sections) !== null) items.push('typography');
   for (const section of sections)
     for (const item of section.items) if (item.kind === 'preview') items.push(item.id);
   return items;

@@ -60,6 +60,27 @@ export function reducePreviewSlots(slots: PreviewSlots, request: PreviewSlotRequ
   return same(slots.live, live) && same(slots.released, released) ? slots : { live, released };
 }
 
+/** How much nearer a live document tile counts, so a small scroll does not swap it for a neighbour. */
+const DOCUMENT_HOLD_PX = 48;
+
+/**
+ * A document's tiles in view, in the order they claim its slots: nearest the
+ * column's centre first, a live tile counted `DOCUMENT_HOLD_PX` nearer. Unlike
+ * the board, a nearer tile takes the slot of a live one past that margin, since
+ * the reader is looking at the middle of the column.
+ */
+export function documentSlotOrder(
+  distances: ReadonlyMap<string, number>,
+  live: readonly string[],
+): string[] {
+  const ranked = Array.from(distances, ([item, distance]) => ({
+    item,
+    rank: live.includes(item) ? distance - DOCUMENT_HOLD_PX : distance,
+  }));
+  ranked.sort((left, right) => left.rank - right.rank);
+  return ranked.map(({ item }) => item);
+}
+
 function same(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index]);
 }

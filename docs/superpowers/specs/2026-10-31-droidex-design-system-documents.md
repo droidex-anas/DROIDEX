@@ -98,7 +98,7 @@ The existing owner, `sidecar/src/canvas/designSystems.ts`, keeps its contract: o
 - A save names its base: the new version is `base + 1`. If that version already exists the save fails with the existing `revision_conflict` code, nothing is written, and the error carries `latestVersion` the way a stale frame move carries `currentRect`.
 - `canvases/design-systems/<id>/proposal.json` holds at most one pending agent proposal (§11).
 - `canvases/design-systems/<id>/deleted` is a tombstone (§10). A deleted kit leaves every list but its versions stay readable, so frames pinned to it keep building.
-- Kit covers and preview captures are pixels of immutable source, so they are cached beside the version, not part of it; a later capture may replace one: `<n>.cover-light.png`, `<n>.cover-dark.png` and `<n>.previews/<itemId>-<mode>.png`, PNG, at most 512 KiB each, the same limit and atomic write as canvas covers (`canvasCovers.ts`). A missing capture is taken again the next time that preview is live.
+- Kit covers and preview captures are pixels of immutable source, so they are cached beside the version, not part of it; a later capture may replace one: `<n>.cover-light.png`, `<n>.cover-dark.png` and `<n>.previews/<itemId>-<mode>.png`, PNG, at most 2 MiB each since they are taken in device pixels, with the same atomic write as canvas covers (`canvasCovers.ts`). A missing capture is taken again the next time that preview is live.
 - Kit images (§8) are content-addressed once in `canvases/design-systems/assets/<sha256>` with a metadata record, like canvas images.
 
 ## 4. Where the document opens
