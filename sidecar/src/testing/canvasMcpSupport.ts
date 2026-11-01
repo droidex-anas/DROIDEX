@@ -59,7 +59,12 @@ export interface Reply {
   };
 }
 
-export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: CanvasCapture) {
+export async function harness(
+  t: TestContext,
+  fs?: CanvasFileSystem,
+  capture?: CanvasCapture,
+  projectFolder: () => string | null = () => null,
+) {
   const scopes = new CanvasScopes();
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
   const store = await storage(t);
@@ -101,6 +106,7 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
     capture ?? noRenderer,
     kits,
     () => 'chat-one',
+    projectFolder,
   );
   const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
     const target = server.tools.find((entry) => entry.name === name);
@@ -115,8 +121,8 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
 export type Harness = Awaited<ReturnType<typeof harness>>;
 
 /** A harness whose chat is in a turn that opened with canvas_read, as every turn does. */
-export async function openTurn(t: TestContext) {
-  const h = await harness(t);
+export async function openTurn(t: TestContext, projectFolder?: () => string | null) {
+  const h = await harness(t, undefined, undefined, projectFolder);
   h.turns.beginTurn('chat-one', undefined);
   return { ...h, scopeId: (await h.call('canvas_read', {})).scopeId };
 }

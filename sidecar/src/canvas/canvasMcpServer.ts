@@ -112,6 +112,7 @@ export function createCanvasMcpServer(
   capture: CanvasCapture,
   kits: Pick<KitPreviews, 'check'>,
   getAppSessionId: () => string,
+  projectFolder: (appSessionId: string) => string | null,
   purpose?: SessionPurpose,
 ) {
   const dispatch = async (
@@ -439,6 +440,7 @@ export function createCanvasMcpServer(
               return saveKit(input, {
                 appSessionId: scope.appSessionId,
                 kits,
+                projectFolder: () => projectFolder(scope.appSessionId),
                 beforePublish: () => {
                   turns.requireScope(scope.scopeId);
                 },

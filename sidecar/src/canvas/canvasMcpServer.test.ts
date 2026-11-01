@@ -58,6 +58,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
       noRenderer,
       h.kits,
       () => 'chat-one',
+      () => null,
       purpose,
     );
     t.after(() => server.close());
