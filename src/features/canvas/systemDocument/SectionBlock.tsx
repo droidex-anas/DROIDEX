@@ -233,7 +233,7 @@ export function SectionBlock({
       />
       {!isRemoved && section.kind === 'tokens' && (
         <p className="text-body text-secondary">
-          The shared primitives do not read these; designs can use them by name.
+          These tokens sit outside the standard groups; designs can use them by name.
         </p>
       )}
       {!isRemoved &&
