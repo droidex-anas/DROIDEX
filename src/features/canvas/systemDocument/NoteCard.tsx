@@ -66,18 +66,20 @@ export function NoteCard({
 
   return (
     <article className="max-w-2xl rounded-lg bg-raised">
-      <header className="flex min-h-11 items-center gap-2 pl-4 pr-2">
+      {/* The unsaved dot sits in the card's padding, so the label starts on
+          the body's edge and the chevron ends on it. */}
+      <header className="flex min-h-11 items-center gap-1.5 pl-1 pr-3">
         <UnsavedMark mark={mark} />
         <button
           type="button"
           aria-expanded={!isRemoved && expanded}
           disabled={isRemoved || editing}
           onClick={toggle}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2.5 text-left disabled:cursor-default"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2.5 text-left text-muted transition-colors duration-quick ease-out enabled:hover:text-secondary disabled:cursor-default"
         >
           <span
             className={cn(
-              'truncate text-code',
+              'truncate font-mono text-code',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -89,7 +91,7 @@ export function NoteCard({
             <ChevronDown
               aria-hidden="true"
               className={cn(
-                'size-icon-md shrink-0 text-muted transition-transform',
+                'size-icon-md shrink-0 transition-transform duration-fast ease-smooth-out motion-reduce:transition-none',
                 !expanded && '-rotate-90',
               )}
             />
@@ -128,18 +130,30 @@ export function NoteCard({
           }}
         />
       )}
-      {!isRemoved && !editing && expanded && (
-        <div className="px-4 pb-4">
-          {note.body.trim() === '' ? (
-            <p className="text-body text-muted">This note is empty.</p>
-          ) : (
-            // Kit text is not the user's prompt: no generated runtimes, no images, no file controls.
-            <ProseFileLinks>
-              <Markdown allowGeneratedContent={false} allowImages={false}>
-                {note.body}
-              </Markdown>
-            </ProseFileLinks>
-          )}
+      {!isRemoved && !editing && (
+        <div className="expand-rows" data-open={expanded || undefined}>
+          {/* The row can only shrink below its content when the child both
+              hides overflow and allows a zero minimum height. */}
+          <div
+            inert={!expanded}
+            className={cn(
+              'min-h-0 overflow-hidden transition-opacity duration-quick ease-out motion-reduce:transition-none',
+              !expanded && 'opacity-0',
+            )}
+          >
+            <div className="px-4 pb-4">
+              {note.body.trim() === '' ? (
+                <p className="text-body text-muted">This note is empty.</p>
+              ) : (
+                // Kit text is not the user's prompt: no generated runtimes, no images, no file controls.
+                <ProseFileLinks>
+                  <Markdown allowGeneratedContent={false} allowImages={false}>
+                    {note.body}
+                  </Markdown>
+                </ProseFileLinks>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </article>

@@ -237,9 +237,7 @@ export function SectionBlock({
               {section.title}
             </span>
           )}
-          {!isRemoved && (
-            <span className="shrink-0 text-caption tabular-nums text-muted">{count}</span>
-          )}
+          {!isRemoved && <span className="shrink-0 text-caption text-muted">{count}</span>}
         </h2>
         <span className="flex-1" />
         {editing &&
