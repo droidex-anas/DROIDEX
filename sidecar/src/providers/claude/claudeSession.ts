@@ -85,8 +85,9 @@ export class ClaudeSession implements ProviderSession {
   // drain it, so the error result that explains the death is not lost.
   private exitError?: Error;
   private exitFallback?: ReturnType<typeof setTimeout>;
-  // Set when a turn ends on its own error: the process death that follows it
-  // is that failure's fallout, not a new one to report through 'closed'.
+  // Set when a turn, typed or delegated, ends on its own error: the process
+  // death that follows it is that failure's fallout, not a new one to report
+  // through 'closed'. Any turn that starts after it clears the claim.
   private turnFailureOwned = false;
   private readonly prompts = new MessageQueue<SDKUserMessage>();
   private readonly mapper: ClaudeEventMapper;
@@ -253,9 +254,9 @@ export class ClaudeSession implements ProviderSession {
     this.requireTurnCanStart();
     const turnId = randomUUID();
     this.activeTurnId = turnId;
+    this.turnFailureOwned = false;
     this.mapper.beginTurn(turnId);
     const turnQueue = (this.turnQueue = new MessageQueue<TurnItem>());
-    this.turnFailureOwned = false;
     // Read with the messages, not off the mapper: the pump maps ahead of this
     // loop, so the mapper may already hold the next turn's refusal.
     let refusal: UsageLimitError | undefined;
@@ -518,7 +519,7 @@ export class ClaudeSession implements ProviderSession {
   }
 
   private continueAfterTurn(items: TurnItem[]): void {
-    for (const { message, events, refusal } of items) {
+    for (const { message, events, refusal, authFailure } of items) {
       if (!this.delegatedTurnRunning && startsDelegatedTurn(message)) {
         // Already mapped, spawns included: only the fork point is dropped.
         this.mapper.forgetForkPoint();
@@ -526,7 +527,12 @@ export class ClaudeSession implements ProviderSession {
       }
       // Mapped while our turn was current, so they carry its fork point.
       if (this.delegatedTurnRunning)
-        this.forwardDelegated({ message, events: events.map(withoutForkPoint), refusal });
+        this.forwardDelegated({
+          message,
+          events: events.map(withoutForkPoint),
+          refusal,
+          authFailure,
+        });
     }
   }
 
@@ -570,7 +576,8 @@ export class ClaudeSession implements ProviderSession {
     if (running) {
       this.delegatedRefusal = undefined;
       this.delegatedAuthFailure = undefined;
-    }
+      this.turnFailureOwned = false;
+    } else this.turnFailureOwned = end?.status === 'failed';
     for (const listener of this.delegatedListeners) listener(running, end);
   }
 

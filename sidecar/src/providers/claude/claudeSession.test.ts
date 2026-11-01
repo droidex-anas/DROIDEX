@@ -413,9 +413,12 @@ test('a lifecycle-confirmed withdrawal survives shutdown before its control repl
 });
 
 // A logged-out CLI refuses the prompt with a synthetic error message and a
-// result that still reads as a success, then exits.
+// result that still reads as a success, then exits. Prompted 'stay up', it
+// plays one whose request failed while it lives on: setting fast mode then
+// runs a healthy turn of its own, after which it crashes.
 const loggedOutCli = String.raw`#!/usr/bin/env node
 import { createInterface } from 'node:readline';
+let refused = false;
 createInterface({ input: process.stdin }).on('line', (line) => {
   const message = JSON.parse(line);
   const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
@@ -436,21 +439,36 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       permission_denials: [], modelUsage: {},
       usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     });
-    process.exit(1);
+    if (message.message.content !== 'stay up') process.exit(1);
+    refused = true;
+    return;
   }
   if (message.type !== 'control_request') return;
-  process.stdout.write(JSON.stringify({ type: 'control_response', response: {
+  send({ type: 'control_response', response: {
     subtype: 'success', request_id: message.request_id, response: { models: [], commands: [] },
-  } }) + '\n');
+  } });
+  if (!refused || message.request.subtype !== 'apply_flag_settings') return;
+  send({
+    type: 'assistant', uuid: 'own-turn', session_id: 'parent', parent_tool_use_id: null,
+    message: {
+      id: 'own-turn', role: 'assistant', model: 'claude-opus-4-6',
+      content: [{ type: 'text', text: 'background task done' }],
+    },
+  });
+  send({
+    type: 'result', subtype: 'success', is_error: false, result: 'background task done',
+    uuid: 'own-result', session_id: 'parent', permission_denials: [], modelUsage: {},
+    usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+  });
+  process.stdout.write('', () => process.exit(2));
 });
 `;
 
-test('a logged-out CLI fails the turn with a sign-in hint', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'claude-logged-out-'));
+function loggedOutSession(directory: string): ClaudeSession {
   const executable = join(directory, 'fake-cli.mjs');
   writeFileSync(executable, loggedOutCli);
   chmodSync(executable, 0o755);
-  const session = new ClaudeSession({
+  return new ClaudeSession({
     appSessionId: randomUUID(),
     executable,
     cwd: directory,
@@ -465,6 +483,14 @@ test('a logged-out CLI fails the turn with a sign-in hint', async () => {
       cancelPending: () => undefined,
     },
   });
+}
+
+const signInFailure = (error: unknown): boolean =>
+  error instanceof Error && error.message === CLAUDE_SIGN_IN_MESSAGE;
+
+test('a logged-out CLI fails the turn with a sign-in hint', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'claude-logged-out-'));
+  const session = loggedOutSession(directory);
   try {
     await session.start();
     const transcriptKinds: string[] = [];
@@ -474,13 +500,38 @@ test('a logged-out CLI fails the turn with a sign-in hint', async () => {
           if (event.transcript) transcriptKinds.push(event.transcript.kind);
         }
       })(),
-      (error: unknown) => error instanceof Error && error.message === CLAUDE_SIGN_IN_MESSAGE,
+      signInFailure,
     );
-    // The refusal reads once, as the turn failure: no error row under it.
+    // The refusal reads once, as the turn failure: no error row under it, and
+    // the exit that follows it is that failure, not a second one.
     assert.deepEqual(
       transcriptKinds.filter((kind) => kind === 'error'),
       [],
     );
+    assert.equal(await session.closed, undefined);
+  } finally {
+    await session.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a crash after a later healthy turn is not owned by an earlier failure', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'claude-logged-out-'));
+  const session = loggedOutSession(directory);
+  const delegatedEnds: (string | undefined)[] = [];
+  session.onDelegatedTurn((running, end) => {
+    if (!running) delegatedEnds.push(end?.status);
+  });
+  try {
+    await session.start();
+    const turn: NormalizedEvent[] = [];
+    await assert.rejects(async () => {
+      for await (const event of session.stream('stay up')) turn.push(event);
+    }, signInFailure);
+    await session.setModel({ fastMode: true });
+    const crash = await session.closed;
+    assert.deepEqual(delegatedEnds, ['completed']);
+    assert.equal(crash?.message, 'Session process exited with code 2.');
   } finally {
     await session.close();
     rmSync(directory, { recursive: true, force: true });
