@@ -152,7 +152,6 @@ async function kitBase(
       baseVersion: null,
     };
   }
-  // Slice 2c reads the project's files here, from the scope's session folder.
   throw canvasError(
     'invalid_input',
     'A design system cannot be made from project files yet. Start from blank or a copy.',
