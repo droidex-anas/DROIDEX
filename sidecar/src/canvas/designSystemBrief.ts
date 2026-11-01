@@ -93,7 +93,7 @@ const EXPORTED_DECLARATION =
 const EXPORT_LIST = /^export\s*\{([^}]*)\}/gm;
 
 /** The value names the kit entry exports: its primitives, in source order. */
-export function kitPrimitives(system: DesignSystem): string[] {
+export function kitPrimitives(system: Pick<DesignSystem, 'files'>): string[] {
   const entry = system.files[KIT_ENTRY];
   const found: { name: string; offset: number }[] = [];
   for (const match of entry.matchAll(EXPORTED_DECLARATION))

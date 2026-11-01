@@ -41,7 +41,7 @@ export interface DesignSystemDocumentView {
   sections: DocumentSection[];
   /** The example file names its previews may name. */
   examples: string[];
-  /** Tokens the shared primitives do not read, kept under their own names. */
+  /** Tokens a kit built on the shared primitives has beyond the ones they read. */
   unmapped: string[];
   provenance: DesignSystemProvenance | null;
   /** When and by whom this version was saved; a built-in kit was never saved. */

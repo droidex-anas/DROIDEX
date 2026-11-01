@@ -7,6 +7,7 @@
 
 import valueParser from 'postcss-value-parser';
 import { buildDocument, CONTRACT_TOKEN_NAMES, type DocumentPart } from './buildDocument.js';
+import { kitPrimitives } from './designSystemBrief.js';
 import {
   DESIGN_SYSTEM_LIMITS,
   designSystemSchema,
@@ -100,8 +101,14 @@ const ALIASES: Record<string, string[]> = {
   ),
 };
 
-/** Kit tokens outside the shared primitive contract; presets have none. */
-export function unmappedKitTokens(system: Pick<DesignSystem, 'sections'>): string[] {
+const SHARED_PRIMITIVES = new Set(kitPrimitives({ files: STARTER_FILES }));
+
+/**
+ * Kit tokens outside the shared primitive contract. Only a kit built on the
+ * shared primitives maps onto them; one with primitives of its own reads its own tokens.
+ */
+export function unmappedKitTokens(system: Pick<DesignSystem, 'sections' | 'files'>): string[] {
+  if (kitPrimitives(system).some((name) => !SHARED_PRIMITIVES.has(name))) return [];
   return Object.keys(kitModes(system.sections).light)
     .filter((name) => !CONTRACT_TOKEN_NAMES.has(name))
     .sort();
