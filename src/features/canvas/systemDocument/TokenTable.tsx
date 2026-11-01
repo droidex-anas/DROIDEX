@@ -1,6 +1,7 @@
 // A token group (spec §5, §6): its title and a data table of its tokens, each
 // named bare and drawn with what it holds. Colours show both modes side by
-// side; the other kinds show one value and a specimen in the previewed mode.
+// side; the other kinds show one value and a specimen in the previewed mode,
+// or a shadow's in both.
 
 import { memo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Copy, MessageSquareText } from '@droidex/icons';
@@ -17,8 +18,11 @@ import type { DraftChange } from './documentDraft';
 import { bareTokenName, tokenKey, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
+import { ShadowValue } from './ShadowValue';
+import { parseShadow } from './shadowLayers';
 import { modeValue } from './specimenStyle';
 import { LiveSwatch, Specimen } from './TokenSpecimens';
+import { drawsSpecimen, tokenShape, type TokenShape } from './tokenShape';
 import { TokenValue } from './TokenValue';
 import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
@@ -61,7 +65,10 @@ export function TokenTable({
   const titleRef = useRef<InlineFieldHandle>(null);
   const isRemoved = marks.get(group.id) === 'removed';
   const isColor = kind === 'colors';
-  const hasSpecimen = kind === 'spacing' || kind === 'radius' || kind === 'shadows';
+  const shapes = group.tokens.map((token) =>
+    tokenShape(modeValue(token, 'light'), kind, group.title),
+  );
+  const hasSpecimen = !isColor && shapes.some(drawsSpecimen);
 
   return (
     <div className="flex flex-col gap-2">
@@ -135,12 +142,13 @@ export function TokenTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-divider">
-            {group.tokens.map((token) => (
+          <tbody>
+            {group.tokens.map((token, index) => (
               <TokenRow
                 key={token.name}
                 token={token}
                 kind={kind}
+                shape={shapes[index]}
                 kitId={kitId}
                 mode={mode}
                 specimens={specimens}
@@ -170,6 +178,7 @@ export function TokenTable({
 const TokenRow = memo(function TokenRow({
   token,
   kind,
+  shape,
   kitId,
   mode,
   specimens,
@@ -180,6 +189,7 @@ const TokenRow = memo(function TokenRow({
 }: {
   token: DocumentToken;
   kind: TokenKind;
+  shape: TokenShape;
   kitId: string;
   mode: PreviewMode;
   specimens: Specimens;
@@ -195,6 +205,7 @@ const TokenRow = memo(function TokenRow({
       token={token}
       which={which}
       kind={kind}
+      shape={shape}
       kitId={kitId}
       specimens={specimens}
       isRemoved={isRemoved}
@@ -244,9 +255,11 @@ const TokenRow = memo(function TokenRow({
       )}
       {hasSpecimen && (
         <td className="py-2 pr-3">
-          <span className="flex min-h-control-md items-center">
-            <Specimen kind={kind} name={token.name} style={specimens[mode]} />
-          </span>
+          {drawsSpecimen(shape) && (
+            <span className="flex min-h-control-md items-center">
+              <Specimen shape={shape} name={token.name} specimens={specimens} mode={mode} />
+            </span>
+          )}
         </td>
       )}
       <td className="py-2">
@@ -378,6 +391,7 @@ function ValueCell({
   token,
   which,
   kind,
+  shape,
   kitId,
   specimens,
   isRemoved,
@@ -386,27 +400,43 @@ function ValueCell({
   token: DocumentToken;
   which: 'value' | PreviewMode;
   kind: TokenKind;
+  shape: TokenShape;
   kitId: string;
   specimens: Specimens;
   isRemoved: boolean;
   onSet: ((token: DocumentToken) => void) | null;
 }) {
   const mode: PreviewMode = which === 'dark' ? 'dark' : 'light';
-  const isColor = kind === 'colors';
-  // Other kinds name the mode only on a row that separates them.
-  const modeLabel = !isColor && which !== 'value' ? MODE_LABEL[which] : null;
+  const isColorTable = kind === 'colors';
+  // Other tables name the mode only on a row that separates them.
+  const modeLabel = !isColorTable && which !== 'value' ? MODE_LABEL[which] : null;
   const value = modeValue(token, mode);
   const label = `${which === 'value' ? 'Value' : `${MODE_LABEL[which]} value`} of ${bareTokenName(token.name)}`;
-  const setValue = (text: string) => {
-    onSet?.(
-      tokenWith(token, 'value' in token ? { value: text } : { ...valuesOf(token), [mode]: text }),
-    );
-  };
+  const onCommit =
+    onSet &&
+    ((text: string) => {
+      onSet(
+        tokenWith(token, 'value' in token ? { value: text } : { ...valuesOf(token), [mode]: text }),
+      );
+    });
+  const layers = shape === 'shadow' ? parseShadow(value) : null;
 
   let shown: ReactNode;
   // Colours always show both modes; a one-value colour edits its value from Light.
-  if (isColor && 'value' in token && which === 'dark')
+  if (isColorTable && 'value' in token && which === 'dark')
     shown = <span className="truncate text-caption text-muted">Same as light</span>;
+  else if (layers)
+    shown = (
+      <ShadowValue
+        value={value}
+        layers={layers}
+        kind={kind}
+        label={label}
+        surfaces={which === 'value' ? [specimens.light, specimens.dark] : [specimens[which]]}
+        isRemoved={isRemoved}
+        onCommit={onCommit}
+      />
+    );
   else
     shown = (
       <TokenValue
@@ -414,24 +444,24 @@ function ValueCell({
         kind={kind}
         label={label}
         isRemoved={isRemoved}
-        leading={isColor ? (text) => <LiveSwatch value={text} /> : undefined}
-        onCommit={onSet === null ? null : setValue}
+        leading={shape === 'color' ? (text) => <LiveSwatch value={text} /> : undefined}
+        onCommit={onCommit}
       />
     );
 
   return (
     <span className="flex min-h-control-md min-w-0 items-center gap-2">
-      {isColor && (
+      {modeLabel && <span className="w-8 shrink-0 text-caption text-muted">{modeLabel}</span>}
+      {shape === 'color' && (
         <CellSwatch
           kitId={kitId}
           token={token}
           mode={mode}
           label={label}
           style={specimens[mode]}
-          onCommit={onSet === null ? null : setValue}
+          onCommit={onCommit}
         />
       )}
-      {modeLabel && <span className="w-8 shrink-0 text-caption text-muted">{modeLabel}</span>}
       {shown}
     </span>
   );
