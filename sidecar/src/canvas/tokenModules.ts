@@ -47,7 +47,7 @@ function bindingMode(name: string | null): Mode | null {
  * nested objects flatten into hyphenated names, `light` and `dark` entries
  * set that mode's value, a `value` entry unwraps, and a list of named records
  * (a token file's `{ name, value }` entries) names each token by its record.
- * A flattened name another value already holds widens by its family, reported
+ * A flattened name another token already holds widens by its family, reported
  * as renamed, and is refused when it cannot; what cannot be read is reported,
  * never dropped quietly.
  */
@@ -68,8 +68,8 @@ export function readTokenModule(
   let found = 0;
   /** The kit name each source token took, by its family and name, so all its values land there. */
   const kitNames = new Map<string, string>();
-  /** Each kit name this module took, by the source token that took it and the first value it set. */
-  const claims = new Map<string, { owner: string; value: string }>();
+  /** The kit names a source token in this module already took. */
+  const claimed = new Set<string>();
   const leaf = (
     value: ConfigValue,
     name: string,
@@ -91,15 +91,15 @@ export function readTokenModule(
     if (token === null) {
       token = tokenName(name);
       if (token === null) return;
-      // A name another value already holds (a size next to a colour) widens by
-      // its family; with no honest name, the competing values are refused. A
-      // mode's value over another source's shared one is the cascade's override.
+      // A name another token in this module took (a size next to a colour)
+      // widens by its family even at an equal value, since a later mode could
+      // set the two apart; with no honest name, both are refused. A mode's
+      // value over another source's shared one is the cascade's override.
       const stored = scopeValue(value.value.replace(/\s+/g, ' ').trim());
       const taken = (candidate: string): boolean => {
+        if (claimed.has(candidate)) return true;
         const shared = declared.scopes.shared[candidate] as string | undefined;
-        if (mode === null && shared !== undefined && shared !== stored) return true;
-        const claim = claims.get(candidate);
-        return claim !== undefined && claim.owner !== owner && claim.value !== stored;
+        return mode === null && shared !== undefined && shared !== stored;
       };
       if (taken(token)) {
         const widened =
@@ -122,7 +122,7 @@ export function readTokenModule(
         token = widened;
       }
       kitNames.set(owner, token);
-      if (!claims.has(token)) claims.set(token, { owner, value: stored });
+      claimed.add(token);
     }
     declare(
       declared,

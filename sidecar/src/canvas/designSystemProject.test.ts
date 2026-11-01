@@ -167,6 +167,28 @@ test('a family that sets a taken name per mode is renamed, and one it cannot ren
     imported.diagnostics.map(({ code }) => code),
     ['renamed_token'],
   );
+  // Families whose first values match still take their own names, in either
+  // order, so a later mode value cannot change both.
+  const size = { tokens: [{ name: 'control', value: '4px' }] };
+  const radius = { tokens: [{ name: 'control', value: { light: '4px', dark: '8px' } }] };
+  const sizeFirst = await read({ size, radius });
+  assert.equal(sizeFirst.status, 'imported');
+  const sizeFirstDark = kitModes(sizeFirst.system.sections).dark;
+  assert.equal(sizeFirstDark['--ds-control'], '4px');
+  assert.equal(sizeFirstDark['--ds-radius-control'], '8px');
+  assert.deepEqual(
+    sizeFirst.diagnostics.map(({ code }) => code),
+    ['renamed_token'],
+  );
+  const radiusFirst = await read({ radius, size });
+  assert.equal(radiusFirst.status, 'imported');
+  const radiusFirstDark = kitModes(radiusFirst.system.sections).dark;
+  assert.equal(radiusFirstDark['--ds-control'], '8px');
+  assert.equal(radiusFirstDark['--ds-size-control'], '4px');
+  assert.deepEqual(
+    radiusFirst.diagnostics.map(({ code }) => code),
+    ['renamed_token'],
+  );
   // `color-primary` already starts with its family, so it has no wider name.
   const clash = await read({
     size: { tokens: [{ name: 'color-primary', value: '4px' }] },
