@@ -301,15 +301,15 @@ Renderer commands, answered by `designSystemCommands.ts` without a canvas or sco
 | Command | Reply |
 | --- | --- |
 | `canvas.listDesignSystems` | `designSystems`: summaries with `savedAt`, `cover`, `proposal`; deleted kits excluded |
-| `canvas.readDesignSystem { ref: { id, version } }` | `designSystem`: `{ id, version, latestVersion, name, kind, cover, sections, examples: string[], unmapped, provenance, savedAt, savedBy, proposal }` without source; `proposal` is `{ baseVersion, proposedAt, appSessionId, name, cover, sections } \| null`, `name` because a proposal may rename the kit |
+| `canvas.readDesignSystem { ref: { id, version } }` | `designSystem`: `{ id, version, latestVersion, name, kind, cover, sections, examples: string[], unmapped, provenance, savedAt, savedBy, proposal }` without source; `proposal` is `{ proposalId, baseVersion, proposedAt, appSessionId, name, cover, sections } \| null`, `name` because a proposal may rename the kit; every proposal gets a new `proposalId`, and review, accept and discard name the one the user saw |
 | `canvas.saveDesignSystem { mutationId, id, baseVersion, name, cover, sections }` | `designSystemSaved { ref, diagnostics }`, or `revision_conflict { latestVersion }` |
 | `canvas.listDesignSystemVersions { id }` | `designSystemVersions`: `{ version, savedAt, savedBy }[]` newest first |
 | `canvas.restoreDesignSystemVersion { mutationId, id, version, onto }` | `designSystemSaved`, or `revision_conflict { latestVersion }` |
-| `canvas.acceptDesignSystemProposal { mutationId, id, onto }` | `designSystemSaved`; `onto` is the version the user saw as latest |
-| `canvas.discardDesignSystemProposal { id }` | `ok` |
+| `canvas.acceptDesignSystemProposal { mutationId, id, proposalId, onto }` | `designSystemSaved`; `onto` is the version the user saw as latest. A proposal no longer waiting is refused: `revision_conflict { latestVersion }` when a save won the race, else `invalid_input`; a retried accept that already saved leaves a later proposal in place |
+| `canvas.discardDesignSystemProposal { id, proposalId }` | `ok`; removes only that proposal, so one that replaced it stays for review |
 | `canvas.setDesignSystemDeleted { mutationId, id, deleted }` | `ok` |
-| `canvas.readKitPreview { ref: { id, version, mode }, item }` | `kitPreview`: the artifact; `item` is a preview id or `cover` or `typography`, two ids §2 keeps from previews |
-| `canvas.saveKitCapture { ref, item, png }` / `canvas.readKitCapture { ref, item }` | `ok` / `kitCapture { png \| null }` |
+| `canvas.readKitPreview { ref: { id, version, mode } \| { id, proposalId, mode }, item }` | `kitPreview`: the artifact; `item` is a preview id or `cover` or `typography`, two ids §2 keeps from previews. A proposal ref builds from the proposal's own source, so the review screen shows the proposed cover and previews, added ones included; a proposal no longer waiting is `invalid_input` |
+| `canvas.saveKitCapture { ref, item, png }` / `canvas.readKitCapture { ref, item }` | `ok` / `kitCapture { png \| null }`; `ref` is a saved version, never a proposal |
 | `canvas.copyDesignSystem`, `canvas.importDesignSystem` | unchanged commands; replies now carry the document |
 
 Event: `designSystemsChanged { id }` after every save, accept, discard, proposal and delete, so lists, choices and open documents refresh.
