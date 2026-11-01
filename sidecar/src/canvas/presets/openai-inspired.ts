@@ -136,7 +136,7 @@ export default function Cover() {
         <Circle size={22} aria-hidden="true" className="text-[color:var(--ds-accent)]" />
         <span className="text-[length:var(--ds-text-lg)] font-semibold">OpenAI-inspired</span>
       </div>
-      <h1 className="mt-6 max-w-2xl text-[length:2.75rem]">Clear answers, plenty of room.</h1>
+      <h1 className="mt-6 max-w-2xl [--ds-text-xl:2.75rem]">Clear answers, plenty of room.</h1>
       <Card className="mt-10 flex w-full max-w-2xl flex-col gap-5 p-6 text-left">
         <div className="flex items-end gap-3">
           <div className="flex-1">

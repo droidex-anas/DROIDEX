@@ -144,7 +144,7 @@ export default function Cover() {
           </span>
           <span className="text-[length:var(--ds-text-lg)] font-semibold tracking-tight">DROIDEX</span>
         </div>
-        <h1 className="max-w-md text-[length:3rem]">Quiet surfaces for focused work.</h1>
+        <h1 className="max-w-md [--ds-text-xl:3rem]">Quiet surfaces for focused work.</h1>
         <p className="max-w-md text-[color:var(--ds-fg-muted)]">
           Warm paper, graphite text and one amber action per view.
         </p>

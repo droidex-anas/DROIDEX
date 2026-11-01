@@ -109,7 +109,7 @@ export default function Cover() {
             Claude-inspired
           </span>
         </div>
-        <h1 className="text-[length:2.75rem]">Room to think, and words worth reading.</h1>
+        <h1 className="[--ds-text-xl:2.75rem]">Room to think, and words worth reading.</h1>
         <Button className="w-fit">
           Start writing
           <ArrowRight size={16} aria-hidden="true" />
