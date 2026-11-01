@@ -222,6 +222,25 @@ test('a removed note shows where it was, Undo puts it back there, and undoing ev
   assert.equal(currentDraft('undo'), null);
 });
 
+test('an item added before another lands in its gap; an unknown anchor appends', () => {
+  const opened = kitAt('gaps', 1);
+  editDraft(opened, { kind: 'addItem', sectionId: 'notes', item: extraNote, before: 'voice' });
+  editDraft(opened, {
+    kind: 'addItem',
+    sectionId: 'notes',
+    item: { ...extraNote, id: 'note-5', label: 'note-5.md' },
+    before: 'no-such',
+  });
+  assert.deepEqual(noteIds(draftOfKit('gaps').sections), [
+    'rules',
+    'feel',
+    'note-4',
+    'voice',
+    'note-5',
+  ]);
+  discardDraft('gaps');
+});
+
 test('a newer read keeps the draft on its base until Discard', () => {
   editDraft(kitAt('refresh', 2), { kind: 'setName', name: 'Calm kit' });
   const newer = kitAt('refresh', 3);

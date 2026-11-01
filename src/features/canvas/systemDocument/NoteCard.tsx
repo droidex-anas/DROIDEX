@@ -126,6 +126,7 @@ export function NoteCard({
         <NoteEditor
           note={note}
           noteLabels={noteLabels}
+          focusLabel={isNew}
           onDone={(next) => {
             if (next.label !== note.label || next.body !== note.body)
               onChange({ kind: 'setItem', item: next });
@@ -166,15 +167,19 @@ export function NoteCard({
 function NoteEditor({
   note,
   noteLabels,
+  focusLabel = false,
   onDone,
 }: {
   note: DocumentNote;
   noteLabels: ReadonlySet<string>;
+  /** A new note starts in its label field, an existing one in its text. */
+  focusLabel?: boolean;
   onDone: (note: DocumentNote) => void;
 }) {
   const [label, setLabel] = useState(note.label);
   const [body, setBody] = useState(note.body);
   const [problem, setProblem] = useState<string | null>(null);
+  const labelRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const doneRef = useRef<() => void>(() => undefined);
 
@@ -191,7 +196,9 @@ function NoteEditor({
 
   // Escape leaves the editor like Done, so a long note is never lost to a keystroke.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => bodyRef.current?.focus());
+    const frame = requestAnimationFrame(() => {
+      (focusLabel ? labelRef : bodyRef).current?.focus();
+    });
     const pop = pushEscapeLayer(() => {
       doneRef.current();
     });
@@ -199,7 +206,7 @@ function NoteEditor({
       cancelAnimationFrame(frame);
       pop();
     };
-  }, []);
+  }, [focusLabel]);
 
   return (
     <div
@@ -210,6 +217,7 @@ function NoteEditor({
       className="flex flex-col gap-2 px-4 pb-4"
     >
       <Input
+        ref={labelRef}
         variant="compact"
         aria-label="Note label"
         value={label}

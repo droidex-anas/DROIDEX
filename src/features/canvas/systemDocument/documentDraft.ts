@@ -38,7 +38,7 @@ export type DraftChange =
   | { kind: 'setToken'; token: DocumentToken }
   | { kind: 'addToken'; groupId: string; token: DocumentToken }
   | { kind: 'setItem'; item: DocumentNote | DocumentPreview | DocumentAsset }
-  | { kind: 'addItem'; sectionId: string; item: DocumentItem }
+  | { kind: 'addItem'; sectionId: string; item: DocumentItem; before?: string }
   | { kind: 'addSection'; section: DocumentSection }
   | { kind: 'retitle'; id: string; title: string }
   | { kind: 'move'; key: string; by: -1 | 1 }
@@ -108,11 +108,16 @@ function applyDraftChange(draft: DocumentDraft, change: DraftChange): DocumentDr
     case 'addItem':
       return {
         ...draft,
-        sections: sections.map((section) =>
-          section.id === change.sectionId
-            ? withItems(section, [...section.items, change.item])
-            : section,
-        ),
+        sections: sections.map((section) => {
+          if (section.id !== change.sectionId) return section;
+          const items = [...section.items];
+          // Without `before` the item joins the section's end.
+          const at =
+            change.before === undefined ? -1 : items.findIndex((item) => item.id === change.before);
+          if (at < 0) items.push(change.item);
+          else items.splice(at, 0, change.item);
+          return withItems(section, items);
+        }),
       };
     case 'addSection':
       return { ...draft, sections: insertSection(sections, change.section) };
@@ -170,12 +175,6 @@ export function freshSection(draft: DocumentDraft, kind: SectionKind): DocumentS
   const id = freshId(kind, takenKeys(draft).ids);
   // An empty section of any kind is valid; TypeScript cannot pair `kind` with its item type.
   return { kind, id, title: SECTION_TITLES[kind], items: [] };
-}
-
-/** The kinds a user can still add: one section of each but notes, which can repeat. */
-export function addableSectionKinds(sections: DocumentSection[]): SectionKind[] {
-  const present = new Set(sections.map((section) => section.kind));
-  return SECTION_ORDER.filter((kind) => kind === 'notes' || !present.has(kind));
 }
 
 const drafts = new Map<string, DocumentDraft>();

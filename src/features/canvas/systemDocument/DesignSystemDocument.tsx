@@ -24,7 +24,6 @@ import type { DesignSystemDocumentView, DesignSystemProvenance } from '../protoc
 import { PreviewModeButton, type PreviewMode } from '../PreviewModeToggle';
 import { DocumentCover } from './DocumentCover';
 import {
-  addableSectionKinds,
   changeCount,
   currentDraft,
   draftOf,
@@ -47,7 +46,6 @@ import {
   tokensByName,
   withRemoved,
   type DraftMark,
-  type SectionKind,
 } from './documentSections';
 import { SaveBar, useSaveDraft } from './SaveBar';
 import type { KitPreviewing } from './KitPreviewTile';
@@ -60,7 +58,7 @@ import { useKitTypeface } from './useKitTypeface';
 import './designSystemDocument.css';
 
 // Below this canvas width the nav folds into the header's Sections menu.
-const NAV_FOLD_WIDTH_PX = 960;
+const NAV_FOLD_WIDTH_PX = 720;
 const NO_MARKS: ReadonlyMap<string, DraftMark> = new Map();
 const NO_TOKENS: Readonly<Record<string, string>> = {};
 
@@ -219,15 +217,16 @@ function KitDocument({
     section.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
   };
 
-  const addItem = (sectionId: string, kind: 'note' | 'group') => {
+  const addItem = (sectionId: string, kind: 'note' | 'group', before?: string) => {
     const current = currentDraft(view.id) ?? draftOf(view);
     const item = kind === 'note' ? freshNote(current) : freshGroup(current, 'New group');
-    change({ kind: 'addItem', sectionId, item });
+    change({ kind: 'addItem', sectionId, item, before });
     setJustAdded(item.id);
   };
 
-  const addSection = (kind: SectionKind) => {
-    const section = freshSection(currentDraft(view.id) ?? draftOf(view), kind);
+  // The nav's "+ Section" row adds a notes section with the typed title.
+  const addNotesSection = (title: string) => {
+    const section = { ...freshSection(currentDraft(view.id) ?? draftOf(view), 'notes'), title };
     change({ kind: 'addSection', section });
     setQuery('');
     requestAnimationFrame(() => {
@@ -243,8 +242,8 @@ function KitDocument({
       canMoveUp: at > 0,
       canMoveDown: at >= 0 && at < working.sections.length - 1,
       onChange,
-      onAdd: (kind) => {
-        addItem(section.id, kind);
+      onAdd: (kind, before) => {
+        addItem(section.id, kind, before);
       },
     };
   };
@@ -271,8 +270,7 @@ function KitDocument({
     query,
     onQueryChange: setQuery,
     onJump: jump,
-    addable: canEdit ? addableSectionKinds(working.sections) : null,
-    onAddSection: addSection,
+    onAddSection: canEdit ? addNotesSection : null,
   };
 
   return (

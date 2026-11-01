@@ -1,9 +1,8 @@
 // One section of the document (spec §5, §6): a heading with its count and
 // menu, then its notes, token groups, previews and assets in reading order.
 
-import { useRef, type CSSProperties } from 'react';
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash } from '@droidex/icons';
-import { Button } from '../../../components/ui/Button';
+import { useRef, type CSSProperties, type ReactNode } from 'react';
+import { ArrowDown, ArrowUp, Pencil, Trash } from '@droidex/icons';
 import { cn } from '../../../components/ui/cn';
 import type {
   DocumentAsset,
@@ -13,6 +12,7 @@ import type {
 } from '../designSystemDocumentProtocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
+import { AddRow } from './AddRow';
 import type { DraftChange } from './documentDraft';
 import type { DocumentItem, DraftMark } from './documentSections';
 import { PreviewItem } from './DocumentPreview';
@@ -32,7 +32,8 @@ export interface SectionEditing {
   canMoveUp: boolean;
   canMoveDown: boolean;
   onChange: (change: DraftChange) => void;
-  onAdd: (kind: 'note' | 'group') => void;
+  /** Adds an item at the section's end, or before the item `before` names. */
+  onAdd: (kind: 'note' | 'group', before?: string) => void;
 }
 
 export function SectionBlock({
@@ -108,24 +109,6 @@ export function SectionBlock({
 
   const sectionActions = (edit: SectionEditing): MenuAction[] => [
     { label: 'Rename', icon: Pencil, run: () => titleRef.current?.edit() },
-    {
-      label: 'Add note',
-      icon: Plus,
-      run: () => {
-        edit.onAdd('note');
-      },
-    },
-    ...(holdsTokens
-      ? [
-          {
-            label: 'Add group',
-            icon: Plus,
-            run: () => {
-              edit.onAdd('group');
-            },
-          },
-        ]
-      : []),
     {
       label: 'Move up',
       icon: ArrowUp,
@@ -269,18 +252,20 @@ export function SectionBlock({
       )}
       {!isRemoved &&
         (section.items.length === 0 ? (
-          <EmptySection editing={editing} holdsTokens={holdsTokens} />
+          <div className="flex items-center gap-3">
+            <p className="text-body text-muted">Nothing in this section yet.</p>
+            {editing && (
+              <AddRow
+                offers={{ note: true, group: holdsTokens }}
+                onAdd={(kind) => {
+                  editing.onAdd(kind);
+                }}
+              />
+            )}
+          </div>
         ) : (
           <div className="flex flex-col gap-6">
-            {itemRuns(section.items).map((run) =>
-              run.kind === 'assets' ? (
-                <div key={run.items[0].id} className="grid grid-cols-3 gap-4">
-                  {run.items.map(renderItem)}
-                </div>
-              ) : (
-                renderItem(run.item)
-              ),
-            )}
+            {blocksWithAddRows(section, editing, holdsTokens, renderItem)}
             {typeSpecimen && <TypeSpecimen size={typeSpecimen} previewing={previewing} />}
           </div>
         ))}
@@ -288,50 +273,55 @@ export function SectionBlock({
   );
 }
 
+/** The section's blocks, with an add row in each gap and at the end. */
+function blocksWithAddRows(
+  section: DocumentSection,
+  editing: SectionEditing | null,
+  holdsTokens: boolean,
+  renderItem: (item: DocumentItem) => ReactNode,
+): ReactNode[] {
+  const offers = { note: true, group: holdsTokens };
+  const blocks: ReactNode[] = [];
+  for (const run of itemRuns(section.items)) {
+    const first = run.kind === 'assets' ? run.items[0] : run.item;
+    if (editing && blocks.length > 0)
+      blocks.push(
+        <AddRow
+          key={`add-${first.id}`}
+          offers={offers}
+          between
+          onAdd={(kind) => {
+            editing.onAdd(kind, first.id);
+          }}
+        />,
+      );
+    blocks.push(
+      run.kind === 'assets' ? (
+        <div key={run.items[0].id} className="grid grid-cols-3 gap-4">
+          {run.items.map(renderItem)}
+        </div>
+      ) : (
+        renderItem(run.item)
+      ),
+    );
+  }
+  if (editing)
+    blocks.push(
+      <AddRow
+        key="add-end"
+        offers={offers}
+        onAdd={(kind) => {
+          editing.onAdd(kind);
+        }}
+      />,
+    );
+  return blocks;
+}
+
 // Only a token section holds groups.
 function tokenKindOf(section: DocumentSection): TokenKind | null {
   const { kind } = section;
   return kind === 'notes' || kind === 'components' || kind === 'assets' ? null : kind;
-}
-
-function EmptySection({
-  editing,
-  holdsTokens,
-}: {
-  editing: SectionEditing | null;
-  holdsTokens: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <p className="text-body text-muted">Nothing in this section yet.</p>
-      {editing && (
-        <>
-          {holdsTokens && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={Plus}
-              onClick={() => {
-                editing.onAdd('group');
-              }}
-            >
-              Add group
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={Plus}
-            onClick={() => {
-              editing.onAdd('note');
-            }}
-          >
-            Add note
-          </Button>
-        </>
-      )}
-    </div>
-  );
 }
 
 // Assets read as a grid, so neighbouring assets share one; everything else

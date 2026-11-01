@@ -16,15 +16,18 @@ export function AddToken({
   groupId,
   kind,
   tokenNames,
+  initiallyOpen = false,
   onChange,
 }: {
   groupId: string;
   kind: TokenKind;
   /** Every token name in the draft, which a new token may not reuse. */
   tokenNames: ReadonlySet<string>;
+  /** A new group opens with its first token's row ready. */
+  initiallyOpen?: boolean;
   onChange: (change: DraftChange) => void;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(initiallyOpen);
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [problem, setProblem] = useState<string | null>(null);

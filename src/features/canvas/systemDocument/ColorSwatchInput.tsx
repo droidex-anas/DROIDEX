@@ -4,10 +4,42 @@
 // a translucent value keeps its own.
 
 import { useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react';
+import type { DocumentToken } from '../designSystemDocumentProtocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { showPickedColor } from './pickedColor';
+import { Swatch } from './TokenSpecimens';
 
 const OPAQUE = 255;
+
+/** The swatch a colour cell shows: the picker when it can be edited, a plain swatch otherwise. */
+export function CellSwatch({
+  kitId,
+  token,
+  mode,
+  label,
+  style,
+  onCommit,
+}: {
+  kitId: string;
+  token: DocumentToken;
+  mode: PreviewMode;
+  label: string;
+  style: CSSProperties;
+  onCommit: ((value: string) => void) | null;
+}) {
+  if (onCommit === null || ('value' in token && mode === 'dark'))
+    return <Swatch name={token.name} style={style} />;
+  return (
+    <ColorSwatchInput
+      kitId={kitId}
+      name={token.name}
+      mode={'value' in token ? 'both' : mode}
+      label={label}
+      style={style}
+      onCommit={onCommit}
+    />
+  );
+}
 
 export function ColorSwatchInput({
   kitId,

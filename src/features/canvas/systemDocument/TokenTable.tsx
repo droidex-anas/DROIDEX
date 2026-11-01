@@ -12,13 +12,13 @@ import type { DocumentToken, TokenGroup, TokenKind } from '../designSystemDocume
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddToken } from './AddToken';
-import { ColorSwatchInput } from './ColorSwatchInput';
+import { CellSwatch } from './ColorSwatchInput';
 import type { DraftChange } from './documentDraft';
 import { bareTokenName, tokenKey, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
 import { modeValue, tokenValueProblem } from './specimenStyle';
-import { LiveSwatch, Specimen, Swatch } from './TokenSpecimens';
+import { LiveSwatch, Specimen } from './TokenSpecimens';
 import { UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TOKEN_NOTE_BYTES = 400;
@@ -71,7 +71,6 @@ export function TokenTable({
             ref={titleRef}
             value={group.title}
             label={`Title of the ${group.title} group`}
-            initiallyEditing={isNew}
             check={(text) =>
               text.length > 0 && text.length <= MAX_TITLE_LENGTH
                 ? null
@@ -153,7 +152,13 @@ export function TokenTable({
         </table>
       )}
       {onChange && !isRemoved && (
-        <AddToken groupId={group.id} kind={kind} tokenNames={tokenNames} onChange={onChange} />
+        <AddToken
+          groupId={group.id}
+          kind={kind}
+          tokenNames={tokenNames}
+          initiallyOpen={isNew}
+          onChange={onChange}
+        />
       )}
     </div>
   );
@@ -438,37 +443,6 @@ function ValueCell({
       {modeLabel && <span className="w-8 shrink-0 text-caption text-muted">{modeLabel}</span>}
       {shown}
     </span>
-  );
-}
-
-// An editable colour's swatch opens the system picker; the dark cell of a
-// one-value colour ("Same as light") and a read-only row show a plain swatch.
-function CellSwatch({
-  kitId,
-  token,
-  mode,
-  label,
-  style,
-  onCommit,
-}: {
-  kitId: string;
-  token: DocumentToken;
-  mode: PreviewMode;
-  label: string;
-  style: CSSProperties;
-  onCommit: ((value: string) => void) | null;
-}) {
-  if (onCommit === null || ('value' in token && mode === 'dark'))
-    return <Swatch name={token.name} style={style} />;
-  return (
-    <ColorSwatchInput
-      kitId={kitId}
-      name={token.name}
-      mode={'value' in token ? 'both' : mode}
-      label={label}
-      style={style}
-      onCommit={onCommit}
-    />
   );
 }
 

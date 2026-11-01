@@ -1,17 +1,16 @@
 // The section nav (spec §5): search, one entry per section with its count and
-// a dot when it has unsaved changes, and Add section in user kits. Under about
-// 960 px the same nav opens from the header's Sections button instead.
+// a dot when it has unsaved changes, and a "+ Section" row that adds a notes
+// section in user kits. Under about 720 px the same nav opens from the
+// header's Sections button instead.
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { ListFilter, Plus, Search } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
-import { Menu } from '../../../components/ui/Menu';
 import { Popover } from '../../../components/ui/Popover';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
-import { SECTION_TITLES } from './documentDraft';
-import type { SectionKind } from './documentSections';
+import { pushEscapeLayer } from '../../../components/ui/escapeStack';
 
 export interface NavEntry {
   id: string;
@@ -27,9 +26,8 @@ export interface DocumentNavProps {
   query: string;
   onQueryChange: (query: string) => void;
   onJump: (id: string) => void;
-  /** The kinds Add section offers; null for a kit that cannot be edited. */
-  addable: SectionKind[] | null;
-  onAddSection: (kind: SectionKind) => void;
+  /** Adds a notes section with the typed title; null for a kit that cannot be edited. */
+  onAddSection: ((title: string) => void) | null;
 }
 
 // How far below the column's top a section's heading must pass to be current.
@@ -41,7 +39,6 @@ export function DocumentNav({
   query,
   onQueryChange,
   onJump,
-  addable,
   onAddSection,
 }: DocumentNavProps) {
   return (
@@ -96,58 +93,66 @@ export function DocumentNav({
       {entries.length === 0 && query !== '' && (
         <p className="px-3 text-caption text-muted">Nothing matches.</p>
       )}
-      {addable && addable.length > 0 && (
-        <AddSectionMenu addable={addable} onAddSection={onAddSection} />
-      )}
+      {onAddSection && <AddSectionRow onAddSection={onAddSection} />}
     </nav>
   );
 }
 
-function AddSectionMenu({
-  addable,
-  onAddSection,
-}: {
-  addable: SectionKind[];
-  onAddSection: (kind: SectionKind) => void;
-}) {
-  const anchorRef = useRef<HTMLButtonElement>(null);
+const MAX_TITLE_LENGTH = 120;
+
+// The nav's last row in a user kit: "+ Section" becomes a title field, and
+// Enter adds a notes section with that title (spec §5).
+function AddSectionRow({ onAddSection }: { onAddSection: (title: string) => void }) {
   const [open, setOpen] = useState(false);
-  return (
-    <div>
-      <Button
-        ref={anchorRef}
-        variant="ghost"
-        size="sm"
-        icon={Plus}
-        aria-haspopup="menu"
-        aria-expanded={open}
+  const [title, setTitle] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Escape closes the field before it reaches the popover or the document.
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+    return pushEscapeLayer(() => {
+      setOpen(false);
+      setTitle('');
+    });
+  }, [open]);
+
+  if (!open)
+    return (
+      <button
+        type="button"
         onClick={() => {
-          setOpen((current) => !current);
+          setOpen(true);
         }}
+        className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-3 text-body text-muted transition-colors hover:bg-elevated hover:text-primary"
       >
-        Add section
-      </Button>
-      <Menu
-        open={open}
-        onClose={() => {
-          setOpen(false);
+        <Plus aria-hidden="true" className="size-icon-sm" />
+        Section
+      </button>
+    );
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const trimmed = title.trim();
+        setOpen(false);
+        setTitle('');
+        if (trimmed.length > 0) onAddSection(trimmed);
+      }}
+    >
+      <Input
+        ref={inputRef}
+        variant="compact"
+        aria-label="New section title"
+        placeholder="Section title"
+        value={title}
+        maxLength={MAX_TITLE_LENGTH}
+        spellCheck={false}
+        onChange={(event) => {
+          setTitle(event.target.value);
         }}
-        anchorRef={anchorRef}
-        label="Add section"
-        width={200}
-      >
-        {addable.map((kind) => (
-          <Menu.Item
-            key={kind}
-            onSelect={() => {
-              onAddSection(kind);
-            }}
-          >
-            {SECTION_TITLES[kind]}
-          </Menu.Item>
-        ))}
-      </Menu>
-    </div>
+      />
+    </form>
   );
 }
 
@@ -161,6 +166,7 @@ export function SectionsMenu({ labelled, ...props }: DocumentNavProps & { labell
   const close = () => {
     setOpen(false);
   };
+  const addSection = props.onAddSection;
   const toggle = () => {
     setOpen((current) => !current);
   };
@@ -205,10 +211,14 @@ export function SectionsMenu({ labelled, ...props }: DocumentNavProps & { labell
             close();
             props.onJump(id);
           }}
-          onAddSection={(kind) => {
-            close();
-            props.onAddSection(kind);
-          }}
+          onAddSection={
+            addSection === null
+              ? null
+              : (title) => {
+                  close();
+                  addSection(title);
+                }
+          }
         />
       </Popover>
     </>
