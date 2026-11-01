@@ -30,6 +30,7 @@ import type {
 } from './canvasAnnotationSchema.js';
 import type { DocumentSection } from './designSystemDocument.js';
 import type { DesignSystemDocumentView } from './designSystemCommands.js';
+import type { KitFontFace } from './kitFonts.js';
 import type { KitPreview } from './kitPreviews.js';
 import type {
   DesignSystemCover,
@@ -509,6 +510,8 @@ export type CanvasCommand =
       png: string;
     }
   | { type: 'canvas.readKitCapture'; requestId: string; ref: DesignSystemRef; item: string }
+  // The fonts a kit version's stylesheets embed, which its document sets the kit's words in.
+  | { type: 'canvas.readKitFonts'; requestId: string; ref: DesignSystemVersionRef }
   // The local library (spec §7). A new item is named by its mutationId, so a
   // retried save finds the copy it already made. `thumbnail` is a base64 PNG
   // of that revision, which the item keeps as its own; a listing carries none,
@@ -590,6 +593,7 @@ export type CanvasReply =
   | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
   | { kind: 'kitPreview'; preview: KitPreview }
   | { kind: 'kitCapture'; png: string | null }
+  | { kind: 'kitFonts'; faces: KitFontFace[] }
   | { kind: 'libraryItem'; item: LibraryItem }
   | { kind: 'libraryItems'; items: LibraryItem[] }
   | { kind: 'libraryThumbnail'; png: string | null }

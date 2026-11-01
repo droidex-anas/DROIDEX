@@ -84,7 +84,7 @@ export function NoteCard({
           <Tooltip label={note.label} className="min-w-0">
             <span
               className={cn(
-                'min-w-0 truncate text-body-strong',
+                'kit-heading-font min-w-0 truncate text-body-strong',
                 isRemoved ? 'text-muted line-through' : 'text-primary',
               )}
             >
@@ -147,7 +147,7 @@ export function NoteCard({
               !expanded && 'opacity-0',
             )}
           >
-            <div className="px-4 pb-4">
+            <div className="kit-body-font px-4 pb-4">
               {note.body.trim() === '' ? (
                 <p className="text-body text-muted">This note is empty.</p>
               ) : (

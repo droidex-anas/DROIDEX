@@ -184,6 +184,15 @@ export type KitPreview =
   | { status: 'ready'; artifact: PreviewArtifact }
   | { status: 'failed'; diagnostics: CanvasDiagnostic[] };
 
+/** One `@font-face` a kit declares, its descriptors as written and its WOFF2 file as base64. */
+export interface KitFontFace {
+  family: string;
+  style: string;
+  weight: string;
+  unicodeRange: string;
+  woff2: string;
+}
+
 /**
  * What one mounted preview of a revision did, as the pane running it saw it:
  * `loading` while its guest starts, `failed` when the design stopped before it
@@ -620,6 +629,8 @@ export type CanvasCommand =
       png: string;
     }
   | { type: 'canvas.readKitCapture'; requestId: string; ref: DesignSystemRef; item: string }
+  // The fonts a kit version's stylesheets embed, which its document sets the kit's words in.
+  | { type: 'canvas.readKitFonts'; requestId: string; ref: DesignSystemVersionRef }
   // The local library (spec §7). A new item is named by its mutationId, so a
   // retried save finds the copy it already made. `thumbnail` is a base64 PNG
   // of that revision, which the item keeps as its own; a listing carries none,
@@ -688,6 +699,7 @@ export type CanvasReply =
   | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
   | { kind: 'kitPreview'; preview: KitPreview }
   | { kind: 'kitCapture'; png: string | null }
+  | { kind: 'kitFonts'; faces: KitFontFace[] }
   | { kind: 'libraryItem'; item: LibraryItem }
   | { kind: 'libraryItems'; items: LibraryItem[] }
   | { kind: 'libraryThumbnail'; png: string | null }

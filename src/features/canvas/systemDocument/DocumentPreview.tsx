@@ -59,12 +59,12 @@ export function PreviewItem({
             onCommit={(title) => {
               edit({ kind: 'setItem', item: { ...preview, title } });
             }}
-            className="text-body-strong text-primary"
+            className="kit-heading-font text-body-strong text-primary"
           />
         ) : (
           <span
             className={cn(
-              'truncate text-body-strong',
+              'kit-heading-font truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >

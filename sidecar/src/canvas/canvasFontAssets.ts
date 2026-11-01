@@ -15,20 +15,26 @@ export async function hostKitFonts(css: string): Promise<string> {
   if (matches.length === 0) return css;
   const replacements = new Map<string, string>();
   for (const [reference, encoded] of matches) {
-    if (!encoded || encoded.length > 4 * Math.ceil(MAX_FONT_BYTES / 3))
-      throw new Error('Kit font is invalid or over 1 MiB.');
-    const bytes = Buffer.from(encoded, 'base64');
-    if (
-      bytes.length < 4 ||
-      bytes.length > MAX_FONT_BYTES ||
-      bytes.toString('ascii', 0, 4) !== 'wOF2'
-    )
-      throw new Error('Kit font is not a valid WOFF2 file.');
+    const bytes = woff2Bytes(encoded);
+    if (!bytes) throw new Error('Kit font is not a valid WOFF2 file of at most 1 MiB.');
     const fontId = createHash('sha256').update(bytes).digest('hex');
     await saveFont(fontId, bytes);
     replacements.set(reference, `url(droidex-canvas-preview://preview/font/${fontId})`);
   }
   return css.replace(FONT_URL, (reference) => replacements.get(reference) ?? reference);
+}
+
+/** The base64 of the first valid WOFF2 file an `@font-face` `src` embeds, or null. */
+export function embeddedWoff2(src: string): string | null {
+  for (const [, encoded] of src.matchAll(FONT_URL)) if (woff2Bytes(encoded)) return encoded;
+  return null;
+}
+
+function woff2Bytes(encoded: string): Buffer | null {
+  if (encoded.length > 4 * Math.ceil(MAX_FONT_BYTES / 3)) return null;
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.length < 4 || bytes.length > MAX_FONT_BYTES) return null;
+  return bytes.toString('ascii', 0, 4) === 'wOF2' ? bytes : null;
 }
 
 async function saveFont(fontId: string, bytes: Buffer): Promise<void> {

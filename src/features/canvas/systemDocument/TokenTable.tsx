@@ -75,12 +75,12 @@ export function TokenTable({
             onCommit={(title) => {
               onChange({ kind: 'retitle', id: group.id, title });
             }}
-            className="text-body-strong text-primary"
+            className="kit-heading-font text-body-strong text-primary"
           />
         ) : (
           <h3
             className={cn(
-              'truncate text-body-strong',
+              'kit-heading-font truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -199,7 +199,7 @@ const TokenRow = memo(function TokenRow({
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
           <span
             className={cn(
-              'truncate text-body-strong',
+              'kit-body-font truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -384,14 +384,14 @@ function ValueCell({
             ),
           );
         }}
-        className="text-body tabular-nums text-secondary"
+        className="kit-body-font text-body tabular-nums text-secondary"
       />
     );
   else
     shown = (
       <span
         className={cn(
-          'truncate text-body tabular-nums',
+          'kit-body-font truncate text-body tabular-nums',
           isRemoved ? 'text-muted line-through' : 'text-secondary',
         )}
       >

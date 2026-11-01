@@ -163,8 +163,6 @@ function exampleName(system: DesignSystem, item: string): string | undefined {
 /**
  * Every typography token set on one line of sample text, which runs off the
  * edge rather than wrap so the document can size the tile from the tokens.
- * Kit fonts load only inside a preview guest, so the document shows them
- * through this example.
  */
 function typographySpecimen(sections: DocumentSection[]): string {
   const groups: { id: string; title: string; tokens: { name: string; property: string }[] }[] = [];

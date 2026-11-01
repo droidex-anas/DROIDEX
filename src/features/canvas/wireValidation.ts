@@ -68,6 +68,7 @@ const REPLY_KINDS = new Set([
   'designSystemSaved',
   'kitPreview',
   'kitCapture',
+  'kitFonts',
   'libraryItem',
   'libraryItems',
   'libraryThumbnail',
@@ -96,6 +97,9 @@ const MAX_LIBRARY_ITEMS = 50;
 export const MAX_TILE_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
 // A kit preview's capture in device pixels: `MAX_KIT_CAPTURE_BASE64_LENGTH` in the sidecar's kitCaptures.ts.
 export const MAX_KIT_CAPTURE_BASE64_LENGTH = Math.ceil((2 * 1024 * 1024) / 3) * 4;
+// `MAX_KIT_FONT_FACES` and `MAX_FONT_DESCRIPTOR_LENGTH` in the sidecar's kitFonts.ts.
+const MAX_KIT_FONT_FACES = 16;
+const MAX_FONT_DESCRIPTOR_LENGTH = 1024;
 // The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
 const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
@@ -206,6 +210,8 @@ function isReply(value: unknown): boolean {
       return isPngOrNone(value.png, MAX_TILE_BASE64_LENGTH);
     case 'kitCapture':
       return isPngOrNone(value.png, MAX_KIT_CAPTURE_BASE64_LENGTH);
+    case 'kitFonts':
+      return boundedList(value.faces, MAX_KIT_FONT_FACES, isKitFontFace);
     case 'removalPreview':
       return (
         record(value.preview) &&
@@ -224,6 +230,18 @@ function isReply(value: unknown): boolean {
 /** A base64 PNG within `maxLength`, or null where there is none. */
 function isPngOrNone(value: unknown, maxLength: number): boolean {
   return value === null || (typeof value === 'string' && value.length <= maxLength);
+}
+
+// A face's WOFF2 data is part of one kit stylesheet.
+function isKitFontFace(value: unknown): boolean {
+  return (
+    record(value) &&
+    boundedText(value.family, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.style, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.weight, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.unicodeRange, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.woff2, MAX_SOURCE_FILE_BYTES)
+  );
 }
 
 function isLibraryItem(value: unknown): boolean {

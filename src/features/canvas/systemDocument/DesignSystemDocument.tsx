@@ -56,6 +56,7 @@ import { specimenProperties } from './specimenStyle';
 import { typeSpecimenSize } from './TypeSpecimen';
 import { useDesignSystemDocument } from './useDesignSystemDocument';
 import { useKitPreviewSlots } from './useKitPreviewSlots';
+import { useKitTypeface } from './useKitTypeface';
 import './designSystemDocument.css';
 
 // Below this canvas width the nav folds into the header's Sections menu.
@@ -193,6 +194,7 @@ function KitDocument({
     [editing, mode],
   );
   const slots = useKitPreviewSlots(scrollRef, base);
+  const typeface = useKitTypeface(base, working.sections, mode);
   const typeSpecimen = typeSpecimenSize(base.sections);
   const previewing: KitPreviewing = {
     kit: { id: base.id, version: base.version, mode },
@@ -332,7 +334,7 @@ function KitDocument({
           className="design-system-document-column min-h-0 min-w-0 flex-1 overflow-y-auto px-4 outline-none"
         >
           {/* One measure for everything in the document, so all of it shares both edges. */}
-          <div className="mx-auto flex max-w-2xl flex-col gap-8 pb-8 pt-2">
+          <div className="mx-auto flex max-w-2xl flex-col gap-8 pb-8 pt-2" style={typeface}>
             <div className="flex flex-col gap-2">
               <DocumentCover
                 appSessionId={appSessionId}

@@ -219,7 +219,10 @@ export function SectionBlock({
     >
       <header className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={mark} />
-        <h2 tabIndex={-1} className="flex min-w-0 items-baseline gap-2 outline-none">
+        <h2
+          tabIndex={-1}
+          className="kit-heading-font flex min-w-0 items-baseline gap-2 outline-none"
+        >
           {onChange && !isRemoved ? (
             <InlineField
               ref={titleRef}

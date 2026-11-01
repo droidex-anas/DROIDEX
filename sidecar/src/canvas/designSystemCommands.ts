@@ -19,6 +19,7 @@ import {
   type SavedBy,
 } from './designSystems.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
+import { readKitFonts } from './kitFonts.js';
 import type { KitPreviews } from './kitPreviews.js';
 import type { CanvasCommand, CanvasReply, DesignSystemVersionRef } from './protocol.js';
 
@@ -58,7 +59,8 @@ export type DesignSystemCommand = Extract<
       | 'importDesignSystem'
       | 'readKitPreview'
       | 'saveKitCapture'
-      | 'readKitCapture'}`;
+      | 'readKitCapture'
+      | 'readKitFonts'}`;
   }
 >;
 
@@ -74,6 +76,7 @@ const COMMAND_TYPES = new Set<CanvasCommand['type']>([
   'canvas.readKitPreview',
   'canvas.saveKitCapture',
   'canvas.readKitCapture',
+  'canvas.readKitFonts',
 ]);
 
 const BY_USER: SavedBy = { actor: 'user' };
@@ -151,6 +154,8 @@ export async function answerDesignSystemCommand(
       const png = await readKitCapture(command.ref, command.item);
       return { kind: 'kitCapture', png: png?.toString('base64') ?? null };
     }
+    case 'canvas.readKitFonts':
+      return { kind: 'kitFonts', faces: readKitFonts(await readDesignSystem(command.ref)) };
   }
 }
 
