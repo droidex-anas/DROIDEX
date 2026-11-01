@@ -6,7 +6,7 @@
 // bytes; an agent can only refer to an image that is already here.
 
 import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import {
   canvasImageImportSchema,
   readChosenImage,
@@ -87,6 +87,14 @@ export async function kitImageFiles(
     }
   }
   return files;
+}
+
+/** Points every `kit-asset:` reference in the export's file at `path` to that image's `assets/<id>`. */
+export function exportedKitAssetReferences(text: string, path: string): string {
+  const folder = posix.dirname(path);
+  return text.replace(KIT_ASSET_REFERENCE, (_reference, assetId: string) =>
+    posix.relative(folder, `assets/${assetId}`),
+  );
 }
 
 /**

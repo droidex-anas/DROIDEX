@@ -311,6 +311,10 @@ test('kit images travel with canvas and kit exports, one file per image', async 
         ...DROIDEX_DESIGN_SYSTEM.files,
         'tokens.css': `${DROIDEX_DESIGN_SYSTEM.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
       },
+      examples: {
+        ...DROIDEX_DESIGN_SYSTEM.examples,
+        'hero/cover.tsx': `export default () => <img src="kit-asset:${textureId}" />;`,
+      },
     },
     { mutationId: 'image-kit', baseVersion: null, savedBy: { actor: 'user' } },
   );
@@ -328,6 +332,12 @@ test('kit images travel with canvas and kit exports, one file per image', async 
   const kitImages = (await fileSet(kitDestination)).filter((path) => path.startsWith('assets/'));
   assert.deepEqual(kitImages, [`assets/${coverId}`, `assets/${textureId}`].sort());
   assert.deepEqual(await readFile(join(kitDestination, 'assets', coverId)), cover);
+  // Each exported file names its image by a path from where it sits.
+  const tokens = await readFile(join(kitDestination, 'src', 'tokens.css'), 'utf8');
+  assert.ok(tokens.includes(`url(../assets/${textureId})`));
+  const example = await readFile(join(kitDestination, 'examples', 'hero', 'cover.tsx'), 'utf8');
+  assert.ok(example.includes(`src="../../assets/${textureId}"`));
+  assert.doesNotMatch(tokens + example, /kit-asset:/);
 });
 
 test('the exported Hey starter builds and serves outside the checkout without a download', async (t) => {
