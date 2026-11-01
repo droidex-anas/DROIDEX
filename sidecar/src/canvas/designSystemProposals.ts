@@ -58,7 +58,7 @@ export interface DesignSystemProposal {
 }
 
 const PRESET_MESSAGE = 'Presets are read-only. Save a copy of it as a new design system.';
-const GONE = 'That agent proposal is no longer waiting for review.';
+const GONE = 'That proposal is no longer waiting for review.';
 
 /**
  * Makes `system` the kit's pending proposal against `baseVersion`, replacing an

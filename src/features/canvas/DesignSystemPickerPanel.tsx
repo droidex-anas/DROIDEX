@@ -218,10 +218,10 @@ function KitOption({
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-body text-primary">{kit.name}</span>
           {kit.proposal && (
-            <Tooltip label="The agent proposed changes">
+            <Tooltip label="Proposed changes">
               <span
                 role="img"
-                aria-label="The agent proposed changes"
+                aria-label="Proposed changes"
                 className="size-1.5 rounded-full bg-accent"
               />
             </Tooltip>

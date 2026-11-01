@@ -62,7 +62,7 @@ export function NoteBodyEditor({
         extensions: [
           liveMarkdown([noteField, markdownStyles]),
           EditorView.lineWrapping,
-          cmPlaceholder("Markdown the agent reads as one of this kit's rules"),
+          cmPlaceholder("One of this kit's rules, in markdown"),
           labelCompartment.current.of(labelAttribute(label)),
           EditorView.contentAttributes.of({ 'aria-multiline': 'true', spellcheck: 'true' }),
           keymap.of([

@@ -1,7 +1,7 @@
 // The save bar (spec §6): the draft's change count with Discard and Save, or,
 // when another version was saved since the draft's base, Discard mine and Save
-// over it. useSaveDraft owns saving; the bar shows it. In a review of the
-// agent's proposal (§11) the bar is ProposalBar, with Discard and Accept.
+// over it. useSaveDraft owns saving; the bar shows it. In a review of a
+// proposal (§11) the bar is ProposalBar, with Discard and Accept.
 
 import { useRef, useState } from 'react';
 import { Button } from '../../../components/ui/Button';
@@ -139,11 +139,11 @@ export function ProposalBar({
   onDiscard: () => void;
 }) {
   const latest = `v${String(latestVersion)}`;
-  let status = 'Agent proposal';
-  if (hasDraft) status = 'Agent proposal · Save or discard your edits first';
-  else if (isStale) status = `Agent proposal · ${latest} was saved since`;
+  let status = 'Proposal';
+  if (hasDraft) status = 'Proposal · Save or discard your edits first';
+  else if (isStale) status = `Proposal · ${latest} was saved since`;
   return (
-    <div role="region" aria-label="Agent proposal" className={BAR_CLASS}>
+    <div role="region" aria-label="Proposal" className={BAR_CLASS}>
       <p role="status" className="min-w-0 flex-1 truncate text-body text-primary">
         {status}
       </p>

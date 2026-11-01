@@ -1,8 +1,8 @@
 // How a change looks against what it changes (spec §6, §11): a small accent
 // dot before the name with what it was in a tooltip, and Undo on what was
 // removed. The dot hangs outside the name's row, so names never shift and
-// start on the column's edge. In a review of the agent's proposal the marks
-// are the agent's, and what it added also says "Added" after its name.
+// start on the column's edge. In a review of a proposal the marks are its
+// changes, and what it adds also says "Added" after its name.
 
 import { useContext } from 'react';
 import { Undo } from '@droidex/icons';
@@ -15,7 +15,7 @@ import { ProposalMarks } from './proposalReview';
 
 const MARK_LABELS = {
   user: { added: 'Added, not saved', changed: 'Changed, not saved' },
-  agent: { added: 'Added by the agent', changed: 'Changed by the agent' },
+  proposal: { added: 'Added in this proposal', changed: 'Changed in this proposal' },
 };
 
 /** The dot, 8px left of the positioned row it is in, which starts where the name does. */
@@ -23,7 +23,9 @@ export function UnsavedMark({ mark, was }: { mark: DraftMark | undefined; was?: 
   const proposal = useContext(ProposalMarks);
   if (mark !== 'added' && mark !== 'changed') return null;
   const label =
-    mark === 'changed' && was !== undefined ? was : MARK_LABELS[proposal ? 'agent' : 'user'][mark];
+    mark === 'changed' && was !== undefined
+      ? was
+      : MARK_LABELS[proposal ? 'proposal' : 'user'][mark];
   return (
     <Tooltip label={label} className="absolute right-full top-1/2 mr-2 -translate-y-1/2">
       <span role="img" aria-label={label} className="size-1.5 rounded-full bg-accent" />
@@ -31,7 +33,7 @@ export function UnsavedMark({ mark, was }: { mark: DraftMark | undefined; was?: 
   );
 }
 
-/** After the name of what the agent's proposal adds. */
+/** After the name of what the proposal under review adds. */
 export function AddedLabel({ mark }: { mark: DraftMark | undefined }) {
   const proposal = useContext(ProposalMarks);
   if (mark !== 'added' || !proposal?.labelsAdded) return null;
