@@ -4,7 +4,11 @@ const { mkdtemp, mkdir, rm, writeFile } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const test = require('node:test');
-const { mayRequestPreviewAsset, readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const {
+  mayRequestPreviewAsset,
+  readCanvasPreviewAsset,
+  readKitImage,
+} = require('./canvasPreviewAssets.cjs');
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
@@ -37,8 +41,36 @@ test('the preview host serves an image only under its owning canvas', async (t) 
   );
 });
 
-test('a kit guest reads fonts and no canvas image; an unbound guest reads nothing', () => {
+test('the preview host serves a kit image by its content hash', async (t) => {
+  const profile = await mkdtemp(join(tmpdir(), 'preview-kit-assets-'));
+  t.after(() => rm(profile, { recursive: true, force: true }));
+  const kitRoot = join(profile, 'canvases', 'design-systems');
+  const options = {
+    canvasRoot: join(profile, 'canvases'),
+    kitRoot,
+    fontRoot: profile,
+    secret: 's',
+  };
+  const assetId = createHash('sha256').update(PNG).digest('hex');
+  await mkdir(join(kitRoot, 'assets'), { recursive: true });
+  await writeFile(join(kitRoot, 'assets', assetId), PNG);
+  const otherId = 'c'.repeat(64);
+  await writeFile(join(kitRoot, 'assets', otherId), PNG);
+  const url = (id) => `droidex-canvas-preview://preview/kit-asset/${id}`;
+
+  assert.deepEqual(await readCanvasPreviewAsset(url(assetId), options), {
+    mime: 'image/png',
+    data: PNG,
+  });
+  assert.equal(await readCanvasPreviewAsset(url(otherId), options), null);
+  assert.equal(await readCanvasPreviewAsset(`${url(assetId)}?sig=x`, options), null);
+  assert.deepEqual(await readKitImage(kitRoot, assetId), { mime: 'image/png', data: PNG });
+  assert.equal(await readKitImage(kitRoot, `../assets/${assetId}`), null);
+});
+
+test('a kit guest reads kit images and fonts but no canvas image; an unbound guest reads nothing', () => {
   const font = `droidex-canvas-preview://preview/font/${'a'.repeat(64)}`;
+  const kitImage = `droidex-canvas-preview://preview/kit-asset/${'d'.repeat(64)}`;
   const image = `droidex-canvas-preview://preview/asset/canvas-a/${'b'.repeat(64)}?sig=c`;
   const canvasA = { kind: 'canvas', canvasId: 'canvas-a' };
   const kit = { kind: 'kit' };
@@ -48,6 +80,9 @@ test('a kit guest reads fonts and no canvas image; an unbound guest reads nothin
   assert.equal(mayRequestPreviewAsset(canvasA, font), true);
   assert.equal(mayRequestPreviewAsset(kit, font), true);
   assert.equal(mayRequestPreviewAsset(kit, image), false);
+  assert.equal(mayRequestPreviewAsset(canvasA, kitImage), true);
+  assert.equal(mayRequestPreviewAsset(kit, kitImage), true);
   assert.equal(mayRequestPreviewAsset(null, font), false);
   assert.equal(mayRequestPreviewAsset(null, image), false);
+  assert.equal(mayRequestPreviewAsset(null, kitImage), false);
 });

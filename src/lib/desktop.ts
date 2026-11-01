@@ -292,6 +292,12 @@ export interface DroidexApi {
   pickFiles: () => Promise<string[]>;
   canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
   canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
+  canvasPickKitImage: () => Promise<OwnedAsset | null>;
+  canvasDropKitImage: (file: File) => Promise<OwnedAsset>;
+  /** A kit image's bytes, or null when the store does not hold that image intact. */
+  canvasReadKitImage: (
+    assetId: string,
+  ) => Promise<{ mime: OwnedAsset['mediaType']; data: Uint8Array } | null>;
   listDirectories: (path: string) => Promise<DirectoryListing>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
@@ -602,6 +608,25 @@ export async function importCanvasImage(canvasId: string, file: File): Promise<O
   return requireDesktopApi('Reference images need the desktop app.').canvasDropImage(
     canvasId,
     file,
+  );
+}
+
+// Kit images (design system documents spec §8) enter the kit store only through
+// main's picker or a drop; main rejects with a curated { code, message }.
+export async function pickKitImage(): Promise<OwnedAsset | null> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasPickKitImage();
+}
+
+export async function importKitImage(file: File): Promise<OwnedAsset> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasDropKitImage(file);
+}
+
+// Main reads a kit image's bytes for the document: one can pass the bridge socket's buffer.
+export async function readKitImage(
+  assetId: string,
+): Promise<{ mime: OwnedAsset['mediaType']; data: Uint8Array } | null> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasReadKitImage(
+    assetId,
   );
 }
 

@@ -1,41 +1,63 @@
 // The kit's cover at the top of the document (spec §5): a 1200 × 480
 // composition at the column's width, captioned like every preview. A preview
-// cover is a live tile like any other preview; a kit without a cover, or a
-// cover never captured, shows its surface and accent. A user kit's cover menu
-// asks the agent for a new one.
+// cover is a live tile like any other preview, an image cover shows whole on
+// the surface tone and is drawn into the cover's capture once saved, and a kit
+// without a cover, or a cover never captured, shows its surface and accent. A
+// user kit's cover menu asks the agent for a new one or replaces it with an
+// image through main's picker.
 
-import type { CSSProperties } from 'react';
-import { RefreshCw } from '@droidex/icons';
+import { useEffect, type CSSProperties } from 'react';
+import { RefreshCw, Upload } from '@droidex/icons';
 import { useStoreDispatch } from '../../../hooks/useStore';
-import type { DesignSystemCover } from '../protocol';
+import { keepImageCoverCapture, useKitCapture } from '../kitCaptures';
+import type { DesignSystemCover, DesignSystemRef, OwnedAsset } from '../protocol';
 import { ActionMenu } from './ActionMenu';
+import { AssetPicture } from './AssetsSection';
+import { sameCover, type DraftChange } from './documentDraft';
+import { pickImage, useImageRequests } from './kitImageImport';
 import { KitPreviewTile, type KitPreviewing } from './KitPreviewTile';
+import { UnsavedMark } from './UnsavedMark';
+import { useKitImage } from './useKitImage';
 
 const COVER_WIDTH = 1200;
 const COVER_HEIGHT = 480;
+const COVER_ASPECT: CSSProperties = {
+  aspectRatio: `${String(COVER_WIDTH)} / ${String(COVER_HEIGHT)}`,
+};
 
 export function DocumentCover({
   appSessionId,
   name,
   cover,
+  savedCover,
   previewing,
-  canRegenerate,
+  onChange,
 }: {
   appSessionId: string;
   name: string;
   cover: DesignSystemCover;
+  /** The cover of the version the draft is based on. */
+  savedCover: DesignSystemCover;
   previewing: KitPreviewing;
-  /** The kit can change, so its menu can put a request for a new cover into the composer. */
-  canRegenerate: boolean;
+  /** Null where the kit cannot change, which hides the cover's menu. */
+  onChange: ((change: DraftChange) => void) | null;
 }) {
   const dispatch = useStoreDispatch();
   const swatches = <SurfaceAndAccent specimen={previewing.specimen} />;
+  const isSaved = sameCover(cover, savedCover);
+  const coverImages = useImageRequests(
+    onChange &&
+      ((asset: OwnedAsset) => {
+        onChange({ kind: 'setCover', cover: { kind: 'image', assetId: asset.assetId } });
+      }),
+  );
   return (
     <figure className="flex flex-col gap-2">
       <figcaption className="flex min-h-control-md items-center gap-2">
+        <UnsavedMark mark={isSaved ? undefined : 'changed'} />
         <span className="truncate text-body-strong text-primary">Cover</span>
         <span className="flex-1" />
-        {canRegenerate && (
+        {onChange && (
           <ActionMenu
             label="Cover actions"
             actions={[
@@ -50,11 +72,18 @@ export function DocumentCover({
                   });
                 },
               },
+              {
+                label: 'Replace with image…',
+                icon: Upload,
+                run: () => {
+                  void coverImages.replace(pickImage());
+                },
+              },
             ]}
           />
         )}
       </figcaption>
-      {cover?.kind === 'preview' ? (
+      {cover?.kind === 'preview' && (
         <KitPreviewTile
           previewing={previewing}
           item="cover"
@@ -63,23 +92,63 @@ export function DocumentCover({
           height={COVER_HEIGHT}
           placeholder={swatches}
         />
-      ) : (
+      )}
+      {cover?.kind === 'image' && (
+        <ImageCover
+          assetId={cover.assetId}
+          label={`${name} cover`}
+          savedAs={isSaved ? previewing.kit : null}
+        />
+      )}
+      {cover === null && (
         <div
           role="img"
-          aria-label={cover === null ? `${name} surface and accent` : `${name} cover`}
+          aria-label={`${name} surface and accent`}
           className="w-full overflow-hidden rounded-lg bg-surface"
-          style={{ aspectRatio: `${String(COVER_WIDTH)} / ${String(COVER_HEIGHT)}` }}
+          style={COVER_ASPECT}
         >
-          {cover === null ? (
-            swatches
-          ) : (
-            <span className="flex size-full items-center justify-center text-label text-muted">
-              Cover
-            </span>
-          )}
+          {swatches}
         </div>
       )}
     </figure>
+  );
+}
+
+// Letterboxed rather than cut to the cover's shape, as asset tiles are. A
+// saved image cover without a capture yet draws one, as a live cover does on
+// its first render, so picker rows and the chip show it.
+function ImageCover({
+  assetId,
+  label,
+  savedAs,
+}: {
+  assetId: string;
+  label: string;
+  /** The version whose cover this is, or null while it is a draft's. */
+  savedAs: DesignSystemRef | null;
+}) {
+  const image = useKitImage(assetId);
+  const capture = useKitCapture(savedAs, 'cover');
+  const imageUrl = image.status === 'ready' ? image.url : null;
+  const kitId = savedAs?.id;
+  const version = savedAs?.version;
+  useEffect(() => {
+    if (capture !== null || imageUrl === null || kitId === undefined || version === undefined)
+      return;
+    const size = { widthPx: COVER_WIDTH, heightPx: COVER_HEIGHT };
+    keepImageCoverCapture({ id: kitId, version }, imageUrl, size).catch((error: unknown) => {
+      console.error('A design system cover image could not be captured:', error);
+    });
+  }, [capture, imageUrl, kitId, version]);
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className="relative w-full overflow-hidden rounded-lg bg-surface"
+      style={COVER_ASPECT}
+    >
+      <AssetPicture image={image} />
+    </div>
   );
 }
 

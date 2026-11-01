@@ -39,6 +39,7 @@ import {
   versionPath,
   writeVersion,
 } from './designSystemStorage.js';
+import { refuseUnknownKitAssets } from './kitAssets.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
 import {
   canvasIdentifierSchema,
@@ -400,6 +401,7 @@ export async function saveDesignSystem(
   const path = versionPath(kit.id, kit.version);
   if (!(await isSavedMutation(path, options.mutationId, kit))) {
     await refuseDeleted(kit.id);
+    await refuseUnknownKitAssets(kit);
     await refuseStaleBase(kit.id, baseVersion);
     const header: VersionHeader = {
       ...documentHeader(kit),

@@ -25,9 +25,8 @@ export const ownedAssetSchema = z
 
 // Main decodes these exact bytes before sending the digest and dimensions over
 // its private bridge route. The digest closes the path replacement race.
-export const canvasImageImportSchema = z
+const chosenImageSchema = z
   .object({
-    canvasId: canvasIdentifierSchema,
     filePath: z.string().min(1).max(4096),
     digest: z.string().regex(/^[0-9a-f]{64}$/),
     width: z.number().int().min(1).max(MAX_DIMENSION),
@@ -35,6 +34,11 @@ export const canvasImageImportSchema = z
   })
   .strict();
 
+export const canvasImageImportSchema = chosenImageSchema.extend({
+  canvasId: canvasIdentifierSchema,
+});
+
+export type ChosenImage = z.infer<typeof chosenImageSchema>;
 export type CanvasImageImport = z.infer<typeof canvasImageImportSchema>;
 
 /** An owned image's record and the bytes its digest names. */
@@ -48,6 +52,13 @@ export async function importCanvasImage(
   root: string,
   request: CanvasImageImport,
 ): Promise<OwnedAsset> {
+  const { asset, bytes } = await readChosenImage(request);
+  await saveOwnedAsset(root, request.canvasId, asset, bytes);
+  return asset;
+}
+
+/** The bytes main attested, refused unless they are still the image it decoded. */
+export async function readChosenImage(request: ChosenImage): Promise<OwnedImage> {
   if (!isAbsolute(request.filePath))
     throw canvasError('invalid_input', 'Choose an image from your computer first.');
 
@@ -87,24 +98,29 @@ export async function importCanvasImage(
     width: request.width,
     height: request.height,
   };
-  await saveOwnedAsset(root, request.canvasId, asset, bytes);
-  return asset;
+  return { asset, bytes };
 }
 
-/** Content-addressed, immutable storage, with no links below the profile root. */
 export async function saveOwnedAsset(
   root: string,
   canvasId: string,
   asset: OwnedAsset,
   bytes: Buffer,
 ): Promise<void> {
-  const canvas = join(root, canvasId);
-  const assets = join(canvas, 'assets');
+  await saveImageIn(join(root, canvasId), asset, bytes);
+}
+
+/**
+ * Content-addressed, immutable storage in `owner`'s `assets` folder, with no
+ * links below the profile root. `owner` is a canvas's directory or the kit store's.
+ */
+export async function saveImageIn(owner: string, asset: OwnedAsset, bytes: Buffer): Promise<void> {
+  const assets = join(owner, 'assets');
   const target = join(assets, asset.assetId);
   const temporary = `${target}.${randomUUID()}.tmp`;
   try {
-    const canvasInfo = await lstat(canvas);
-    if (!canvasInfo.isDirectory() || canvasInfo.isSymbolicLink())
+    const ownerInfo = await lstat(owner);
+    if (!ownerInfo.isDirectory() || ownerInfo.isSymbolicLink())
       throw canvasError(
         'storage_failed',
         'Canvas storage is damaged. Reopen DROIDEX to recover it.',
@@ -158,7 +174,7 @@ export async function saveOwnedAsset(
     await syncDirectory(assets);
     await saveAssetMetadata(assets, asset);
     await syncDirectory(assets);
-    await syncDirectory(canvas);
+    await syncDirectory(owner);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
     if (error instanceof CanvasCommandError) throw error;
@@ -208,16 +224,14 @@ export function referencedAssetIds(contents: Iterable<string>): string[] {
   return [...assetIds];
 }
 
-/** One image a canvas owns, verified against its record and digest. */
-export async function readOwnedImage(
-  root: string,
-  canvasId: string,
-  assetId: string,
-): Promise<OwnedImage> {
-  const canvas = join(root, canvasId);
-  const directory = join(canvas, 'assets');
+/**
+ * One image from `owner`'s `assets` folder, verified against its record and
+ * digest. `owner` is a canvas's directory or the kit store's.
+ */
+export async function readImageIn(owner: string, assetId: string): Promise<OwnedImage> {
+  const directory = join(owner, 'assets');
   try {
-    for (const path of [canvas, directory]) {
+    for (const path of [owner, directory]) {
       const info = await lstat(path);
       if (!info.isDirectory() || info.isSymbolicLink())
         throw canvasError('storage_failed', DAMAGED_ASSET);

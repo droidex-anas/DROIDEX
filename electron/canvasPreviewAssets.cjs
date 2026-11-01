@@ -1,6 +1,6 @@
-// The preview scheme's only subresources: canvas-owned images and installed kit
-// fonts. URLs contain IDs, never private paths; every disk read stays under an
-// app-owned directory and refuses links below the profile root.
+// The preview scheme's only subresources: canvas-owned images, kit images and
+// installed kit fonts. URLs contain IDs, never private paths; every disk read
+// stays under an app-owned directory and refuses links below the profile root.
 
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 const { constants } = require('node:fs');
@@ -9,12 +9,15 @@ const { join } = require('node:path');
 
 const HASH = '[0-9a-f]{64}';
 const CANVAS_ASSET = new RegExp(`^/asset/([A-Za-z0-9_-]{1,128})/(${HASH})$`);
+const KIT_ASSET_ID = new RegExp(`^${HASH}$`);
+const KIT_ASSET = new RegExp(`^/kit-asset/(${HASH})$`);
 const KIT_FONT = new RegExp(`^/font/(${HASH})$`);
 const IMAGE_CANVAS = /^\/asset\/([A-Za-z0-9_-]{1,128})\//;
 
 /**
  * Whether a guest with this binding may request this preview URL: any bound
- * guest reads kit fonts, and only a guest bound to a canvas reads its images.
+ * guest reads kit images and fonts, and only a guest bound to a canvas reads
+ * that canvas's images.
  */
 function mayRequestPreviewAsset(binding, requestUrl) {
   if (binding === null) return false;
@@ -23,7 +26,7 @@ function mayRequestPreviewAsset(binding, requestUrl) {
   return binding.kind === 'canvas' && image[1] === binding.canvasId;
 }
 
-async function readCanvasPreviewAsset(requestUrl, { canvasRoot, fontRoot, secret }) {
+async function readCanvasPreviewAsset(requestUrl, { canvasRoot, kitRoot, fontRoot, secret }) {
   const url = new URL(requestUrl);
   if (url.protocol !== 'droidex-canvas-preview:' || url.host !== 'preview') return null;
   const image = CANVAS_ASSET.exec(url.pathname);
@@ -42,12 +45,25 @@ async function readCanvasPreviewAsset(requestUrl, { canvasRoot, fontRoot, secret
     return mime ? { mime, data } : null;
   }
 
+  const kitImage = KIT_ASSET.exec(url.pathname);
+  if (kitImage) return url.search ? null : readKitImage(kitRoot, kitImage[1]);
+
   const font = KIT_FONT.exec(url.pathname);
   if (!font || url.search) return null;
   const [, fontId] = font;
   const data = await readOwnedFile(join(fontRoot, fontId), [fontRoot], 1024 * 1024);
   if (!data || createHash('sha256').update(data).digest('hex') !== fontId) return null;
   return data.toString('ascii', 0, 4) === 'wOF2' ? { mime: 'font/woff2', data } : null;
+}
+
+/** A kit image by its content hash, for preview guests and the document alike. */
+async function readKitImage(kitRoot, assetId) {
+  if (typeof assetId !== 'string' || !KIT_ASSET_ID.test(assetId)) return null;
+  const assets = join(kitRoot, 'assets');
+  const data = await readOwnedFile(join(assets, assetId), [kitRoot, assets], 10 * 1024 * 1024);
+  if (!data || createHash('sha256').update(data).digest('hex') !== assetId) return null;
+  const mime = imageMediaType(data);
+  return mime ? { mime, data } : null;
 }
 
 async function readOwnedFile(target, directories, maxBytes) {
@@ -85,4 +101,4 @@ function imageMediaType(data) {
   return null;
 }
 
-module.exports = { readCanvasPreviewAsset, mayRequestPreviewAsset, imageMediaType };
+module.exports = { readCanvasPreviewAsset, readKitImage, mayRequestPreviewAsset, imageMediaType };

@@ -15,7 +15,7 @@ const MAX_TOKEN_NOTE_BYTES = 400;
 const MAX_NOTE_BYTES = 8 * 1024;
 const MAX_ITEM_NOTE_BYTES = 1024;
 const MAX_PREVIEWS = 24;
-const MAX_ASSETS = 48;
+export const MAX_ASSETS = 48;
 // `DESIGN_SYSTEM_LIMITS.maxNameLength` in the sidecar's designSystems.ts.
 export const MAX_KIT_NAME_LENGTH = 120;
 // The sidecar's `CANVAS_LIMITS`: an example file's name is a source path, and

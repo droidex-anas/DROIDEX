@@ -154,6 +154,8 @@ function resumeQuery(batch: ServerEventBatch): string {
 
 test('only Electron main can submit a validated Canvas image import', async (t) => {
   const imports: string[] = [];
+  const owned = (digest: string) =>
+    ({ assetId: digest, mediaType: 'image/png', byteLength: 1, width: 1, height: 1 }) as const;
   const server = startBridgeServer({
     requestedPort: 0,
     token: 'renderer-token',
@@ -161,13 +163,11 @@ test('only Electron main can submit a validated Canvas image import', async (t) 
       secret: 'main-only-secret',
       importImage: async (request) => {
         imports.push(request.filePath);
-        return {
-          assetId: request.digest,
-          mediaType: 'image/png',
-          byteLength: 1,
-          width: 1,
-          height: 1,
-        };
+        return owned(request.digest);
+      },
+      importKitImage: async (request) => {
+        imports.push(`kit:${request.filePath}`);
+        return owned(request.digest);
       },
     },
     onCommand: async () => undefined,
@@ -175,15 +175,10 @@ test('only Electron main can submit a validated Canvas image import', async (t) 
   await server.ready;
   t.after(() => server.close());
   const url = `http://127.0.0.1:${String(server.port)}/canvas/import-image`;
-  const request = {
-    canvasId: 'canvas-one',
-    filePath: '/chosen/image.png',
-    digest: 'a'.repeat(64),
-    width: 1,
-    height: 1,
-  };
-  const send = (body: object, secret: string) =>
-    fetch(url, {
+  const chosen = { filePath: '/chosen/image.png', digest: 'a'.repeat(64), width: 1, height: 1 };
+  const request = { canvasId: 'canvas-one', ...chosen };
+  const send = (body: object, secret: string, to = url) =>
+    fetch(to, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-canvas-secret': secret },
       body: JSON.stringify(body),
@@ -199,6 +194,13 @@ test('only Electron main can submit a validated Canvas image import', async (t) 
   assert.deepEqual(imports, []);
   assert.equal((await send(request, 'main-only-secret')).status, 200);
   assert.deepEqual(imports, ['/chosen/image.png']);
+
+  // The kit store has no canvas to name.
+  const kitUrl = url.replace('/import-image', '/import-kit-image');
+  assert.equal((await send(chosen, 'renderer-token', kitUrl)).status, 401);
+  assert.equal((await send(request, 'main-only-secret', kitUrl)).status, 400);
+  assert.equal((await send(chosen, 'main-only-secret', kitUrl)).status, 200);
+  assert.deepEqual(imports, ['/chosen/image.png', 'kit:/chosen/image.png']);
 });
 
 test('voice ownership moves only on a successful start, and only the owner can stop', async (t) => {
