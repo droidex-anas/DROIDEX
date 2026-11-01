@@ -33,7 +33,6 @@ import {
 import { readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
 import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
 import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
-import { DROIDEX_DESIGN_SYSTEM } from '../sidecar/src/canvas/presets/droidex.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const PLATFORM_PACKAGE = `@esbuild/${process.platform}-${process.arch}`;
@@ -242,16 +241,18 @@ function probeTarget(appPath: string | undefined): ProbeTarget {
   };
 }
 
+const DROIDEX_REF: DesignSystemRef = { id: 'droidex', version: 1, mode: 'dark' };
+const DROIDEX_COVER = (await readDesignSystem(DROIDEX_REF)).examples['cover.tsx'];
+
 function compileInput(files?: DesignCompileInput['files']): DesignCompileInput {
-  const example = DROIDEX_DESIGN_SYSTEM.examples['cover.tsx'];
-  if (files === undefined && example === undefined) fail('the design kit ships no cover');
+  if (files === undefined && DROIDEX_COVER === undefined) fail('the design kit ships no cover');
   return {
     kind: 'design',
     designId: 'canvas-compiler-probe',
     revisionId: 'canvas-compiler-probe',
     generation: 1,
-    files: files ?? { 'main.tsx': example },
-    designSystem: { id: DROIDEX_DESIGN_SYSTEM.id, version: DROIDEX_DESIGN_SYSTEM.version, mode: 'dark' },
+    files: files ?? { 'main.tsx': DROIDEX_COVER },
+    designSystem: DROIDEX_REF,
     designSystemAdherence: 'guide',
   };
 }
@@ -484,7 +485,12 @@ for (const id of ['droidex', 'openai-inspired', 'claude-inspired']) {
     const input = { ...compileInput(), files: { 'main.tsx': example }, designSystem: ref };
     const shipped = await runWorker(target, target.runtimeDir, input);
     assertClean(shipped, target.label);
-    if (shipped.compiled.status !== 'ready' || !shipped.compiled.design.html.includes('"ArrowRight"'))
+    // The DROIDEX cover draws the kit's own icons; the other covers name a Lucide one.
+    const namesLucide = example.includes("from 'lucide-react'");
+    if (
+      shipped.compiled.status !== 'ready' ||
+      (namesLucide && !shipped.compiled.design.html.includes('"ArrowRight"'))
+    )
       fail(`${id}/${mode} did not bundle its named Lucide icon`);
     const artifact = artifactOf(shipped.compiled);
     kitArtifacts.push(artifact);

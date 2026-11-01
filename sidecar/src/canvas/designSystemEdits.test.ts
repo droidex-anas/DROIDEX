@@ -6,9 +6,9 @@ import {
   type DocumentChange,
 } from './designSystemEdits.js';
 import type { DocumentSection } from './designSystemDocument.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 
-const base = DROIDEX_DESIGN_SYSTEM.sections;
+const base = OPENAI_INSPIRED_DESIGN_SYSTEM.sections;
 
 function apply(...changes: DocumentChange[]): DocumentSection[] {
   return applyDocumentChanges(base, changes);
@@ -63,7 +63,7 @@ test('changes find tokens, notes and previews by their natural keys and keep the
     { ...preview, width: 640, height: 320 },
   );
   assert.equal(after.length, before.length);
-  assert.deepEqual(base, DROIDEX_DESIGN_SYSTEM.sections, 'the base is not changed');
+  assert.deepEqual(base, OPENAI_INSPIRED_DESIGN_SYSTEM.sections, 'the base is not changed');
 });
 
 test('Size and Z index sections are created between Shadows and Motion', () => {

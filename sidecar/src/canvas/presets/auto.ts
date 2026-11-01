@@ -60,7 +60,7 @@ const DARK_TOKENS: Record<string, string> = {
 };
 
 const AUTO_NOTE =
-  "The user chose no design system, so this one has no look of its own. Take the style from, in order: the request itself (a product, brand, mood or reference it names), the frames already on this canvas (match their palette, type, spacing and radius), then your own judgement. Set that style as --ds-* token overrides in a stylesheet of the frame's own, for example :root { --ds-accent: …; --ds-canvas: … } in styles.css, so the primitives take it on; give dark its own values under [data-mode='dark'] when it needs them. These neutral tokens are a blank base, not a style to keep. Auto is not the DROIDEX preset: use DROIDEX's warm paper and amber only when the user asks for DROIDEX. Builds are not checked against a kit under Auto.\n";
+  "The user chose no design system, so this one has no look of its own. Take the style from, in order: the request itself (a product, brand, mood or reference it names), the frames already on this canvas (match their palette, type, spacing and radius), then your own judgement. Set that style as --ds-* token overrides in a stylesheet of the frame's own, for example :root { --ds-accent: …; --ds-canvas: … } in styles.css, so the primitives take it on; give dark its own values under [data-mode='dark'] when it needs them. These neutral tokens are a blank base, not a style to keep. Auto is not the DROIDEX preset: use DROIDEX's look only when the user asks for DROIDEX. Builds are not checked against a kit under Auto.\n";
 
 /** The resting kit: no style of its own, so the agent derives one per request. */
 export const AUTO_DESIGN_SYSTEM: DesignSystem = {

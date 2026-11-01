@@ -15,7 +15,7 @@ import { kitGuidance } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import type { DesignSystemRef } from './protocol.js';
 
 const canvasId = 'export-canvas';
@@ -95,12 +95,12 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
   const fontId = createHash('sha256').update(font).digest('hex');
   const kit = await saveDesignSystem(
     {
-      ...DROIDEX_DESIGN_SYSTEM,
+      ...OPENAI_INSPIRED_DESIGN_SYSTEM,
       id: 'export-kit',
       name: 'Export kit',
       files: {
-        ...DROIDEX_DESIGN_SYSTEM.files,
-        'tokens.css': `${DROIDEX_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
+        ...OPENAI_INSPIRED_DESIGN_SYSTEM.files,
+        'tokens.css': `${OPENAI_INSPIRED_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
         'fonts/OFL.txt': 'Open Font License',
       },
     },
@@ -303,16 +303,16 @@ test('kit images travel with canvas and kit exports, one file per image', async 
   await ownImage(canvasOwner(root), PNG);
   const kit = await saveDesignSystem(
     {
-      ...DROIDEX_DESIGN_SYSTEM,
+      ...OPENAI_INSPIRED_DESIGN_SYSTEM,
       id: 'image-kit',
       name: 'Image kit',
       cover: { kind: 'image', assetId: coverId },
       files: {
-        ...DROIDEX_DESIGN_SYSTEM.files,
-        'tokens.css': `${DROIDEX_DESIGN_SYSTEM.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
+        ...OPENAI_INSPIRED_DESIGN_SYSTEM.files,
+        'tokens.css': `${OPENAI_INSPIRED_DESIGN_SYSTEM.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
       },
       examples: {
-        ...DROIDEX_DESIGN_SYSTEM.examples,
+        ...OPENAI_INSPIRED_DESIGN_SYSTEM.examples,
         'hero/cover.tsx': `export default () => <img src="kit-asset:${textureId}" />;`,
       },
     },

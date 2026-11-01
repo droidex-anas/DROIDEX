@@ -11,7 +11,6 @@ import { discardProposal, proposeDesignSystem, readProposal } from './designSyst
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { KitPreviews } from './kitPreviews.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
 
@@ -38,9 +37,9 @@ function countingPreviews(
 }
 
 /** Every preview the shipped kits have, in both modes. */
-function presetPreviews(): { ref: DesignSystemRef; item: string }[] {
+async function presetPreviews(): Promise<{ ref: DesignSystemRef; item: string }[]> {
   const systems = [
-    DROIDEX_DESIGN_SYSTEM,
+    await readDesignSystem(LIGHT),
     OPENAI_INSPIRED_DESIGN_SYSTEM,
     CLAUDE_INSPIRED_DESIGN_SYSTEM,
   ];
@@ -93,7 +92,7 @@ test('a preview compiles once per version, mode and item while it is pending or 
   const slow = countingPreviews(
     () => new Promise((resolve) => held.push(() => resolve(design('<html></html>')))),
   );
-  const targets = presetPreviews();
+  const targets = await presetPreviews();
   assert.ok(targets.length > 32);
   const reads = targets.map(({ ref, item }) => slow.previews.read(ref, item));
   reads.push(slow.previews.read(targets[0].ref, targets[0].item));
@@ -142,7 +141,7 @@ test("a waiting proposal's previews build from its own examples, and a settled o
     design(input.kind === 'kitPreview' ? input.example : ''),
   );
   await saveDesignSystem(
-    { ...DROIDEX_DESIGN_SYSTEM, id: 'proposed' },
+    { ...(await readDesignSystem(LIGHT)), id: 'proposed' },
     { mutationId: 'proposed-v1', baseVersion: null, savedBy: { actor: 'user' } },
   );
   const saved = await readDesignSystem({ id: 'proposed', version: 1 });

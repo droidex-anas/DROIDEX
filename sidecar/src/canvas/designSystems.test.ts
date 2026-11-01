@@ -25,11 +25,15 @@ import {
 import { CANVAS_LIMITS } from './schema.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { DROIDEX_KIT } from './presets/droidexKit.js';
 
 pinScratchProfile();
 
-const KITS = [DROIDEX_DESIGN_SYSTEM, OPENAI_INSPIRED_DESIGN_SYSTEM, CLAUDE_INSPIRED_DESIGN_SYSTEM];
+const KITS = [
+  designSystemSchema.parse(DROIDEX_KIT),
+  OPENAI_INSPIRED_DESIGN_SYSTEM,
+  CLAUDE_INSPIRED_DESIGN_SYSTEM,
+];
 
 test('built-in versions are exact snapshots that callers cannot mutate', async () => {
   for (const kit of KITS) {
@@ -63,8 +67,9 @@ test('kit text meets AA contrast on every surface the primitives use', () => {
       ];
       for (const [fg, bg] of pairs) {
         const foreground = tokens['--ds-' + fg];
-        const background = tokens['--ds-' + bg];
-        assert.ok(foreground && background, kit.id + ' has ' + fg + '/' + bg);
+        assert.ok(foreground && tokens['--ds-' + bg], kit.id + ' has ' + fg + '/' + bg);
+        // A translucent fill such as a soft accent sits on a raised surface.
+        const background = opaque(tokens['--ds-' + bg], tokens['--ds-raised']);
         const ratio = contrast(foreground, background);
         assert.ok(
           ratio >= 4.5,
@@ -80,7 +85,7 @@ test('kit text meets AA contrast on every surface the primitives use', () => {
         for (const layer of ['lift', 'press']) {
           const ratio = contrast(
             tokens['--ds-' + fg],
-            layerColor(tokens['--ds-' + bg], tokens['--ds-' + layer]),
+            opaque(tokens['--ds-' + layer], tokens['--ds-' + bg]),
           );
           assert.ok(
             ratio >= 4.5,
@@ -92,17 +97,18 @@ test('kit text meets AA contrast on every surface the primitives use', () => {
   }
 });
 
-function layerColor(background: string, layer: string): string {
-  const parts = /^rgb\((0|255) \1 \1 \/ (0\.\d+)\)$/.exec(layer);
-  assert.ok(parts, 'a translucent black or white layer');
-  const channel = Number(parts[1]);
-  const opacity = Number(parts[2]);
+/** The colour as #rrggbb, laying a translucent rgb() or rgba() one over `base`. */
+function opaque(color: string, base: string): string {
+  const parts = /^rgba?\((\d+)[ ,]+(\d+)[ ,]+(\d+)[ ,/]+(0?\.\d+)\)$/.exec(color);
+  if (!parts) return color;
+  const opacity = Number(parts[4]);
   return (
     '#' +
     [1, 3, 5]
-      .map((start) =>
+      .map((start, channel) =>
         Math.round(
-          parseInt(background.slice(start, start + 2), 16) * (1 - opacity) + channel * opacity,
+          parseInt(base.slice(start, start + 2), 16) * (1 - opacity) +
+            Number(parts[channel + 1]) * opacity,
         )
           .toString(16)
           .padStart(2, '0'),

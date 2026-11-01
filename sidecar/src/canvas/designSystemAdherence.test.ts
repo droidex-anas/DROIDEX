@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { CompileFailedError, CompilerWorker } from './compiler.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
-import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { starterKit } from './designSystemImport.js';
+import { AUTO_DESIGN_SYSTEM_REF, readDesignSystem, type DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
+
+// The shared primitives on the starter's tokens, so the cases below read a kit that never changes.
+const KIT: DesignSystem = { id: 'starter', version: 1, name: 'Starter', ...starterKit() };
 
 const ON_KIT: SourceFiles = {
   'main.tsx': `import { LineChart, Line } from 'recharts';
@@ -60,7 +63,7 @@ export default function Report() {
 };
 
 function check(files: SourceFiles, rule: 'off' | 'guide' | 'strict' = 'guide') {
-  return checkDesignSystemAdherence(files, DROIDEX_DESIGN_SYSTEM, rule);
+  return checkDesignSystemAdherence(files, KIT, rule);
 }
 
 function places(diagnostics: CanvasDiagnostic[]): string[] {
@@ -97,8 +100,8 @@ test('hard-coded colours and fonts are reported by file and line, an override on
 });
 
 test('a kit whose CSS does not parse is reported at its own file and line', () => {
-  const broken = { ...DROIDEX_DESIGN_SYSTEM.files, 'tokens.css': '.x {\n  color: red;\n' };
-  const kit = { ...DROIDEX_DESIGN_SYSTEM, files: broken };
+  const broken = { ...KIT.files, 'tokens.css': '.x {\n  color: red;\n' };
+  const kit = { ...KIT, files: broken };
   const result = checkDesignSystemAdherence(ON_KIT, kit, 'guide');
   assert.equal(result.status, 'failed');
   assert.deepEqual(places(result.diagnostics), ['css_error @droidex/design-system/tokens.css:1']);
@@ -179,8 +182,8 @@ test('sizes, radii, spacing and shadows off the kit’s tokens are reported, and
 
 test('a kit without a section gets no check for it', () => {
   const typographyOnly = {
-    ...DROIDEX_DESIGN_SYSTEM,
-    sections: DROIDEX_DESIGN_SYSTEM.sections.filter(
+    ...KIT,
+    sections: KIT.sections.filter(
       (section) => !['colors', 'spacing', 'radius', 'shadows'].includes(section.kind),
     ),
   };
@@ -199,7 +202,7 @@ test('a kit without a section gets no check for it', () => {
 });
 
 test('a compound value one token holds is on the kit, and a number in a style object is pixels', () => {
-  const kit = structuredClone(DROIDEX_DESIGN_SYSTEM);
+  const kit = structuredClone(KIT);
   for (const section of kit.sections)
     if (section.kind === 'radius')
       for (const item of section.items)
@@ -230,17 +233,20 @@ const worker = new CompilerWorker();
 after(() => worker.terminate());
 
 test('the compiler fails a straying build under strict and builds it with notes under guide', async () => {
+  const pinned = await readDesignSystem(compileInput(STRAYING).designSystem);
+  const expected = (rule: 'guide' | 'strict') =>
+    places(checkDesignSystemAdherence(STRAYING, pinned, rule).diagnostics);
   const guided = await worker.compile(
     compileInput(STRAYING, 'guide'),
     new AbortController().signal,
   );
-  assert.deepEqual(places(guided.diagnostics), places(check(STRAYING).diagnostics));
+  assert.deepEqual(places(guided.diagnostics), expected('guide'));
 
   await assert.rejects(
     worker.compile(compileInput(STRAYING, 'strict'), new AbortController().signal),
     (error) => {
       assert.ok(error instanceof CompileFailedError);
-      assert.deepEqual(places(error.diagnostics), places(check(STRAYING, 'strict').diagnostics));
+      assert.deepEqual(places(error.diagnostics), expected('strict'));
       return true;
     },
   );
