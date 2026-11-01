@@ -1,5 +1,5 @@
 // The Canvas MCP suite's harness: a real workspace and turn leases behind one
-// chat's Canvas tools, a compiler that answers at once, and a stand-in pane that
+// chat's Canvas tools, compilers that answer at once, and a stand-in pane that
 // reports what each ready preview did.
 
 import assert from 'node:assert/strict';
@@ -13,9 +13,14 @@ import { createCanvasMcpServer } from '../canvas/canvasMcpServer.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
-import { CompileFailedError, type DesignCompileInput } from '../canvas/compiler.js';
+import {
+  CompileFailedError,
+  type DesignCompileInput,
+  type KitPreviewCompileInput,
+} from '../canvas/compiler.js';
 import { checkDesignSystemAdherence } from '../canvas/designSystemAdherence.js';
 import { readDesignSystem } from '../canvas/designSystems.js';
+import { KitPreviews } from '../canvas/kitPreviews.js';
 import { storage } from './canvasBuildSupport.js';
 
 /** No renderer page answers a screenshot here, so capture is always refused. */
@@ -33,7 +38,13 @@ export interface Reply {
   created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
   receipt?: { revisionId: string };
   frames?: { designId: string }[];
-  systems?: { id: string; version: number }[];
+  systems?: { id: string; version: number; proposal: boolean }[];
+  status?: string;
+  ref?: { id: string; version: number };
+  id?: string;
+  baseVersion?: number;
+  latestVersion?: number;
+  diagnostics?: { file?: string; line?: number }[];
   designSystem?: { primitives: string[] };
   designSystemAdherence?: string;
   annotationsVersion?: number;
@@ -53,6 +64,7 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
   const store = await storage(t);
   const builds = answeringBuilds();
+  const kits = answeringKits();
   const workspace = await CanvasWorkspace.open(store.root, builds, {
     fs,
     isChatKnown: () => true,
@@ -63,6 +75,7 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
   });
   store.closing.push(async () => {
     await builds.close();
+    await kits.close();
     await workspace.close();
   });
   // The open pane: it starts a preview of every build that lands and, a turn of
@@ -86,6 +99,7 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
     () => Promise.resolve(workspace),
     turns,
     capture ?? noRenderer,
+    kits,
     () => 'chat-one',
   );
   const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
@@ -95,7 +109,7 @@ export async function harness(t: TestContext, fs?: CanvasFileSystem, capture?: C
     assert.equal(content.type, 'text');
     return JSON.parse(content.text ?? '') as Reply;
   };
-  return { scopes, turns, workspace, server, call };
+  return { scopes, turns, workspace, kits, server, call };
 }
 
 export type Harness = Awaited<ReturnType<typeof harness>>;
@@ -128,6 +142,31 @@ function answeringBuilds(): CanvasBuilds {
   };
   return new CanvasBuilds({
     compiler: () => ({ compile, terminate: () => Promise.resolve() }),
+    deadline: () => () => undefined,
+  });
+}
+
+/** Kit examples build at once, except one that names `BROKEN`. */
+function answeringKits(): KitPreviews {
+  const compile = ({ example }: KitPreviewCompileInput) => {
+    if (example.includes('BROKEN'))
+      return Promise.reject(
+        new CompileFailedError([
+          { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 2 },
+        ]),
+      );
+    return Promise.resolve({
+      artifactId: 'kit',
+      html: '<html></html>',
+      diagnostics: [],
+      elements: [],
+    });
+  };
+  return new KitPreviews({
+    compiler: () => ({
+      compile: (input) => compile(input as KitPreviewCompileInput),
+      terminate: () => Promise.resolve(),
+    }),
     deadline: () => () => undefined,
   });
 }

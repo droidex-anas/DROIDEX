@@ -20,7 +20,6 @@ import {
 import { saveLibraryItem } from './canvasLibrary.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
-import { readDesignSystem } from './designSystems.js';
 import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
   DESIGN_SESSION_GUIDANCE,
@@ -57,6 +56,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
       () => Promise.resolve(h.workspace),
       h.turns,
       noRenderer,
+      h.kits,
       () => 'chat-one',
       purpose,
     );
@@ -176,36 +176,26 @@ test('theme listing is bounded and saving requires a client mutation ID', async 
   const listed = await h.call('canvas_theme', { operation: 'list', limit: 1 });
   assert.equal(listed.ok, true);
   assert.equal(listed.systems?.length, 1);
-  const system = {
-    ...(await readDesignSystem(droidexKit)),
-    id: 'mutation-required-kit',
+  const save = {
+    scopeId,
+    operation: 'save',
+    kit: { id: 'mutation-required-kit', from: { copy: { id: 'droidex', version: 1 } } },
   };
-  assert.equal(
-    (await h.call('canvas_theme', { scopeId, operation: 'save', system })).code,
-    'invalid_input',
-  );
+  assert.equal((await h.call('canvas_theme', save)).code, 'invalid_input');
   assert.equal(
     (
       await h.call('canvas_theme', {
-        scopeId,
-        operation: 'save',
+        ...save,
         mutationId: 'forged-provenance',
-        system: {
-          ...system,
-          provenance: {
-            sourceCanvasId: 'other-canvas',
-            revision: { designId: 'other-frame', revisionId: 'other-revision' },
-          },
+        provenance: {
+          sourceCanvasId: 'other-canvas',
+          revision: { designId: 'other-frame', revisionId: 'other-revision' },
         },
       })
     ).code,
     'invalid_input',
   );
-  assert.equal(
-    (await h.call('canvas_theme', { scopeId, operation: 'save', system, mutationId: 'save-kit' }))
-      .ok,
-    true,
-  );
+  assert.equal((await h.call('canvas_theme', { ...save, mutationId: 'save-kit' })).ok, true);
 });
 
 test('read binds the newest steer, an earlier named lease stays pinned, and another chat cannot borrow it', async (t) => {

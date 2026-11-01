@@ -47,6 +47,7 @@ function harness() {
     () => Promise.reject(new Error('Canvas storage unavailable')),
     new CanvasTurns(new CanvasScopes(), () => null),
     () => Promise.reject(new Error('Canvas capture unavailable')),
+    { check: () => Promise.reject(new Error('Kit builds unavailable')) },
     () => 'chat-one',
   );
   const interactions = {
@@ -239,6 +240,7 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
         () => Promise.reject(new Error('Canvas storage unavailable')),
         new CanvasTurns(new CanvasScopes(), () => null),
         () => Promise.reject(new Error('Canvas capture unavailable')),
+        { check: () => Promise.reject(new Error('Kit builds unavailable')) },
         () => 'chat-one',
       ),
     ],

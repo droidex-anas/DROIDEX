@@ -29,6 +29,7 @@ import {
   flushAncestors,
   isMissing,
   LINKED_STORAGE,
+  proposalPath,
   readSavedFile,
   refuseLinkedPath,
   savedVersions,
@@ -258,7 +259,7 @@ export async function listDesignSystems(): Promise<DesignSystemSummary[]> {
         swatches,
         cover,
         savedAt,
-        proposal: false,
+        proposal: await exists(proposalPath(id.data)),
       });
     }
     return summaries;
@@ -398,7 +399,7 @@ export async function saveDesignSystem(
 
   const path = versionPath(kit.id, kit.version);
   if (!(await isSavedMutation(path, options.mutationId, kit))) {
-    if (await exists(tombstonePath(kit.id))) throw canvasError('invalid_input', DELETED_MESSAGE);
+    await refuseDeleted(kit.id);
     await refuseStaleBase(kit.id, baseVersion);
     const header: VersionHeader = {
       ...documentHeader(kit),
@@ -425,7 +426,11 @@ export async function saveDesignSystem(
   return { id: kit.id, version: kit.version, mode: 'light' };
 }
 
-async function refuseStaleBase(id: string, baseVersion: number | null): Promise<void> {
+export async function refuseDeleted(id: string): Promise<void> {
+  if (await exists(tombstonePath(id))) throw canvasError('invalid_input', DELETED_MESSAGE);
+}
+
+export async function refuseStaleBase(id: string, baseVersion: number | null): Promise<void> {
   const latest = await latestVersion(id);
   if (latest === (baseVersion ?? 0)) return;
   if (latest === 0) throw canvasError('version_mismatch', UNKNOWN_MESSAGE);
@@ -434,6 +439,16 @@ async function refuseStaleBase(id: string, baseVersion: number | null): Promise<
 
 async function latestVersion(id: string): Promise<number> {
   return Math.max(0, ...(await savedVersions(id)));
+}
+
+/** Whether this mutation wrote that version, so a retry can answer with it. */
+export async function wasSavedBy(
+  ref: DesignSystemVersionRef,
+  mutationId: string,
+): Promise<boolean> {
+  const saved = await readSavedFile(versionPath(ref.id, ref.version));
+  if (saved === null) return false;
+  return savedVersionSchema.safeParse(parseJson(saved.text)).data?.mutationId === mutationId;
 }
 
 async function isSavedMutation(

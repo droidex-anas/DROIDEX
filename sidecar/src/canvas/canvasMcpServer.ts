@@ -6,6 +6,7 @@ import { agentFrame, buildReport, renderedPreview, settledFrame } from './canvas
 import { agentAnnotation } from './canvasAnnotationReport.js';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
+import { KitBuildError, kitSaveShape, saveKit } from './canvasMcpDesignSystemSave.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import { DESIGN_CANVAS_MCP_INSTRUCTIONS } from './designSessionGuidance.js';
@@ -15,6 +16,7 @@ import type { SessionPurpose } from '../protocol.js';
 import type { CanvasCapture } from './canvasCaptures.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
+import type { KitPreviews } from './kitPreviews.js';
 import type { CanvasFrame, CanvasScope } from './protocol.js';
 import {
   arrangeFramesInputSchema,
@@ -23,14 +25,8 @@ import {
   designSystemRefSchema,
   writeFilesInputSchema,
 } from './schema.js';
-import {
-  designSystemSchema,
-  listDesignSystems,
-  readDesignSystem,
-  saveDesignSystem,
-} from './designSystems.js';
+import { listDesignSystems, readDesignSystem } from './designSystems.js';
 
-const authoredSystemSchema = designSystemSchema.innerType().omit({ provenance: true });
 const scopeIdSchema = z
   .string()
   .min(1)
@@ -91,7 +87,7 @@ const themeSchema = z.discriminatedUnion('operation', [
       ...mutationScopeShape,
       operation: z.literal('save'),
       mutationId: canvasIdentifierSchema,
-      system: authoredSystemSchema,
+      ...kitSaveShape,
     })
     .strict(),
   z
@@ -114,6 +110,7 @@ export function createCanvasMcpServer(
   workspace: () => Promise<CanvasWorkspace>,
   turns: Pick<CanvasTurns, 'activeScope' | 'requireScope' | 'scopeEnded'>,
   capture: CanvasCapture,
+  kits: Pick<KitPreviews, 'check'>,
   getAppSessionId: () => string,
   purpose?: SessionPurpose,
 ) {
@@ -142,15 +139,14 @@ export function createCanvasMcpServer(
       };
     } catch (error) {
       const failure = toolFailure(error);
-      return {
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({ ok: false, code: failure.code, message: failure.message }),
-          },
-        ],
+      const facts = {
+        ok: false,
+        code: failure.code,
+        message: failure.message,
+        ...(failure.latestVersion === undefined ? {} : { latestVersion: failure.latestVersion }),
+        ...(failure instanceof KitBuildError ? { diagnostics: failure.diagnostics } : {}),
       };
+      return { isError: true, content: [{ type: 'text', text: JSON.stringify(facts) }] };
     }
   };
 
@@ -407,7 +403,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_theme',
-      'List or read versioned design systems on demand: omit scopeId to use the active turn, or use only a scopeId this turn’s canvas_read returned. Save and apply require that returned scopeId; reuse it and mutationId on retry. Apply to a named design at its current revision. Never invent a scopeId.',
+      'List or read versioned design systems: omit scopeId to use the active turn, or use only a scopeId this turn’s canvas_read returned. Save and apply require that returned scopeId; reuse it and mutationId on retry. Apply to a named design at its current revision. Save sends changes, not a whole kit: a new id starts from blank or a copy and saves version 1, while a change to an existing kit becomes a proposal the user reviews, so read that kit first and pass the version you read as baseVersion. Changes find tokens by name, notes by label, previews by title and images by name; a new token needs its section and group. Notes are short rules, never restated token values; give important tokens a usage note. When you create a kit or change its look, write a cover.tsx example (1200 × 480) with cover: preview, and one or two demos as previews. Save compiles index.tsx and every example it shows and refuses with file and line diagnostics. Never invent a scopeId.',
       {
         scopeId: scopeIdSchema
           .optional()
@@ -418,8 +414,9 @@ export function createCanvasMcpServer(
         offset: pageSchema.optional(),
         limit: z.number().int().min(1).max(32).optional(),
         ref: designSystemRefSchema.optional(),
-        system: authoredSystemSchema.optional(),
         mutationId: canvasIdentifierSchema.optional(),
+        ...kitSaveShape,
+        kit: kitSaveShape.kit.optional(),
         designId: canvasIdentifierSchema.optional(),
         expectedRevisionId: canvasIdentifierSchema.optional(),
       },
@@ -439,16 +436,13 @@ export function createCanvasMcpServer(
             }
             if (input.operation === 'read') return { system: await readDesignSystem(input.ref) };
             if (input.operation === 'save')
-              return {
-                ref: await saveDesignSystem(input.system, {
-                  mutationId: input.mutationId,
-                  baseVersion: input.system.version === 1 ? null : input.system.version - 1,
-                  savedBy: { actor: 'agent', appSessionId: scope.appSessionId },
-                  beforePublish: () => {
-                    turns.requireScope(scope.scopeId);
-                  },
-                }),
-              };
+              return saveKit(input, {
+                appSessionId: scope.appSessionId,
+                kits,
+                beforePublish: () => {
+                  turns.requireScope(scope.scopeId);
+                },
+              });
             const result = await applyDesignSystem(await workspace(), scope, {
               mutationId: input.mutationId,
               designId: input.designId,
