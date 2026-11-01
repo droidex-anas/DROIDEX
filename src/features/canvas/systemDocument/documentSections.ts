@@ -185,9 +185,9 @@ function markTokens(
     if (!nextTokens.has(name) && nextItems.has(holder)) marks.set(tokenKey(name), 'removed');
 }
 
-const MAX_NAMED_TOKENS = 3;
-// What a change summary counts rather than names, in the order it lists them.
-const COUNTED_NOUNS = ['note', 'preview', 'image', 'group', 'section'] as const;
+// What a change summary counts, in the order it lists them.
+const COUNTED_NOUNS = ['token', 'note', 'preview', 'image', 'group', 'section'] as const;
+const COUNTED_MARKS: DraftMark[] = ['added', 'changed', 'removed'];
 const ITEM_NOUNS: Record<DocumentItem['kind'], (typeof COUNTED_NOUNS)[number]> = {
   note: 'note',
   preview: 'preview',
@@ -203,39 +203,40 @@ interface SummarizedVersion {
 
 /**
  * One line for what `next` changes against `base`, as the version history
- * lists it: a few tokens by bare name and everything else counted
- * ("Accent, radius-card, 1 note").
+ * lists it: the name and cover, then what was added, changed or removed,
+ * counted by kind ("Cover replaced, 3 tokens changed, note added").
  */
 export function changeSummary(base: SummarizedVersion, next: SummarizedVersion): string {
   const items = new Map([...itemsById(base.sections), ...itemsById(next.sections)]);
-  const tokens: string[] = [];
   const counts = new Map<string, number>();
-  for (const key of draftDiff(base.sections, next.sections).keys()) {
-    const token = tokenNameOf(key);
-    if (token !== null) {
-      tokens.push(bareTokenName(token));
-      continue;
-    }
+  const nounOf = (key: string) => {
+    if (tokenNameOf(key) !== null) return 'token';
     const item = items.get(key)?.item;
-    const noun = item ? ITEM_NOUNS[item.kind] : 'section';
-    counts.set(noun, (counts.get(noun) ?? 0) + 1);
+    return item ? ITEM_NOUNS[item.kind] : 'section';
+  };
+  for (const [key, mark] of draftDiff(base.sections, next.sections)) {
+    const counted = `${nounOf(key)} ${mark}`;
+    counts.set(counted, (counts.get(counted) ?? 0) + 1);
   }
   const parts: string[] = [];
-  if (base.name !== next.name) parts.push('name');
-  if (JSON.stringify(base.cover) !== JSON.stringify(next.cover)) parts.push('cover');
-  if (tokens.length > MAX_NAMED_TOKENS) parts.push(counted(tokens.length, 'token'));
-  else parts.push(...tokens);
-  for (const noun of COUNTED_NOUNS) {
-    const count = counts.get(noun);
-    if (count !== undefined) parts.push(counted(count, noun));
-  }
+  if (base.name !== next.name) parts.push('renamed');
+  const cover = coverChange(base.cover, next.cover);
+  if (cover !== null) parts.push(cover);
+  for (const noun of COUNTED_NOUNS)
+    for (const mark of COUNTED_MARKS) {
+      const count = counts.get(`${noun} ${mark}`);
+      if (count === 1) parts.push(`${noun} ${mark}`);
+      else if (count !== undefined) parts.push(`${String(count)} ${noun}s ${mark}`);
+    }
   if (parts.length === 0) return 'No changes';
   const line = parts.join(', ');
   return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
-function counted(count: number, noun: string): string {
-  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
+function coverChange(base: DesignSystemCover, next: DesignSystemCover): string | null {
+  if (JSON.stringify(base) === JSON.stringify(next)) return null;
+  if (base === null) return 'cover added';
+  return next === null ? 'cover removed' : 'cover replaced';
 }
 
 /** Whether the section, or anything in it, has a mark. */

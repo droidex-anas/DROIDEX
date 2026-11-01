@@ -164,7 +164,7 @@ test('a note or token moved to another holder, and reordered tokens, are marked 
   );
 });
 
-test("a version's summary names a few tokens and counts everything else", () => {
+test("a version's summary says what changed, counted by kind, without naming tokens", () => {
   const before = kitAt('summary', 1);
   const [notes, colors] = base;
   const surfaces = colors.items[0] as TokenGroup;
@@ -175,16 +175,24 @@ test("a version's summary names a few tokens and counts everything else", () => 
   const accent: DocumentToken = { name: '--ds-accent', value: '#f60' };
   assert.equal(
     changeSummary(before, { ...before, sections: recoloured([surfaces.tokens[0], accent]) }),
-    'Accent, 2 notes',
+    'Token changed, note added, note removed',
   );
   const many = ['a', 'b', 'c', 'd'].map((name) => ({ name: `--ds-${name}`, value: '1px' }));
   assert.equal(
     changeSummary(before, {
       ...before,
       name: 'Calm kit',
+      cover: { kind: 'image', assetId: 'cover' },
       sections: recoloured([...surfaces.tokens, ...many]),
     }),
-    'Name, 4 tokens, 2 notes',
+    'Renamed, cover added, 4 tokens added, note added, note removed',
+  );
+  assert.equal(
+    changeSummary(
+      { ...before, cover: { kind: 'preview', example: 'Settings.tsx' } },
+      { ...before, cover: { kind: 'image', assetId: 'cover' } },
+    ),
+    'Cover replaced',
   );
   assert.equal(changeSummary(before, before), 'No changes');
 });
