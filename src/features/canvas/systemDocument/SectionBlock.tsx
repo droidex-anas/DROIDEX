@@ -325,7 +325,9 @@ function SectionHeading({
             {section.title}
           </span>
         )}
-        {!isRemoved && <span className="shrink-0 text-caption text-muted">{count}</span>}
+        {!isRemoved && (
+          <span className="shrink-0 text-caption tabular-nums text-muted">{count}</span>
+        )}
       </h2>
       <AddedLabel mark={mark} />
       <span className="flex-1" />

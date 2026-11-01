@@ -10,10 +10,9 @@ import { DropCue } from '../../tabs/TileDropTarget';
 import type { DocumentAsset } from '../designSystemDocumentProtocol';
 import type { OwnedAsset } from '../protocol';
 import { ActionMenu, type MenuAction } from './ActionMenu';
-import type { DraftChange } from './documentDraft';
+import { MAX_ASSET_NAME_LENGTH, type DraftChange } from './documentDraft';
 import type { DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
-import { MAX_ASSET_NAME_LENGTH } from './kitImageImport';
 import { NotePopover } from './NotePopover';
 import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 import { useKitImage, type KitImage } from './useKitImage';
@@ -142,7 +141,7 @@ function AssetTile({
           )}
         </span>
         {/* Always one line tall, so a tile does not grow when its image has been read. */}
-        <span className="truncate text-caption text-muted">
+        <span className="truncate text-caption tabular-nums text-muted">
           {image.status === 'ready' ? imageFacts(image) : '\u00a0'}
         </span>
         {!isRemoved && asset.note !== undefined && (

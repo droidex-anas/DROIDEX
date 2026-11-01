@@ -10,11 +10,11 @@ import { useEffect, type CSSProperties } from 'react';
 import { RefreshCw, Upload } from '@droidex/icons';
 import { useStoreDispatch } from '../../../hooks/useStore';
 import { keepImageCoverCapture, useKitCapture } from '../kitCaptures';
-import type { DesignSystemCover, DesignSystemRef } from '../protocol';
+import type { DesignSystemCover, DesignSystemRef, OwnedAsset } from '../protocol';
 import { ActionMenu } from './ActionMenu';
 import { AssetPicture } from './AssetsSection';
 import { sameCover, type DraftChange } from './documentDraft';
-import { pickImage } from './kitImageImport';
+import { pickImage, useImageRequests } from './kitImageImport';
 import { KitPreviewTile, type KitPreviewing } from './KitPreviewTile';
 import { UnsavedMark } from './UnsavedMark';
 import { useKitImage } from './useKitImage';
@@ -45,6 +45,12 @@ export function DocumentCover({
   const dispatch = useStoreDispatch();
   const swatches = <SurfaceAndAccent specimen={previewing.specimen} />;
   const isSaved = sameCover(cover, savedCover);
+  const coverImages = useImageRequests(
+    onChange &&
+      ((asset: OwnedAsset) => {
+        onChange({ kind: 'setCover', cover: { kind: 'image', assetId: asset.assetId } });
+      }),
+  );
   return (
     <figure className="flex flex-col gap-2">
       <figcaption className="flex min-h-control-md items-center gap-2">
@@ -70,13 +76,7 @@ export function DocumentCover({
                 label: 'Replace with image…',
                 icon: Upload,
                 run: () => {
-                  void pickImage().then((asset) => {
-                    if (asset)
-                      onChange({
-                        kind: 'setCover',
-                        cover: { kind: 'image', assetId: asset.assetId },
-                      });
-                  });
+                  void coverImages.replace(pickImage());
                 },
               },
             ]}

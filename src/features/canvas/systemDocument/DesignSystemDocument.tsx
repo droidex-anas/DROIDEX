@@ -17,6 +17,7 @@ import { Copy } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { useStoreSelector } from '../../../hooks/useStore';
 import { resolveScheme } from '../../../lib/theme';
+import { pushToast } from '../../../lib/toast';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
@@ -32,6 +33,8 @@ import {
   freshGroup,
   freshNote,
   freshSection,
+  FULL_KIT_MESSAGE,
+  isRestoreOverCap,
   useDocumentDraft,
   type DraftChange,
 } from './documentDraft';
@@ -165,6 +168,13 @@ function KitDocument({
 
   const change = useCallback(
     (next: DraftChange) => {
+      if (
+        next.kind === 'restore' &&
+        isRestoreOverCap(currentDraft(view.id) ?? draftOf(view), next.key)
+      ) {
+        pushToast(FULL_KIT_MESSAGE, 'error');
+        return;
+      }
       editDraft(view, next);
       keepFocusIn(scrollRef, next.kind === 'remove' ? next.key : undefined);
     },

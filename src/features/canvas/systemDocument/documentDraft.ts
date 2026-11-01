@@ -23,6 +23,9 @@ import {
 } from './documentSections';
 import type { DesignSystemCover, DesignSystemDocumentView } from '../protocol';
 
+export const MAX_ASSET_NAME_LENGTH = 120;
+export const FULL_KIT_MESSAGE = `A design system holds at most ${String(MAX_ASSETS)} images.`;
+
 export interface DocumentDraft {
   base: DesignSystemDocumentView;
   name: string;
@@ -147,6 +150,7 @@ function applyDraftChange(draft: DocumentDraft, change: DraftChange): DocumentDr
     case 'remove':
       return { ...draft, sections: removed(sections, change.key) };
     case 'restore':
+      if (isRestoreOverCap(draft, change.key)) return draft;
       return { ...draft, sections: restored(draft.base.sections, sections, change.key) };
   }
 }
@@ -188,12 +192,18 @@ export function freshAsset(
   assetId: string,
   name: string,
 ): DocumentAsset | null {
-  const held = draft.sections.flatMap((section): DocumentItem[] => section.items);
-  if (held.filter((item) => item.kind === 'asset').length >= MAX_ASSETS) return null;
+  if (assetsIn(draft.sections).length >= MAX_ASSETS) return null;
   const { ids, assetNames } = takenKeys(draft);
-  let title = name;
-  for (let n = 2; assetNames.has(title); n += 1) title = `${name} ${String(n)}`;
-  return { kind: 'asset', id: freshId(idStem(name) || 'image', ids), name: title, assetId };
+  const id = freshId(idStem(name) || 'image', ids);
+  return { kind: 'asset', id, name: uniqueAssetName(name, assetNames), assetId };
+}
+
+/** Whether Undo of `key` would bring back an image the draft has no room for; it then does nothing. */
+export function isRestoreOverCap(draft: DocumentDraft, key: string): boolean {
+  const asset = assetsIn(draft.base.sections).some((item) => item.id === key);
+  return (
+    asset && !itemsById(draft.sections).has(key) && assetsIn(draft.sections).length >= MAX_ASSETS
+  );
 }
 
 export function freshSection(draft: DocumentDraft, kind: SectionKind): DocumentSection {
@@ -318,11 +328,18 @@ function restored(
   }
   const home = base.find((section) => section.items.some((item) => item.id === key));
   if (!home || itemsById(next).has(key)) return next;
+  // An asset whose name another entry took meanwhile comes back renamed.
+  const names = new Set(assetsIn(next).map((asset) => asset.name));
+  const homeItems = home.items.map((item) =>
+    item.id === key && item.kind === 'asset' && names.has(item.name)
+      ? { ...item, name: uniqueAssetName(item.name, names) }
+      : item,
+  );
   return next.map((section) =>
     section.id === home.id
       ? withItems(
           section,
-          restoredInto<DocumentItem>(home.items, section.items, key, (item) => item.id),
+          restoredInto<DocumentItem>(homeItems, section.items, key, (item) => item.id),
         )
       : section,
   );
@@ -359,6 +376,20 @@ function takenKeys(draft: DocumentDraft) {
     }
   }
   return { ids, labels, assetNames };
+}
+
+function assetsIn(sections: DocumentSection[]): DocumentAsset[] {
+  return sections.flatMap((section) => section.items.filter((item) => item.kind === 'asset'));
+}
+
+// The suffix replaces the end of a long name, so the result still fits.
+function uniqueAssetName(name: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(name)) return name;
+  for (let n = 2; ; n += 1) {
+    const suffix = ` ${String(n)}`;
+    const candidate = `${name.slice(0, MAX_ASSET_NAME_LENGTH - suffix.length).trimEnd()}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
 }
 
 function idStem(title: string): string {
