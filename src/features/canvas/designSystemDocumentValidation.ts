@@ -216,6 +216,7 @@ export function isKitDocument(value: unknown): boolean {
 function isKitProposal(value: unknown): boolean {
   return (
     hasOnlyKeys(value, [
+      'proposalId',
       'baseVersion',
       'proposedAt',
       'appSessionId',
@@ -223,6 +224,7 @@ function isKitProposal(value: unknown): boolean {
       'cover',
       'sections',
     ]) &&
+    id(value.proposalId) &&
     count(value.baseVersion) &&
     isTimestamp(value.proposedAt) &&
     isAppSessionId(value.appSessionId) &&

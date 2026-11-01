@@ -22,6 +22,13 @@ export interface DesignSystemVersionRef {
   version: number;
 }
 
+/** The proposal a kit has waiting, in one mode; a new proposal gets a new `proposalId`. */
+export interface DesignSystemProposalRef {
+  id: string;
+  proposalId: string;
+  mode: DesignSystemRef['mode'];
+}
+
 /** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
 export interface DesignSystemSummary {
   id: string;
@@ -109,6 +116,8 @@ export interface DesignSystemDocumentView {
 
 /** A kit's pending agent proposal: the version it was made on and the document it proposes. */
 export interface DesignSystemProposal {
+  /** A proposal is never changed, only replaced by one with another ID. */
+  proposalId: string;
   baseVersion: number;
   proposedAt: string;
   /** The chat whose agent proposed it. */
@@ -606,16 +615,23 @@ export type CanvasCommand =
       id: string;
       deleted: boolean;
     }
-  // An agent's pending proposal: accept saves it as the version after `onto`,
-  // the newest the user saw, and discard removes it.
+  // The agent proposal the user reviewed, while it is still the one waiting:
+  // accept saves it as the version after `onto`, the newest the user saw, and
+  // discard removes it.
   | {
       type: 'canvas.acceptDesignSystemProposal';
       requestId: string;
       mutationId: string;
       id: string;
+      proposalId: string;
       onto: number;
     }
-  | { type: 'canvas.discardDesignSystemProposal'; requestId: string; id: string }
+  | {
+      type: 'canvas.discardDesignSystemProposal';
+      requestId: string;
+      id: string;
+      proposalId: string;
+    }
   | {
       type: 'canvas.copyDesignSystem';
       requestId: string;
@@ -630,10 +646,15 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
-  // A kit version's previews in one mode. `item` is a preview's id, `cover` or
-  // `typography`. A capture is a base64 PNG the document took from a live
-  // preview; a later one replaces it.
-  | { type: 'canvas.readKitPreview'; requestId: string; ref: DesignSystemRef; item: string }
+  // A kit version's previews in one mode, or a waiting proposal's. `item` is a
+  // preview's id, `cover` or `typography`. A capture is a base64 PNG the
+  // document took from a saved version's live preview; a later one replaces it.
+  | {
+      type: 'canvas.readKitPreview';
+      requestId: string;
+      ref: DesignSystemRef | DesignSystemProposalRef;
+      item: string;
+    }
   | {
       type: 'canvas.saveKitCapture';
       requestId: string;

@@ -60,7 +60,7 @@ export function useProposalDecision(
   const decidingRef = useRef(false);
   // A retry after a lost answer reuses the mutation ID, so it finds the version
   // already saved instead of refusing for want of a proposal.
-  const attemptRef = useRef<{ proposedAt: string; onto: number; mutationId: string } | null>(null);
+  const attemptRef = useRef<{ proposalId: string; onto: number; mutationId: string } | null>(null);
 
   const decide = async (next: Exclude<ProposalDecision, 'idle'>, send: () => Promise<unknown>) => {
     if (decidingRef.current) return;
@@ -88,18 +88,23 @@ export function useProposalDecision(
     if (!proposal) return;
     const onto = view.latestVersion;
     const attempt = attemptRef.current;
+    const { proposalId } = proposal;
     const mutationId =
-      attempt?.proposedAt === proposal.proposedAt && attempt.onto === onto
+      attempt?.proposalId === proposalId && attempt.onto === onto
         ? attempt.mutationId
         : crypto.randomUUID();
-    attemptRef.current = { proposedAt: proposal.proposedAt, onto, mutationId };
+    attemptRef.current = { proposalId, onto, mutationId };
     void decide('accepting', () =>
-      canvasClient.designSystems.acceptProposal(mutationId, view.id, onto),
+      canvasClient.designSystems.acceptProposal(mutationId, view.id, proposalId, onto),
     );
   };
 
   const discard = () => {
-    void decide('discarding', () => canvasClient.designSystems.discardProposal(view.id));
+    const { proposal } = view;
+    if (!proposal) return;
+    void decide('discarding', () =>
+      canvasClient.designSystems.discardProposal(view.id, proposal.proposalId),
+    );
   };
 
   return { decision, accept, discard };

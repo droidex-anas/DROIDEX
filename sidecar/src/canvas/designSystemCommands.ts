@@ -123,10 +123,12 @@ export async function answerDesignSystemCommand(
     case 'canvas.setDesignSystemDeleted':
       await setDesignSystemDeleted(command.id, command.deleted, command.mutationId);
       return { kind: 'ok' };
-    case 'canvas.acceptDesignSystemProposal':
-      return saved(await acceptProposal(command.id, command.mutationId, command.onto), []);
+    case 'canvas.acceptDesignSystemProposal': {
+      const { proposalId, mutationId, onto } = command;
+      return saved(await acceptProposal(command.id, { proposalId, mutationId, onto }), []);
+    }
     case 'canvas.discardDesignSystemProposal':
-      await discardProposal(command.id);
+      await discardProposal(command.id, command.proposalId);
       return { kind: 'ok' };
     // A new kit's id is its mutationId: a retried save finds the version it
     // already published and answers with it instead of saving a second kit.

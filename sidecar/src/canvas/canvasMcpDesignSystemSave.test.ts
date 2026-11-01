@@ -154,5 +154,13 @@ test('a stale base refuses with the latest version, and a kit that does not buil
     broken.diagnostics?.map(({ file, line }) => ({ file, line })),
     [{ file: 'examples/Pricing.tsx', line: 2 }],
   );
+  const unshown = await call('canvas_theme', {
+    scopeId,
+    operation: 'save',
+    mutationId: 'unshown',
+    kit: { id: 'busy', baseVersion: 2 },
+    examples: { 'Unused.tsx': 'BROKEN' },
+  });
+  assert.equal(unshown.code, 'invalid_source', 'an example no preview shows builds too');
   assert.equal(await readProposal('busy'), null, 'a refused save leaves nothing to review');
 });

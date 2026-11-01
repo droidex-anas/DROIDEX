@@ -1,9 +1,11 @@
 // The one agent proposal a user kit may have waiting (design system documents
 // spec §11): `<id>/proposal.json`, the whole proposed version and the version
-// it was made on. A new proposal replaces the earlier one; accepting saves it as
-// the kit's next version by the agent that proposed it, and discarding removes
-// it. Neither tells the agent anything: its next read shows the outcome.
+// it was made on. A new proposal replaces the earlier one under a new ID, so
+// the user accepts or discards the one they reviewed: accepting saves it as the
+// kit's next version by the agent that proposed it, and discarding removes it.
+// Neither tells the agent anything: its next read shows the outcome.
 
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { canvasError } from './canvasError.js';
 import { announceDesignSystemChange } from './designSystemChanges.js';
@@ -28,10 +30,12 @@ import {
   replaceFile,
   setMarker,
 } from './designSystemStorage.js';
-import type { DesignSystemRef } from './protocol.js';
+import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
+import { canvasIdentifierSchema } from './schema.js';
 
 const storedProposalSchema = z
   .object({
+    proposalId: canvasIdentifierSchema,
     baseVersion: z.number().int().positive().safe(),
     proposedAt: z.string().datetime(),
     appSessionId: z.string().min(1).max(200),
@@ -42,6 +46,8 @@ type StoredProposal = z.infer<typeof storedProposalSchema>;
 
 /** A pending proposal as the document reviews it: everything but its source. */
 export interface DesignSystemProposal {
+  /** A proposal is never changed, only replaced by one with another ID. */
+  proposalId: string;
   baseVersion: number;
   proposedAt: string;
   /** The chat whose agent proposed it, never a provider session. */
@@ -52,7 +58,7 @@ export interface DesignSystemProposal {
 }
 
 const PRESET_MESSAGE = 'Presets are read-only. Save a copy of it as a new design system.';
-const NO_PROPOSAL = 'No agent proposal waits for review in that design system.';
+const GONE = 'That agent proposal is no longer waiting for review.';
 
 /**
  * Makes `system` the kit's pending proposal against `baseVersion`, replacing an
@@ -77,6 +83,7 @@ export async function proposeDesignSystem(
     throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? 'That kit is not valid.');
   const base = await readDesignSystem({ id, version: baseVersion });
   const proposal: StoredProposal = {
+    proposalId: randomUUID(),
     baseVersion,
     proposedAt: new Date().toISOString(),
     appSessionId,
@@ -90,8 +97,7 @@ export async function proposeDesignSystem(
     if (await exists(receipt)) return;
     await refuseDeleted(id);
     await refuseStaleBase(id, baseVersion);
-    options.beforePublish();
-    await replaceFile(proposalPath(id), JSON.stringify(proposal));
+    await replaceFile(proposalPath(id), JSON.stringify(proposal), options.beforePublish);
     await setMarker(receipt, true);
   });
   announceDesignSystemChange(id);
@@ -102,28 +108,43 @@ export async function readProposal(id: string): Promise<DesignSystemProposal | n
   if (designSystemKind(id) !== 'user') return null;
   const stored = await readStored(id);
   if (!stored) return null;
-  const { baseVersion, proposedAt, appSessionId, system } = stored;
+  const { proposalId, baseVersion, proposedAt, appSessionId, system } = stored;
   const { name, cover, sections } = system;
-  return { baseVersion, proposedAt, appSessionId, name, cover, sections };
+  return { proposalId, baseVersion, proposedAt, appSessionId, name, cover, sections };
+}
+
+/** The whole proposed kit, source included, while that proposal is the one waiting. */
+export async function readProposedSystem(ref: Omit<DesignSystemProposalRef, 'mode'>) {
+  const stored = designSystemKind(ref.id) === 'user' ? await readStored(ref.id) : null;
+  if (stored?.proposalId !== ref.proposalId) throw canvasError('invalid_input', GONE);
+  return stored.system;
 }
 
 /**
- * Saves the pending proposal as the version after `onto`, the latest the user
- * saw, and removes it. `onto` may be newer than the proposal's base when the
- * user accepts over it. A stale `onto` is refused and keeps the proposal; a
- * retry after success answers with the version it saved.
+ * Saves the proposal the user reviewed as the version after `onto`, the latest
+ * they saw, and removes it. `onto` may be newer than the proposal's base when
+ * the user accepts over it. A stale `onto` is refused and keeps the proposal. A
+ * retry after success answers with the version it saved and leaves any later
+ * proposal alone.
  */
 export async function acceptProposal(
   id: string,
-  mutationId: string,
-  onto: number,
+  accept: { proposalId: string; mutationId: string; onto: number },
 ): Promise<DesignSystemRef> {
+  const { proposalId, mutationId, onto } = accept;
   const ref = await queueKitWrite(id, async () => {
     const stored = await readStored(id);
-    if (!stored) {
-      const saved = { id, version: onto + 1 };
-      if (await wasSavedBy(saved, mutationId)) return { ...saved, mode: 'light' as const };
-      throw canvasError('invalid_input', NO_PROPOSAL);
+    const isWaiting = stored?.proposalId === proposalId;
+    const saved = { id, version: onto + 1 };
+    if (await wasSavedBy(saved, mutationId)) {
+      // The first attempt saved and may not have removed the proposal it saved.
+      if (isWaiting) await removeFile(proposalPath(id));
+      return { ...saved, mode: 'light' as const };
+    }
+    if (!isWaiting) {
+      // An accept, save or restore that won the race says which version it made.
+      await refuseStaleBase(id, onto);
+      throw canvasError('invalid_input', GONE);
     }
     const accepted = await saveDesignSystem(stored.system, {
       mutationId,
@@ -138,8 +159,11 @@ export async function acceptProposal(
   return ref;
 }
 
-export async function discardProposal(id: string): Promise<void> {
-  await queueKitWrite(id, () => removeFile(proposalPath(id)));
+/** Removes that proposal; one that replaced it stays for review. */
+export async function discardProposal(id: string, proposalId: string): Promise<void> {
+  await queueKitWrite(id, async () => {
+    if ((await readStored(id))?.proposalId === proposalId) await removeFile(proposalPath(id));
+  });
   announceDesignSystemChange(id);
 }
 

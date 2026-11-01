@@ -1,8 +1,9 @@
 // A kit's previews (design system documents spec §7): one example of one kit
-// version, compiled in one mode through the same compiler as frames, with no
-// revision to select in and no adherence. Versions are immutable, so an answer
-// about the source is kept in memory and compiled once while it is kept. An
-// agent's unsaved kit is checked through the same compiler and never kept.
+// version or of the proposal waiting for review, compiled in one mode through
+// the same compiler as frames, with no revision to select in and no adherence.
+// Versions and proposals are immutable, so an answer about the source is kept
+// in memory and compiled once while it is kept. An agent's unsaved kit is
+// checked through the same compiler and never kept.
 
 import { realDeadline, type BuildDeadline } from './CanvasBuilds.js';
 import { buildFailure } from './canvasBuildFailures.js';
@@ -11,8 +12,14 @@ import { canvasError } from './canvasError.js';
 import { CompilerWorker, type KitPreviewCompileInput } from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import type { DocumentSection } from './designSystemDocument.js';
+import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
-import type { CanvasDiagnostic, DesignSystemRef, PreviewArtifact } from './protocol.js';
+import type {
+  CanvasDiagnostic,
+  DesignSystemProposalRef,
+  DesignSystemRef,
+  PreviewArtifact,
+} from './protocol.js';
 
 /** What a preview tile loads, or the diagnostics it shows instead. */
 export type KitPreview =
@@ -59,10 +66,11 @@ export class KitPreviews {
     this.deadline = deps.deadline ?? realDeadline;
   }
 
-  /** The preview `item` names in that kit version and mode. */
-  async read(ref: DesignSystemRef, item: string): Promise<KitPreview> {
+  /** The preview `item` names in that kit version or proposal, in its mode. */
+  async read(ref: DesignSystemRef | DesignSystemProposalRef, item: string): Promise<KitPreview> {
     this.refuseClosed();
-    const key = JSON.stringify([ref.id, ref.version, ref.mode, item]);
+    const source = 'proposalId' in ref ? ref.proposalId : ref.version;
+    const key = JSON.stringify([ref.id, source, ref.mode, item]);
     const kept = this.kept.get(key);
     if (kept) {
       this.keep(key, kept);
@@ -74,17 +82,18 @@ export class KitPreviews {
   }
 
   /**
-   * Compiles a kit that may not be saved yet: its entry, then each example its
-   * cover and previews show, once each. Returns the failures' diagnostics, none
-   * when everything builds. One stylesheet carries both modes and the mode is
-   * only the document's `data-mode`, so one compile answers for both.
+   * Compiles a kit that may not be saved yet: its entry, then each of its
+   * examples once. Returns the failures' diagnostics, none when everything
+   * builds. One stylesheet carries both modes and the mode is only the
+   * document's `data-mode`, so one compile answers for both.
    */
   async check(
-    kit: Pick<DesignSystem, 'files' | 'sections' | 'cover' | 'examples'>,
+    kit: Pick<DesignSystem, 'files' | 'sections' | 'examples'>,
   ): Promise<CanvasDiagnostic[]> {
     const source = { files: kit.files, sections: kit.sections };
     const entries: [string, string][] = [[KIT_ENTRY, KIT_ENTRY_CHECK]];
-    for (const name of shownExamples(kit)) entries.push([`examples/${name}`, kit.examples[name]]);
+    for (const [name, example] of Object.entries(kit.examples))
+      entries.push([`examples/${name}`, example]);
     const diagnostics: CanvasDiagnostic[] = [];
     for (const [file, example] of entries) {
       this.refuseClosed();
@@ -112,7 +121,11 @@ export class KitPreviews {
     while (this.ending.size > 0) await Promise.all([...this.ending]);
   }
 
-  private start(key: string, ref: DesignSystemRef, item: string): Promise<Answer> {
+  private start(
+    key: string,
+    ref: DesignSystemRef | DesignSystemProposalRef,
+    item: string,
+  ): Promise<Answer> {
     const answer = this.compileItem(ref, item);
     this.pending.set(key, answer);
     void answer.then(
@@ -138,8 +151,12 @@ export class KitPreviews {
     if (this.closed) throw canvasError('scope_expired', SHUTTING_DOWN);
   }
 
-  private async compileItem(ref: DesignSystemRef, item: string): Promise<Answer> {
-    const system = await readDesignSystem(ref);
+  private async compileItem(
+    ref: DesignSystemRef | DesignSystemProposalRef,
+    item: string,
+  ): Promise<Answer> {
+    const system =
+      'proposalId' in ref ? await readProposedSystem(ref) : await readDesignSystem(ref);
     const example = kitExample(system, item);
     this.refuseClosed();
     const kit = { files: system.files, sections: system.sections };
@@ -193,15 +210,6 @@ export function kitExample(system: DesignSystem, item: string): string {
   if (source === undefined)
     throw canvasError('invalid_input', 'That preview is not in this design system version.');
   return source;
-}
-
-/** The examples a kit's cover and previews show, each once. */
-function shownExamples(kit: Pick<DesignSystem, 'sections' | 'cover'>): string[] {
-  const names = kit.sections.flatMap((section) =>
-    section.items.flatMap((item) => (item.kind === 'preview' ? [item.example] : [])),
-  );
-  if (kit.cover?.kind === 'preview') names.push(kit.cover.example);
-  return [...new Set(names)];
 }
 
 function exampleName(system: DesignSystem, item: string): string | undefined {

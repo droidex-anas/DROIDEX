@@ -186,14 +186,23 @@ export async function removeFile(path: string): Promise<void> {
   }
 }
 
-/** Writes a file that may be replaced later whole: a reader sees the old content or the new. */
-export async function replaceFile(path: string, content: string): Promise<void> {
+/**
+ * Writes a file that may be replaced later whole: a reader sees the old content
+ * or the new. `beforePublish` runs once the content is staged, just before the
+ * rename, so a writer that may no longer publish leaves the old file in place.
+ */
+export async function replaceFile(
+  path: string,
+  content: string,
+  beforePublish: () => void,
+): Promise<void> {
   const directory = dirname(path);
   const temporary = join(directory, `.${randomUUID()}.tmp`);
   try {
     await refuseLinkedPath(path);
     await mkdir(directory, { recursive: true });
     await writeNew(temporary, content);
+    beforePublish();
     await rename(temporary, path);
     await flushAncestors(directory);
   } catch (error) {

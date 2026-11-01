@@ -443,6 +443,7 @@ test('the document reads an agent proposal, and accept and discard answer and ar
     [proposal?.baseVersion, proposal?.appSessionId, proposal?.name],
     [1, 'chat-one', 'Reviewed by the agent'],
   );
+  assert.ok(proposal);
 
   const changed = (from: number) =>
     canvas.events.slice(from).filter((event) => event.type === 'canvas.designSystemsChanged');
@@ -452,6 +453,7 @@ test('the document reads an agent proposal, and accept and discard answer and ar
     requestId: 'accept',
     mutationId: 'accept',
     id: 'reviewed',
+    proposalId: proposal.proposalId,
     onto: 1,
   });
   assert.deepEqual(okReply(canvas, 'accept'), {
@@ -468,11 +470,14 @@ test('the document reads an agent proposal, and accept and discard answer and ar
   assert.ok(changed(before).length > 0, 'an accept tells the lists to refresh');
 
   await propose('second', 'Never accepted', 2);
+  const second = (await readKit(canvas, { id: 'reviewed', version: 2 })).proposal;
+  assert.ok(second);
   before = canvas.events.length;
   await canvas.handle({
     type: 'canvas.discardDesignSystemProposal',
     requestId: 'discard',
     id: 'reviewed',
+    proposalId: second.proposalId,
   });
   assert.deepEqual(okReply(canvas, 'discard'), { kind: 'ok' });
   assert.deepEqual(changed(before), [{ type: 'canvas.designSystemsChanged', id: 'reviewed' }]);

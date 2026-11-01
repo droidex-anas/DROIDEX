@@ -209,15 +209,18 @@ function KitDocument({
   const baseTokens = new Map(
     Array.from(tokensByName(base.sections), ([name, { token }]) => [name, token]),
   );
-  // Previews build from the version a draft or proposal changes, and show its values live.
+  // Previews build from the version a draft changes and show its values live,
+  // and from the proposal itself under review.
   const draftTokens = useMemo(
-    () => (changed ? changedTokenValues(base.sections, changed.sections, mode) : NO_TOKENS),
-    [base.sections, changed, mode],
+    () => (editing ? changedTokenValues(base.sections, editing.sections, mode) : NO_TOKENS),
+    [base.sections, editing, mode],
   );
-  const slots = useKitPreviewSlots(scrollRef, base);
-  const typeSpecimen = typeSpecimenSize(base.sections);
+  const built = reviewed ?? base;
+  const slots = useKitPreviewSlots(scrollRef, built);
+  const typeSpecimen = typeSpecimenSize(built.sections);
   const previewing: KitPreviewing = {
     kit: { id: base.id, version: base.version, mode },
+    proposalId: reviewed?.proposalId ?? null,
     draftTokens,
     ...slots,
   };

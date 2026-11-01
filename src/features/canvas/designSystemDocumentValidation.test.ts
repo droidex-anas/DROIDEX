@@ -149,6 +149,7 @@ test('the renderer accepts every design system reply and event the sidecar sends
   };
   const fromProject = { name: 'acme', files: ['tailwind.config.ts', 'src/index.css'] };
   const proposal = {
+    proposalId: '7b0c3f52-8f3e-4f0e-9a51-2d6f4c1e9b10',
     baseVersion: 3,
     proposedAt: '2026-10-31T12:05:00.000Z',
     appSessionId: 'app-1',

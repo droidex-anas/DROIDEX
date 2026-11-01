@@ -46,6 +46,13 @@ const kitName = {
 };
 const kitVersionSchema = z.number().int().positive().safe();
 const kitDocument = designSystemSchema.innerType().shape;
+const designSystemProposalRefSchema = z
+  .object({
+    id: canvasIdentifierSchema,
+    proposalId: canvasIdentifierSchema,
+    mode: designSystemRefSchema.shape.mode,
+  })
+  .strict();
 // A DESIGN.md becomes kit guidance, so it shares the guidance bound; pasted
 // CSS or a config is only read for tokens.
 const MAX_PASTED_TOKEN_SOURCE_BYTES = 64 * 1024;
@@ -267,6 +274,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       mutationId: canvasIdentifierSchema,
       id: canvasIdentifierSchema,
+      proposalId: canvasIdentifierSchema,
       onto: kitVersionSchema,
     })
     .strict(),
@@ -275,6 +283,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.discardDesignSystemProposal'),
       ...request,
       id: canvasIdentifierSchema,
+      proposalId: canvasIdentifierSchema,
     })
     .strict(),
   z
@@ -299,7 +308,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('canvas.readKitPreview'),
       ...request,
-      ref: designSystemRefSchema,
+      ref: z.union([designSystemRefSchema, designSystemProposalRefSchema]),
       item: documentIdSchema,
     })
     .strict(),

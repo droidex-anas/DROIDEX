@@ -7,6 +7,7 @@ import type {
   CanvasDiagnostic,
   DesignSystemCover,
   DesignSystemDocumentView,
+  DesignSystemProposalRef,
   DesignSystemRef,
   DesignSystemSource,
   DesignSystemSummary,
@@ -97,24 +98,35 @@ export class DesignSystemRequests {
     reply(event, 'ok');
   }
 
-  /** Saves the agent's proposal as the version after `onto`, the newest the user saw. */
-  async acceptProposal(mutationId: string, id: string, onto: number): Promise<SavedDesignSystem> {
+  /**
+   * Saves the agent's proposal `proposalId` as the version after `onto`, the
+   * newest the user saw. A proposal replaced since fails with `invalid_input`.
+   */
+  async acceptProposal(
+    mutationId: string,
+    id: string,
+    proposalId: string,
+    onto: number,
+  ): Promise<SavedDesignSystem> {
     const event = await this.send({
       type: 'canvas.acceptDesignSystemProposal',
       requestId: requestId(),
       mutationId,
       id,
+      proposalId,
       onto,
     });
     const { ref, diagnostics } = reply(event, 'designSystemSaved');
     return { ref, diagnostics };
   }
 
-  async discardProposal(id: string): Promise<void> {
+  /** Removes the proposal `proposalId`; one that replaced it stays. */
+  async discardProposal(id: string, proposalId: string): Promise<void> {
     const event = await this.send({
       type: 'canvas.discardDesignSystemProposal',
       requestId: requestId(),
       id,
+      proposalId,
     });
     reply(event, 'ok');
   }
@@ -154,7 +166,10 @@ export class DesignSystemRequests {
   }
 
   /** `item` is a preview's id, `cover` or `typography`. */
-  async readPreview(ref: DesignSystemRef, item: string): Promise<KitPreview> {
+  async readPreview(
+    ref: DesignSystemRef | DesignSystemProposalRef,
+    item: string,
+  ): Promise<KitPreview> {
     const event = await this.send({
       type: 'canvas.readKitPreview',
       requestId: requestId(),
