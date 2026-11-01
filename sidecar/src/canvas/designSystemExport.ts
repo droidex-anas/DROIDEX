@@ -15,6 +15,7 @@ import {
 import { modeTokens } from './designStylesheet.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
+import { documentKitAssetIds, kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import type { DesignSystemVersionRef } from './protocol.js';
 import { designSystemVersionRefSchema } from './schema.js';
 
@@ -27,9 +28,10 @@ const exportRequestSchema = z
 
 /**
  * The kit's own files under `src/`, its examples, each note under `notes/`,
- * the document as `document.json`, and two derived files: the text the agent
- * reads as `DESIGN.md`, and the light and dark tokens as `modes.css` under the
- * kit's `data-mode` selectors, which From CSS reads back.
+ * the document as `document.json`, the images it shows or its files refer to
+ * under `assets/`, and two derived files: the text the agent reads as
+ * `DESIGN.md`, and the light and dark tokens as `modes.css` under the kit's
+ * `data-mode` selectors, which From CSS reads back.
  */
 export async function exportDesignSystem(
   ref: DesignSystemVersionRef,
@@ -40,6 +42,12 @@ export async function exportDesignSystem(
     throw canvasError('invalid_input', 'Choose an export folder in DROIDEX first.');
   const kit = await readDesignSystem(ref);
   signal?.throwIfAborted();
+  const imageIds = documentKitAssetIds(kit);
+  for (const assetId of referencedKitAssetIds([
+    ...Object.values(kit.files),
+    ...Object.values(kit.examples),
+  ]))
+    imageIds.add(assetId);
   const files: ExportFile[] = [
     ...Object.entries(kit.files).map(([path, content]) => ({ path: `src/${path}`, content })),
     ...Object.entries(kit.examples).map(([path, content]) => ({
@@ -68,6 +76,7 @@ export async function exportDesignSystem(
         2,
       )}\n`,
     },
+    ...(await kitImageFiles(imageIds, signal)),
   ];
   await writeExport(resolve(destinationDirectory), files, signal);
   return { filesWritten: files.length };

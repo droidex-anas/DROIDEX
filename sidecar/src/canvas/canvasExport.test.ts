@@ -7,12 +7,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { startBridgeServer } from '../bridgeServer.js';
-import { saveOwnedAsset } from './canvasAssets.js';
+import { saveImageIn } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
 import { kitGuidance } from './designSystemDocument.js';
+import { exportDesignSystem } from './designSystemExport.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
+import { systemsRoot } from './designSystemStorage.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import type { DesignSystemRef } from './protocol.js';
 
@@ -20,10 +22,10 @@ const canvasId = 'export-canvas';
 const ref = { designId: 'hey', revisionId: 'revision-1' };
 const defaultKit = { id: 'droidex', version: 1, mode: 'light' } as const;
 
-/** An owned image as Canvas stores it: the bytes and the record beside them. */
-async function ownImage(root: string, image: Buffer): Promise<string> {
+/** An image as a canvas or the kit store keeps it: the bytes and the record beside them. */
+async function ownImage(owner: string, image: Buffer): Promise<string> {
   const assetId = createHash('sha256').update(image).digest('hex');
-  await mkdir(join(root, 'canvases', canvasId), { recursive: true });
+  await mkdir(owner, { recursive: true });
   const asset = {
     assetId,
     mediaType: 'image/png',
@@ -31,8 +33,14 @@ async function ownImage(root: string, image: Buffer): Promise<string> {
     width: 1,
     height: 1,
   } as const;
-  await saveOwnedAsset(join(root, 'canvases'), canvasId, asset, image);
+  await saveImageIn(owner, asset, image);
   return assetId;
+}
+
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+
+function canvasOwner(root: string): string {
+  return join(root, 'canvases', canvasId);
 }
 
 async function profile(t: TestContext): Promise<{ root: string; destination: string }> {
@@ -102,7 +110,7 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
     '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489',
     'hex',
   );
-  const assetId = await ownImage(root, image);
+  const assetId = await ownImage(canvasOwner(root), image);
   const source = `export default function Hey(){return <img src="canvas-asset:${assetId}" alt="Hey"/>}`;
   await saveRevision(root, { 'main.tsx': source, 'style.css': 'h1 { color: red; }' }, kit);
 
@@ -284,12 +292,51 @@ test('refuses linked destination paths and escaping revision paths', async (t) =
   assert.deepEqual(await fileSet(destination), []);
 });
 
+test('kit images travel with canvas and kit exports, one file per image', async (t) => {
+  const { root, destination } = await profile(t);
+  const cover = Buffer.concat([PNG, Buffer.from('cover')]);
+  const texture = Buffer.concat([PNG, Buffer.from('texture')]);
+  const coverId = await ownImage(systemsRoot(), cover);
+  const textureId = await ownImage(systemsRoot(), texture);
+  // The same bytes as a canvas image and a kit image are still one export file.
+  const sharedId = await ownImage(systemsRoot(), PNG);
+  await ownImage(canvasOwner(root), PNG);
+  const kit = await saveDesignSystem(
+    {
+      ...DROIDEX_DESIGN_SYSTEM,
+      id: 'image-kit',
+      name: 'Image kit',
+      cover: { kind: 'image', assetId: coverId },
+      files: {
+        ...DROIDEX_DESIGN_SYSTEM.files,
+        'tokens.css': `${DROIDEX_DESIGN_SYSTEM.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
+      },
+    },
+    { mutationId: 'image-kit', baseVersion: null, savedBy: { actor: 'user' } },
+  );
+  const source = `export default () => <><img src="canvas-asset:${sharedId}" /><img src="kit-asset:${sharedId}" /></>;`;
+  await saveRevision(root, { 'main.tsx': source }, kit);
+
+  await exportCanvasSource(canvasId, ref, destination);
+  const canvasImages = (await fileSet(destination)).filter((path) => path.startsWith('assets/'));
+  assert.deepEqual(canvasImages, [`assets/${sharedId}`, `assets/${textureId}`].sort());
+  assert.deepEqual(await readFile(join(destination, 'assets', textureId)), texture);
+
+  const kitDestination = join(root, 'kit-export');
+  await mkdir(kitDestination);
+  await exportDesignSystem(kit, kitDestination);
+  const kitImages = (await fileSet(kitDestination)).filter((path) => path.startsWith('assets/'));
+  assert.deepEqual(kitImages, [`assets/${coverId}`, `assets/${textureId}`].sort());
+  assert.deepEqual(await readFile(join(kitDestination, 'assets', coverId)), cover);
+});
+
 test('the exported Hey starter builds and serves outside the checkout without a download', async (t) => {
   const { root, destination } = await profile(t);
-  const image = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
-  const assetId = await ownImage(root, image);
+  const assetId = await ownImage(canvasOwner(root), PNG);
+  const kitImage = Buffer.concat([PNG, Buffer.from('kit')]);
+  const kitAssetId = await ownImage(systemsRoot(), kitImage);
   const source = `import { Card } from '@droidex/design-system';
-export default function Hey() { return <Card className="dark:bg-black"><img src="canvas-asset:${assetId}" alt="Hey" /></Card>; }`;
+export default function Hey() { return <Card className="dark:bg-black"><img src="canvas-asset:${assetId}" alt="Hey" /><img src="kit-asset:${kitAssetId}" alt="Kit" /></Card>; }`;
   await saveRevision(root, { 'main.tsx': source }, defaultKit);
   await exportCanvasSource(canvasId, ref, destination);
   const sidecarModules = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules');
@@ -313,15 +360,18 @@ export default function Hey() { return <Card className="dark:bg-black"><img src=
       reject(new Error(`Exported build exited ${String(code)}: ${errors}`)),
     );
   });
-  const [document, script, asset] = await Promise.all([
+  const [document, script, asset, kitAsset] = await Promise.all([
     fetch(address).then((response) => response.text()),
     fetch(`${address}/app.js`).then((response) => response.text()),
     fetch(`${address}/assets/${assetId}`),
+    fetch(`${address}/assets/${kitAssetId}`),
   ]);
   assert.match(document, /canvas-root/);
   assert.match(script, /Hey/);
+  assert.ok(script.includes(`/assets/${kitAssetId}`) && !script.includes('kit-asset:'));
   assert.equal(asset.headers.get('content-type'), 'image/png');
-  assert.deepEqual(Buffer.from(await asset.arrayBuffer()), image);
+  assert.deepEqual(Buffer.from(await asset.arrayBuffer()), PNG);
+  assert.deepEqual(Buffer.from(await kitAsset.arrayBuffer()), kitImage);
   const stylesheet = await readFile(join(destination, 'dist/style.css'), 'utf8');
   assert.match(stylesheet, /--ds-accent/);
   assert.ok(stylesheet.includes(String.raw`.dark\:bg-black:where([data-mode='dark']`));

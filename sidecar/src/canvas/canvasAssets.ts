@@ -224,16 +224,14 @@ export function referencedAssetIds(contents: Iterable<string>): string[] {
   return [...assetIds];
 }
 
-/** One image a canvas owns, verified against its record and digest. */
-export async function readOwnedImage(
-  root: string,
-  canvasId: string,
-  assetId: string,
-): Promise<OwnedImage> {
-  const canvas = join(root, canvasId);
-  const directory = join(canvas, 'assets');
+/**
+ * One image from `owner`'s `assets` folder, verified against its record and
+ * digest. `owner` is a canvas's directory or the kit store's.
+ */
+export async function readImageIn(owner: string, assetId: string): Promise<OwnedImage> {
+  const directory = join(owner, 'assets');
   try {
-    for (const path of [canvas, directory]) {
+    for (const path of [owner, directory]) {
       const info = await lstat(path);
       if (!info.isDirectory() || info.isSymbolicLink())
         throw canvasError('storage_failed', DAMAGED_ASSET);

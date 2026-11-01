@@ -10,10 +10,12 @@ import { join } from 'node:path';
 import {
   canvasImageImportSchema,
   readChosenImage,
+  readImageIn,
   saveImageIn,
   type ChosenImage,
 } from './canvasAssets.js';
-import { canvasError, storageFailure } from './canvasError.js';
+import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import type { ExportFile } from './canvasExport.js';
 import type { DesignSystem } from './designSystems.js';
 import { exists, flushAncestors, refuseLinkedPath, systemsRoot } from './designSystemStorage.js';
 import type { OwnedAsset } from './protocol.js';
@@ -39,17 +41,52 @@ export async function importKitImage(request: ChosenImage): Promise<OwnedAsset> 
 }
 
 /** Refuses a document that names an image nobody imported, the agent's only way to add one. */
-export async function refuseUnknownKitAssets({
+export async function refuseUnknownKitAssets(
+  document: Pick<DesignSystem, 'cover' | 'sections'>,
+): Promise<void> {
+  for (const assetId of documentKitAssetIds(document))
+    if (!(await exists(join(systemsRoot(), 'assets', `${assetId}.json`))))
+      throw canvasError('invalid_input', MISSING_KIT_ASSET);
+}
+
+/** The kit images a document shows: its cover and its asset items. */
+export function documentKitAssetIds({
   cover,
   sections,
-}: Pick<DesignSystem, 'cover' | 'sections'>): Promise<void> {
+}: Pick<DesignSystem, 'cover' | 'sections'>): Set<string> {
   const assetIds = new Set<string>();
   if (cover?.kind === 'image') assetIds.add(cover.assetId);
   for (const section of sections)
     for (const item of section.items) if (item.kind === 'asset') assetIds.add(item.assetId);
-  for (const assetId of assetIds)
-    if (!(await exists(join(systemsRoot(), 'assets', `${assetId}.json`))))
-      throw canvasError('invalid_input', MISSING_KIT_ASSET);
+  return assetIds;
+}
+
+/** The kit images some text refers to as `kit-asset:`, each once. */
+export function referencedKitAssetIds(contents: Iterable<string>): Set<string> {
+  const assetIds = new Set<string>();
+  for (const content of contents)
+    for (const match of content.matchAll(KIT_ASSET_REFERENCE)) assetIds.add(match[1]);
+  return assetIds;
+}
+
+/** Each kit image, verified against its record and digest, as an export's `assets/<id>`. */
+export async function kitImageFiles(
+  assetIds: Iterable<string>,
+  signal?: AbortSignal,
+): Promise<ExportFile[]> {
+  const files: ExportFile[] = [];
+  for (const assetId of assetIds) {
+    signal?.throwIfAborted();
+    try {
+      const { bytes } = await readImageIn(systemsRoot(), assetId);
+      files.push({ path: `assets/${assetId}`, content: bytes });
+    } catch (error) {
+      if (error instanceof CanvasCommandError && error.code === 'not_found')
+        throw canvasError('not_found', MISSING_KIT_ASSET);
+      throw error;
+    }
+  }
+  return files;
 }
 
 /**
