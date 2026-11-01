@@ -23,6 +23,11 @@ export class KitCaptureCache {
     return this.urls.has(key);
   }
 
+  /** Whether a consumer still holds `key`. */
+  isHeld(key: string): boolean {
+    return this.holds.has(key);
+  }
+
   set(key: string, url: string | null): void {
     this.forget(key);
     this.urls.set(key, url);
