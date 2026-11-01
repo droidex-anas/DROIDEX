@@ -1,12 +1,12 @@
 // Where saved kits live on disk and how a file there is read and published:
 // `canvases/design-systems/<id>/<n>.json`, one immutable file per version, a
-// `deleted` tombstone beside them (design system documents spec §3), one
-// `<mutationId>.applied` receipt per delete or Undo that ran, and the captures
-// of each version's previews.
+// `deleted` tombstone and a pending `proposal.json` beside them (design system
+// documents spec §3), one `<mutationId>.applied` receipt per delete, Undo or
+// proposal that ran, and the captures of each version's previews.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, rename, rm, unlink } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import { canvasError, storageFailure } from './canvasError.js';
 import { canvasDir } from '../droidexPaths.js';
@@ -45,25 +45,39 @@ export function tombstonePath(id: string): string {
   return join(kitDirectory(id), 'deleted');
 }
 
-// One kit's deletes and Undos run one at a time: a duplicate that passed its
-// receipt check beside the original could otherwise land after a later Undo.
-const tombstoneWrites = new Map<string, Promise<void>>();
+export function proposalPath(id: string): string {
+  return join(kitDirectory(id), 'proposal.json');
+}
+
+/** The marker that a delete, Undo or proposal with this mutation ID already ran. */
+export function receiptPath(id: string, mutationId: string): string {
+  return join(kitDirectory(id), `${identifier(mutationId)}.applied`);
+}
+
+// One kit's tombstone and proposal writes run one at a time: a duplicate that
+// passed its receipt check beside the original could otherwise land after a
+// later write.
+const kitWrites = new Map<string, Promise<unknown>>();
+
+/** Runs `write` after every earlier queued write of the same kit has settled. */
+export function queueKitWrite<T>(id: string, write: () => Promise<T>): Promise<T> {
+  const written = (kitWrites.get(id) ?? Promise.resolve()).then(write);
+  const settled = written.catch(() => undefined);
+  kitWrites.set(id, settled);
+  void settled.then(() => {
+    if (kitWrites.get(id) === settled) kitWrites.delete(id);
+  });
+  return written;
+}
 
 /** Sets or clears a kit's tombstone once per mutation ID; a repeat changes nothing. */
 export function setTombstone(id: string, deleted: boolean, mutationId: string): Promise<void> {
-  const receipt = join(kitDirectory(id), `${identifier(mutationId)}.applied`);
-  const write = async () => {
+  const receipt = receiptPath(id, mutationId);
+  return queueKitWrite(id, async () => {
     if (await exists(receipt)) return;
     await setMarker(tombstonePath(id), deleted);
     await setMarker(receipt, true);
-  };
-  const written = (tombstoneWrites.get(id) ?? Promise.resolve()).then(write);
-  const settled = written.catch(() => undefined);
-  tombstoneWrites.set(id, settled);
-  void settled.then(() => {
-    if (tombstoneWrites.get(id) === settled) tombstoneWrites.delete(id);
   });
-  return written;
 }
 
 /** The kit's saved version numbers, unordered; none when it was never saved. */
@@ -151,13 +165,48 @@ export async function writeVersion(
 }
 
 /** Creates or removes an empty marker file in a kit's directory, then flushes it. */
-async function setMarker(path: string, present: boolean): Promise<void> {
+export async function setMarker(path: string, present: boolean): Promise<void> {
+  if (!present) return removeFile(path);
   try {
     await refuseLinkedPath(path);
-    if (present) await writeNew(path, '').catch(ignoreCode('EEXIST'));
-    else await unlink(path).catch(ignoreCode('ENOENT'));
+    await writeNew(path, '').catch(ignoreCode('EEXIST'));
     await flushAncestors(dirname(path));
   } catch (error) {
+    throw storageFailure(SAVE_RECOVERY, error);
+  }
+}
+
+export async function removeFile(path: string): Promise<void> {
+  try {
+    await refuseLinkedPath(path);
+    await unlink(path).catch(ignoreCode('ENOENT'));
+    await flushAncestors(dirname(path));
+  } catch (error) {
+    throw storageFailure(SAVE_RECOVERY, error);
+  }
+}
+
+/**
+ * Writes a file that may be replaced later whole: a reader sees the old content
+ * or the new. `beforePublish` runs once the content is staged, just before the
+ * rename, so a writer that may no longer publish leaves the old file in place.
+ */
+export async function replaceFile(
+  path: string,
+  content: string,
+  beforePublish: () => void,
+): Promise<void> {
+  const directory = dirname(path);
+  const temporary = join(directory, `.${randomUUID()}.tmp`);
+  try {
+    await refuseLinkedPath(path);
+    await mkdir(directory, { recursive: true });
+    await writeNew(temporary, content);
+    beforePublish();
+    await rename(temporary, path);
+    await flushAncestors(directory);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
     throw storageFailure(SAVE_RECOVERY, error);
   }
 }

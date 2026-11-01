@@ -21,7 +21,7 @@ interface Watch {
 
 export function useKitPreviewSlots(
   columnRef: RefObject<HTMLElement | null>,
-  /** The version the previews build from; a preview only a draft has cannot run. */
+  /** The version or proposal the previews build from; a preview only a draft has cannot run. */
   version: Pick<DesignSystemDocumentView, 'cover' | 'sections'>,
 ) {
   const tiles = useRef(new Map<string, HTMLElement>());

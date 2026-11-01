@@ -8,6 +8,7 @@ import { Palette } from 'lucide-react';
 import { Check, Search } from '@droidex/icons';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Field';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { cn } from '../../components/ui/cn';
 import { recentDesignSystems } from './designSystemChoices';
 import { activeRow, pickerRows, rowAfterKey, type PickerRow } from './designSystemPickerRows';
@@ -214,7 +215,18 @@ function KitOption({
         <KitThumbnail kit={kit} mode={mode} size="row" />
       )}
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-body text-primary">{kit.name}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-body text-primary">{kit.name}</span>
+          {kit.proposal && (
+            <Tooltip label="The agent proposed changes">
+              <span
+                role="img"
+                aria-label="The agent proposed changes"
+                className="size-1.5 rounded-full bg-accent"
+              />
+            </Tooltip>
+          )}
+        </span>
         {kit.kind === 'auto' && (
           <span className="text-caption text-muted">Styles from the request and the canvas</span>
         )}

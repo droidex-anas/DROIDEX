@@ -321,6 +321,13 @@ export interface CanvasError {
   latestVersion?: number;
 }
 
+/** The proposal a kit has waiting, in one mode; a new proposal gets a new `proposalId`. */
+export interface DesignSystemProposalRef {
+  id: string;
+  proposalId: string;
+  mode: DesignSystemRef['mode'];
+}
+
 // ── Bridge commands and events ───────────────────────────────────────
 // The pane's half of the Canvas contract. `appSessionId` is the only session
 // identity on the wire; a mutation names the canvas its chat is attached to, and
@@ -483,6 +490,23 @@ export type CanvasCommand =
       id: string;
       deleted: boolean;
     }
+  // The agent proposal the user reviewed, while it is still the one waiting:
+  // accept saves it as the version after `onto`, the newest the user saw, and
+  // discard removes it.
+  | {
+      type: 'canvas.acceptDesignSystemProposal';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      proposalId: string;
+      onto: number;
+    }
+  | {
+      type: 'canvas.discardDesignSystemProposal';
+      requestId: string;
+      id: string;
+      proposalId: string;
+    }
   | {
       type: 'canvas.copyDesignSystem';
       requestId: string;
@@ -497,10 +521,15 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
-  // A kit version's previews in one mode. `item` is a preview's id, `cover` or
-  // `typography`. A capture is a base64 PNG the document took from a live
-  // preview; a later one replaces it.
-  | { type: 'canvas.readKitPreview'; requestId: string; ref: DesignSystemRef; item: string }
+  // A kit version's previews in one mode, or a waiting proposal's. `item` is a
+  // preview's id, `cover` or `typography`. A capture is a base64 PNG the
+  // document took from a saved version's live preview; a later one replaces it.
+  | {
+      type: 'canvas.readKitPreview';
+      requestId: string;
+      ref: DesignSystemRef | DesignSystemProposalRef;
+      item: string;
+    }
   | {
       type: 'canvas.saveKitCapture';
       requestId: string;

@@ -41,7 +41,7 @@ const UTILITIES = '@tailwind utilities;\n';
 
 export async function buildDesignStylesheet(
   files: SourceFiles,
-  system: DesignSystem,
+  system: Pick<DesignSystem, 'files' | 'sections'>,
 ): Promise<DesignStylesheetResult> {
   const sources: [string, string][] = [
     [TOKENS_FILE, modeTokens(kitModes(system.sections))],
@@ -244,7 +244,7 @@ export const CANVAS_TAILWIND_OPTIONS = {
   plugins: [],
 } satisfies Pick<Config, 'darkMode' | 'theme' | 'plugins'>;
 
-function tailwindConfig(files: SourceFiles, system: DesignSystem): Config {
+function tailwindConfig(files: SourceFiles, system: Pick<DesignSystem, 'files'>): Config {
   return {
     // Every design and kit file is scanned, so a class only appears when some
     // source literally spells it out; no partial class names are guessed.

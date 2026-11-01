@@ -7,11 +7,13 @@ import {
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
+import { discardProposal, proposeDesignSystem, readProposal } from './designSystemProposals.js';
+import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { KitPreviews } from './kitPreviews.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
-import type { DesignSystemRef } from './protocol.js';
+import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
 
 pinScratchProfile();
 
@@ -133,4 +135,53 @@ test("a source's diagnostics are kept, a lost compiler is tried again", async ()
   await assert.rejects(previews.read(LIGHT, 'no-such-preview'), { code: 'invalid_input' });
   await previews.close();
   await assert.rejects(previews.read(LIGHT, 'typography'), { code: 'scope_expired' });
+});
+
+test("a waiting proposal's previews build from its own examples, and a settled one's no longer do", async () => {
+  const { previews } = countingPreviews((input) =>
+    design(input.kind === 'kitPreview' ? input.example : ''),
+  );
+  await saveDesignSystem(
+    { ...DROIDEX_DESIGN_SYSTEM, id: 'proposed' },
+    { mutationId: 'proposed-v1', baseVersion: null, savedBy: { actor: 'user' } },
+  );
+  const saved = await readDesignSystem({ id: 'proposed', version: 1 });
+  const cover =
+    saved.cover?.kind === 'preview' ? saved.cover.example : assert.fail('a preview cover');
+  const proposed = structuredClone(saved);
+  proposed.examples[cover] = 'export default () => "Proposed cover";';
+  proposed.examples['Pricing.tsx'] = 'export default () => "Pricing";';
+  const section = proposed.sections.find(({ kind }) => kind === 'components');
+  assert.ok(section?.kind === 'components');
+  section.items.push({
+    kind: 'preview',
+    id: 'pricing',
+    title: 'Pricing',
+    example: 'Pricing.tsx',
+    width: 960,
+    height: 640,
+  });
+  await proposeDesignSystem(proposed, {
+    mutationId: 'proposal',
+    baseVersion: 1,
+    appSessionId: 'chat-one',
+    beforePublish: () => undefined,
+  });
+  const proposalId = (await readProposal('proposed'))?.proposalId ?? assert.fail('a proposal');
+  const ref: DesignSystemProposalRef = { id: 'proposed', proposalId, mode: 'light' };
+  const source = async (target: DesignSystemRef | DesignSystemProposalRef, item: string) => {
+    const preview = await previews.read(target, item);
+    return preview.status === 'ready' ? preview.artifact.html : null;
+  };
+
+  assert.equal(await source(ref, 'cover'), proposed.examples[cover]);
+  assert.equal(await source(ref, 'pricing'), proposed.examples['Pricing.tsx']);
+  assert.equal(
+    await source({ id: 'proposed', version: 1, mode: 'light' }, 'cover'),
+    saved.examples[cover],
+  );
+
+  await discardProposal('proposed', proposalId);
+  await assert.rejects(previews.read(ref, 'typography'), { code: 'invalid_input' });
+  await previews.close();
 });

@@ -105,26 +105,24 @@ export async function compileDesign(
 }
 
 /**
- * One kit example as a one-file design under that kit version. Nothing on it
- * can be selected, and the kit is not held to its own rules.
+ * One kit example as a one-file design under that kit. Nothing on it can be
+ * selected, and the kit is not held to its own rules.
  */
 async function compileKitPreview(
   input: KitPreviewCompileInput,
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
   const files = { [DESIGN_ENTRY]: input.example };
-  const system = await readDesignSystem(input.system);
-  stopIfCancelled(signal);
-  const bundle = await bundleDesign({ files, kitFiles: system.files });
+  const bundle = await bundleDesign({ files, kitFiles: input.kit.files });
   stopIfCancelled(signal);
   if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
   const unbound = unboundNameDiagnostics(files);
   if (unbound.length > 0) throw new CompileFailedError(unbound);
-  const stylesheet = await buildDesignStylesheet(files, system);
+  const stylesheet = await buildDesignStylesheet(files, input.kit);
   stopIfCancelled(signal);
   if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
 
-  const html = previewDocument(stylesheet.css, bundle.js, input.system.mode);
+  const html = previewDocument(stylesheet.css, bundle.js, input.mode);
   return {
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,

@@ -54,6 +54,9 @@ export function cleanFeed(items: readonly FeedItem[]): FeedItem[] {
       case 'status':
         answer.push(item);
         break;
+      case 'browser':
+        // A finished turn sets its Browser card after the answer; it is not work after it.
+        break;
       default:
         workAfter = true;
     }

@@ -27,7 +27,7 @@ export const DOCUMENT_LIMITS = {
 // §14 asks for these as preview targets beside the previews' own ids.
 const RESERVED_PREVIEW_IDS = new Set(['cover', 'typography']);
 
-const TOKEN_KINDS = [
+export const TOKEN_KINDS = [
   'colors',
   'typography',
   'spacing',

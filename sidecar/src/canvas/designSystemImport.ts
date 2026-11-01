@@ -150,19 +150,33 @@ export function importDesignSystem(
     id: kit.id,
     version: 1,
     name: kit.name,
-    cover: null,
-    sections: buildDocument({
-      tokens: mapOntoContract(declared, diagnostics),
-      overview: [rulesNote(LICENSED_FONTS), ...notes],
-      components: PRIMITIVE_PARTS,
-    }),
-    files: DROIDEX_DESIGN_SYSTEM.files,
-    examples: PRIMITIVE_EXAMPLES,
+    ...starterKit(mapOntoContract(declared, diagnostics), notes),
     ...(kit.provenance ? { provenance: kit.provenance } : {}),
   });
   if (!parsed.success)
     return refused(parsed.error.issues[0]?.message ?? 'That design system is not valid.');
   return { status: 'imported', system: parsed.data, diagnostics: bounded(diagnostics) };
+}
+
+/**
+ * A new kit's document and source before anything else is written into it: the
+ * shared primitives with their notes and previews, these tokens (DROIDEX's
+ * values for the primitives' tokens unless given) and these overview notes.
+ */
+export function starterKit(
+  tokens: Record<Mode, Record<string, string>> = CONTRACT,
+  notes: DocumentPart[] = [],
+): Pick<DesignSystem, 'cover' | 'sections' | 'files' | 'examples'> {
+  return {
+    cover: null,
+    sections: buildDocument({
+      tokens,
+      overview: [rulesNote(LICENSED_FONTS), ...notes],
+      components: PRIMITIVE_PARTS,
+    }),
+    files: DROIDEX_DESIGN_SYSTEM.files,
+    examples: PRIMITIVE_EXAMPLES,
+  };
 }
 
 type SourceRead = { status: 'read'; notes: DocumentPart[] } | Refused;

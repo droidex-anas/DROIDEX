@@ -6,6 +6,12 @@ import { canvasError } from './canvasError.js';
 import type { DocumentSection } from './designSystemDocument.js';
 import { importDesignSystem, pastedSource, unmappedKitTokens } from './designSystemImport.js';
 import {
+  acceptProposal,
+  discardProposal,
+  readProposal,
+  type DesignSystemProposal,
+} from './designSystemProposals.js';
+import {
   designSystemKind,
   listDesignSystems,
   listDesignSystemVersions,
@@ -40,8 +46,8 @@ export interface DesignSystemDocumentView {
   /** When and by whom this version was saved; a built-in kit was never saved. */
   savedAt: string | null;
   savedBy: SavedBy | null;
-  /** An agent proposal waiting for review; none until proposals exist. */
-  proposal: null;
+  /** The agent proposal waiting for review, if there is one. */
+  proposal: DesignSystemProposal | null;
 }
 
 export type DesignSystemCommand = Extract<
@@ -54,6 +60,8 @@ export type DesignSystemCommand = Extract<
       | 'listDesignSystemVersions'
       | 'restoreDesignSystemVersion'
       | 'setDesignSystemDeleted'
+      | 'acceptDesignSystemProposal'
+      | 'discardDesignSystemProposal'
       | 'copyDesignSystem'
       | 'importDesignSystem'
       | 'readKitPreview'
@@ -69,6 +77,8 @@ const COMMAND_TYPES = new Set<CanvasCommand['type']>([
   'canvas.listDesignSystemVersions',
   'canvas.restoreDesignSystemVersion',
   'canvas.setDesignSystemDeleted',
+  'canvas.acceptDesignSystemProposal',
+  'canvas.discardDesignSystemProposal',
   'canvas.copyDesignSystem',
   'canvas.importDesignSystem',
   'canvas.readKitPreview',
@@ -112,6 +122,13 @@ export async function answerDesignSystemCommand(
     }
     case 'canvas.setDesignSystemDeleted':
       await setDesignSystemDeleted(command.id, command.deleted, command.mutationId);
+      return { kind: 'ok' };
+    case 'canvas.acceptDesignSystemProposal': {
+      const { proposalId, mutationId, onto } = command;
+      return saved(await acceptProposal(command.id, { proposalId, mutationId, onto }), []);
+    }
+    case 'canvas.discardDesignSystemProposal':
+      await discardProposal(command.id, command.proposalId);
       return { kind: 'ok' };
     // A new kit's id is its mutationId: a retried save finds the version it
     // already published and answers with it instead of saving a second kit.
@@ -178,6 +195,6 @@ async function readDocument(ref: DesignSystemVersionRef): Promise<DesignSystemDo
     provenance: system.provenance ?? null,
     savedAt: entry?.savedAt ?? null,
     savedBy: entry?.savedBy ?? null,
-    proposal: null,
+    proposal: await readProposal(system.id),
   };
 }

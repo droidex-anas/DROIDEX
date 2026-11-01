@@ -16,7 +16,7 @@ import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
 import { modeValue, tokenValueProblem } from './specimenStyle';
 import { LiveSwatch, Specimen, Swatch } from './TokenSpecimens';
-import { UndoRemove, UnsavedMark } from './UnsavedMark';
+import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TOKEN_NOTE_BYTES = 400;
 const MAX_TITLE_LENGTH = 120;
@@ -87,6 +87,7 @@ export function TokenTable({
             {group.title}
           </h3>
         )}
+        <AddedLabel mark={marks.get(group.id)} />
         <span className="flex-1" />
         {onChange &&
           (isRemoved ? (
@@ -202,7 +203,7 @@ const TokenRow = memo(function TokenRow({
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
           <span
             className={cn(
-              'truncate font-mono text-code',
+              'truncate text-body',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -386,14 +387,14 @@ function ValueCell({
             ),
           );
         }}
-        className="font-mono text-code text-secondary"
+        className="text-body tabular-nums text-secondary"
       />
     );
   else
     shown = (
       <span
         className={cn(
-          'truncate font-mono text-code',
+          'truncate text-body tabular-nums',
           isRemoved ? 'text-muted line-through' : 'text-secondary',
         )}
       >

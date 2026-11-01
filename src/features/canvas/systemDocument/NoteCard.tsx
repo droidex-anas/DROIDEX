@@ -15,7 +15,7 @@ import type { DocumentNote } from '../designSystemDocumentProtocol';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import type { DraftChange } from './documentDraft';
 import type { DraftMark } from './documentSections';
-import { UndoRemove, UnsavedMark } from './UnsavedMark';
+import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const NOTE_LABEL = /^[a-z0-9][a-z0-9-]*\.md$/;
 const MAX_LABEL_LENGTH = 48;
@@ -79,13 +79,14 @@ export function NoteCard({
         >
           <span
             className={cn(
-              'truncate font-mono text-code',
+              'truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
             {note.label}
           </span>
           {note.author === 'agent' && <Badge tone="accent">Agent</Badge>}
+          <AddedLabel mark={mark} />
           <span className="flex-1" />
           {!isRemoved && !editing && (
             <ChevronDown
@@ -215,7 +216,6 @@ function NoteEditor({
           setLabel(event.target.value);
           setProblem(null);
         }}
-        className="text-code"
       />
       <textarea
         ref={bodyRef}

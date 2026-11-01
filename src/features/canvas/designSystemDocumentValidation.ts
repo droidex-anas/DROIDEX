@@ -209,7 +209,28 @@ export function isKitDocument(value: unknown): boolean {
     (value.provenance === null || isKitProvenance(value.provenance)) &&
     (value.savedAt === null || isTimestamp(value.savedAt)) &&
     (value.savedBy === null || isSavedBy(value.savedBy)) &&
-    value.proposal === null
+    (value.proposal === null || isKitProposal(value.proposal))
+  );
+}
+
+function isKitProposal(value: unknown): boolean {
+  return (
+    hasOnlyKeys(value, [
+      'proposalId',
+      'baseVersion',
+      'proposedAt',
+      'appSessionId',
+      'name',
+      'cover',
+      'sections',
+    ]) &&
+    id(value.proposalId) &&
+    count(value.baseVersion) &&
+    isTimestamp(value.proposedAt) &&
+    isAppSessionId(value.appSessionId) &&
+    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
+    isCover(value.cover) &&
+    isDocumentSections(value.sections)
   );
 }
 
