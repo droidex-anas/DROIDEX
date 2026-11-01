@@ -4,7 +4,7 @@
 // to a keystroke. Over 8 KiB the text stays open with why.
 
 import { useEffect, useRef, useState } from 'react';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import { insertNewline } from '@codemirror/commands';
 import { insertNewlineContinueMarkup } from '@codemirror/lang-markdown';
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
@@ -40,6 +40,8 @@ export function NoteBodyEditor({
   const [problem, setProblem] = useState<string | null>(null);
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
+  const viewRef = useRef<EditorView | null>(null);
+  const labelCompartment = useRef(new Compartment());
 
   useEffect(() => {
     const host = hostRef.current;
@@ -50,9 +52,10 @@ export function NoteBodyEditor({
     // Escape keeps the text like any other exit, but only while the field has
     // focus: a title being edited above it owns Escape then.
     let popEscape: (() => void) | null = null;
-    // Destroying a focused view (a remount, or the unmount a commit just asked
-    // for) blurs it; that blur is teardown, not the user leaving the field.
-    let alive = true;
+    // The editor settles once, on kept text or at teardown. Destroying a focused
+    // view blurs it, and so does the focus a keyboard exit moves to the card;
+    // neither blur is the user leaving the field.
+    let isSettled = false;
     const view = new EditorView({
       state: EditorState.create({
         doc: body,
@@ -60,11 +63,8 @@ export function NoteBodyEditor({
           liveMarkdown([noteField, markdownStyles]),
           EditorView.lineWrapping,
           cmPlaceholder("Markdown the agent reads as one of this kit's rules"),
-          EditorView.contentAttributes.of({
-            'aria-label': label,
-            'aria-multiline': 'true',
-            spellcheck: 'true',
-          }),
+          labelCompartment.current.of(labelAttribute(label)),
+          EditorView.contentAttributes.of({ 'aria-multiline': 'true', spellcheck: 'true' }),
           keymap.of([
             {
               key: 'Enter',
@@ -85,7 +85,7 @@ export function NoteBodyEditor({
               });
             },
             blur: () => {
-              if (!alive) return;
+              if (isSettled) return;
               popEscape?.();
               popEscape = null;
               commitRef.current(false);
@@ -99,22 +99,33 @@ export function NoteBodyEditor({
       parent: host,
     });
     commitRef.current = (keyboard) => {
+      if (isSettled) return;
       const text = view.state.doc.toString();
       if (utf8.encode(text).byteLength > MAX_NOTE_BYTES) {
         setProblem('A note is at most 8 KiB. Shorten it.');
         return;
       }
+      isSettled = true;
       onCommitRef.current(text, keyboard);
     };
+    viewRef.current = view;
     if (autoFocus) view.focus();
     return () => {
-      alive = false;
+      isSettled = true;
+      viewRef.current = null;
       popEscape?.();
       view.destroy();
     };
     // The editor owns its text while mounted; a changed note body remounts the card's editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, label]);
+  }, [body]);
+
+  // A renamed note keeps the text being edited; only the field's name follows.
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: labelCompartment.current.reconfigure(labelAttribute(label)),
+    });
+  }, [label]);
 
   return (
     <div className="-mx-2 rounded-md px-2 py-1 transition-colors duration-quick ease-out focus-within:bg-elevated">
@@ -126,4 +137,8 @@ export function NoteBodyEditor({
       )}
     </div>
   );
+}
+
+function labelAttribute(label: string) {
+  return EditorView.contentAttributes.of({ 'aria-label': label });
 }
