@@ -79,7 +79,7 @@ export function NoteCard({
         >
           <span
             className={cn(
-              'truncate font-mono text-code',
+              'truncate text-body-strong',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -216,7 +216,6 @@ function NoteEditor({
           setLabel(event.target.value);
           setProblem(null);
         }}
-        className="text-code"
       />
       <textarea
         ref={bodyRef}
