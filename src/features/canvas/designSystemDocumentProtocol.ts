@@ -8,6 +8,8 @@ export type TokenKind =
   | 'spacing'
   | 'radius'
   | 'shadows'
+  | 'size'
+  | 'z-index'
   | 'motion'
   | 'tokens';
 

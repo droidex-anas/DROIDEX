@@ -99,9 +99,9 @@ test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared prim
   const kit = await readKit(canvas, ref);
   assert.equal(kit.modes.light['--ds-accent'], '#8a5a1f');
   assert.equal(kit.modes.dark['--ds-accent'], '#e3a857');
-  // Kept under its own name in both modes, and reported rather than dropped.
-  assert.deepEqual(kit.unmapped, ['--brand-ink']);
-  assert.equal(kit.modes.dark['--brand-ink'], '#2b2118');
+  // Kept under its own name in the kit's namespace, and reported rather than dropped.
+  assert.deepEqual(kit.unmapped, ['--ds-brand-ink']);
+  assert.equal(kit.modes.dark['--ds-brand-ink'], '#2b2118');
   // The agent reads the whole DESIGN.md as one of the kit's notes.
   const saved = await readDesignSystem(ref);
   assert.ok(kitGuidance(saved.name, saved.sections).includes('### design.md'));
@@ -149,7 +149,7 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
     css.modes.light['--ds-danger'],
     kitModes(DROIDEX_DESIGN_SYSTEM.sections).light['--ds-danger'],
   );
-  assert.deepEqual(css.unmapped, ['--chart-1']);
+  assert.deepEqual(css.unmapped, ['--ds-chart-1']);
 
   const fromConfig = await importKit(canvas, 'from-config', {
     kind: 'cssOrTailwind',
@@ -162,7 +162,7 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
   const config = await readKit(canvas, fromConfig.ref);
   assert.equal(config.modes.dark['--ds-accent'], '#123456');
   assert.equal(config.modes.light['--ds-radius-lg'], '14px');
-  assert.deepEqual(config.unmapped, ['--color-brand-500']);
+  assert.deepEqual(config.unmapped, ['--ds-color-brand-500']);
 
   // A stylesheet that does not parse saves nothing.
   await canvas.handle({
@@ -202,7 +202,7 @@ test('references resolve however deep they fan out, and what cannot be read is n
     kind: 'cssOrTailwind',
     text,
   });
-  assert.equal((await readKit(canvas, ref)).modes.dark['--level-0'], '1px');
+  assert.equal((await readKit(canvas, ref)).modes.dark['--ds-level-0'], '1px');
   assert.deepEqual(
     diagnostics.map(({ message }) => message.split(' was not imported. ')[0].slice(0, 12)),
     ['--loop-a', '--loop-b', '--long-long-'],
@@ -258,7 +258,7 @@ test('pasted sources are bounded before they are read, and competing values are 
   );
   assert.deepEqual(await refusal('long-chain', `:root{${chain.join('')}}`), {
     code: 'invalid_input',
-    message: 'That source declares 3000 tokens; a kit holds at most 128.',
+    message: 'That source declares 3000 tokens; a kit holds at most 256.',
   });
   assert.deepEqual(
     await refusal('competing', ':root { --primary: #123; }\n:root { --primary: #456; }'),

@@ -30,7 +30,10 @@ import {
 const COVER_EXAMPLE = 'cover.tsx';
 
 const projectSourceSchema = z
-  .object({ path: z.string().min(1).max(256), kind: z.enum(['tailwind', 'css', 'designMd']) })
+  .object({
+    path: z.string().min(1).max(256),
+    kind: z.enum(['tailwind', 'css', 'tokens', 'designMd']),
+  })
   .strict();
 
 const kitSchema = z
@@ -50,7 +53,7 @@ const kitSchema = z
       .strict(),
   ])
   .describe(
-    "An existing kit's id and the version you read, or a new id and what it starts from: 'blank' (the shared primitives with DROIDEX's token values), { copy: { id, version } }, or { project: [{ path, kind }] }, the theme files of this chat's project folder, named relative to it.",
+    "An existing kit's id and the version you read, or a new id and what it starts from: 'blank' (the shared primitives with DROIDEX's token values), { copy: { id, version } }, or { project: [{ path, kind }] }: theme files of this chat's project folder, named relative to it, with kind tailwind (a Tailwind config), css (a stylesheet of custom properties), tokens (a JS, TS or JSON module of token objects, read for its literals) or designMd (one markdown design doc at most). DROIDEX imports them under their own token names; follow with changes for what the import missed.",
   );
 
 /** What a save adds to canvas_theme's input; a save needs `kit`. */

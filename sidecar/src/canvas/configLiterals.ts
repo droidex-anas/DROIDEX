@@ -29,6 +29,129 @@ const TOKEN =
 // The reader recurses once per object or array it opens; past this it refuses.
 const MAX_NESTING = 32;
 
+/** A top-level binding of a module: its declared name, or null for a default export or a bare JSON object. */
+export interface ConfigBinding {
+  name: string | null;
+  value: ConfigValue;
+}
+
+/**
+ * The top-level bindings of a JavaScript or TypeScript module, or the whole
+ * text as one binding when it is a bare object (a JSON file): every
+ * `const name = value` (exported or not) and `export default value`, read as
+ * literals. One declarator per statement; anything richer reads as computed.
+ */
+export function readConfigBindings(
+  source: string,
+): { status: 'read'; bindings: ConfigBinding[] } | { status: 'tooDeep' } {
+  const tokens = tokenize(source);
+  const bindings: ConfigBinding[] = [];
+  let depth = 0;
+  let index = 0;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token.kind === 'punct') {
+      if (index === 0 && token.text === '{') {
+        const read = readBindingValue(tokens, index);
+        if (read.status === 'tooDeep') return read;
+        bindings.push({ name: null, value: read.value });
+        index = read.cursor;
+        continue;
+      }
+      if (token.text === '{' || token.text === '[' || token.text === '(') depth += 1;
+      else if (token.text === '}' || token.text === ']' || token.text === ')')
+        depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+    if (depth !== 0) {
+      index += 1;
+      continue;
+    }
+    let keyword = token.text;
+    if (keyword === 'export') {
+      const next = tokens.at(index + 1);
+      if (next?.kind === 'word' && next.text === 'default') {
+        const read = readBindingValue(tokens, index + 2);
+        if (read.status === 'tooDeep') return read;
+        bindings.push({ name: null, value: read.value });
+        index = read.cursor;
+        continue;
+      }
+      if (next?.kind !== 'word' || !isDeclaration(next.text)) {
+        index += 1;
+        continue;
+      }
+      keyword = next.text;
+      index += 1;
+    }
+    if (!isDeclaration(keyword)) {
+      index += 1;
+      continue;
+    }
+    const name = tokens.at(index + 1);
+    if (name?.kind !== 'word') {
+      index += 1;
+      continue;
+    }
+    const equals = bindingEquals(tokens, index + 2);
+    if (equals === null) {
+      index += 1;
+      continue;
+    }
+    const read = readBindingValue(tokens, equals + 1);
+    if (read.status === 'tooDeep') return read;
+    bindings.push({ name: name.text, value: read.value });
+    index = read.cursor;
+  }
+  return { status: 'read', bindings };
+}
+
+function isDeclaration(word: string): boolean {
+  return word === 'const' || word === 'let' || word === 'var';
+}
+
+/** The `=` that starts the value, past a type annotation; null when the statement has none. */
+function bindingEquals(tokens: Token[], start: number): number | null {
+  let inner = 0;
+  for (let index = start; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.kind === 'punct') {
+      // `=>` opens a function type, not a value.
+      if (token.text === '=' && tokens[index + 1]?.text !== '>') return index;
+      if (token.text === ';') return null;
+      if (token.text === '{' || token.text === '[' || token.text === '(') inner += 1;
+      else if (token.text === '}' || token.text === ']' || token.text === ')') {
+        if (inner === 0) return null;
+        inner -= 1;
+      }
+    } else if (inner === 0 && (isDeclaration(token.text) || token.text === 'export')) return null;
+  }
+  return null;
+}
+
+type BindingRead = { status: 'read'; value: ConfigValue; cursor: number } | { status: 'tooDeep' };
+
+/** A binding's value: a literal, with a top-level string or number closed by `;` or `as`. */
+function readBindingValue(tokens: Token[], start: number): BindingRead {
+  const first = tokens.at(start);
+  const after = tokens.at(start + 1);
+  const closes =
+    after === undefined ||
+    (after.kind === 'punct' && after.text === ';') ||
+    (after.kind === 'word' && after.text === 'as');
+  if (first?.kind === 'text' && closes)
+    return {
+      status: 'read',
+      value: { kind: 'text', value: first.text, line: first.line },
+      cursor: start + 1,
+    };
+  const reader = new LiteralReader(tokens, start);
+  const value = reader.value();
+  if (reader.tooDeep) return { status: 'tooDeep' };
+  return { status: 'read', value, cursor: reader.cursor };
+}
+
 /** The object a `theme:` property holds, wherever the config declares it. */
 export function readConfigTheme(
   source: string,
@@ -158,6 +281,11 @@ class LiteralReader {
   private endsValue(index: number): boolean {
     const next = this.tokens.at(index);
     return !next || (next.kind === 'punct' && [',', '}', ']'].includes(next.text));
+  }
+
+  /** Where the reader stopped, so a caller can keep scanning after the value. */
+  get cursor(): number {
+    return this.index;
   }
 
   private at(text: string): boolean {

@@ -1,8 +1,9 @@
 // A user kit from a DESIGN.md, CSS variables and Tailwind configs, pasted (spec
 // §10) or read from a project (design system documents spec §12). Names the
-// shared primitives know are mapped onto their `--ds-*` tokens;
-// every other token is kept under its own name and read back as unmapped, and a
-// declaration that cannot become a token is reported, never dropped quietly.
+// shared primitives know are mapped onto their `--ds-*` tokens; every other
+// token keeps its own name in the kit's namespace (`--bg` is `--ds-bg`) and is
+// read back as unmapped, and a declaration that cannot become a token is
+// reported, never dropped quietly.
 
 import valueParser from 'postcss-value-parser';
 import { buildDocument, CONTRACT_TOKEN_NAMES, type DocumentPart } from './buildDocument.js';
@@ -29,6 +30,7 @@ import {
   placeOf,
   readCss,
   readTailwind,
+  readTokenModule,
   tokenName,
   type Declared,
   type Mode,
@@ -42,7 +44,7 @@ export type ImportDesignSystemResult =
 
 /** One text a kit is made from; a project's names the file it was read from. */
 export interface ImportSource {
-  kind: 'designMd' | 'css' | 'tailwind';
+  kind: 'designMd' | 'css' | 'tailwind' | 'tokens';
   text: string;
   file?: string;
 }
@@ -212,7 +214,9 @@ function readSource(
   const failure =
     kind === 'tailwind'
       ? readTailwind(text, origin, declared, diagnostics)
-      : readCss(text, origin, declared, diagnostics);
+      : kind === 'tokens'
+        ? readTokenModule(text, origin, declared, diagnostics)
+        : readCss(text, origin, declared, diagnostics);
   return failure ? failed([failure, ...diagnostics]) : { status: 'read', notes: [] };
 }
 
@@ -284,6 +288,13 @@ function mapOntoContract(
     if (alias) assign(contractName, `--${alias}`);
   }
 
+  // A name keeps its own spelling when its --ds- form is a primitive's or another source token's.
+  const kitName = (name: string): string => {
+    if (name.startsWith('--ds-')) return name;
+    const prefixed = `--ds-${name.slice('--'.length)}`;
+    const taken = Object.hasOwn(CONTRACT.light, prefixed) || declared.places.has(prefixed);
+    return taken ? name : prefixed;
+  };
   for (const name of declared.places.keys()) {
     if (claimed.has(name)) continue;
     const light = resolved.light.get(name);
@@ -297,8 +308,9 @@ function mapOntoContract(
         message: `${name} has only a ${only} value; both modes use it.`,
         ...placeOf(declared, name, only),
       });
-    modes.light[name] = light ?? either;
-    modes.dark[name] = dark ?? either;
+    const kept = kitName(name);
+    modes.light[kept] = light ?? either;
+    modes.dark[kept] = dark ?? either;
   }
   return modes;
 }

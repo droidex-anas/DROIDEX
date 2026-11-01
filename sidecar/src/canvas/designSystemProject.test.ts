@@ -35,6 +35,7 @@ test('a Tailwind config and its CSS variables make one kit that names the files 
     'src/index.css': `:root {
   --primary: 222 47% 11%;
   --brand-ink: #2b2118;
+  --accent: 210 40% 96%;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.1);
 }
 .dark {
@@ -57,12 +58,71 @@ test('a Tailwind config and its CSS variables make one kit that names the files 
   assert.equal(modes.light['--ds-radius-lg'], '14px');
   // The config's shadow reads the stylesheet's token of the same name.
   assert.equal(modes.dark['--ds-shadow-sm'], '0 1px 2px rgb(0 0 0 / 0.1)');
-  // The config's own colour keeps its name beside the CSS token it reads.
-  assert.deepEqual(unmappedKitTokens(system), ['--brand-ink', '--color-primary']);
-  assert.equal(modes.dark['--color-primary'], 'hsl(210 40% 98%)');
+  // Other tokens keep their names in the kit's namespace, the config's colour
+  // beside the CSS token it reads; one whose --ds- name is a primitive's keeps its own.
+  assert.deepEqual(unmappedKitTokens(system), ['--accent', '--ds-brand-ink', '--ds-color-primary']);
+  assert.equal(modes.dark['--ds-color-primary'], 'hsl(210 40% 98%)');
   assert.deepEqual(
     diagnostics.map(({ code, file, line }) => `${code} ${file ?? ''}:${String(line ?? '')}`),
     ['manual_interpretation_required tailwind.config.js:4'],
+  );
+});
+
+test('a token module and a token file read their literals, per mode, and name what they skip', async (t) => {
+  const root = await project(t, {
+    'src/themeTokens.ts': `export const SKILL_COLORS = {
+  dark: '#93c5fd',
+  light: '#1d4ed8',
+} as const;
+
+const STATUS_COLORS = {
+  success: { dark: '#4fae82', light: '#1f7a4d' },
+};
+
+export const DURATION_QUICK = '150ms';
+export const computed = buildTokens(source);
+`,
+    'tokens.json': JSON.stringify({
+      name: 'Acme',
+      color: {
+        themes: [{ id: 'dark' }, { id: 'light' }],
+        tokens: [
+          { name: 'brand-ink', value: { dark: '#0a0a0a', light: '#f8f7f4' }, usage: 'Text.' },
+          { name: 'space-0.5', value: '2px' },
+        ],
+      },
+      size: { tokens: [{ name: 'brand-ink', value: '480px' }] },
+    }),
+  });
+  const imported = await importProjectDesignSystem(
+    root,
+    [
+      { path: 'src/themeTokens.ts', kind: 'tokens' },
+      { path: 'tokens.json', kind: 'tokens' },
+    ],
+    KIT,
+  );
+  assert.equal(imported.status, 'imported');
+  const modes = kitModes(imported.system.sections);
+  assert.equal(modes.dark['--ds-skill-colors'], '#93c5fd');
+  assert.equal(modes.light['--ds-skill-colors'], '#1d4ed8');
+  assert.equal(modes.dark['--ds-status-colors-success'], '#4fae82');
+  assert.equal(modes.light['--ds-status-colors-success'], '#1f7a4d');
+  assert.equal(modes.light['--ds-duration-quick'], '150ms');
+  assert.equal(modes.dark['--ds-brand-ink'], '#0a0a0a');
+  assert.equal(modes.light['--ds-space-0-5'], '2px');
+  // A record name another value already holds widens by its family.
+  assert.equal(modes.light['--ds-size-brand-ink'], '480px');
+  // The computed binding, the mode list and the rename are reported, not dropped quietly.
+  assert.deepEqual(
+    imported.diagnostics.map(
+      ({ code, file, line }) => `${code} ${file ?? ''}:${String(line ?? '')}`,
+    ),
+    [
+      'manual_interpretation_required src/themeTokens.ts:11',
+      'manual_interpretation_required tokens.json:1',
+      'renamed_token tokens.json:1',
+    ],
   );
 });
 
