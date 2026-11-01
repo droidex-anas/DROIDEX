@@ -22,6 +22,21 @@ function ev(overrides: Partial<TranscriptEvent> & Pick<TranscriptEvent, 'kind'>)
   };
 }
 
+/** A theme save whose note, token and example each carry `marker`. */
+function themeSave(marker: string) {
+  return {
+    operation: 'save',
+    kit: { id: 'acme', baseVersion: 1 },
+    changes: [
+      { set: 'note', label: 'voice.md', body: marker },
+      { set: 'token', name: '--ds-accent', value: marker, section: 'colors', group: 'Brand' },
+    ],
+    examples: { 'Pricing.tsx': marker },
+  };
+}
+
+const PROPOSED = JSON.stringify({ ok: true, status: 'proposed', id: 'acme', baseVersion: 1 });
+
 const META = {
   title: 'Fix the sidebar',
   providerSessionId: 'droid-abc',
@@ -146,6 +161,23 @@ test('native Canvas replay exports safe activity while preserving ordinary tools
       ]),
     );
   }
+  for (const [id, content, isError] of [
+    ['proposed', PROPOSED, false],
+    ['refused', `Tool error: ${canary}`, true],
+  ] as const) {
+    const call = {
+      type: 'tool_use',
+      id,
+      name: 'droidex-canvas___canvas_theme',
+      input: themeSave(canary),
+    };
+    lines.push(
+      line(`call-${id}`, 'assistant', [call]),
+      line(`result-${id}`, 'user', [
+        { type: 'tool_result', tool_use_id: id, content, is_error: isError },
+      ]),
+    );
+  }
   lines.push(
     line('ordinary-call', 'assistant', [
       {
@@ -166,6 +198,8 @@ test('native Canvas replay exports safe activity while preserving ordinary tools
   assert.match(md, /\*\*Canvas:\*\* Updated design · rev-1/);
   assert.match(md, /\*\*Canvas:\*\* Could not update design/);
   assert.match(md, /\*\*Canvas:\*\* Canvas tool stopped\./);
+  assert.match(md, /\*\*Canvas:\*\* Proposed changes to design system acme/);
+  assert.match(md, /\*\*Canvas:\*\* Could not save design system/);
   assert.match(md, /\*\*Tool: mcp__other__canvas_write\*\*/);
   assert.ok(md.includes(`\`\`\`\n${canary}\n\`\`\``));
   assert.ok(md.includes(`## User\n\nPlease show ${canary}`));
@@ -200,21 +234,43 @@ test('Codex Canvas completion, failure and interruption export as safe activity 
   const mapper = new CodexEventMapper(summary.appSessionId);
   const canary = 'CANVAS_INTERNAL_GUIDANCE_7E4B';
   await file.appendPrompt(`Update the card design. Please show ${canary}`);
-  for (const status of ['completed', 'failed', 'interrupted']) {
-    const item = {
-      type: 'dynamicToolCall',
-      id: status,
-      namespace: 'droidex_canvas',
-      tool: 'canvas_write',
-      arguments: { designId: 'design-1', files: { 'src/a.tsx': canary } },
-      contentItems: [{ type: 'inputText', text: canary }],
-      success: status === 'completed',
-    };
+  const run = (item: Record<string, unknown>, status: string) => {
     for (const event of [
       ...mapper.map('item/started', { item: { ...item, status: 'inProgress' } }),
       ...mapper.map('item/completed', { item: { ...item, status } }),
     ])
       flow.apply(summary.appSessionId, summary.appSessionId, 'primary', event);
+  };
+  for (const status of ['completed', 'failed', 'interrupted']) {
+    run(
+      {
+        type: 'dynamicToolCall',
+        id: status,
+        namespace: 'droidex_canvas',
+        tool: 'canvas_write',
+        arguments: { designId: 'design-1', files: { 'src/a.tsx': canary } },
+        contentItems: [{ type: 'inputText', text: canary }],
+        success: status === 'completed',
+      },
+      status,
+    );
+  }
+  for (const [status, text] of [
+    ['completed', PROPOSED],
+    ['failed', canary],
+  ]) {
+    run(
+      {
+        type: 'dynamicToolCall',
+        id: `theme-${status}`,
+        namespace: 'droidex_canvas',
+        tool: 'canvas_theme',
+        arguments: themeSave(canary),
+        contentItems: [{ type: 'inputText', text }],
+        success: status === 'completed',
+      },
+      status,
+    );
   }
   await file.flush();
   const replayed = parseFullSessionTranscript(
@@ -231,10 +287,14 @@ test('Codex Canvas completion, failure and interruption export as safe activity 
       ['completed', undefined],
       ['failed', undefined],
       ['failed', true],
+      ['completed', undefined],
+      ['failed', undefined],
     ],
   );
   const md = transcriptToMarkdown(replayed, META);
   assert.equal(md.split(canary).length - 1, 1, 'only user prose retains the canary');
+  assert.match(md, /\*\*Canvas:\*\* Proposed changes to design system acme/);
+  assert.match(md, /\*\*Canvas:\*\* Could not save design system/);
   assert.match(md, /\*\*Canvas:\*\* Updated design/);
   assert.match(md, /\*\*Canvas:\*\* Could not update design/);
   assert.match(md, /\*\*Canvas:\*\* Canvas tool stopped\./);
