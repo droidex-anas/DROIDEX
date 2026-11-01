@@ -3,10 +3,11 @@
 // right. DocumentNotice is the quiet line under it for a kit that is read-only,
 // and OlderVersionNotice that line over an older version.
 
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ArrowLeft } from '@droidex/icons';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { pushToast } from '../../../lib/toast';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage } from '../client';
@@ -17,6 +18,31 @@ import { useIsMounted } from './useIsMounted';
 import { VersionMenu } from './VersionMenu';
 
 const MAX_NAME_LENGTH = 120;
+
+/**
+ * What the header keeps as its row narrows. It drops, in order, the
+ * Preset/Yours badge, the mode toggle's words, the Board and Sections labels,
+ * most of the primary action's label and last the version button; the name
+ * truncates throughout. Widths are the row's content box, chosen so the row
+ * never overflows with every control present.
+ */
+export interface HeaderRoom {
+  badge: boolean;
+  modeWords: boolean;
+  navWords: boolean;
+  fullPrimary: boolean;
+  version: boolean;
+}
+
+function headerRoom(widthPx: number): HeaderRoom {
+  return {
+    badge: widthPx >= 720,
+    modeWords: widthPx >= 640,
+    navWords: widthPx >= 560,
+    fullPrimary: widthPx >= 440,
+    version: widthPx >= 340,
+  };
+}
 
 export function DocumentHeader({
   view,
@@ -34,14 +60,25 @@ export function DocumentHeader({
   onBack: () => void;
   onShowVersion: (version: number) => void;
   /** The right end: sections, mode, more menu and the primary action. */
-  children: ReactNode;
+  children: (room: HeaderRoom) => ReactNode;
 }) {
+  const headerRef = useRef<HTMLElement>(null);
+  const room = headerRoom(useContentWidth(headerRef));
   const renamed = name !== view.name;
   return (
-    <header className="design-system-document-header flex h-12 shrink-0 items-center gap-2 px-4">
-      <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
-        Board
-      </Button>
+    <header
+      ref={headerRef}
+      className="design-system-document-header flex h-12 shrink-0 items-center gap-2 px-4"
+    >
+      {room.navWords ? (
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
+          Board
+        </Button>
+      ) : (
+        <Tooltip label="Board" placement="bottom">
+          <Button variant="ghost" size="sm" icon={ArrowLeft} aria-label="Board" onClick={onBack} />
+        </Tooltip>
+      )}
       <div className="flex min-w-0 items-center gap-2">
         <UnsavedMark
           mark={renamed ? 'changed' : undefined}
@@ -63,11 +100,47 @@ export function DocumentHeader({
           <h1 className="truncate text-body-strong text-primary">{name}</h1>
         )}
       </div>
-      <VersionMenu id={view.id} shown={view.version} onShow={onShowVersion} />
-      <Badge>{view.kind === 'preset' ? 'Preset' : 'Yours'}</Badge>
-      <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>
+      {room.version && <VersionMenu id={view.id} shown={view.version} onShow={onShowVersion} />}
+      {room.badge && <Badge>{view.kind === 'preset' ? 'Preset' : 'Yours'}</Badge>}
+      <div className="ml-auto flex shrink-0 items-center gap-2">{children(room)}</div>
     </header>
   );
+}
+
+/** The primary action; short, it reads “Use” and names itself in full. */
+export function UseInCanvas({ short, onUse }: { short: boolean; onUse: () => void }) {
+  if (!short)
+    return (
+      <Button variant="primary" size="sm" onClick={onUse}>
+        Use in this canvas
+      </Button>
+    );
+  return (
+    <Tooltip label="Use in this canvas" placement="bottom">
+      <Button variant="primary" size="sm" aria-label="Use in this canvas" onClick={onUse}>
+        Use
+      </Button>
+    </Tooltip>
+  );
+}
+
+/** The element's width inside its padding, measured before paint and on every resize. */
+function useContentWidth(ref: RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(Number.POSITIVE_INFINITY);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const style = getComputedStyle(element);
+    setWidth(element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [ref]);
+  return width;
 }
 
 export function DocumentNotice({ text, children }: { text: string; children: ReactNode }) {

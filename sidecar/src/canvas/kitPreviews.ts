@@ -161,8 +161,10 @@ function exampleName(system: DesignSystem, item: string): string | undefined {
 }
 
 /**
- * Every typography token set on one line of sample text. Kit fonts load only
- * inside a preview guest, so the document shows them through this example.
+ * Every typography token set on one line of sample text, which runs off the
+ * edge rather than wrap so the document can size the tile from the tokens.
+ * Kit fonts load only inside a preview guest, so the document shows them
+ * through this example.
  */
 function typographySpecimen(sections: DocumentSection[]): string {
   const groups: { id: string; title: string; tokens: { name: string; property: string }[] }[] = [];
@@ -180,14 +182,14 @@ function typographySpecimen(sections: DocumentSection[]): string {
 
 export default function Typography() {
   return (
-    <main style={{ display: 'flex', flexDirection: 'column', gap: 32, padding: 32, minHeight: '100vh', boxSizing: 'border-box', background: 'var(--ds-canvas)', color: 'var(--ds-fg)' }}>
+    <main style={{ display: 'flex', flexDirection: 'column', gap: 32, padding: 32, minHeight: '100vh', boxSizing: 'border-box', overflow: 'hidden', background: 'var(--ds-canvas)', color: 'var(--ds-fg)' }}>
       {GROUPS.map((group) => (
         <section key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <h2 style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--ds-fg-muted)' }}>{group.title}</h2>
           {group.tokens.map((token) => (
             <div key={token.name} style={{ display: 'flex', alignItems: 'baseline', gap: 24 }}>
-              <code style={{ flex: '0 0 200px', fontSize: 12, color: 'var(--ds-fg-muted)' }}>{token.name}</code>
-              <span style={{ [token.property]: \`var(\${token.name})\` }}>The quick brown fox jumps over the lazy dog</span>
+              <code style={{ flex: '0 0 200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--ds-fg-muted)' }}>{token.name}</code>
+              <span style={{ whiteSpace: 'nowrap', [token.property]: \`var(\${token.name})\` }}>The quick brown fox jumps over the lazy dog</span>
             </div>
           ))}
         </section>

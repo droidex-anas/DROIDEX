@@ -1,9 +1,36 @@
 /* The docked canvas pane floats its menu and expand button over the top-right
-   corner, where the document's header ends; keep the header's controls clear. */
+   corner, where the document's header ends; keep the header's controls clear of
+   it (the corner is about 110px wide, 8px in from the edge). */
 .canvas-pane-column:has(> .canvas-pane-corner) .design-system-document-header {
-  padding-right: theme('spacing.24');
+  padding-right: theme('spacing.32');
 }
 
 .design-system-document-column {
   scrollbar-gutter: stable;
+}
+
+/* A kit tile's layers cross-fade as icon and text swaps do: a capture as it
+   arrives, and the live guest once it has painted. */
+@keyframes kit-tile-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+.kit-tile-reveal {
+  animation: kit-tile-reveal var(--duration-fast) var(--ease-in-out) both;
+}
+
+.kit-tile-fade {
+  transition: opacity var(--duration-fast) var(--ease-in-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kit-tile-reveal {
+    animation: none;
+  }
+
+  .kit-tile-fade {
+    transition: none;
+  }
 }

@@ -23,12 +23,23 @@ function captureFailure(message = UNAVAILABLE) {
   return { ok: false, error: { code: 'capture_unavailable', message } };
 }
 
+function isIdentifier(id) {
+  return typeof id === 'string' && IDENTIFIER.test(id);
+}
+
 function captureKey(canvasId, designId, revisionId) {
-  if (
-    ![canvasId, designId, revisionId].every((id) => typeof id === 'string' && IDENTIFIER.test(id))
-  )
-    return null;
+  if (![canvasId, designId, revisionId].every(isIdentifier)) return null;
   return JSON.stringify([canvasId, designId, revisionId]);
+}
+
+/** A kit preview names no canvas; its capture is stored with the kit, so main keeps none. */
+function isKitCapture(guest, canvasId, designId, revisionId) {
+  return (
+    canvasId === null &&
+    guest?.binding?.kind === 'kit' &&
+    isIdentifier(designId) &&
+    isIdentifier(revisionId)
+  );
 }
 
 function captureBounds(width, height, scaleFactor) {
@@ -224,13 +235,14 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         height,
         scaleFactor,
       } = request;
-      const key = captureKey(canvasId, designId, revisionId);
       const guest = guests.get(guestId);
+      const isKit = isKitCapture(guest, canvasId, designId, revisionId);
+      const key = isKit ? null : captureKey(canvasId, designId, revisionId);
       if (
         typeof requestId !== 'string' ||
         !IDENTIFIER.test(requestId) ||
         captures.has(requestId) ||
-        !key ||
+        (!isKit && !key) ||
         !guest ||
         guest.capture ||
         guest.contents.isDestroyed() ||
@@ -302,7 +314,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
                 complete(captureFailure());
                 return;
               }
-              cache(key, bytes);
+              if (key) cache(key, bytes);
               complete({ ok: true, mediaType: 'image/png', bytes });
             });
           })

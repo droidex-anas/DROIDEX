@@ -1,7 +1,7 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the four audited literals below.
+// element's `executeJavaScript`, with exactly the five audited literals below.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -115,6 +115,14 @@ export function previewSelectScript(
   sequence: number,
 ): string {
   return `globalThis.__droidexCanvasPreview.select(${jsonArgument({ target, properties, sequence })})`;
+}
+
+/**
+ * Sets a kit's draft token values on the design's root, replacing the set this
+ * guest was given before; an empty set puts the saved values back.
+ */
+export function previewSetTokensScript(tokens: Readonly<Record<string, string>>): string {
+  return `globalThis.__droidexCanvasPreview.setTokens(${jsonArgument({ tokens })})`;
 }
 
 /**

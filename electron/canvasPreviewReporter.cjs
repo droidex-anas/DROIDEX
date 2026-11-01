@@ -14,7 +14,9 @@
  *
  * It also answers the board's selection commands with a `selection` event for
  * the element picked or named, and again whenever that element's box moves,
- * each echoing the sequence number of the command it answers.
+ * each echoing the sequence number of the command it answers. A kit preview's
+ * draft token values arrive as one set that replaces the last, as inline custom
+ * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
  */
 const GENERATED_FRAME_REPORTER = `(() => {
@@ -149,10 +151,19 @@ const GENERATED_FRAME_REPORTER = `(() => {
   addEventListener('scroll', () => {
     if (selected) reportSelection();
   }, true);
+  let draftTokens = [];
+  const setTokens = (tokens) => {
+    const style = document.documentElement.style;
+    for (const name of draftTokens) style.removeProperty(name);
+    draftTokens = Object.keys(tokens);
+    for (const name of draftTokens) style.setProperty(name, tokens[name]);
+  };
   addEventListener('message', (message) => {
     const command = message.data;
     if (message.source !== top || !command || command.canvasPreviewCommand !== nonce) return;
-    if (command.command === 'pick') {
+    if (command.command === 'setTokens') {
+      setTokens(command.tokens);
+    } else if (command.command === 'pick') {
       let node = null;
       if (command.step) {
         const marked = Array.from(document.querySelectorAll('[' + MARKER + ']'));

@@ -51,7 +51,7 @@ export function isTokenName(value: unknown): boolean {
 }
 
 /** A value the sidecar trims and then pastes into a stylesheet rule. */
-function isTokenValue(value: unknown): boolean {
+export function isTokenValue(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const trimmed = value.trim();
   return boundedText(trimmed, MAX_TOKEN_VALUE_LENGTH) && !UNSAFE_TOKEN_VALUE.test(trimmed);

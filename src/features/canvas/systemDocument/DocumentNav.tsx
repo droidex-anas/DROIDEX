@@ -8,6 +8,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
 import { Menu } from '../../../components/ui/Menu';
 import { Popover } from '../../../components/ui/Popover';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
 import { SECTION_TITLES } from './documentDraft';
 import type { SectionKind } from './documentSections';
@@ -150,27 +151,45 @@ function AddSectionMenu({
   );
 }
 
-/** The nav in a popover, for a canvas area too narrow to keep it beside the document. */
-export function SectionsMenu(props: DocumentNavProps) {
+/**
+ * The nav in a popover, for a canvas area too narrow to keep it beside the
+ * document. Unlabelled, its button is the icon alone.
+ */
+export function SectionsMenu({ labelled, ...props }: DocumentNavProps & { labelled: boolean }) {
   const anchorRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const close = () => {
     setOpen(false);
   };
+  const toggle = () => {
+    setOpen((current) => !current);
+  };
   return (
     <>
-      <Button
-        ref={anchorRef}
-        variant="ghost"
-        size="sm"
-        icon={ListFilter}
-        aria-expanded={open}
-        onClick={() => {
-          setOpen((current) => !current);
-        }}
-      >
-        Sections
-      </Button>
+      {labelled ? (
+        <Button
+          ref={anchorRef}
+          variant="ghost"
+          size="sm"
+          icon={ListFilter}
+          aria-expanded={open}
+          onClick={toggle}
+        >
+          Sections
+        </Button>
+      ) : (
+        <Tooltip label="Sections" placement="bottom">
+          <Button
+            ref={anchorRef}
+            variant="ghost"
+            size="sm"
+            icon={ListFilter}
+            aria-label="Sections"
+            aria-expanded={open}
+            onClick={toggle}
+          />
+        </Tooltip>
+      )}
       <Popover
         open={open}
         onClose={close}

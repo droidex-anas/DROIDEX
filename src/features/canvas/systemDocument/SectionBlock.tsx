@@ -17,8 +17,10 @@ import type { DraftChange } from './documentDraft';
 import type { DocumentItem, DraftMark } from './documentSections';
 import { PreviewItem } from './DocumentPreview';
 import { InlineField, type InlineFieldHandle } from './InlineField';
+import type { KitPreviewing } from './KitPreviewTile';
 import { NoteCard } from './NoteCard';
 import { TokenTable } from './TokenTable';
+import { TypeSpecimen, type TypeSpecimenSize } from './TypeSpecimen';
 import { UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TITLE_LENGTH = 120;
@@ -44,6 +46,8 @@ export function SectionBlock({
   tokenNames,
   noteLabels,
   previewTitles,
+  previewing,
+  typeSpecimen,
   justAdded,
   editing,
 }: {
@@ -57,6 +61,9 @@ export function SectionBlock({
   tokenNames: ReadonlySet<string>;
   noteLabels: ReadonlySet<string>;
   previewTitles: ReadonlySet<string>;
+  previewing: KitPreviewing;
+  /** The saved version's type specimen, which follows this section's groups. */
+  typeSpecimen: TypeSpecimenSize | null;
   /** The item or section the user just added, which opens for editing. */
   justAdded: string | null;
   editing: SectionEditing | null;
@@ -185,6 +192,7 @@ export function SectionBlock({
             key={item.id}
             preview={item}
             mark={itemMark}
+            previewing={previewing}
             previewTitles={previewTitles}
             actions={itemActions(item.id)}
             onChange={onChange}
@@ -269,6 +277,7 @@ export function SectionBlock({
                 renderItem(run.item)
               ),
             )}
+            {typeSpecimen && <TypeSpecimen size={typeSpecimen} previewing={previewing} />}
           </div>
         ))}
     </section>

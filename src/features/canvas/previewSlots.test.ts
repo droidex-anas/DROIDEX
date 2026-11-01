@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  documentSlotOrder,
   MAX_LIVE_PREVIEWS,
   NO_PREVIEW_SLOTS,
   reducePreviewSlots,
@@ -65,6 +66,21 @@ test('selection claims a slot ahead of a frame that merely sits nearer', () => {
 
   assert.ok(slots.live.includes('e'));
   assert.deepEqual(slots.live, ['e', 'a', 'b', 'c']);
+});
+
+test("a document's nearest tiles take slots from farther live ones, past a small margin", () => {
+  const held: PreviewSlots = { live: ['a', 'b', 'c', 'd'], released: [] };
+  const claim = (distancesPx: Record<string, number>) => {
+    const order = documentSlotOrder(new Map(Object.entries(distancesPx)), held.live);
+    return reducePreviewSlots(held, request({ visible: order, selected: order }));
+  };
+
+  const scrolled = claim({ e: 0, a: 100, b: 200, c: 300, d: 400 });
+  assert.deepEqual(scrolled.live, ['e', 'a', 'b', 'c']);
+  assert.deepEqual(scrolled.released, ['d']);
+
+  // A pixel nearer than 'd' is not reason enough to stop a running preview.
+  assert.equal(claim({ a: 0, b: 100, c: 200, d: 300, e: 299 }), held);
 });
 
 test('a released frame says so until it is live again', () => {

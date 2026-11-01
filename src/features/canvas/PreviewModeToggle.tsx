@@ -1,5 +1,9 @@
 // Light or dark: which of a kit's two token sets the dialog and the picker show.
 
+import { Moon, Sun } from '@droidex/icons';
+import { Button } from '../../components/ui/Button';
+import { Tooltip } from '../../components/ui/Tooltip';
+
 export type PreviewMode = 'light' | 'dark';
 
 export function PreviewModeToggle({
@@ -32,5 +36,30 @@ export function PreviewModeToggle({
         </button>
       ))}
     </div>
+  );
+}
+
+/** The toggle as one icon button for a crowded row: it shows the mode and switches to the other. */
+export function PreviewModeButton({
+  mode,
+  onChange,
+}: {
+  mode: PreviewMode;
+  onChange: (mode: PreviewMode) => void;
+}) {
+  const other = mode === 'light' ? 'dark' : 'light';
+  const label = `${mode === 'light' ? 'Light' : 'Dark'} preview. Switch to ${other}`;
+  return (
+    <Tooltip label={label} placement="bottom">
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={mode === 'light' ? Sun : Moon}
+        aria-label={label}
+        onClick={() => {
+          onChange(other);
+        }}
+      />
+    </Tooltip>
   );
 }

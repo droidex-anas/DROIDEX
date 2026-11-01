@@ -1,6 +1,5 @@
-// A component preview or demo (spec §5, §7): its title, an optional note and a
-// tile at the item's size, scaled down to the column and never up. Slice 2a
-// renders the kit in the tile; until then it is a titled placeholder.
+// A component preview or demo (spec §5, §7): its title, an optional note and
+// the kit's tile of it.
 
 import { useRef, useState } from 'react';
 import { MessageSquareText } from '@droidex/icons';
@@ -11,6 +10,7 @@ import { ActionMenu, type MenuAction } from './ActionMenu';
 import type { DraftChange } from './documentDraft';
 import type { DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
+import { KitPreviewTile, type KitPreviewing } from './KitPreviewTile';
 import { NotePopover } from './NotePopover';
 import { UndoRemove, UnsavedMark } from './UnsavedMark';
 
@@ -20,12 +20,14 @@ const MAX_PREVIEW_NOTE_BYTES = 1024;
 export function PreviewItem({
   preview,
   mark,
+  previewing,
   previewTitles,
   actions,
   onChange,
 }: {
   preview: DocumentPreview;
   mark: DraftMark | undefined;
+  previewing: KitPreviewing;
   /** Every preview title in the draft, which a renamed preview may not take. */
   previewTitles: ReadonlySet<string>;
   /** The preview's move and remove actions. */
@@ -101,7 +103,18 @@ export function PreviewItem({
         <p className="max-w-2xl whitespace-pre-wrap text-body text-secondary">{preview.note}</p>
       )}
       {!isRemoved && (
-        <PreviewTile title={preview.title} width={preview.width} height={preview.height} />
+        <KitPreviewTile
+          previewing={previewing}
+          item={preview.id}
+          label={`${preview.title} preview`}
+          width={preview.width}
+          height={preview.height}
+          placeholder={
+            <span className="flex size-full items-center justify-center text-label text-muted">
+              {preview.title}
+            </span>
+          }
+        />
       )}
       {noteOpen && edit && (
         <NotePopover
@@ -118,18 +131,5 @@ export function PreviewItem({
         />
       )}
     </figure>
-  );
-}
-
-function PreviewTile({ title, width, height }: { title: string; width: number; height: number }) {
-  return (
-    <div
-      role="img"
-      aria-label={`${title} preview`}
-      className="flex w-full items-center justify-center rounded-lg bg-surface text-label text-muted"
-      style={{ maxWidth: width, aspectRatio: `${String(width)} / ${String(height)}` }}
-    >
-      {title}
-    </div>
   );
 }

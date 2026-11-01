@@ -21,7 +21,7 @@ import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPa
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
 import type { DesignSystemDocumentView, DesignSystemProvenance } from '../protocol';
-import { PreviewModeToggle, type PreviewMode } from '../PreviewModeToggle';
+import { PreviewModeButton, PreviewModeToggle, type PreviewMode } from '../PreviewModeToggle';
 import { DocumentCover } from './DocumentCover';
 import {
   addableSectionKinds,
@@ -35,11 +35,12 @@ import {
   useDocumentDraft,
   type DraftChange,
 } from './documentDraft';
-import { DocumentHeader, DocumentNotice, OlderVersionNotice } from './DocumentHeader';
+import { DocumentHeader, DocumentNotice, OlderVersionNotice, UseInCanvas } from './DocumentHeader';
 import { DocumentMenu, useDuplicate } from './DocumentMenu';
 import { DocumentNav, SectionsMenu, useActiveSection, type DocumentNavProps } from './DocumentNav';
 import { itemCount, searchSections } from './documentSearch';
 import {
+  changedTokenValues,
   documentNames,
   draftDiff,
   isMarked,
@@ -49,14 +50,18 @@ import {
   type SectionKind,
 } from './documentSections';
 import { SaveBar, useSaveDraft } from './SaveBar';
+import type { KitPreviewing } from './KitPreviewTile';
 import { SectionBlock, type SectionEditing } from './SectionBlock';
 import { specimenProperties } from './specimenStyle';
+import { typeSpecimenSize } from './TypeSpecimen';
 import { useDesignSystemDocument } from './useDesignSystemDocument';
+import { useKitPreviewSlots } from './useKitPreviewSlots';
 import './designSystemDocument.css';
 
 // Below this canvas width the nav folds into the header's Sections menu.
 const NAV_FOLD_WIDTH_PX = 960;
 const NO_MARKS: ReadonlyMap<string, DraftMark> = new Map();
+const NO_TOKENS: Readonly<Record<string, string>> = {};
 
 export function DesignSystemDocument({
   appSessionId,
@@ -182,6 +187,18 @@ function KitDocument({
   const baseTokens = new Map(
     Array.from(tokensByName(base.sections), ([name, { token }]) => [name, token]),
   );
+  // Previews build from the version the draft is based on, and show the draft's values live.
+  const draftTokens = useMemo(
+    () => (editing ? changedTokenValues(editing.base.sections, editing.sections, mode) : NO_TOKENS),
+    [editing, mode],
+  );
+  const slots = useKitPreviewSlots(scrollRef, base);
+  const typeSpecimen = typeSpecimenSize(base.sections);
+  const previewing: KitPreviewing = {
+    kit: { id: base.id, version: base.version, mode },
+    draftTokens,
+    ...slots,
+  };
 
   // Scrolls the column alone: scrollIntoView would also scroll the pane's
   // clipped ancestors and push the header out of the window.
@@ -271,22 +288,27 @@ function KitDocument({
           void onShow(version);
         }}
       >
-        {!wide && <SectionsMenu {...navProps} />}
-        <PreviewModeToggle mode={mode} onChange={setMode} />
-        <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
-        {isLatest && !editing && !isChosen && (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              chooseDesignSystem(canvasKey, {
-                ref: { id: view.id, version: view.version, mode },
-                name: view.name,
-              });
-            }}
-          >
-            Use in this canvas
-          </Button>
+        {(room) => (
+          <>
+            {!wide && <SectionsMenu {...navProps} labelled={room.navWords} />}
+            {room.modeWords ? (
+              <PreviewModeToggle mode={mode} onChange={setMode} />
+            ) : (
+              <PreviewModeButton mode={mode} onChange={setMode} />
+            )}
+            <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
+            {isLatest && !editing && !isChosen && (
+              <UseInCanvas
+                short={!room.fullPrimary}
+                onUse={() => {
+                  chooseDesignSystem(canvasKey, {
+                    ref: { id: view.id, version: view.version, mode },
+                    name: view.name,
+                  });
+                }}
+              />
+            )}
+          </>
         )}
       </DocumentHeader>
       {!isLatest && <OlderVersionNotice key={view.version} view={view} onShow={onShow} />}
@@ -310,7 +332,14 @@ function KitDocument({
         >
           <div className="flex flex-col gap-8 px-8 pb-8 pt-2">
             <div className="flex flex-col gap-2">
-              <DocumentCover name={working.name} cover={working.cover} specimen={specimens[mode]} />
+              <DocumentCover
+                appSessionId={appSessionId}
+                name={working.name}
+                cover={working.cover}
+                specimen={specimens[mode]}
+                previewing={previewing}
+                canRegenerate={canEdit}
+              />
               <ProvenanceLine provenance={view.provenance} unmapped={view.unmapped.length} />
             </div>
             {visible.map((section) => (
@@ -326,6 +355,8 @@ function KitDocument({
                 tokenNames={names.tokenNames}
                 noteLabels={names.noteLabels}
                 previewTitles={names.previewTitles}
+                previewing={previewing}
+                typeSpecimen={section.kind === 'typography' ? typeSpecimen : null}
                 justAdded={justAdded}
                 editing={sectionEditing(section)}
               />

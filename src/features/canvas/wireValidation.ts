@@ -92,8 +92,10 @@ const MAX_REVISION_DIFF_BYTES = 256 * 1024;
 // `LIBRARY_LIST_LIMIT` in the sidecar's canvasLibrary.ts.
 const MAX_LIBRARY_ITEMS = 50;
 // A tile's picture: `MAX_THUMBNAIL_BASE64_LENGTH` in the sidecar's canvasLibrary.ts
-// and `MAX_COVER_BASE64_LENGTH` in its canvasCovers.ts, which kit captures share.
+// and `MAX_COVER_BASE64_LENGTH` in its canvasCovers.ts.
 export const MAX_TILE_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
+// A kit preview's capture in device pixels: `MAX_KIT_CAPTURE_BASE64_LENGTH` in the sidecar's kitCaptures.ts.
+export const MAX_KIT_CAPTURE_BASE64_LENGTH = Math.ceil((2 * 1024 * 1024) / 3) * 4;
 // The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
 const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
@@ -201,11 +203,9 @@ function isReply(value: unknown): boolean {
       return isKitPreview(value.preview);
     case 'libraryThumbnail':
     case 'cover':
+      return isPngOrNone(value.png, MAX_TILE_BASE64_LENGTH);
     case 'kitCapture':
-      return (
-        value.png === null ||
-        (typeof value.png === 'string' && value.png.length <= MAX_TILE_BASE64_LENGTH)
-      );
+      return isPngOrNone(value.png, MAX_KIT_CAPTURE_BASE64_LENGTH);
     case 'removalPreview':
       return (
         record(value.preview) &&
@@ -219,6 +219,11 @@ function isReply(value: unknown): boolean {
     default:
       return true;
   }
+}
+
+/** A base64 PNG within `maxLength`, or null where there is none. */
+function isPngOrNone(value: unknown, maxLength: number): boolean {
+  return value === null || (typeof value === 'string' && value.length <= maxLength);
 }
 
 function isLibraryItem(value: unknown): boolean {
