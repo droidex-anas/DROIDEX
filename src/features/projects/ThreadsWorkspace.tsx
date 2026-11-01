@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
@@ -6,7 +7,7 @@ import type { TranscriptEvent } from '../../types/bridge';
 import { resumeProject } from './client';
 import { PaneTransition } from './PaneTransition';
 import { ThreadDetail } from './ThreadDetail';
-import { ThreadList } from './ThreadList';
+import { ThreadList, type ThreadListView } from './ThreadList';
 import type { ThreadRow } from './threadBoard';
 import type { ProjectStep } from './types';
 import { entryForSession, useProjectBoard } from './useProjectBoard';
@@ -24,6 +25,7 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
   const reduceMotion = useReducedMotion() === true;
   const { entries } = useProjectBoard();
   const now = useRelativeTimeNow();
+  const [view, setView] = useState<ThreadListView>('threads');
   const { threadId } = tab;
   const state = useStoreSelector((current) => {
     const session = current.activeAppSessionId
@@ -87,6 +89,8 @@ export function ThreadsWorkspace({ tab }: { tab: UtilityTab }) {
             now={now}
             error={project?.error ?? ''}
             activeAppSessionId={session?.appSessionId}
+            view={view}
+            onViewChange={setView}
             onOpenThread={showThread}
           />
         )}
