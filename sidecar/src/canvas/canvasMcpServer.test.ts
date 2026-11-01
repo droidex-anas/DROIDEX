@@ -94,6 +94,10 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
     if (purpose === 'design') {
       assert.match(result.instructions, /complete working React\/TSX files/);
       assert.match(result.instructions, /Tailwind available; a plain HTML document is not a frame/);
+      assert.match(
+        result.instructions,
+        /save a kit with canvas_theme save instead of drawing frames/,
+      );
       assert.equal(result.instructions.includes(DESIGN_SESSION_GUIDANCE), false);
     }
     const write = server.tools.find((entry) => entry.name === 'canvas_write');
