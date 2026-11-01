@@ -11,7 +11,7 @@ export const DOCUMENT_LIMITS = {
   maxSections: 16,
   maxItemsPerSection: 64,
   maxTitleLength: 120,
-  maxTokens: 128,
+  maxTokens: 256,
   maxTokenValueLength: 160,
   maxTokenNoteBytes: 400,
   maxNoteBytes: 8 * 1024,
@@ -33,6 +33,8 @@ export const TOKEN_KINDS = [
   'spacing',
   'radius',
   'shadows',
+  'size',
+  'z-index',
   'motion',
   'tokens',
 ] as const;

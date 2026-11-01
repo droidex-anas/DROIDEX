@@ -43,7 +43,7 @@ test('both boundaries accept the DROIDEX document and refuse the same ones past 
   assert.deepEqual(acceptedBy(DROIDEX_DOCUMENT_SECTIONS), { sidecar: true, renderer: true });
 
   const [overview, colors, shadows, components] = DROIDEX_DOCUMENT_SECTIONS;
-  const manyNames = Array.from({ length: 125 }, (_, index) => `--other-${String(index)}`);
+  const manyNames = Array.from({ length: 253 }, (_, index) => `--other-${String(index)}`);
   const copiedLabel = {
     ...overview,
     items: [...overview.items, { ...overview.items[0], id: 'rules-copy' }],
@@ -55,7 +55,7 @@ test('both boundaries accept the DROIDEX document and refuse the same ones past 
     ),
   };
   const refused: Record<string, DocumentSection[]> = {
-    'more than 128 tokens': [...DROIDEX_DOCUMENT_SECTIONS, tokenSection('other', manyNames)],
+    'more than 256 tokens': [...DROIDEX_DOCUMENT_SECTIONS, tokenSection('other', manyNames)],
     'a token in two sections': [
       ...DROIDEX_DOCUMENT_SECTIONS,
       tokenSection('other', ['--ds-accent']),

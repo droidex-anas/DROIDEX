@@ -36,6 +36,8 @@ export const SECTION_TITLES: Record<DocumentSection['kind'], string> = {
   spacing: 'Spacing',
   radius: 'Corner radius',
   shadows: 'Shadows',
+  size: 'Size',
+  'z-index': 'Z index',
   motion: 'Motion',
   tokens: 'Other tokens',
   components: 'Components',

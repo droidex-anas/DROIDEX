@@ -66,6 +66,20 @@ test('changes find tokens, notes and previews by their natural keys and keep the
   assert.deepEqual(base, DROIDEX_DESIGN_SYSTEM.sections, 'the base is not changed');
 });
 
+test('Size and Z index sections are created between Shadows and Motion', () => {
+  const changed = apply(
+    { set: 'token', name: '--ds-z-popover', value: '1000', section: 'z-index', group: 'Layers' },
+    { set: 'token', name: '--ds-control-md', value: '32px', section: 'size', group: 'Controls' },
+  );
+  const titles = changed.map((section) => section.title);
+  assert.deepEqual(titles.slice(titles.indexOf('Shadows'), titles.indexOf('Motion') + 1), [
+    'Shadows',
+    'Size',
+    'Z index',
+    'Motion',
+  ]);
+});
+
 test('a new token needs its section and group; other new items go to the first section of their kind', () => {
   assert.throws(() => apply({ set: 'token', name: '--ds-glow', value: '#fff' }), {
     code: 'invalid_input',
