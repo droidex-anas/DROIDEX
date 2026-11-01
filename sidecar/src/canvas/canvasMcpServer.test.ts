@@ -100,6 +100,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
       );
       assert.match(result.instructions, /UI icons come from lucide-react, never emoji/);
       assert.match(result.instructions, /real mark from simple-icons/);
+      assert.match(result.instructions, /foreground as currentColor on dark or coloured fills/);
       assert.equal(result.instructions.includes(DESIGN_SESSION_GUIDANCE), false);
     }
     const write = server.tools.find((entry) => entry.name === 'canvas_write');
