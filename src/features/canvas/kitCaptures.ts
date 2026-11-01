@@ -21,6 +21,11 @@ const MODES: readonly PreviewMode[] = ['light', 'dark'];
 const captures = new KitCaptureCache(32 * 1024 * 1024);
 const reading = new Set<string>();
 const listeners = new Set<() => void>();
+// Reads share the canvas client's pending-request cap with kit fonts and preview
+// builds, so a document with many tiles reads its stills a few at a time.
+const MAX_READS_IN_FLIGHT = 8;
+let readsInFlight = 0;
+const waitingReads: (() => void)[] = [];
 
 function captureKey(ref: DesignSystemRef, item: string): string {
   return JSON.stringify([ref.id, ref.version, ref.mode, item]);
@@ -29,6 +34,23 @@ function captureKey(ref: DesignSystemRef, item: string): string {
 function show(key: string, png: string | null): void {
   captures.set(key, png === null ? null : `data:image/png;base64,${png}`);
   for (const listener of listeners) listener();
+}
+
+function readCapture(ref: DesignSystemRef, item: string): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const start = () => {
+      readsInFlight += 1;
+      canvasClient.designSystems
+        .readCapture(ref, item)
+        .then(resolve, reject)
+        .finally(() => {
+          readsInFlight -= 1;
+          waitingReads.shift()?.();
+        });
+    };
+    if (readsInFlight < MAX_READS_IN_FLIGHT) start();
+    else waitingReads.push(start);
+  });
 }
 
 function subscribe(listener: () => void): () => void {
@@ -56,8 +78,7 @@ export function useKitCapture(
     const release = captures.hold(key);
     if (captures.has(key) || reading.has(key)) return release;
     reading.add(key);
-    canvasClient.designSystems
-      .readCapture({ id, version, mode }, item)
+    readCapture({ id, version, mode }, item)
       .then(
         (png) => {
           if (!captures.has(key)) show(key, png);
