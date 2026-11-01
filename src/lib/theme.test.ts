@@ -125,6 +125,7 @@ describe('deriveThemeTokens', () => {
       '--surface',
       '--elevated',
       '--field',
+      '--field-raised',
       '--active',
       '--raised',
       '--sidebar',
@@ -162,6 +163,13 @@ describe('deriveThemeTokens', () => {
         assert.ok(hover >= 1.12, `${name} hover on ${ground} is ${hover.toFixed(3)}:1`);
         assert.ok(selected >= 1.28, `${name} selection on ${ground} is ${selected.toFixed(3)}:1`);
       }
+    }
+  });
+
+  it('keeps a field visible inside a floating layer', () => {
+    for (const { name, tokens } of EVERY_VARIANT) {
+      const ratio = contrastRatio(tokens['--field-raised'], tokens['--raised']);
+      assert.ok(ratio >= 1.05, `${name} field on --raised is ${ratio.toFixed(3)}:1`);
     }
   });
 

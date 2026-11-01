@@ -65,6 +65,7 @@
     --surface: #111111;
     --elevated: #1e1e1e;
     --field: #1e1e1e;
+    --field-raised: #141414;
     --active: #2b2b2b;
     --raised: #1e1e1e;
     --sidebar: #111111;
@@ -1041,11 +1042,13 @@
      <body>, outside #root's zoom, so it applies the UI zoom itself, and its
      max height converts the room usePopoverPosition measured in screen
      pixels into its own zoomed units. A layer can reach over the title bar,
-     so it punches a no-drag hole there to keep its controls pressable. */
+     so it punches a no-drag hole there to keep its controls pressable. Its
+     fields take the fill tuned for the raised layer (deriveThemeTokens). */
   .floating-layer {
     zoom: var(--ui-zoom);
     max-height: calc(var(--available-height, 100vh) / var(--ui-zoom));
     -webkit-app-region: no-drag;
+    --field: var(--field-raised);
   }
 
   /* Enter from the side the layer actually landed on (data-side): fade in
