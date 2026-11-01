@@ -114,6 +114,9 @@ export default {
           { lineHeight: '1.5', letterSpacing: '0px', fontWeight: '400' },
         ],
         'code-sm': ['11px', { lineHeight: '16px', letterSpacing: '0px', fontWeight: '400' }],
+        // Inline code (`.inline-code`) takes the size of the text around it,
+        // scaled so SF Mono's x-height meets SF Pro's: 13.44px in 14px prose.
+        'code-inline': '0.96em',
       },
       height: sizes,
       // The fixed shell columns (rules.md "Sizes"): `w-sidebar`, the floating

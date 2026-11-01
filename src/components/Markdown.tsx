@@ -270,8 +270,8 @@ function createMarkdownComponents(specMode: boolean): Components {
           <span
             className={`underline decoration-transparent underline-offset-2 transition-colors group-hover/link:decoration-current ${textIsUrl && !named ? 'break-all' : ''}`}
           >
-            {/* A path used as a link label stays a plain pill: the link is the
-                control, and a button cannot nest inside an anchor. */}
+            {/* A path used as a link label stays plain inline code: the link is
+                the control, and a button cannot nest inside an anchor. */}
             {named ? link.label : <ProseFileLinks>{children}</ProseFileLinks>}
           </span>
         </a>
@@ -292,7 +292,7 @@ function createMarkdownComponents(specMode: boolean): Components {
     hr: () => <hr className={`border-0 h-px bg-divider/25 ${specMode ? 'my-8' : 'my-4'}`} />,
     // A fence is the only markdown that produces <pre>, so <pre> owns block
     // code and <code> is always inline. A fence without a language therefore
-    // still gets a code card instead of an inline pill on every line, and each
+    // still gets a code card instead of inline code on every line, and each
     // fenced renderer owns its frame, avoiding invalid <pre><div> nesting.
     pre: ({ children, node }) => {
       const fence = node?.children.at(0);
@@ -402,7 +402,7 @@ function MarkdownImpl({
     </div>
   );
   // Text the user typed names files they already have in front of them, so a
-  // prompt bubble stays reading matter: its mentions keep the plain pill.
+  // prompt bubble stays reading matter: its mentions stay plain inline code.
   return authored ? <ProseFileLinks>{tree}</ProseFileLinks> : tree;
 }
 

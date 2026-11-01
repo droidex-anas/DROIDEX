@@ -112,6 +112,7 @@ Small engineering choices that decide whether the app feels finished.
 **Text and inputs**
 
 - **Inline links** use `.inline-link` (`src/index.css`): coloured text that underlines on hover, the same as Markdown links. Give it `text-link` for a URL, or the entity's own colour for an in-app name; don't hand-roll `underline` and `hover:` styles.
+- **Inline code** uses `.inline-code` (`src/index.css`) everywhere it sits in running text, the transcript and the composer alike: `code-inline` mono with no box and no padding, so a selection stays one band. With `role="button"` it is a path that opens in Review, with a faint hairline underline that firms up on hover and focus.
 - **Text wrapping.** Use `text-wrap: balance` on headings and `text-wrap: pretty` on `prose`, so no orphaned single words.
 - **Truncate where the meaning is.** Paths truncate in the middle (`src/…/Popover.tsx`), branch names at the end. Show the full value in a tooltip.
 - **Inputs for code-ish values** (branch names, paths, commands) get `spellCheck={false} autoCorrect="off" autoCapitalize="off"`.
