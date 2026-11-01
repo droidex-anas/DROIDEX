@@ -54,7 +54,7 @@ export function ProposalLine({
       <div
         inert={!open}
         className={cn(
-          'min-h-0 overflow-hidden transition-opacity duration-150 ease-out',
+          'min-h-0 overflow-hidden transition-opacity duration-quick ease-out motion-reduce:transition-none',
           !open && 'opacity-0',
         )}
       >

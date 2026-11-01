@@ -60,7 +60,7 @@ export default function KitChip({
         disabled={kit === null}
         onClick={open}
         aria-label={reviews ? `Review the proposed changes to ${name}` : `Open ${name}`}
-        className="inline-flex h-control-sm min-w-0 items-center gap-1.5 rounded-md bg-elevated pl-1 pr-2 text-label text-primary transition-colors duration-150 ease-smooth-out enabled:hover:bg-active disabled:cursor-default disabled:text-muted"
+        className="inline-flex h-control-sm min-w-0 items-center gap-1.5 rounded-md bg-elevated pl-1 pr-2 text-label text-primary transition-colors duration-quick ease-out enabled:hover:bg-active disabled:cursor-default disabled:text-muted"
       >
         {kit ? (
           <span className={cn('flex shrink-0', listedLate && 'animate-fade-in')}>
@@ -71,7 +71,7 @@ export default function KitChip({
         )}
         <span className="truncate">{name}</span>
         {status !== 'proposed' && (
-          <span className="shrink-0 tabular-nums text-muted">· v{version}</span>
+          <span className="shrink-0 font-normal text-muted">· v{version}</span>
         )}
       </button>
       {kit === null && <span className="shrink-0 text-muted">· no longer saved</span>}
