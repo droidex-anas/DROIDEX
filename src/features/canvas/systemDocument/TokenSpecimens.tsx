@@ -1,8 +1,8 @@
-// What a token holds, drawn: a colour swatch, or a spacing, radius or shadow
-// specimen. The kit's own tokens reach them as custom properties on `style`.
+// What a token holds, drawn: a colour swatch, a length bar, a rounded square
+// for a corner radius, or a card carrying a shadow. The kit's own tokens reach
+// them as custom properties on `style`.
 
 import type { CSSProperties } from 'react';
-import type { TokenKind } from '../designSystemDocumentProtocol';
 import { isPaintable } from './specimenStyle';
 
 export function Swatch({ name, style }: { name: string; style: CSSProperties }) {
@@ -30,16 +30,16 @@ export function LiveSwatch({ value }: { value: string }) {
 }
 
 export function Specimen({
-  kind,
+  shape,
   name,
   style,
 }: {
-  kind: TokenKind;
+  shape: 'radius' | 'length';
   name: string;
   style: CSSProperties;
 }) {
   const paint = `var(${name})`;
-  if (kind === 'spacing')
+  if (shape === 'length')
     return (
       <span
         aria-hidden="true"
@@ -47,19 +47,43 @@ export function Specimen({
         style={{ ...style, width: paint }}
       />
     );
-  if (kind === 'radius')
-    return (
-      <span
-        aria-hidden="true"
-        className="size-8 bg-accent/15"
-        style={{ ...style, borderRadius: paint }}
-      />
-    );
   return (
     <span
       aria-hidden="true"
-      className="h-8 w-14 rounded-md bg-raised"
-      style={{ ...style, boxShadow: paint }}
+      className="size-8 bg-accent/15"
+      style={{ ...style, borderRadius: paint }}
     />
+  );
+}
+
+const TILE_SIZE = {
+  row: { tile: 'h-8 w-11 rounded-md', card: 'h-4 w-6 rounded-sm' },
+  editor: { tile: 'h-20 flex-1 rounded-lg', card: 'h-9 w-16 rounded-md' },
+};
+
+/** A card on the kit's canvas, carrying `shadow` in the mode whose tokens `style` holds. */
+export function ShadowTile({
+  shadow,
+  style,
+  size,
+}: {
+  shadow: string;
+  style: CSSProperties;
+  size: keyof typeof TILE_SIZE;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex shrink-0 items-center justify-center ${TILE_SIZE[size].tile}`}
+      style={{ ...style, background: 'var(--ds-canvas, var(--ds-surface, var(--surface)))' }}
+    >
+      <span
+        className={TILE_SIZE[size].card}
+        style={{
+          background: 'var(--ds-raised, var(--ds-surface, var(--raised)))',
+          boxShadow: shadow,
+        }}
+      />
+    </span>
   );
 }

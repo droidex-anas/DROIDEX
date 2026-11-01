@@ -91,6 +91,7 @@ export function AddToken({
         add();
       }}
     >
+      {/* Flex basis sizes the fields: Input's own w-full outranks a width class. */}
       <div className="flex items-center gap-2">
         <Input
           ref={nameRef}
@@ -104,7 +105,7 @@ export function AddToken({
             setName(event.target.value);
             setProblem(null);
           }}
-          className="w-1/3"
+          className="basis-1/3"
         />
         <Input
           variant="compact"
