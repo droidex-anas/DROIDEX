@@ -47,7 +47,7 @@ export function PreviewItem({
   };
 
   return (
-    <figure className="flex flex-col gap-2">
+    <figure data-item-id={preview.id} className="flex scroll-mt-4 flex-col gap-2">
       <figcaption className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={mark} />
         {edit ? (

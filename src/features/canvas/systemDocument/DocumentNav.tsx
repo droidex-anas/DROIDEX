@@ -1,9 +1,24 @@
-// The section nav (spec §5): search, one entry per section with its count and
-// a dot when it has unsaved changes, and a "+ Section" row that adds a notes
-// section in user kits. Under about 720 px the same nav opens from the
-// header's Sections button instead.
+// The section nav (spec §5): search, one entry per section with its icon, its
+// count and a dot when it has unsaved changes, a "+ Section" row that adds a
+// notes section in user kits, and the kit's files. Under about 720 px the same
+// nav opens from the header's Sections button instead.
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import {
+  BookOpen,
+  Box,
+  Circle,
+  Copy,
+  Hash,
+  ImageIcon,
+  Layers,
+  MoveHorizontal,
+  Palette,
+  Scan,
+  Type,
+  Wind,
+  type LucideIcon,
+} from 'lucide-react';
 import { ListFilter, Plus, Search } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
@@ -11,9 +26,13 @@ import { Popover } from '../../../components/ui/Popover';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
 import { pushEscapeLayer } from '../../../components/ui/escapeStack';
+import type { DocumentSection } from '../designSystemDocumentProtocol';
+import { FilesRow } from './FilesRow';
+import type { KitFile } from './kitFiles';
 
 export interface NavEntry {
   id: string;
+  kind: DocumentSection['kind'];
   title: string;
   count: number;
   isMarked: boolean;
@@ -28,10 +47,36 @@ export interface DocumentNavProps {
   onJump: (id: string) => void;
   /** Adds a notes section with the typed title; null for a kit that cannot be edited. */
   onAddSection: ((title: string) => void) | null;
+  files: KitFile[];
+  onOpenFile: (file: KitFile) => void;
 }
 
 // How far below the column's top a section's heading must pass to be current.
 const ACTIVE_OFFSET_PX = 96;
+
+const KIND_ICON: Partial<Record<DocumentSection['kind'], LucideIcon>> = {
+  colors: Palette,
+  typography: Type,
+  spacing: MoveHorizontal,
+  radius: Scan,
+  shadows: Copy,
+  motion: Wind,
+  components: Box,
+  assets: ImageIcon,
+};
+
+// Notes and other-token sections say what they hold only in their title.
+const TITLE_ICON = new Map<string, LucideIcon>([
+  ['overview', BookOpen],
+  ['size', Circle],
+  ['sizes', Circle],
+  ['zindex', Layers],
+]);
+
+function sectionIcon(entry: NavEntry): LucideIcon {
+  const titleKey = entry.title.toLowerCase().replace(/[^a-z]/g, '');
+  return KIND_ICON[entry.kind] ?? TITLE_ICON.get(titleKey) ?? Hash;
+}
 
 export function DocumentNav({
   entries,
@@ -40,6 +85,8 @@ export function DocumentNav({
   onQueryChange,
   onJump,
   onAddSection,
+  files,
+  onOpenFile,
 }: DocumentNavProps) {
   return (
     <nav aria-label="Sections" className="flex flex-col gap-2">
@@ -63,37 +110,45 @@ export function DocumentNav({
         }}
       />
       <ul className="flex flex-col">
-        {entries.map((entry) => (
-          <li key={entry.id}>
-            <button
-              type="button"
-              aria-current={entry.id === active ? 'location' : undefined}
-              onClick={() => {
-                onJump(entry.id);
-              }}
-              className={cn(
-                'flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-3 text-left text-body transition-colors',
-                entry.id === active
-                  ? 'bg-active text-primary'
-                  : 'text-secondary hover:bg-elevated hover:text-primary',
-              )}
-            >
-              <span aria-hidden="true" className="flex w-1.5 shrink-0">
-                {entry.isMarked && <span className="size-1.5 rounded-full bg-accent" />}
-              </span>
-              <span className={cn('min-w-0 flex-1 truncate', entry.isRemoved && 'line-through')}>
-                {entry.title}
-                {entry.isMarked && <span className="sr-only">, unsaved changes</span>}
-              </span>
-              <span className="shrink-0 text-caption tabular-nums text-muted">{entry.count}</span>
-            </button>
-          </li>
-        ))}
+        {entries.map((entry) => {
+          const Icon = sectionIcon(entry);
+          return (
+            <li key={entry.id}>
+              <button
+                type="button"
+                aria-current={entry.id === active ? 'location' : undefined}
+                onClick={() => {
+                  onJump(entry.id);
+                }}
+                className={cn(
+                  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 text-left text-body transition-colors',
+                  entry.id === active
+                    ? 'bg-active text-primary'
+                    : 'text-secondary hover:bg-elevated hover:text-primary',
+                )}
+              >
+                {/* Drawn at the stroke of the @droidex/icons glyphs around them. */}
+                <Icon aria-hidden="true" strokeWidth={1.5} className="size-icon-sm shrink-0" />
+                <span className={cn('min-w-0 flex-1 truncate', entry.isRemoved && 'line-through')}>
+                  {entry.title}
+                  {entry.isMarked && <span className="sr-only">, unsaved changes</span>}
+                </span>
+                {entry.isMarked && (
+                  <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-accent" />
+                )}
+                <span className="shrink-0 text-caption tabular-nums text-muted">{entry.count}</span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
       {entries.length === 0 && query !== '' && (
         <p className="px-3 text-caption text-muted">Nothing matches.</p>
       )}
       {onAddSection && <AddSectionRow onAddSection={onAddSection} />}
+      <div className="pt-2">
+        <FilesRow files={files} onOpen={onOpenFile} />
+      </div>
     </nav>
   );
 }
@@ -124,9 +179,9 @@ function AddSectionRow({ onAddSection }: { onAddSection: (title: string) => void
         onClick={() => {
           setOpen(true);
         }}
-        className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-3 text-body text-muted transition-colors hover:bg-elevated hover:text-primary"
+        className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 text-body text-muted transition-colors hover:bg-elevated hover:text-primary"
       >
-        <Plus aria-hidden="true" className="size-icon-sm" />
+        <Plus aria-hidden="true" className="size-icon-sm shrink-0" />
         Section
       </button>
     );
@@ -210,6 +265,10 @@ export function SectionsMenu({ labelled, ...props }: DocumentNavProps & { labell
           onJump={(id) => {
             close();
             props.onJump(id);
+          }}
+          onOpenFile={(file) => {
+            close();
+            props.onOpenFile(file);
           }}
           onAddSection={
             addSection === null

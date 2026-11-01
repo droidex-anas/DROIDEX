@@ -102,7 +102,7 @@ export function NoteCard({
   ];
 
   return (
-    <article className="rounded-lg bg-raised">
+    <article data-item-id={note.id} className="scroll-mt-4 rounded-lg bg-raised">
       {/* The header's padding is the body's, so the title starts on the body's
           edge and the chevron or menu ends on it. The unsaved dot hangs outside
           the card, in line with the column's other dots. */}

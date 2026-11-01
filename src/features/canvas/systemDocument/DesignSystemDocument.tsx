@@ -22,6 +22,7 @@ import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoice
 import type { DocumentSection } from '../designSystemDocumentProtocol';
 import type { DesignSystemDocumentView, DesignSystemProvenance } from '../protocol';
 import { PreviewModeButton, type PreviewMode } from '../PreviewModeToggle';
+import { revealFile, revealSection } from './columnScroll';
 import { DocumentCover } from './DocumentCover';
 import {
   changeCount,
@@ -47,6 +48,7 @@ import {
   withRemoved,
   type DraftMark,
 } from './documentSections';
+import { kitFiles, type KitFile } from './kitFiles';
 import { SaveBar, useSaveDraft } from './SaveBar';
 import type { KitPreviewing } from './KitPreviewTile';
 import { SectionBlock, type SectionEditing } from './SectionBlock';
@@ -201,20 +203,17 @@ function KitDocument({
     ...slots,
   };
 
-  // Scrolls the column alone: scrollIntoView would also scroll the pane's
-  // clipped ancestors and push the header out of the window.
   const jump = (id: string) => {
-    const column = scrollRef.current;
-    const section = column?.querySelector<HTMLElement>(`[data-section-id="${id}"]`);
-    if (!column || !section) return;
-    const top =
-      section.getBoundingClientRect().top -
-      column.getBoundingClientRect().top +
-      column.scrollTop -
-      parseFloat(getComputedStyle(section).scrollMarginTop);
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    column.scrollTo({ top, behavior: reduceMotion ? 'auto' : 'smooth' });
-    section.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+    if (scrollRef.current) revealSection(scrollRef.current, id);
+  };
+
+  // A file shows only with the search cleared, so it reveals a frame later.
+  const openFile = ({ shownAt }: KitFile) => {
+    if (shownAt === null) return;
+    setQuery('');
+    requestAnimationFrame(() => {
+      if (scrollRef.current) revealFile(scrollRef.current, shownAt);
+    });
   };
 
   const addItem = (sectionId: string, kind: 'note' | 'group', before?: string) => {
@@ -261,6 +260,7 @@ function KitDocument({
   const navProps: DocumentNavProps = {
     entries: visible.map((section) => ({
       id: section.id,
+      kind: section.kind,
       title: section.title,
       count: itemCount(section, isRemoved),
       isMarked: isMarked(section, marks),
@@ -271,6 +271,8 @@ function KitDocument({
     onQueryChange: setQuery,
     onJump: jump,
     onAddSection: canEdit ? addNotesSection : null,
+    files: kitFiles(working.sections, working.cover, view.examples),
+    onOpenFile: openFile,
   };
 
   return (

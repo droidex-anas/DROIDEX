@@ -353,7 +353,7 @@ function AssetTile({
 }) {
   const isRemoved = mark === 'removed';
   return (
-    <figure className="flex min-w-0 flex-col gap-1.5">
+    <figure data-item-id={asset.id} className="flex min-w-0 scroll-mt-4 flex-col gap-1.5">
       <div
         role="img"
         aria-label={asset.name}
