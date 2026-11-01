@@ -53,7 +53,7 @@ export function DocumentCover({
   );
   return (
     <figure className="flex flex-col gap-2">
-      <figcaption className="flex min-h-control-md items-center gap-2">
+      <figcaption className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={isSaved ? undefined : 'changed'} />
         <span className="truncate text-body-strong text-primary">Cover</span>
         <span className="flex-1" />
