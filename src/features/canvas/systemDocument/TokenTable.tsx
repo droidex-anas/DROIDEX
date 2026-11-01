@@ -17,8 +17,9 @@ import type { DraftChange } from './documentDraft';
 import { bareTokenName, tokenKey, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
-import { modeValue, tokenValueProblem } from './specimenStyle';
+import { modeValue } from './specimenStyle';
 import { LiveSwatch, Specimen } from './TokenSpecimens';
+import { TokenValue } from './TokenValue';
 import { UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const MAX_TOKEN_NOTE_BYTES = 400;
@@ -394,7 +395,7 @@ function ValueCell({
   // Other kinds name the mode only on a row that separates them.
   const modeLabel = !isColor && which !== 'value' ? MODE_LABEL[which] : null;
   const value = modeValue(token, mode);
-  const fieldLabel = which === 'value' ? 'Value' : `${MODE_LABEL[which]} value`;
+  const label = `${which === 'value' ? 'Value' : `${MODE_LABEL[which]} value`} of ${bareTokenName(token.name)}`;
   const setValue = (text: string) => {
     onSet?.(
       tokenWith(token, 'value' in token ? { value: text } : { ...valuesOf(token), [mode]: text }),
@@ -405,27 +406,16 @@ function ValueCell({
   // Colours always show both modes; a one-value colour edits its value from Light.
   if (isColor && 'value' in token && which === 'dark')
     shown = <span className="truncate text-caption text-muted">Same as light</span>;
-  else if (onSet)
-    shown = (
-      <InlineField
-        value={value}
-        label={`${fieldLabel} of ${bareTokenName(token.name)}`}
-        check={(text) => tokenValueProblem(kind, text)}
-        leading={isColor ? (text) => <LiveSwatch value={text} /> : undefined}
-        onCommit={setValue}
-        className="kit-body-font text-body tabular-nums text-secondary"
-      />
-    );
   else
     shown = (
-      <span
-        className={cn(
-          'kit-body-font truncate text-body tabular-nums',
-          isRemoved ? 'text-muted line-through' : 'text-secondary',
-        )}
-      >
-        {value}
-      </span>
+      <TokenValue
+        value={value}
+        kind={kind}
+        label={label}
+        isRemoved={isRemoved}
+        leading={isColor ? (text) => <LiveSwatch value={text} /> : undefined}
+        onCommit={onSet === null ? null : setValue}
+      />
     );
 
   return (
@@ -435,7 +425,7 @@ function ValueCell({
           kitId={kitId}
           token={token}
           mode={mode}
-          label={`${fieldLabel} of ${bareTokenName(token.name)}`}
+          label={label}
           style={specimens[mode]}
           onCommit={onSet === null ? null : setValue}
         />

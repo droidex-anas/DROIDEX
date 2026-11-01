@@ -26,6 +26,7 @@ export function InlineField({
   check,
   onCommit,
   leading,
+  suffix,
   initiallyEditing = false,
   className,
 }: {
@@ -38,6 +39,8 @@ export function InlineField({
   onCommit: (text: string) => void;
   /** Shown before the text while editing, such as a live colour swatch. */
   leading?: (text: string) => ReactNode;
+  /** A quiet unit after the text, kept out of what is edited. */
+  suffix?: string;
   initiallyEditing?: boolean;
   /** The text's type style, shared by the value and its field. */
   className?: string;
@@ -118,6 +121,7 @@ export function InlineField({
       >
         <span className="sr-only">Edit {label}: </span>
         {value}
+        {suffix !== undefined && <span className="ml-0.5 text-muted">{suffix}</span>}
       </button>
     );
   return (
@@ -125,12 +129,13 @@ export function InlineField({
       <Input
         ref={inputRef}
         variant="compact"
-        aria-label={label}
+        aria-label={suffix === undefined ? label : `${label}, in ${suffix}`}
         aria-describedby={problem === null ? undefined : problemId}
         invalid={problem !== null}
         value={text}
         spellCheck={false}
         leading={leading?.(text)}
+        trailing={suffix}
         className={className}
         onChange={(event) => {
           setText(event.target.value);
