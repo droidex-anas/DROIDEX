@@ -19,6 +19,12 @@
   font-family: var(--kit-heading-font);
 }
 
+/* The swatch's invisible colour input takes keyboard focus; the ring goes on
+   the swatch it covers. */
+.kit-colour-swatch:has(input:focus-visible) {
+  outline: 1.5px solid var(--focus-ring);
+}
+
 /* A kit tile's layers cross-fade as icon and text swaps do: a capture as it
    arrives, and the live guest once it has painted. */
 @keyframes kit-tile-reveal {

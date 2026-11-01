@@ -175,6 +175,7 @@ export function SectionBlock({
               key={item.id}
               group={item}
               kind={tokenKind}
+              kitId={kitId}
               mode={mode}
               specimens={specimens}
               marks={marks}

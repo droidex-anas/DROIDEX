@@ -146,6 +146,7 @@ Who can edit: the user edits their own kits. Presets open read-only with a quiet
 **Editing in place.**
 
 - Values: click a value to edit it in a `Field` input. Enter or blur keeps it in the draft, Escape reverts. A colour input shows its swatch live. A value that fails the schema rule or `CSS.supports` for its kind shows the error under the field and is not kept.
+- Colour swatches: an editable colour row's swatch opens the system colour picker. The colour being chosen shows in the swatch and in the live previews; letting go keeps it in the draft as one change, and dismissing the picker keeps nothing. The picker has no alpha, so a translucent value keeps its own. A one-value colour picks from its Light swatch and sets both modes.
 - Light and dark: a row's menu has Separate light and dark, or Use one value for both (which takes the light value).
 - Usage notes: the row's note icon opens a popover (`usePopoverPosition`, 320 px) with the note as an editable text area and Remove.
 - Add and remove: each group ends with Add token (a name field and value); a token section's Add makes a group; a section's Add note adds a note (`note-1.md`). Removing anything is a draft change with Undo, so it needs no confirmation.

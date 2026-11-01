@@ -7,6 +7,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -25,6 +26,7 @@ import {
 import { canvasClient } from '../canvasClient';
 import { canvasMessage } from '../client';
 import { keepKitCapture, useKitCapture } from '../kitCaptures';
+import { usePickedColor } from './pickedColor';
 import { createGuestElement } from '../previewGuestElement';
 import { startPreview, type PreviewRun } from '../previewRuntime';
 import type { DesignSystemRef } from '../protocol';
@@ -142,8 +144,15 @@ function KitGuest({
   const { id, version, mode } = kit;
   const host = useRef<HTMLDivElement>(null);
   const runRef = useRef<PreviewRun | null>(null);
-  const tokens = useRef(draftTokens);
-  tokens.current = draftTokens;
+  // A colour being chosen in the document shows live, like a draft value does.
+  const picked = usePickedColor();
+  const shownTokens = useMemo(() => {
+    if (picked?.kitId !== id) return draftTokens;
+    if (picked.mode !== 'both' && picked.mode !== mode) return draftTokens;
+    return { ...draftTokens, [picked.name]: picked.value };
+  }, [picked, draftTokens, id, mode]);
+  const tokens = useRef(shownTokens);
+  tokens.current = shownTokens;
   const capturing = useRef(wantsCapture);
   capturing.current = wantsCapture;
   const [read, setRead] = useState<ArtifactRead>({ status: 'loading' });
@@ -273,8 +282,8 @@ function KitGuest({
   }, [html, id, version, mode, item, width, height]);
 
   useEffect(() => {
-    runRef.current?.setTokens(draftTokens);
-  }, [draftTokens]);
+    runRef.current?.setTokens(shownTokens);
+  }, [shownTokens]);
 
   return (
     <>
