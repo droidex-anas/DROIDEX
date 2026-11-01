@@ -188,7 +188,7 @@ export default function Typography() {
           <h2 style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--ds-fg-muted)' }}>{group.title}</h2>
           {group.tokens.map((token) => (
             <div key={token.name} style={{ display: 'flex', alignItems: 'baseline', gap: 24 }}>
-              <code style={{ flex: '0 0 200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--ds-fg-muted)' }}>{token.name}</code>
+              <span style={{ flex: '0 0 200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--ds-fg-muted)' }}>{token.name}</span>
               <span style={{ whiteSpace: 'nowrap', [token.property]: \`var(\${token.name})\` }}>The quick brown fox jumps over the lazy dog</span>
             </div>
           ))}
