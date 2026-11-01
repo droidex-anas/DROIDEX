@@ -290,7 +290,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_write',
-      'Submit complete changed React/TSX files for a named frame using the scopeId from this turn’s canvas_read and the frame’s current revisionId (null for a new frame). The entry is main.tsx, which must default-export a React component; other relative .tsx, .ts and .css files are optional modules it imports. Imports may name react, lucide-react, recharts and @droidex/design-system (Tailwind available; a plain HTML document is not a frame). A tree without main.tsx is refused. The reply waits for the build: when it failed, fix the named file and line and write again in this turn. Use a new mutationId for each change and reuse it, with its scopeId, only to retry a lost response.',
+      'Submit complete changed React/TSX files for a named frame using the scopeId from this turn’s canvas_read and the frame’s current revisionId (null for a new frame). The entry is main.tsx, which must default-export a React component; other relative .tsx, .ts and .css files are optional modules it imports. Imports may name react, lucide-react (UI icons), simple-icons (brand marks), recharts and @droidex/design-system (Tailwind available; a plain HTML document is not a frame). A tree without main.tsx is refused. The reply waits for the build: when it failed, fix the named file and line and write again in this turn. Use a new mutationId for each change and reuse it, with its scopeId, only to retry a lost response.',
       writeSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {

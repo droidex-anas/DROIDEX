@@ -23,7 +23,7 @@ export type ExtractDesignSystemResult =
   | { status: 'refused'; diagnostics: CanvasDiagnostic[] };
 
 const PRIMITIVES = new Set(['Button', 'Input', 'Card', 'Badge', 'Tabs', 'Dialog']);
-const OWNED_IMPORTS = new Set(['react', 'react/jsx-runtime', 'lucide-react']);
+const OWNED_IMPORTS = new Set(['react', 'react/jsx-runtime', 'lucide-react', 'simple-icons']);
 const PRIMITIVE_SELECTOR =
   /\.ds-(?:button|input|field|hint|error|card|badge|tab|tablist|tabpanel|dialog)(?:[-\s.:[#>,+~]|$)/;
 

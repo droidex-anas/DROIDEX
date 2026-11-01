@@ -28,8 +28,17 @@ const SUPPORTED_IMPORTS: readonly string[] = [
   'react-dom/client',
   'lucide-react',
   'recharts',
+  'simple-icons',
   KIT_SPECIFIER,
 ];
+
+// Node's resolver picks each package's CommonJS barrel, which retains every
+// export. Their pinned ESM entries let esbuild drop what a design never uses.
+const ESM_ENTRIES = new Map([
+  ['lucide-react', 'lucide-react/dist/esm/lucide-react.js'],
+  ['recharts', 'recharts/es6/index.js'],
+  ['simple-icons', 'simple-icons/index.mjs'],
+]);
 
 export interface DesignSources {
   /** The revision's own files, already validated by `sourceFilesSchema`. */
@@ -221,9 +230,6 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
             );
           return { path: resolved.path, namespace: args.namespace };
         }
-        // Node's package entry is CommonJS. Its ESM entry lets esbuild omit
-        // chart exports the design never uses.
-        if (args.path === 'recharts') return { path: runtimePath('recharts/es6/index.js') };
         if (SUPPORTED_IMPORTS.includes(args.path)) return { path: runtimePath(args.path) };
         return refuse(
           'unsupported_import',
@@ -250,11 +256,7 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
  * package from a real directory, which is its own business.
  */
 function runtimePath(specifier: string): string {
-  // Node's resolver selects Lucide's CommonJS barrel, which retains every icon.
-  // Its pinned ESM entry lets esbuild remove all unused icons.
-  return canvasRuntime().resolve(
-    specifier === 'lucide-react' ? 'lucide-react/dist/esm/lucide-react.js' : specifier,
-  );
+  return canvasRuntime().resolve(ESM_ENTRIES.get(specifier) ?? specifier);
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {
