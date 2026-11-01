@@ -273,6 +273,23 @@ test('selection commands reach only a guest this run started and has not stopped
   assert.equal(session.calls.length, 4);
 });
 
+test('draft tokens reach a started guest as data and nothing after the run stops', async () => {
+  const session = run();
+  session.preview.setTokens({ '--ds-accent': 'red' });
+  assert.equal(session.calls.length, 1, 'nothing is sent before the guest has started');
+
+  await started(session);
+  session.preview.setTokens({ '--ds-accent': '</script>' });
+  assert.equal(
+    session.calls[2].code,
+    'globalThis.__droidexCanvasPreview.setTokens({"tokens":{"--ds-accent":"\\u003c/script>"}})',
+  );
+
+  session.preview.stop();
+  session.preview.setTokens({});
+  assert.equal(session.calls.length, 3);
+});
+
 test('bounded events reach the board, and what a flood dropped is not reported', async () => {
   const session = run();
   const nonce = await started(session);

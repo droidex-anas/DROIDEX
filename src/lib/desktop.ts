@@ -85,7 +85,8 @@ export interface SidecarSupervisorSnapshot {
 export interface CanvasPreviewCaptureRequest {
   requestId: string;
   guestId: number;
-  canvasId: string;
+  /** Null for a kit-bound guest, whose capture main returns but does not keep. */
+  canvasId: string | null;
   designId: string;
   revisionId: string;
   generation: number;

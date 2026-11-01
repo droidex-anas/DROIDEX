@@ -392,7 +392,7 @@ export function PreviewGuestFrame({
 }
 
 /** A guest that can only ever load the owned intermediate. */
-function createGuestElement(url: string) {
+export function createGuestElement(url: string) {
   const guest = document.createElement('webview') as HTMLElement & {
     getWebContentsId: () => number;
     executeJavaScript: (code: string) => Promise<unknown>;

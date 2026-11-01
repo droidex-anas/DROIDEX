@@ -17,6 +17,7 @@ import type { DraftChange } from './documentDraft';
 import type { DocumentItem, DraftMark } from './documentSections';
 import { PreviewItem } from './DocumentPreview';
 import { InlineField, type InlineFieldHandle } from './InlineField';
+import type { KitPreviewing } from './KitPreviewTile';
 import { NoteCard } from './NoteCard';
 import { TokenTable } from './TokenTable';
 import { UndoRemove, UnsavedMark } from './UnsavedMark';
@@ -44,6 +45,7 @@ export function SectionBlock({
   tokenNames,
   noteLabels,
   previewTitles,
+  previewing,
   justAdded,
   editing,
 }: {
@@ -57,6 +59,7 @@ export function SectionBlock({
   tokenNames: ReadonlySet<string>;
   noteLabels: ReadonlySet<string>;
   previewTitles: ReadonlySet<string>;
+  previewing: KitPreviewing;
   /** The item or section the user just added, which opens for editing. */
   justAdded: string | null;
   editing: SectionEditing | null;
@@ -185,6 +188,7 @@ export function SectionBlock({
             key={item.id}
             preview={item}
             mark={itemMark}
+            previewing={previewing}
             previewTitles={previewTitles}
             actions={itemActions(item.id)}
             onChange={onChange}

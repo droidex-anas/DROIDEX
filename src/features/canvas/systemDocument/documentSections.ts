@@ -3,6 +3,9 @@
 // through. A draft is compared with its base; slice 2b compares a proposal.
 
 import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
+import { isTokenName, isTokenValue } from '../designSystemDocumentValidation';
+import type { PreviewMode } from '../PreviewModeToggle';
+import { modeValue } from './specimenStyle';
 
 export type DocumentItem = DocumentSection['items'][number];
 export type SectionKind = DocumentSection['kind'];
@@ -39,6 +42,26 @@ export function tokensByName(sections: DocumentSection[]) {
       if (item.kind === 'group')
         for (const token of item.tokens) tokens.set(token.name, { token, holder: item.id });
   return tokens;
+}
+
+/**
+ * The draft's token values in `mode` that differ from the base's, by name, as
+ * live previews show them. A value a save would refuse stays at the base's.
+ */
+export function changedTokenValues(
+  base: DocumentSection[],
+  draft: DocumentSection[],
+  mode: PreviewMode,
+): Record<string, string> {
+  const saved = tokensByName(base);
+  const changed: Record<string, string> = {};
+  for (const [name, { token }] of tokensByName(draft)) {
+    const value = modeValue(token, mode).trim();
+    const before = saved.get(name);
+    if (before && modeValue(before.token, mode).trim() === value) continue;
+    if (isTokenName(name) && isTokenValue(value)) changed[name] = value;
+  }
+  return changed;
 }
 
 /** The names a new or renamed token, note or preview may not take. */

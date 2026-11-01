@@ -436,6 +436,27 @@ test('main captures only the attached guest at CSS size and device scale, and ke
   assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
 });
 
+test('a kit-bound guest is captured without a canvas, and main keeps no copy', async () => {
+  const { hosts } = createHosts();
+  const kitGuest = createGuest(41);
+  const canvasGuest = createGuest(42);
+  hosts.attach(kitGuest);
+  hosts.attach(canvasGuest);
+  hosts.bind(41, { kind: 'kit' });
+  hosts.bind(42, { kind: 'canvas', canvasId: 'cv_01' });
+  const kitRequest = { ...captureRequest, canvasId: null };
+
+  const refused = await hosts.capture({ ...kitRequest, requestId: 'capture_02', guestId: 42 });
+  assert.equal(refused.ok, false);
+  const capture = hosts.capture(kitRequest);
+  await new Promise(setImmediate);
+  kitGuest.captures[0].resolve(capturedImage());
+
+  assert.equal((await capture).ok, true);
+  assert.equal(canvasGuest.captures.length, 0);
+  assert.equal(hosts.readThumbnail('kit', 'dsg_01', 'rev_01'), null);
+});
+
 test('capture timeout ends overdue native work once and releases every guest timer', async () => {
   const { hosts, clock } = createHosts();
   const guest = createGuest(41);

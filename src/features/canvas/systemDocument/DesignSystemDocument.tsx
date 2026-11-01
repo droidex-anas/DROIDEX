@@ -14,7 +14,7 @@ import {
 } from 'react';
 import { Copy } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
-import { useStoreSelector } from '../../../hooks/useStore';
+import { useStoreDispatch, useStoreSelector } from '../../../hooks/useStore';
 import { resolveScheme } from '../../../lib/theme';
 import { canvasClient } from '../canvasClient';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
@@ -40,6 +40,7 @@ import { DocumentMenu, useDuplicate } from './DocumentMenu';
 import { DocumentNav, SectionsMenu, useActiveSection, type DocumentNavProps } from './DocumentNav';
 import { itemCount, searchSections } from './documentSearch';
 import {
+  changedTokenValues,
   documentNames,
   draftDiff,
   isMarked,
@@ -49,14 +50,17 @@ import {
   type SectionKind,
 } from './documentSections';
 import { SaveBar, useSaveDraft } from './SaveBar';
+import type { KitPreviewing } from './KitPreviewTile';
 import { SectionBlock, type SectionEditing } from './SectionBlock';
 import { specimenProperties } from './specimenStyle';
 import { useDesignSystemDocument } from './useDesignSystemDocument';
+import { useKitPreviewSlots } from './useKitPreviewSlots';
 import './designSystemDocument.css';
 
 // Below this canvas width the nav folds into the header's Sections menu.
 const NAV_FOLD_WIDTH_PX = 960;
 const NO_MARKS: ReadonlyMap<string, DraftMark> = new Map();
+const NO_TOKENS: Readonly<Record<string, string>> = {};
 
 export function DesignSystemDocument({
   appSessionId,
@@ -133,6 +137,7 @@ function KitDocument({
   const scrollRef = useRef<HTMLDivElement>(null);
   const draft = useDocumentDraft(view.id);
   const appMode = useStoreSelector((state) => state.theme.mode);
+  const dispatch = useStoreDispatch();
   const choice = useDesignSystemChoice(canvasKey);
   const isChosen = choice !== null && choice.ref.id === view.id;
   const [mode, setMode] = useState<PreviewMode>(() =>
@@ -182,6 +187,17 @@ function KitDocument({
   const baseTokens = new Map(
     Array.from(tokensByName(base.sections), ([name, { token }]) => [name, token]),
   );
+  // Previews build from the version the draft is based on, and show the draft's values live.
+  const draftTokens = useMemo(
+    () => (editing ? changedTokenValues(editing.base.sections, editing.sections, mode) : NO_TOKENS),
+    [editing, mode],
+  );
+  const slots = useKitPreviewSlots(scrollRef, base);
+  const previewing: KitPreviewing = {
+    kit: { id: base.id, version: base.version, mode },
+    draftTokens,
+    ...slots,
+  };
 
   // Scrolls the column alone: scrollIntoView would also scroll the pane's
   // clipped ancestors and push the header out of the window.
@@ -310,7 +326,23 @@ function KitDocument({
         >
           <div className="flex flex-col gap-8 px-8 pb-8 pt-2">
             <div className="flex flex-col gap-2">
-              <DocumentCover name={working.name} cover={working.cover} specimen={specimens[mode]} />
+              <DocumentCover
+                name={working.name}
+                cover={working.cover}
+                specimen={specimens[mode]}
+                previewing={previewing}
+                onRegenerate={
+                  canEdit
+                    ? () => {
+                        dispatch({
+                          type: 'SEED_COMPOSER',
+                          appSessionId,
+                          text: `Make a new cover for ${view.name}.`,
+                        });
+                      }
+                    : null
+                }
+              />
               <ProvenanceLine provenance={view.provenance} unmapped={view.unmapped.length} />
             </div>
             {visible.map((section) => (
@@ -326,6 +358,7 @@ function KitDocument({
                 tokenNames={names.tokenNames}
                 noteLabels={names.noteLabels}
                 previewTitles={names.previewTitles}
+                previewing={previewing}
                 justAdded={justAdded}
                 editing={sectionEditing(section)}
               />

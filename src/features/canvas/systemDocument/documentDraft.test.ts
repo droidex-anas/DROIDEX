@@ -13,7 +13,13 @@ import {
   editDraft,
   type DocumentDraft,
 } from './documentDraft';
-import { draftDiff, tokenKey, withItems, withRemoved } from './documentSections';
+import {
+  changedTokenValues,
+  draftDiff,
+  tokenKey,
+  withItems,
+  withRemoved,
+} from './documentSections';
 import type { DesignSystemDocumentView } from '../protocol';
 
 const base: DocumentSection[] = [
@@ -151,6 +157,24 @@ test('a note or token moved to another holder, and reordered tokens, are marked 
       [tokenKey('--ds-accent'), 'changed'],
     ]),
   );
+});
+
+test('live previews get only the draft values that differ in their mode and a save would accept', () => {
+  const opened = kitAt('tokens', 1);
+  editDraft(opened, {
+    kind: 'setToken',
+    token: { name: '--ds-bg', light: '#fff', dark: '#000' },
+  });
+  editDraft(opened, {
+    kind: 'addToken',
+    groupId: 'surfaces',
+    token: { name: '--ds-line', value: 'red; color: blue' },
+  });
+  const { sections } = draftOfKit('tokens');
+  assert.equal(draftDiff(base, sections).get(tokenKey('--ds-line')), 'added');
+  assert.deepEqual(changedTokenValues(base, sections, 'light'), {});
+  assert.deepEqual(changedTokenValues(base, sections, 'dark'), { '--ds-bg': '#000' });
+  discardDraft('tokens');
 });
 
 test('a removed note shows where it was, Undo puts it back there, and undoing every edit ends the draft', () => {
