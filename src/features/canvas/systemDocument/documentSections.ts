@@ -85,6 +85,16 @@ export function noteTitle(label: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** The label a typed note title writes to: "My rules" is "my-rules.md". */
+export function noteLabel(title: string): string {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${slug}.md`;
+}
+
 /** The names a new or renamed token, note or preview may not take. */
 export function documentNames(sections: DocumentSection[]) {
   const tokenNames = new Set<string>();
