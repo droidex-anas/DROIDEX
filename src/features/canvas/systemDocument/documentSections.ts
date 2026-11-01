@@ -95,18 +95,20 @@ export function noteLabel(title: string): string {
   return `${slug}.md`;
 }
 
-/** The names a new or renamed token, note or preview may not take. */
+/** The names a new or renamed token, note, preview or asset may not take. */
 export function documentNames(sections: DocumentSection[]) {
   const tokenNames = new Set<string>();
   const noteLabels = new Set<string>();
   const previewTitles = new Set<string>();
+  const assetNames = new Set<string>();
   for (const section of sections)
     for (const item of section.items) {
       if (item.kind === 'group') for (const token of item.tokens) tokenNames.add(token.name);
       if (item.kind === 'note') noteLabels.add(item.label);
       if (item.kind === 'preview') previewTitles.add(item.title);
+      if (item.kind === 'asset') assetNames.add(item.name);
     }
-  return { tokenNames, noteLabels, previewTitles };
+  return { tokenNames, noteLabels, previewTitles, assetNames };
 }
 
 /**

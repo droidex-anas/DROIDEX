@@ -11,6 +11,7 @@ import type {
   DocumentToken,
   TokenGroup,
 } from '../designSystemDocumentProtocol';
+import { MAX_ASSETS } from '../designSystemDocumentValidation';
 import {
   draftDiff,
   itemsById,
@@ -21,6 +22,9 @@ import {
   type SectionKind,
 } from './documentSections';
 import type { DesignSystemCover, DesignSystemDocumentView } from '../protocol';
+
+export const MAX_ASSET_NAME_LENGTH = 120;
+export const FULL_KIT_MESSAGE = `A design system holds at most ${String(MAX_ASSETS)} images.`;
 
 export interface DocumentDraft {
   base: DesignSystemDocumentView;
@@ -35,6 +39,7 @@ export interface DocumentDraft {
  */
 export type DraftChange =
   | { kind: 'setName'; name: string }
+  | { kind: 'setCover'; cover: DesignSystemCover }
   | { kind: 'setToken'; token: DocumentToken }
   | { kind: 'addToken'; groupId: string; token: DocumentToken }
   | { kind: 'setItem'; item: DocumentNote | DocumentPreview | DocumentAsset }
@@ -85,6 +90,8 @@ function applyDraftChange(draft: DocumentDraft, change: DraftChange): DocumentDr
   switch (change.kind) {
     case 'setName':
       return { ...draft, name: change.name };
+    case 'setCover':
+      return { ...draft, cover: change.cover };
     case 'setToken':
       return {
         ...draft,
@@ -143,6 +150,7 @@ function applyDraftChange(draft: DocumentDraft, change: DraftChange): DocumentDr
     case 'remove':
       return { ...draft, sections: removed(sections, change.key) };
     case 'restore':
+      if (isRestoreOverCap(draft, change.key)) return draft;
       return { ...draft, sections: restored(draft.base.sections, sections, change.key) };
   }
 }
@@ -167,12 +175,35 @@ export function freshNote(draft: DocumentDraft): DocumentNote {
 }
 
 export function freshGroup(draft: DocumentDraft, title: string): TokenGroup {
-  const stem = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40);
-  return { kind: 'group', id: freshId(stem || 'group', takenKeys(draft).ids), title, tokens: [] };
+  return {
+    kind: 'group',
+    id: freshId(idStem(title) || 'group', takenKeys(draft).ids),
+    title,
+    tokens: [],
+  };
+}
+
+/**
+ * An entry for an imported image, named `name`, or `name 2` and on when another
+ * asset has it; null when the draft already holds as many as a version can.
+ */
+export function freshAsset(
+  draft: DocumentDraft,
+  assetId: string,
+  name: string,
+): DocumentAsset | null {
+  if (assetsIn(draft.sections).length >= MAX_ASSETS) return null;
+  const { ids, assetNames } = takenKeys(draft);
+  const id = freshId(idStem(name) || 'image', ids);
+  return { kind: 'asset', id, name: uniqueAssetName(name, assetNames), assetId };
+}
+
+/** Whether Undo of `key` would bring back an image the draft has no room for; it then does nothing. */
+export function isRestoreOverCap(draft: DocumentDraft, key: string): boolean {
+  const asset = assetsIn(draft.base.sections).some((item) => item.id === key);
+  return (
+    asset && !itemsById(draft.sections).has(key) && assetsIn(draft.sections).length >= MAX_ASSETS
+  );
 }
 
 export function freshSection(draft: DocumentDraft, kind: SectionKind): DocumentSection {
@@ -297,11 +328,18 @@ function restored(
   }
   const home = base.find((section) => section.items.some((item) => item.id === key));
   if (!home || itemsById(next).has(key)) return next;
+  // An asset whose name another entry took meanwhile comes back renamed.
+  const names = new Set(assetsIn(next).map((asset) => asset.name));
+  const homeItems = home.items.map((item) =>
+    item.id === key && item.kind === 'asset' && names.has(item.name)
+      ? { ...item, name: uniqueAssetName(item.name, names) }
+      : item,
+  );
   return next.map((section) =>
     section.id === home.id
       ? withItems(
           section,
-          restoredInto<DocumentItem>(home.items, section.items, key, (item) => item.id),
+          restoredInto<DocumentItem>(homeItems, section.items, key, (item) => item.id),
         )
       : section,
   );
@@ -328,14 +366,38 @@ function restoredInto<T>(
 function takenKeys(draft: DocumentDraft) {
   const ids = new Set<string>();
   const labels = new Set<string>();
+  const assetNames = new Set<string>();
   for (const section of [...draft.base.sections, ...draft.sections]) {
     ids.add(section.id);
     for (const item of section.items) {
       ids.add(item.id);
       if (item.kind === 'note') labels.add(item.label);
+      if (item.kind === 'asset') assetNames.add(item.name);
     }
   }
-  return { ids, labels };
+  return { ids, labels, assetNames };
+}
+
+function assetsIn(sections: DocumentSection[]): DocumentAsset[] {
+  return sections.flatMap((section) => section.items.filter((item) => item.kind === 'asset'));
+}
+
+// The suffix replaces the end of a long name, so the result still fits.
+function uniqueAssetName(name: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(name)) return name;
+  for (let n = 2; ; n += 1) {
+    const suffix = ` ${String(n)}`;
+    const candidate = `${name.slice(0, MAX_ASSET_NAME_LENGTH - suffix.length).trimEnd()}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+function idStem(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
 }
 
 function freshId(stem: string, taken: ReadonlySet<string>): string {
@@ -345,7 +407,7 @@ function freshId(stem: string, taken: ReadonlySet<string>): string {
   return `${stem}-${String(n)}`;
 }
 
-function sameCover(a: DesignSystemCover, b: DesignSystemCover): boolean {
+export function sameCover(a: DesignSystemCover, b: DesignSystemCover): boolean {
   if (a === null || b === null) return a === b;
   if (a.kind === 'preview') return b.kind === 'preview' && a.example === b.example;
   return b.kind === 'image' && a.assetId === b.assetId;

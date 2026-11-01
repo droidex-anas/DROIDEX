@@ -25,6 +25,7 @@ import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
+import { resolveKitAssetReferences } from './kitAssets.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { instrumentSource, SourceElementError } from './sourceElements.js';
 import { resolveStyleChange, styleValue } from './styleEdits.js';
@@ -137,7 +138,8 @@ function stopIfCancelled(signal: AbortSignal): void {
 
 /**
  * One document, with the stylesheet and the bundle inline. The preview host
- * loads it with no network, so an external reference would simply be missing.
+ * loads it with no network, so an external reference would simply be missing;
+ * kit images are the preview host's to serve.
  */
 function previewDocument(css: string, js: string, mode: DesignSystemRef['mode']): string {
   return `<!doctype html>
@@ -149,13 +151,13 @@ function previewDocument(css: string, js: string, mode: DesignSystemRef['mode'])
 ${EARLY_FAILURE_SCRIPT}
 </script>
 <style>
-${escapeClosingTag(css, 'style')}
+${escapeClosingTag(resolveKitAssetReferences(css), 'style')}
 </style>
 </head>
 <body>
 <div id="${ROOT_ELEMENT_ID}"></div>
 <script>
-${escapeClosingTag(js, 'script')}
+${escapeClosingTag(resolveKitAssetReferences(js), 'script')}
 </script>
 </body>
 </html>

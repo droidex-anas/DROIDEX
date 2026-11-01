@@ -17,6 +17,7 @@ import { Copy } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { useStoreSelector } from '../../../hooks/useStore';
 import { resolveScheme } from '../../../lib/theme';
+import { pushToast } from '../../../lib/toast';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
@@ -32,6 +33,8 @@ import {
   freshGroup,
   freshNote,
   freshSection,
+  FULL_KIT_MESSAGE,
+  isRestoreOverCap,
   useDocumentDraft,
   type DraftChange,
 } from './documentDraft';
@@ -49,6 +52,7 @@ import {
   type DraftMark,
 } from './documentSections';
 import { kitFiles, type KitFile } from './kitFiles';
+import { addImages } from './kitImageImport';
 import type { KitPreviewing } from './KitPreviewTile';
 import { ProposalLine } from './ProposalLine';
 import {
@@ -164,6 +168,13 @@ function KitDocument({
 
   const change = useCallback(
     (next: DraftChange) => {
+      if (
+        next.kind === 'restore' &&
+        isRestoreOverCap(currentDraft(view.id) ?? draftOf(view), next.key)
+      ) {
+        pushToast(FULL_KIT_MESSAGE, 'error');
+        return;
+      }
       editDraft(view, next);
       keepFocusIn(scrollRef, next.kind === 'remove' ? next.key : undefined);
     },
@@ -269,6 +280,10 @@ function KitDocument({
       onAdd: (kind, before) => {
         addItem(section.id, kind, before);
       },
+      onAddImages:
+        section.kind === 'assets' && !isRemoved(section.id)
+          ? (images) => addImages(view, section.id, images, change)
+          : null,
     };
   };
 
@@ -375,8 +390,9 @@ function KitDocument({
                   appSessionId={appSessionId}
                   name={working.name}
                   cover={working.cover}
+                  savedCover={base.cover}
                   previewing={previewing}
-                  canRegenerate={isEditable}
+                  onChange={onChange}
                 />
                 <ProvenanceLine provenance={view.provenance} unmapped={view.unmapped.length} />
               </div>
@@ -393,6 +409,7 @@ function KitDocument({
                   tokenNames={names.tokenNames}
                   noteLabels={names.noteLabels}
                   previewTitles={names.previewTitles}
+                  assetNames={names.assetNames}
                   previewing={previewing}
                   typeSpecimen={section.kind === 'typography' ? typeSpecimen : null}
                   justAdded={justAdded}

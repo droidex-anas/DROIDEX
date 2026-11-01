@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type {
+  DocumentAsset,
   DocumentNote,
   DocumentSection,
   DocumentToken,
@@ -11,6 +12,8 @@ import {
   currentDraft,
   discardDraft,
   editDraft,
+  freshAsset,
+  isRestoreOverCap,
   type DocumentDraft,
 } from './documentDraft';
 import {
@@ -21,6 +24,7 @@ import {
   withItems,
   withRemoved,
 } from './documentSections';
+import { isDocumentSections } from '../designSystemDocumentValidation';
 import type { DesignSystemDocumentView } from '../protocol';
 
 const base: DocumentSection[] = [
@@ -247,6 +251,72 @@ test('an item added before another lands in its gap; an unknown anchor appends',
     'note-5',
   ]);
   discardDraft('gaps');
+});
+
+test('an imported image takes a name no asset has, removed ones included, until the version is full', () => {
+  const assetId = 'a'.repeat(64);
+  const assets = (items: DocumentAsset[]): DocumentSection[] => [
+    { kind: 'assets', id: 'assets', title: 'Assets', items },
+  ];
+  const logo: DocumentAsset = { kind: 'asset', id: 'logo', name: 'Logo', assetId };
+  editDraft({ ...kitAt('assets', 1), sections: assets([logo]) }, { kind: 'remove', key: 'logo' });
+
+  const imported = freshAsset(draftOfKit('assets'), assetId, 'Logo');
+  assert.equal(imported?.name, 'Logo 2');
+  assert.notEqual(imported?.id, 'logo');
+  const long = 'L'.repeat(120);
+  const draft = { ...draftOfKit('assets'), sections: assets([{ ...logo, name: long }]) };
+  assert.equal(freshAsset(draft, assetId, long)?.name, `${'L'.repeat(118)} 2`);
+
+  const full = Array.from(
+    { length: 48 },
+    (_, n): DocumentAsset => ({
+      kind: 'asset',
+      id: `image-${String(n)}`,
+      name: `Image ${String(n)}`,
+      assetId,
+    }),
+  );
+  assert.equal(
+    freshAsset({ ...draftOfKit('assets'), sections: assets(full) }, assetId, 'Logo'),
+    null,
+  );
+  discardDraft('assets');
+});
+
+test('Undo of a removed image keeps asset names unique and the version within its image limit', () => {
+  const asset = (id: string, name: string): DocumentAsset => ({
+    kind: 'asset',
+    id,
+    name,
+    assetId: 'b'.repeat(64),
+  });
+  const images = Array.from({ length: 46 }, (_, n) =>
+    asset(`image-${String(n)}`, `Image ${String(n)}`),
+  );
+  const items = [asset('logo', 'Logo'), asset('mark', 'Mark'), ...images];
+  const opened = {
+    ...kitAt('undo-assets', 1),
+    sections: [{ kind: 'assets' as const, id: 'assets', title: 'Assets', items }],
+  };
+  const names = () =>
+    draftOfKit('undo-assets').sections[0].items.map((item) => 'name' in item && item.name);
+
+  editDraft(opened, { kind: 'remove', key: 'logo' });
+  editDraft(opened, { kind: 'setItem', item: asset('mark', 'Logo') });
+  editDraft(opened, { kind: 'restore', key: 'logo' });
+  assert.deepEqual(names().slice(0, 2), ['Logo 2', 'Logo']);
+  assert.equal(isDocumentSections(draftOfKit('undo-assets').sections), true);
+
+  editDraft(opened, { kind: 'remove', key: 'image-0' });
+  const replacement = freshAsset(draftOfKit('undo-assets'), 'c'.repeat(64), 'New');
+  assert.ok(replacement);
+  editDraft(opened, { kind: 'addItem', sectionId: 'assets', item: replacement });
+  assert.equal(isRestoreOverCap(draftOfKit('undo-assets'), 'image-0'), true);
+  editDraft(opened, { kind: 'restore', key: 'image-0' });
+  assert.equal(names().length, 48);
+  assert.equal(names().includes('Image 0'), false);
+  discardDraft('undo-assets');
 });
 
 test('a newer read keeps the draft on its base until Discard', () => {

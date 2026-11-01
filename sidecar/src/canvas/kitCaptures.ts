@@ -1,8 +1,9 @@
 // The pictures of a kit version's previews: its cover and each preview, per
-// mode, captured by the document from a live preview. They are pixels of
-// immutable source, so they sit beside the version rather than in it, and a
-// later capture replaces one (design system documents spec §3). The same atomic
-// write as a canvas cover, with room for device pixels at the cover's full size.
+// mode, captured by the document from a live preview or, for an image cover,
+// drawn from that image. They are pixels of immutable source, so they sit
+// beside the version rather than in it, and a later capture replaces one
+// (design system documents spec §3). The same atomic write as a canvas cover,
+// with room for device pixels at the cover's full size.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -30,7 +31,8 @@ export async function saveKitCapture(
   png: Buffer,
 ): Promise<void> {
   if (imageMediaType(png) !== 'image/png') throw canvasError('invalid_input', NOT_PNG);
-  kitExample(await readDesignSystem(ref), item);
+  const system = await readDesignSystem(ref);
+  if (item !== 'cover' || system.cover?.kind !== 'image') kitExample(system, item);
   const target = capturePath(ref, item);
   // An orphaned `.tmp` costs only its bytes: nothing reads a name it did not ask for.
   const temporary = `${target}.${randomUUID()}.tmp`;

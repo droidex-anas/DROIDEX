@@ -147,6 +147,15 @@ contextBridge.exposeInMainWorld('droidex', {
     const filePath = canvasDroppedFilePath(file);
     return canvasImageReply(await ipcRenderer.invoke('canvas-drop-image', { canvasId, filePath }));
   },
+  canvasPickKitImage: async () => {
+    const reply = await ipcRenderer.invoke('canvas-pick-kit-image');
+    return reply === null ? null : canvasImageReply(reply);
+  },
+  canvasDropKitImage: async (file) => {
+    const filePath = canvasDroppedFilePath(file);
+    return canvasImageReply(await ipcRenderer.invoke('canvas-drop-kit-image', { filePath }));
+  },
+  canvasReadKitImage: (assetId) => ipcRenderer.invoke('canvas-read-kit-image', { assetId }),
   // The owned source every Canvas preview guest loads, and the only way the
   // board can ask main to end one. Main owns the registry of guests it
   // attached, so an ID it does not recognise is refused.
