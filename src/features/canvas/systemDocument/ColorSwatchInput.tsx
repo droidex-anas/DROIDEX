@@ -2,7 +2,7 @@
 // the user picks shows in the swatch and in live previews while they choose;
 // closing the picker keeps it in the draft as one change. The system picker
 // has no cancel, so only closing it on the colour it opened with keeps
-// nothing. It has no alpha either, so a translucent value keeps its own.
+// nothing. It has no alpha either, so a value keeps its own, zero included.
 
 import { useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react';
 import type { DocumentToken } from '../designSystemDocumentProtocol';
@@ -110,8 +110,7 @@ function ColorSwatchInput({
           const paint = paintRef.current;
           if (!paint) return;
           const [red, green, blue, alpha] = channels(getComputedStyle(paint).backgroundColor);
-          // A see-through colour is picked as an opaque one, or it would stay invisible.
-          alphaRef.current = alpha === 0 ? OPAQUE : alpha;
+          alphaRef.current = alpha;
           startRef.current = `#${[red, green, blue].map(hexByte).join('')}`;
           event.currentTarget.value = startRef.current;
         }}
