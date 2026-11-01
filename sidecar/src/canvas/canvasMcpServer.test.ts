@@ -98,6 +98,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
         result.instructions,
         /save a kit with canvas_theme save instead of drawing frames/,
       );
+      assert.match(result.instructions, /Icons come from lucide-react, never emoji/);
       assert.equal(result.instructions.includes(DESIGN_SESSION_GUIDANCE), false);
     }
     const write = server.tools.find((entry) => entry.name === 'canvas_write');
