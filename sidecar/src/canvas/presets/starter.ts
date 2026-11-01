@@ -18,7 +18,7 @@ Use the semantic --ds-* tokens: foreground on raised, surface and canvas; muted 
 
 Write complete literal Tailwind 3 classes in every source file; never concatenate class fragments. Import named icons from lucide-react, never a dynamic icon map. Decorative icons use aria-hidden; icon-only buttons need an accessible name.
 
-Imports are limited to react, react/jsx-runtime, react-dom/client, lucide-react, @droidex/design-system and relative source modules; any other package fails, and so do remote imports and fonts. ${fonts} Local component state resets on a source revision or refresh.
+Imports are limited to react, react/jsx-runtime, react-dom/client, lucide-react, simple-icons, @droidex/design-system and relative source modules; any other package fails, and so do remote imports and fonts. ${fonts} Local component state resets on a source revision or refresh.
 `,
   };
 }

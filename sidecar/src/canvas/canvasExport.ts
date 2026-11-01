@@ -154,6 +154,7 @@ function exportPackageJson(): string {
           'lucide-react': '0.460.0',
           recharts: version('recharts'),
           'react-is': version('react-is'),
+          'simple-icons': '16.36.0',
         },
         devDependencies: {
           esbuild: version('esbuild'),
@@ -375,8 +376,8 @@ images in \`assets/\`.
 
 Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
 \`npm run preview\` to serve the result locally. The supported runtime imports
-are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, and
-\`@droidex/design-system\`. Direct dependency versions are exact in
+are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
+and \`@droidex/design-system\`. Direct dependency versions are exact in
 \`package.json\`. No lockfile is generated during export: npm resolves transitive
 dependencies when you install, without the export needing registry access.
 `;
