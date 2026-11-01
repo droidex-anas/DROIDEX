@@ -59,7 +59,7 @@ const SECTION_ORDER: readonly SectionKind[] = [
   'assets',
 ];
 
-export const SECTION_TITLES: Record<SectionKind, string> = {
+const SECTION_TITLES: Record<SectionKind, string> = {
   notes: 'Notes',
   colors: 'Colors',
   typography: 'Typography',

@@ -41,7 +41,7 @@ export function CellSwatch({
   );
 }
 
-export function ColorSwatchInput({
+function ColorSwatchInput({
   kitId,
   name,
   mode,
