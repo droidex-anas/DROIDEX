@@ -111,35 +111,38 @@ function isDeclaration(word: string): boolean {
   return word === 'const' || word === 'let' || word === 'var';
 }
 
+/** A `;`, or the keyword that starts the next declaration in a module written without semicolons. */
+function endsStatement(token: Token): boolean {
+  if (token.kind === 'punct') return token.text === ';';
+  return token.kind === 'word' && (isDeclaration(token.text) || token.text === 'export');
+}
+
 /** The `=` that starts the value, past a type annotation; null when the statement has none. */
 function bindingEquals(tokens: Token[], start: number): number | null {
   let inner = 0;
   for (let index = start; index < tokens.length; index += 1) {
     const token = tokens[index];
-    if (token.kind === 'punct') {
-      // `=>` opens a function type, not a value.
-      if (token.text === '=' && tokens[index + 1]?.text !== '>') return index;
-      if (token.text === ';') return null;
-      if (token.text === '{' || token.text === '[' || token.text === '(') inner += 1;
-      else if (token.text === '}' || token.text === ']' || token.text === ')') {
-        if (inner === 0) return null;
-        inner -= 1;
-      }
-    } else if (inner === 0 && (isDeclaration(token.text) || token.text === 'export')) return null;
+    if (inner === 0 && endsStatement(token)) return null;
+    if (token.kind !== 'punct') continue;
+    // `=>` opens a function type, not a value.
+    if (token.text === '=' && tokens[index + 1]?.text !== '>') return index;
+    if (token.text === '{' || token.text === '[' || token.text === '(') inner += 1;
+    else if (token.text === '}' || token.text === ']' || token.text === ')') {
+      if (inner === 0) return null;
+      inner -= 1;
+    }
   }
   return null;
 }
 
 type BindingRead = { status: 'read'; value: ConfigValue; cursor: number } | { status: 'tooDeep' };
 
-/** A binding's value: a literal, with a top-level string or number closed by `;` or `as`. */
+/** A binding's value: a literal, with a top-level string or number closed by its statement's end or `as`. */
 function readBindingValue(tokens: Token[], start: number): BindingRead {
   const first = tokens.at(start);
   const after = tokens.at(start + 1);
   const closes =
-    after === undefined ||
-    (after.kind === 'punct' && after.text === ';') ||
-    (after.kind === 'word' && after.text === 'as');
+    after === undefined || endsStatement(after) || (after.kind === 'word' && after.text === 'as');
   if (first?.kind === 'text' && closes)
     return {
       status: 'read',
@@ -259,11 +262,13 @@ class LiteralReader {
     return { kind: 'list', items, line };
   }
 
-  /** Moves to the comma or closing bracket that ends the expression at this depth. */
+  /** Moves to the comma, closing bracket or statement end that ends the expression at this depth. */
   private skipExpression(): void {
     let depth = 0;
     for (; this.index < this.tokens.length; this.index += 1) {
-      const { kind, text } = this.tokens[this.index];
+      const token = this.tokens[this.index];
+      if (depth === 0 && endsStatement(token)) return;
+      const { kind, text } = token;
       if (kind !== 'punct') continue;
       if (text === '{' || text === '[' || text === '(') depth += 1;
       else if (text === '}' || text === ']' || text === ')') {

@@ -30,13 +30,13 @@ import {
   placeOf,
   readCss,
   readTailwind,
-  readTokenModule,
   tokenName,
   type Declared,
   type Mode,
   type TextOrigin,
 } from './designSystemSources.js';
 import type { CanvasDiagnostic } from './protocol.js';
+import { readTokenModule } from './tokenModules.js';
 
 export type ImportDesignSystemResult =
   | { status: 'imported'; system: DesignSystem; diagnostics: CanvasDiagnostic[] }

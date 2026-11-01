@@ -126,6 +126,56 @@ export const computed = buildTokens(source);
   );
 });
 
+test('a computed binding ends at its statement, so the bindings after it are still read', async (t) => {
+  const root = await project(t, {
+    'src/tokens.ts': `export const derived = buildTokens(source);
+export const palette = { brand: '#123456' };
+export const easing = curves.standard
+export const DURATION_QUICK = '150ms'
+`,
+  });
+  const imported = await importProjectDesignSystem(
+    root,
+    [{ path: 'src/tokens.ts', kind: 'tokens' }],
+    KIT,
+  );
+  assert.equal(imported.status, 'imported');
+  const modes = kitModes(imported.system.sections);
+  assert.equal(modes.light['--ds-palette-brand'], '#123456');
+  assert.equal(modes.light['--ds-duration-quick'], '150ms');
+  assert.deepEqual(
+    imported.diagnostics.map(({ code, line }) => `${code} ${String(line ?? '')}`),
+    ['manual_interpretation_required 1', 'manual_interpretation_required 3'],
+  );
+});
+
+test('a family that sets a taken name per mode is renamed, and one it cannot rename is refused', async (t) => {
+  const read = async (tokens: unknown) => {
+    const root = await project(t, { 'tokens.json': JSON.stringify(tokens) });
+    return importProjectDesignSystem(root, [{ path: 'tokens.json', kind: 'tokens' }], KIT);
+  };
+  const imported = await read({
+    size: { tokens: [{ name: 'brand-ink', value: '480px' }] },
+    color: { tokens: [{ name: 'brand-ink', value: { dark: '#0a0a0a', light: '#f8f7f4' } }] },
+  });
+  assert.equal(imported.status, 'imported');
+  const modes = kitModes(imported.system.sections);
+  assert.equal(modes.dark['--ds-brand-ink'], '480px');
+  assert.equal(modes.light['--ds-color-brand-ink'], '#f8f7f4');
+  assert.equal(modes.dark['--ds-color-brand-ink'], '#0a0a0a');
+  assert.deepEqual(
+    imported.diagnostics.map(({ code }) => code),
+    ['renamed_token'],
+  );
+  // `color-primary` already starts with its family, so it has no wider name.
+  const clash = await read({
+    size: { tokens: [{ name: 'color-primary', value: '4px' }] },
+    color: { primary: { light: '#ffffff', dark: '#000000' } },
+  });
+  assert.equal(clash.status, 'refused');
+  assert.equal(clash.diagnostics.at(0)?.code, 'ambiguous_token');
+});
+
 test('a project file outside the folder, behind a link, too large or not text is refused', async (t) => {
   const root = await project(t, {
     'src/index.css': ':root { --primary: #123456; }',

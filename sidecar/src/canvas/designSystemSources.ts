@@ -1,8 +1,7 @@
-// Reads a DESIGN.md's blocks, CSS variables, a Tailwind config or a token
-// module, pasted or read from a project, into declared tokens, each with its
-// light, dark or shared value and the place that set it. Nothing here runs
-// the source: CSS is parsed by PostCSS, and a config or module is read for
-// its literals only.
+// Reads a DESIGN.md's blocks, CSS variables or a Tailwind config, pasted or
+// read from a project, into declared tokens, each with its light, dark or
+// shared value and the place that set it. Nothing here runs the source: CSS is
+// parsed by PostCSS, and a config is read for its literals only.
 
 import postcss, {
   type AtRule,
@@ -12,7 +11,7 @@ import postcss, {
   type Root,
   type Rule,
 } from 'postcss';
-import { readConfigBindings, readConfigTheme, type ConfigValue } from './configLiterals.js';
+import { readConfigTheme, type ConfigValue } from './configLiterals.js';
 import {
   declareToken,
   rootSelectorScope,
@@ -68,12 +67,12 @@ export function declarePlaceholders(declared: Declared, diagnostics: CanvasDiagn
       declare(declared, { name, value: `var(${name})`, targets: ['shared'], place }, diagnostics);
 }
 
-function placeIn(origin: TextOrigin, line: number): SourcePlace {
+export function placeIn(origin: TextOrigin, line: number): SourcePlace {
   const at = origin.lineOffset + line;
   return origin.file === undefined ? { line: at } : { file: origin.file, line: at };
 }
 
-function fileOf(origin: TextOrigin): { file?: string } {
+export function fileOf(origin: TextOrigin): { file?: string } {
   return origin.file === undefined ? {} : { file: origin.file };
 }
 
@@ -309,209 +308,6 @@ function literalValue(value: ConfigValue, section: string): string | null {
   return first?.kind === 'text' ? first.value : null;
 }
 
-// Keys a token module carries beside its values; they never name a token.
-const MODULE_METADATA = new Set([
-  'name',
-  'id',
-  'version',
-  'usage',
-  'description',
-  '$description',
-  'comment',
-  'type',
-  '$type',
-  'meta',
-  'note',
-]);
-
-/** A binding or entry named for a mode holds that mode's values. */
-function bindingMode(name: string | null): Mode | null {
-  if (name === null) return null;
-  const words = name
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[^a-z0-9]+/);
-  if (words.includes('light')) return 'light';
-  if (words.includes('dark')) return 'dark';
-  return null;
-}
-
-/**
- * Reads a JS, TS or JSON token module's literal bindings, never running them:
- * nested objects flatten into hyphenated names, `light` and `dark` entries
- * set that mode's value, a `value` entry unwraps, and a list of named records
- * (a token file's `{ name, value }` entries) names each token by its record.
- * A flattened name another value already holds widens by its family, reported
- * as renamed; what cannot be read is reported, never dropped quietly.
- */
-export function readTokenModule(
-  text: string,
-  origin: TextOrigin,
-  declared: Declared,
-  diagnostics: CanvasDiagnostic[],
-): CanvasDiagnostic | null {
-  const read = readConfigBindings(text);
-  if (read.status === 'tooDeep')
-    return {
-      code: 'invalid_input',
-      message: 'That token module nests its values too deeply to read.',
-      ...fileOf(origin),
-    };
-  const diagnosed = diagnostics.length;
-  let found = 0;
-  /** Each token this module declared, by the collect-path and value that set it. */
-  const claims = new Map<string, { path: string; value: string }>();
-  const leaf = (
-    value: ConfigValue,
-    name: string,
-    path: string,
-    mode: Mode | null,
-    family: string,
-  ): void => {
-    const place = placeIn(origin, value.line);
-    if (value.kind !== 'text') {
-      diagnostics.push({
-        code: 'manual_interpretation_required',
-        message: `${path} is computed in the module. Set it with a token change instead.`,
-        ...place,
-      });
-      return;
-    }
-    let token = tokenName(name);
-    if (token === null) return;
-    // A shared name another value already holds (a size next to a colour)
-    // widens by its family; with no honest name it stays, and the competing
-    // values are refused as they are for every source. A mode's value never
-    // widens: the other mode is its own, and the cascade settles the rest.
-    const normalized = value.value.replace(/\s+/g, ' ').trim();
-    const taken = (candidate: string): boolean => {
-      if (mode !== null) return false;
-      const shared = declared.scopes.shared[candidate] as string | undefined;
-      if (shared !== undefined && shared !== normalized) return true;
-      const claim = claims.get(candidate);
-      return claim !== undefined && claim.path !== path && claim.value !== normalized;
-    };
-    if (taken(token)) {
-      const widened =
-        family !== '' && name !== family && !name.startsWith(`${family}-`)
-          ? tokenName(`${family}-${name}`)
-          : null;
-      if (widened !== null && widened !== token && !taken(widened)) {
-        diagnostics.push({
-          code: 'renamed_token',
-          message: `${path} is ${widened} in the kit: ${token} already names another value.`,
-          ...place,
-        });
-        token = widened;
-      }
-    }
-    if (!claims.has(token)) claims.set(token, { path, value: normalized });
-    declare(
-      declared,
-      { name: token, value: value.value, targets: mode === null ? ['shared'] : [mode], place },
-      diagnostics,
-    );
-    found += 1;
-  };
-  const collect = (
-    value: ConfigValue,
-    name: string,
-    path: string,
-    mode: Mode | null,
-    family: string,
-  ): void => {
-    if (value.kind === 'object') {
-      for (const entry of value.entries) {
-        if (entry.key === null) {
-          leaf(entry.value, name, path, mode, family);
-          continue;
-        }
-        const key = entry.key;
-        if (key === 'light' || key === 'dark') {
-          if (entry.value.kind === 'object')
-            collect(entry.value, name, `${path}.${key}`, key, family);
-          else leaf(entry.value, name || key, `${path}.${key}`, key, family);
-          continue;
-        }
-        if (key === 'value' || key === '$value' || key === 'DEFAULT') {
-          if (entry.value.kind === 'object')
-            collect(entry.value, name, `${path}.${key}`, mode, family);
-          else leaf(entry.value, name || key, `${path}.${key}`, mode, family);
-          continue;
-        }
-        if (MODULE_METADATA.has(key)) continue;
-        collect(
-          entry.value,
-          name === '' ? key : `${name}-${key}`,
-          `${path}.${key}`,
-          mode,
-          family === '' ? key : family,
-        );
-      }
-      return;
-    }
-    if (value.kind === 'list') {
-      if (value.items.length === 0) return;
-      const records = value.items.flatMap((item) => {
-        const recordName = tokenRecordName(item);
-        return recordName === null ? [] : [{ item, name: recordName }];
-      });
-      // A record names its token itself; the path it sits under is no prefix,
-      // only its family's fallback when the name is taken.
-      if (records.length === value.items.length) {
-        const section = name.replace(/(?:^|-)tokens$/, '') || family;
-        for (const record of records)
-          collect(record.item, record.name, `${path}.${record.name}`, mode, section);
-        return;
-      }
-      const texts = value.items.flatMap((item) => (item.kind === 'text' ? [item.value] : []));
-      // A family list and a layered shadow both join.
-      if (texts.length === value.items.length) {
-        leaf({ kind: 'text', value: texts.join(', '), line: value.line }, name, path, mode, family);
-        return;
-      }
-      diagnostics.push({
-        code: 'manual_interpretation_required',
-        message: `${path} is a list of values the import cannot read. Set them with token changes instead.`,
-        ...placeIn(origin, value.line),
-      });
-      return;
-    }
-    leaf(value, name, path, mode, family);
-  };
-  for (const binding of read.bindings) {
-    const fragment = binding.name === null ? '' : (tokenName(binding.name)?.slice(2) ?? '');
-    collect(
-      binding.value,
-      fragment,
-      binding.name ?? 'the module',
-      bindingMode(binding.name),
-      fragment,
-    );
-  }
-  if (found === 0 && diagnostics.length === diagnosed)
-    diagnostics.push({
-      code: 'no_tokens',
-      message: 'That token module declares no literal token values.',
-      ...fileOf(origin),
-    });
-  return null;
-}
-
-/** The token name of a `{ name, value }` record, or null for a list item that is none. */
-function tokenRecordName(item: ConfigValue): string | null {
-  if (item.kind !== 'object') return null;
-  const name = item.entries.find((entry) => entry.key === 'name');
-  const valued = item.entries.some(
-    (entry) =>
-      entry.key === 'value' ||
-      entry.key === '$value' ||
-      entry.key === 'light' ||
-      entry.key === 'dark',
-  );
-  return valued && name?.value.kind === 'text' ? name.value.value : null;
-}
-
 /** The kit's spelling of a custom property name: `--Brand_500` is `--brand-500`. */
 export function tokenName(raw: string): string | null {
   const words = raw
@@ -522,7 +318,7 @@ export function tokenName(raw: string): string | null {
 }
 
 // Pasted values may wrap across lines; a token value is a single line.
-function declare(
+export function declare(
   declared: Declared,
   token: { name: string; value: string; targets: TokenScope[]; place: SourcePlace },
   diagnostics: CanvasDiagnostic[],
