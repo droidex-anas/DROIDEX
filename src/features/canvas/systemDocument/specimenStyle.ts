@@ -70,10 +70,24 @@ export function isPaintable(property: string, value: string): boolean {
   return !FETCHING.test(value) && CSS.supports(property, value);
 }
 
+const PAINTED_PROPERTIES = Object.values(SHAPE_PROPERTY).filter((property) => property !== null);
+
 /**
- * The kit's drawn tokens in `mode` as custom properties, set on each specimen
- * so a token that refers to another still resolves. Values a check refuses are
- * left out and their specimen stays empty.
+ * What a token's value is checked against before it is published: the
+ * property its row paints. A row that draws text, such as a bare 0, may still
+ * be what another token refers to, so it is checked against what its kind
+ * holds, or in a mixed section, what any specimen paints.
+ */
+function publishingProperties(shape: TokenShape, kind: TokenKind): string[] {
+  const painted = SHAPE_PROPERTY[shape];
+  if (painted !== null) return [painted];
+  return ACCEPTING_PROPERTIES[kind] ?? PAINTED_PROPERTIES;
+}
+
+/**
+ * The kit's tokens in `mode` as custom properties, set on each specimen so a
+ * token that refers to another still resolves. Values a check refuses are left
+ * out and their specimen stays empty.
  */
 export function specimenProperties(sections: DocumentSection[], mode: PreviewMode): CSSProperties {
   const properties: Record<string, string> = {};
@@ -83,9 +97,10 @@ export function specimenProperties(sections: DocumentSection[], mode: PreviewMod
     for (const item of section.items) {
       if (item.kind !== 'group') continue;
       for (const token of item.tokens) {
-        const property = SHAPE_PROPERTY[tokenShape(modeValue(token, 'light'), kind, item.title)];
+        const shape = tokenShape(modeValue(token, 'light'), kind, item.title);
         const value = modeValue(token, mode).trim();
-        if (property !== null && isPaintable(property, value)) properties[token.name] = value;
+        if (publishingProperties(shape, kind).some((property) => isPaintable(property, value)))
+          properties[token.name] = value;
       }
     }
   }
