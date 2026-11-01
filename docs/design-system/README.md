@@ -131,6 +131,10 @@ Use the **DROIDEX icon set** (`packages/icons`). It has 166 curved 24px outline 
 
 The mark is a pixel **DX** monogram built on an 80px grid. On the light tile (`brand-paper`) the D is `brand-ink`, and on the dark tile (`brand-ink`) the D is `brand-paper`. The X is always `brand-orange`. In text the wordmark is set in `wordmark` style (Silkscreen, tracking −0.04em) as DROIDE + X, so the X can take `brand-orange`. Use the files in `assets/brand` (`icon.svg`, `icon-dark.svg`) as they are; don't redraw, recolour or stretch them. The DROIDEX name and mark are trademarks, so forks must use their own.
 
+## Canvas kit
+
+The built-in DROIDEX kit in Design canvases is this system as a kit: its tokens, notes, primitives, cover and component previews live in `sidecar/src/canvas/presets/droidex/`, exported from a kit made in the app. To change it, duplicate DROIDEX in the app, edit the copy and let its cover and previews render in both modes, then write it back with `npm run kits:export -- --profile <profile dir> --kit <copy id> --as droidex`. The export takes the copy's latest version and the captures it has, and lists the ones still missing.
+
 ## Not covered yet
 
 - Only the **Default** preset is here. Midnight, Ember, Ocean and the branded presets in `src/lib/theme.ts` aren't, and neither is the "focused" diff style or the translucent sidebar variant.
