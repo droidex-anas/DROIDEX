@@ -409,7 +409,7 @@ function IssueList({
               onReveal(issue);
             }}
             disabled={issue.path === null}
-            className="flex w-full gap-2 rounded-md px-2 py-1 text-left font-mono text-code-sm text-secondary transition-colors enabled:hover:bg-elevated disabled:cursor-default"
+            className="flex w-full gap-2 rounded-md px-2 py-1 text-left text-caption tabular-nums text-secondary transition-colors enabled:hover:bg-elevated disabled:cursor-default"
           >
             <span className="shrink-0 text-danger">
               {issue.path === null

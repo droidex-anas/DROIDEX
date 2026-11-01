@@ -74,7 +74,7 @@ function HarnessCliRow({ cli, status }: { cli: HarnessCliState; status?: Provide
   if (!cli.installed) {
     return (
       <SettingRow label={label} description="Not detected on this machine.">
-        <span className="font-mono text-code text-muted">missing</span>
+        <span className="text-body text-muted">missing</span>
       </SettingRow>
     );
   }
@@ -96,7 +96,7 @@ function HarnessCliRow({ cli, status }: { cli: HarnessCliState; status?: Provide
       }
     >
       <div className="flex shrink-0 items-center gap-2">
-        <span className="font-mono text-code text-muted">{cli.version ?? 'installed'}</span>
+        <span className="text-body tabular-nums text-muted">{cli.version ?? 'installed'}</span>
         {status?.readiness === 'ready' && <SignInBadge provider={cli.provider} status={status} />}
         {cli.source !== 'chatgpt' && (
           <Button

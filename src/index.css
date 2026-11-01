@@ -896,16 +896,22 @@
     text-wrap: balance;
   }
 
-  /* Inline code in running text reads by its face alone: mono at the x-height
-     of the text around it, with no box. It takes no padding either: a
-     selection highlights glyphs, never an inline box's padding, so padding
-     would open a gap in the band and push the following punctuation away. */
+  /* Inline code in running text is a name, not a code surface, so it stays in
+     the text's own face and size and reads by weight alone. No box and no
+     padding: a selection highlights glyphs, never an inline box's padding, so
+     padding would open a gap in the band and push the following punctuation away. */
   .inline-code {
-    font-family: theme('fontFamily.mono');
-    font-size: theme('fontSize.code-inline');
-    letter-spacing: 0;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: theme('fontWeight.medium');
+    font-variant-numeric: inherit;
     color: var(--text);
     overflow-wrap: break-word;
+  }
+
+  /* In a heading or bold run the text is already heavier than 500. */
+  :where(h1, h2, h3, h4, h5, h6, strong, b, th) .inline-code {
+    font-weight: inherit;
   }
 
   /* Without a box, a link's colour is what marks code inside it as a link. */

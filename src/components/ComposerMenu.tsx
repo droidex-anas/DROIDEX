@@ -132,7 +132,7 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
       <CatalogRowIcon item={row} />
       <Name>{catalogLabel(row)}</Name>
       {row.argumentHint && (
-        <span className="shrink-0 font-mono text-code-sm text-muted">{row.argumentHint}</span>
+        <span className="shrink-0 text-caption text-muted">{row.argumentHint}</span>
       )}
       <Detail>{row.description}</Detail>
       {/* Where a command or skill comes from is worth saying; an app or a

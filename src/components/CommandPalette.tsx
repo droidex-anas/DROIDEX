@@ -108,7 +108,7 @@ export default function CommandPalette() {
             </span>
             <span className="flex-1 text-body text-primary">{cmd.label}</span>
             {cmd.shortcut && (
-              <span className="text-caption text-muted font-mono">{cmd.shortcut}</span>
+              <span className="text-caption tabular-nums text-muted">{cmd.shortcut}</span>
             )}
             {i === selected && <ArrowRight className="size-icon-sm text-accent" />}
           </button>

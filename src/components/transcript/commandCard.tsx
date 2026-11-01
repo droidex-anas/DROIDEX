@@ -46,7 +46,7 @@ export function ToolCallCard({
   const out = output ? stripAnsi(output).trimEnd() : '';
   return (
     <ToolPanel className="group relative">
-      <div className="px-3.5 py-2.5 font-mono text-code">
+      <div className="px-3.5 py-2.5 text-code">
         {heading}
         {running && <span className="shimmer-text text-body-strong">Running</span>}
         {interrupted && <InterruptedTag />}
@@ -89,7 +89,7 @@ export function CommandCard({
   return (
     <ToolCallCard
       heading={
-        <div className="flex gap-2 break-words">
+        <div className="flex gap-2 break-words font-mono">
           <span className={`select-none ${error ? 'text-danger' : 'text-muted'}`}>$</span>
           <span className="whitespace-pre-wrap text-primary">{command}</span>
         </div>
