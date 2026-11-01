@@ -40,14 +40,15 @@ export default function KitChip({
   const frameName = useFrameName(status === 'applied' ? canvasId : null, activity.designIds.at(0));
   const openPane = useOpenCanvasPane();
   const name = kit?.name ?? id;
+  // A proposal already accepted or discarded opens the kit as it is now.
+  const reviews = status === 'proposed' && Boolean(kit?.proposal);
 
   const open = () => {
     if (status !== 'proposed') {
       openPane({ appSessionId, canvasId, designSystem: { id, version } });
       return;
     }
-    // A proposal already accepted or discarded opens the kit as it is now.
-    if (kit?.proposal) startReview(id);
+    if (reviews) startReview(id);
     openPane({ appSessionId, canvasId, designSystem: { id } });
   };
 
@@ -58,9 +59,7 @@ export default function KitChip({
         type="button"
         disabled={kit === null}
         onClick={open}
-        aria-label={
-          status === 'proposed' ? `Review the proposed changes to ${name}` : `Open ${name}`
-        }
+        aria-label={reviews ? `Review the proposed changes to ${name}` : `Open ${name}`}
         className="inline-flex h-control-sm min-w-0 items-center gap-1.5 rounded-md bg-elevated pl-1 pr-2 text-label text-primary transition-colors duration-150 ease-smooth-out enabled:hover:bg-active disabled:cursor-default disabled:text-muted"
       >
         {kit ? (
