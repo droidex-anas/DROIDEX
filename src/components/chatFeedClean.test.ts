@@ -71,6 +71,25 @@ test('a design chat shows the prompts, the answers and their designs, never the 
   ]);
 });
 
+test('a finished turn that used the browser keeps its answer', () => {
+  const events = [
+    user('Make a design system from example.com'),
+    ev({
+      kind: 'tool_call',
+      toolName: 'droidex-browser___browser_open',
+      toolUseId: 'open',
+      toolArgs: { url: 'https://example.com' },
+    }),
+    ev({ kind: 'tool_result', toolUseId: 'open', text: 'Opened the page.' }),
+    reply('I created the Example design system.'),
+  ];
+
+  assert.deepEqual(shape(buildGroupedFeed(events, false, { clean: true })), [
+    'user: Make a design system from example.com',
+    'agent: I created the Example design system.',
+  ]);
+});
+
 test('the status line names what the running turn is doing', () => {
   const prompt = user('Design a pricing card');
   const label = (...turn: TranscriptEvent[]) => designWorkingStatus([prompt, ...turn]).label;
