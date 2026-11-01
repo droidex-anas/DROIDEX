@@ -39,7 +39,7 @@ export function PreviewModeToggle({
   );
 }
 
-/** The toggle as one icon button for a crowded row: it shows the mode and switches to the other. */
+/** The toggle as one icon button: it names and shows the mode it switches to. */
 export function PreviewModeButton({
   mode,
   onChange,
@@ -48,13 +48,13 @@ export function PreviewModeButton({
   onChange: (mode: PreviewMode) => void;
 }) {
   const other = mode === 'light' ? 'dark' : 'light';
-  const label = `${mode === 'light' ? 'Light' : 'Dark'} preview. Switch to ${other}`;
+  const label = `Preview in ${other}`;
   return (
     <Tooltip label={label} placement="bottom">
       <Button
         variant="ghost"
         size="sm"
-        icon={mode === 'light' ? Sun : Moon}
+        icon={other === 'dark' ? Moon : Sun}
         aria-label={label}
         onClick={() => {
           onChange(other);

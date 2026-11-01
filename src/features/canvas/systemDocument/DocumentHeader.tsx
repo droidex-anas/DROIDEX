@@ -19,14 +19,12 @@ import { VersionMenu } from './VersionMenu';
 const MAX_NAME_LENGTH = 120;
 
 /**
- * What the header keeps as its row narrows. It drops, in order, the mode
- * toggle's words, the Board and Sections labels,
- * most of the primary action's label and last the version button; the name
- * truncates throughout. Widths are the row's content box, chosen so the row
- * never overflows with every control present.
+ * What the header keeps as its row narrows. It drops, in order, the Board and
+ * Sections labels, most of the primary action's label and last the version
+ * button; the name truncates throughout. Widths are the row's content box,
+ * chosen so the row never overflows with every control present.
  */
 export interface HeaderRoom {
-  modeWords: boolean;
   navWords: boolean;
   fullPrimary: boolean;
   version: boolean;
@@ -34,7 +32,6 @@ export interface HeaderRoom {
 
 function headerRoom(widthPx: number): HeaderRoom {
   return {
-    modeWords: widthPx >= 640,
     navWords: widthPx >= 560,
     fullPrimary: widthPx >= 440,
     version: widthPx >= 340,

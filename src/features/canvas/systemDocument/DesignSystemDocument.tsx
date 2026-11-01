@@ -21,7 +21,7 @@ import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPa
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
 import type { DesignSystemDocumentView, DesignSystemProvenance } from '../protocol';
-import { PreviewModeButton, PreviewModeToggle, type PreviewMode } from '../PreviewModeToggle';
+import { PreviewModeButton, type PreviewMode } from '../PreviewModeToggle';
 import { DocumentCover } from './DocumentCover';
 import {
   addableSectionKinds,
@@ -294,11 +294,7 @@ function KitDocument({
         {(room) => (
           <>
             {!wide && <SectionsMenu {...navProps} labelled={room.navWords} />}
-            {room.modeWords ? (
-              <PreviewModeToggle mode={mode} onChange={setMode} />
-            ) : (
-              <PreviewModeButton mode={mode} onChange={setMode} />
-            )}
+            <PreviewModeButton mode={mode} onChange={setMode} />
             <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
             {isLatest && !editing && !isChosen && (
               <UseInCanvas
