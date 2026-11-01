@@ -1,7 +1,8 @@
 /* The docked canvas pane floats its menu and expand button over the top-right
-   corner, where the document's header ends; keep the header's controls clear. */
+   corner, where the document's header ends; keep the header's controls clear of
+   it (the corner is about 110px wide, 8px in from the edge). */
 .canvas-pane-column:has(> .canvas-pane-corner) .design-system-document-header {
-  padding-right: theme('spacing.24');
+  padding-right: theme('spacing.32');
 }
 
 .design-system-document-column {

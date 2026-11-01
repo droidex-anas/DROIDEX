@@ -21,7 +21,7 @@ import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPa
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
 import type { DesignSystemDocumentView, DesignSystemProvenance } from '../protocol';
-import { PreviewModeToggle, type PreviewMode } from '../PreviewModeToggle';
+import { PreviewModeButton, PreviewModeToggle, type PreviewMode } from '../PreviewModeToggle';
 import { DocumentCover } from './DocumentCover';
 import {
   addableSectionKinds,
@@ -35,7 +35,7 @@ import {
   useDocumentDraft,
   type DraftChange,
 } from './documentDraft';
-import { DocumentHeader, DocumentNotice, OlderVersionNotice } from './DocumentHeader';
+import { DocumentHeader, DocumentNotice, OlderVersionNotice, UseInCanvas } from './DocumentHeader';
 import { DocumentMenu, useDuplicate } from './DocumentMenu';
 import { DocumentNav, SectionsMenu, useActiveSection, type DocumentNavProps } from './DocumentNav';
 import { itemCount, searchSections } from './documentSearch';
@@ -286,22 +286,27 @@ function KitDocument({
           void onShow(version);
         }}
       >
-        {!wide && <SectionsMenu {...navProps} />}
-        <PreviewModeToggle mode={mode} onChange={setMode} />
-        <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
-        {isLatest && !editing && !isChosen && (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              chooseDesignSystem(canvasKey, {
-                ref: { id: view.id, version: view.version, mode },
-                name: view.name,
-              });
-            }}
-          >
-            Use in this canvas
-          </Button>
+        {(room) => (
+          <>
+            {!wide && <SectionsMenu {...navProps} labelled={room.navWords} />}
+            {room.modeWords ? (
+              <PreviewModeToggle mode={mode} onChange={setMode} />
+            ) : (
+              <PreviewModeButton mode={mode} onChange={setMode} />
+            )}
+            <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
+            {isLatest && !editing && !isChosen && (
+              <UseInCanvas
+                short={!room.fullPrimary}
+                onUse={() => {
+                  chooseDesignSystem(canvasKey, {
+                    ref: { id: view.id, version: view.version, mode },
+                    name: view.name,
+                  });
+                }}
+              />
+            )}
+          </>
         )}
       </DocumentHeader>
       {!isLatest && <OlderVersionNotice key={view.version} view={view} onShow={onShow} />}
