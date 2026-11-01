@@ -14,6 +14,7 @@ import {
 import { diagnosticPlace, missingLabel } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import type { PreviewElement } from './previewDocument';
+import { createGuestElement } from './previewGuestElement';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import { useCanvasMotion } from './useCanvasMotion';
 import type { CanvasDiagnostic, CanvasFrame, PreviewArtifact, PreviewReport } from './protocol';
@@ -389,17 +390,6 @@ export function PreviewGuestFrame({
       )}
     </div>
   );
-}
-
-/** A guest that can only ever load the owned intermediate. */
-export function createGuestElement(url: string) {
-  const guest = document.createElement('webview') as HTMLElement & {
-    getWebContentsId: () => number;
-    executeJavaScript: (code: string) => Promise<unknown>;
-  };
-  guest.setAttribute('src', url);
-  guest.style.cssText = 'display:flex;width:100%;height:100%';
-  return guest;
 }
 
 function lostLabel(reason: PreviewLostReason): string {

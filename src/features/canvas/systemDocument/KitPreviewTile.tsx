@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 import { Badge } from '../../../components/ui/Badge';
+import { cn } from '../../../components/ui/cn';
 import {
   bindCanvasPreviewGuest,
   cancelCanvasPreviewCapture,
@@ -21,8 +22,8 @@ import {
 } from '../../../lib/desktop';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage } from '../client';
-import { createGuestElement } from '../DesignPreview';
 import { keepKitCapture, useKitCapture } from '../kitCaptures';
+import { createGuestElement } from '../previewGuestElement';
 import { startPreview, type PreviewRun } from '../previewRuntime';
 import type { DesignSystemRef } from '../protocol';
 
@@ -64,11 +65,14 @@ export function KitPreviewTile({
 }) {
   const { kit, draftTokens, live, observe } = previewing;
   const still = useKitCapture(kit, item);
+  // Read too, so a mode without a capture yet shows the other one dimmed, not a placeholder.
+  const otherStill = useKitCapture({ ...kit, mode: kit.mode === 'light' ? 'dark' : 'light' }, item);
   const fitRef = useRef<HTMLDivElement>(null);
   const scale = useFitScale(fitRef, width);
   const isLive = live.includes(item);
   const isDrafted = Object.keys(draftTokens).length > 0;
   const isSavedLook = !isLive && Boolean(still) && isDrafted;
+  const isNeverCaptured = still === null && otherStill === null;
   return (
     <div
       ref={observe(item)}
@@ -78,11 +82,9 @@ export function KitPreviewTile({
       style={{ maxWidth: width, aspectRatio: `${String(width)} / ${String(height)}` }}
     >
       <div ref={fitRef} aria-hidden className="absolute inset-0">
-        {still ? (
-          <img src={still} alt="" draggable={false} className="size-full object-cover" />
-        ) : (
-          placeholder
-        )}
+        {isNeverCaptured && placeholder}
+        {otherStill && <Still src={otherStill} className="opacity-50" />}
+        {still && <Still key={kit.mode} src={still} className="kit-tile-reveal" />}
         {isLive && scale > 0 && (
           <KitGuest
             key={JSON.stringify([kit.id, kit.version, kit.mode, item])}
@@ -269,7 +271,7 @@ function KitGuest({
     <>
       <div
         ref={host}
-        className="absolute left-0 top-0 origin-top-left transition-opacity"
+        className="kit-tile-fade absolute left-0 top-0 origin-top-left"
         style={{
           width,
           height,
@@ -280,6 +282,17 @@ function KitGuest({
       {read.status === 'failed' && <TileNote text={read.message} />}
       {phase === 'lost' && <TileNote text="This preview is no longer running." />}
     </>
+  );
+}
+
+function Still({ src, className }: { src: string; className: string }) {
+  return (
+    <img
+      src={src}
+      alt=""
+      draggable={false}
+      className={cn('absolute inset-0 size-full object-cover', className)}
+    />
   );
 }
 

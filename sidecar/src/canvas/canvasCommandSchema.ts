@@ -8,6 +8,7 @@ import { DESIGN_SYSTEM_LIMITS, designSystemSchema } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
+import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './kitCaptures.js';
 import type { CanvasCommand } from './protocol.js';
 import {
   arrangeFramesInputSchema,
@@ -292,7 +293,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       ref: designSystemRefSchema,
       item: documentIdSchema,
-      png: base64Schema(MAX_COVER_BASE64_LENGTH),
+      png: base64Schema(MAX_KIT_CAPTURE_BASE64_LENGTH),
     })
     .strict(),
   z

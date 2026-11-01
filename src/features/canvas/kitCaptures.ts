@@ -7,7 +7,10 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { canvasClient } from './canvasClient';
 import { base64 } from './captureCanvasImage';
 import type { DesignSystemRef } from './protocol';
-import { MAX_TILE_BASE64_LENGTH } from './wireValidation';
+import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './wireValidation';
+
+// Device pixels up to 2x keep a tile sharp at its own size on a Retina screen.
+const MAX_CAPTURE_SCALE = 2;
 
 // A data URL per kit version, mode and item, or null once its read found none.
 const captures = new Map<string, string | null>();
@@ -65,20 +68,23 @@ export function useKitCapture(
   return capture;
 }
 
-/** Keeps a live preview's pixels as that item's capture, at its own size in CSS pixels. */
+/** Keeps a live preview's pixels as that item's capture, at its own size in device pixels. */
 export async function keepKitCapture(
   ref: DesignSystemRef,
   item: string,
   bytes: Uint8Array,
   widthPx: number,
 ): Promise<void> {
-  const png = await scaledPng(bytes, widthPx);
+  const scale = Math.min(MAX_CAPTURE_SCALE, Math.max(1, window.devicePixelRatio));
+  let png = await scaledPng(bytes, Math.round(widthPx * scale));
+  // A capture too detailed for the limit at device scale is still worth keeping at CSS scale.
+  if (png === null && scale > 1) png = await scaledPng(bytes, widthPx);
   if (png === null) return;
   await canvasClient.designSystems.saveCapture(ref, item, png);
   show(captureKey(ref, item), png);
 }
 
-/** The PNG at most `widthPx` wide as base64, or null when it is over the sidecar's limit. */
+/** The PNG at most `widthPx` pixels wide as base64, or null when it is over the sidecar's limit. */
 async function scaledPng(bytes: Uint8Array, widthPx: number): Promise<string | null> {
   const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: 'image/png' }));
   try {
@@ -91,7 +97,7 @@ async function scaledPng(bytes: Uint8Array, widthPx: number): Promise<string | n
     context.drawImage(bitmap, 0, 0, width, height);
     const blob = await canvas.convertToBlob({ type: 'image/png' });
     const encoded = base64(new Uint8Array(await blob.arrayBuffer()));
-    return encoded.length <= MAX_TILE_BASE64_LENGTH ? encoded : null;
+    return encoded.length <= MAX_KIT_CAPTURE_BASE64_LENGTH ? encoded : null;
   } finally {
     bitmap.close();
   }

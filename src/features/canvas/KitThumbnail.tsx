@@ -25,32 +25,27 @@ export function KitThumbnail({
     kit.cover ? { id: kit.id, version: kit.version, mode } : null,
     'cover',
   );
-  if (cover)
-    return (
-      <img
-        src={cover}
-        alt=""
-        aria-hidden
-        draggable={false}
-        className={cn('aspect-kit shrink-0 object-cover', SIZE[size].tile)}
-      />
-    );
   const { surface, accent } = kit.swatches[mode];
   return (
     <span
       aria-hidden
       className={cn(
         // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary kit surface needs an edge to read on any popover
-        'flex aspect-kit shrink-0 items-center ring-1 ring-inset ring-divider-strong',
+        'flex aspect-kit shrink-0 items-center overflow-hidden ring-1 ring-inset ring-divider-strong',
         SIZE[size].tile,
-        SIZE[size].swatches,
+        cover ? 'p-px' : SIZE[size].swatches,
       )}
       style={{ background: paintable(surface) }}
     >
-      <span
-        className={cn('rounded-full', SIZE[size].accent)}
-        style={{ background: paintable(accent) }}
-      />
+      {cover ? (
+        // Letterboxed on the kit's surface, so a capture is never cut to the tile's shape.
+        <img src={cover} alt="" draggable={false} className="size-full object-contain" />
+      ) : (
+        <span
+          className={cn('rounded-full', SIZE[size].accent)}
+          style={{ background: paintable(accent) }}
+        />
+      )}
     </span>
   );
 }

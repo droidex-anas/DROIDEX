@@ -1,20 +1,23 @@
 // The pictures of a kit version's previews: its cover and each preview, per
 // mode, captured by the document from a live preview. They are pixels of
 // immutable source, so they sit beside the version rather than in it, and a
-// later capture replaces one (design system documents spec §3). The same limit
-// and atomic write as a canvas cover.
+// later capture replaces one (design system documents spec §3). The same atomic
+// write as a canvas cover, with room for device pixels at the cover's full size.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { imageMediaType } from './canvasAssets.js';
-import { MAX_COVER_BYTES } from './canvasCovers.js';
 import { canvasError, storageFailure } from './canvasError.js';
 import { capturePath, isMissing, refuseLinkedPath } from './designSystemStorage.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitExample } from './kitPreviews.js';
 import type { DesignSystemRef } from './protocol.js';
+
+// A 1200 × 480 cover at 2x is 2400 × 960 pixels; a busy one needs more than a canvas cover's 512 KiB.
+const MAX_KIT_CAPTURE_BYTES = 2 * 1024 * 1024;
+export const MAX_KIT_CAPTURE_BASE64_LENGTH = Math.ceil(MAX_KIT_CAPTURE_BYTES / 3) * 4;
 
 const NOT_PNG = 'A preview capture must be a PNG.';
 const SAVE_RECOVERY = 'The preview capture could not be saved.';
@@ -60,7 +63,7 @@ export async function readKitCapture(ref: DesignSystemRef, item: string): Promis
     const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const info = await file.stat();
-      if (!info.isFile() || info.size > MAX_COVER_BYTES)
+      if (!info.isFile() || info.size > MAX_KIT_CAPTURE_BYTES)
         throw canvasError('storage_failed', READ_RECOVERY);
       const png = await file.readFile();
       if (imageMediaType(png) !== 'image/png') throw canvasError('storage_failed', READ_RECOVERY);

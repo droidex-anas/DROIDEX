@@ -14,7 +14,7 @@ import {
 } from 'react';
 import { Copy } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
-import { useStoreDispatch, useStoreSelector } from '../../../hooks/useStore';
+import { useStoreSelector } from '../../../hooks/useStore';
 import { resolveScheme } from '../../../lib/theme';
 import { canvasClient } from '../canvasClient';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
@@ -137,7 +137,6 @@ function KitDocument({
   const scrollRef = useRef<HTMLDivElement>(null);
   const draft = useDocumentDraft(view.id);
   const appMode = useStoreSelector((state) => state.theme.mode);
-  const dispatch = useStoreDispatch();
   const choice = useDesignSystemChoice(canvasKey);
   const isChosen = choice !== null && choice.ref.id === view.id;
   const [mode, setMode] = useState<PreviewMode>(() =>
@@ -327,21 +326,12 @@ function KitDocument({
           <div className="flex flex-col gap-8 px-8 pb-8 pt-2">
             <div className="flex flex-col gap-2">
               <DocumentCover
+                appSessionId={appSessionId}
                 name={working.name}
                 cover={working.cover}
                 specimen={specimens[mode]}
                 previewing={previewing}
-                onRegenerate={
-                  canEdit
-                    ? () => {
-                        dispatch({
-                          type: 'SEED_COMPOSER',
-                          appSessionId,
-                          text: `Make a new cover for ${view.name}.`,
-                        });
-                      }
-                    : null
-                }
+                canRegenerate={canEdit}
               />
               <ProvenanceLine provenance={view.provenance} unmapped={view.unmapped.length} />
             </div>
