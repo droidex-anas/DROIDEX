@@ -17,11 +17,9 @@ import { Copy } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { useStoreSelector } from '../../../hooks/useStore';
 import { resolveScheme } from '../../../lib/theme';
-import { pushToast } from '../../../lib/toast';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
 import type { DocumentSection } from '../designSystemDocumentProtocol';
-import { MAX_ASSETS } from '../designSystemDocumentValidation';
 import type { DesignSystemDocumentView } from '../protocol';
 import { PreviewModeButton, type PreviewMode } from '../PreviewModeToggle';
 import { revealFile, revealSection } from './columnScroll';
@@ -31,7 +29,6 @@ import {
   currentDraft,
   draftOf,
   editDraft,
-  freshAsset,
   freshGroup,
   freshNote,
   freshSection,
@@ -52,7 +49,7 @@ import {
   type DraftMark,
 } from './documentSections';
 import { kitFiles, type KitFile } from './kitFiles';
-import type { ImportedImage } from './kitImageImport';
+import { addImages } from './kitImageImport';
 import type { KitPreviewing } from './KitPreviewTile';
 import { ProposalLine } from './ProposalLine';
 import {
@@ -252,17 +249,6 @@ function KitDocument({
     setJustAdded(item.id);
   };
 
-  const addImages = (sectionId: string, images: ImportedImage[]) => {
-    for (const { asset, name } of images) {
-      const item = freshAsset(currentDraft(view.id) ?? draftOf(view), asset.assetId, name);
-      if (!item) {
-        pushToast(`A design system holds at most ${String(MAX_ASSETS)} images.`, 'error');
-        return;
-      }
-      change({ kind: 'addItem', sectionId, item });
-    }
-  };
-
   // The nav's "+ Section" row adds a notes section with the typed title.
   const addNotesSection = (title: string) => {
     const section = { ...freshSection(currentDraft(view.id) ?? draftOf(view), 'notes'), title };
@@ -287,7 +273,7 @@ function KitDocument({
       onAddImages:
         section.kind === 'assets' && !isRemoved(section.id)
           ? (images) => {
-              addImages(section.id, images);
+              addImages(view, section.id, images, change);
             }
           : null,
     };

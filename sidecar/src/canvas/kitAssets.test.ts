@@ -14,6 +14,7 @@ import { CompilerWorker } from './compiler.js';
 import { readDesignSystem, saveDesignSystem, type DesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
 import { importKitImage, kitImageImportSchema } from './kitAssets.js';
+import { readKitCapture, saveKitCapture } from './kitCaptures.js';
 import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 
 pinScratchProfile();
@@ -92,6 +93,9 @@ test('a kit document names only images that were imported', async (t) => {
   const cover = { kind: 'image' as const, assetId: CANVAS_PNG_ASSET_ID };
   const ref = await saveDesignSystem(kit(cover, CANVAS_PNG_ASSET_ID), options('imported'));
   assert.deepEqual((await readDesignSystem(ref)).cover, cover);
+  // An image cover has no example; its capture is what picker rows and the chip show.
+  await saveKitCapture({ ...ref, mode: 'dark' }, 'cover', CANVAS_PNG);
+  assert.deepEqual(await readKitCapture({ ...ref, mode: 'dark' }, 'cover'), CANVAS_PNG);
 });
 
 test('a compiled design loads kit images from the preview host', async (t) => {

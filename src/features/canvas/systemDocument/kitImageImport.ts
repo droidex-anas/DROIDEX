@@ -5,7 +5,9 @@
 import { useState, type DragEvent } from 'react';
 import { importKitImage, pickKitImage } from '../../../lib/desktop';
 import { pushToast } from '../../../lib/toast';
-import type { OwnedAsset } from '../protocol';
+import { MAX_ASSETS } from '../designSystemDocumentValidation';
+import type { DesignSystemDocumentView, OwnedAsset } from '../protocol';
+import { currentDraft, draftOf, freshAsset, type DraftChange } from './documentDraft';
 
 export const MAX_ASSET_NAME_LENGTH = 120;
 const IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/webp']);
@@ -68,6 +70,23 @@ export function useKitImageImport(onImported: ((images: ImportedImage[]) => void
       },
     },
   };
+}
+
+/** Adds imported images to a section as asset entries, stopping at the kit's image limit. */
+export function addImages(
+  view: DesignSystemDocumentView,
+  sectionId: string,
+  images: ImportedImage[],
+  change: (next: DraftChange) => void,
+) {
+  for (const { asset, name } of images) {
+    const item = freshAsset(currentDraft(view.id) ?? draftOf(view), asset.assetId, name);
+    if (!item) {
+      pushToast(`A design system holds at most ${String(MAX_ASSETS)} images.`, 'error');
+      return;
+    }
+    change({ kind: 'addItem', sectionId, item });
+  }
 }
 
 /** Main's image picker into the kit store; a failure is reported and reads as no image. */

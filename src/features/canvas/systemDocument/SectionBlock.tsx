@@ -1,7 +1,7 @@
 // One section of the document (spec §5, §6): a heading with its count and
 // menu, then its notes, token groups, previews and assets in reading order.
 
-import { useContext, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useContext, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { ArrowDown, ArrowUp, Pencil, Trash, Upload } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
@@ -117,36 +117,39 @@ export function SectionBlock({
     ];
   };
 
-  const sectionActions = (edit: SectionEditing): MenuAction[] => [
-    { label: 'Rename', icon: Pencil, run: () => titleRef.current?.edit() },
-    ...(imports.pick
-      ? [{ label: 'Add image…', icon: Upload, disabled: imports.isImporting, run: imports.pick }]
-      : []),
-    {
-      label: 'Move up',
-      icon: ArrowUp,
-      disabled: !edit.canMoveUp,
-      run: () => {
-        edit.onChange({ kind: 'move', key: section.id, by: -1 });
+  const sectionActions = (edit: SectionEditing | null): MenuAction[] => {
+    if (!edit) return [];
+    return [
+      { label: 'Rename', icon: Pencil, run: () => titleRef.current?.edit() },
+      ...(imports.pick
+        ? [{ label: 'Add image…', icon: Upload, disabled: imports.isImporting, run: imports.pick }]
+        : []),
+      {
+        label: 'Move up',
+        icon: ArrowUp,
+        disabled: !edit.canMoveUp,
+        run: () => {
+          edit.onChange({ kind: 'move', key: section.id, by: -1 });
+        },
       },
-    },
-    {
-      label: 'Move down',
-      icon: ArrowDown,
-      disabled: !edit.canMoveDown,
-      run: () => {
-        edit.onChange({ kind: 'move', key: section.id, by: 1 });
+      {
+        label: 'Move down',
+        icon: ArrowDown,
+        disabled: !edit.canMoveDown,
+        run: () => {
+          edit.onChange({ kind: 'move', key: section.id, by: 1 });
+        },
       },
-    },
-    {
-      label: 'Remove section',
-      icon: Trash,
-      danger: true,
-      run: () => {
-        edit.onChange({ kind: 'remove', key: section.id });
+      {
+        label: 'Remove section',
+        icon: Trash,
+        danger: true,
+        run: () => {
+          edit.onChange({ kind: 'remove', key: section.id });
+        },
       },
-    },
-  ];
+    ];
+  };
 
   const renderItem = (item: StandaloneItem) => {
     const itemMark = marks.get(item.id);
@@ -220,51 +223,14 @@ export function SectionBlock({
       {...imports.dropHandlers}
     >
       {imports.isOver && <ImageDropCue />}
-      <header className="relative flex min-h-control-md items-center gap-2">
-        <UnsavedMark mark={mark} />
-        <h2
-          tabIndex={-1}
-          className="kit-heading-font flex min-w-0 items-baseline gap-2 outline-none"
-        >
-          {onChange && !isRemoved ? (
-            <InlineField
-              ref={titleRef}
-              value={section.title}
-              label={`Title of the ${section.title} section`}
-              check={(title) =>
-                title.length > 0 && title.length <= MAX_TITLE_LENGTH
-                  ? null
-                  : 'A title is 1 to 120 characters.'
-              }
-              onCommit={(title) => {
-                onChange({ kind: 'retitle', id: section.id, title });
-              }}
-              className="text-heading text-primary"
-            />
-          ) : (
-            <span
-              className={cn(
-                'truncate text-heading',
-                isRemoved ? 'text-muted line-through' : 'text-primary',
-              )}
-            >
-              {section.title}
-            </span>
-          )}
-          {!isRemoved && <span className="shrink-0 text-caption text-muted">{count}</span>}
-        </h2>
-        <AddedLabel mark={mark} />
-        <span className="flex-1" />
-        {editing &&
-          (isRemoved ? (
-            <UndoRemove label={section.title} removedKey={section.id} onChange={editing.onChange} />
-          ) : (
-            <ActionMenu
-              label={`${section.title} section actions`}
-              actions={sectionActions(editing)}
-            />
-          ))}
-      </header>
+      <SectionHeading
+        section={section}
+        mark={mark}
+        count={count}
+        titleRef={titleRef}
+        onChange={onChange}
+        actions={sectionActions(editing)}
+      />
       {!isRemoved && section.kind === 'tokens' && (
         <p className="text-body text-secondary">
           The shared primitives do not read these; designs can use them by name.
@@ -274,7 +240,9 @@ export function SectionBlock({
         (section.items.length === 0 ? (
           <div className="flex items-center gap-3">
             <p className="text-body text-muted">
-              {imports.pick ? 'Drop PNG, JPEG or WebP images here.' : 'Nothing in this section yet.'}
+              {imports.pick
+                ? 'Drop PNG, JPEG or WebP images here.'
+                : 'Nothing in this section yet.'}
             </p>
             {editing && (
               <div className="flex gap-1">
@@ -309,6 +277,65 @@ export function SectionBlock({
           </ProposalMarks.Provider>
         ))}
     </section>
+  );
+}
+
+function SectionHeading({
+  section,
+  mark,
+  count,
+  titleRef,
+  onChange,
+  actions,
+}: {
+  section: DocumentSection;
+  mark: DraftMark | undefined;
+  count: number;
+  titleRef: RefObject<InlineFieldHandle | null>;
+  onChange: ((change: DraftChange) => void) | null;
+  actions: MenuAction[];
+}) {
+  const isRemoved = mark === 'removed';
+  return (
+    <header className="relative flex min-h-control-md items-center gap-2">
+      <UnsavedMark mark={mark} />
+      <h2 tabIndex={-1} className="kit-heading-font flex min-w-0 items-baseline gap-2 outline-none">
+        {onChange && !isRemoved ? (
+          <InlineField
+            ref={titleRef}
+            value={section.title}
+            label={`Title of the ${section.title} section`}
+            check={(title) =>
+              title.length > 0 && title.length <= MAX_TITLE_LENGTH
+                ? null
+                : 'A title is 1 to 120 characters.'
+            }
+            onCommit={(title) => {
+              onChange({ kind: 'retitle', id: section.id, title });
+            }}
+            className="text-heading text-primary"
+          />
+        ) : (
+          <span
+            className={cn(
+              'truncate text-heading',
+              isRemoved ? 'text-muted line-through' : 'text-primary',
+            )}
+          >
+            {section.title}
+          </span>
+        )}
+        {!isRemoved && <span className="shrink-0 text-caption text-muted">{count}</span>}
+      </h2>
+      <AddedLabel mark={mark} />
+      <span className="flex-1" />
+      {onChange &&
+        (isRemoved ? (
+          <UndoRemove label={section.title} removedKey={section.id} onChange={onChange} />
+        ) : (
+          <ActionMenu label={`${section.title} section actions`} actions={actions} />
+        ))}
+    </header>
   );
 }
 
@@ -370,4 +397,3 @@ function itemRuns(items: DocumentItem[]): ItemRun[] {
   }
   return runs;
 }
-
