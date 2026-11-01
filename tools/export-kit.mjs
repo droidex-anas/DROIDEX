@@ -45,6 +45,9 @@ if (system.cover?.kind === 'image' || JSON.stringify(system).includes('kit-asset
 const presetDir = join(PRESETS_DIR, values.as);
 const name = values.name ?? existingName();
 if (name === undefined) fail(`No preset ${values.as} exists yet. Name it: --name <name>.`);
+const previous = `${presetDir}.previous`;
+if (existsSync(previous))
+  fail(`${previous} is left from an export that did not finish. Move it back to ${presetDir} or delete it, then export again.`);
 
 const staging = `${presetDir}.export`;
 rmSync(staging, { recursive: true, force: true });
@@ -63,8 +66,7 @@ const preset = {
 };
 writeFileSync(join(staging, 'system.json'), `${JSON.stringify(preset, null, 2)}\n`);
 const copied = copyCaptures();
-rmSync(presetDir, { recursive: true, force: true });
-renameSync(staging, presetDir);
+publish();
 
 console.log(`Exported ${values.kit} v${version} as the ${values.as} preset (${name}).`);
 console.log(`Cover: ${copied.cover.join(' and ') || 'none'}. Preview captures: ${copied.previews}.`);
@@ -102,6 +104,25 @@ function savedSystem() {
     kit.cover !== undefined;
   if (!isWhole) fail(`${path} is damaged: it does not hold version ${version} of ${values.kit}.`);
   return kit;
+}
+
+// The previous export stays until the new one is in place, so a failed move can put it back.
+function publish() {
+  if (existsSync(presetDir)) renameSync(presetDir, previous);
+  try {
+    renameSync(staging, presetDir);
+  } catch (error) {
+    try {
+      if (existsSync(previous)) renameSync(previous, presetDir);
+    } catch (restoreError) {
+      fail(
+        `Could not publish the export (${error.message}) or put the previous one back (${restoreError.message}). ` +
+          `Move ${previous} back to ${presetDir}; the new export is in ${staging}.`,
+      );
+    }
+    fail(`Could not publish the export (${error.message}). The preset is unchanged; the new export is in ${staging}.`);
+  }
+  rmSync(previous, { recursive: true, force: true });
 }
 
 function existingName() {
