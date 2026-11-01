@@ -7,6 +7,7 @@
 
 import valueParser from 'postcss-value-parser';
 import { buildDocument, CONTRACT_TOKEN_NAMES, type DocumentPart } from './buildDocument.js';
+import { kitPrimitives } from './designSystemBrief.js';
 import {
   DESIGN_SYSTEM_LIMITS,
   designSystemSchema,
@@ -15,12 +16,13 @@ import {
   type DesignSystemSource,
 } from './designSystems.js';
 import { DOCUMENT_LIMITS, kitModes, tokenValueSchema } from './designSystemDocument.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import {
   LICENSED_FONTS,
   PRIMITIVE_EXAMPLES,
   PRIMITIVE_PARTS,
   rulesNote,
+  STARTER_FILES,
+  STARTER_TOKENS,
 } from './presets/starter.js';
 import {
   declarePlaceholders,
@@ -49,8 +51,8 @@ export interface ImportSource {
   file?: string;
 }
 
-/** The tokens Button, Input, Card, Badge, Tabs and Dialog read, with DROIDEX's values. */
-const CONTRACT = kitModes(DROIDEX_DESIGN_SYSTEM.sections);
+/** The tokens Button, Input, Card, Badge, Tabs and Dialog read, with the starter's values. */
+const CONTRACT = STARTER_TOKENS;
 const MODES: readonly Mode[] = ['light', 'dark'];
 const MAX_DIAGNOSTICS = 64;
 // Messages can quote pasted names; the renderer drops a reply with an overlong one.
@@ -99,8 +101,14 @@ const ALIASES: Record<string, string[]> = {
   ),
 };
 
-/** Kit tokens outside the shared primitive contract; presets have none. */
-export function unmappedKitTokens(system: Pick<DesignSystem, 'sections'>): string[] {
+const SHARED_PRIMITIVES = new Set(kitPrimitives({ files: STARTER_FILES }));
+
+/**
+ * Kit tokens outside the shared primitive contract. Only a kit built on the
+ * shared primitives maps onto them; one with primitives of its own reads its own tokens.
+ */
+export function unmappedKitTokens(system: Pick<DesignSystem, 'sections' | 'files'>): string[] {
+  if (kitPrimitives(system).some((name) => !SHARED_PRIMITIVES.has(name))) return [];
   return Object.keys(kitModes(system.sections).light)
     .filter((name) => !CONTRACT_TOKEN_NAMES.has(name))
     .sort();
@@ -142,7 +150,7 @@ export function importDesignSystem(
     diagnostics.push({
       code: 'no_tokens',
       message:
-        'This DESIGN.md has no css or Tailwind config block, so the kit keeps DROIDEX tokens.',
+        'This DESIGN.md has no css or Tailwind config block, so the kit keeps the default tokens.',
     });
   }
   const unreadable = tokenRefusal(declared, diagnostics);
@@ -162,7 +170,7 @@ export function importDesignSystem(
 
 /**
  * A new kit's document and source before anything else is written into it: the
- * shared primitives with their notes and previews, these tokens (DROIDEX's
+ * shared primitives with their notes and previews, these tokens (the starter's
  * values for the primitives' tokens unless given) and these overview notes.
  */
 export function starterKit(
@@ -176,7 +184,7 @@ export function starterKit(
       overview: [rulesNote(LICENSED_FONTS), ...notes],
       components: PRIMITIVE_PARTS,
     }),
-    files: DROIDEX_DESIGN_SYSTEM.files,
+    files: STARTER_FILES,
     examples: PRIMITIVE_EXAMPLES,
   };
 }

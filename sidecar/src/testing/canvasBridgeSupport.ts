@@ -27,7 +27,8 @@ import {
   writeInput,
 } from './canvasStorageSupport.js';
 
-export const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+// A preset authored in code, so a frame's kit does not change when DROIDEX is exported again.
+export const designSystem = { id: 'openai-inspired', version: 1, mode: 'light' } as const;
 export const APP = 'app-1';
 export const PAGE = 'page-1';
 export const EDITABLE =

@@ -15,7 +15,7 @@ import { readDesignSystem, saveDesignSystem, type DesignSystem } from './designS
 import { systemsRoot } from './designSystemStorage.js';
 import { importKitImage, kitImageImportSchema } from './kitAssets.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 
 pinScratchProfile();
 
@@ -63,11 +63,11 @@ test('kit image imports apply the canvas image checks and keep one copy', async 
 test('a kit document names only images that were imported', async (t) => {
   const assetId = createHash('sha256').update('not imported').digest('hex');
   const kit = (cover: DesignSystem['cover'], logo: string): Omit<DesignSystem, 'version'> => ({
-    ...structuredClone(DROIDEX_DESIGN_SYSTEM),
+    ...structuredClone(OPENAI_INSPIRED_DESIGN_SYSTEM),
     id: 'kit-with-images',
     cover,
     sections: [
-      ...DROIDEX_DESIGN_SYSTEM.sections,
+      ...OPENAI_INSPIRED_DESIGN_SYSTEM.sections,
       {
         kind: 'assets',
         id: 'brand',

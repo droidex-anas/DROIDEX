@@ -2,10 +2,13 @@ import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
 import type { CompilerRequest, DesignCompileInput } from '../canvas/compiler.js';
-import { DROIDEX_DESIGN_SYSTEM } from '../canvas/presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from '../canvas/presets/openai-inspired.js';
 import type { SourceFiles } from '../canvas/protocol.js';
 
-/** One design's compile request on the DROIDEX kit, with the kit rule off unless named. */
+/**
+ * One design's compile request on a preset authored on the shared primitives,
+ * so it does not change when DROIDEX is exported again, with the kit rule off unless named.
+ */
 export function compileInput(
   files: SourceFiles,
   designSystemAdherence: DesignCompileInput['designSystemAdherence'] = 'off',
@@ -17,8 +20,8 @@ export function compileInput(
     generation: 1,
     files,
     designSystem: {
-      id: DROIDEX_DESIGN_SYSTEM.id,
-      version: DROIDEX_DESIGN_SYSTEM.version,
+      id: OPENAI_INSPIRED_DESIGN_SYSTEM.id,
+      version: OPENAI_INSPIRED_DESIGN_SYSTEM.version,
       mode: 'dark',
     },
     designSystemAdherence,

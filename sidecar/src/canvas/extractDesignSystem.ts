@@ -3,11 +3,10 @@ import { posix } from 'node:path';
 import postcss from 'postcss';
 import ts from 'typescript';
 import { buildDocument } from './buildDocument.js';
-import { kitModes } from './designSystemDocument.js';
 import { designSystemSchema, type DesignSystem } from './designSystems.js';
 import { lineAt, sourceTokens } from './designSystemTokens.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { PRIMITIVES_TSX } from './presets/primitives.js';
+import { STARTER_TOKENS } from './presets/starter.js';
 import { KIT_CSS } from './presets/styles.js';
 import type { CanvasDiagnostic, RevisionRef, SourceFiles } from './protocol.js';
 import { sourceFilesSchema } from './schema.js';
@@ -65,7 +64,6 @@ export function extractDesignSystem(
       line: reference.line,
     });
   }
-  const contract = kitModes(DROIDEX_DESIGN_SYSTEM.sections);
   const designMd = source['DESIGN.md'];
   const kit = designSystemSchema.safeParse({
     id: randomUUID(),
@@ -74,8 +72,8 @@ export function extractDesignSystem(
     cover: null,
     sections: buildDocument({
       tokens: {
-        light: { ...contract.light, ...tokens.modes.light },
-        dark: { ...contract.dark, ...tokens.modes.dark },
+        light: { ...STARTER_TOKENS.light, ...tokens.modes.light },
+        dark: { ...STARTER_TOKENS.dark, ...tokens.modes.dark },
       },
       overview: designMd ? [{ kind: 'note', label: 'design.md', body: designMd }] : [],
     }),

@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
 import { bundleDesign } from './designBundle.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { STARTER_FILES } from './presets/starter.js';
 
 const sources = {
   files: { 'main.tsx': 'export default function Hey() {\n  return null;\n}\n' },
-  kitFiles: DROIDEX_DESIGN_SYSTEM.files,
+  kitFiles: STARTER_FILES,
 };
 
 // Everything the bundler answers about real source is covered through the

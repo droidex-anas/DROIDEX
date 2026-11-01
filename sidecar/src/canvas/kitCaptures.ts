@@ -14,6 +14,7 @@ import { canvasError, storageFailure } from './canvasError.js';
 import { capturePath, isMissing, refuseLinkedPath } from './designSystemStorage.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitExample } from './kitPreviews.js';
+import { bundledKitCapture } from './presets/droidexKit.js';
 import type { DesignSystemRef } from './protocol.js';
 
 // A 1200 × 480 cover at 2x is 2400 × 960 pixels; a busy one needs more than a canvas cover's 512 KiB.
@@ -59,6 +60,9 @@ export async function saveKitCapture(
 
 /** The capture, or null when that preview has not rendered live in that mode yet. */
 export async function readKitCapture(ref: DesignSystemRef, item: string): Promise<Buffer | null> {
+  // A preset's shipped capture comes first; one taken in this profile fills a mode it ships none for.
+  const bundled = await bundledKitCapture(ref, item);
+  if (bundled) return bundled;
   const target = capturePath(ref, item);
   try {
     await refuseLinkedPath(target);

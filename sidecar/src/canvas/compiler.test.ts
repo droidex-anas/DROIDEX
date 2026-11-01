@@ -16,10 +16,10 @@ import {
   type CompiledDesign,
 } from './compiler.js';
 import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesses.js';
+import { readDesignSystem } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
@@ -173,7 +173,7 @@ test('every preview and cover a built-in kit shows builds strictly in both pinne
   const offlineFont = /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/;
   for (const kit of [
     AUTO_DESIGN_SYSTEM,
-    DROIDEX_DESIGN_SYSTEM,
+    await readDesignSystem({ id: 'droidex', version: 1 }),
     OPENAI_INSPIRED_DESIGN_SYSTEM,
     CLAUDE_INSPIRED_DESIGN_SYSTEM,
   ]) {

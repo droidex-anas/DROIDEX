@@ -8,6 +8,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { canvasClient } from './canvasClient';
 import { base64 } from './captureCanvasImage';
 import { KitCaptureCache } from './kitCaptureCache';
+import { KitCaptureReads } from './kitCaptureReads';
 import type { DesignSystemRef } from './protocol';
 import type { PreviewMode } from './PreviewModeToggle';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './wireValidation';
@@ -19,7 +20,7 @@ const MODES: readonly PreviewMode[] = ['light', 'dark'];
 // Keyed by kit version, mode and item; held by each mounted tile, row and chip.
 // A capture let go is read again from the sidecar when one shows it.
 const captures = new KitCaptureCache(32 * 1024 * 1024);
-const reading = new Set<string>();
+const reads = new KitCaptureReads(8);
 const listeners = new Set<() => void>();
 
 function captureKey(ref: DesignSystemRef, item: string): string {
@@ -29,6 +30,18 @@ function captureKey(ref: DesignSystemRef, item: string): string {
 function show(key: string, png: string | null): void {
   captures.set(key, png === null ? null : `data:image/png;base64,${png}`);
   for (const listener of listeners) listener();
+}
+
+function readCapture(key: string, ref: DesignSystemRef, item: string): Promise<void> {
+  return canvasClient.designSystems.readCapture(ref, item).then(
+    (png) => {
+      if (!captures.has(key)) show(key, png);
+    },
+    (error: unknown) => {
+      console.error('A design system preview capture could not be read:', error);
+      if (!captures.has(key)) show(key, null);
+    },
+  );
 }
 
 function subscribe(listener: () => void): () => void {
@@ -54,23 +67,11 @@ export function useKitCapture(
   useEffect(() => {
     if (key === null || id === undefined || version === undefined || mode === undefined) return;
     const release = captures.hold(key);
-    if (captures.has(key) || reading.has(key)) return release;
-    reading.add(key);
-    canvasClient.designSystems
-      .readCapture({ id, version, mode }, item)
-      .then(
-        (png) => {
-          if (!captures.has(key)) show(key, png);
-        },
-        (error: unknown) => {
-          console.error('A design system preview capture could not be read:', error);
-          if (!captures.has(key)) show(key, null);
-        },
-      )
-      .finally(() => {
-        reading.delete(key);
-      });
-    return release;
+    if (!captures.has(key)) reads.request(key, () => readCapture(key, { id, version, mode }, item));
+    return () => {
+      release();
+      if (!captures.isHeld(key)) reads.cancel(key);
+    };
   }, [key, id, version, mode, item]);
   return capture;
 }

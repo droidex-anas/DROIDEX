@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { STYLE_PROPERTIES as RENDERER_STYLE_PROPERTIES } from '../../../src/features/canvas/styleProperties.js';
-import { kitModes } from './designSystemDocument.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { STARTER_TOKENS } from './presets/starter.js';
 import { SourceElementError } from './sourceElements.js';
 import { resolveStyleChange, STYLE_PROPERTIES, styleValue } from './styleEdits.js';
 
-const KIT = kitModes(DROIDEX_DESIGN_SYSTEM.sections).light;
+const KIT = STARTER_TOKENS.light;
 type Change = Parameters<typeof resolveStyleChange>[0];
 
 function refusal(change: Change, tokens: Record<string, string> = KIT): SourceElementError {

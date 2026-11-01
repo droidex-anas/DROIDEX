@@ -1,5 +1,5 @@
-// The DROIDEX preset as a small design system document, shared by the sidecar's
-// and the renderer's tests of the document contract.
+// A small design system document on the starter's token values, shared by the
+// sidecar's and the renderer's tests of the document contract.
 
 import type { DocumentSection } from '../canvas/designSystemDocument.js';
 

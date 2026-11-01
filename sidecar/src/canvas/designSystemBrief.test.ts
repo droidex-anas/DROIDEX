@@ -9,13 +9,13 @@ import {
   type DocumentSection,
 } from './designSystemDocument.js';
 import { DESIGN_SYSTEM_LIMITS, saveDesignSystem } from './designSystems.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 
 pinScratchProfile();
 
-/** DROIDEX filled to the schema's limits: 128 long token names and 16 KiB of notes. */
+/** A preset filled to the schema's limits: 128 long token names and 16 KiB of notes. */
 function fullKit(): DocumentSection[] {
-  const sections = DROIDEX_DESIGN_SYSTEM.sections;
+  const sections = OPENAI_INSPIRED_DESIGN_SYSTEM.sections;
   const declared = Object.keys(kitModes(sections).light).length;
   const others: DocumentSection = {
     kind: 'tokens',
@@ -52,7 +52,7 @@ function fullKit(): DocumentSection[] {
 test('a full kit’s brief lists token names by section kind within the 4 KiB name budget', async () => {
   const sections = fullKit();
   const ref = await saveDesignSystem(
-    { ...DROIDEX_DESIGN_SYSTEM, id: 'full', name: 'Full', sections },
+    { ...OPENAI_INSPIRED_DESIGN_SYSTEM, id: 'full', name: 'Full', sections },
     { mutationId: 'full-kit', baseVersion: null, savedBy: { actor: 'user' } },
   );
   const brief = await designSystemBrief({ ...ref, mode: 'dark' });

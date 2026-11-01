@@ -13,7 +13,8 @@ import { exportDesignSystem } from './designSystemExport.js';
 import { proposeDesignSystem } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem, type DesignSystemSource } from './designSystems.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { STARTER_TOKENS } from './presets/starter.js';
 import type { CanvasDiagnostic, DesignSystemVersionRef } from './protocol.js';
 
 pinScratchProfile();
@@ -116,7 +117,7 @@ test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared prim
         designId: 'hey',
         revisionId: 'revision-1',
         generation: 1,
-        files: { 'main.tsx': DROIDEX_DESIGN_SYSTEM.examples['SettingsPanel.tsx'] },
+        files: { 'main.tsx': OPENAI_INSPIRED_DESIGN_SYSTEM.examples['PricingCard.tsx'] },
         designSystem: { ...ref, mode },
         // Strict fails a build that strays from the kit, so a clean build is the proof.
         designSystemAdherence: 'strict',
@@ -143,12 +144,9 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
   assert.equal(css.modes.light['--ds-accent'], 'hsl(222.2 47.4% 11.2%)');
   assert.equal(css.modes.dark['--ds-accent'], 'hsl(210 40% 98%)');
   assert.equal(css.modes.dark['--ds-canvas'], 'hsl(222.2 84% 4.9%)');
-  // A reference follows its mode, and unset contract tokens keep DROIDEX values.
+  // A reference follows its mode, and unset contract tokens keep the starter's values.
   assert.equal(css.modes.dark['--ds-focus'], 'hsl(210 40% 98%)');
-  assert.equal(
-    css.modes.light['--ds-danger'],
-    kitModes(DROIDEX_DESIGN_SYSTEM.sections).light['--ds-danger'],
-  );
+  assert.equal(css.modes.light['--ds-danger'], STARTER_TOKENS.light['--ds-danger']);
   assert.deepEqual(css.unmapped, ['--ds-chart-1']);
 
   const fromConfig = await importKit(canvas, 'from-config', {
@@ -297,8 +295,9 @@ test('saving a copy of a preset makes the user’s own kit with provenance', asy
 
   const kit = await readKit(canvas, { id: 'droidex-copy', version: 1 });
   assert.deepEqual(kit.provenance, { copiedFrom: { id: 'droidex', version: 1 } });
-  assert.deepEqual(kit.sections, DROIDEX_DESIGN_SYSTEM.sections);
-  assert.deepEqual(kit.cover, DROIDEX_DESIGN_SYSTEM.cover);
+  const preset = await readDesignSystem({ id: 'droidex', version: 1 });
+  assert.deepEqual(kit.sections, preset.sections);
+  assert.deepEqual(kit.cover, preset.cover);
   assert.deepEqual(kit.unmapped, []);
 
   await canvas.handle({ type: 'canvas.listDesignSystems', requestId: 'list' });
@@ -567,7 +566,7 @@ test('only Electron main’s token reaches the export route', async (t) => {
       headers: { 'x-canvas-export-token': token },
       body: JSON.stringify(body),
     });
-  const request = { ref: { id: 'droidex', version: 1 }, destinationDirectory: destination };
+  const request = { ref: { id: 'openai-inspired', version: 1 }, destinationDirectory: destination };
 
   assert.equal((await post('renderer-token', request)).status, 404);
   assert.deepEqual(await readdir(destination), []);

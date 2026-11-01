@@ -11,12 +11,12 @@ import {
 } from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { STARTER_TOKENS } from './presets/starter.js';
 
 pinScratchProfile();
 
-const SETTINGS_TSX = DROIDEX_DESIGN_SYSTEM.examples['SettingsPanel.tsx'];
-const DROIDEX_MODES = kitModes(DROIDEX_DESIGN_SYSTEM.sections);
+const PRICING_TSX = OPENAI_INSPIRED_DESIGN_SYSTEM.examples['PricingCard.tsx'];
 
 function save(system: DesignSystem) {
   return saveDesignSystem(system, {
@@ -34,7 +34,7 @@ const input = {
 
 test('a saved token-only extraction compiles all six shared primitives with styles and tokens in both modes', async (t) => {
   const result = extractDesignSystem(
-    { 'tokens.css': ':root { --ds-accent: #ff0000; }', 'main.tsx': SETTINGS_TSX },
+    { 'tokens.css': ':root { --ds-accent: #ff0000; }', 'main.tsx': PRICING_TSX },
     input,
   );
   assert.equal(result.status, 'extracted');
@@ -51,7 +51,7 @@ test('a saved token-only extraction compiles all six shared primitives with styl
         generation: 1,
         designSystemAdherence: 'guide',
         designSystem: { ...ref, mode },
-        files: { 'main.tsx': SETTINGS_TSX },
+        files: { 'main.tsx': PRICING_TSX },
       },
       new AbortController().signal,
     );
@@ -84,8 +84,8 @@ test('extraction keeps owned tokens and primitive modules, reports inherited val
   assert.equal(extracted.status, 'extracted');
   if (extracted.status !== 'extracted') return;
   assert.deepEqual(kitModes(extracted.system.sections), {
-    light: { ...DROIDEX_MODES.light, '--ds-space': '8px', '--ds-accent': '#123456' },
-    dark: { ...DROIDEX_MODES.dark, '--ds-space': '8px', '--ds-accent': '#abcdef' },
+    light: { ...STARTER_TOKENS.light, '--ds-space': '8px', '--ds-accent': '#123456' },
+    dark: { ...STARTER_TOKENS.dark, '--ds-space': '8px', '--ds-accent': '#abcdef' },
   });
   assert.deepEqual(extracted.system.provenance, {
     sourceCanvasId: input.sourceCanvasId,
@@ -174,7 +174,7 @@ test('a wrapper around an imported kit primitive is reported instead of copying 
   if (result.status !== 'extracted') return;
   assert.ok(!Object.hasOwn(result.system.files, 'source/button.tsx'));
   assert.ok(result.diagnostics.some((entry) => entry.code === 'not_source_owned'));
-  assert.deepEqual(kitModes(result.system.sections), DROIDEX_MODES);
+  assert.deepEqual(kitModes(result.system.sections), STARTER_TOKENS);
 });
 
 test('extraction filters imported stylesheets to primitive rules regardless of source record order', () => {

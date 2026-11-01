@@ -12,7 +12,7 @@ import { canvasError, staleDesignSystemBase, storageFailure } from './canvasErro
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
 import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { DROIDEX_KIT } from './presets/droidexKit.js';
 import { announceDesignSystemChange } from './designSystemChanges.js';
 import { convertLegacyVersion, legacySummary } from './designSystemConversion.js';
 import {
@@ -203,10 +203,10 @@ const savedVersionSchema = z
   .strict();
 const HEADER_BYTES = 8192;
 
-// Parsing snapshots the authored kits and validates their limits at startup.
+// Parsing snapshots the authored and exported kits and validates their limits at startup.
 const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [
   AUTO_DESIGN_SYSTEM,
-  DROIDEX_DESIGN_SYSTEM,
+  DROIDEX_KIT,
   OPENAI_INSPIRED_DESIGN_SYSTEM,
   CLAUDE_INSPIRED_DESIGN_SYSTEM,
 ].map((system) => designSystemSchema.parse(system));
