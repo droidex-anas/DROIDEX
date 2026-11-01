@@ -49,6 +49,7 @@ function harness() {
     () => Promise.reject(new Error('Canvas capture unavailable')),
     { check: () => Promise.reject(new Error('Kit builds unavailable')) },
     () => 'chat-one',
+    () => null,
   );
   const interactions = {
     requestApproval: async (approval: ProviderApprovalRequest) => {
@@ -242,6 +243,7 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
         () => Promise.reject(new Error('Canvas capture unavailable')),
         { check: () => Promise.reject(new Error('Kit builds unavailable')) },
         () => 'chat-one',
+        () => null,
       ),
     ],
   };

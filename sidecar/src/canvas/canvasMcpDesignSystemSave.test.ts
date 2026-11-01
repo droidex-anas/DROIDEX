@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { openTurn } from '../testing/canvasMcpSupport.js';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
@@ -76,10 +79,34 @@ test('a new kit saves as version 1 by the agent, from blank or from a copy', asy
     (await save('unnamed', { kit: { id: 'unnamed', from: 'blank' } })).code,
     'invalid_input',
   );
-  const project = await save('project', {
-    kit: { id: 'from-project', from: { project: [{ path: 'src/index.css', kind: 'css' }] } },
-  });
-  assert.equal(project.code, 'invalid_input', 'project sources arrive with slice 2c');
+});
+
+test("a new kit reads the theme files of the chat's own project folder, and a chat without one refuses", async (t) => {
+  const parent = await mkdtemp(join(tmpdir(), 'kit-project-'));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const folder = join(parent, 'acme-web');
+  await mkdir(join(folder, 'src'), { recursive: true });
+  await writeFile(join(folder, 'src/index.css'), ':root { --primary: #c2410c; }');
+  let projectFolder: string | null = folder;
+  const { scopeId, call } = await openTurn(t, () => projectFolder);
+  const save = (mutationId: string) =>
+    call('canvas_theme', {
+      scopeId,
+      operation: 'save',
+      mutationId,
+      kit: { id: mutationId, from: { project: [{ path: 'src/index.css', kind: 'css' }] } },
+      name: 'Acme',
+    });
+
+  assert.deepEqual((await save('acme-web')).ref, { id: 'acme-web', version: 1 });
+  const acme = await readDesignSystem({ id: 'acme-web', version: 1 });
+  assert.deepEqual(acme.provenance, { project: { name: 'acme-web', files: ['src/index.css'] } });
+  assert.equal(tokenValue(acme.sections, '--ds-accent'), '#c2410c');
+
+  projectFolder = null;
+  const folderless = await save('folderless');
+  assert.equal(folderless.code, 'invalid_input');
+  assert.match(folderless.message ?? '', /no project folder/);
 });
 
 test('a change to a user kit becomes its proposal, and the kit keeps its version', async (t) => {

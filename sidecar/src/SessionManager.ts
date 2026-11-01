@@ -1674,6 +1674,11 @@ export class SessionManager {
       this.canvasCapture,
       this.kitPreviews,
       () => ref.id,
+      (appSessionId) => {
+        const summary = this.registry.resolveSummary(appSessionId);
+        if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
+        return summary.cwd;
+      },
       ref.purpose,
     );
     if (kind === 'codex') {
