@@ -1,17 +1,19 @@
 // A token group (spec §5, §6): its title and a data table of its tokens, each
-// drawn with what it holds. Colours show both modes side by side; the other
-// kinds show one value and a specimen in the previewed mode.
+// named bare and drawn with what it holds. Colours show both modes side by
+// side; the other kinds show one value and a specimen in the previewed mode.
 
 import { memo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { MessageSquareText } from '@droidex/icons';
+import { Copy, MessageSquareText } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
+import { pushToast } from '../../../lib/toast';
 import type { DocumentToken, TokenGroup, TokenKind } from '../designSystemDocumentProtocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddToken } from './AddToken';
 import type { DraftChange } from './documentDraft';
-import { tokenKey, type DraftMark } from './documentSections';
+import { bareTokenName, tokenKey, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
 import { modeValue, tokenValueProblem } from './specimenStyle';
@@ -197,14 +199,16 @@ const TokenRow = memo(function TokenRow({
       <td className="py-2 pr-3">
         <span className="relative flex min-h-control-md items-center">
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
-          <span
-            className={cn(
-              'kit-body-font truncate text-body-strong',
-              isRemoved ? 'text-muted line-through' : 'text-primary',
-            )}
-          >
-            {token.name}
-          </span>
+          <Tooltip label={`var(${token.name})`} className="min-w-0">
+            <span
+              className={cn(
+                'kit-body-font block truncate text-body-strong',
+                isRemoved ? 'text-muted line-through' : 'text-primary',
+              )}
+            >
+              {bareTokenName(token.name)}
+            </span>
+          </Tooltip>
         </span>
       </td>
       {kind === 'colors' ? (
@@ -236,7 +240,7 @@ const TokenRow = memo(function TokenRow({
           <span className="flex min-h-control-md items-center justify-end">
             {onChange && (
               <UndoRemove
-                label={token.name}
+                label={bareTokenName(token.name)}
                 removedKey={tokenKey(token.name)}
                 onChange={onChange}
               />
@@ -260,8 +264,20 @@ function TokenActions({
 }) {
   const noteRef = useRef<HTMLButtonElement>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+  const name = bareTokenName(token.name);
   const set = (next: DocumentToken) => {
     onChange?.({ kind: 'setToken', token: next });
+  };
+  const reference = `var(${token.name})`;
+  const copy: MenuAction = {
+    label: 'Copy reference',
+    icon: Copy,
+    run: () => {
+      navigator.clipboard.writeText(reference).then(
+        () => pushToast(`Copied ${reference}`),
+        () => pushToast(`${reference} could not be copied.`, 'error'),
+      );
+    },
   };
   const split: MenuAction =
     'value' in token
@@ -288,9 +304,7 @@ function TokenActions({
             size="sm"
             icon={MessageSquareText}
             aria-label={
-              token.note === undefined
-                ? `Add a usage note to ${token.name}`
-                : `Usage note of ${token.name}`
+              token.note === undefined ? `Add a usage note to ${name}` : `Usage note of ${name}`
             }
             aria-expanded={noteOpen}
             onClick={() => {
@@ -303,26 +317,29 @@ function TokenActions({
             )}
           />
         )}
-        {onChange && (
-          <ActionMenu
-            label={`${token.name} actions`}
-            actions={[
-              split,
-              {
-                label: 'Remove',
-                danger: true,
-                run: () => {
-                  onChange({ kind: 'remove', key: tokenKey(token.name) });
-                },
-              },
-            ]}
-          />
-        )}
+        <ActionMenu
+          label={`${name} actions`}
+          actions={
+            onChange
+              ? [
+                  copy,
+                  split,
+                  {
+                    label: 'Remove',
+                    danger: true,
+                    run: () => {
+                      onChange({ kind: 'remove', key: tokenKey(token.name) });
+                    },
+                  },
+                ]
+              : [copy]
+          }
+        />
       </span>
       {noteOpen && (
         <NotePopover
           anchorRef={noteRef}
-          title={`Usage note · ${token.name}`}
+          title={`Usage note · ${name}`}
           note={token.note}
           maxBytes={MAX_TOKEN_NOTE_BYTES}
           onChange={
@@ -373,7 +390,7 @@ function ValueCell({
     shown = (
       <InlineField
         value={value}
-        label={`${fieldLabel} of ${token.name}`}
+        label={`${fieldLabel} of ${bareTokenName(token.name)}`}
         check={(text) => tokenValueProblem(kind, text)}
         leading={isColor ? (text) => <LiveSwatch value={text} /> : undefined}
         onCommit={(text) => {

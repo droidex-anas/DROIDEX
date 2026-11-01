@@ -1,4 +1,5 @@
-// The form under a token group that adds a token to it (spec §6).
+// The form under a token group that adds a token to it (spec §6). The name is
+// typed bare, as the document shows it; the kit's --ds- prefix is added back.
 
 import { useEffect, useRef, useState } from 'react';
 import { Plus } from '@droidex/icons';
@@ -8,6 +9,7 @@ import { pushEscapeLayer } from '../../../components/ui/escapeStack';
 import type { TokenKind } from '../designSystemDocumentProtocol';
 import { isTokenName } from '../designSystemDocumentValidation';
 import type { DraftChange } from './documentDraft';
+import { fullTokenName } from './documentSections';
 import { tokenValueProblem } from './specimenStyle';
 
 export function AddToken({
@@ -23,7 +25,7 @@ export function AddToken({
   onChange: (change: DraftChange) => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const [name, setName] = useState('--');
+  const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -67,8 +69,12 @@ export function AddToken({
       setProblem(why);
       return;
     }
-    onChange({ kind: 'addToken', groupId, token: { name: trimmed, value: value.trim() } });
-    setName('--');
+    onChange({
+      kind: 'addToken',
+      groupId,
+      token: { name: fullTokenName(trimmed), value: value.trim() },
+    });
+    setName('');
     setValue('');
     setProblem(null);
     nameRef.current?.focus();
@@ -87,6 +93,7 @@ export function AddToken({
           ref={nameRef}
           variant="compact"
           aria-label="New token name"
+          placeholder="Name"
           value={name}
           spellCheck={false}
           invalid={problem !== null}
@@ -126,12 +133,13 @@ export function AddToken({
 
 function newTokenProblem(
   kind: TokenKind,
-  name: string,
+  bare: string,
   value: string,
   tokenNames: ReadonlySet<string>,
 ): string | null {
+  const name = fullTokenName(bare);
   if (!isTokenName(name))
-    return 'A token name is a CSS custom property such as --ds-accent: lowercase words joined by hyphens.';
-  if (tokenNames.has(name)) return `${name} is already in this design system.`;
+    return 'A token name is lowercase words joined by hyphens, such as accent or space-2.';
+  if (tokenNames.has(name)) return `${bare} is already in this design system.`;
   return tokenValueProblem(kind, value);
 }

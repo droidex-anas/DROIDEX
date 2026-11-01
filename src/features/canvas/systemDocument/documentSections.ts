@@ -64,6 +64,19 @@ export function changedTokenValues(
   return changed;
 }
 
+// A kit's tokens share the --ds- namespace beside Tailwind's and the app's own.
+const KIT_TOKEN_PREFIX = '--ds-';
+
+/** What the document calls a token: `--ds-accent` is "accent"; a name outside the kit's namespace reads whole. */
+export function bareTokenName(name: string): string {
+  return name.startsWith(KIT_TOKEN_PREFIX) ? name.slice(KIT_TOKEN_PREFIX.length) : name;
+}
+
+/** The token a typed bare name stands for: "accent" is `--ds-accent`; a name typed with its dashes stays as typed. */
+export function fullTokenName(bare: string): string {
+  return bare.startsWith('--') ? bare : KIT_TOKEN_PREFIX + bare;
+}
+
 /** What a note's label reads as: "1-rules.md" is "Rules", "design-engineering.md" "Design engineering". */
 export function noteTitle(label: string): string {
   const stem = label.replace(/\.md$/, '');

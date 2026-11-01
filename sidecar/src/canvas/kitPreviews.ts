@@ -165,12 +165,21 @@ function exampleName(system: DesignSystem, item: string): string | undefined {
  * edge rather than wrap so the document can size the tile from the tokens.
  */
 function typographySpecimen(sections: DocumentSection[]): string {
-  const groups: { id: string; title: string; tokens: { name: string; property: string }[] }[] = [];
+  const groups: {
+    id: string;
+    title: string;
+    tokens: { name: string; label: string; property: string }[];
+  }[] = [];
   for (const section of sections) {
     if (section.kind !== 'typography') continue;
     for (const item of section.items) {
       if (item.kind !== 'group') continue;
-      const tokens = item.tokens.map(({ name }) => ({ name, property: typeProperty(name) }));
+      // Labelled bare, as the document names tokens.
+      const tokens = item.tokens.map(({ name }) => ({
+        name,
+        label: name.replace(/^--ds-/, ''),
+        property: typeProperty(name),
+      }));
       groups.push({ id: item.id, title: item.title, tokens });
     }
   }
@@ -186,7 +195,7 @@ export default function Typography() {
           <h2 style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--ds-fg-muted)' }}>{group.title}</h2>
           {group.tokens.map((token) => (
             <div key={token.name} style={{ display: 'flex', alignItems: 'baseline', gap: 24 }}>
-              <span style={{ flex: '0 0 200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--ds-fg-muted)' }}>{token.name}</span>
+              <span style={{ flex: '0 0 200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--ds-fg-muted)' }}>{token.label}</span>
               <span style={{ whiteSpace: 'nowrap', [token.property]: \`var(\${token.name})\` }}>The quick brown fox jumps over the lazy dog</span>
             </div>
           ))}
