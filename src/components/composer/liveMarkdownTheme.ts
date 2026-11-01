@@ -53,13 +53,6 @@ export const liveMarkdownTheme = EditorView.theme({
   '.cm-md-strong': { fontWeight: '600' },
   '.cm-md-em': { fontStyle: 'italic' },
   '.cm-md-strike': { textDecoration: 'line-through', opacity: '0.65' },
-  '.cm-md-code': {
-    fontFamily: MONO,
-    fontSize: '12px',
-    background: textTint(8),
-    borderRadius: '5px',
-    padding: '1px 5px',
-  },
   // Links read by colour, as in the transcript; the underline shows on hover.
   '.cm-md-link, .cm-md-url': {
     color: 'var(--link)',

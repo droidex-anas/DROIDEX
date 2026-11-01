@@ -58,7 +58,7 @@ export function TokenTable({
   const hasSpecimen = kind === 'spacing' || kind === 'radius' || kind === 'shadows';
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-2">
       <div className="flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={marks.get(group.id)} />
         {onChange && !isRemoved ? (
@@ -75,10 +75,15 @@ export function TokenTable({
             onCommit={(title) => {
               onChange({ kind: 'retitle', id: group.id, title });
             }}
-            className="text-label text-muted"
+            className="text-body-strong text-primary"
           />
         ) : (
-          <h3 className={cn('truncate text-label text-muted', isRemoved && 'line-through')}>
+          <h3
+            className={cn(
+              'truncate text-body-strong',
+              isRemoved ? 'text-muted line-through' : 'text-primary',
+            )}
+          >
             {group.title}
           </h3>
         )}
@@ -97,7 +102,7 @@ export function TokenTable({
         <table className="w-full table-fixed text-left">
           <thead>
             <tr className="text-caption text-muted">
-              <th scope="col" className="w-1/3 py-1.5 font-normal">
+              <th scope="col" className="w-1/3 pb-1 pt-1.5 font-normal">
                 <span className="flex items-center gap-2">
                   <UnsavedMark mark={undefined} />
                   Name
@@ -105,24 +110,24 @@ export function TokenTable({
               </th>
               {isColor ? (
                 <>
-                  <th scope="col" className="py-1.5 font-normal">
+                  <th scope="col" className="pb-1 pt-1.5 font-normal">
                     Light
                   </th>
-                  <th scope="col" className="py-1.5 font-normal">
+                  <th scope="col" className="pb-1 pt-1.5 font-normal">
                     Dark
                   </th>
                 </>
               ) : (
-                <th scope="col" className="py-1.5 font-normal">
+                <th scope="col" className="pb-1 pt-1.5 font-normal">
                   Value
                 </th>
               )}
               {hasSpecimen && (
-                <th scope="col" className="w-1/4 py-1.5 font-normal">
+                <th scope="col" className="w-1/4 pb-1 pt-1.5 font-normal">
                   <span className="sr-only">Specimen</span>
                 </th>
               )}
-              <th scope="col" className="w-20 py-1.5">
+              <th scope="col" className="w-20 pb-1 pt-1.5">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
@@ -197,7 +202,7 @@ const TokenRow = memo(function TokenRow({
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
           <span
             className={cn(
-              'truncate text-code',
+              'truncate font-mono text-code',
               isRemoved ? 'text-muted line-through' : 'text-primary',
             )}
           >
@@ -381,14 +386,14 @@ function ValueCell({
             ),
           );
         }}
-        className="text-code text-secondary"
+        className="font-mono text-code text-secondary"
       />
     );
   else
     shown = (
       <span
         className={cn(
-          'truncate text-code',
+          'truncate font-mono text-code',
           isRemoved ? 'text-muted line-through' : 'text-secondary',
         )}
       >
