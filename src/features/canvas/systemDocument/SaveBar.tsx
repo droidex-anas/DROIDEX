@@ -96,7 +96,7 @@ export function SaveBar({
       <p role="status" className="min-w-0 flex-1 truncate text-body text-primary">
         {conflict === null
           ? `${String(count)} unsaved ${count === 1 ? 'change' : 'changes'}`
-          : `v${String(conflict)} was saved while you edited`}
+          : `Version ${String(conflict)} was saved while you edited`}
       </p>
       <Button variant="ghost" size="sm" disabled={state.status === 'saving'} onClick={onDiscard}>
         {conflict === null ? 'Discard' : 'Discard mine'}
@@ -110,7 +110,7 @@ export function SaveBar({
           aria-keyshortcuts="Meta+S"
           onClick={onSave}
         >
-          {conflict === null ? 'Save' : `Save over v${String(conflict)}`}
+          {conflict === null ? 'Save' : `Save over version ${String(conflict)}`}
         </Button>
       </Tooltip>
     </div>

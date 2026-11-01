@@ -117,7 +117,7 @@ The canvas area is the only place a document opens: the board region beside the 
 
 Layout, left to right inside the canvas area: a section nav, then the document column.
 
-**Header row** (the canvas area's top row, same height as the board's): Back to board (ghost, arrow icon, “Board”); the kit name (editable in user kits); a version button (`v5`) that opens the history (§10); then on the right a light/dark icon button named for the mode it switches to (“Preview in dark”), a more menu (Duplicate, Export…, Delete) and at most one primary action. The primary action is **Use in this canvas** when the kit is not the canvas's choice. While a draft or proposal is open, the save bar holds the primary action instead and the header has none.
+**Header row** (the canvas area's top row, same height as the board's): Back to board (ghost, arrow icon, “Board”); the kit name (editable in user kits); a quiet version button (“Version 5”) that opens the history (§10); then on the right a light/dark icon button named for the mode it switches to (“Preview in dark”), a more menu (Duplicate, Export…, Delete) and at most one primary action. The primary action is **Use in this canvas** when the kit is not the canvas's choice. While a draft or proposal is open, the save bar holds the primary action instead and the header has none.
 
 **Section nav**, about 220 px, sticky, on the canvas tone with no divider: a search field, then one entry per section with its count (“Colors 18”). The active section has the `bg-active` tone; a section with unsaved or proposed changes shows a small accent dot. Search filters tokens by name and value, notes by label and text, previews and assets by title; nav counts show matches and empty sections hide while searching. In user kits the nav ends with Add section (a menu of the kinds not yet present, plus Notes). Below about 960 px of canvas width the nav folds into a Sections menu in the header.
 
@@ -153,7 +153,7 @@ Who can edit: the user edits their own kits. Presets open read-only with a quiet
 - Previews: notes and titles are editable; source is not. New previews and demos come from the agent.
 - Sections and items: rename, move up, move down and remove from their menus.
 
-**Saving.** Save sends the draft's name, cover reference and sections with its base version (`canvas.saveDesignSystem`). Files and examples always come from the base; the document never sends source. The new version is shown at once, the draft clears, and every canvas that chose this kit follows to the new version (§9). If the base is no longer the latest, nothing is written and the bar says “v6 was saved while you edited” with Discard mine and Save over v6; saving over writes the draft as v7 and v6 stays in the history. The draft is kept until the user chooses.
+**Saving.** Save sends the draft's name, cover reference and sections with its base version (`canvas.saveDesignSystem`). Files and examples always come from the base; the document never sends source. The new version is shown at once, the draft clears, and every canvas that chose this kit follows to the new version (§9). If the base is no longer the latest, nothing is written and the bar says “Version 6 was saved while you edited” with Discard mine and Save over version 6; saving over writes the draft as version 7 and version 6 stays in the history. The draft is kept until the user chooses.
 
 ## 7. Component previews and demos
 
@@ -208,7 +208,7 @@ The Manage design systems dialog and its entry points (the canvas menu, the Desi
 
 New actions:
 
-- **Version history**: the version button opens a menu of versions, newest first: “v5 · You · 2 min ago”, “v4 · Agent in Landing page · yesterday”. Choosing one shows it read-only with a line “Viewing v3 · latest is v5”, Back to latest, and Restore as v6 (primary), which saves that version's document, files and examples as the next version (`canvas.restoreDesignSystemVersion`).
+- **Version history**: the version button opens a menu of versions, newest first. Each row reads “Version 5”, a muted line of what it changed against the version before (“Accent, radius-card, 1 note”, “Created” for the first) and how long ago it was saved, right-aligned; the latest has a check and the version on screen is highlighted. Choosing one shows it read-only with a line “Viewing version 3 · latest is version 5”, Back to latest, and Restore as version 6 (primary), which saves that version's document, files and examples as the next version (`canvas.restoreDesignSystemVersion`).
 - **Delete** (user kits only): optimistic, with an Undo toast and no confirmation. It writes the tombstone, takes the kit out of the picker and returns every canvas that chose it to Auto. Frames and queued requests pinned to its versions keep building. Undo removes the tombstone and restores those choices.
 
 ## 11. Agent authoring

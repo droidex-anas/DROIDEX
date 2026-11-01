@@ -5,6 +5,7 @@
 import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
 import { isTokenName, isTokenValue } from '../designSystemDocumentValidation';
 import type { PreviewMode } from '../PreviewModeToggle';
+import type { DesignSystemCover } from '../protocol';
 import { modeValue } from './specimenStyle';
 
 export type DocumentItem = DocumentSection['items'][number];
@@ -170,6 +171,59 @@ function markTokens(
   }
   for (const [name, { holder }] of baseTokens)
     if (!nextTokens.has(name) && nextItems.has(holder)) marks.set(tokenKey(name), 'removed');
+}
+
+const MAX_NAMED_TOKENS = 3;
+// What a change summary counts rather than names, in the order it lists them.
+const COUNTED_NOUNS = ['note', 'preview', 'image', 'group', 'section'] as const;
+const ITEM_NOUNS: Record<DocumentItem['kind'], (typeof COUNTED_NOUNS)[number]> = {
+  note: 'note',
+  preview: 'preview',
+  asset: 'image',
+  group: 'group',
+};
+
+interface SummarizedVersion {
+  name: string;
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
+}
+
+/**
+ * One line for what `next` changes against `base`, as the version history
+ * lists it: a few tokens by bare name and everything else counted
+ * ("Accent, radius-card, 1 note").
+ */
+export function changeSummary(base: SummarizedVersion, next: SummarizedVersion): string {
+  const items = new Map([...itemsById(base.sections), ...itemsById(next.sections)]);
+  const tokens: string[] = [];
+  const counts = new Map<string, number>();
+  for (const key of draftDiff(base.sections, next.sections).keys()) {
+    const token = tokenNameOf(key);
+    if (token !== null) {
+      tokens.push(bareTokenName(token));
+      continue;
+    }
+    const item = items.get(key)?.item;
+    const noun = item ? ITEM_NOUNS[item.kind] : 'section';
+    counts.set(noun, (counts.get(noun) ?? 0) + 1);
+  }
+  const parts: string[] = [];
+  if (base.name !== next.name) parts.push('name');
+  if (JSON.stringify(base.cover) !== JSON.stringify(next.cover)) parts.push('cover');
+  if (tokens.length > MAX_NAMED_TOKENS) parts.push(counted(tokens.length, 'token'));
+  else parts.push(...tokens);
+  for (const noun of COUNTED_NOUNS) {
+    const count = counts.get(noun);
+    if (count !== undefined) parts.push(counted(count, noun));
+  }
+  if (parts.length === 0) return 'No changes';
+  const line = parts.join(', ');
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
+function counted(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 /** Whether the section, or anything in it, has a mark. */

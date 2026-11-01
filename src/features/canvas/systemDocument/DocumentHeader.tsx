@@ -185,7 +185,7 @@ export function OlderVersionNotice({
 
   return (
     <DocumentNotice
-      text={`Viewing v${String(view.version)} · latest is v${String(view.latestVersion)}`}
+      text={`Viewing version ${String(view.version)} · latest is version ${String(view.latestVersion)}`}
     >
       <Button
         variant="ghost"
@@ -206,7 +206,7 @@ export function OlderVersionNotice({
             void restore();
           }}
         >
-          Restore as v{view.latestVersion + 1}
+          Restore as version {view.latestVersion + 1}
         </Button>
       )}
     </DocumentNotice>

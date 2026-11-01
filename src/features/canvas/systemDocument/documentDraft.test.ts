@@ -15,6 +15,7 @@ import {
 } from './documentDraft';
 import {
   changedTokenValues,
+  changeSummary,
   draftDiff,
   tokenKey,
   withItems,
@@ -157,6 +158,31 @@ test('a note or token moved to another holder, and reordered tokens, are marked 
       [tokenKey('--ds-accent'), 'changed'],
     ]),
   );
+});
+
+test("a version's summary names a few tokens and counts everything else", () => {
+  const before = kitAt('summary', 1);
+  const [notes, colors] = base;
+  const surfaces = colors.items[0] as TokenGroup;
+  const recoloured = (tokens: DocumentToken[]) => [
+    withItems(notes, [...notes.items.slice(1), extraNote]),
+    withItems(colors, [{ ...surfaces, tokens }]),
+  ];
+  const accent: DocumentToken = { name: '--ds-accent', value: '#f60' };
+  assert.equal(
+    changeSummary(before, { ...before, sections: recoloured([surfaces.tokens[0], accent]) }),
+    'Accent, 2 notes',
+  );
+  const many = ['a', 'b', 'c', 'd'].map((name) => ({ name: `--ds-${name}`, value: '1px' }));
+  assert.equal(
+    changeSummary(before, {
+      ...before,
+      name: 'Calm kit',
+      sections: recoloured([...surfaces.tokens, ...many]),
+    }),
+    'Name, 4 tokens, 2 notes',
+  );
+  assert.equal(changeSummary(before, before), 'No changes');
 });
 
 test('live previews get only the draft values that differ in their mode and a save would accept', () => {
