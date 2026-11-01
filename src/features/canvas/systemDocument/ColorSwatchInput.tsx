@@ -1,7 +1,8 @@
 // A colour token's swatch that opens the system colour picker (spec §6). What
 // the user picks shows in the swatch and in live previews while they choose;
-// letting go keeps it in the draft as one change. The picker has no alpha, so
-// a translucent value keeps its own.
+// closing the picker keeps it in the draft as one change. The system picker
+// has no cancel, so only closing it on the colour it opened with keeps
+// nothing. It has no alpha either, so a translucent value keeps its own.
 
 import { useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react';
 import type { DocumentToken } from '../designSystemDocumentProtocol';
@@ -61,6 +62,8 @@ function ColorSwatchInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const paintRef = useRef<HTMLSpanElement>(null);
   const alphaRef = useRef(OPAQUE);
+  // The colour the picker opened on, as the input's hex.
+  const startRef = useRef('');
   const [picked, setPicked] = useState<string | null>(null);
   const isPicking = useRef(false);
 
@@ -70,31 +73,24 @@ function ColorSwatchInput({
     showPickedColor(value === null ? null : { kitId, name, mode, value });
   };
 
-  // React's onChange follows every input event; the native change event is the release.
+  // React's onChange follows every input event; the native change event fires as the picker closes.
   const keep = useEffectEvent(() => {
     const input = inputRef.current;
     if (!input) return;
     pick(null);
-    onCommit(withAlpha(input.value, alphaRef.current));
+    if (input.value !== startRef.current) onCommit(withAlpha(input.value, alphaRef.current));
   });
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
-    const onRelease = () => {
+    const onClose = () => {
       keep();
     };
-    const onCancel = () => {
-      pick(null);
-    };
-    input.addEventListener('change', onRelease);
-    input.addEventListener('cancel', onCancel);
+    input.addEventListener('change', onClose);
     return () => {
-      input.removeEventListener('change', onRelease);
-      input.removeEventListener('cancel', onCancel);
+      input.removeEventListener('change', onClose);
       if (isPicking.current) showPickedColor(null);
     };
-    // pick reads only refs and stable setters; kitId, name and mode are fixed per row cell.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -116,10 +112,12 @@ function ColorSwatchInput({
           const [red, green, blue, alpha] = channels(getComputedStyle(paint).backgroundColor);
           // A see-through colour is picked as an opaque one, or it would stay invisible.
           alphaRef.current = alpha === 0 ? OPAQUE : alpha;
-          event.currentTarget.value = `#${[red, green, blue].map(hexByte).join('')}`;
+          startRef.current = `#${[red, green, blue].map(hexByte).join('')}`;
+          event.currentTarget.value = startRef.current;
         }}
         onInput={(event) => {
-          pick(withAlpha(event.currentTarget.value, alphaRef.current));
+          const value = event.currentTarget.value;
+          pick(value === startRef.current ? null : withAlpha(value, alphaRef.current));
         }}
       />
     </span>
