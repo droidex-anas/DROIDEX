@@ -53,6 +53,7 @@ export function AddToken({
           onClick={() => {
             setAdding(true);
           }}
+          className="-ml-2.5"
         >
           Add token
         </Button>

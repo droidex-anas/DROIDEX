@@ -70,16 +70,25 @@ export function DocumentHeader({
       ref={headerRef}
       className="design-system-document-header flex h-12 shrink-0 items-center gap-2 px-4"
     >
+      {/* Board's padding hangs, so its arrow starts on the edge the notice and a narrow column share. */}
       {room.navWords ? (
-        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="-ml-2.5">
           Board
         </Button>
       ) : (
         <Tooltip label="Board" placement="bottom">
-          <Button variant="ghost" size="sm" icon={ArrowLeft} aria-label="Board" onClick={onBack} />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ArrowLeft}
+            aria-label="Board"
+            onClick={onBack}
+            className="-ml-1.5"
+          />
         </Tooltip>
       )}
-      <div className="flex min-w-0 items-center gap-2">
+      {/* The margin keeps the unsaved dot's place between Board and the name. */}
+      <div className="relative ml-3.5 flex min-w-0 items-center">
         <UnsavedMark
           mark={renamed ? 'changed' : undefined}
           was={renamed ? `Was ${view.name}` : undefined}

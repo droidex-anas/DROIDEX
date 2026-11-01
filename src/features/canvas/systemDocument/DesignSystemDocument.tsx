@@ -197,6 +197,7 @@ function KitDocument({
   const previewing: KitPreviewing = {
     kit: { id: base.id, version: base.version, mode },
     draftTokens,
+    specimen: specimens[mode],
     ...slots,
   };
 
@@ -328,15 +329,15 @@ function KitDocument({
         <div
           ref={scrollRef}
           tabIndex={-1}
-          className="design-system-document-column min-h-0 min-w-0 flex-1 overflow-y-auto outline-none"
+          className="design-system-document-column min-h-0 min-w-0 flex-1 overflow-y-auto px-4 outline-none"
         >
-          <div className="flex flex-col gap-8 px-8 pb-8 pt-2">
+          {/* One measure for everything in the document, so all of it shares both edges. */}
+          <div className="mx-auto flex max-w-2xl flex-col gap-8 pb-8 pt-2">
             <div className="flex flex-col gap-2">
               <DocumentCover
                 appSessionId={appSessionId}
                 name={working.name}
                 cover={working.cover}
-                specimen={specimens[mode]}
                 previewing={previewing}
                 canRegenerate={canEdit}
               />

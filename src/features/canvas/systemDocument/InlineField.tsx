@@ -112,7 +112,7 @@ export function InlineField({
           setText(value);
         }}
         className={cn(
-          '-mx-1 max-w-full cursor-text truncate rounded-sm px-1 text-left transition-colors duration-quick ease-out hover:bg-elevated',
+          '-mx-1 cursor-text truncate rounded-sm px-1 text-left transition-colors duration-quick ease-out hover:bg-elevated',
           className,
         )}
       >

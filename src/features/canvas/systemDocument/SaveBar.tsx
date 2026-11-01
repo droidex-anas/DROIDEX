@@ -91,7 +91,7 @@ export function SaveBar({
     <div
       role="region"
       aria-label="Unsaved changes"
-      className="sticky bottom-4 mx-8 mb-4 flex items-center gap-2 rounded-lg bg-raised py-2 pl-4 pr-2 shadow-lg"
+      className="sticky bottom-4 mx-auto mb-4 flex max-w-2xl items-center gap-2 rounded-lg bg-raised py-2 pl-4 pr-2 shadow-lg"
     >
       <p role="status" className="min-w-0 flex-1 truncate text-body text-primary">
         {conflict === null

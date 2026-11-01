@@ -1,4 +1,5 @@
-// The ⋯ menu a section, item or token row carries (spec §6).
+// The ⋯ menu a section, item or token row carries (spec §6). When it ends its
+// row its padding hangs past the row's edge, so the glyph ends on it.
 
 import { useRef, useState } from 'react';
 import { Ellipsis, type IconComponent } from '@droidex/icons';
@@ -29,6 +30,7 @@ export function ActionMenu({ label, actions }: { label: string; actions: MenuAct
         onClick={() => {
           setOpen((current) => !current);
         }}
+        className="last:-mr-1.5"
       />
       <Menu
         open={open}

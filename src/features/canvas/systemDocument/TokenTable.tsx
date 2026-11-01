@@ -59,7 +59,7 @@ export function TokenTable({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex min-h-control-md items-center gap-2">
+      <div className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={marks.get(group.id)} />
         {onChange && !isRemoved ? (
           <InlineField
@@ -103,10 +103,7 @@ export function TokenTable({
           <thead>
             <tr className="text-caption text-muted">
               <th scope="col" className="w-1/3 pb-1 pt-1.5 font-normal">
-                <span className="flex items-center gap-2">
-                  <UnsavedMark mark={undefined} />
-                  Name
-                </span>
+                Name
               </th>
               {isColor ? (
                 <>
@@ -198,7 +195,7 @@ const TokenRow = memo(function TokenRow({
   return (
     <tr className="group/row align-top">
       <td className="py-2 pr-3">
-        <span className="flex min-h-control-md items-center gap-2">
+        <span className="relative flex min-h-control-md items-center">
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
           <span
             className={cn(
@@ -300,6 +297,7 @@ function TokenActions({
               setNoteOpen((open) => !open);
             }}
             className={cn(
+              'last:-mr-1.5',
               token.note === undefined &&
                 'opacity-0 focus-visible:opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 aria-expanded:opacity-100',
             )}

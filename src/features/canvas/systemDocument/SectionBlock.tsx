@@ -217,7 +217,7 @@ export function SectionBlock({
       aria-label={section.title}
       className="flex scroll-mt-4 flex-col gap-4"
     >
-      <header className="flex min-h-control-md items-center gap-2">
+      <header className="relative flex min-h-control-md items-center gap-2">
         <UnsavedMark mark={mark} />
         <h2 tabIndex={-1} className="flex min-w-0 items-baseline gap-2 outline-none">
           {onChange && !isRemoved ? (
@@ -259,7 +259,7 @@ export function SectionBlock({
           ))}
       </header>
       {!isRemoved && section.kind === 'tokens' && (
-        <p className="max-w-2xl text-body text-secondary">
+        <p className="text-body text-secondary">
           The shared primitives do not read these; designs can use them by name.
         </p>
       )}
@@ -367,7 +367,7 @@ function AssetTile({
       >
         Image
       </div>
-      <figcaption className="flex min-h-control-sm items-center gap-1.5">
+      <figcaption className="relative flex min-h-control-sm items-center gap-1.5">
         <UnsavedMark mark={mark} />
         <span
           className={cn(

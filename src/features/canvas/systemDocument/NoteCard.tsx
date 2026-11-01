@@ -68,10 +68,11 @@ export function NoteCard({
   };
 
   return (
-    <article className="max-w-2xl rounded-lg bg-raised">
-      {/* The unsaved dot sits in the card's padding, so the label starts on
-          the body's edge and the chevron ends on it. */}
-      <header className="flex min-h-11 items-center gap-1.5 pl-1 pr-3">
+    <article className="rounded-lg bg-raised">
+      {/* The header's padding is the body's, so the label starts on the body's
+          edge and the chevron or menu ends on it. The unsaved dot hangs outside
+          the card, in line with the column's other dots. */}
+      <header className="relative flex min-h-11 items-center gap-1.5 px-4">
         <UnsavedMark mark={mark} />
         <button
           type="button"
