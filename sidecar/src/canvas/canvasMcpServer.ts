@@ -456,7 +456,11 @@ export function createCanvasMcpServer(
                 diagnostic.code === 'version_mismatch' ? 'version_mismatch' : 'invalid_source';
               throw canvasError(code, diagnostic.message);
             }
-            return { receipt: result.receipt };
+            return {
+              status: 'applied',
+              ref: { id: input.ref.id, version: input.ref.version },
+              receipt: result.receipt,
+            };
           },
         ),
     ),

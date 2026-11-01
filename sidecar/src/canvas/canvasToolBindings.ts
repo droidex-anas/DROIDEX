@@ -3,7 +3,13 @@ import { join } from 'node:path';
 
 import { droidexUserDataDir } from '../droidexPaths.js';
 import { objectValue } from '../values.js';
-import { isIdentifier, safeFrameName, type CanvasToolBinding } from './canvasToolPresentation.js';
+import {
+  isIdentifier,
+  kitReference,
+  safeFrameName,
+  themeOperation,
+  type CanvasToolBinding,
+} from './canvasToolPresentation.js';
 
 const ACTIONS: CanvasToolBinding['action'][] = [
   'create',
@@ -67,6 +73,8 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
       const designIds = rawIds.filter(isIdentifier);
       if (designIds.length !== rawIds.length) continue;
       const { revisionId, canvasId, frameNames } = value;
+      const operation = themeOperation(value.themeOperation);
+      const designSystem = kitReference(value.designSystem);
       const rawNames: unknown[] = Array.isArray(frameNames) ? frameNames : [];
       const safeNames = rawNames.filter(
         (name): name is string => typeof name === 'string' && safeFrameName(name) === name,
@@ -85,6 +93,8 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
         safeNames.length <= 50
           ? { frameNames: safeNames }
           : {}),
+        ...(operation ? { themeOperation: operation } : {}),
+        ...(designSystem ? { designSystem } : {}),
       });
     } catch {
       // A torn last write cannot hide earlier correlations.

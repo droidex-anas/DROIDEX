@@ -12,6 +12,7 @@ import { ProviderTranscriptFile } from '../providers/ProviderTranscriptFile.js';
 import { ClaudeEventMapper } from '../providers/claude/claudeEvents.js';
 import { parseFullSessionTranscript } from '../sessionTranscript.js';
 import { sessionSummary } from '../testing/sessionSummaryFixture.js';
+import { appendCanvasToolBinding, readCanvasToolBindings } from './canvasToolBindings.js';
 import { CanvasToolPresentation, canvasToolProvenance } from './canvasToolPresentation.js';
 
 const CANARY = 'CANVAS_INTERNAL_GUIDANCE_7E4B';
@@ -130,6 +131,90 @@ test('only the reserved server and correlated call are projected', () => {
   assert.equal(created.canvasActivity?.title, 'Hey');
   assert.equal(created.canvasActivity?.firstArtifact, true);
   assert.ok(!JSON.stringify(created).includes(CANARY));
+});
+
+test('a theme save, proposal or apply keeps only its kit reference, live and on replay', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'canvas-theme-bindings-'));
+  const previous = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = directory;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previous;
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const projector = new CanvasToolPresentation([], (binding) => {
+    appendCanvasToolBinding('app', binding);
+  });
+  const name = 'mcp__droidex-canvas__canvas_theme';
+  const changes = [
+    { set: 'note', label: 'voice.md', body: CANARY },
+    { set: 'token', name: '--ds-accent', value: CANARY, section: 'colors', group: 'Brand' },
+  ];
+  const results: TranscriptEvent[] = [];
+  const theme = (toolUseId: string, toolArgs: Record<string, unknown>, answer: unknown) => {
+    const call = projector.project(
+      event('tool_call', { toolName: name, toolUseId, toolArgs }),
+      canvasToolProvenance(name, toolUseId),
+    );
+    const text = JSON.stringify(answer);
+    const result = event('tool_result', { toolUseId, text, isError: text.includes('"ok":false') });
+    results.push(result);
+    return [call, projector.project(result)];
+  };
+  const saved = theme(
+    'save-1',
+    { operation: 'save', kit: { id: 'acme', from: 'blank' }, name: CANARY, changes },
+    { ok: true, status: 'saved', ref: { id: 'acme', version: 1 }, diagnostics: [] },
+  );
+  const proposed = theme(
+    'save-2',
+    { operation: 'save', kit: { id: 'acme', baseVersion: 1 }, changes },
+    { ok: true, status: 'proposed', id: 'acme', baseVersion: 1, message: CANARY },
+  );
+  const applied = theme(
+    'apply-1',
+    { operation: 'apply', designId: 'design-1', ref: { id: 'acme', version: 2, mode: 'dark' } },
+    { ok: true, status: 'applied', ref: { id: 'acme', version: 2 }, receipt: { revisionId: 'r1' } },
+  );
+  const refused = theme(
+    'save-3',
+    { operation: 'save', kit: { id: 'acme', baseVersion: 1 }, changes },
+    { ok: false, error: { code: 'revision_conflict', message: CANARY } },
+  );
+  assert.deepEqual(
+    [saved, proposed, applied, refused].map(([call, result]) => [
+      call.canvasActivity?.message,
+      result.canvasActivity?.message,
+      result.canvasActivity?.designSystem,
+    ]),
+    [
+      [
+        'Saving design system',
+        'Created design system acme · v1',
+        { id: 'acme', version: 1, status: 'saved' },
+      ],
+      [
+        'Saving design system',
+        'Proposed changes to design system acme',
+        { id: 'acme', version: 1, status: 'proposed' },
+      ],
+      [
+        'Applying design system',
+        'Applied design system acme · v2',
+        { id: 'acme', version: 2, status: 'applied' },
+      ],
+      ['Saving design system', 'Could not save design system', undefined],
+    ],
+  );
+  const persisted = readFileSync(join(directory, 'canvas-tool-bindings', 'app.jsonl'), 'utf8');
+  const replayed = new CanvasToolPresentation(readCanvasToolBindings('app'));
+  const replay = results.map((result) => replayed.project(result));
+  assert.deepEqual(
+    replay.map((result) => result.canvasActivity?.message),
+    [saved, proposed, applied, refused].map(([, result]) => result.canvasActivity?.message),
+  );
+  assert.ok(!JSON.stringify([saved, proposed, applied, refused, replay]).includes(CANARY));
+  assert.ok(!persisted.includes(CANARY));
 });
 
 const message = (value: unknown): SDKMessage => value as SDKMessage;

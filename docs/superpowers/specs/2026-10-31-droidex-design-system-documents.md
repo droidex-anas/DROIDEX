@@ -242,7 +242,7 @@ Changes use the document's natural keys (token name, note label, preview title, 
 
 What a save does:
 
-- **New kit** (the id is unused): built from its `from` base, the changes applied, validated, then `index.tsx` and every example compiled in both modes. A failure refuses with diagnostics (file, line, message). Success saves v1 with `savedBy: agent` and returns `{ status: 'saved', ref, diagnostics }`.
+- **New kit** (the id is unused): built from its `from` base, the changes applied, validated, then `index.tsx` and every example compiled once each, since the mode never changes whether a build compiles. A failure refuses with diagnostics (file, line, message). Success saves v1 with `savedBy: agent` and returns `{ status: 'saved', ref, diagnostics }`.
 - **Existing user kit**: the same validation and build, then the result becomes the kit's pending proposal against `baseVersion`, replacing an earlier one. It returns `{ status: 'proposed', id, baseVersion, diagnostics }`. The tool's message says the user reviews it and that builds keep the current version until then.
 - A preset id refuses with `preset_read_only` and suggests `from: { copy }`. A deleted kit refuses with `invalid_input`. A `baseVersion` that is not the latest refuses with `revision_conflict` and the latest number, so the agent reads again.
 
