@@ -1,8 +1,13 @@
-// The notes, previews and examples every preset shares: the rules that hold for
-// any kit, and one note and one preview per shared primitive. Each preset copies
-// them into its own immutable version.
+// The notes, previews and examples the presets authored in code share: the rules
+// that hold for any kit, and one note and one preview per shared primitive. Each
+// of those presets copies them into its own immutable version. A new kit that is not a copy (blank,
+// imported or extracted) starts from the same primitives with the starter's
+// token values and files.
 
 import type { DocumentPart } from '../buildDocument.js';
+import inter from './fonts/inter.json' with { type: 'json' };
+import { PRIMITIVES_TSX } from './primitives.js';
+import { GEOMETRY_TOKENS, KIT_CSS } from './styles.js';
 
 export const LICENSED_FONTS =
   'The kit includes licensed Latin fonts; other scripts use local system fonts.';
@@ -203,3 +208,58 @@ export const PRIMITIVE_PARTS: DocumentPart[] = PRIMITIVES.flatMap(({ name, api, 
 export const PRIMITIVE_EXAMPLES: Record<string, string> = Object.fromEntries(
   PRIMITIVES.map(({ name, example }) => [`${name}.tsx`, example]),
 );
+
+/** A value for every token the shared primitives read: warm paper, graphite text and an amber accent. */
+export const STARTER_TOKENS: Record<'light' | 'dark', Record<string, string>> = {
+  light: {
+    ...GEOMETRY_TOKENS,
+    '--ds-canvas': '#f6f3ee',
+    '--ds-surface': '#fdfbf7',
+    '--ds-raised': '#fffcf7',
+    '--ds-elevated': '#f1ece4',
+    '--ds-active': '#e8e1d6',
+    '--ds-fg': '#221e19',
+    '--ds-fg-muted': '#5d564c',
+    '--ds-border': '#e3dcd0',
+    '--ds-accent': '#8a5a1f',
+    '--ds-lift': 'rgb(0 0 0 / 0.06)',
+    '--ds-press': 'rgb(0 0 0 / 0.10)',
+    '--ds-accent-soft': '#f3e6d4',
+    '--ds-accent-fg': '#fffaf2',
+    '--ds-focus': '#b9833c',
+    '--ds-positive': '#2f6f4f',
+    '--ds-danger': '#a3342b',
+    '--ds-backdrop': 'rgb(34 30 25 / 0.25)',
+    '--ds-shadow-sm': '0 1px 2px rgb(34 30 25 / 0.06)',
+    '--ds-shadow-md': '0 12px 32px rgb(34 30 25 / 0.10)',
+  },
+  dark: {
+    ...GEOMETRY_TOKENS,
+    '--ds-canvas': '#121110',
+    '--ds-surface': '#191817',
+    '--ds-raised': '#201e1c',
+    '--ds-elevated': '#262320',
+    '--ds-active': '#2e2a26',
+    '--ds-fg': '#ece7df',
+    '--ds-fg-muted': '#a8a19a',
+    '--ds-border': '#2c2825',
+    '--ds-accent': '#e3a857',
+    '--ds-lift': 'rgb(255 255 255 / 0.08)',
+    '--ds-press': 'rgb(255 255 255 / 0.12)',
+    '--ds-accent-soft': '#332a1e',
+    '--ds-accent-fg': '#1b1710',
+    '--ds-focus': '#e3a857',
+    '--ds-positive': '#6ec194',
+    '--ds-danger': '#e08a7f',
+    '--ds-backdrop': 'rgb(0 0 0 / 0.5)',
+    '--ds-shadow-sm': '0 1px 2px rgb(0 0 0 / 0.40)',
+    '--ds-shadow-md': '0 16px 44px rgb(0 0 0 / 0.50)',
+  },
+};
+
+/** The shared primitives, their stylesheet and Inter, which the starter's type tokens name. */
+export const STARTER_FILES: Record<string, string> = {
+  'index.tsx': PRIMITIVES_TSX,
+  'tokens.css': inter.css + KIT_CSS,
+  'fonts/Inter-OFL.txt': inter.license,
+};
