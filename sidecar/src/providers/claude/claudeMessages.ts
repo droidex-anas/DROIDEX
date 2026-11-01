@@ -78,6 +78,18 @@ export function turnFailure(subtype: string, errors: string[]): string {
     : `Claude Code ended the turn (${subtype}).`;
 }
 
+// The failure a result settles its turn with, if any. The CLI marks a request
+// it could not run (logged out, API down) is_error on a 'success' result: a
+// failed turn, not an answer.
+export function resultFailure(
+  message: Extract<SDKMessage, { type: 'result' }>,
+  authFailure?: string,
+): Error | undefined {
+  if (message.subtype !== 'success') return new Error(turnFailure(message.subtype, message.errors));
+  if (message.is_error) return new Error(authFailure ?? message.result);
+  return undefined;
+}
+
 export function isSlashCommand(text: string): boolean {
   return text.trimStart().startsWith('/');
 }

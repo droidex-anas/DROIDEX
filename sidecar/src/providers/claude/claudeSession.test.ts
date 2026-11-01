@@ -7,6 +7,7 @@ import test from 'node:test';
 import type { NormalizedEvent } from '../../normalize.js';
 
 import { ClaudeSession } from './claudeSession.js';
+import { CLAUDE_SIGN_IN_MESSAGE } from './claudeEvents.js';
 import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 
 // Exercise the actual SDK transport with a deterministic, unauthenticated CLI.
@@ -405,6 +406,81 @@ test('a lifecycle-confirmed withdrawal survives shutdown before its control repl
     await session.close();
     assert.equal(await withdrawing, true);
     await turn.return(undefined);
+  } finally {
+    await session.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+// A logged-out CLI refuses the prompt with a synthetic error message and a
+// result that still reads as a success, then exits.
+const loggedOutCli = String.raw`#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line);
+  const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
+  if (message.type === 'user') {
+    send({
+      type: 'assistant', uuid: 'refusal', session_id: message.session_id, parent_tool_use_id: null,
+      error: 'authentication_failed', is_api_error_message: true,
+      user_message_uuids: [message.uuid],
+      message: {
+        id: 'refusal', role: 'assistant', model: '<synthetic>',
+        content: [{ type: 'text', text: 'Not logged in · Please run /login' }],
+      },
+    });
+    send({
+      type: 'result', subtype: 'success', is_error: true,
+      result: 'Not logged in · Please run /login',
+      uuid: 'result', session_id: message.session_id, user_message_uuids: [message.uuid],
+      permission_denials: [], modelUsage: {},
+      usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    });
+    process.exit(1);
+  }
+  if (message.type !== 'control_request') return;
+  process.stdout.write(JSON.stringify({ type: 'control_response', response: {
+    subtype: 'success', request_id: message.request_id, response: { models: [], commands: [] },
+  } }) + '\n');
+});
+`;
+
+test('a logged-out CLI fails the turn with a sign-in hint', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'claude-logged-out-'));
+  const executable = join(directory, 'fake-cli.mjs');
+  writeFileSync(executable, loggedOutCli);
+  chmodSync(executable, 0o755);
+  const session = new ClaudeSession({
+    appSessionId: randomUUID(),
+    executable,
+    cwd: directory,
+    autonomy: 'low',
+    interactionMode: 'auto',
+    models: [],
+    mcpServers: {},
+    interactions: {
+      requestApproval: () => Promise.reject(new Error('unused')),
+      requestQuestion: () => Promise.reject(new Error('unused')),
+      isActive: () => true,
+      cancelPending: () => undefined,
+    },
+  });
+  try {
+    await session.start();
+    const transcriptKinds: string[] = [];
+    await assert.rejects(
+      (async () => {
+        for await (const event of session.stream('hi')) {
+          if (event.transcript) transcriptKinds.push(event.transcript.kind);
+        }
+      })(),
+      (error: unknown) => error instanceof Error && error.message === CLAUDE_SIGN_IN_MESSAGE,
+    );
+    // The refusal reads once, as the turn failure: no error row under it.
+    assert.deepEqual(
+      transcriptKinds.filter((kind) => kind === 'error'),
+      [],
+    );
   } finally {
     await session.close();
     rmSync(directory, { recursive: true, force: true });
