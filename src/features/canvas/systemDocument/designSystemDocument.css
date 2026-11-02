@@ -145,6 +145,14 @@
   color: var(--text-muted);
 }
 
+/* A type sample fills its column; a line wider than that runs to the edge and
+   fades there, as on a specimen sheet, instead of ending on an ellipsis. */
+.kit-type-sample {
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, #000 calc(100% - theme('spacing.8')), transparent);
+}
+
 /* The swatch's invisible colour input takes keyboard focus; the ring goes on
    the swatch it covers. */
 .kit-colour-swatch:has(input:focus-visible) {

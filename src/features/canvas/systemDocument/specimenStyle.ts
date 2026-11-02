@@ -1,7 +1,8 @@
 // What the renderer draws of a kit's tokens itself (spec §5): colour swatches,
-// length bars, corner squares and shadow tiles, and the checks an edited value
-// passes. A value reaches CSS only when the browser accepts it for the property
-// it previews and it cannot fetch anything, so a kit cannot make the app load a URL.
+// type samples, length bars, corner squares and shadow tiles, and the checks an
+// edited value passes. A value reaches CSS only when the browser accepts it for
+// the property it previews and it cannot fetch anything, so a kit cannot make
+// the app load a URL.
 
 import type { CSSProperties } from 'react';
 import type { DocumentSection, DocumentToken, TokenKind } from '../designSystemDocumentProtocol';
@@ -17,6 +18,8 @@ const SHAPE_PROPERTY: Record<TokenShape, string | null> = {
   shadow: 'box-shadow',
   radius: 'border-radius',
   length: 'width',
+  // A type sample sets whichever property its token names (typeProperty).
+  type: null,
   text: null,
 };
 
@@ -46,6 +49,29 @@ const KIND_NOUN: Record<TokenKind, string> = {
 
 // A backslash could spell `url(` as a CSS escape.
 const FETCHING = /url\(|image(?:-set)?\(|\\/i;
+
+export type TypeProperty =
+  | 'fontSize'
+  | 'fontFamily'
+  | 'fontWeight'
+  | 'lineHeight'
+  | 'letterSpacing';
+
+// Kits name their type tokens by what they set (--ds-font-sans, --ds-text-lg,
+// --ds-weight-bold); a name that says nothing else is a size.
+export function typeProperty(name: string): TypeProperty {
+  if (name.includes('weight')) return 'fontWeight';
+  if (name.includes('leading') || name.includes('line-height')) return 'lineHeight';
+  if (name.includes('tracking') || name.includes('letter-spacing')) return 'letterSpacing';
+  if ((name.includes('font') || name.includes('family')) && !name.includes('size'))
+    return 'fontFamily';
+  return 'fontSize';
+}
+
+/** The property the document sets to a family token's stack, naming the fonts it loaded for the kit. */
+export function loadedFamilyProperty(name: string): string {
+  return `--kit-family${name}`;
+}
 
 export function modeValue(token: DocumentToken, mode: PreviewMode): string {
   return 'value' in token ? token.value : token[mode];

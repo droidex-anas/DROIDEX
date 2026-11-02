@@ -23,7 +23,6 @@ import { useKitImageImport, type ImportedImage } from './kitImageImport';
 import type { KitPreviewing } from './KitPreviewTile';
 import { NoteCard } from './NoteCard';
 import { TokenTable } from './TokenTable';
-import { TypeSpecimen, type TypeSpecimenSize } from './TypeSpecimen';
 import { IN_ADDED_SECTION, ProposalMarks } from './proposalReview';
 import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
@@ -55,7 +54,6 @@ export function SectionBlock({
   previewTitles,
   assetNames,
   previewing,
-  typeSpecimen,
   justAdded,
   editing,
 }: {
@@ -71,8 +69,6 @@ export function SectionBlock({
   previewTitles: ReadonlySet<string>;
   assetNames: ReadonlySet<string>;
   previewing: KitPreviewing;
-  /** The saved version's type specimen, which follows this section's groups. */
-  typeSpecimen: TypeSpecimenSize | null;
   /** The item or section the user just added, which opens for editing. */
   justAdded: string | null;
   editing: SectionEditing | null;
@@ -272,7 +268,6 @@ export function SectionBlock({
           >
             <div className="flex flex-col gap-6">
               {blocksWithAddRows(section, editing, holdsTokens, renderRun)}
-              {typeSpecimen && <TypeSpecimen size={typeSpecimen} previewing={previewing} />}
             </div>
           </ProposalMarks.Provider>
         ))}

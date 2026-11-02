@@ -67,7 +67,6 @@ import { ProvenanceLine } from './ProvenanceLine';
 import { ProposalBar, SaveBar, useSaveDraft } from './SaveBar';
 import { SectionBlock, type SectionEditing } from './SectionBlock';
 import { specimenProperties } from './specimenStyle';
-import { typeSpecimenSize } from './TypeSpecimen';
 import { useDesignSystemDocument } from './useDesignSystemDocument';
 import { useKitPreviewSlots } from './useKitPreviewSlots';
 import { useKitTypeface } from './useKitTypeface';
@@ -230,7 +229,6 @@ function KitDocument({
   const built = reviewed ?? base;
   const slots = useKitPreviewSlots(scrollRef, built);
   const typeface = useKitTypeface(base, working.sections, mode);
-  const typeSpecimen = typeSpecimenSize(built.sections);
   const previewing: KitPreviewing = {
     kit: { id: base.id, version: base.version, mode },
     proposalId: reviewed?.proposalId ?? null,
@@ -411,7 +409,6 @@ function KitDocument({
                   previewTitles={names.previewTitles}
                   assetNames={names.assetNames}
                   previewing={previewing}
-                  typeSpecimen={section.kind === 'typography' ? typeSpecimen : null}
                   justAdded={justAdded}
                   editing={sectionEditing(section)}
                 />
