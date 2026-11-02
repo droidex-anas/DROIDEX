@@ -28,6 +28,7 @@ function droidOn(modelId: string) {
   const listeners = new Set<RawListener>();
   const cli = {
     turn: (): unknown => undefined,
+    output: (): AsyncIterable<unknown> | Iterable<unknown> => [],
     onSettingsWrite: (settings: Parameters<FactorySession['updateSettings']>[0]): unknown =>
       void settings,
     onInterrupt: (): unknown => undefined,
@@ -56,6 +57,7 @@ function droidOn(modelId: string) {
     },
     async *stream() {
       await cli.turn();
+      yield* cli.output();
       yield successfulResultEvent('droid-1');
     },
   } as unknown as FactorySession;
@@ -302,17 +304,36 @@ test('a switch Droid makes on the usage limit is reported once, and never for ou
 
 test('the chat follows a switch Droid makes onto Droid Core, or on a turn that fails', async () => {
   const { cli, session } = droidOn('opus-5-5');
-  cli.turn = () => {
+  let finishTurn = () => {};
+  const held = new Promise<void>((resolve) => {
+    finishTurn = resolve;
+  });
+  cli.output = async function* () {
     cli.notify(settingsUpdated('glm-5-core'));
+    yield settingsUpdated('glm-5-core');
     cli.notify(
       systemNotice(
         'Your Standard usage is used up, so this session switched to GLM-5 (Droid Core) as your overage preference asks. It switches back when Standard usage resets. To change your preferences, run the `/limits` slash command.',
       ),
     );
+    yield { type: 'assistant_text_delta', messageId: 'reply', text: 'Still on it' };
+    await held;
   };
-  assert.deepEqual(switches(await turnEvents(session.stream('go on'))), [
+  // The switch reaches the chat before the reply that follows it, while the
+  // turn is still running.
+  const turn = session.stream('go on');
+  const beforeReply: NormalizedEvent[] = [];
+  for (;;) {
+    const { value, done } = await turn.next();
+    if (done || value.transcript?.text === 'Still on it') break;
+    beforeReply.push(value);
+  }
+  assert.deepEqual(switches(beforeReply), [
     { from: 'opus-5-5', to: 'glm-5-core', cause: 'usage_limit' },
   ]);
+  finishTurn();
+  assert.deepEqual(switches(await turnEvents(turn)), []);
+  cli.output = () => [];
 
   cli.turn = () => {
     cli.notify(settingsUpdated('opus-5-5'));
