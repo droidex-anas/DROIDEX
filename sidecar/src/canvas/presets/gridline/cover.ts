@@ -48,8 +48,8 @@ const STATUS = {
 };
 
 const INVOICES = [
-  { id: 'INV-2041', customer: 'Halvorsen Logistics', due: '17 Mar', amount: '$12,480.00', status: 'Paid' },
-  { id: 'INV-2040', customer: 'Brightwater Clinics', due: '16 Mar', amount: '$3,215.40', status: 'Overdue' },
+  { id: 'INV-2041', customer: 'Brightwater Clinics', due: '17 Mar', amount: '$3,215.40', status: 'Overdue' },
+  { id: 'INV-2040', customer: 'Halvorsen Logistics', due: '16 Mar', amount: '$12,480.00', status: 'Paid' },
   { id: 'INV-2039', customer: 'Okafor & Lane', due: '15 Mar', amount: '$8,900.00', status: 'Paid' },
   { id: 'INV-2038', customer: 'Pinecrest Schools', due: '14 Mar', amount: '$1,760.00', status: 'Draft' },
   { id: 'INV-2037', customer: 'Marlow Studio', due: '12 Mar', amount: '$642.18', status: 'Paid' },
@@ -81,7 +81,7 @@ export default function Cover() {
         </div>
       </div>
 
-      <div className="absolute left-[400px] top-12 flex h-[480px] w-[860px] overflow-hidden rounded-tl-[var(--ds-radius-2xl)] bg-[color:var(--ds-canvas)] shadow-[var(--ds-shadow-lg)]">
+      <div className="absolute left-[400px] top-10 flex h-[480px] w-[860px] overflow-hidden rounded-tl-[var(--ds-radius-2xl)] bg-[color:var(--ds-canvas)] shadow-[var(--ds-shadow-lg)]">
         <aside className="flex w-[184px] shrink-0 flex-col gap-0.5 bg-[color:var(--ds-surface)] px-3 pt-4">
           <div className="mb-3 flex h-8 items-center gap-2 px-2">
             <span className="ds-label">Northwind Freight</span>
@@ -170,7 +170,7 @@ export default function Cover() {
               </thead>
               <tbody>
                 {INVOICES.map((invoice) => (
-                  <tr key={invoice.id} aria-selected={invoice.id === 'INV-2040'}>
+                  <tr key={invoice.id} aria-selected={invoice.id === 'INV-2041'}>
                     <td className="ds-text-secondary">{invoice.id}</td>
                     <td style={{ fontWeight: 'var(--ds-weight-medium)' }}>{invoice.customer}</td>
                     <td className="ds-text-secondary">{invoice.due}</td>
@@ -181,7 +181,7 @@ export default function Cover() {
                     <td className="w-10 text-[color:var(--ds-fg-muted)]">
                       <span
                         className={
-                          invoice.id === 'INV-2040'
+                          invoice.id === 'INV-2041'
                             ? 'flex h-6 w-6 items-center justify-center rounded-[var(--ds-radius-sm)] bg-[color:var(--ds-active)] text-[color:var(--ds-fg)]'
                             : 'flex h-6 w-6 items-center justify-center'
                         }
@@ -193,7 +193,7 @@ export default function Cover() {
                 ))}
               </tbody>
             </table>
-            <div className="ds-card absolute right-3 top-[154px] flex w-48 flex-col gap-0.5 p-1.5 shadow-[var(--ds-shadow-lg)]">
+            <div className="ds-card absolute right-3 top-[112px] flex w-48 flex-col gap-0.5 p-1.5 shadow-[var(--ds-shadow-lg)]">
               <span className="ds-label flex h-8 items-center gap-2.5 rounded-[var(--ds-radius-md)] bg-[color:var(--ds-elevated)] px-2.5">
                 <Bell size={16} aria-hidden="true" />
                 Send reminder
