@@ -100,6 +100,7 @@ function LayersButton({
   onCommit: ((value: string) => void) | null;
 }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const rowRef = useRef<HTMLElement>(null);
   const editorRef = useRef<ShadowEditorHandle>(null);
   const [open, setOpen] = useState(false);
   const summary = shadowSummary(layers);
@@ -119,8 +120,12 @@ function LayersButton({
         aria-expanded={open}
         onClick={() => {
           // A second press closes the editor as Escape does, keeping its edit.
-          if (open) editorRef.current?.close();
-          else setOpen(true);
+          if (open) {
+            editorRef.current?.close();
+            return;
+          }
+          rowRef.current = buttonRef.current?.closest('tr') ?? null;
+          setOpen(true);
         }}
         className="kit-body-font -mx-1 truncate rounded-sm px-1 text-left text-body tabular-nums text-secondary transition-colors duration-quick ease-out hover:bg-elevated"
       >
@@ -133,6 +138,7 @@ function LayersButton({
         <ShadowEditor
           ref={editorRef}
           anchorRef={buttonRef}
+          rowRef={rowRef}
           value={value}
           layers={layers}
           kind={kind}
@@ -155,6 +161,7 @@ interface ShadowEditorHandle {
 function ShadowEditor({
   ref,
   anchorRef,
+  rowRef,
   value,
   layers,
   kind,
@@ -165,6 +172,8 @@ function ShadowEditor({
 }: {
   ref: Ref<ShadowEditorHandle>;
   anchorRef: RefObject<HTMLElement | null>;
+  /** The token's row, whose end the editor aligns to. */
+  rowRef: RefObject<HTMLElement | null>;
   value: string;
   layers: ShadowLayer[];
   kind: TokenKind;
@@ -201,9 +210,12 @@ function ShadowEditor({
       open
       onClose={close}
       anchorRef={anchorRef}
+      // Aligned to the row's end, the editor stays inside the document column
+      // and off the chat beside it however narrow the canvas area is.
+      alignRef={rowRef}
       label={`Layers of the ${label}`}
       width={360}
-      placement="bottom-start"
+      placement="bottom-end"
     >
       <div className="flex flex-col gap-3 p-3">
         <p className="truncate text-label text-muted">{label}</p>

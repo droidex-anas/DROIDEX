@@ -330,6 +330,7 @@ v1.6.0 and v1.6.1 shipped Design in beta with user kits saved as `{ modes, guida
 - Modes other than light and dark, per-canvas forks of a kit, and merging concurrent edits.
 - Restyling existing frames when a kit changes; apply stays an explicit, per-design source revision.
 - SVG assets and font upload (f009's Upload font).
+- SVG icon import for kits, the next follow-up: an Icons group in Assets as in f011, with bulk upload of SVG icons, each row showing its type and size, and a storage footer with the kit's total. It needs a sanitised SVG contract first (an allowlist of elements and attributes, no scripts, external references or embedded rasters, with a size cap), validated at the picker and drop boundary like the raster images of §8.
 - Collecting deleted kits and unreferenced kit images from disk.
 - Remote and small-window layouts.
 - Theming DROIDEX's own chrome from a kit.

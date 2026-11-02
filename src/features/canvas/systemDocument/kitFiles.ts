@@ -26,8 +26,14 @@ export function kitFiles(
       if (item.kind === 'preview' && !previewOf.has(item.example))
         previewOf.set(item.example, shownAt);
     }
-  for (const name of examples) {
-    const isCover = cover?.kind === 'preview' && cover.example === name;
+  const coverExample = cover?.kind === 'preview' ? cover.example : null;
+  // A proposal can add examples the saved version does not list; its cover and
+  // previews name them.
+  const named = new Set(examples);
+  if (coverExample !== null) named.add(coverExample);
+  for (const name of previewOf.keys()) named.add(name);
+  for (const name of named) {
+    const isCover = coverExample === name;
     files.push({
       name,
       kind: 'example',
