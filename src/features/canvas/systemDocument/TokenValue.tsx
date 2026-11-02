@@ -2,7 +2,6 @@
 // shows the unit as a quiet suffix; editing changes the number and keeps the
 // unit unless another is typed.
 
-import type { ReactNode } from 'react';
 import { cn } from '../../../components/ui/cn';
 import type { TokenKind } from '../designSystemDocumentProtocol';
 import { InlineField } from './InlineField';
@@ -14,7 +13,7 @@ export function TokenValue({
   kind,
   label,
   isRemoved,
-  leading,
+  onDraft,
   onCommit,
 }: {
   value: string;
@@ -22,7 +21,8 @@ export function TokenValue({
   /** What the value is, such as "Value of space-2". */
   label: string;
   isRemoved: boolean;
-  leading?: (text: string) => ReactNode;
+  /** Follows the text while it is edited, then null. */
+  onDraft?: (text: string | null) => void;
   /** Null for a value that cannot be edited. */
   onCommit: ((value: string) => void) | null;
 }) {
@@ -47,7 +47,7 @@ export function TokenValue({
       suffix={unit?.unit}
       label={label}
       check={(text) => tokenValueProblem(kind, edited(text))}
-      leading={leading}
+      onDraft={onDraft}
       onCommit={(text) => {
         const next = edited(text);
         if (next !== value) onCommit(next);

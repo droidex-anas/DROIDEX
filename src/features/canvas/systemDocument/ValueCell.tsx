@@ -2,14 +2,13 @@
 // shadow's tiles and layers, or the value as text. A row that separates its
 // modes has one for each.
 
-import type { CSSProperties, ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { DocumentToken, TokenKind } from '../designSystemDocumentProtocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { CellSwatch } from './ColorSwatchInput';
 import { bareTokenName } from './documentSections';
 import { ShadowValue } from './ShadowValue';
 import { modeValue } from './specimenStyle';
-import { LiveSwatch } from './TokenSpecimens';
 import type { TokenShape } from './tokenShape';
 import { TokenValue } from './TokenValue';
 
@@ -36,6 +35,8 @@ export function ValueCell({
   /** Null for a value that cannot be edited. */
   onSet: ((mode: PreviewMode, value: string) => void) | null;
 }) {
+  // A colour being typed, which its swatch paints as it is typed.
+  const [draft, setDraft] = useState<string | null>(null);
   const mode: PreviewMode = which === 'dark' ? 'dark' : 'light';
   const isColorTable = kind === 'colors';
   // Other tables name the mode only on a row that separates them.
@@ -73,7 +74,7 @@ export function ValueCell({
         kind={kind}
         label={label}
         isRemoved={isRemoved}
-        leading={shape === 'color' ? (text) => <LiveSwatch value={text} /> : undefined}
+        onDraft={shape === 'color' ? setDraft : undefined}
         onCommit={onCommit}
       />
     );
@@ -88,6 +89,7 @@ export function ValueCell({
           mode={mode}
           label={label}
           style={specimens[mode]}
+          draft={draft}
           onCommit={onCommit}
         />
       )}

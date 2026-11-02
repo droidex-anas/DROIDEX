@@ -3,7 +3,6 @@
 // them as custom properties on `style`.
 
 import type { CSSProperties } from 'react';
-import { isPaintable } from './specimenStyle';
 
 export function Swatch({ name, style }: { name: string; style: CSSProperties }) {
   return (
@@ -12,19 +11,6 @@ export function Swatch({ name, style }: { name: string; style: CSSProperties }) 
       // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
       className="size-5 shrink-0 rounded-sm ring-1 ring-inset ring-divider"
       style={{ ...style, background: `var(${name})` }}
-    />
-  );
-}
-
-/** The colour being typed, drawn only once it parses. */
-export function LiveSwatch({ value }: { value: string }) {
-  const trimmed = value.trim();
-  return (
-    <span
-      aria-hidden="true"
-      // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-      className="mr-2 inline-block size-3.5 rounded-xs align-middle ring-1 ring-inset ring-divider"
-      style={{ background: isPaintable('color', trimmed) ? trimmed : undefined }}
     />
   );
 }

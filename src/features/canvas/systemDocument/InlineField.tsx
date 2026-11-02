@@ -1,14 +1,15 @@
-// A value that reads as text and edits in place (spec §6). Clicking it opens a
-// field; Enter or leaving the field keeps the value, Escape puts the old one
-// back. A value the check refuses stays in the field with why under it.
+// A value that reads as text and edits in place (spec §6). Clicking it turns
+// the text into a field of the same box and type, so nothing moves; Enter or
+// leaving the field keeps the value, Escape puts the old one back. A value the
+// check refuses stays in the field with why under it.
 
 import {
   useEffect,
+  useEffectEvent,
   useId,
   useImperativeHandle,
   useRef,
   useState,
-  type ReactNode,
   type Ref,
 } from 'react';
 import { Input } from '../../../components/ui/Field';
@@ -25,7 +26,7 @@ export function InlineField({
   label,
   check,
   onCommit,
-  leading,
+  onDraft,
   suffix,
   initiallyEditing = false,
   className,
@@ -37,15 +38,15 @@ export function InlineField({
   /** Why a value cannot be kept, or null when it can. */
   check: (text: string) => string | null;
   onCommit: (text: string) => void;
-  /** Shown before the text while editing, such as a live colour swatch. */
-  leading?: (text: string) => ReactNode;
+  /** Follows the text while it is edited, then null, for a live preview beside it. */
+  onDraft?: (text: string | null) => void;
   /** A quiet unit after the text, kept out of what is edited. */
   suffix?: string;
   initiallyEditing?: boolean;
   /** The text's type style, shared by the value and its field. */
   className?: string;
 }) {
-  const [text, setText] = useState<string | null>(initiallyEditing ? value : null);
+  const [text, setTextState] = useState<string | null>(initiallyEditing ? value : null);
   const [problem, setProblem] = useState<string | null>(null);
   // Leaving the field after Escape must not keep what Escape threw away.
   const textRef = useRef(text);
@@ -56,6 +57,11 @@ export function InlineField({
   const problemId = useId();
   const editing = text !== null;
 
+  const setText = (next: string | null) => {
+    setTextState(next);
+    onDraft?.(next);
+  };
+
   const stop = (focusValue: boolean) => {
     textRef.current = null;
     returnFocus.current = focusValue;
@@ -63,15 +69,14 @@ export function InlineField({
     setProblem(null);
   };
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      edit: () => {
-        setText(value);
-      },
-    }),
-    [value],
-  );
+  useImperativeHandle(ref, () => ({
+    edit: () => {
+      setText(value);
+    },
+  }));
+  const stopOnEscape = useEffectEvent(() => {
+    stop(true);
+  });
 
   useEffect(() => {
     if (!editing) {
@@ -85,7 +90,7 @@ export function InlineField({
       inputRef.current?.select();
     });
     const pop = pushEscapeLayer(() => {
-      stop(true);
+      stopOnEscape();
     });
     return () => {
       cancelAnimationFrame(frame);
@@ -128,13 +133,12 @@ export function InlineField({
     <span className="flex min-w-0 flex-col gap-1">
       <Input
         ref={inputRef}
-        variant="compact"
+        variant="inline"
         aria-label={suffix === undefined ? label : `${label}, in ${suffix}`}
         aria-describedby={problem === null ? undefined : problemId}
         invalid={problem !== null}
         value={text}
         spellCheck={false}
-        leading={leading?.(text)}
         trailing={suffix}
         className={className}
         onChange={(event) => {

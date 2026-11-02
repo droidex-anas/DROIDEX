@@ -187,6 +187,11 @@
     outline: 1.5px solid var(--focus-ring);
   }
 
+  /* An inline input (ui/Field) is as wide as its text, like the text it replaces. */
+  .field-sizing-content {
+    field-sizing: content;
+  }
+
   /* Anything clickable shows a pointer so it reads as clickable; a disabled
      control shows not-allowed instead. `:where` keeps this at zero
      specificity so the disabled rule and cursor utilities win. */
