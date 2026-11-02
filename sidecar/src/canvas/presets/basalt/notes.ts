@@ -20,7 +20,7 @@ export const LAYOUT = `The app frame is a 240px sidebar on surface, a 44px heade
 
 - List and detail: a 400px list on the left, the detail card filling the rest, with the log or code at the bottom of the detail.
 - Rows are 34px or two-line: the subject in label, the hash and branch in caption below, the state and time on the right.
-- Logs sit on surface in a three-column grid: timestamp in quiet, level in its tone, message in secondary.
+- Logs sit on surface in a three-column grid: timestamp in muted, level in its tone, message in secondary.
 - Settings pages stack a header with one primary, a table card, and a usage snippet.
 `;
 

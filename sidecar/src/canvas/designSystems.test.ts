@@ -65,9 +65,14 @@ test('kit text meets AA contrast on every surface the primitives use', () => {
           'fg',
           bg,
         ]),
-        ...['canvas', 'surface', 'raised', 'elevated', 'active'].map((bg) => ['fg-muted', bg]),
+        ...['fg-secondary', 'fg-muted'].flatMap((fg) =>
+          ['canvas', 'surface', 'raised', 'elevated', 'active'].map((bg) => [fg, bg]),
+        ),
+        // Status words sit in rows on a card, and on the current row.
+        ...['positive', 'warning', 'danger'].flatMap((fg) =>
+          ['raised', 'active'].map((bg) => [fg, bg]),
+        ),
         ['accent-fg', 'accent'],
-        ['danger', 'raised'],
       ];
       for (const [fg, bg] of pairs) {
         const foreground = tokens['--ds-' + fg];

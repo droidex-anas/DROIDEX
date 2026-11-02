@@ -127,7 +127,7 @@ export default function Deployments() {
                   <span className={STATE[each.state]} data-state={each.state === 'Building' ? 'running' : undefined}>
                     {each.state}
                   </span>
-                  <span className="ds-caption ds-text-quiet">{each.hash === live ? 'Live' : each.when}</span>
+                  <span className="ds-caption ds-text-muted">{each.hash === live ? 'Live' : each.when}</span>
                 </div>
               </button>
             ))
@@ -158,7 +158,7 @@ export default function Deployments() {
           <div className="ds-codeblock ds-log">
             {logFor(deploy).map((line) => (
               <Fragment key={line.time + line.text}>
-                <span className="ds-text-quiet">{line.time}</span>
+                <span className="ds-text-muted">{line.time}</span>
                 <span className={LEVEL[line.level]}>{line.level}</span>
                 <span className={line.level === 'error' ? 'text-[color:var(--ds-danger)]' : 'ds-text-secondary'}>{line.text}</span>
               </Fragment>
@@ -279,7 +279,7 @@ export default function ApiKeys() {
             <div key={key.prefix} className="ds-row">
               <div className="flex w-48 flex-col gap-0.5">
                 <span className="ds-label">{key.name}</span>
-                <span className="ds-caption ds-text-quiet">{'Created ' + key.created}</span>
+                <span className="ds-caption ds-text-muted">{'Created ' + key.created}</span>
               </div>
               <code className="ds-code ds-text-muted w-40">{key.prefix}</code>
               <span className="flex flex-1 flex-wrap gap-1">

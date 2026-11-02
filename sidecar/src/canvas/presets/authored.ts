@@ -267,6 +267,7 @@ samp {
 .ds-text-muted {
   color: var(--ds-fg-muted);
 }
+/* Quiet sits below 4.5:1: for disabled text and marks that are not text, never for words to read. */
 .ds-text-quiet {
   color: var(--ds-fg-quiet);
 }

@@ -84,7 +84,7 @@ export default function Cover() {
                   <span className={STATE[deploy.state]} data-state={deploy.state === 'Building' ? 'running' : undefined}>
                     {deploy.state}
                   </span>
-                  <span className="ds-caption ds-text-quiet">{deploy.when}</span>
+                  <span className="ds-caption ds-text-muted">{deploy.when}</span>
                 </div>
               </li>
             ))}
@@ -94,17 +94,17 @@ export default function Cover() {
             <div className="flex h-10 shrink-0 items-center gap-3 px-4">
               <span className="ds-label">Build log</span>
               <code className="ds-code ds-text-muted">a91c3e0</code>
-              <span className="ds-caption ds-text-quiet ml-auto">Following · 1m 51s</span>
+              <span className="ds-caption ds-text-muted ml-auto">Following · 1m 51s</span>
             </div>
             <div className="ds-log px-4">
               {LOG.map((line) => (
                 <Fragment key={line.time}>
-                  <span className="ds-text-quiet">{line.time}</span>
+                  <span className="ds-text-muted">{line.time}</span>
                   <span className={LEVEL[line.level]}>{line.level}</span>
                   <span className="ds-text-secondary">{line.text}</span>
                 </Fragment>
               ))}
-              <span className="ds-text-quiet">12:05:23.540</span>
+              <span className="ds-text-muted">12:05:23.540</span>
               <span className="text-[color:var(--ds-fg-muted)]">info</span>
               <span className="flex items-center gap-1 ds-text-secondary">
                 Pushing layer 3 of 7
@@ -120,7 +120,7 @@ export default function Cover() {
           <Search size={16} aria-hidden="true" className="text-[color:var(--ds-fg-muted)]" />
           <span className="ds-body">roll</span>
           <span className="-ml-2 h-4 w-px bg-[color:var(--ds-accent)]" />
-          <span className="ds-caption ds-text-quiet ml-auto">ledger-api</span>
+          <span className="ds-caption ds-text-muted ml-auto">ledger-api</span>
         </div>
         <div className="flex flex-col gap-0.5 p-1.5 pt-0">
           <div className="ds-row bg-[color:var(--ds-active)]">
