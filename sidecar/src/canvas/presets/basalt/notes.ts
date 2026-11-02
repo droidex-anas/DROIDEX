@@ -8,7 +8,7 @@ export const FEEL = `Basalt is a dark-first system for the tools developers live
 - Lava marks the next action, focus and a live cursor. Status speaks in green, amber and red, always with a word.
 `;
 
-export const INTERACTION = `- Hover lays --ds-lift over a row or control; press lays --ds-press. Rows never move or grow.
+export const INTERACTION = `- Hover lays lift over a row or control; pressing lays press. Rows never move or grow.
 - The current row takes active and keeps it while focus moves elsewhere. Mark it with aria-current.
 - The command palette opens on ⌘K with the input focused; the highlighted result runs on Enter and shows ↵.
 - A destructive or traffic-moving action asks for the resource's name and says what will change, in words, before the button.

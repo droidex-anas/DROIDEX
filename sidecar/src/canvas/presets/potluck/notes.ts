@@ -8,10 +8,10 @@ export const FEEL = `Potluck is a system for friendly consumer apps people open 
 - Speak like a friend: first names, contractions, a little warmth, never cute at the cost of clarity.
 `;
 
-export const INTERACTION = `- Hover lays --ds-lift over a control and press lays --ds-press; chips fill with accent-soft when pressed (aria-pressed).
+export const INTERACTION = `- Hover lays lift over a control and pressing lays press; chips fill with accent-soft when pressed (aria-pressed).
 - Choices that are one of a few (Going, Maybe, Can't make it) are pill tabs; the chosen one lifts onto raised.
 - Claiming, joining and creating answer at once with a toast in plain words ("You're bringing tea. Ama has been told.").
-- A toast or dialog arrives on --ds-ease-spring in 320ms, with a small overshoot; everything else uses the standard ease in 200ms.
+- A toast or dialog arrives on ease-spring in 320ms, with a small overshoot; everything else uses the standard ease in 200ms.
 - Errors say what to do in a friendly sentence under the field. Focus is the 3px ring at 55% green, for the keyboard only.
 `;
 

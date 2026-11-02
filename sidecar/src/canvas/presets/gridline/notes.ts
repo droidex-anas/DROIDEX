@@ -8,7 +8,7 @@ export const FEEL = `Gridline is a system for operational software people keep o
 - Every colour is a state, a series or the action. Chrome stays slate.
 `;
 
-export const INTERACTION = `- Hover lays --ds-lift over a row or control; press lays --ds-press. Nothing scales or moves.
+export const INTERACTION = `- Hover lays lift over a row or control; pressing lays press. Nothing scales or moves.
 - A selected row takes accent-soft; a selected tab takes active.
 - Focus is the 3px ring at 55% focus, for the keyboard only.
 - Disabled controls drop to muted text on elevated and say why in a hint.
@@ -97,7 +97,7 @@ export const USAGE: AuthoredPreset['usage'] = {
   'card.md':
     'A card holds one table, one chart or one KPI. Card pads 24px; a KPI card overrides it with !p-4 and a table card with !p-2, which keeps 8px around its rows.\n',
   'badge.md':
-    'Gridline squares badges to 4px. Status badges set the matching soft fill with bg-[color:var(--ds-positive-soft)] and friends, and always carry the word.\n',
+    'Gridline squares badges to 4px. Status badges take the matching soft fill (positive-soft, warning-soft, danger-soft or info-soft) and always carry the word.\n',
   'tabs.md':
     'Tabs filter a table or switch a panel; a count in the label ("Overdue 23") saves a click.\n',
   'dialog.md':

@@ -9,7 +9,7 @@ export const FEEL = `Margin is a system for products people read from start to f
 `;
 
 export const INTERACTION = `- Links stay ink with a claret underline; hover thickens the underline. Visited links do not change colour.
-- Hover lays --ds-lift over a control and press lays --ds-press. Nothing on the page moves while someone reads.
+- Hover lays lift over a control and pressing lays press. Nothing on the page moves while someone reads.
 - The selected tab takes a 2px ink underline, never a fill.
 - A footnote number is a button: pressing it brings its sidenote to full ink in the rail, and pressing again lets it go.
 - Toggles say their state in words: Listen becomes Pause, Save becomes Saved, each with aria-pressed.

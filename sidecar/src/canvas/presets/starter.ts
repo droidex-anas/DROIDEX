@@ -19,7 +19,7 @@ export function rulesNote(fonts: string): DocumentPart {
     label: '1-rules.md',
     body: `Give every control a real action, a label, and honest loading, empty and error states. Keep the focus, disabled and reduced-motion behaviour. Use buttons, not clickable divs, and reserve a primary action for the next useful step.
 
-Use the semantic --ds-* tokens: foreground on raised, surface and canvas; muted for secondary text and metadata; quiet only for disabled text and marks that are not text; accent-fg on accent; foreground on accent-soft. Separate layers with tone and shadow, not nested outlines. For hover and press, lay the translucent --ds-lift and --ds-press over a control's own background, never a second hard-coded colour.
+Use the kit's semantic tokens: foreground on raised, surface and canvas; muted for secondary text and metadata; quiet only for disabled text and marks that are not text; accent-fg on accent; foreground on accent-soft. Separate layers with tone and shadow, not nested outlines. For hover and press, lay the translucent lift and press tokens over a control's own background, never a second hard-coded colour.
 
 Write complete literal Tailwind 3 classes in every source file; never concatenate class fragments. Import named icons from lucide-react, never a dynamic icon map. Decorative icons use aria-hidden; icon-only buttons need an accessible name.
 
