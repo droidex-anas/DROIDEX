@@ -40,7 +40,13 @@ import {
 } from './documentDraft';
 import { DocumentHeader, DocumentNotice, OlderVersionNotice, UseInCanvas } from './DocumentHeader';
 import { DocumentMenu, useDuplicate } from './DocumentMenu';
-import { DocumentNav, SectionsMenu, useActiveSection, type DocumentNavProps } from './DocumentNav';
+import {
+  NavAside,
+  SectionsMenu,
+  useActiveSection,
+  useNavHidden,
+  type DocumentNavProps,
+} from './DocumentNav';
 import { itemCount, searchSections } from './documentSearch';
 import {
   changedTokenValues,
@@ -160,6 +166,8 @@ function KitDocument({
   const [query, setQuery] = useState('');
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const wide = useIsWide(rootRef);
+  const nav = useNavHidden();
+  const showsNav = wide && !nav.isHidden;
   const duplicate = useDuplicate(view, appSessionId);
   const saving = useSaveDraft(view.id);
   const isReviewing = useIsReviewing(view.id);
@@ -328,10 +336,11 @@ function KitDocument({
         onShowVersion={(version) => {
           void onShow(version);
         }}
+        navToggle={wide ? { isHidden: nav.isHidden, onToggle: nav.toggle } : null}
       >
         {(room) => (
           <>
-            {!wide && <SectionsMenu {...navProps} labelled={room.navWords} />}
+            {!showsNav && <SectionsMenu {...navProps} labelled={room.navWords} />}
             <PreviewModeButton mode={mode} onChange={setMode} />
             <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
             {isLatest && !editing && !reviewed && !isChosen && (
@@ -370,11 +379,8 @@ function KitDocument({
         </DocumentNotice>
       )}
       <div className="flex min-h-0 flex-1">
-        {wide && (
-          <aside className="w-56 shrink-0 overflow-y-auto pb-6 pl-2 pr-1 pt-1">
-            <DocumentNav {...navProps} />
-          </aside>
-        )}
+        {/* Folding into the Sections menu as the canvas narrows is instant; only the toggle slides it. */}
+        {wide && <NavAside isShown={!nav.isHidden} {...navProps} />}
         <div
           ref={scrollRef}
           tabIndex={-1}
