@@ -104,12 +104,15 @@ const ALIASES: Record<string, string[]> = {
 const SHARED_PRIMITIVES = new Set(kitPrimitives({ files: STARTER_FILES }));
 
 /**
- * Kit tokens outside the shared primitive contract. Only a kit built on the
- * shared primitives maps onto them; one with primitives of its own reads its own tokens.
+ * The tokens left in Other tokens: outside the shared primitive contract and in
+ * no section of their own, as an import keeps the names it could not map. Only a
+ * kit built on the shared primitives maps onto them; one with primitives of its
+ * own reads its own tokens.
  */
 export function unmappedKitTokens(system: Pick<DesignSystem, 'sections' | 'files'>): string[] {
   if (kitPrimitives(system).some((name) => !SHARED_PRIMITIVES.has(name))) return [];
-  return Object.keys(kitModes(system.sections).light)
+  const others = system.sections.filter((section) => section.kind === 'tokens');
+  return Object.keys(kitModes(others).light)
     .filter((name) => !CONTRACT_TOKEN_NAMES.has(name))
     .sort();
 }
