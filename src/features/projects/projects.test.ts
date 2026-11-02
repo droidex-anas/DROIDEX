@@ -25,6 +25,7 @@ import { leadRow, threadCounts, threadGroups, threadRows } from './threadBoard';
 import { threadReports } from './threadNotices';
 import { ProjectPlan } from './ProjectPlan';
 import { ThreadDetail } from './ThreadDetail';
+import { ThreadList } from './ThreadList';
 import { ThreadRow } from './ThreadRow';
 import { ThreadSpawnLine } from './ThreadSpawnLine';
 
@@ -226,13 +227,17 @@ test('a runtime that cannot answer for projects still lets the chat list paint',
 });
 
 test('a streaming thread blocked on an approval shows the block, not the spinner', () => {
-  const [worker] = threadRows(project, {
+  const signals = {
     sessions: { main: session('main'), worker: session('worker') },
-    attention: (id) => (id === 'worker' ? 'approval' : null),
+    attention: (id: string) => (id === 'worker' ? 'approval' : null),
     digests: {},
-  });
+  } as const;
+  const [worker] = threadRows(project, signals);
   assert.equal(worker?.status, 'approval');
   assert.equal(worker?.live, false);
+  assert.equal(worker?.detail, 'Needs approval');
+  const [asking] = threadRows(project, { ...signals, asking: () => 'Run npm install?' });
+  assert.equal(asking?.detail, 'Run npm install?');
 });
 
 test('Alt account labels remain visible from queued spawn through the live thread', () => {
@@ -440,17 +445,24 @@ test('the plan shows lead-owned progress even when its linked thread is working'
     digests: {},
   });
   const rendered = renderToStaticMarkup(
-    createElement(ProjectPlan, {
-      plan,
+    createElement(ProjectPlan, { plan, rows, onOpenThread: () => undefined }),
+  );
+  assert.match(rendered, /aria-label="done"/);
+  assert.match(rendered, /aria-label="review"/);
+  const list = renderToStaticMarkup(
+    createElement(ThreadList, {
       rows,
-      open: true,
-      onToggle: () => undefined,
+      plan,
+      held: false,
+      now: 1,
+      error: '',
+      view: 'threads',
+      onViewChange: () => undefined,
       onOpenThread: () => undefined,
     }),
   );
-  assert.match(rendered, /Plan · 1 of 2 done/);
-  assert.match(rendered, /aria-label="done"/);
-  assert.match(rendered, /aria-label="review"/);
+  assert.match(list, /aria-label="1 of 2 steps done"/);
+  assert.match(list, /role="tab"[^>]*aria-selected="false"[^>]*>.*Plan<\/span><span[^>]*>1\/2</);
 });
 
 test('opening spawns publish queued rows and disable Open until their session is registered', async (t) => {
