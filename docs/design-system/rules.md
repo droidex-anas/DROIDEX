@@ -61,7 +61,7 @@ Leave surfaces that already work without lines alone.
 - bold (700), light (300), or italic in UI chrome;
 - uppercase for anything but `overline` badges;
 - `prose` in menus or rows, or `caption` for anything people read for more than a glance;
-- mono for numbers that aren't code (use tabular figures in the sans face instead);
+- mono anywhere but code, terminal output and diffs: labels, file names, IDs, token names and values, and numbers that aren't code are sans (with tabular figures for numbers);
 - centred text in lists, menus or forms (centre only empty states and the welcome screen);
 - more than three text styles in one component.
 
@@ -201,6 +201,13 @@ If a screen has more than three colours besides the neutrals, something is decor
 - **No exclamation marks, no emoji, no "please"** in UI chrome.
 - **Status words are states:** Waiting, Working, Ready to review, Done.
 - **Numbers and units:** "2m ago", "14 files", "+42 −7".
+
+## Illustrations, frames and design systems
+
+- **Illustrations follow stageshow.** A kit cover, a picker tile, an empty-state picture or a demo inside a document is a faux product shot built to the stageshow skill: a believable screen, a hard crop, real words only where the story is, no plate behind the window and no stock AI decoration.
+- **Agent frames look like a serious product.** What the agent draws on the canvas uses real icons and brand marks, real window chrome and final copy. No lorem ipsum, placeholder logos, a letter in a coloured square, or "Button" as a label.
+- **Token names read as the standard ones.** A design system shows `accent`, `radius-card`, `shadow-md`, never the `--ds-` prefix it is stored under. The full `var(--ds-…)` is only in the row's tooltip and what Copy reference copies.
+- **Documents name no author.** A design system document, its notes and an agent proposal never say who wrote or proposed them.
 
 ## Before shipping a screen
 
