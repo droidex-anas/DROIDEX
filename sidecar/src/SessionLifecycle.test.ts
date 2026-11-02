@@ -1505,8 +1505,8 @@ test('a session tracks its provider pid and close kills its processes while the 
       ['processes.untrack', 4321],
     ],
   );
-  assert.equal(h.isIgnoredCommand('npx -y some-mcp --stdio'), true);
-  assert.equal(h.isIgnoredCommand('node /w/node_modules/.bin/vite'), false);
+  assert.equal(h.isIgnoredCommand('created-pid', 'npx -y some-mcp --stdio'), true);
+  assert.equal(h.isIgnoredCommand('created-pid', 'node /w/node_modules/.bin/vite'), false);
 
   const resumed = createHarness([summary('app-2', 'provider-2')]);
   queueLoad(resumed, 'provider-2');

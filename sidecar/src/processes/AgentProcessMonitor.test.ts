@@ -146,19 +146,24 @@ test('scan hides shell wrappers, emits once per change, and attaches ports', asy
   );
 });
 
-test('a process names the command the agent ran, not the harness supervisor around it', async () => {
+test('a process names the command the agent ran, not a supervisor or package-manager shell', async () => {
   const command = '/bin/bash -c npm run dev';
   const h = harness([
     rows[0],
     { pid: 650, ppid: 600, startedAt: 0, command: '/bin/bash -c exec "$@"' },
     { pid: 700, ppid: 650, startedAt: 0, command },
-    rows[2],
+    { pid: 710, ppid: 700, startedAt: 0, command: 'node /usr/bin/npm run dev' },
+    { pid: 720, ppid: 710, startedAt: 0, command: 'sh -c vite' },
+    { pid: 800, ppid: 720, startedAt: 0, command: 'node /w/node_modules/.bin/vite' },
   ]);
   h.monitor.track('s1', 600, () => true);
   await h.monitor.scan();
   assert.deepEqual(
-    h.monitor.processesFor('s1').map((row) => row.originCommand),
-    [command],
+    h.monitor.processesFor('s1').map((row) => [row.pid, row.originCommand]),
+    [
+      [710, command],
+      [800, command],
+    ],
   );
 });
 

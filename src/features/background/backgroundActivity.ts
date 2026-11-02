@@ -30,7 +30,11 @@ export function finishedCommands(
       continue;
     const result = resultByCall.get(call);
     const command = shellCommandOf(call.toolArgs);
-    if (!result || !command || isCommandStillRunning(command, processes)) continue;
+    if (!result || !command) continue;
+    // Only a process this call could have started keeps it running; an earlier
+    // run of the same command does not. `ps` start times are second-granular.
+    const startedSince = processes.filter((process) => process.startedAt >= call.ts - 1000);
+    if (isCommandStillRunning(command, startedSince)) continue;
     finished.push({
       id: call.id,
       command,

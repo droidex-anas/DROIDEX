@@ -18,6 +18,7 @@ import { ProcessCard } from './ProcessCard';
    one. */
 
 const EARLIER_FOLD = 8;
+const STOP_SETTLE_MS = 10_000;
 const NO_PROCESSES: AgentProcess[] = [];
 const NO_EVENTS: TranscriptEvent[] = [];
 
@@ -44,11 +45,17 @@ export function BackgroundWorkspace({ appSessionId }: { appSessionId: string }) 
   const { processes, transcript, sleepingOnAgents } = state;
   const now = useSecondClock(processes.length > 0);
   const earlier = useMemo(() => finishedCommands(transcript, processes), [transcript, processes]);
-  const [stopping, setStopping] = useState<ReadonlySet<number>>(new Set());
+  // When each process was asked to stop. The bridge reports no outcome, so a
+  // stop that has not taken the process away by STOP_SETTLE_MS can be retried.
+  const [stopRequests, setStopRequests] = useState<ReadonlyMap<string, number>>(new Map());
+  const isStopping = (process: AgentProcess) => {
+    const requestedAt = stopRequests.get(processKey(process));
+    return requestedAt !== undefined && now - requestedAt < STOP_SETTLE_MS;
+  };
 
-  const stop = (pid: number) => {
-    setStopping((current) => new Set(current).add(pid));
-    stopAgentProcess(appSessionId, pid);
+  const stop = (process: AgentProcess) => {
+    setStopRequests((current) => new Map(current).set(processKey(process), Date.now()));
+    stopAgentProcess(appSessionId, process.pid);
   };
   const openPort = (port: number) => {
     dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'browser', appSessionId });
@@ -75,7 +82,7 @@ export function BackgroundWorkspace({ appSessionId }: { appSessionId: string }) 
               size="sm"
               className="min-w-0"
               onClick={() => {
-                for (const process of processes) stop(process.pid);
+                for (const process of processes) stop(process);
               }}
             >
               Stop all
@@ -86,12 +93,12 @@ export function BackgroundWorkspace({ appSessionId }: { appSessionId: string }) 
       <div className="space-y-2 px-3">
         {processes.map((process) => (
           <ProcessCard
-            key={process.pid}
+            key={processKey(process)}
             process={process}
             now={now}
-            stopping={stopping.has(process.pid)}
+            stopping={isStopping(process)}
             onStop={() => {
-              stop(process.pid);
+              stop(process);
             }}
             onOpenPort={openPort}
           />
@@ -105,6 +112,11 @@ export function BackgroundWorkspace({ appSessionId }: { appSessionId: string }) 
       <EarlierCommands commands={earlier} now={now} />
     </div>
   );
+}
+
+// A pid can be recycled, so a process is its pid and its start time.
+function processKey(process: AgentProcess): string {
+  return `${String(process.pid)}:${String(process.startedAt)}`;
 }
 
 function SleepingCard({ agents, onOpenAgents }: { agents: number; onOpenAgents: () => void }) {
@@ -198,6 +210,7 @@ function EarlierCommands({ commands, now }: { commands: FinishedCommand[]; now: 
             variant="ghost"
             size="sm"
             className="ml-1 mt-1 min-w-0"
+            aria-expanded={showAll}
             onClick={() => {
               setShowAll((current) => !current);
             }}

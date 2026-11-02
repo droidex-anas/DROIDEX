@@ -287,6 +287,13 @@ const AssistantMessage = memo(function AssistantMessage({
   // Only a settled echo yields to the pinned spec card; collapsing a row
   // mid-stream would jolt the virtualized feed.
   if (!live && echo) return null;
+  const chatStatus = isLatestReply ? (
+    <Suspense fallback={null}>
+      <ThreadsWaiting appSessionId={streamId} />
+      <BackgroundLine appSessionId={streamId} />
+    </Suspense>
+  ) : null;
+  const hasActions = !live && isFinalResponse && text.trim() !== '';
   return (
     // min-w-0 so a wide table or a long unbroken URL scrolls inside the message
     // rather than widening the row past the transcript.
@@ -297,7 +304,7 @@ const AssistantMessage = memo(function AssistantMessage({
         </div>
       )}
       <MessageBody text={text} live={live} cacheId={cacheId} />
-      {!live && isFinalResponse && text.trim() ? (
+      {hasActions ? (
         <ResponseActions
           text={copyTextForMessage(text)}
           ts={ts}
@@ -310,13 +317,12 @@ const AssistantMessage = memo(function AssistantMessage({
             : {})}
           {...(forking !== undefined ? { forking } : {})}
         >
-          {isLatestReply ? (
-            <Suspense fallback={null}>
-              <ThreadsWaiting appSessionId={streamId} />
-              <BackgroundLine appSessionId={streamId} />
-            </Suspense>
-          ) : null}
+          {chatStatus}
         </ResponseActions>
+      ) : null}
+      {/* A reply with no actions of its own still says what the chat has going. */}
+      {!hasActions && !live && chatStatus ? (
+        <div className="-ml-1.5 mt-1.5 flex h-control-sm items-center">{chatStatus}</div>
       ) : null}
     </div>
   );

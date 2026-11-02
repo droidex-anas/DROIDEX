@@ -38,8 +38,10 @@ test('earlier commands are the finished ones, newest first, with how each ended'
     ...run('dev', 'npm run dev', 7_000, { ts: 8_000 }),
     ...run('test', 'npm test', 9_000, { ts: 9_500, interrupted: true }),
     ...run('pending', 'sleep 30', 10_000),
+    // The first dev server still runs, but this later run of it has ended.
+    ...run('rerun', 'npm run dev', 11_000, { ts: 11_200, isError: true }),
   ];
-  const stillServing = [process({ originCommand: '/bin/zsh -c npm run dev' })];
+  const stillServing = [process({ originCommand: '/bin/zsh -c npm run dev', startedAt: 7_500 })];
 
   assert.deepEqual(
     finishedCommands(transcript, stillServing).map(({ id, outcome, durationMs }) => ({
@@ -48,6 +50,7 @@ test('earlier commands are the finished ones, newest first, with how each ended'
       durationMs,
     })),
     [
+      { id: 'rerun', outcome: 'failed', durationMs: 200 },
       { id: 'test', outcome: 'interrupted', durationMs: 500 },
       { id: 'lint', outcome: 'failed', durationMs: 1_000 },
       { id: 'build', outcome: 'succeeded', durationMs: 3_000 },
