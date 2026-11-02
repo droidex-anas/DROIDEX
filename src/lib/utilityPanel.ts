@@ -6,6 +6,7 @@ export type UtilityTool =
   | 'canvas'
   | 'agents'
   | 'threads'
+  | 'background'
   | 'side';
 
 export interface UtilityTab {
@@ -49,6 +50,7 @@ const SINGLETON_TOOLS = new Set<UtilityTool>([
   'canvas',
   'agents',
   'threads',
+  'background',
   'side',
 ]);
 
@@ -296,6 +298,7 @@ function isUtilityTool(value: unknown): value is UtilityTool {
     value === 'files' ||
     value === 'canvas' ||
     value === 'threads' ||
+    value === 'background' ||
     value === 'side'
   );
 }

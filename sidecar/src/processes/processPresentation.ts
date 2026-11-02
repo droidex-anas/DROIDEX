@@ -1,7 +1,10 @@
 import type { AgentProcess } from '../protocol.js';
 import type { ProcessRecord } from './processTree.js';
 
-const MIN_AGE_MS = 1500;
+// Longer than any heartbeat a harness restarts around a command: Droid's
+// command supervisor runs a fresh `sleep 2` every two seconds.
+const MIN_AGE_MS = 3000;
+
 function isShellWrapper(command: string): boolean {
   const [executable, ...args] = command.trim().split(/\s+/);
   if (!/^(?:\S*\/)?(?:sh|zsh|bash|fish|dash)$/.test(executable)) return false;
@@ -54,14 +57,7 @@ export function visibleProcesses(
   return rows
     .filter((row) => now - row.startedAt >= MIN_AGE_MS && !isShellWrapper(row.command))
     .map((row) => {
-      let parent = byPid.get(row.ppid);
-      let originCommand: string | undefined;
-      const seen = new Set([row.pid]);
-      while (parent && !seen.has(parent.pid)) {
-        seen.add(parent.pid);
-        if (isShellWrapper(parent.command)) originCommand = parent.command;
-        parent = byPid.get(parent.ppid);
-      }
+      const originCommand = launchingShell(row, byPid);
       return {
         pid: row.pid,
         name: displayNameFor(row.command),
@@ -71,4 +67,21 @@ export function visibleProcesses(
         ports: [...(ports.get(row.pid) ?? [])].sort((a, b) => a - b),
       };
     });
+}
+
+// The nearest shell wrapper above a process is the command the agent ran; one
+// further up is the harness's own supervisor. A shell that execs its last
+// command leaves none, and the process's own command line is what was run.
+function launchingShell(
+  row: ProcessRecord,
+  byPid: ReadonlyMap<number, ProcessRecord>,
+): string | undefined {
+  const seen = new Set([row.pid]);
+  let parent = byPid.get(row.ppid);
+  while (parent && !seen.has(parent.pid)) {
+    if (isShellWrapper(parent.command)) return parent.command;
+    seen.add(parent.pid);
+    parent = byPid.get(parent.ppid);
+  }
+  return undefined;
 }

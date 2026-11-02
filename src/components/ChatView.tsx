@@ -18,7 +18,6 @@ import { sessionAttention } from '../lib/sessionAttention';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
 import { AppBlockRepairSessionContext } from './appBlockRepairContext';
-import { RunningProcessesMenu } from './RunningProcessesMenu';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
 import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
@@ -249,7 +248,6 @@ function ChatHeader({
   live,
   sub,
   leadPx,
-  appSessionId,
   canvas,
   tile,
 }: {
@@ -259,8 +257,6 @@ function ChatHeader({
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
-  // The chat whose processes the header lists; null when it lists none.
-  appSessionId: string | null;
   // The chat's own canvas, which turns the title into its attached-chats menu.
   canvas?: { appSessionId: string; canvasId: string };
   // In a split tab the title is the tile's drag handle and close button.
@@ -294,7 +290,6 @@ function ChatHeader({
         )}
         {tile && <CloseTileButton tileId={tile.id} title={title} />}
       </div>
-      {appSessionId && <RunningProcessesMenu appSessionId={appSessionId} />}
       {sub?.onStop && (
         <Button size="sm" icon={Square} onClick={sub.onStop} title="Stop child session">
           Stop
@@ -897,9 +892,9 @@ export default function ChatView({
 
   // Only the top-left tile's header row takes in the window controls.
   const leadPx = rowLeadPx !== null && (!tile || (tile.atTop && tile.atLeft)) ? rowLeadPx : 16;
-  // A lone chat in a tab is named by its tab, whose row also lists its
-  // processes, so it needs a header only for a crumb back — or for the canvas
-  // on its board, whose chats this column's header owns (spec §4).
+  // A lone chat in a tab is named by its tab, so it needs a header only for a
+  // crumb back — or for the canvas on its board, whose chats this column's
+  // header owns (spec §4).
   const namedByTab = tabStripShown && !tile;
   let header: ReactNode = null;
   if (activeSession && inDesign && boardCanvasId !== null && !chatHeaderSub && !tile) {
@@ -922,7 +917,6 @@ export default function ChatView({
         }
         live={live}
         leadPx={leadPx}
-        appSessionId={namedByTab ? null : activeSession.appSessionId}
         tile={tile}
         {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
         {...(boardCanvasId !== null
@@ -931,9 +925,7 @@ export default function ChatView({
       />
     );
   } else if (!activeSession && tile) {
-    header = (
-      <ChatHeader title="New chat" live={false} leadPx={leadPx} appSessionId={null} tile={tile} />
-    );
+    header = <ChatHeader title="New chat" live={false} leadPx={leadPx} tile={tile} />;
   } else if (!tabStripShown) {
     // The welcome screen has no header of its own, but the top row still
     // belongs to the window chrome.

@@ -18,6 +18,7 @@ import type {
 import type { AppServerClient } from './appServer.js';
 import { codexAutonomy, codexSandboxPolicy, OpenPrompts } from './codexApprovals.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { isCodexHarnessProcess } from './codexHarnessProcesses.js';
 import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
 import { CodexRateLimits } from './codexRateLimits.js';
 import { canApproveWorkspaceEdits } from './codexEditPermissions.js';
@@ -234,6 +235,10 @@ export class CodexSession implements ProviderSession {
     const pid = this.client.pid;
     if (pid === undefined) return undefined;
     return { pid, isAlive: () => this.client.isAlive() };
+  }
+
+  isHarnessProcess(command: string): boolean {
+    return isCodexHarnessProcess(command);
   }
 
   // Opens the session's thread: a new one, or the stored one it is resuming.

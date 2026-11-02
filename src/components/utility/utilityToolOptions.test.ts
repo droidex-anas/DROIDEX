@@ -12,7 +12,7 @@ test('the picker offers the tools every chat has, and Canvas is not one of them'
   // Canvas opens from an artifact card or the design entry point, so it still
   // needs a label and an icon for the tab strip without being offered here.
   assert.equal(utilityToolOption('canvas').label, 'Canvas');
-  for (const tool of ['canvas', 'agents', 'threads', 'side'] as const) {
+  for (const tool of ['canvas', 'agents', 'threads', 'background', 'side'] as const) {
     assert.equal(utilityToolOption(tool).tool, tool);
   }
 });

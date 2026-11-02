@@ -2,7 +2,6 @@ import { useRef } from 'react';
 import { useStoreSelector } from '../../hooks/useStore';
 import { ComposerHeight } from '../composer/ComposerHeight';
 import PromptInput from '../PromptInput';
-import { RunningProcessesMenu } from '../RunningProcessesMenu';
 import { BrowserActivityLine } from './BrowserActivityLine';
 import BrowserWorkspace from './BrowserWorkspace';
 
@@ -26,12 +25,7 @@ export function BrowserFocusWorkspace({
         expanded={expanded}
         onToggleExpanded={onToggleExpanded}
         activity={
-          expanded && appSessionId ? (
-            <div className="flex min-w-0 items-center gap-2">
-              <RunningProcessesMenu appSessionId={appSessionId} overPage />
-              <BrowserActivityLine appSessionId={appSessionId} />
-            </div>
-          ) : null
+          expanded && appSessionId ? <BrowserActivityLine appSessionId={appSessionId} /> : null
         }
       />
       {expanded && ownComposer && (

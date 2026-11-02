@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { nonEmptyEnv } from '../../droidexPaths.js';
 import type { ModelInfo, ProviderStatus, SkillInfo } from '../../protocol.js';
 import type {
   Provider,
@@ -17,6 +16,7 @@ import type {
 } from '../session.js';
 import { AppServerClient } from './appServer.js';
 import { CodexCatalog } from './codexCatalog.js';
+import { codexHome } from './codexHarnessProcesses.js';
 import { CodexRateLimits } from './codexRateLimits.js';
 import { resolveCodexPath } from './codexExecutable.js';
 import { listModels } from './codexModels.js';
@@ -363,9 +363,8 @@ async function configuredModel(client: AppServerClient): Promise<string | undefi
 // The top-level `model` key, read only until the first table header so a model
 // named inside a profile or a provider table is never mistaken for the default.
 function configFileModel(): string | undefined {
-  const home = nonEmptyEnv(process.env.CODEX_HOME, join(homedir(), '.codex'));
   try {
-    for (const line of readFileSync(join(home, 'config.toml'), 'utf8').split(/\r?\n/)) {
+    for (const line of readFileSync(join(codexHome(), 'config.toml'), 'utf8').split(/\r?\n/)) {
       const text = line.trim();
       if (text.startsWith('[')) return undefined;
       const match = /^model\s*=\s*["']([^"']+)["']/.exec(text);
