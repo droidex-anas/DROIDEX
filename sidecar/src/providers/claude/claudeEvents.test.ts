@@ -729,6 +729,30 @@ test('task updates preserve nonterminal states and only explicit endings settle 
   }
 });
 
+test('a refusal fallback on the main thread moves the chat to its model; a subagent one does not', () => {
+  const mapper = new ClaudeEventMapper('app-1', 'claude-opus-4-8');
+  const switches = (scope: 'local' | 'session') =>
+    mapper
+      .map(
+        message({
+          type: 'system',
+          subtype: 'model_refusal_fallback',
+          trigger: 'refusal',
+          direction: 'retry',
+          scope,
+          original_model: 'claude-opus-4-8',
+          fallback_model: 'claude-sonnet-4-6',
+        }),
+      )
+      .flatMap((event) => (event.harnessModelSwitch ? [event.harnessModelSwitch] : []));
+  assert.deepEqual(switches('local'), []);
+  assert.equal(mapper.modelId, 'claude-opus-4-8');
+  assert.deepEqual(switches('session'), [
+    { from: 'claude-opus-4-8', to: 'claude-sonnet-4-6', cause: 'harness' },
+  ]);
+  assert.equal(mapper.modelId, 'claude-sonnet-4-6');
+});
+
 test('result capacity comes from the main conversation model, never a child', () => {
   const mapper = new ClaudeEventMapper('context-chat', 'sonnet[1m]');
   mapper.map(

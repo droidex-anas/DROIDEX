@@ -300,6 +300,31 @@ test('a switch Droid makes on the usage limit is reported once, and never for ou
   assert.deepEqual(switches(await turnEvents(session.stream('and again'))), []);
 });
 
+test('the chat follows a switch Droid makes onto Droid Core, or on a turn that fails', async () => {
+  const { cli, session } = droidOn('opus-5-5');
+  cli.turn = () => {
+    cli.notify(settingsUpdated('glm-5-core'));
+    cli.notify(
+      systemNotice(
+        'Your Standard usage is used up, so this session switched to GLM-5 (Droid Core) as your overage preference asks. It switches back when Standard usage resets. To change your preferences, run the `/limits` slash command.',
+      ),
+    );
+  };
+  assert.deepEqual(switches(await turnEvents(session.stream('go on'))), [
+    { from: 'opus-5-5', to: 'glm-5-core', cause: 'usage_limit' },
+  ]);
+
+  cli.turn = () => {
+    cli.notify(settingsUpdated('opus-5-5'));
+    throw new Error('Model connection failed');
+  };
+  const events: NormalizedEvent[] = [];
+  await assert.rejects(async () => {
+    for await (const event of session.stream('retry')) events.push(event);
+  }, /Model connection failed/);
+  assert.deepEqual(switches(events), [{ from: 'glm-5-core', to: 'opus-5-5', cause: 'harness' }]);
+});
+
 test('a translated limit notice fails the turn with its detail and adds no row', async () => {
   const { cli, session } = droidOn('opus-5-5');
   cli.turn = () => {
