@@ -247,6 +247,10 @@ export default function ApiKeys() {
   const [error, setError] = useState('');
   const [created, setCreated] = useState('');
   const [copy, setCopy] = useState('');
+  const [revoking, setRevoking] = useState<(typeof KEYS)[number] | null>(null);
+  const [typed, setTyped] = useState('');
+  const [revokeError, setRevokeError] = useState('');
+  const [notice, setNotice] = useState('');
   const close = () => {
     setCreating(false);
     setCreated('');
@@ -271,6 +275,20 @@ export default function ApiKeys() {
       setCopy('failed');
     }
   };
+  const closeRevoke = () => {
+    setRevoking(null);
+    setTyped('');
+    setRevokeError('');
+  };
+  const revoke = (key: (typeof KEYS)[number]) => {
+    if (typed !== key.name) {
+      setRevokeError('Type ' + key.name + ' exactly to confirm.');
+      return;
+    }
+    setKeys(keys.filter((each) => each.id !== key.id));
+    setNotice(key.name + ' is revoked. Requests that use it now fail.');
+    closeRevoke();
+  };
   const shown = keys.filter((key) => key.env === env);
   const tab = (value: string, label: string) => ({ value, label, content: null });
 
@@ -281,7 +299,7 @@ export default function ApiKeys() {
           <h1 className="ds-heading">API keys</h1>
           <p className="ds-body ds-text-muted m-0">A key acts as your workspace. Keep it in a secret manager, never in source.</p>
         </div>
-        <Button className="ml-auto" onClick={() => setCreating(true)}>
+        <Button id="create-key" className="ml-auto" onClick={() => setCreating(true)}>
           <Plus size={16} aria-hidden="true" />
           Create key
         </Button>
@@ -293,10 +311,12 @@ export default function ApiKeys() {
         {shown.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-10 text-center">
             <KeyRound size={20} aria-hidden="true" className="text-[color:var(--ds-fg-muted)]" />
-            <p className="ds-body-strong m-0">No test keys yet</p>
-            <p className="ds-caption ds-text-muted m-0">Test keys reach the sandbox and never move real money.</p>
+            <p className="ds-body-strong m-0">{'No ' + env + ' keys yet'}</p>
+            <p className="ds-caption ds-text-muted m-0">
+              {env === 'live' ? 'Live keys move real money. Give each service its own.' : 'Test keys reach the sandbox and never move real money.'}
+            </p>
             <Button variant="secondary" onClick={() => setCreating(true)}>
-              Create a test key
+              {'Create a ' + env + ' key'}
             </Button>
           </div>
         ) : (
@@ -313,13 +333,16 @@ export default function ApiKeys() {
                 ))}
               </span>
               <span className="ds-caption ds-text-muted w-28 text-right">{key.used}</span>
-              <Button variant="quiet" onClick={() => setKeys(keys.filter((each) => each.id !== key.id))}>
+              <Button variant="quiet" onClick={() => setRevoking(key)}>
                 Revoke
               </Button>
             </div>
           ))
         )}
       </Card>
+      <p className="ds-caption ds-text-muted m-0" aria-live="polite">
+        {notice}
+      </p>
       <section className="flex flex-col gap-2">
         <span className="ds-overline ds-text-muted">Use it</span>
         <pre className="ds-codeblock">
@@ -373,6 +396,30 @@ export default function ApiKeys() {
           </>
         )}
       </Dialog>
+      {revoking === null ? null : (
+        <Dialog open onClose={closeRevoke} title="Revoke key" returnFocusId="create-key">
+          <div className="flex flex-col gap-4">
+            <p className="ds-body m-0">
+              Requests signed with <span className="ds-body-strong">{revoking.name}</span> (
+              <span className="ds-tabular">{revoking.prefix}</span>) fail with 401 from the moment you revoke it. You can't
+              undo this; anything still using the key stops working.
+            </p>
+            <Input
+              label={'Type ' + revoking.name + ' to confirm'}
+              value={typed}
+              error={revokeError}
+              autoComplete="off"
+              onChange={(event) => setTyped(event.target.value)}
+            />
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="quiet" onClick={closeRevoke}>
+              Cancel
+            </Button>
+            <Button onClick={() => revoke(revoking)}>Revoke key</Button>
+          </div>
+        </Dialog>
+      )}
     </main>
   );
 }
