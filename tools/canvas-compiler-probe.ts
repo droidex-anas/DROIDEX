@@ -30,7 +30,7 @@ import {
   type CompilerRequest,
   type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
-import { readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
+import { listDesignSystems, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
 import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
 import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
@@ -242,16 +242,23 @@ function probeTarget(appPath: string | undefined): ProbeTarget {
 }
 
 const DROIDEX_REF: DesignSystemRef = { id: 'droidex', version: 1, mode: 'dark' };
-const DROIDEX_COVER = (await readDesignSystem(DROIDEX_REF)).examples['cover.tsx'];
+// The probe's own example, so its content check does not follow what a kit's
+// authored examples happen to say.
+const PROBE_CONTENT = "You're all set";
+const PROBE_EXAMPLE = `import { Button } from '@droidex/design-system';
+
+export default function Probe() {
+  return <Button>${PROBE_CONTENT}</Button>;
+}
+`;
 
 function compileInput(files?: DesignCompileInput['files']): DesignCompileInput {
-  if (files === undefined && DROIDEX_COVER === undefined) fail('the design kit ships no cover');
   return {
     kind: 'design',
     designId: 'canvas-compiler-probe',
     revisionId: 'canvas-compiler-probe',
     generation: 1,
-    files: files ?? { 'main.tsx': DROIDEX_COVER },
+    files: files ?? { 'main.tsx': PROBE_EXAMPLE },
     designSystem: DROIDEX_REF,
     designSystemAdherence: 'guide',
   };
@@ -400,17 +407,17 @@ function linkOutside(runtime: string, relative: string): void {
   symlinkSync(outside, join(runtime, relative));
 }
 
-/** The self-contained artifact a preview host could load. */
+/** The self-contained artifact a preview host could load; `content` is text its example renders. */
 function artifactOf(
   response: CompilerResponse,
-  content = "You're all set",
+  content: string | null = PROBE_CONTENT,
 ): { label: string; bytes: number } {
   if (response.status !== 'ready') fail(`the compiler answered ${response.status}`);
   const { artifactId, html } = response.design;
   const required: [string, boolean][] = [
     ['a sha256 artifact id', /^[0-9a-f]{64}$/.test(artifactId)],
     ['the preview root', html.includes('id="canvas-root"')],
-    ['the example content', html.includes(content)],
+    ['the example content', content === null || html.includes(content)],
     [
       'the hosted offline font',
       /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/.test(html) &&
@@ -471,28 +478,34 @@ const notices: string[] = JSON.parse(
 if (!notices.includes('node_modules/lucide-react/LICENSE'))
   fail('the runtime is missing the Lucide license notice');
 
+// The presets are listed from an empty profile, so no user kit joins them.
+process.env.DROIDEX_HISTORY_DIR = mkdtempSync(join(tmpdir(), 'canvas-compiler-probe-kits-'));
+const presets = (await listDesignSystems()).filter((summary) => summary.kind === 'preset');
+rmSync(process.env.DROIDEX_HISTORY_DIR, { recursive: true, force: true });
+if (!presets.some((preset) => preset.id === DROIDEX_REF.id)) fail('DROIDEX is not a preset');
+
 const kitArtifacts: { label: string; bytes: number }[] = [];
-for (const id of ['droidex', 'openai-inspired', 'claude-inspired']) {
+for (const { id, version } of presets) {
   for (const mode of ['light', 'dark'] as const) {
-    const ref: DesignSystemRef = { id, version: 1, mode };
+    const ref: DesignSystemRef = { id, version, mode };
     const kit = await readDesignSystem(ref);
     const example = kit.examples['cover.tsx'];
     if (example === undefined) fail(`${id} ships no cover`);
-    for (const family of id === 'claude-inspired' ? ['Inter', 'Lora'] : ['Inter']) {
-      if (!kit.files[`fonts/${family}-OFL.txt`]?.includes('SIL OPEN FONT LICENSE'))
-        fail(`${id} ships no ${family} font notice`);
+    const notices = Object.keys(kit.files).filter((name) => /^fonts\/.+-OFL\.txt$/.test(name));
+    if (notices.length === 0) fail(`${id} ships no font notice`);
+    for (const name of notices) {
+      if (!kit.files[name]?.includes('SIL OPEN FONT LICENSE')) fail(`${id} ships an empty ${name}`);
     }
     const input = { ...compileInput(), files: { 'main.tsx': example }, designSystem: ref };
     const shipped = await runWorker(target, target.runtimeDir, input);
     assertClean(shipped, target.label);
-    // The DROIDEX cover draws the kit's own icons; the other covers name a Lucide one.
-    const namesLucide = example.includes("from 'lucide-react'");
+    const lucideIcon = /import \{\s*(\w+)[^}]*\} from 'lucide-react'/.exec(example)?.[1];
     if (
       shipped.compiled.status !== 'ready' ||
-      (namesLucide && !shipped.compiled.design.html.includes('"ArrowRight"'))
+      (lucideIcon !== undefined && !shipped.compiled.design.html.includes(`"${lucideIcon}"`))
     )
       fail(`${id}/${mode} did not bundle its named Lucide icon`);
-    const artifact = artifactOf(shipped.compiled);
+    const artifact = artifactOf(shipped.compiled, null);
     kitArtifacts.push(artifact);
     process.stdout.write(
       `Compiled ${id}/${mode} offline from ${target.label}: ${artifact.label}\n`,
