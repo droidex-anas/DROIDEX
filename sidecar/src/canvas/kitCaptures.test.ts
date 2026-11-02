@@ -9,7 +9,7 @@ pinScratchProfile();
 
 test("a kit keeps each preview's capture per mode, and refuses one it does not have", async (t) => {
   const canvas = await harness(t);
-  const light: DesignSystemRef = { id: 'openai-inspired', version: 1, mode: 'light' };
+  const light: DesignSystemRef = { id: 'gridline', version: 1, mode: 'light' };
   const dark: DesignSystemRef = { ...light, mode: 'dark' };
   const png = CANVAS_PNG.toString('base64');
   const readCapture = async (requestId: string, ref = light, item = 'cover') => {

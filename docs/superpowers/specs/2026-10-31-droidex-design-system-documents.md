@@ -1,6 +1,6 @@
 # DROIDEX design system documents
 
-Status: proposed. Nothing in this document is implemented yet. It supersedes two paragraphs of the [Canvas design specification](./2026-10-05-droidex-canvas-design.md) §10, **Choosing and managing systems** and **How a kit is written**, and the Manage design systems dialog they describe. The rest of §10 (Auto, the three presets, the lift/press and no-layout-shift rules, per-request pinning, apply, images) still holds.
+Status: proposed. Nothing in this document is implemented yet. It supersedes two paragraphs of the [Canvas design specification](./2026-10-05-droidex-canvas-design.md) §10, **Choosing and managing systems** and **How a kit is written**, and the Manage design systems dialog they describe. The rest of §10 (Auto, the presets, the lift/press and no-layout-shift rules, per-request pinning, apply, images) still holds.
 
 Execution plan: [design system documents plan](../plans/2026-10-31-droidex-design-system-documents.md).
 
@@ -123,7 +123,7 @@ Layout, left to right inside the canvas area: a section nav, then the document c
 
 **Document column**: page edge space-8, sections space-8 apart, each section a heading (`text-heading`) with its count and a section menu (rename, move up, move down, remove), then its items. Notes and prose keep the 672 px reading measure; token tables, previews and demos use the full column.
 
-- **Cover.** At the top, the kit's cover (below) at the column's width, with the provenance line under it (“Copy of Claude-inspired v1”, “Created from this project: tailwind.config.ts, src/index.css · 6 tokens not mapped”, “Extracted from Landing page · v3”).
+- **Cover.** At the top, the kit's cover (below) at the column's width, with the provenance line under it (“Copy of Margin v1”, “Created from this project: tailwind.config.ts, src/index.css · 6 tokens not mapped”, “Extracted from Landing page · v3”).
 - **Notes** are `bg-raised` cards, radius 12, no border. The card header shows the title the label reads as (the label is its tooltip, and edits inline in user kits) and a chevron; the body is rendered markdown at the reading measure. Notes start expanded; collapse state is remembered per kit for the app session.
 - **Token groups** are a group title (`text-body-strong`, like a preview's title) and a data table with `tbody` row dividers, its column heads in `text-caption`, muted, its names bare in medium sans (`accent` for `--ds-accent`; the full `var(--ds-accent)` is the row's tooltip and what its Copy reference action copies; a new token's name is typed bare) and its values in sans with tabular figures; a value that is one number and a unit (“0.5rem”, “140ms”) shows the unit as a quiet suffix, inside its field too, and editing the number keeps the unit. Colours show Name, Light and Dark, each a hairlined swatch and its value, so both modes are always visible. Single-value kinds show Name, Value and a specimen: a bar for spacing, a tile with that corner for radius, a raised tile with that shadow for shadows, the value alone for motion. Typography rows show Name and Value; the specimens are one preview rendered by the kit (below). Other tokens open with one sentence: these tokens sit outside the standard groups; designs can use them by name. A row with a usage note shows a note icon; hovering or focusing any row shows it.
 - **Previews** (components and demos) are a title, an optional note and a tile at the preview's size scaled down to fit the column, never up (§7).
@@ -186,7 +186,7 @@ Assets are images the kit owns: logos, marks, illustrations, cover images. PNG, 
 1. A search field, focused on open, and the light/dark toggle beside it.
 2. **Auto**, always first: “Styles from the request and the canvas”.
 3. **Recent**: up to three kits most recently chosen on any canvas, newest first, read from the choice store. Hidden while searching and when empty.
-4. **Presets**: DROIDEX, OpenAI-inspired, Claude-inspired.
+4. **Presets**: DROIDEX, Margin, Gridline, Basalt, Potluck.
 5. **Yours**: user kits, most recently saved first, a dot on a kit with a pending agent proposal.
 
 Each row shows the cover thumbnail (64 × 26, `rounded-sm`) or the two swatches, the name and a check on the current one. Enter or click chooses and closes. On the active row, Open (a trailing ghost button, also Right Arrow) opens the kit's document in the canvas area; it is absent on the Design home and for Auto. The footer is **New design system**, a submenu: From this project (§12; shown only when the chat has a project folder), From DESIGN.md…, From CSS or Tailwind config…. The last two open a 560 px dialog with the existing paste-or-upload form (`NewDesignSystemForm`), call the existing `canvas.importDesignSystem`, choose the new kit for this canvas and open its document where a canvas area exists. The Manage design systems footer is gone.

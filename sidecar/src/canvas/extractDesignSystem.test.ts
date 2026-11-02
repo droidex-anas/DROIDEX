@@ -11,12 +11,12 @@ import {
 } from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 import { STARTER_TOKENS } from './presets/starter.js';
 
 pinScratchProfile();
 
-const PRICING_TSX = OPENAI_INSPIRED_DESIGN_SYSTEM.examples['PricingCard.tsx'];
+const PRICING_TSX = GRIDLINE_DESIGN_SYSTEM.examples['PricingCard.tsx'];
 
 function save(system: DesignSystem) {
   return saveDesignSystem(system, {

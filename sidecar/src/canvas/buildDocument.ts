@@ -1,13 +1,15 @@
 // The canonical builder every document that is not typed by hand comes from:
 // presets, imports, extraction and the v1.6 conversion (design system documents
-// spec §2). Contract tokens land in their sections and groups by name, any other
-// token in Other tokens, and the sections follow the canonical order. A note
-// longer than one holds continues in name-2.md and on, so nothing is cut.
+// spec §2). Contract tokens land in their sections and groups by name, a token
+// a source groups itself in that group, any other token in Other tokens, and the
+// sections follow the canonical order. A note longer than one holds continues in
+// name-2.md and on, so nothing is cut.
 
 import { DOCUMENT_LIMITS, TOKEN_KINDS, type DocumentSection } from './designSystemDocument.js';
 
 type TokenKind = (typeof TOKEN_KINDS)[number];
 type DocumentItem = DocumentSection['items'][number];
+type TokenSectionItem = Extract<DocumentSection, { kind: TokenKind }>['items'][number];
 
 export type DocumentPart =
   | { kind: 'note'; label: string; body: string }
@@ -20,10 +22,26 @@ export type DocumentPart =
       note?: string;
     };
 
+type NotePart = Extract<DocumentPart, { kind: 'note' }>;
+
+export interface TokenGroup {
+  kind: TokenKind;
+  title: string;
+  names: string[];
+}
+
 export interface DocumentSource {
   tokens: { light: Record<string, string>; dark: Record<string, string> };
   /** Notes and demos for the Overview section, in order. */
   overview?: DocumentPart[];
+  /**
+   * Groups for tokens past the contract's. One with a contract group's kind and
+   * title extends it, in its own order with the contract names it leaves out
+   * after; any other follows the contract groups of its kind.
+   */
+  groups?: TokenGroup[];
+  /** Notes that close a token section, after its groups. */
+  sectionNotes?: Partial<Record<TokenKind, NotePart[]>>;
   /** Notes and previews for the Components section, in order. */
   components?: DocumentPart[];
 }
@@ -45,7 +63,7 @@ export const SECTION_TITLES: Record<DocumentSection['kind'], string> = {
 };
 
 /** The tokens Button, Input, Card, Badge, Tabs and Dialog read, grouped as a document shows them. */
-const CONTRACT_GROUPS: { kind: TokenKind; title: string; names: string[] }[] = [
+const CONTRACT_GROUPS: TokenGroup[] = [
   {
     kind: 'colors',
     title: 'Surfaces',
@@ -113,19 +131,21 @@ export function buildDocument(source: DocumentSource): DocumentSection[] {
       ? { name, value: lightValue }
       : { name, light: lightValue, dark: darkValue };
   };
-  const groups = [
-    ...CONTRACT_GROUPS.map((group) => ({
-      ...group,
-      names: group.names.filter((name) => names.includes(name)),
-    })),
-    {
-      kind: 'tokens' as const,
-      title: 'Other',
-      names: names.filter((name) => !CONTRACT_TOKEN_NAMES.has(name)),
-    },
-  ];
+  const groups = CONTRACT_GROUPS.map((group) => ({ ...group, names: [...group.names] }));
+  for (const extra of source.groups ?? []) {
+    const contract = groups.find(({ kind, title }) => kind === extra.kind && title === extra.title);
+    if (contract) contract.names = [...new Set([...extra.names, ...contract.names])];
+    else groups.push({ ...extra, names: [...extra.names] });
+  }
+  // A token is listed once, in the first group that names it.
+  const placed = new Set<string>();
+  for (const group of groups) {
+    group.names = group.names.filter((name) => names.includes(name) && !placed.has(name));
+    for (const name of group.names) placed.add(name);
+  }
+  groups.push({ kind: 'tokens', title: 'Other', names: names.filter((name) => !placed.has(name)) });
   for (const kind of TOKEN_KINDS) {
-    const items = groups
+    const items: TokenSectionItem[] = groups
       .filter((group) => group.kind === kind && group.names.length > 0)
       .map((group) => ({
         kind: 'group' as const,
@@ -133,7 +153,9 @@ export function buildDocument(source: DocumentSource): DocumentSection[] {
         title: group.title,
         tokens: group.names.map(token),
       }));
-    if (items.length > 0) sections.push({ kind, id: kind, title: SECTION_TITLES[kind], items });
+    if (items.length === 0) continue;
+    for (const note of source.sectionNotes?.[kind] ?? []) items.push(...noteItems(note, ids));
+    sections.push({ kind, id: kind, title: SECTION_TITLES[kind], items });
   }
 
   if (source.components?.length)
@@ -151,6 +173,10 @@ function items(
   ids: Set<string>,
 ): Extract<DocumentItem, { kind: 'note' | 'preview' }>[] {
   if (part.kind === 'preview') return [{ ...part, id: uniqueId(ids, part.title) }];
+  return noteItems(part, ids);
+}
+
+function noteItems(part: NotePart, ids: Set<string>): Extract<DocumentItem, { kind: 'note' }>[] {
   const stem = part.label.slice(0, -'.md'.length);
   return noteBodies(part.body, DOCUMENT_LIMITS.maxNoteBytes).map((body, index) => {
     const label = index === 0 ? part.label : `${stem}-${String(index + 1)}.md`;

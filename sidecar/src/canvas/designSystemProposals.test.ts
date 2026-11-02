@@ -21,7 +21,7 @@ import {
   type DesignSystem,
 } from './designSystems.js';
 import { proposalPath } from './designSystemStorage.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 
 pinScratchProfile();
 
@@ -31,7 +31,7 @@ onDesignSystemChange((id) => announced.push(id));
 /** A user kit at version 1, copied from DROIDEX. */
 async function userKit(id: string): Promise<DesignSystem> {
   await saveDesignSystem(
-    { ...OPENAI_INSPIRED_DESIGN_SYSTEM, id, name: 'Studio' },
+    { ...GRIDLINE_DESIGN_SYSTEM, id, name: 'Studio' },
     { mutationId: `${id}-v1`, baseVersion: null, savedBy: { actor: 'user' } },
   );
   return readDesignSystem({ id, version: 1 });
@@ -190,7 +190,7 @@ test('discard removes the proposal and is announced; presets and deleted kits ta
     [1],
   );
 
-  await assert.rejects(propose(OPENAI_INSPIRED_DESIGN_SYSTEM, 'preset'), {
+  await assert.rejects(propose(GRIDLINE_DESIGN_SYSTEM, 'preset'), {
     code: 'preset_read_only',
   });
   await setDesignSystemDeleted('discarded', true, 'delete');

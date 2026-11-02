@@ -10,9 +10,11 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { canvasError, staleDesignSystemBase, storageFailure } from './canvasError.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
-import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
+import { BASALT_DESIGN_SYSTEM } from './presets/basalt/index.js';
 import { DROIDEX_KIT } from './presets/droidexKit.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
+import { MARGIN_DESIGN_SYSTEM } from './presets/margin/index.js';
+import { POTLUCK_DESIGN_SYSTEM } from './presets/potluck/index.js';
 import { announceDesignSystemChange } from './designSystemChanges.js';
 import { convertLegacyVersion, legacySummary } from './designSystemConversion.js';
 import {
@@ -207,8 +209,10 @@ const HEADER_BYTES = 8192;
 const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [
   AUTO_DESIGN_SYSTEM,
   DROIDEX_KIT,
-  OPENAI_INSPIRED_DESIGN_SYSTEM,
-  CLAUDE_INSPIRED_DESIGN_SYSTEM,
+  MARGIN_DESIGN_SYSTEM,
+  GRIDLINE_DESIGN_SYSTEM,
+  BASALT_DESIGN_SYSTEM,
+  POTLUCK_DESIGN_SYSTEM,
 ].map((system) => designSystemSchema.parse(system));
 
 /**

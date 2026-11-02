@@ -34,7 +34,7 @@ function kit(
 const systems = [
   kit('auto', 'Auto', 'auto'),
   kit('droidex', 'DROIDEX', 'preset'),
-  kit('claude-inspired', 'Claude-inspired', 'preset'),
+  kit('margin', 'Margin', 'preset'),
   kit('kit_z', 'Zinc', 'user', '2026-10-30T09:00:00.000Z'),
   kit('kit_a', 'Aurora', 'user', '2026-10-31T09:00:00.000Z'),
   kit('kit_m', 'Moss', 'user'),
@@ -46,7 +46,7 @@ test('Auto leads, then recent kits, presets in order and the user’s kits newes
   assert.deepEqual(names(all.auto), ['Auto']);
   // A recent kit that is no longer saved is not offered.
   assert.deepEqual(names(all.recent), ['Zinc', 'DROIDEX']);
-  assert.deepEqual(names(all.presets), ['DROIDEX', 'Claude-inspired']);
+  assert.deepEqual(names(all.presets), ['DROIDEX', 'Margin']);
   assert.deepEqual(names(all.yours), ['Aurora', 'Zinc', 'Moss']);
 
   const searched = pickerRows(systems, '  zi ', ['kit_z']);
@@ -74,8 +74,8 @@ test('the list opens on the current kit, a search on its first match, and arrows
 
 test('picking a kit pins its version in the previewed mode', () => {
   assert.deepEqual(choiceOf(systems[2], 'dark'), {
-    ref: { id: 'claude-inspired', version: 1, mode: 'dark' },
-    name: 'Claude-inspired',
+    ref: { id: 'margin', version: 1, mode: 'dark' },
+    name: 'Margin',
   });
 });
 
@@ -88,20 +88,20 @@ test('the chip names the kit a request runs under: the choice, else the first pi
     size: '10 × 10',
     designSystem,
   });
-  const claude = pin({ id: 'claude-inspired', version: 1, mode: 'dark' });
+  const margin = pin({ id: 'margin', version: 1, mode: 'dark' });
   const zinc = pin({ id: 'kit_z', version: 1, mode: 'light' });
   const madeUnderAuto = pin(AUTO_DESIGN_SYSTEM.ref);
   const chosen = choiceOf(systems[4], 'light');
 
-  assert.deepEqual(shownKit([claude, zinc], chosen, systems), chosen);
-  assert.deepEqual(shownKit([claude, zinc], null, systems), {
-    ref: claude.designSystem,
-    name: 'Claude-inspired',
+  assert.deepEqual(shownKit([margin, zinc], chosen, systems), chosen);
+  assert.deepEqual(shownKit([margin, zinc], null, systems), {
+    ref: margin.designSystem,
+    name: 'Margin',
   });
   assert.deepEqual(shownKit([], null, null), AUTO_DESIGN_SYSTEM);
   assert.deepEqual(shownKit([madeUnderAuto], null, null), AUTO_DESIGN_SYSTEM);
   for (const [pins, choice] of [
-    [[claude, zinc], chosen],
+    [[margin, zinc], chosen],
     [[zinc], null],
     [[], null],
   ] as const)

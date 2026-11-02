@@ -19,8 +19,10 @@ import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesse
 import { readDesignSystem } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
-import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { BASALT_DESIGN_SYSTEM } from './presets/basalt/index.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
+import { MARGIN_DESIGN_SYSTEM } from './presets/margin/index.js';
+import { POTLUCK_DESIGN_SYSTEM } from './presets/potluck/index.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import type { SourceFiles } from './schema.js';
@@ -174,8 +176,10 @@ test('every preview and cover a built-in kit shows builds strictly in both pinne
   for (const kit of [
     AUTO_DESIGN_SYSTEM,
     await readDesignSystem({ id: 'droidex', version: 1 }),
-    OPENAI_INSPIRED_DESIGN_SYSTEM,
-    CLAUDE_INSPIRED_DESIGN_SYSTEM,
+    MARGIN_DESIGN_SYSTEM,
+    GRIDLINE_DESIGN_SYSTEM,
+    BASALT_DESIGN_SYSTEM,
+    POTLUCK_DESIGN_SYSTEM,
   ]) {
     for (const item of [kit.cover, ...kit.sections.flatMap((section) => [...section.items])]) {
       if (item?.kind !== 'preview') continue;

@@ -2277,7 +2277,7 @@ test('a first prompt runs under the kit its create pinned', async () => {
   const h = createHarness();
   const provider = queueCreate(h, 'first-pinned');
   const gate = provider.deferNextStream();
-  const kit = { id: 'claude-inspired', version: 1, mode: 'dark' } as const;
+  const kit = { id: 'margin', version: 1, mode: 'dark' } as const;
   const canvasContext = { designs: [], elements: [], designSystem: kit };
 
   await h.lifecycle.create({ ...createCommand(), canvasContext });

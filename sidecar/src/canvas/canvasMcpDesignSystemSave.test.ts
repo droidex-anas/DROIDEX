@@ -13,7 +13,7 @@ import {
   setDesignSystemDeleted,
   type DesignSystem,
 } from './designSystems.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 
 pinScratchProfile();
 
@@ -22,7 +22,7 @@ const accent = { set: 'token', name: '--ds-accent', value: '#c2410c' };
 async function userKit(id: string, version = 1): Promise<void> {
   for (let next = 1; next <= version; next += 1)
     await saveDesignSystem(
-      { ...OPENAI_INSPIRED_DESIGN_SYSTEM, id, name: `Studio ${String(next)}` },
+      { ...GRIDLINE_DESIGN_SYSTEM, id, name: `Studio ${String(next)}` },
       {
         mutationId: `${id}-v${String(next)}`,
         baseVersion: next - 1 || null,

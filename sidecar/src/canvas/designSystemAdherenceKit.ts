@@ -67,8 +67,8 @@ export function readKit(
   const fontTokens: string[] = [];
   const typeSizes: SectionToken[] = [];
   for (const token of typography) {
-    // A size, weight or line height is a number, never a family.
-    const named = token.values.flatMap(fontFamilies).filter((family) => !/^[\d.]/.test(family));
+    // A size, weight, line height or tracking is a number, never a family.
+    const named = token.values.flatMap(fontFamilies).filter((family) => !/^-?[\d.]/.test(family));
     if (named.length > 0) fontTokens.push(token.name);
     for (const family of named) families.add(family.toLowerCase());
     if (token.values.every((value) => ABSOLUTE_LENGTH.test(value))) typeSizes.push(token);

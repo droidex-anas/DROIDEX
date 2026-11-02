@@ -6,7 +6,7 @@ import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { readDesignSystem } from './designSystems.js';
 import type { CanvasScope, SourceFiles } from './protocol.js';
 
-const system = { id: 'openai-inspired', version: 1, mode: 'dark' } as const;
+const system = { id: 'gridline', version: 1, mode: 'dark' } as const;
 
 async function design(
   t: TestContext,
