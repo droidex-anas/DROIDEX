@@ -2,7 +2,7 @@
 // the kit's tile of it.
 
 import { useRef, useState } from 'react';
-import { MessageSquareText } from '@droidex/icons';
+import { Notebook } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import type { DocumentPreview } from '../designSystemDocumentProtocol';
@@ -82,7 +82,7 @@ export function PreviewItem({
               ref={noteRef}
               variant="ghost"
               size="sm"
-              icon={MessageSquareText}
+              icon={Notebook}
               aria-label={
                 preview.note === undefined
                   ? `Add a note to ${preview.title}`
@@ -120,7 +120,8 @@ export function PreviewItem({
       {noteOpen && edit && (
         <NotePopover
           anchorRef={noteRef}
-          title={`Note · ${preview.title}`}
+          title="Note"
+          subject={preview.title}
           note={preview.note}
           maxBytes={MAX_PREVIEW_NOTE_BYTES}
           onChange={(note) => {

@@ -4,7 +4,7 @@
 // it, and a length or corner with a specimen in the previewed mode beside it.
 
 import { memo, useRef, useState, type CSSProperties } from 'react';
-import { Copy, MessageSquareText } from '@droidex/icons';
+import { Copy, Notebook } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
@@ -326,7 +326,7 @@ function TokenActions({
             ref={noteRef}
             variant="ghost"
             size="sm"
-            icon={MessageSquareText}
+            icon={Notebook}
             aria-label={
               token.note === undefined ? `Add a usage note to ${name}` : `Usage note of ${name}`
             }
@@ -363,7 +363,8 @@ function TokenActions({
       {noteOpen && (
         <NotePopover
           anchorRef={noteRef}
-          title={`Usage note · ${name}`}
+          title="Usage note"
+          subject={name}
           note={token.note}
           maxBytes={MAX_TOKEN_NOTE_BYTES}
           onChange={

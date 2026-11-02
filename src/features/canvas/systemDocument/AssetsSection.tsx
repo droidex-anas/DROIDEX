@@ -4,7 +4,7 @@
 // bytes, which older versions may name.
 
 import { useRef, useState } from 'react';
-import { ImageOff, MessageSquareText, Pencil } from '@droidex/icons';
+import { ImageOff, Notebook, Pencil } from '@droidex/icons';
 import { cn } from '../../../components/ui/cn';
 import { DropCue } from '../../tabs/TileDropTarget';
 import type { DocumentAsset } from '../designSystemDocumentProtocol';
@@ -130,7 +130,7 @@ function AssetTile({
                 { label: 'Rename', icon: Pencil, run: () => titleRef.current?.edit() },
                 {
                   label: asset.note === undefined ? 'Add note' : 'Edit note',
-                  icon: MessageSquareText,
+                  icon: Notebook,
                   run: () => {
                     setNoteOpen(true);
                   },
@@ -153,7 +153,8 @@ function AssetTile({
       {noteOpen && edit && (
         <NotePopover
           anchorRef={tileRef}
-          title={`Note · ${asset.name}`}
+          title="Note"
+          subject={asset.name}
           note={asset.note}
           maxBytes={MAX_NOTE_BYTES}
           onChange={(note) => {

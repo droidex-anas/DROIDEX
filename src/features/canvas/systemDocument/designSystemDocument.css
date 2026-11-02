@@ -19,6 +19,132 @@
   font-family: var(--kit-heading-font);
 }
 
+/* In the kit's notes, inline code naming a file is set in mono, where mono
+   reads as precision; any other inline code keeps the text's face. The note's
+   editor marks the path around its inline code. */
+.kit-text .inline-code[data-file-path],
+.kit-text [data-file-path] > .inline-code {
+  font-family: theme('fontFamily.mono');
+  font-size: var(--code-font-size);
+  font-weight: theme('fontWeight.normal');
+}
+
+/* A note's editor is laid out as the note renders (Markdown.tsx), so the text
+   keeps its place when a click turns one into the other. noteFieldLayout marks
+   the first line of a block that follows text directly, a later list item,
+   and a bullet item's line; a blank line between blocks is the gap itself. */
+.kit-note-field {
+  --note-list-indent: calc(theme('spacing.5') + theme('spacing[0.5]'));
+}
+
+.kit-note-field .cm-line {
+  text-wrap-style: pretty;
+}
+
+.kit-note-field .cm-line:has(> br:only-child) {
+  line-height: theme('spacing.3');
+}
+
+.kit-note-field .kit-note-block {
+  padding-top: theme('spacing.3');
+}
+
+.kit-note-field .kit-note-item {
+  padding-top: theme('spacing.1');
+}
+
+/* A heading has the rendered size, its air above, and what follows tucked
+   under it, whether a blank line or the next block's first line holds the space. */
+.kit-note-field .cm-line.cm-md-h1 {
+  font-size: theme('fontSize.display');
+  line-height: theme('fontSize.display[1].lineHeight');
+  letter-spacing: theme('fontSize.display[1].letterSpacing');
+}
+
+.kit-note-field .cm-line:is(.cm-md-h2, .cm-md-h3) {
+  font-size: theme('fontSize.heading');
+  line-height: theme('fontSize.heading[1].lineHeight');
+  letter-spacing: theme('fontSize.heading[1].letterSpacing');
+}
+
+.kit-note-field .kit-note-block.cm-md-h1 {
+  padding-top: theme('spacing.6');
+}
+
+.kit-note-field .cm-line:has(> br:only-child):has(+ .cm-md-h1) {
+  line-height: theme('spacing.6');
+}
+
+.kit-note-field .kit-note-block.cm-md-h2 {
+  padding-top: theme('spacing.5');
+}
+
+.kit-note-field .cm-line:has(> br:only-child):has(+ .cm-md-h2) {
+  line-height: theme('spacing.5');
+}
+
+.kit-note-field .kit-note-block.cm-md-h3 {
+  padding-top: theme('spacing.4');
+}
+
+.kit-note-field .cm-line:has(> br:only-child):has(+ .cm-md-h3) {
+  line-height: theme('spacing.4');
+}
+
+.kit-note-field .cm-md-h1 + .kit-note-block {
+  padding-top: theme('spacing.2');
+}
+
+.kit-note-field .cm-md-h1 + .cm-line:has(> br:only-child) {
+  line-height: theme('spacing.2');
+}
+
+.kit-note-field .cm-md-h2 + .kit-note-block {
+  padding-top: theme('spacing[1.5]');
+}
+
+.kit-note-field .cm-md-h2 + .cm-line:has(> br:only-child) {
+  line-height: theme('spacing[1.5]');
+}
+
+.kit-note-field .cm-md-h3 + .kit-note-block {
+  padding-top: theme('spacing.1');
+}
+
+.kit-note-field .cm-md-h3 + .cm-line:has(> br:only-child) {
+  line-height: theme('spacing.1');
+}
+
+.kit-note-field .cm-line:has(.cm-md-listmark) {
+  padding-left: var(--note-list-indent);
+}
+
+/* The marker ends a space (about a quarter em) short of the indent, where the
+   item's text starts; a marker wider than that, such as 10., grows to the left. */
+.kit-note-field .cm-md-listmark {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: calc(var(--note-list-indent) - 0.25em);
+  margin-left: calc(var(--note-list-indent) * -1);
+  padding-right: theme('spacing[0.5]');
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-weight: theme('fontWeight.normal');
+}
+
+/* A bullet item is a list item with the rendered list's own marker, the same
+   glyph in the same place: the list's indent, then the item's. */
+.kit-note-field .kit-note-bullet {
+  display: list-item;
+  list-style: disc outside;
+  margin-left: theme('spacing.5');
+  padding-left: theme('spacing[0.5]');
+}
+
+.kit-note-field .kit-note-bullet::marker {
+  color: var(--text-muted);
+}
+
 /* The swatch's invisible colour input takes keyboard focus; the ring goes on
    the swatch it covers. */
 .kit-colour-swatch:has(input:focus-visible) {

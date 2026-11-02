@@ -32,7 +32,12 @@ export function ProseFileLinks({
 export function InlineCode({ children }: { children?: ReactNode }) {
   const onOpenReviewFile = useContext(ProseFileContext);
   const path = typeof children === 'string' ? repoPathInProse(children) : null;
-  if (!path || !onOpenReviewFile) return <code className="inline-code">{children}</code>;
+  if (!path || !onOpenReviewFile)
+    return (
+      <code className="inline-code" data-file-path={path ?? undefined}>
+        {children}
+      </code>
+    );
   const open = () => {
     onOpenReviewFile(path);
   };
@@ -43,6 +48,7 @@ export function InlineCode({ children }: { children?: ReactNode }) {
       role="button"
       tabIndex={0}
       title="Open in Review"
+      data-file-path={path}
       onClick={open}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
