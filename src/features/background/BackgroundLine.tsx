@@ -12,24 +12,19 @@ export function BackgroundLine({ appSessionId }: { appSessionId: string }) {
       : 0,
   );
   if (count === 0) return null;
-  const label = `${String(count)} running in background`;
+  const label = `${String(count)} background ${count === 1 ? 'process' : 'processes'}`;
   return (
     <Button
       variant="ghost"
       size="sm"
       data-testid="background-line"
       aria-label={`${label}. Open the Background tab`}
-      icon={
-        <span aria-hidden="true" className="flex size-icon-sm items-center justify-center">
-          <span className="size-1.5 rounded-full bg-success motion-safe:animate-pulse" />
-        </span>
-      }
       onClick={() => {
         dispatch({ type: 'OPEN_UTILITY_TOOL', tool: 'background', appSessionId });
       }}
       className="ml-1 min-w-0 text-muted"
     >
-      {label}
+      <span className="motion-safe:animate-breathe">{label}</span>
     </Button>
   );
 }
