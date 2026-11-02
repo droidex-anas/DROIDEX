@@ -22,6 +22,12 @@ export function isCompactionCompleteStatus(text?: string): boolean {
   return /compact/i.test(t) && /complete/i.test(t);
 }
 
+// The divider a finished compaction leaves: the daemon's automatic marker or
+// the manual completion line.
+export function isCompactionDivider(event: TranscriptEvent): boolean {
+  return event.kind === 'compaction' || isCompactionCompleteStatus(event.text);
+}
+
 export function isSettingsStatus(event: TranscriptEvent): boolean {
   return event.modelSwitch !== undefined;
 }
@@ -365,7 +371,18 @@ export function buildFeed(
       continue;
     }
     if (ev.kind === 'compaction' || ev.kind === 'status') {
-      items.push({ type: 'status', key: ev.id, event: ev });
+      // A finished compaction replaces its own "Compacting…" line, which would
+      // otherwise linger above the divider as if still running.
+      const last = items.at(-1);
+      if (
+        isCompactionDivider(ev) &&
+        last?.type === 'status' &&
+        isCompactingStatus(last.event.text)
+      ) {
+        items[items.length - 1] = { type: 'status', key: ev.id, event: ev };
+      } else {
+        items.push({ type: 'status', key: ev.id, event: ev });
+      }
       i++;
       continue;
     }

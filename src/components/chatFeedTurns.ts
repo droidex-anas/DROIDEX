@@ -6,7 +6,7 @@ import {
   buildFeed,
   collectTurnFiles,
   isCancellationArtifact,
-  isCompactionCompleteStatus,
+  isCompactionDivider,
   isSteeredPrompt,
   startsTurn,
   type BuildFeedOptions,
@@ -228,10 +228,7 @@ function mergeAssistantMessages(
 // else (a bare /compact), where it stays top-level: there is no work to fold it
 // into, and a one-item "Worked for 0s" disclosure would hide the boundary.
 function isCompactionMarker(it: FeedItem): boolean {
-  return (
-    it.type === 'status' &&
-    (it.event.kind === 'compaction' || isCompactionCompleteStatus(it.event.text))
-  );
+  return it.type === 'status' && isCompactionDivider(it.event);
 }
 
 // Collapse a completed assistant turn: everything the turn did — thinking,

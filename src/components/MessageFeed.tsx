@@ -41,7 +41,13 @@ import {
   projectFinalResponseKeys,
   type FinalResponseKeyState,
 } from './messageFeedState';
-import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
+import {
+  buildFeed,
+  isCompactingStatus,
+  isCompactionDivider,
+  isSettingsStatus,
+  type FeedItem,
+} from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
 import { isSpecEcho } from './chat';
 import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
@@ -298,7 +304,8 @@ export function MessageFeed({
   // One live cue at a time. While the tail message streams, its caret is the
   // cue; Working takes over the moment the stream idles so a token gap never
   // reads as completion. Thinking, status, and running-child tails already
-  // convey pending work.
+  // convey pending work; a settings line or compaction divider is a static
+  // marker, and the turn can run on behind it for minutes before streaming.
   const tailIsReply = last?.type === 'message' && last.event.author !== 'user';
   const tailText = tailIsReply ? (last.event.text ?? '') : '';
   const tailSelfIndicates =
@@ -306,7 +313,9 @@ export function MessageFeed({
     (last.type === 'thinking' ||
       // An App tail shows its own "Building interactive app" progress.
       (tailIsReply && hasAppBlock(tailText)) ||
-      (last.type === 'status' && !isSettingsStatus(last.event)) ||
+      (last.type === 'status' &&
+        !isSettingsStatus(last.event) &&
+        !isCompactionDivider(last.event)) ||
       (last.type === 'child_session' && lastChildSessionRunning) ||
       (last.type === 'child_sessions' && lastDockRunning));
   // While the parent polls its subagents nothing in the feed represents that

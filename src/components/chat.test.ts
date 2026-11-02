@@ -526,6 +526,22 @@ test('sameFeedEvents compares grouped rows by their nested events, not object id
   assert.equal(sameFeedEvents(changes(1), changes(2)), false);
 });
 
+test('a live turn past an automatic compaction shows the divider and a Working cue', () => {
+  const html = renderToStaticMarkup(
+    createElement(MessageFeed, {
+      events: [
+        userMsg('go'),
+        ev({ kind: 'status', text: 'Compacting conversation...' }),
+        ev({ kind: 'compaction', removedCount: 3 }),
+      ],
+      pending: true,
+    }),
+  );
+  assert.match(html, /Context automatically compacted/);
+  assert.doesNotMatch(html, /Compacting/);
+  assert.match(html, /Working/);
+});
+
 test('settled compaction history does not show a live shimmer', () => {
   const event = ev({ kind: 'status', text: 'Compacting…' });
   const html = renderToStaticMarkup(
