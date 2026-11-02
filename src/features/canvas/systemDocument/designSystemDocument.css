@@ -41,6 +41,12 @@
   text-wrap-style: pretty;
 }
 
+/* Wrap like the rendered note: CodeMirror's break-spaces keeps a line-ending
+   space inside the line, which can push the next word down. */
+.kit-note-field .cm-content.cm-lineWrapping {
+  white-space: pre-wrap;
+}
+
 .kit-note-field .cm-line:has(> br:only-child) {
   line-height: theme('spacing.3');
 }
