@@ -43,9 +43,8 @@ import {
 } from './messageFeedState';
 import { buildFeed, isCompactingStatus, isSettingsStatus, type FeedItem } from './chatFeed';
 import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
-import { designWorkingStatus } from './chatFeedClean';
 import { isSpecEcho } from './chat';
-import { DesignStatusLine, ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
+import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
 
 /* ── Collapsed spec card shown inline in chat (chevron to expand) ── */
@@ -136,7 +135,6 @@ export function MessageFeed({
   density = DEFAULT_TOOL_ACTIVITY.density,
   inlineDiffs = DEFAULT_TOOL_ACTIVITY.inlineDiffs,
   pendingSteers,
-  clean = false,
 }: {
   events: TranscriptEvent[];
   items?: FeedItem[];
@@ -173,9 +171,6 @@ export function MessageFeed({
   inlineDiffs?: boolean;
   // Steers the model has not taken in yet; they follow the transcript.
   pendingSteers?: ReactNode;
-  // A design chat's `items` hold no work rows, so the live cue names the
-  // design step instead.
-  clean?: boolean;
 }) {
   // Child session cards, waiting label, and live timers are enabled only for the
   // chat/spec feed (which supplies onOpenChildSession). Per-turn change summaries
@@ -245,7 +240,6 @@ export function MessageFeed({
     feedIdentity,
     updateKind,
     rebuiltFromItemIndex,
-    clean ? staysUnderAnswer : undefined,
   );
   const enteredKeys = useMemo(() => new Set<string>(), [feedIdentity]);
   const recordEntrance = useCallback(
@@ -270,16 +264,12 @@ export function MessageFeed({
   const forkDividerAfter = forkedFrom ? lastInheritedItemIndex(items, forkedFrom.forkedAt) : -1;
 
   const lastIdx = items.length - 1;
-  // A design chat sets each turn's designs under its answer, so the row that
-  // streams and carries the live cue is the last one above them.
-  let tailIdx = lastIdx;
-  if (clean) while (tailIdx >= 0 && staysUnderAnswer(items[tailIdx])) tailIdx -= 1;
   // The chat's own latest reply: a changes row can follow it, and a native
   // subagent's replies share the chat's id but are not the chat speaking.
   let lastReplyIdx = lastIdx;
   while (lastReplyIdx >= 0 && !isOwnReply(items[lastReplyIdx])) lastReplyIdx -= 1;
   // Empty feeds are real (a fresh session), so the tail is genuinely optional.
-  const last: FeedItem | undefined = tailIdx >= 0 ? items[tailIdx] : undefined;
+  const last: FeedItem | undefined = lastIdx >= 0 ? items[lastIdx] : undefined;
   // Tool rows wear their MCP server's mark; the catalog follows this
   // transcript's workspace.
   useToolMarkCatalog(cwd);
@@ -344,14 +334,6 @@ export function MessageFeed({
     pending && !tailTyping && (subagentPoll ? !lastDockRunning : !tailSelfIndicates);
   // Time the check from the poll itself; the visible tail can be minutes old.
   const workingStart = rich ? (subagentPoll?.ts ?? tailTimestamp(last)) : undefined;
-  // A design chat's cue holds the place its answer takes, above the turn's
-  // designs, so the answer replaces it rather than pushing the designs down.
-  const designCue =
-    clean && showWorking ? (
-      <div className="mx-auto min-w-0 max-w-2xl pb-2 pt-4">
-        <DesignStatusLine status={designWorkingStatus(events)} startTs={workingStart} />
-      </div>
-    ) : null;
 
   return (
     // A reply's prose names files as it works; inside the transcript those
@@ -385,9 +367,9 @@ export function MessageFeed({
                   item={item}
                   animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
                   onEnter={recordEntrance}
-                  live={pending && index === tailIdx && !subagentPoll}
+                  live={pending && index === lastIdx && !subagentPoll}
                   sessionLive={pending}
-                  compacting={compacting && index === tailIdx}
+                  compacting={compacting && index === lastIdx}
                   cwd={cwd}
                   onOpenDiff={onOpenDiff ? callbacks.onOpenDiff : undefined}
                   onOpenReviewFile={stableOnOpenReviewFile}
@@ -405,7 +387,6 @@ export function MessageFeed({
                   forkPointId={fork?.forkPointId}
                   forking={fork ? forking : undefined}
                 />
-                {index === tailIdx ? designCue : null}
                 {index === worktreeInsertAfter && createdWorktreePath ? (
                   <div className="mx-auto min-w-0 max-w-2xl">
                     <WorktreeCreatedCard path={createdWorktreePath} />
@@ -421,7 +402,7 @@ export function MessageFeed({
           }}
         </ConversationList>
 
-        {showWorking && !clean && (
+        {showWorking && (
           <div className="mx-auto min-w-0 max-w-2xl">
             <WorkingIndicator
               label={feedWorkingLabel(last, subagentPoll !== undefined)}
@@ -429,7 +410,6 @@ export function MessageFeed({
             />
           </div>
         )}
-        {tailIdx < 0 ? designCue : null}
         {pendingSteers}
       </div>
     </ProseFileLinks>
@@ -441,10 +421,6 @@ function feedWorkingLabel(last: FeedItem | undefined, pollingSubagents: boolean)
   if (last?.type === 'tools') return 'Running';
   if (last?.type === 'diff' || last?.type === 'diffs') return 'Updating files';
   return 'Working';
-}
-
-function staysUnderAnswer(item: FeedItem): boolean {
-  return item.type === 'canvas_artifact';
 }
 
 function isOwnReply(item: FeedItem): boolean {
