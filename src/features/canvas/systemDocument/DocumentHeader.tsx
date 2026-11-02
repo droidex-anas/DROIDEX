@@ -9,7 +9,7 @@ import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { pushToast } from '../../../lib/toast';
 import { canvasClient } from '../canvasClient';
-import { canvasMessage } from '../client';
+import { canvasMessage, CanvasRequestError } from '../client';
 import type { DesignSystemDocumentView } from '../protocol';
 import { InlineField } from './InlineField';
 import { UnsavedMark } from './UnsavedMark';
@@ -177,7 +177,10 @@ export function OlderVersionNotice({
       // Only while this version is on screen: the user may have moved on.
       if (isMounted()) await onShow('latest');
     } catch (error) {
-      pushToast(canvasMessage(error), 'error');
+      // A version saved meanwhile reaches the notice by its change event, which
+      // turns Restore into Restore as the version after it.
+      if (!(error instanceof CanvasRequestError && error.code === 'revision_conflict'))
+        pushToast(canvasMessage(error), 'error');
     } finally {
       setRestoring(false);
     }
