@@ -1,6 +1,10 @@
-// Gridline's own rules on top of the shared sheet: squarer badges, and the
-// table, figure and meter classes its data screens are made of.
-export const GRIDLINE_CSS = `.ds-badge {
+// Gridline's own rules on top of the shared sheet: 32px controls, squarer
+// badges, and the table, figure and meter classes its data screens are made of.
+export const GRIDLINE_CSS = `.ds-button,
+.ds-input {
+  padding: var(--ds-space-1-5) var(--ds-space-3);
+}
+.ds-badge {
   border-radius: var(--ds-radius-sm);
   padding: var(--ds-space-0-5) var(--ds-space-2);
   font-weight: var(--ds-weight-semibold);

@@ -3,7 +3,6 @@
 export const BASALT_CSS = `.ds-button {
   padding: var(--ds-space-1) var(--ds-space-3);
   font-size: var(--ds-text-base);
-  font-weight: var(--ds-weight-medium);
 }
 .ds-card {
   border-radius: var(--ds-radius-xl);

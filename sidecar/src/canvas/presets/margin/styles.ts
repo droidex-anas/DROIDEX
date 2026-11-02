@@ -3,7 +3,6 @@
 // sidenote and link classes its pages are made of.
 export const MARGIN_CSS = `.ds-button {
   border-radius: var(--ds-radius-sm);
-  font-weight: var(--ds-weight-medium);
   letter-spacing: 0.01em;
 }
 .ds-card {

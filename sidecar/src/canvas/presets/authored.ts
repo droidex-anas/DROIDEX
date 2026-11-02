@@ -288,6 +288,10 @@ kbd {
   min-height: var(--ds-control-md);
   transition-timing-function: var(--ds-ease);
 }
+.ds-button,
+.ds-field label {
+  font-weight: var(--ds-weight-medium);
+}
 .ds-button svg,
 .ds-tab svg {
   flex-shrink: 0;
