@@ -527,19 +527,31 @@ test('sameFeedEvents compares grouped rows by their nested events, not object id
 });
 
 test('a live turn past an automatic compaction shows the divider and a Working cue', () => {
-  const html = renderToStaticMarkup(
-    createElement(MessageFeed, {
-      events: [
-        userMsg('go'),
-        ev({ kind: 'status', text: 'Compacting conversation...' }),
-        ev({ kind: 'compaction', removedCount: 3 }),
-      ],
-      pending: true,
-    }),
-  );
-  assert.match(html, /Context automatically compacted/);
-  assert.doesNotMatch(html, /Compacting/);
-  assert.match(html, /Working/);
+  const between: Record<string, TranscriptEvent[]> = {
+    adjacent: [],
+    reply: [asst('Reading the canvas')],
+    steer: [ev({ kind: 'text', author: 'user', text: 'make it blue', steered: true })],
+  };
+  for (const [name, rows] of Object.entries(between)) {
+    const html = renderToStaticMarkup(
+      createElement(MessageFeed, {
+        events: [
+          userMsg('go'),
+          ev({ kind: 'status', text: 'Compacting conversation...' }),
+          ...rows,
+          ev({ kind: 'compaction', removedCount: 3 }),
+        ],
+        pending: true,
+      }),
+    );
+    assert.match(html, /Context automatically compacted/, name);
+    assert.doesNotMatch(html, /Compacting/, name);
+    assert.match(html, /Working/, name);
+    for (const row of rows) {
+      const at = html.indexOf(row.text ?? '');
+      assert.ok(at >= 0 && at < html.indexOf('Context automatically compacted'), name);
+    }
+  }
 });
 
 test('settled compaction history does not show a live shimmer', () => {
