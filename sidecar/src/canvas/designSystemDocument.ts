@@ -326,9 +326,14 @@ export function withNoteAuthors(
 
 function usageNotes(item: DocumentItem): string[] {
   if (item.kind === 'group')
-    return item.tokens.flatMap((token) => (token.note ? [`- ${token.name}: ${token.note}`] : []));
-  if (item.kind === 'preview' && item.note) return [`- ${item.title}: ${item.note}`];
+    return item.tokens.flatMap((token) => (token.note ? [usageLine(token.name, token.note)] : []));
+  if (item.kind === 'preview' && item.note) return [usageLine(item.title, item.note)];
   return [];
+}
+
+// A usage note can run to several lines; indenting them keeps it inside its list item.
+function usageLine(subject: string, note: string): string {
+  return `- ${subject}: ${note.replace(/\n(?=.)/g, '\n  ')}`;
 }
 
 /** Inserts a section before the first one that comes after it in the canonical order. */
