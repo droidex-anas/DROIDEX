@@ -55,6 +55,10 @@ function useProvenanceOrigin(provenance: DesignSystemProvenance | null): string 
     };
   }, [copiedFromId, sourceCanvasId]);
 
+  if (provenance !== null && 'project' in provenance) {
+    const { name, files } = provenance.project;
+    return `From ${name}: ${files.join(', ')}`;
+  }
   if (copiedFrom)
     return `Copy of ${sourceName ?? 'another design system'} v${String(copiedFrom.version)}`;
   if (sourceCanvasId) return `Extracted from ${sourceName ?? 'a canvas'}`;
