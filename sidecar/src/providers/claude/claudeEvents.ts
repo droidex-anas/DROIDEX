@@ -10,7 +10,7 @@
 import type { ModelInfo, SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { TranscriptEvent } from '../../protocol.js';
+import type { ModelSwitch, TranscriptEvent } from '../../protocol.js';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
 import { toolResultParts } from '../../toolResultImages.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';
@@ -132,12 +132,12 @@ export class ClaudeEventMapper {
     // A local slash command answers through this frame instead of the model loop.
     if (message.subtype === 'local_command_output')
       return message.content ? [{ transcript: this.answerText(message.content, null) }] : [];
-    const fallback = consentFallback(message);
+    const fallback = sessionModelFallback(message);
     if (fallback) {
       const to = claudeCatalogModelId(fallback.to, this.models);
       this.setModel(to);
       const from = claudeCatalogModelId(fallback.from, this.models);
-      return [{ harnessModelSwitch: { from, to, cause: 'usage_limit' } }];
+      return [{ harnessModelSwitch: { from, to, cause: fallback.cause } }];
     }
     return this.subagents.map(message);
   }
@@ -444,13 +444,18 @@ function failedCanvasToolUseId(
   return canvasToolUseIds.length === 1 ? canvasToolUseIds[0] : undefined;
 }
 
-function consentFallback(
-  message: Record<string, unknown>,
-): { from: string; to: string } | undefined {
-  if (message.subtype !== 'model_consent_fallback') return undefined;
+// A fallback that moves the session's own model: the one the user consented to
+// on the usage limit, or the retry after a refusal on the main thread. A
+// subagent's refusal fallback leaves the session model alone.
+function sessionModelFallback(message: Record<string, unknown>): Required<ModelSwitch> | undefined {
+  let cause: Required<ModelSwitch>['cause'];
+  if (message.subtype === 'model_consent_fallback') cause = 'usage_limit';
+  else if (message.subtype === 'model_refusal_fallback' && message.scope !== 'local')
+    cause = 'harness';
+  else return undefined;
   const { original_model: from, fallback_model: to } = message;
   return typeof from === 'string' && typeof to === 'string' && from && to
-    ? { from, to }
+    ? { from, to, cause }
     : undefined;
 }
 

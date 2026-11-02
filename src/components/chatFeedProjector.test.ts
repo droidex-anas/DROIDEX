@@ -174,6 +174,39 @@ test('incremental projection rebuilds one safe turn and preserves completed pref
   assertMatchesFullBuild(withNextPrompt, nextPromptInput);
 });
 
+test('an appended compaction completion retires its progress line across a steer or a reply', () => {
+  const steer = event('steer', { sourceSessionId: 'user', author: 'user', steered: true, ts: 3 });
+  for (const between of [steer, event('reply', { ts: 3 })]) {
+    const project = createChatFeedProjector();
+    let events = [user('prompt', 1)];
+    project(input(events, undefined));
+    const appended = [
+      event('compacting', {
+        kind: 'status',
+        author: undefined,
+        text: 'Compacting conversation...',
+      }),
+      between,
+      event('compacted', { kind: 'compaction', author: undefined, text: undefined, ts: 4 }),
+    ];
+    let projection: ChatFeedProjection | undefined;
+    for (const [revision, next] of appended.entries()) {
+      const projectorInput = input(
+        [...events, next],
+        appendMutation(revision + 1, events.length, events.length),
+      );
+      events = projectorInput.allTranscript;
+      projection = project(projectorInput);
+      assert.equal(projection.mode, 'incremental');
+      assertMatchesFullBuild(projection, projectorInput);
+    }
+    assert.deepEqual(
+      projection?.feedItems.map((item) => item.key),
+      ['prompt', between.id, 'compacted'],
+    );
+  }
+});
+
 test('cross-turn tool results rewind to the correlated call before rebuilding', () => {
   const project = createChatFeedProjector();
   const call = toolCall('grep-call', 'grep-1', 'Grep', { pattern: 'needle' }, 2);

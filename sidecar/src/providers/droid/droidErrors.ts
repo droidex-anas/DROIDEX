@@ -21,13 +21,12 @@ export type DroidSessionNotice =
   | { kind: 'core_fallback' }
   | { kind: 'usage_limit'; detail: string };
 
-// Droid writes its Droid Core notice as an English template.
-const CORE_FALLBACK_PREFIX = 'Your standard model budget is exhausted.';
-
 // What Droid says about the session's model and usage only through raw
-// notifications, which its stream() leaves out. The limit notice is
-// translated, so it is known by its shape: a user-only system message that
-// points at `/limits`, whose first line is the server's own detail.
+// notifications, which its stream() leaves out. Both usage notices are
+// translated user-only system messages that point at `/limits`, so they are
+// known by their shape: a refusal puts the server's own detail on a first line
+// of its own, while the notice that Droid moved the session to Droid Core is
+// one sentence.
 export function droidSessionNotice(note: unknown): DroidSessionNotice | undefined {
   const notification = objectValue(note);
   if (notification?.type === 'settings_updated') {
@@ -41,9 +40,9 @@ export function droidSessionNotice(note: unknown): DroidSessionNotice | undefine
   const message = objectValue(notification.message);
   if (message?.role !== 'system' || message.visibility !== 'user_only') return undefined;
   const text = messageText(message.content);
-  if (text.startsWith(CORE_FALLBACK_PREFIX)) return { kind: 'core_fallback' };
-  if (text.includes('`/limits`')) return { kind: 'usage_limit', detail: text.split('\n', 1)[0] };
-  return undefined;
+  if (!text.includes('`/limits`')) return undefined;
+  const [detail, ...rest] = text.split('\n');
+  return rest.length > 0 ? { kind: 'usage_limit', detail } : { kind: 'core_fallback' };
 }
 
 function messageText(content: unknown): string {

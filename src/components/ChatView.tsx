@@ -26,7 +26,7 @@ import { PendingSteers } from './transcript/PendingSteers';
 import { JumpToLatest } from './transcript/JumpToLatest';
 import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
-import { chatDisplayTitle, isDesignChat } from '../lib/chatMetadata';
+import { chatDisplayTitle } from '../lib/chatMetadata';
 import {
   childSessionActivityForTarget,
   childSessionLabel,
@@ -338,9 +338,6 @@ export default function ChatView({
   const tabStripShown = useStoreSelector(showsTabStrip);
   const boardCanvasId = useStoreSelector((current) => canvasOnBoard(current, appSessionId));
   const inDesign = useStoreSelector((current) => activeProduct(current) === 'design');
-  const designChat = useStoreSelector((current) =>
-    appSessionId ? isDesignChat(current.chatMetadata[appSessionId]) : false,
-  );
   // Tool-activity settings are render-only feed props; select them apart from
   // the obscured-gated chat state so a settings change always applies live.
   const toolActivity = useStoreSelector((s) => s.toolActivity);
@@ -618,8 +615,6 @@ export default function ChatView({
     });
   }, [activeAppSessionId, specContent, hasFileSpec, fileSpec, storedSpec?.path, dispatch]);
 
-  // A child session's feed is the child's own work, so it stays in full.
-  const cleanFeed = designChat && !viewingChildSession;
   const feedProjectorRef = useRef<ReturnType<typeof createChatFeedProjector> | null>(null);
   feedProjectorRef.current ??= createChatFeedProjector();
   // The projector owns visibility filtering because transcript mutation indices
@@ -642,7 +637,6 @@ export default function ChatView({
       specContent,
       changes: true,
       groupChildSessions: !viewingChildSession,
-      clean: cleanFeed,
     },
   });
   const tailLen = transcript.at(-1)?.text?.length ?? 0;
@@ -828,7 +822,6 @@ export default function ChatView({
             specContent={specContent}
             density={toolActivity.density}
             inlineDiffs={toolActivity.inlineDiffs}
-            clean={cleanFeed}
             {...(openSpecWiki !== undefined ? { onOpenSpecWiki: openSpecWiki } : {})}
             {...(!viewingChildSession && createdWorktreePath !== undefined
               ? { createdWorktreePath }
