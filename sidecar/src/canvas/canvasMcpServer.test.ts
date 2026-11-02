@@ -707,7 +707,7 @@ test('MCP theme apply validates token mapping before publication and preserves r
     mutationId: 'apply-kit',
     designId,
     expectedRevisionId: source.receipt.revisionId,
-    ref: { id: 'openai-inspired', version: 1, mode: 'dark' },
+    ref: { id: 'gridline', version: 1, mode: 'dark' },
   };
   const before = h.workspace.snapshot(canvasId);
   assert.equal((await h.call('canvas_theme', input)).code, 'invalid_source');

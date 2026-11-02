@@ -2,7 +2,7 @@ import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
 import type { CompilerRequest, DesignCompileInput } from '../canvas/compiler.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from '../canvas/presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from '../canvas/presets/gridline/index.js';
 import type { SourceFiles } from '../canvas/protocol.js';
 
 /**
@@ -20,8 +20,8 @@ export function compileInput(
     generation: 1,
     files,
     designSystem: {
-      id: OPENAI_INSPIRED_DESIGN_SYSTEM.id,
-      version: OPENAI_INSPIRED_DESIGN_SYSTEM.version,
+      id: GRIDLINE_DESIGN_SYSTEM.id,
+      version: GRIDLINE_DESIGN_SYSTEM.version,
       mode: 'dark',
     },
     designSystemAdherence,

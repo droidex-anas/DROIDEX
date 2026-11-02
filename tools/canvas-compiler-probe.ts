@@ -472,24 +472,31 @@ if (!notices.includes('node_modules/lucide-react/LICENSE'))
   fail('the runtime is missing the Lucide license notice');
 
 const kitArtifacts: { label: string; bytes: number }[] = [];
-for (const id of ['droidex', 'openai-inspired', 'claude-inspired']) {
+const kitFontFamilies: Record<string, string[]> = {
+  droidex: ['Inter'],
+  margin: ['Newsreader', 'Schibsted Grotesk'],
+  gridline: ['Manrope'],
+  basalt: ['Instrument Sans', 'JetBrains Mono'],
+  potluck: ['Nunito'],
+};
+for (const [id, families] of Object.entries(kitFontFamilies)) {
   for (const mode of ['light', 'dark'] as const) {
     const ref: DesignSystemRef = { id, version: 1, mode };
     const kit = await readDesignSystem(ref);
     const example = kit.examples['cover.tsx'];
     if (example === undefined) fail(`${id} ships no cover`);
-    for (const family of id === 'claude-inspired' ? ['Inter', 'Lora'] : ['Inter']) {
-      if (!kit.files[`fonts/${family}-OFL.txt`]?.includes('SIL OPEN FONT LICENSE'))
+    for (const family of families) {
+      if (!kit.files[`fonts/${family.replaceAll(' ', '')}-OFL.txt`]?.includes('SIL OPEN FONT LICENSE'))
         fail(`${id} ships no ${family} font notice`);
     }
     const input = { ...compileInput(), files: { 'main.tsx': example }, designSystem: ref };
     const shipped = await runWorker(target, target.runtimeDir, input);
     assertClean(shipped, target.label);
-    // The DROIDEX cover draws the kit's own icons; the other covers name a Lucide one.
-    const namesLucide = example.includes("from 'lucide-react'");
+    // The DROIDEX cover draws the kit's own icons; the other covers name Lucide ones.
+    const lucideIcon = /import \{\s*(\w+)[^}]*\} from 'lucide-react'/.exec(example)?.[1];
     if (
       shipped.compiled.status !== 'ready' ||
-      (namesLucide && !shipped.compiled.design.html.includes('"ArrowRight"'))
+      (lucideIcon !== undefined && !shipped.compiled.design.html.includes(`"${lucideIcon}"`))
     )
       fail(`${id}/${mode} did not bundle its named Lucide icon`);
     const artifact = artifactOf(shipped.compiled);

@@ -9,13 +9,13 @@ import {
   type DocumentSection,
 } from './designSystemDocument.js';
 import { DESIGN_SYSTEM_LIMITS, saveDesignSystem } from './designSystems.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 
 pinScratchProfile();
 
-/** A preset filled to the schema's limits: 128 long token names and 16 KiB of notes. */
+/** A preset filled to the schema's limits: long token names up to the cap and 16 KiB of notes. */
 function fullKit(): DocumentSection[] {
-  const sections = OPENAI_INSPIRED_DESIGN_SYSTEM.sections;
+  const sections = GRIDLINE_DESIGN_SYSTEM.sections;
   const declared = Object.keys(kitModes(sections).light).length;
   const others: DocumentSection = {
     kind: 'tokens',
@@ -52,7 +52,7 @@ function fullKit(): DocumentSection[] {
 test('a full kit’s brief lists token names by section kind within the 4 KiB name budget', async () => {
   const sections = fullKit();
   const ref = await saveDesignSystem(
-    { ...OPENAI_INSPIRED_DESIGN_SYSTEM, id: 'full', name: 'Full', sections },
+    { ...GRIDLINE_DESIGN_SYSTEM, id: 'full', name: 'Full', sections },
     { mutationId: 'full-kit', baseVersion: null, savedBy: { actor: 'user' } },
   );
   const brief = await designSystemBrief({ ...ref, mode: 'dark' });
@@ -69,13 +69,17 @@ test('a full kit’s brief lists token names by section kind within the 4 KiB na
     'spacing',
     'radius',
     'shadows',
+    'size',
     'motion',
     'tokens',
   ]);
   assert.deepEqual(tokens.radius, [
+    '--ds-radius-xs',
     '--ds-radius-sm',
     '--ds-radius-md',
     '--ds-radius-lg',
+    '--ds-radius-xl',
+    '--ds-radius-2xl',
     '--ds-radius-pill',
   ]);
   const listed = Object.values(tokens).flat().length;

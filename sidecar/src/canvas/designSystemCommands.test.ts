@@ -12,8 +12,7 @@ import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { proposeDesignSystem } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem, type DesignSystemSource } from './designSystems.js';
-import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 import { STARTER_TOKENS } from './presets/starter.js';
 import type { CanvasDiagnostic, DesignSystemVersionRef } from './protocol.js';
 
@@ -117,7 +116,7 @@ test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared prim
         designId: 'hey',
         revisionId: 'revision-1',
         generation: 1,
-        files: { 'main.tsx': OPENAI_INSPIRED_DESIGN_SYSTEM.examples['PricingCard.tsx'] },
+        files: { 'main.tsx': GRIDLINE_DESIGN_SYSTEM.examples['PricingCard.tsx'] },
         designSystem: { ...ref, mode },
         // Strict fails a build that strays from the kit, so a clean build is the proof.
         designSystemAdherence: 'strict',
@@ -505,8 +504,8 @@ async function filesUnder(directory: string, prefix = ''): Promise<string[]> {
 
 test('export writes the kit into the chosen empty folder only, and its modes read back', async (t) => {
   const { parent, destination } = await exportFolder(t);
-  const ref = { id: 'claude-inspired', version: 1 };
-  assert.deepEqual(await exportDesignSystem(ref, destination), { filesWritten: 23 });
+  const ref = { id: 'gridline', version: 1 };
+  assert.deepEqual(await exportDesignSystem(ref, destination), { filesWritten: 35 });
   assert.deepEqual((await readdir(parent)).sort(), ['chosen', 'neighbour.txt']);
   const primitives = ['Badge', 'Button', 'Card', 'Dialog', 'Input', 'Tabs'];
   assert.deepEqual(
@@ -514,32 +513,34 @@ test('export writes the kit into the chosen empty folder only, and its modes rea
     [
       'DESIGN.md',
       'document.json',
-      ...['ReadingView', 'cover', ...primitives].map((name) => `examples/${name}.tsx`),
+      ...['Invoices', 'PricingCard', 'cover', ...primitives].map((name) => `examples/${name}.tsx`),
       'modes.css',
-      ...['1-rules', '2-feel', ...primitives.map((name) => name.toLowerCase())].map(
-        (name) => `notes/${name}.md`,
-      ),
-      'src/fonts/Inter-OFL.txt',
-      'src/fonts/Lora-OFL.txt',
+      ...[
+        ...['1-rules', '2-feel', '3-interaction', '4-layout', '5-copy', '6-checklist'],
+        ...['colour', 'type', 'spacing', 'radius', 'shadows', 'size', 'motion'],
+        ...primitives.map((name) => name.toLowerCase()),
+      ].map((name) => `notes/${name}.md`),
+      'src/fonts.css',
+      'src/fonts/Manrope-OFL.txt',
       'src/index.tsx',
       'src/tokens.css',
     ].sort(),
   );
-  const { name, sections } = CLAUDE_INSPIRED_DESIGN_SYSTEM;
+  const { name, sections } = GRIDLINE_DESIGN_SYSTEM;
   assert.equal(await readFile(join(destination, 'DESIGN.md'), 'utf8'), kitGuidance(name, sections));
   const exported: unknown = JSON.parse(await readFile(join(destination, 'document.json'), 'utf8'));
   assert.deepEqual(exported, {
-    id: 'claude-inspired',
+    id: 'gridline',
     version: 1,
     name,
-    cover: CLAUDE_INSPIRED_DESIGN_SYSTEM.cover,
+    cover: GRIDLINE_DESIGN_SYSTEM.cover,
     sections,
     provenance: null,
   });
 
   // The exported tokens are a stylesheet From CSS reads back unchanged.
   const canvas = await harness(t);
-  const reimported = await importKit(canvas, 'claude-reimported', {
+  const reimported = await importKit(canvas, 'gridline-reimported', {
     kind: 'cssOrTailwind',
     text: await readFile(join(destination, 'modes.css'), 'utf8'),
   });
@@ -566,11 +567,11 @@ test('only Electron main’s token reaches the export route', async (t) => {
       headers: { 'x-canvas-export-token': token },
       body: JSON.stringify(body),
     });
-  const request = { ref: { id: 'openai-inspired', version: 1 }, destinationDirectory: destination };
+  const request = { ref: { id: 'gridline', version: 1 }, destinationDirectory: destination };
 
   assert.equal((await post('renderer-token', request)).status, 404);
   assert.deepEqual(await readdir(destination), []);
   const exported = await post('host-token', request);
   assert.equal(exported.status, 200);
-  assert.deepEqual(await exported.json(), { filesWritten: 22 });
+  assert.deepEqual(await exported.json(), { filesWritten: 35 });
 });

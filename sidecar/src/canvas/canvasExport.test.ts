@@ -15,7 +15,7 @@ import { kitGuidance } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 import type { DesignSystemRef } from './protocol.js';
 
 const canvasId = 'export-canvas';
@@ -95,12 +95,12 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
   const fontId = createHash('sha256').update(font).digest('hex');
   const kit = await saveDesignSystem(
     {
-      ...OPENAI_INSPIRED_DESIGN_SYSTEM,
+      ...GRIDLINE_DESIGN_SYSTEM,
       id: 'export-kit',
       name: 'Export kit',
       files: {
-        ...OPENAI_INSPIRED_DESIGN_SYSTEM.files,
-        'tokens.css': `${OPENAI_INSPIRED_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
+        ...GRIDLINE_DESIGN_SYSTEM.files,
+        'tokens.css': `${GRIDLINE_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
         'fonts/OFL.txt': 'Open Font License',
       },
     },
@@ -125,7 +125,9 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
     'canvas-export/tailwind-config.json',
     ...Object.keys(system.examples).map((path) => `canvas-export/examples/${path}`),
     ...Object.keys(system.files).map((path) => `design-system/${path}`),
-    ...embeddedFontIds(system.files['tokens.css']).map((id) => `fonts/${id}.woff2`),
+    ...embeddedFontIds(system.files['fonts.css'] + system.files['tokens.css']).map(
+      (id) => `fonts/${id}.woff2`,
+    ),
     'package.json',
     'src/main.tsx',
     'src/style.css',
@@ -303,16 +305,16 @@ test('kit images travel with canvas and kit exports, one file per image', async 
   await ownImage(canvasOwner(root), PNG);
   const kit = await saveDesignSystem(
     {
-      ...OPENAI_INSPIRED_DESIGN_SYSTEM,
+      ...GRIDLINE_DESIGN_SYSTEM,
       id: 'image-kit',
       name: 'Image kit',
       cover: { kind: 'image', assetId: coverId },
       files: {
-        ...OPENAI_INSPIRED_DESIGN_SYSTEM.files,
-        'tokens.css': `${OPENAI_INSPIRED_DESIGN_SYSTEM.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
+        ...GRIDLINE_DESIGN_SYSTEM.files,
+        'tokens.css': `${GRIDLINE_DESIGN_SYSTEM.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
       },
       examples: {
-        ...OPENAI_INSPIRED_DESIGN_SYSTEM.examples,
+        ...GRIDLINE_DESIGN_SYSTEM.examples,
         'hero/cover.tsx': `export default () => <img src="kit-asset:${textureId}" />;`,
       },
     },

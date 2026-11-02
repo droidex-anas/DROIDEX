@@ -6,9 +6,9 @@ import {
   type DocumentChange,
 } from './designSystemEdits.js';
 import type { DocumentSection } from './designSystemDocument.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 
-const base = OPENAI_INSPIRED_DESIGN_SYSTEM.sections;
+const base = GRIDLINE_DESIGN_SYSTEM.sections;
 
 function apply(...changes: DocumentChange[]): DocumentSection[] {
   return applyDocumentChanges(base, changes);
@@ -63,7 +63,7 @@ test('changes find tokens, notes and previews by their natural keys and keep the
     { ...preview, width: 640, height: 320 },
   );
   assert.equal(after.length, before.length);
-  assert.deepEqual(base, OPENAI_INSPIRED_DESIGN_SYSTEM.sections, 'the base is not changed');
+  assert.deepEqual(base, GRIDLINE_DESIGN_SYSTEM.sections, 'the base is not changed');
 });
 
 test('Size and Z index sections are created between Shadows and Motion', () => {
@@ -103,7 +103,7 @@ test('a new token needs its section and group; other new items go to the first s
       group: 'Brand',
     },
     { set: 'note', label: 'voice.md', body: 'Plain words.' },
-    { set: 'preview', title: 'Pricing', example: 'Pricing.tsx', width: 960, height: 640 },
+    { set: 'preview', title: 'Checkout', example: 'Checkout.tsx', width: 960, height: 640 },
     {
       set: 'preview',
       title: 'Settings demo',
@@ -141,7 +141,7 @@ test('a new token needs its section and group; other new items go to the first s
   });
   assert.equal(notes.items.at(-1)?.id, 'settings-demo');
   const components = changed.find((section) => section.kind === 'components');
-  assert.equal(components?.items.at(-1)?.id, 'pricing');
+  assert.equal(components?.items.at(-1)?.id, 'checkout');
 
   assert.throws(
     () =>
