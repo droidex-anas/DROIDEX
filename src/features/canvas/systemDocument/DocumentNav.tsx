@@ -295,7 +295,11 @@ export function SectionsMenu({ labelled, ...props }: DocumentNavProps & { labell
   );
 }
 
-/** The section whose heading last passed the top of the scrolling column. */
+/**
+ * The section whose heading last passed a line near the top of the scrolling
+ * column. Over the last screen of scrolling the line slides to the column's
+ * foot, so the short sections at the end of the document become active too.
+ */
 export function useActiveSection(
   scrollRef: RefObject<HTMLElement | null>,
   sectionIds: string[],
@@ -310,7 +314,12 @@ export function useActiveSection(
     let frame = 0;
     const measure = () => {
       frame = 0;
-      const line = scroller.getBoundingClientRect().top + ACTIVE_OFFSET_PX;
+      const { top, height } = scroller.getBoundingClientRect();
+      const scrollRange = scroller.scrollHeight - scroller.clientHeight;
+      const ramp = Math.min(scroller.clientHeight, scrollRange);
+      const remaining = scrollRange - scroller.scrollTop;
+      const progress = ramp > 0 ? Math.min(1, Math.max(0, 1 - remaining / ramp)) : 0;
+      const line = top + ACTIVE_OFFSET_PX + progress * (height - ACTIVE_OFFSET_PX);
       let current = ids.at(0) ?? null;
       for (const id of ids) {
         const heading = scroller.querySelector(`[data-section-id="${id}"]`);
