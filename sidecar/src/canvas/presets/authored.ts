@@ -182,11 +182,13 @@ h2 {
   line-height: var(--ds-leading-snug);
 }
 code,
-kbd,
 pre,
 samp {
   font-family: var(--ds-font-mono);
   font-size: var(--ds-text-code);
+}
+kbd {
+  font-family: var(--ds-font-sans);
 }
 ::selection {
   background: var(--ds-selection);

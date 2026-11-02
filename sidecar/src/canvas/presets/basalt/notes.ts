@@ -1,6 +1,6 @@
 import type { AuthoredPreset } from '../authored.js';
 
-export const FEEL = `Basalt is a dark-first system for the tools developers live in: deploy consoles, log viewers, terminals, API dashboards and settings for infrastructure. The chrome is five steps of near-black basalt in Instrument Sans, so the output, the status and the one lava accent are the loudest things on screen. JetBrains Mono appears only where the content is code: hashes, keys, logs, snippets.
+export const FEEL = `Basalt is a dark-first system for the tools developers live in: deploy consoles, log viewers, terminals, API dashboards and settings for infrastructure. The chrome is five steps of near-black basalt in Instrument Sans, so the output, the status and the one lava accent are the loudest things on screen. JetBrains Mono appears only where the content is code: logs, snippets and a key's one-time value. Hashes, key prefixes and shortcuts are part of the UI and stay in Instrument Sans.
 
 - Dark is the reference. Light mode keeps the same steps and hues for daylight and screenshots; design in dark first and check light.
 - Dense and quiet: 13px body, 30px controls, 2px between rows.
@@ -27,7 +27,7 @@ export const LAYOUT = `The app frame is a 240px sidebar on surface, a 44px heade
 export const COPY = `Sentence case, short and literal. Name the resource the way the CLI does (ledger-api, a91c3e0, deps/pg). Buttons say the operation: Deploy main, Roll back, Create key, Revoke. Times are relative under a day ("40s ago", "2h ago"), dates after. Durations as 1m 51s. Errors quote the tool's message and add the next step. Never call a failure "oops" or a success "magic".
 `;
 
-export const CHECKLIST = `Before you ship a screen: designed in dark and checked in light; code and identifiers in mono, nothing else; every status has a word; destructive actions confirm by name; ⌘K and Escape work; one lava action per view.
+export const CHECKLIST = `Before you ship a screen: designed in dark and checked in light; mono only for code (logs, snippets, a key's one-time value), never for hashes, prefixes or shortcuts; every status has a word; destructive actions confirm by name; ⌘K and Escape work; one lava action per view.
 `;
 
 export const SECTION_NOTES: AuthoredPreset['sectionNotes'] = {
@@ -43,7 +43,7 @@ export const SECTION_NOTES: AuthoredPreset['sectionNotes'] = {
     {
       kind: 'note',
       label: 'type.md',
-      body: `Instrument Sans sets all chrome: 13 for body and buttons, 12 for labels, 11 for captions, 10 for overlines and keycaps. Headings are 600 at 18–22; title (30) and display (40) are for empty states and marketing pages. JetBrains Mono is the code font only (code, 12): hashes, keys, paths, log lines and snippets, never labels or numbers in a table. Add ds-tabular to counters and durations that update.
+      body: `Instrument Sans sets all chrome: 13 for body and buttons, 12 for labels, 11 for captions, 10 for overlines and keycaps. Headings are 600 at 18–22; title (30) and display (40) are for empty states and marketing pages. JetBrains Mono is the code font only (code, 12): log lines, snippets and a key's one-time value. Hashes, key prefixes, branches and keycaps are UI, so they stay in Instrument Sans; add ds-tabular to them and to counters and durations that update.
 `,
     },
   ],

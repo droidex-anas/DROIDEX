@@ -75,7 +75,7 @@ export default function Cover() {
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="ds-label truncate">{deploy.message}</span>
                   <span className="ds-caption ds-text-muted flex items-center gap-2">
-                    <code className="ds-code">{deploy.hash}</code>
+                    <span className="ds-tabular">{deploy.hash}</span>
                     <GitBranch size={12} aria-hidden="true" />
                     {deploy.branch}
                   </span>
@@ -93,7 +93,7 @@ export default function Cover() {
           <section className="flex min-w-0 flex-1 flex-col bg-[color:var(--ds-canvas)]">
             <div className="flex h-10 shrink-0 items-center gap-3 px-4">
               <span className="ds-label">Build log</span>
-              <code className="ds-code ds-text-muted">a91c3e0</code>
+              <span className="ds-caption ds-tabular ds-text-muted">a91c3e0</span>
               <span className="ds-caption ds-text-muted ml-auto">Following · 1m 51s</span>
             </div>
             <div className="ds-log px-4">
@@ -126,13 +126,13 @@ export default function Cover() {
           <div className="ds-row bg-[color:var(--ds-active)]">
             <RotateCcw size={16} aria-hidden="true" className="text-[color:var(--ds-accent)]" />
             <span className="ds-label">Roll back production to</span>
-            <code className="ds-code -ml-1.5 ds-text-muted">4f2c9a1</code>
+            <span className="ds-label ds-tabular -ml-1.5 ds-text-muted">4f2c9a1</span>
             <kbd className="ds-kbd ml-auto">↵</kbd>
           </div>
           <div className="ds-row">
             <RotateCcw size={16} aria-hidden="true" className="text-[color:var(--ds-fg-muted)]" />
             <span className="ds-label ds-text-secondary">Roll back preview to</span>
-            <code className="ds-code -ml-1.5 ds-text-muted">77d0f19</code>
+            <span className="ds-label ds-tabular -ml-1.5 ds-text-muted">77d0f19</span>
           </div>
           <div className="ds-row">
             <ScrollText size={16} aria-hidden="true" className="text-[color:var(--ds-fg-muted)]" />

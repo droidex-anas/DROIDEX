@@ -118,7 +118,7 @@ export default function Deployments() {
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="ds-label truncate">{each.message}</span>
                   <span className="ds-caption ds-text-muted flex items-center gap-2">
-                    <code className="ds-code">{each.hash}</code>
+                    <span className="ds-tabular">{each.hash}</span>
                     <GitBranch size={12} aria-hidden="true" />
                     {each.branch}
                   </span>
@@ -138,7 +138,7 @@ export default function Deployments() {
             <div className="flex min-w-0 flex-col gap-1">
               <h2 className="ds-subheading">{deploy.message}</h2>
               <span className="ds-caption ds-text-muted flex items-center gap-2">
-                <code className="ds-code">{deploy.hash}</code>
+                <span className="ds-tabular">{deploy.hash}</span>
                 {deploy.author + ' · ' + deploy.env + ' · built in ' + deploy.took}
                 {deploy.hash === live ? <Badge>Live</Badge> : null}
               </span>
@@ -172,7 +172,8 @@ export default function Deployments() {
       <Dialog open={confirming} onClose={() => setConfirming(false)} title="Roll back production">
         <div className="flex flex-col gap-4">
           <p className="ds-body m-0">
-            Traffic moves from <code className="ds-code">{live}</code> to <code className="ds-code">{deploy.hash}</code>. Requests
+            Traffic moves from <span className="ds-body-strong ds-tabular">{live}</span> to{' '}
+            <span className="ds-body-strong ds-tabular">{deploy.hash}</span>. Requests
             in flight finish on the current build.
           </p>
           <Input
@@ -281,7 +282,7 @@ export default function ApiKeys() {
                 <span className="ds-label">{key.name}</span>
                 <span className="ds-caption ds-text-muted">{'Created ' + key.created}</span>
               </div>
-              <code className="ds-code ds-text-muted w-40">{key.prefix}</code>
+              <span className="ds-caption ds-tabular ds-text-muted w-40">{key.prefix}</span>
               <span className="flex flex-1 flex-wrap gap-1">
                 {key.scopes.map((scope) => (
                   <Badge key={scope}>{scope}</Badge>
