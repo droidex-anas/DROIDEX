@@ -63,7 +63,7 @@ export function KitPreviewTile({
   placeholder,
 }: {
   previewing: KitPreviewing;
-  /** A preview's id, `cover` or `typography`. */
+  /** A preview's id or `cover`. */
   item: string;
   /** The tile's accessible name. */
   label: string;

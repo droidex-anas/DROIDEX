@@ -166,7 +166,7 @@ export class DesignSystemRequests {
     return { ref, diagnostics };
   }
 
-  /** `item` is a preview's id, `cover` or `typography`. */
+  /** `item` is a preview's id or `cover`. */
   async readPreview(
     ref: DesignSystemRef | DesignSystemProposalRef,
     item: string,
