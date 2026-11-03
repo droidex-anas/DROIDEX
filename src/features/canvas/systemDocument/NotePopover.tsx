@@ -7,7 +7,6 @@
 import { useRef, useState, type RefObject } from 'react';
 import { Notebook, PenLine, Trash, X } from '@droidex/icons';
 import { Markdown } from '../../../components/Markdown';
-import { ProseFileLinks } from '../../../components/transcript/ProseFileLink';
 import { Button } from '../../../components/ui/Button';
 import { Popover } from '../../../components/ui/Popover';
 import { Tooltip } from '../../../components/ui/Tooltip';
@@ -138,12 +137,11 @@ export function NotePopover({
             }
             className={cn(onChange && 'cursor-text')}
           >
-            {/* Kit text is not the user's prompt: no generated runtimes, no images, no file controls. */}
-            <ProseFileLinks>
-              <Markdown allowGeneratedContent={false} allowImages={false}>
-                {note ?? ''}
-              </Markdown>
-            </ProseFileLinks>
+            {/* A note reads as written, every line break showing, with no
+                generated runtimes, images or file controls. */}
+            <Markdown authored allowImages={false}>
+              {note ?? ''}
+            </Markdown>
           </div>
         )}
       </div>

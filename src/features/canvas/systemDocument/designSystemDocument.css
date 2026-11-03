@@ -31,8 +31,9 @@
 
 /* A note's editor is laid out as the note renders (Markdown.tsx), so the text
    keeps its place when a click turns one into the other. noteFieldLayout marks
-   the first line of a block that follows text directly, a later list item,
-   and a bullet item's line; a blank line between blocks is the gap itself. */
+   the first line of a block that follows text directly, a later list item, a
+   blank line inside a list, and each line of a list item with its depth; a
+   blank line between blocks is the gap itself. */
 .kit-note-field {
   --note-list-indent: calc(theme('spacing.5') + theme('spacing[0.5]'));
 }
@@ -57,6 +58,11 @@
 
 .kit-note-field .kit-note-item {
   padding-top: theme('spacing.1');
+}
+
+.kit-note-field .cm-line.kit-note-blank:not(.kit-note-blank-open) {
+  height: 0;
+  line-height: 0;
 }
 
 /* A heading has the rendered size, its air above, and what follows tucked
@@ -121,8 +127,8 @@
   line-height: theme('spacing.1');
 }
 
-.kit-note-field .cm-line:has(.cm-md-listmark) {
-  padding-left: var(--note-list-indent);
+.kit-note-field .kit-note-indent {
+  padding-left: calc(var(--note-list-indent) * var(--note-depth));
 }
 
 /* The marker ends a space (about a quarter em) short of the indent, where the
@@ -139,11 +145,11 @@
 }
 
 /* A bullet item is a list item with the rendered list's own marker, the same
-   glyph in the same place: the list's indent, then the item's. */
+   glyph in the same place: each list's indent, then the item's. */
 .kit-note-field .kit-note-bullet {
   display: list-item;
   list-style: disc outside;
-  margin-left: theme('spacing.5');
+  margin-left: calc(var(--note-list-indent) * var(--note-depth) - theme('spacing[0.5]'));
   padding-left: theme('spacing[0.5]');
 }
 

@@ -6,7 +6,6 @@
 import { useRef, useState } from 'react';
 import { ChevronDown, Pencil } from '@droidex/icons';
 import { Markdown } from '../../../components/Markdown';
-import { ProseFileLinks } from '../../../components/transcript/ProseFileLink';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
 import type { DocumentNote } from '../designSystemDocumentProtocol';
@@ -202,12 +201,11 @@ export function NoteCard({
                   {note.body.trim() === '' ? (
                     <p className="text-body text-muted">This note is empty.</p>
                   ) : (
-                    // Kit text is not the user's prompt: no generated runtimes, no images, no file controls.
-                    <ProseFileLinks>
-                      <Markdown allowGeneratedContent={false} allowImages={false}>
-                        {note.body}
-                      </Markdown>
-                    </ProseFileLinks>
+                    // A note reads as written, every line break showing, with no
+                    // generated runtimes, images or file controls.
+                    <Markdown authored allowImages={false}>
+                      {note.body}
+                    </Markdown>
                   )}
                 </div>
               )}
