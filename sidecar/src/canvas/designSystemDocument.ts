@@ -24,9 +24,6 @@ export const DOCUMENT_LIMITS = {
   maxDocumentBytes: 256 * 1024,
 } as const;
 
-// §14 asks for these as preview targets beside the previews' own ids.
-const RESERVED_PREVIEW_IDS = new Set(['cover', 'typography']);
-
 export const TOKEN_KINDS = [
   'colors',
   'typography',
@@ -200,8 +197,9 @@ function documentProblem(sections: DocumentSection[]): string | null {
         const repeated = item.tokens.find((token) => !claim(tokenNames, token.name));
         if (repeated) return `${repeated.name} is declared twice. Keep one.`;
       }
-      if (item.kind === 'preview' && RESERVED_PREVIEW_IDS.has(item.id))
-        return `A preview cannot use the id ${item.id}. Choose another.`;
+      // §14 asks for the cover as a preview target beside the previews' own ids.
+      if (item.kind === 'preview' && item.id === 'cover')
+        return 'A preview cannot use the id cover. Choose another.';
       if (item.kind === 'preview' && !claim(previewTitles, item.title))
         return `Two previews are called ${item.title}. Rename one.`;
       if (item.kind === 'asset' && !claim(assetNames, item.name))

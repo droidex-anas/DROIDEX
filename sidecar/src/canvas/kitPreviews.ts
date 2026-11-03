@@ -11,7 +11,6 @@ import { boundDiagnostics } from './canvasDiagnostics.js';
 import { canvasError } from './canvasError.js';
 import { CompilerWorker, type KitPreviewCompileInput } from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
-import type { DocumentSection } from './designSystemDocument.js';
 import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
 import type {
@@ -199,12 +198,8 @@ export class KitPreviews {
   }
 }
 
-/**
- * The source `item` names in this version: `cover`, the `typography` specimen,
- * or the id of one of its previews.
- */
+/** The source `item` names in this version: `cover` or the id of one of its previews. */
 export function kitExample(system: DesignSystem, item: string): string {
-  if (item === 'typography') return typographySpecimen(system.sections);
   const name = exampleName(system, item);
   const source = name === undefined ? undefined : system.examples[name];
   if (source === undefined)
@@ -218,62 +213,4 @@ function exampleName(system: DesignSystem, item: string): string | undefined {
     for (const entry of section.items)
       if (entry.kind === 'preview' && entry.id === item) return entry.example;
   return undefined;
-}
-
-/**
- * Every typography token set on one line of sample text, which runs off the
- * edge rather than wrap so the document can size the tile from the tokens.
- */
-function typographySpecimen(sections: DocumentSection[]): string {
-  const groups: {
-    id: string;
-    title: string;
-    tokens: { name: string; label: string; property: string }[];
-  }[] = [];
-  for (const section of sections) {
-    if (section.kind !== 'typography') continue;
-    for (const item of section.items) {
-      if (item.kind !== 'group') continue;
-      // Labelled bare, as the document names tokens.
-      const tokens = item.tokens.map(({ name }) => ({
-        name,
-        label: name.replace(/^--ds-/, ''),
-        property: typeProperty(name),
-      }));
-      groups.push({ id: item.id, title: item.title, tokens });
-    }
-  }
-  if (groups.length === 0)
-    throw canvasError('invalid_input', 'This design system has no typography tokens.');
-  return `const GROUPS = ${JSON.stringify(groups)};
-
-export default function Typography() {
-  return (
-    <main style={{ display: 'flex', flexDirection: 'column', gap: 32, padding: 32, minHeight: '100vh', boxSizing: 'border-box', overflow: 'hidden', background: 'var(--ds-canvas)', color: 'var(--ds-fg)' }}>
-      {GROUPS.map((group) => (
-        <section key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--ds-fg-muted)' }}>{group.title}</h2>
-          {group.tokens.map((token) => (
-            <div key={token.name} style={{ display: 'flex', alignItems: 'baseline', gap: 24 }}>
-              <span style={{ flex: '0 0 200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--ds-fg-muted)' }}>{token.label}</span>
-              <span style={{ whiteSpace: 'nowrap', [token.property]: \`var(\${token.name})\` }}>The quick brown fox jumps over the lazy dog</span>
-            </div>
-          ))}
-        </section>
-      ))}
-    </main>
-  );
-}
-`;
-}
-
-// Kits name their type tokens by what they set (--ds-font-sans, --ds-text-lg,
-// --ds-weight-bold); a name that says nothing else is a size.
-function typeProperty(name: string): string {
-  if (name.includes('weight')) return 'fontWeight';
-  if (name.includes('leading') || name.includes('line-height')) return 'lineHeight';
-  if (name.includes('tracking') || name.includes('letter-spacing')) return 'letterSpacing';
-  if ((name.includes('font') || name.includes('family')) && !name.includes('size'))
-    return 'fontFamily';
-  return 'fontSize';
 }

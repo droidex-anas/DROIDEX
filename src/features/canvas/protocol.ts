@@ -656,8 +656,8 @@ export type CanvasCommand =
       source: DesignSystemSource;
     }
   // A kit version's previews in one mode, or a waiting proposal's. `item` is a
-  // preview's id, `cover` or `typography`. A capture is a base64 PNG the
-  // document took from a saved version's live preview; a later one replaces it.
+  // preview's id or `cover`. A capture is a base64 PNG the document took from a
+  // saved version's live preview; a later one replaces it.
   | {
       type: 'canvas.readKitPreview';
       requestId: string;
