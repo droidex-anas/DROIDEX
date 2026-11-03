@@ -52,7 +52,7 @@ export function Field({ label, hint, error, className, children, ...rest }: Fiel
   );
 }
 
-type InputVariant = 'default' | 'compact' | 'embedded';
+type InputVariant = 'default' | 'compact' | 'embedded' | 'inline';
 
 const VARIANT: Record<InputVariant, string> = {
   default: 'h-control-lg rounded-md px-3 text-body-lg',
@@ -60,6 +60,9 @@ const VARIANT: Record<InputVariant, string> = {
   // A search sitting in a picker's header strip: the strip is the field, and
   // the caret shows focus, so it draws no fill and no ring of its own.
   embedded: 'bg-transparent text-body focus-visible:outline-none',
+  // Text edited where it reads: the box of the text it replaces, in the type
+  // the caller sets, so nothing moves as editing starts or ends.
+  inline: '-mx-1 rounded-sm px-1',
 };
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -94,6 +97,7 @@ export function Input({
   const fill = inputFill(isInvalid, variant);
   const hovers = fill === 'bg-field';
   const hasAffix = leading !== undefined || trailing !== undefined;
+  const width = variant === 'inline' ? 'field-sizing-content' : 'w-full';
   const input = (
     <input
       ref={ref}
@@ -104,13 +108,17 @@ export function Input({
       className={
         !hasAffix
           ? cn(
-              'w-full min-w-0 text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
+              width,
+              'min-w-0 text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
               VARIANT[variant],
               fill,
               hovers && 'enabled:hover:bg-active',
               className,
             )
-          : 'h-full w-full min-w-0 bg-transparent text-primary placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed'
+          : cn(
+              width,
+              'h-full min-w-0 bg-transparent text-primary placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed',
+            )
       }
     />
   );
@@ -131,7 +139,7 @@ export function Input({
     >
       <Affix>{leading}</Affix>
       {input}
-      <Affix className="pl-1">{trailing}</Affix>
+      <Affix className={variant === 'inline' ? 'pl-0.5' : 'pl-1'}>{trailing}</Affix>
     </label>
   );
 }

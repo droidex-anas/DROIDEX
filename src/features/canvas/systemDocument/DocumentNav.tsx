@@ -1,10 +1,11 @@
 // The section nav (spec §5): search, one entry per section with its icon, its
 // count and a dot when it has unsaved changes, a "+ Section" row that adds a
-// notes section in user kits, and the kit's files. Under about 720 px the same
-// nav opens from the header's Sections button instead.
+// notes section in user kits, and the kit's files. Under about 720 px, or once
+// the user hides it, the same nav opens from the header's Sections button.
 
 import { useEffect, useEffectEvent, useRef, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookOpen,
   Box,
@@ -54,6 +55,10 @@ export interface DocumentNavProps {
 
 // How far below the column's top a section's heading must pass to be current.
 const ACTIVE_OFFSET_PX = 96;
+const NAV_HIDDEN_KEY = 'droid-design-system-nav-hidden';
+// The panel move (feel.md), leaving quicker than it arrives.
+const NAV_MOVE = { duration: 0.24, ease: [0.22, 1, 0.36, 1] } as const;
+const NAV_LEAVE = { ...NAV_MOVE, duration: 0.18 } as const;
 
 const KIND_ICON: Partial<Record<DocumentSection['kind'], LucideIcon>> = {
   colors: Palette,
@@ -152,6 +157,53 @@ export function DocumentNav({
       </div>
     </nav>
   );
+}
+
+/** The nav beside the document. Hiding it slides the column over into the room. */
+export function NavAside({ isShown, ...props }: DocumentNavProps & { isShown: boolean }) {
+  return (
+    <AnimatePresence initial={false}>
+      {isShown && (
+        <motion.aside
+          key="nav"
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: 'auto', opacity: 1 }}
+          exit={{ width: 0, opacity: 0, transition: NAV_LEAVE }}
+          transition={NAV_MOVE}
+          className="shrink-0 overflow-hidden"
+        >
+          {/* Full width throughout, so the nav never rewraps on the way. */}
+          <div className="h-full w-56 overflow-y-auto pb-6 pl-2 pr-1 pt-1">
+            <DocumentNav {...props} />
+          </div>
+        </motion.aside>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function readNavHidden(): boolean {
+  try {
+    return localStorage.getItem(NAV_HIDDEN_KEY) === 'true';
+  } catch {
+    // Storage can be unavailable (private mode, quota); the nav shows.
+    return false;
+  }
+}
+
+/** Whether the user hid the nav beside the document, remembered for every kit. */
+export function useNavHidden() {
+  const [isHidden, setIsHidden] = useState(readNavHidden);
+  const toggle = () => {
+    const next = !isHidden;
+    setIsHidden(next);
+    try {
+      localStorage.setItem(NAV_HIDDEN_KEY, String(next));
+    } catch {
+      // The choice still holds for this document; it just is not remembered.
+    }
+  };
+  return { isHidden, toggle };
 }
 
 const MAX_TITLE_LENGTH = 120;

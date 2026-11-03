@@ -1,13 +1,14 @@
 // What a token row draws beside its value (spec §5), read from the value
-// first: a colour gets its swatch, a shadow its tiles, a length a bar or, under
-// a corner heading, a rounded square, and a bare number nothing. A value that
-// does not say, such as a var() or calc(), takes what its section holds, or in
-// a section of mixed tokens what its group's title names.
+// first: a colour gets its swatch, a shadow its tiles, a type value a line of
+// text set in it, a length a bar or, under a corner heading, a rounded square,
+// and a bare number nothing. A value that does not say, such as a var() or
+// calc(), takes what its section holds, or in a section of mixed tokens what
+// its group's title names.
 
 import type { TokenKind } from '../designSystemDocumentProtocol';
 import { parseShadow } from './shadowLayers';
 
-export type TokenShape = 'color' | 'shadow' | 'radius' | 'length' | 'text';
+export type TokenShape = 'color' | 'shadow' | 'radius' | 'length' | 'type' | 'text';
 
 const COLOR =
   /^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\(.*\)|transparent)$/i;
@@ -20,8 +21,7 @@ const KIND_SHAPE: Record<TokenKind, TokenShape | null> = {
   radius: 'radius',
   spacing: 'length',
   size: 'length',
-  // Type keeps its section's specimen; its sizes are not bars.
-  typography: 'text',
+  typography: 'type',
   motion: 'text',
   'z-index': 'text',
   tokens: null,
@@ -39,6 +39,8 @@ export function tokenShape(value: string, kind: TokenKind, groupTitle: string): 
   const text = value.trim();
   if (COLOR.test(text)) return 'color';
   if (parseShadow(text)) return 'shadow';
+  // Every type value sets text, a bare weight or line height included.
+  if (kind === 'typography') return 'type';
   if (NUMBER.test(text)) return 'text';
   const named =
     KIND_SHAPE[kind] ?? TITLE_SHAPES.find(([title]) => title.test(groupTitle))?.[1] ?? 'text';
@@ -47,6 +49,6 @@ export function tokenShape(value: string, kind: TokenKind, groupTitle: string): 
 }
 
 /** Whether a row of this shape draws a specimen beside its value; a colour's swatch and a shadow's tiles sit in the value. */
-export function drawsSpecimen(shape: TokenShape): shape is 'radius' | 'length' {
-  return shape === 'radius' || shape === 'length';
+export function drawsSpecimen(shape: TokenShape): shape is 'radius' | 'length' | 'type' {
+  return shape === 'radius' || shape === 'length' || shape === 'type';
 }

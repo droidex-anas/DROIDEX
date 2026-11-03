@@ -1,10 +1,11 @@
 // A token group (spec §5, §6): its title and a data table of its tokens, each
 // named bare and drawn with what it holds. Colours show both modes side by
 // side; the other kinds show one value, a shadow with tiles of both modes in
-// it, and a length or corner with a specimen in the previewed mode beside it.
+// it, and a type value, length or corner with a specimen in the previewed mode
+// beside it.
 
 import { memo, useRef, useState, type CSSProperties } from 'react';
-import { Copy, MessageSquareText } from '@droidex/icons';
+import { Copy, Notebook } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
@@ -25,6 +26,9 @@ import { ValueCell } from './ValueCell';
 
 const MAX_TOKEN_NOTE_BYTES = 400;
 const MAX_TITLE_LENGTH = 120;
+const SPECIMEN_COLUMNS = { name: 'w-1/3', value: undefined, specimen: 'w-1/4', label: 'Specimen' };
+// A type sample is a line of text, so it takes the width the other columns leave.
+const TYPE_SAMPLE_COLUMNS = { name: 'w-1/5', value: 'w-1/5', specimen: undefined, label: 'Sample' };
 
 type Specimens = Record<PreviewMode, CSSProperties>;
 type TokenValues = { value: string } | { light: string; dark: string };
@@ -66,6 +70,7 @@ export function TokenTable({
     tokenShape(modeValue(token, 'light'), kind, group.title),
   );
   const hasSpecimen = !isColor && shapes.some(drawsSpecimen);
+  const columns = shapes.includes('type') ? TYPE_SAMPLE_COLUMNS : SPECIMEN_COLUMNS;
 
   return (
     <div className="flex flex-col gap-2">
@@ -112,7 +117,7 @@ export function TokenTable({
         <table className="w-full table-fixed text-left">
           <thead>
             <tr className="text-caption text-muted">
-              <th scope="col" className="w-1/3 pb-1 pt-1.5 font-normal">
+              <th scope="col" className={cn(columns.name, 'pb-1 pt-1.5 font-normal')}>
                 Name
               </th>
               {isColor ? (
@@ -125,13 +130,13 @@ export function TokenTable({
                   </th>
                 </>
               ) : (
-                <th scope="col" className="pb-1 pt-1.5 font-normal">
+                <th scope="col" className={cn(columns.value, 'pb-1 pt-1.5 font-normal')}>
                   Value
                 </th>
               )}
               {hasSpecimen && (
-                <th scope="col" className="w-1/4 pb-1 pt-1.5 font-normal">
-                  <span className="sr-only">Specimen</span>
+                <th scope="col" className={cn(columns.specimen, 'pb-1 pt-1.5 font-normal')}>
+                  <span className="sr-only">{columns.label}</span>
                 </th>
               )}
               <th scope="col" className="w-20 pb-1 pt-1.5">
@@ -326,7 +331,7 @@ function TokenActions({
             ref={noteRef}
             variant="ghost"
             size="sm"
-            icon={MessageSquareText}
+            icon={Notebook}
             aria-label={
               token.note === undefined ? `Add a usage note to ${name}` : `Usage note of ${name}`
             }
@@ -363,7 +368,8 @@ function TokenActions({
       {noteOpen && (
         <NotePopover
           anchorRef={noteRef}
-          title={`Usage note · ${name}`}
+          title="Usage note"
+          subject={name}
           note={token.note}
           maxBytes={MAX_TOKEN_NOTE_BYTES}
           onChange={

@@ -1,9 +1,14 @@
-// What a token holds, drawn: a colour swatch, a length bar, a rounded square
-// for a corner radius, or a card carrying a shadow. The kit's own tokens reach
-// them as custom properties on `style`.
+// What a token holds, drawn: a colour swatch, a line of text set in a type
+// token, a length bar, a rounded square for a corner radius, or a card carrying
+// a shadow. The kit's own tokens reach them as custom properties on `style`.
 
 import type { CSSProperties } from 'react';
-import { isPaintable } from './specimenStyle';
+import { loadedFamilyProperty, typeProperty } from './specimenStyle';
+
+const SAMPLE_LINE = 'The quick brown fox jumps over the lazy dog';
+// Long enough to wrap in its column, so the room between its lines shows.
+const SAMPLE_PARAGRAPH =
+  'Line height is the room each line of a paragraph takes, and it decides how a block of text breathes.';
 
 export function Swatch({ name, style }: { name: string; style: CSSProperties }) {
   return (
@@ -16,29 +21,17 @@ export function Swatch({ name, style }: { name: string; style: CSSProperties }) 
   );
 }
 
-/** The colour being typed, drawn only once it parses. */
-export function LiveSwatch({ value }: { value: string }) {
-  const trimmed = value.trim();
-  return (
-    <span
-      aria-hidden="true"
-      // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-      className="mr-2 inline-block size-3.5 rounded-xs align-middle ring-1 ring-inset ring-divider"
-      style={{ background: isPaintable('color', trimmed) ? trimmed : undefined }}
-    />
-  );
-}
-
 export function Specimen({
   shape,
   name,
   style,
 }: {
-  shape: 'radius' | 'length';
+  shape: 'radius' | 'length' | 'type';
   name: string;
   style: CSSProperties;
 }) {
   const paint = `var(${name})`;
+  if (shape === 'type') return <TypeSample name={name} style={style} />;
   if (shape === 'length')
     return (
       <span
@@ -53,6 +46,43 @@ export function Specimen({
       className="size-8 bg-accent/15"
       style={{ ...style, borderRadius: paint }}
     />
+  );
+}
+
+/** Text in the kit's body face with one property set by the token, at the document's reading size unless the token is a size. */
+function TypeSample({ name, style }: { name: string; style: CSSProperties }) {
+  const property = typeProperty(name);
+  const paint = `var(${name})`;
+  if (property === 'fontSize')
+    return (
+      <span
+        aria-hidden="true"
+        className="kit-body-font kit-type-sample min-w-0 flex-1 leading-tight text-primary"
+        style={{ ...style, fontSize: paint }}
+      >
+        {SAMPLE_LINE}
+      </span>
+    );
+  if (property === 'lineHeight')
+    return (
+      <span
+        aria-hidden="true"
+        className="kit-body-font line-clamp-2 min-w-0 text-prose text-primary"
+        style={{ ...style, lineHeight: paint }}
+      >
+        {SAMPLE_PARAGRAPH}
+      </span>
+    );
+  // A family is set in the fonts the document loaded for the kit, once it has.
+  const value = property === 'fontFamily' ? `var(${loadedFamilyProperty(name)}, ${paint})` : paint;
+  return (
+    <span
+      aria-hidden="true"
+      className="kit-body-font kit-type-sample min-w-0 flex-1 text-prose text-primary"
+      style={{ ...style, [property]: value }}
+    >
+      {SAMPLE_LINE}
+    </span>
   );
 }
 

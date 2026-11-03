@@ -9,7 +9,7 @@ import {
 } from './compiler.js';
 import { discardProposal, proposeDesignSystem, readProposal } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
-import { KitPreviews } from './kitPreviews.js';
+import { KitPreviews, kitExample } from './kitPreviews.js';
 import { BASALT_DESIGN_SYSTEM } from './presets/basalt/index.js';
 import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 import { MARGIN_DESIGN_SYSTEM } from './presets/margin/index.js';
@@ -65,11 +65,11 @@ const design = (html: string): CompiledDesign => ({
   elements: [],
 });
 
-test("a kit's cover and typography specimen compile into preview documents", async (t) => {
+test("a kit's cover and previews compile into preview documents", async (t) => {
   const previews = new KitPreviews();
   t.after(() => previews.close());
 
-  for (const item of ['cover', 'typography']) {
+  for (const item of ['cover', 'sidebar']) {
     const preview = await previews.read(DARK, item);
     assert.equal(preview.status, 'ready', item);
     assert.ok(preview.status === 'ready' && preview.artifact.html.includes('<html'), item);
@@ -85,7 +85,7 @@ test('a preview compiles once per version, mode and item while it is pending or 
   ]);
   assert.deepEqual(first, second);
   await previews.read(DARK, 'cover');
-  await previews.read(LIGHT, 'typography');
+  await previews.read(LIGHT, 'sidebar');
   await previews.read(LIGHT, 'cover');
 
   assert.equal(compiled.length, 3);
@@ -112,9 +112,10 @@ test('a preview compiles once per version, mode and item while it is pending or 
 
 test("a source's diagnostics are kept, a lost compiler is tried again", async () => {
   let lost = true;
+  const sidebar = kitExample(await readDesignSystem(LIGHT), 'sidebar');
   const { previews, compiled } = countingPreviews((input) => {
     const example = input.kind === 'kitPreview' ? input.example : '';
-    if (example.includes('Typography'))
+    if (example === sidebar)
       throw new CompileFailedError([{ code: 'compile_error', message: 'Broken.' }]);
     if (lost) {
       lost = false;
@@ -123,12 +124,12 @@ test("a source's diagnostics are kept, a lost compiler is tried again", async ()
     return design('<html></html>');
   });
 
-  const broken = await previews.read(LIGHT, 'typography');
+  const broken = await previews.read(LIGHT, 'sidebar');
   assert.deepEqual(broken, {
     status: 'failed',
     diagnostics: [{ code: 'compile_error', message: 'Broken.' }],
   });
-  assert.deepEqual(await previews.read(LIGHT, 'typography'), broken);
+  assert.deepEqual(await previews.read(LIGHT, 'sidebar'), broken);
 
   const unavailable = await previews.read(LIGHT, 'cover');
   assert.equal(unavailable.status, 'failed');
@@ -137,7 +138,7 @@ test("a source's diagnostics are kept, a lost compiler is tried again", async ()
 
   await assert.rejects(previews.read(LIGHT, 'no-such-preview'), { code: 'invalid_input' });
   await previews.close();
-  await assert.rejects(previews.read(LIGHT, 'typography'), { code: 'scope_expired' });
+  await assert.rejects(previews.read(LIGHT, 'sidebar'), { code: 'scope_expired' });
 });
 
 test("a waiting proposal's previews build from its own examples, and a settled one's no longer do", async () => {
@@ -185,6 +186,6 @@ test("a waiting proposal's previews build from its own examples, and a settled o
   );
 
   await discardProposal('proposed', proposalId);
-  await assert.rejects(previews.read(ref, 'typography'), { code: 'invalid_input' });
+  await assert.rejects(previews.read(ref, 'sidebar'), { code: 'invalid_input' });
   await previews.close();
 });

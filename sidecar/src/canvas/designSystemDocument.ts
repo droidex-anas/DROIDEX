@@ -24,9 +24,6 @@ export const DOCUMENT_LIMITS = {
   maxDocumentBytes: 256 * 1024,
 } as const;
 
-// §14 asks for these as preview targets beside the previews' own ids.
-const RESERVED_PREVIEW_IDS = new Set(['cover', 'typography']);
-
 export const TOKEN_KINDS = [
   'colors',
   'typography',
@@ -200,8 +197,9 @@ function documentProblem(sections: DocumentSection[]): string | null {
         const repeated = item.tokens.find((token) => !claim(tokenNames, token.name));
         if (repeated) return `${repeated.name} is declared twice. Keep one.`;
       }
-      if (item.kind === 'preview' && RESERVED_PREVIEW_IDS.has(item.id))
-        return `A preview cannot use the id ${item.id}. Choose another.`;
+      // §14 asks for the cover as a preview target beside the previews' own ids.
+      if (item.kind === 'preview' && item.id === 'cover')
+        return 'A preview cannot use the id cover. Choose another.';
       if (item.kind === 'preview' && !claim(previewTitles, item.title))
         return `Two previews are called ${item.title}. Rename one.`;
       if (item.kind === 'asset' && !claim(assetNames, item.name))
@@ -326,9 +324,14 @@ export function withNoteAuthors(
 
 function usageNotes(item: DocumentItem): string[] {
   if (item.kind === 'group')
-    return item.tokens.flatMap((token) => (token.note ? [`- ${token.name}: ${token.note}`] : []));
-  if (item.kind === 'preview' && item.note) return [`- ${item.title}: ${item.note}`];
+    return item.tokens.flatMap((token) => (token.note ? [usageLine(token.name, token.note)] : []));
+  if (item.kind === 'preview' && item.note) return [usageLine(item.title, item.note)];
   return [];
+}
+
+// A usage note can run to several lines; indenting them keeps it inside its list item.
+function usageLine(subject: string, note: string): string {
+  return `- ${subject}: ${note.replace(/\n(?=.)/g, '\n  ')}`;
 }
 
 /** Inserts a section before the first one that comes after it in the canonical order. */

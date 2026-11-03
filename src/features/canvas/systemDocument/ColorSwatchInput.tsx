@@ -8,6 +8,7 @@ import { useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 
 import type { DocumentToken } from '../designSystemDocumentProtocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { showPickedColor } from './pickedColor';
+import { isPaintable } from './specimenStyle';
 import { Swatch } from './TokenSpecimens';
 
 const OPAQUE = 255;
@@ -19,6 +20,7 @@ export function CellSwatch({
   mode,
   label,
   style,
+  draft,
   onCommit,
 }: {
   kitId: string;
@@ -26,6 +28,8 @@ export function CellSwatch({
   mode: PreviewMode;
   label: string;
   style: CSSProperties;
+  /** A value being typed beside the swatch, painted while it is a colour. */
+  draft: string | null;
   onCommit: ((value: string) => void) | null;
 }) {
   if (onCommit === null || ('value' in token && mode === 'dark'))
@@ -37,6 +41,7 @@ export function CellSwatch({
       mode={'value' in token ? 'both' : mode}
       label={label}
       style={style}
+      typed={draft !== null && isPaintable('color', draft.trim()) ? draft.trim() : null}
       onCommit={onCommit}
     />
   );
@@ -48,6 +53,7 @@ function ColorSwatchInput({
   mode,
   label,
   style,
+  typed,
   onCommit,
 }: {
   kitId: string;
@@ -57,6 +63,8 @@ function ColorSwatchInput({
   label: string;
   /** The kit's specimen tokens, so the swatch paints `var(name)` as the kit resolves it. */
   style: CSSProperties;
+  /** A colour typed into the value beside the swatch. */
+  typed: string | null;
   onCommit: (value: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -98,7 +106,7 @@ function ColorSwatchInput({
       <span
         ref={paintRef}
         className="block size-full rounded-sm"
-        style={{ ...style, background: picked ?? `var(${name})` }}
+        style={{ ...style, background: picked ?? typed ?? `var(${name})` }}
       />
       <input
         ref={inputRef}

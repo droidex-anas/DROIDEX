@@ -4,7 +4,7 @@
 // and OlderVersionNotice that line over an older version.
 
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ArrowLeft } from '@droidex/icons';
+import { ArrowLeft, PanelLeft } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { pushToast } from '../../../lib/toast';
@@ -44,6 +44,7 @@ export function DocumentHeader({
   onRename,
   onBack,
   onShowVersion,
+  navToggle,
   children,
 }: {
   view: DesignSystemDocumentView;
@@ -53,6 +54,8 @@ export function DocumentHeader({
   onRename: ((name: string) => void) | null;
   onBack: () => void;
   onShowVersion: (version: number) => void;
+  /** Hides and shows the nav beside the document; null while the canvas is too narrow for it. */
+  navToggle: { isHidden: boolean; onToggle: () => void } | null;
   /** The right end: sections, mode, more menu and the primary action. */
   children: (room: HeaderRoom) => ReactNode;
 }) {
@@ -64,9 +67,28 @@ export function DocumentHeader({
       ref={headerRef}
       className="design-system-document-header flex h-12 shrink-0 items-center gap-2 px-4"
     >
-      {/* Board's padding hangs, so its arrow starts on the edge the notice and a narrow column share. */}
+      {/* The first button's padding hangs, so its icon starts on the edge the notice and a narrow column share. */}
+      {navToggle && (
+        <Tooltip label={navToggle.isHidden ? 'Show sections' : 'Hide sections'} placement="bottom">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={PanelLeft}
+            aria-label={navToggle.isHidden ? 'Show sections' : 'Hide sections'}
+            aria-expanded={!navToggle.isHidden}
+            onClick={navToggle.onToggle}
+            className="-ml-1.5"
+          />
+        </Tooltip>
+      )}
       {room.navWords ? (
-        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="-ml-2.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={ArrowLeft}
+          onClick={onBack}
+          className={navToggle ? undefined : '-ml-2.5'}
+        >
           Board
         </Button>
       ) : (
@@ -77,7 +99,7 @@ export function DocumentHeader({
             icon={ArrowLeft}
             aria-label="Board"
             onClick={onBack}
-            className="-ml-1.5"
+            className={navToggle ? undefined : '-ml-1.5'}
           />
         </Tooltip>
       )}

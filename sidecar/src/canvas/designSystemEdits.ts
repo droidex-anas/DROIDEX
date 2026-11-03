@@ -89,8 +89,6 @@ interface Found<Item> {
   item: Item;
 }
 
-// The two preview targets of §14, which no item may take.
-const RESERVED_IDS = ['cover', 'typography'];
 const PREVIEW_KINDS: readonly SectionKind[] = ['components', 'notes'];
 
 /** The document after every change in order; the caller validates the version it makes. */
@@ -105,7 +103,8 @@ export function applyDocumentChanges(
 
 class DocumentEdit {
   sections: DocumentSection[];
-  private readonly ids = new Set(RESERVED_IDS);
+  /** The ids in use, the cover's preview target (§14) among them. */
+  private readonly ids = new Set(['cover']);
   /** Images the user already put in this kit; an agent cannot bring new bytes (§8). */
   private readonly assetIds = new Set<string>();
 

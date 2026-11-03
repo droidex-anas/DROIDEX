@@ -37,8 +37,6 @@ const TOKEN_KINDS = new Set<unknown>([
   'motion',
   'tokens',
 ]);
-// Preview targets of their own beside the previews' ids.
-const RESERVED_PREVIEW_IDS = new Set(['cover', 'typography']);
 const RESERVED_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
 const ITEM_ID = /^[a-z0-9-]{1,48}$/;
 const NOTE_LABEL = /^[a-z0-9][a-z0-9-]*\.md$/;
@@ -150,7 +148,7 @@ function isAsset(value: unknown): boolean {
 
 // The rules that span sections, as the sidecar checks them: one section per
 // kind but notes, unique ids and natural keys (labels, token names, preview
-// titles, asset names), no reserved preview id, and the document's counts.
+// titles, asset names), no preview under the cover's id, and the document's counts.
 function isConsistent(sections: DocumentSection[]): boolean {
   const kinds = new Set<string>();
   const ids = new Set<string>();
@@ -168,7 +166,7 @@ function isConsistent(sections: DocumentSection[]): boolean {
         return false;
       if (
         item.kind === 'preview' &&
-        (RESERVED_PREVIEW_IDS.has(item.id) || !claim(previewTitles, item.title.trim()))
+        (item.id === 'cover' || !claim(previewTitles, item.title.trim()))
       )
         return false;
       if (item.kind === 'asset' && !claim(assetNames, item.name.trim())) return false;

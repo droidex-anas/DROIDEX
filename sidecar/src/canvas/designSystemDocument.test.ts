@@ -104,6 +104,27 @@ test("kit guidance keeps a section's usage notes where they sit between its note
   );
 });
 
+test('kit guidance keeps a usage note of several lines inside its list item', () => {
+  const colors: DocumentSection = {
+    kind: 'colors',
+    id: 'colors',
+    title: 'Colors',
+    items: [
+      {
+        kind: 'group',
+        id: 'text',
+        title: 'Text',
+        tokens: [{ name: '--ds-text', value: '#111', note: 'Body copy.\n\n- Never on accent' }],
+      },
+    ],
+  };
+
+  assert.equal(
+    kitGuidance('Kit', [colors]),
+    ['# Kit', '## Colors', '- --ds-text: Body copy.\n\n  - Never on accent'].join('\n\n'),
+  );
+});
+
 test('a section added later goes to its canonical place, even after the user reordered', () => {
   const kinds = (sections: DocumentSection[]) => sections.map((section) => section.kind);
   const built = [...CANONICAL_SECTION_ORDER]

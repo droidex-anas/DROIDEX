@@ -6,7 +6,6 @@
 import { useRef, useState } from 'react';
 import { ChevronDown, Pencil } from '@droidex/icons';
 import { Markdown } from '../../../components/Markdown';
-import { ProseFileLinks } from '../../../components/transcript/ProseFileLink';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
 import type { DocumentNote } from '../designSystemDocumentProtocol';
@@ -14,11 +13,12 @@ import { ActionMenu, type MenuAction } from './ActionMenu';
 import type { DraftChange } from './documentDraft';
 import { noteLabel, noteTitle, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
-import { NoteBodyEditor } from './NoteBodyEditor';
+import { caretPointOf, NoteBodyEditor, type CaretPoint } from './NoteBodyEditor';
 import { AddedLabel, UndoRemove, UnsavedMark } from './UnsavedMark';
 
 const NOTE_LABEL = /^[a-z0-9][a-z0-9-]*\.md$/;
 const MAX_LABEL_LENGTH = 48;
+const MAX_BODY_BYTES = 8 * 1024;
 
 // Collapsed notes by kit, for the app session.
 const collapsedNotes = new Map<string, Set<string>>();
@@ -55,6 +55,7 @@ export function NoteCard({
 }) {
   const [expanded, setExpanded] = useState(() => !isCollapsed(kitId, note.id));
   const [editingBody, setEditingBody] = useState(isNew);
+  const [caretAt, setCaretAt] = useState<CaretPoint | null>(null);
   const titleRef = useRef<InlineFieldHandle>(null);
   const chevronRef = useRef<HTMLButtonElement>(null);
   const isRemoved = mark === 'removed';
@@ -88,6 +89,7 @@ export function NoteCard({
             icon: Pencil,
             run: () => {
               setExpanded(true);
+              setCaretAt(null);
               setEditingBody(true);
             },
           } satisfies MenuAction,
@@ -170,20 +172,26 @@ export function NoteCard({
               !open && 'opacity-0',
             )}
           >
-            <div className="kit-body-font px-4 pb-4">
+            <div className="kit-body-font kit-text px-4 pb-4">
               {editingBody && canEdit ? (
                 <NoteBodyEditor
                   body={note.body}
                   label={`Text of ${title}`}
+                  placeholder="One of this kit's rules, in markdown"
+                  maxBytes={MAX_BODY_BYTES}
                   autoFocus={!isNew}
+                  caretAt={caretAt}
+                  className="text-prose"
                   onCommit={commitBody}
                 />
               ) : (
                 <div
                   onClick={
                     canEdit
-                      ? () => {
-                          setExpanded(true);
+                      ? (event) => {
+                          const point = caretPointOf(event);
+                          if (!point) return;
+                          setCaretAt(point);
                           setEditingBody(true);
                         }
                       : undefined
@@ -193,12 +201,11 @@ export function NoteCard({
                   {note.body.trim() === '' ? (
                     <p className="text-body text-muted">This note is empty.</p>
                   ) : (
-                    // Kit text is not the user's prompt: no generated runtimes, no images, no file controls.
-                    <ProseFileLinks>
-                      <Markdown allowGeneratedContent={false} allowImages={false}>
-                        {note.body}
-                      </Markdown>
-                    </ProseFileLinks>
+                    // A note reads as written, every line break showing, with no
+                    // generated runtimes, images or file controls.
+                    <Markdown authored allowImages={false}>
+                      {note.body}
+                    </Markdown>
                   )}
                 </div>
               )}

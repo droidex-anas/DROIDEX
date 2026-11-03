@@ -27,18 +27,18 @@ test("a kit keeps each preview's capture per mode, and refuses one it does not h
 
   await save('req-cover', 'cover');
   assert.deepEqual(okReply(canvas, 'req-cover'), { kind: 'ok' });
-  await save('req-type', 'typography');
-  assert.deepEqual(okReply(canvas, 'req-type'), { kind: 'ok' });
+  await save('req-card', 'pricing');
+  assert.deepEqual(okReply(canvas, 'req-card'), { kind: 'ok' });
 
   assert.deepEqual(await readCapture('req-saved'), { kind: 'kitCapture', png });
-  assert.deepEqual(await readCapture('req-type-saved', light, 'typography'), {
+  assert.deepEqual(await readCapture('req-card-saved', light, 'pricing'), {
     kind: 'kitCapture',
     png,
   });
   assert.deepEqual(await readCapture('req-dark', dark), { kind: 'kitCapture', png: null });
 });
 
-test('the DROIDEX preset shows the captures it ships, and one taken here fills a preview it ships none of', async (t) => {
+test('the DROIDEX preset shows the captures it ships over one taken here', async (t) => {
   const canvas = await harness(t);
   const light: DesignSystemRef = { id: 'droidex', version: 1, mode: 'light' };
   const png = CANVAS_PNG.toString('base64');
@@ -60,8 +60,4 @@ test('the DROIDEX preset shows the captures it ships, and one taken here fills a
     await readCapture('req-sidebar', 'sidebar'),
     await shipped('previews/sidebar-light.png'),
   );
-
-  assert.deepEqual(await readCapture('req-type', 'typography'), { kind: 'kitCapture', png: null });
-  await save('req-type-save', 'typography');
-  assert.deepEqual(await readCapture('req-type-saved', 'typography'), { kind: 'kitCapture', png });
 });

@@ -9,7 +9,7 @@ import type { DocumentSection } from '../designSystemDocumentProtocol';
 import type { KitFontFace } from '../protocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { tokensByName } from './documentSections';
-import { isPaintable, modeValue } from './specimenStyle';
+import { isPaintable, loadedFamilyProperty, modeValue, typeProperty } from './specimenStyle';
 
 const APP_TYPE: CSSProperties = {};
 let fontLoads = 0;
@@ -23,7 +23,8 @@ interface LoadedFonts {
 
 /**
  * `--kit-body-font` and `--kit-heading-font` for the document's column, which
- * the `kit-body-font` and `kit-heading-font` classes read.
+ * the `kit-body-font` and `kit-heading-font` classes read, and each family
+ * token's stack for its type sample.
  */
 export function useKitTypeface(
   kit: { id: string; version: number },
@@ -73,6 +74,10 @@ export function useKitTypeface(
   const properties: Record<string, string> = {};
   if (body) properties['--kit-body-font'] = body;
   if (heading) properties['--kit-heading-font'] = heading;
+  for (const name of tokens.keys()) {
+    const family = typeProperty(name) === 'fontFamily' ? stack(name) : null;
+    if (family) properties[loadedFamilyProperty(name)] = family;
+  }
   return properties;
 }
 

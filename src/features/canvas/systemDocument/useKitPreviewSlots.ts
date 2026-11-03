@@ -10,7 +10,6 @@ import {
   reducePreviewSlots,
 } from '../previewSlots';
 import type { DesignSystemDocumentView } from '../protocol';
-import { typeSpecimenSize } from './TypeSpecimen';
 
 const NONE: readonly string[] = [];
 
@@ -112,7 +111,6 @@ export function useKitPreviewSlots(
 
 function runnableItems({ cover, sections }: Pick<DesignSystemDocumentView, 'cover' | 'sections'>) {
   const items = cover?.kind === 'preview' ? ['cover'] : [];
-  if (typeSpecimenSize(sections) !== null) items.push('typography');
   for (const section of sections)
     for (const item of section.items) if (item.kind === 'preview') items.push(item.id);
   return items;
