@@ -1,9 +1,11 @@
 // A small kit authored on the shared primitives and the starter's tokens, with
-// a cover, a pricing demo and Inter in its own sheet, for suites that need a
-// document and previews that never change. It is not built in: save it first.
+// a cover, a pricing demo, and Inter and the DROIDEX kit's Silkscreen in its own
+// sheet, for suites that need a document and previews that never change. It is
+// not built in: save it first.
 
 import { buildDocument } from '../canvas/buildDocument.js';
 import type { DesignSystem } from '../canvas/designSystems.js';
+import droidex from '../canvas/presets/droidex/system.json' with { type: 'json' };
 import inter from '../canvas/presets/fonts/inter.json' with { type: 'json' };
 import { PRIMITIVES_TSX } from '../canvas/presets/primitives.js';
 import {
@@ -118,9 +120,10 @@ export const SAMPLE_KIT: DesignSystem = {
   }),
   files: {
     'index.tsx': PRIMITIVES_TSX,
-    'fonts.css': inter.css,
+    'fonts.css': inter.css + droidex.files['fonts.css'],
     'tokens.css': KIT_CSS,
     'fonts/Inter-OFL.txt': inter.license,
+    'fonts/Silkscreen-OFL.txt': droidex.files['fonts/Silkscreen-OFL.txt'],
   },
   examples: { ...PRIMITIVE_EXAMPLES, 'cover.tsx': COVER_TSX, 'PricingCard.tsx': PRICING_TSX },
 };

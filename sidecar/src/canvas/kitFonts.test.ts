@@ -26,7 +26,10 @@ test("a kit's document gets the WOFF2 faces its stylesheets embed, and none it w
       weight,
       unicodeRange,
     })),
-    [{ family: 'Inter', style: 'normal', weight: '100 900', unicodeRange: 'U+0-10FFFF' }],
+    [
+      { family: 'Inter', style: 'normal', weight: '100 900', unicodeRange: 'U+0-10FFFF' },
+      { family: 'Silkscreen', style: 'normal', weight: '400', unicodeRange: 'U+0-10FFFF' },
+    ],
   );
   const inter = reply.faces[0].woff2;
   assert.equal(Buffer.from(inter, 'base64').toString('ascii', 0, 4), 'wOF2');

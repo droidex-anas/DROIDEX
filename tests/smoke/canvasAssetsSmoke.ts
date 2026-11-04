@@ -8,6 +8,8 @@ import {
   previewNonce,
   previewStartScript,
 } from '../../src/features/canvas/previewDocument';
+import { saveDesignSystem } from '../../sidecar/src/canvas/designSystems';
+import { SAMPLE_KIT } from '../../sidecar/src/testing/sampleKit';
 import { askGuest, mountPreviewGuest } from './canvasPreviewHost';
 import { withCanvasBridge, withCanvasHost } from './canvasSmoke';
 
@@ -161,14 +163,18 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         }, failedCanvas.canvasId);
         assert.equal(storageFailure?.code, 'storage_failed');
         assert.equal(storageFailure.message.includes(chosen), false);
-        // An imported kit starts from the starter's files, which embed Inter.
-        const kit = await send({
-          type: 'canvas.importDesignSystem',
-          mutationId: 'import-asset-kit',
-          name: 'Offline fonts',
-          source: { kind: 'cssOrTailwind', text: ':root { --primary: #3355ff; }' },
+        // The sample kit embeds two faces, Inter and Silkscreen. It is saved
+        // into this profile, where the app's sidecar reads kits.
+        const testProfile = process.env.DROIDEX_USER_DATA_DIR;
+        process.env.DROIDEX_USER_DATA_DIR = profile;
+        const kitRef = await saveDesignSystem(SAMPLE_KIT, {
+          mutationId: 'save-asset-kit',
+          baseVersion: null,
+          savedBy: { actor: 'user' },
+        }).finally(() => {
+          if (testProfile === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+          else process.env.DROIDEX_USER_DATA_DIR = testProfile;
         });
-        assert.ok(kit.kind === 'designSystemSaved');
         const added = await send({
           type: 'canvas.create',
           canvasId,
@@ -180,7 +186,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                 name: 'Owned assets',
                 width: 320,
                 height: 240,
-                designSystem: { ...kit.ref, mode: 'light' },
+                designSystem: { ...kitRef, mode: 'light' },
               },
             ],
           },
@@ -290,9 +296,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                   if (!image) return { image: false, font: false };
                   try {
                     const fonts = await document.fonts.load('16px "Inter"');
+                    const wordmarks = await document.fonts.load('16px "Silkscreen"');
                     return {
                       image: image.complete && image.naturalWidth === 1,
                       font: fonts.length === 1 && fonts[0].status === 'loaded',
+                      wordmarkFont: wordmarks.length === 1 && wordmarks[0].status === 'loaded',
                     };
                   } catch (error) {
                     return { image: image.complete && image.naturalWidth === 1, font: String(error) };
@@ -301,7 +309,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
               }, guestId),
             { timeout: 20_000, intervals: [200] },
           )
-          .toEqual({ image: true, font: true });
+          .toEqual({ image: true, font: true, wordmarkFont: true });
         await expect
           .poll(() =>
             app.evaluate(
