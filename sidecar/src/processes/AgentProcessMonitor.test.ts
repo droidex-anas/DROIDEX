@@ -5,6 +5,7 @@ import {
   TICK_MS,
   type AgentProcessMonitorDependencies,
 } from './AgentProcessMonitor.js';
+import { commandLineContains } from './commandLineMatch.js';
 import type { ProcessRecord } from './processTree.js';
 
 function harness(
@@ -145,6 +146,27 @@ test('scan hides shell wrappers, emits once per change, and attaches ports', asy
   );
 });
 
+test('a process names the command the agent ran, not a supervisor or package-manager shell', async () => {
+  const command = '/bin/bash -c npm run dev';
+  const h = harness([
+    rows[0],
+    { pid: 650, ppid: 600, startedAt: 0, command: '/bin/bash -c exec "$@"' },
+    { pid: 700, ppid: 650, startedAt: 0, command },
+    { pid: 710, ppid: 700, startedAt: 0, command: 'node /usr/bin/npm run dev' },
+    { pid: 720, ppid: 710, startedAt: 0, command: 'sh -c vite' },
+    { pid: 800, ppid: 720, startedAt: 0, command: 'node /w/node_modules/.bin/vite' },
+  ]);
+  h.monitor.track('s1', 600, () => true);
+  await h.monitor.scan();
+  assert.deepEqual(
+    h.monitor.processesFor('s1').map((row) => [row.pid, row.originCommand]),
+    [
+      [710, command],
+      [800, command],
+    ],
+  );
+});
+
 test('processes younger than MIN_AGE_MS are not shown yet', async () => {
   const young = rows.map((r) => (r.pid === 800 ? { ...r, startedAt: 99_500 } : r));
   const h = harness(young);
@@ -156,7 +178,12 @@ test('processes younger than MIN_AGE_MS are not shown yet', async () => {
   // A shell wrapper and a process too young to publish are nothing the user
   // could stop, so nothing that may hold the session open.
   assert.equal(h.monitor.hasProcesses('s1'), false);
+  // Droid's command supervisor replaces a `sleep 2` every two seconds; one
+  // must never live long enough to show.
   h.advance(2000);
+  await h.monitor.scan();
+  assert.equal(h.emitted.length, 1);
+  h.advance(1000);
   await h.monitor.scan();
   assert.equal(h.emitted.length, 2);
 });
@@ -685,7 +712,7 @@ const mcpRows: ProcessRecord[] = [
 
 test('an ignored command hides its whole subtree and nothing else', async () => {
   const h = harness(mcpRows);
-  h.monitor.setIgnoredCommands('s1', ['npx -y some-mcp']);
+  h.monitor.setIgnoredCommands('s1', (command) => commandLineContains(command, 'npx -y some-mcp'));
   h.monitor.track('s1', 600, () => true);
   await h.monitor.scan();
 

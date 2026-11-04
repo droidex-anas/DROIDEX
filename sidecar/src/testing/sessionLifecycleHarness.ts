@@ -78,6 +78,7 @@ export function createHarness(
   let now = 10_000;
   let mcpId = 0;
   let mcpConfigs: McpServerConfig[] = [];
+  const ignoredCommands = new Map<string, (command: string) => boolean>();
   const historical = (): HistoricalSession[] =>
     ordinarySummaries.map((item) => ({ summary: { ...item }, progress: [] }));
   const recordEvent = (event: ServerEvent): void => {
@@ -186,8 +187,9 @@ export function createHarness(
     },
     isShutdownStarted: () => shutdownStarted,
     agentProcesses: {
-      setIgnoredCommands: (appSessionId, patterns) => {
-        record('runtime', 'processes.setIgnoredCommands', appSessionId, ...patterns);
+      setIgnoredCommands: (appSessionId, isIgnored) => {
+        ignoredCommands.set(appSessionId, isIgnored);
+        record('runtime', 'processes.setIgnoredCommands', appSessionId);
       },
       track: (appSessionId, pid) => {
         record('runtime', 'processes.track', appSessionId, pid);
@@ -334,6 +336,8 @@ export function createHarness(
     setMcpConfigs: (configs: McpServerConfig[]) => {
       mcpConfigs = configs;
     },
+    isIgnoredCommand: (appSessionId: string, command: string) =>
+      ignoredCommands.get(appSessionId)?.(command) ?? false,
     failNextEmit: (type: ServerEvent['type'], error: Error) => {
       nextEmitFailure = { type, error };
     },

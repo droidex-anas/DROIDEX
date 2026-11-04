@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { ArrowLeft, ExternalLink } from '@droidex/icons';
 import { Button } from '../../components/ui/Button';
-import { ThreadList } from './ThreadList';
+import { ThreadList, type ThreadListView } from './ThreadList';
 import type { ProjectBoardEntry } from './useProjectBoard';
 
 /* One project: what it is, whether its coordination is held, and the threads it
@@ -23,6 +24,7 @@ export function ProjectThreads({
   onOpenThread: (appSessionId: string) => void;
 }) {
   const { project, rows } = entry;
+  const [view, setView] = useState<ThreadListView>('threads');
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-6 pb-6">
       <div className="flex shrink-0 items-center gap-2 py-3">
@@ -64,6 +66,8 @@ export function ProjectThreads({
           leadStopped={project.leadStopped === true}
           now={now}
           error={project.error ?? ''}
+          view={view}
+          onViewChange={setView}
           onOpenThread={onOpenThread}
         />
       </div>

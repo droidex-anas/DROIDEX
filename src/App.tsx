@@ -45,7 +45,6 @@ import SetupBanner from './components/onboarding/SetupBanner';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight';
 import { TOP_ROW_HEIGHT_PX, WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome';
 import { HeaderTabs } from './features/tabs/HeaderTabs';
-import { RunningProcessesMenu } from './components/RunningProcessesMenu';
 import { ChatTiles } from './features/tabs/ChatTiles';
 import { DesignDropTarget } from './features/tabs/DesignDropTarget';
 import {
@@ -122,6 +121,7 @@ import {
   LazyCommandPalette,
   LazyAgentsWorkspace,
   LazyThreadsWorkspace,
+  LazyBackgroundWorkspace,
   LazyThreadAttentionNotifier,
   LazyFilesWorkspace,
   LazyMissionControl,
@@ -834,13 +834,8 @@ export default function App() {
   const bannerStackRef = useRef<HTMLDivElement>(null);
   const bannerStackHeight = useMeasuredHeight(bannerStackRef);
 
-  // A lone chat in a tab has no header of its own: the tab names it, and its
-  // running processes join these controls in the tab row.
-  const listsProcesses =
-    state.tabStripShown && !state.activeTabSplit && !isMissionControlView && !!activeSession;
   const sessionControls = fullContentRoute ? null : (
     <>
-      {listsProcesses && <RunningProcessesMenu appSessionId={activeSession.appSessionId} />}
       {!showUtilityPane && (
         <>
           {workingDirectory && (
@@ -1185,6 +1180,13 @@ export default function App() {
                         return (
                           <Suspense fallback={utilityToolFallback('threads')}>
                             <LazyThreadsWorkspace tab={tab} />
+                          </Suspense>
+                        );
+                      }
+                      if (tab.tool === 'background') {
+                        return (
+                          <Suspense fallback={utilityToolFallback('background')}>
+                            <LazyBackgroundWorkspace appSessionId={activeSession.appSessionId} />
                           </Suspense>
                         );
                       }

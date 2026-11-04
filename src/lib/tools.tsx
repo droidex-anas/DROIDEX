@@ -594,6 +594,13 @@ export function toolArgString(args: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+// The command line an exec tool ran, under whichever argument its harness uses.
+export function shellCommandOf(args: unknown): string | undefined {
+  return (
+    toolArgString(args, 'command') ?? toolArgString(args, 'cmd') ?? toolArgString(args, 'script')
+  );
+}
+
 export function toolArgStringArray(args: unknown, key: string): string[] {
   const value = toolArgRecord(args)[key];
   return Array.isArray(value)

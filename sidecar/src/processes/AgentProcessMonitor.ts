@@ -1,5 +1,4 @@
 import type { AgentProcess } from '../protocol.js';
-import { commandLineContains } from './commandLineMatch.js';
 import { descendantsOf, sameProcess, type ProcessRecord } from './processTree.js';
 import { killProcessTree } from './processTermination.js';
 import { sameProcessList, visibleProcesses } from './processPresentation.js';
@@ -49,9 +48,10 @@ function dedupeByPid(rows: readonly ProcessRecord[]): ProcessRecord[] {
 export class AgentProcessMonitor {
   private readonly roots = new Map<number, TrackedRoot>();
   private readonly closing = new Map<string, Promise<void>>();
-  // appSessionId -> command lines the session spawns on the provider's behalf
-  // (stdio MCP servers), which belong to no one the user can act on.
-  private readonly ignoredCommands = new Map<string, readonly string[]>();
+  // appSessionId -> recognises the processes its provider runs for itself
+  // (stdio MCP servers, harness helpers), which belong to no one the user can
+  // act on.
+  private readonly ignoredCommands = new Map<string, (command: string) => boolean>();
   private readonly current = new Map<string, AgentProcess[]>();
   private readonly published = new Map<string, AgentProcess[]>();
   private readonly descendants = new Map<string, ProcessRecord[]>();
@@ -69,12 +69,11 @@ export class AgentProcessMonitor {
 
   constructor(private readonly d: AgentProcessMonitorDependencies) {}
 
-  // Stdio MCP servers are spawned by the provider as its own children, so the
-  // walk finds them; they are the agent's plumbing, not the session's work, and
-  // a chip row for one would also block idle retirement forever.
-  setIgnoredCommands(appSessionId: string, patterns: readonly string[]): void {
-    if (patterns.length === 0) this.ignoredCommands.delete(appSessionId);
-    else this.ignoredCommands.set(appSessionId, [...patterns]);
+  // The provider spawns stdio MCP servers and its own helpers as its children,
+  // so the walk finds them; they are the agent's plumbing, not the session's
+  // work, and a row for one would also block idle retirement forever.
+  setIgnoredCommands(appSessionId: string, isIgnored: (command: string) => boolean): void {
+    this.ignoredCommands.set(appSessionId, isIgnored);
   }
 
   track(
@@ -366,13 +365,9 @@ export class AgentProcessMonitor {
     rows: ProcessRecord[],
     table: readonly ProcessRecord[],
   ): ProcessRecord[] {
-    const patterns = this.ignoredCommands.get(appSessionId);
-    if (!patterns || patterns.length === 0) return rows;
-    const hidden = new Set(
-      rows
-        .filter((row) => patterns.some((pattern) => commandLineContains(row.command, pattern)))
-        .map((row) => row.pid),
-    );
+    const isIgnored = this.ignoredCommands.get(appSessionId);
+    if (!isIgnored) return rows;
+    const hidden = new Set(rows.filter((row) => isIgnored(row.command)).map((row) => row.pid));
     if (hidden.size === 0) return rows;
     for (const row of descendantsOf(table, hidden)) hidden.add(row.pid);
     return rows.filter((row) => !hidden.has(row.pid));

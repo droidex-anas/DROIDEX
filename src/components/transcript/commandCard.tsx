@@ -1,24 +1,11 @@
 import { useContext, useState } from 'react';
-import { commandLineContains } from '../../lib/commandLineMatch';
-import { LiveProcessesContext } from './liveProcessesContext';
+import { isCommandStillRunning, LiveProcessesContext } from './liveProcessesContext';
 import { stripAnsi } from '../../lib/tools';
 import { TranscriptImage } from '../media/TranscriptImage';
 import { Caret, ErrorTag, Expand, InterruptedTag, linkify, ToolPanel } from './primitives';
 
-// A backgrounded server keeps its card "running" after the turn ends as long
-// as a live agent process still carries the command the agent typed.
 function useCommandStillRunning(command: string): boolean {
-  const processes = useContext(LiveProcessesContext);
-  if (processes.length === 0) return false;
-  const needle = command.trim();
-  return (
-    needle.length > 3 &&
-    processes.some(
-      (p) =>
-        commandLineContains(p.command, needle) ||
-        (p.originCommand !== undefined && commandLineContains(p.originCommand, needle)),
-    )
-  );
+  return isCommandStillRunning(command, useContext(LiveProcessesContext));
 }
 
 const NO_IMAGES: string[] = [];

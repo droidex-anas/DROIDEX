@@ -31,6 +31,7 @@ import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { LiveOperationTarget, SessionContext } from './SessionContext.js';
 import type { ChildSessions } from './ChildSessions.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
+import { commandLineContains } from './processes/commandLineMatch.js';
 import { errMsg } from './errors.js';
 import {
   buildCreatedSessionSummary,
@@ -1459,8 +1460,14 @@ export class SessionLifecycle {
     mcpConfigs: readonly McpServerConfig[],
   ): void {
     const d = this.dependencies;
-    // Before the first scan, so a configured MCP server never reaches the chip.
-    d.agentProcesses.setIgnoredCommands(appSessionId, stdioMcpCommandLines(mcpConfigs));
+    // Before the first scan, so the provider's own plumbing never reaches the list.
+    const mcpCommandLines = stdioMcpCommandLines(mcpConfigs);
+    d.agentProcesses.setIgnoredCommands(
+      appSessionId,
+      (command) =>
+        mcpCommandLines.some((line) => commandLineContains(command, line)) ||
+        (session.isHarnessProcess?.(command) ?? false),
+    );
     const process = session.process;
     if (process) d.agentProcesses.track(appSessionId, process.pid, () => process.isAlive());
   }

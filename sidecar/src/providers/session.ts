@@ -185,6 +185,9 @@ export interface ProviderSession {
   readonly canvasTools?: SessionSummary['canvasTools'];
   // The live agent process, when the provider runs one, so it can be tracked.
   readonly process?: { pid: number; isAlive(): boolean };
+  // Whether a process under it, by its command line, is one the provider runs
+  // for itself rather than for the agent, and so not the session's work.
+  isHarnessProcess?(command: string): boolean;
   // For a runtime that can end outside a turn. Never rejects; a failure carries
   // its diagnostic, and intentional closure resolves without one.
   readonly closed?: Promise<Error | undefined>;
