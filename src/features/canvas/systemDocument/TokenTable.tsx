@@ -15,7 +15,7 @@ import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddToken } from './AddToken';
 import type { DraftChange } from './documentDraft';
-import { bareTokenName, tokenKey, type DraftMark } from './documentSections';
+import { bareTokenName, displayTokenValue, tokenKey, type DraftMark } from './documentSections';
 import { InlineField, type InlineFieldHandle } from './InlineField';
 import { NotePopover } from './NotePopover';
 import { modeValue } from './specimenStyle';
@@ -156,6 +156,7 @@ export function TokenTable({
                 specimens={specimens}
                 mark={marks.get(tokenKey(token.name))}
                 base={baseTokens.get(token.name)}
+                tokenNames={tokenNames}
                 hasSpecimen={hasSpecimen}
                 onChange={onChange}
               />
@@ -186,6 +187,7 @@ const TokenRow = memo(function TokenRow({
   specimens,
   mark,
   base,
+  tokenNames,
   hasSpecimen,
   onChange,
 }: {
@@ -197,6 +199,7 @@ const TokenRow = memo(function TokenRow({
   specimens: Specimens;
   mark: DraftMark | undefined;
   base: DocumentToken | undefined;
+  tokenNames: ReadonlySet<string>;
   hasSpecimen: boolean;
   onChange: ((change: DraftChange) => void) | null;
 }) {
@@ -217,6 +220,7 @@ const TokenRow = memo(function TokenRow({
       shape={shape}
       kitId={kitId}
       specimens={specimens}
+      tokenNames={tokenNames}
       isRemoved={isRemoved}
       onSet={setValue}
     />
@@ -402,8 +406,8 @@ function wasLabel(base: DocumentToken | undefined, token: DocumentToken): string
   // A token moved to another group keeps its values.
   if (sameValues(valuesOf(base), valuesOf(token)))
     return base.note === token.note ? undefined : 'Usage note changed, not saved';
-  if ('value' in base) return `Was ${base.value}`;
-  return `Was ${base.light} in light, ${base.dark} in dark`;
+  if ('value' in base) return `Was ${displayTokenValue(base.value)}`;
+  return `Was ${displayTokenValue(base.light)} in light, ${displayTokenValue(base.dark)} in dark`;
 }
 
 function sameValues(a: TokenValues, b: TokenValues): boolean {

@@ -19,7 +19,9 @@ import {
 import {
   changedTokenValues,
   changeSummary,
+  displayTokenValue,
   draftDiff,
+  storedTokenValue,
   tokenKey,
   withItems,
   withRemoved,
@@ -213,6 +215,23 @@ test('live previews get only the draft values that differ in their mode and a sa
   assert.deepEqual(changedTokenValues(base, sections, 'light'), {});
   assert.deepEqual(changedTokenValues(base, sections, 'dark'), { '--ds-bg': '#000' });
   discardDraft('tokens');
+});
+
+test('a reference shows as its bare name, and an edit keeps the references it showed', () => {
+  const names = new Set(['--ds-bg', '--ds-accent']);
+  const mixed = 'color-mix(in srgb, var(--ds-accent) 20%, white)';
+  assert.equal(displayTokenValue('var(--ds-accent)'), 'accent');
+  assert.equal(displayTokenValue(mixed), 'color-mix(in srgb, accent 20%, white)');
+  assert.equal(storedTokenValue('bg', '#fff', names), 'var(--ds-bg)');
+  assert.equal(
+    storedTokenValue('color-mix(in srgb, accent 30%, white)', mixed, names),
+    'color-mix(in srgb, var(--ds-accent) 30%, white)',
+  );
+  // Inside a longer value, only a name the edited value referred to refers again.
+  assert.equal(
+    storedTokenValue('color-mix(in srgb, bg 30%, white)', mixed, names),
+    'color-mix(in srgb, bg 30%, white)',
+  );
 });
 
 test('a removed note shows where it was, Undo puts it back there, and undoing every edit ends the draft', () => {

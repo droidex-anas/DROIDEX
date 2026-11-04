@@ -21,6 +21,7 @@ export function ValueCell({
   shape,
   kitId,
   specimens,
+  tokenNames,
   isRemoved,
   onSet,
 }: {
@@ -31,6 +32,8 @@ export function ValueCell({
   kitId: string;
   /** The kit's specimen tokens as custom properties, per mode. */
   specimens: Record<PreviewMode, CSSProperties>;
+  /** Every token name in the draft, which a typed bare name may refer to. */
+  tokenNames: ReadonlySet<string>;
   isRemoved: boolean;
   /** Null for a value that cannot be edited. */
   onSet: ((mode: PreviewMode, value: string) => void) | null;
@@ -63,6 +66,7 @@ export function ValueCell({
         kind={kind}
         label={label}
         surfaces={modes.map((tileMode) => specimens[tileMode])}
+        tokenNames={tokenNames}
         isRemoved={isRemoved}
         onCommit={onCommit}
       />
@@ -73,6 +77,7 @@ export function ValueCell({
         value={value}
         kind={kind}
         label={label}
+        tokenNames={tokenNames}
         isRemoved={isRemoved}
         onDraft={shape === 'color' ? setDraft : undefined}
         onCommit={onCommit}

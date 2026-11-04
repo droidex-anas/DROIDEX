@@ -78,6 +78,33 @@ export function fullTokenName(bare: string): string {
   return bare.startsWith('--') ? bare : KIT_TOKEN_PREFIX + bare;
 }
 
+const KIT_REFERENCE = /var\(--ds-([a-z0-9]+(?:-[a-z0-9]+)*)\)/g;
+// A whole word of a value: not part of a longer name, a number's unit or a function's name.
+const VALUE_WORD = /(?<![\w-])[a-z0-9]+(?:-[a-z0-9]+)*(?![\w(-])/g;
+
+/** What the document shows of a value: a reference to a kit token reads as its bare name, so `var(--ds-accent)` is "accent". */
+export function displayTokenValue(value: string): string {
+  return value.replace(KIT_REFERENCE, (_reference, bare: string) => bare);
+}
+
+/**
+ * What an edit keeps of `text`, typed over what `was` showed: a name shown for
+ * one of `was`'s references refers again, and a value that is only a token's
+ * bare name refers to that token. Any other word stands as typed.
+ */
+export function storedTokenValue(
+  text: string,
+  was: string,
+  tokenNames: ReadonlySet<string>,
+): string {
+  const whole = fullTokenName(text);
+  if (tokenNames.has(whole)) return `var(${whole})`;
+  const referenced = new Set(Array.from(was.matchAll(KIT_REFERENCE), ([, bare]) => bare));
+  return text.replace(VALUE_WORD, (word) =>
+    referenced.has(word) ? `var(${KIT_TOKEN_PREFIX}${word})` : word,
+  );
+}
+
 /** What a note's label reads as: "1-rules.md" is "Rules", "design-engineering.md" "Design engineering". */
 export function noteTitle(label: string): string {
   const stem = label.replace(/\.md$/, '');

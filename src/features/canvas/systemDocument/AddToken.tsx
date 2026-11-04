@@ -1,5 +1,6 @@
 // The form under a token group that adds a token to it (spec §6). The name is
 // typed bare, as the document shows it; the kit's --ds- prefix is added back.
+// A value that is another token's bare name refers to it.
 
 import { useEffect, useRef, useState } from 'react';
 import { Plus } from '@droidex/icons';
@@ -9,7 +10,7 @@ import { pushEscapeLayer } from '../../../components/ui/escapeStack';
 import type { TokenKind } from '../designSystemDocumentProtocol';
 import { isTokenName } from '../designSystemDocumentValidation';
 import type { DraftChange } from './documentDraft';
-import { fullTokenName } from './documentSections';
+import { fullTokenName, storedTokenValue } from './documentSections';
 import { tokenValueProblem } from './specimenStyle';
 
 export function AddToken({
@@ -67,7 +68,8 @@ export function AddToken({
 
   const add = () => {
     const trimmed = name.trim();
-    const why = newTokenProblem(kind, trimmed, value, tokenNames);
+    const stored = storedTokenValue(value.trim(), '', tokenNames);
+    const why = newTokenProblem(kind, trimmed, stored, tokenNames);
     if (why !== null) {
       setProblem(why);
       return;
@@ -75,7 +77,7 @@ export function AddToken({
     onChange({
       kind: 'addToken',
       groupId,
-      token: { name: fullTokenName(trimmed), value: value.trim() },
+      token: { name: fullTokenName(trimmed), value: stored },
     });
     setName('');
     setValue('');

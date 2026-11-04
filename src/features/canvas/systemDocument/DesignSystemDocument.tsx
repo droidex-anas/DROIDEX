@@ -224,7 +224,8 @@ function KitDocument({
     }),
     [working.sections],
   );
-  const names = documentNames(working.sections);
+  // Token rows are memoised on these names, so a search or scroll must not make new ones.
+  const names = useMemo(() => documentNames(working.sections), [working.sections]);
   const baseTokens = new Map(
     Array.from(tokensByName(base.sections), ([name, { token }]) => [name, token]),
   );
