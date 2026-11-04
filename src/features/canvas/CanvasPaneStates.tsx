@@ -26,7 +26,10 @@ export function CanvasInvitation({ children }: { children?: ReactNode }) {
         </div>
         <ul aria-label="Starting points" className="grid w-full grid-cols-2 gap-3">
           {DESIGN_STARTERS.map((starter) => (
-            <li key={starter.label}>
+            <li
+              key={starter.label}
+              className={starter.sketch === 'system' ? 'col-span-2' : undefined}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -36,7 +39,7 @@ export function CanvasInvitation({ children }: { children?: ReactNode }) {
               >
                 <span className="flex h-24 items-center justify-center rounded-lg bg-text/5 transition-colors duration-200 group-hover:bg-text/10">
                   <span className="transition-transform duration-200 motion-safe:group-hover:-translate-y-0.5">
-                    <StarterSketch kind={starter.sketch} />
+                    <StarterSketch kind={starter.sketch} wide={starter.sketch === 'system'} />
                   </span>
                 </span>
                 <span className="flex flex-col px-1.5 pb-1">
