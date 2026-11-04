@@ -19,10 +19,6 @@ import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesse
 import { readDesignSystem } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
-import { BASALT_DESIGN_SYSTEM } from './presets/basalt/index.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
-import { MARGIN_DESIGN_SYSTEM } from './presets/margin/index.js';
-import { POTLUCK_DESIGN_SYSTEM } from './presets/potluck/index.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import type { SourceFiles } from './schema.js';
@@ -173,14 +169,7 @@ test('Tailwind emits exactly the utilities the source spells out', async () => {
 
 test('every preview and cover a built-in kit shows builds strictly in both pinned modes', async () => {
   const offlineFont = /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/;
-  for (const kit of [
-    AUTO_DESIGN_SYSTEM,
-    await readDesignSystem({ id: 'droidex', version: 1 }),
-    MARGIN_DESIGN_SYSTEM,
-    GRIDLINE_DESIGN_SYSTEM,
-    BASALT_DESIGN_SYSTEM,
-    POTLUCK_DESIGN_SYSTEM,
-  ]) {
+  for (const kit of [AUTO_DESIGN_SYSTEM, await readDesignSystem({ id: 'droidex', version: 1 })]) {
     for (const item of [kit.cover, ...kit.sections.flatMap((section) => [...section.items])]) {
       if (item?.kind !== 'preview') continue;
       const { example } = item;

@@ -6,7 +6,8 @@ import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { readDesignSystem } from './designSystems.js';
 import type { CanvasScope, SourceFiles } from './protocol.js';
 
-const system = { id: 'gridline', version: 1, mode: 'dark' } as const;
+// Auto declares none of the --ds-* names the unmapped cases use; DROIDEX declares --ds-brand.
+const system = { id: 'auto', version: 1, mode: 'dark' } as const;
 
 async function design(
   t: TestContext,

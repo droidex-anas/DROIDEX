@@ -3,13 +3,19 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { errorOf, harness, okReply } from '../testing/canvasBridgeSupport.js';
 import { CANVAS_PNG, pinScratchProfile } from '../testing/canvasStorageSupport.js';
+import { SAMPLE_KIT } from '../testing/sampleKit.js';
+import { saveDesignSystem } from './designSystems.js';
 import type { DesignSystemRef } from './protocol.js';
 
 pinScratchProfile();
 
 test("a kit keeps each preview's capture per mode, and refuses one it does not have", async (t) => {
   const canvas = await harness(t);
-  const light: DesignSystemRef = { id: 'gridline', version: 1, mode: 'light' };
+  const light: DesignSystemRef = await saveDesignSystem(SAMPLE_KIT, {
+    mutationId: 'sample',
+    baseVersion: null,
+    savedBy: { actor: 'user' },
+  });
   const dark: DesignSystemRef = { ...light, mode: 'dark' };
   const png = CANVAS_PNG.toString('base64');
   const readCapture = async (requestId: string, ref = light, item = 'cover') => {

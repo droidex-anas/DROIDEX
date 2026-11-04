@@ -23,21 +23,11 @@ import {
   type SavedBy,
 } from './designSystems.js';
 import { CANVAS_LIMITS } from './schema.js';
-import { BASALT_DESIGN_SYSTEM } from './presets/basalt/index.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
-import { MARGIN_DESIGN_SYSTEM } from './presets/margin/index.js';
-import { POTLUCK_DESIGN_SYSTEM } from './presets/potluck/index.js';
 import { DROIDEX_KIT } from './presets/droidexKit.js';
 
 pinScratchProfile();
 
-const KITS = [
-  designSystemSchema.parse(DROIDEX_KIT),
-  MARGIN_DESIGN_SYSTEM,
-  GRIDLINE_DESIGN_SYSTEM,
-  BASALT_DESIGN_SYSTEM,
-  POTLUCK_DESIGN_SYSTEM,
-];
+const KITS = [designSystemSchema.parse(DROIDEX_KIT)];
 
 test('built-in versions are exact snapshots that callers cannot mutate', async () => {
   for (const kit of KITS) {
@@ -311,7 +301,7 @@ test('listing returns preset swatches and the latest user version without readin
   );
   assert.deepEqual(
     summaries.filter((entry) => entry.kind === 'preset').map((entry) => entry.id),
-    ['droidex', 'margin', 'gridline', 'basalt', 'potluck'],
+    ['droidex'],
   );
   // Auto leads the list as its own kind, so no preset reads as the default.
   assert.deepEqual([summaries[0].id, summaries[0].kind], ['auto', 'auto']);
@@ -331,7 +321,7 @@ test('listing leaves out a kit with a damaged header and keeps every other kit',
 
   const ids = (await listDesignSystems()).map((entry) => entry.id);
 
-  assert.deepEqual(ids.slice(0, 6), ['auto', 'droidex', 'margin', 'gridline', 'basalt', 'potluck']);
+  assert.deepEqual(ids.slice(0, 2), ['auto', 'droidex']);
   assert.ok(ids.includes('readable-kit'));
   assert.ok(!ids.includes('damaged-kit'));
   assert.equal(warn.mock.callCount(), 1);

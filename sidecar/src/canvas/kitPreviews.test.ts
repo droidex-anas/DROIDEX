@@ -10,10 +10,7 @@ import {
 import { discardProposal, proposeDesignSystem, readProposal } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { KitPreviews, kitExample } from './kitPreviews.js';
-import { BASALT_DESIGN_SYSTEM } from './presets/basalt/index.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
-import { MARGIN_DESIGN_SYSTEM } from './presets/margin/index.js';
-import { POTLUCK_DESIGN_SYSTEM } from './presets/potluck/index.js';
+import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
 
 pinScratchProfile();
@@ -40,13 +37,7 @@ function countingPreviews(
 
 /** Every preview the shipped kits have, in both modes. */
 async function presetPreviews(): Promise<{ ref: DesignSystemRef; item: string }[]> {
-  const systems = [
-    await readDesignSystem(LIGHT),
-    MARGIN_DESIGN_SYSTEM,
-    GRIDLINE_DESIGN_SYSTEM,
-    BASALT_DESIGN_SYSTEM,
-    POTLUCK_DESIGN_SYSTEM,
-  ];
+  const systems = [AUTO_DESIGN_SYSTEM, await readDesignSystem(LIGHT)];
   return systems.flatMap(({ id, version, sections }) =>
     (['light', 'dark'] as const).flatMap((mode) =>
       sections.flatMap((section) =>

@@ -204,9 +204,10 @@ If a screen has more than three colours besides the neutrals, something is decor
 
 ## Illustrations, frames and design systems
 
-- **Illustrations follow stageshow.** A kit cover, a picker tile, an empty-state picture or a demo inside a document is a faux product shot built to the stageshow skill: a believable screen, a hard crop, real words only where the story is, no plate behind the window and no stock AI decoration.
-- **Agent frames look like a serious product.** What the agent draws on the canvas uses real icons and brand marks, real window chrome and final copy. No lorem ipsum, placeholder logos, a letter in a coloured square, or "Button" as a label.
+- **Illustrations are real product screens.** A kit cover, a picker tile, an empty-state picture or a demo inside a document shows the product's own screen as it would ship, cropped hard to what it is about: real words and honest data on the subject, placeholder bars for the rest, no lorem, no plate behind it, no device frame or browser window unless that chrome is the product, and no stock AI decoration. It fills its box exactly, sized in pixels, never to the window.
+- **Agent frames look like a serious product.** What the agent draws on the canvas uses real icons and brand marks, the product's own chrome and final copy. No lorem ipsum, placeholder logos, a letter in a coloured square, or "Button" as a label.
 - **Token names read as the standard ones.** A design system shows `accent`, `radius-card`, `shadow-md`, never the `--ds-` prefix it is stored under. The full `var(--ds-…)` is only in the row's tooltip and what Copy reference copies.
+- **A design system is whole.** Every colour has light and dark values, type sizes come with weights and line heights in fonts that load, the key tokens and each primitive carry a usage note, and a cover and a few demos show the kit applied. Every scale reads in order, smallest first, and the kit has one rules note.
 - **Documents name no author.** A design system document, its notes and an agent proposal never say who wrote or proposed them.
 
 ## Before shipping a screen

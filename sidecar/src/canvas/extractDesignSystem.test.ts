@@ -11,12 +11,10 @@ import {
 } from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
 import { STARTER_TOKENS } from './presets/starter.js';
+import { PRICING_TSX } from '../testing/sampleKit.js';
 
 pinScratchProfile();
-
-const PRICING_TSX = GRIDLINE_DESIGN_SYSTEM.examples['PricingCard.tsx'];
 
 function save(system: DesignSystem) {
   return saveDesignSystem(system, {
