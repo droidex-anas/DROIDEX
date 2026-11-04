@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { expect, test } from '@playwright/test';
-import { HEY_TSX } from '../../sidecar/src/canvas/presets/starter';
+import { readDesignSystem } from '../../sidecar/src/canvas/designSystems';
 import {
   PREVIEW_STARTED,
   previewNonce,
@@ -29,8 +29,15 @@ function isRect(value: unknown): value is { x: number; y: number; width: number;
   );
 }
 
+const BUTTON_NAME = `(button) => button.getAttribute('aria-label') ?? button.textContent?.trim()`;
+
+const button = (name: string): string =>
+  `[...document.querySelectorAll("button")].find(button => (${BUTTON_NAME})(button) === ${JSON.stringify(name)})`;
+
 test('a kit dialog keeps keyboard focus in the real preview guest and returns it after closing', async () => {
-  const design = await compileDesign({ 'main.tsx': HEY_TSX });
+  const example = (await readDesignSystem({ id: 'droidex', version: 1 })).examples['Dialog.tsx'];
+  assert.ok(example);
+  const design = await compileDesign({ 'main.tsx': example });
 
   await withCanvasHost(async (app, page) => {
     const guestId = await mountPreviewGuest(page);
@@ -45,7 +52,7 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
         { id: guestId, code: script },
       );
     await expect
-      .poll(() => generated('Boolean(document.querySelector("[role=tab]"))'), {
+      .poll(() => generated('Boolean(document.querySelector("dialog")?.open)'), {
         timeout: 20_000,
       })
       .toBe(true);
@@ -53,8 +60,8 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
     await focusHost(app);
 
     // A press reaches the design's process after mouse.click returns, so a
-    // control the previous press reveals (a tab's panel, the dialog's buttons)
-    // can still be hidden, with an empty box at the origin. Wait until it shows.
+    // control the previous press reveals (the dialog's buttons) can still be
+    // hidden, with an empty box at the origin. Wait until it shows.
     const click = async (expression: string): Promise<void> => {
       let rect: unknown;
       await expect
@@ -76,105 +83,44 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
     const active = () =>
       generated(`(() => ({
         open: document.querySelector('dialog')?.open,
-        tag: document.activeElement?.tagName,
-        text: document.activeElement?.tagName === 'BUTTON' ? document.activeElement.textContent?.trim() : null,
-        placeholder: document.activeElement?.getAttribute('placeholder'),
+        focused: document.activeElement?.tagName === 'BUTTON' ? (${BUTTON_NAME})(document.activeElement) : document.activeElement?.tagName,
         inDialog: document.querySelector('dialog')?.contains(document.activeElement),
         hasFocus: document.hasFocus(),
       }))()`);
+    const focused = async () => ((await active()) as { focused: unknown }).focused;
     const layout = () =>
       generated(`(() => ({
         clientWidth: document.documentElement.clientWidth,
-        cardLeft: document.querySelector('.ds-card')?.getBoundingClientRect().left,
+        openerLeft: ${button('Delete chat')}?.getBoundingClientRect().left + window.scrollX,
       }))()`);
 
-    await click('document.querySelectorAll("[role=tab]")[1]');
+    // The example opens with its dialog showing.
+    await click(button('Cancel'));
+    await expect.poll(() => generated('document.querySelector("dialog")?.open')).toBe(false);
     const layoutBeforeDialog = await layout();
-    await click(
-      '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',
-    );
+
+    await click(button('Delete chat'));
     await expect
       .poll(() => active())
-      .toEqual({
-        open: true,
-        tag: 'BUTTON',
-        text: 'Close',
-        placeholder: null,
-        inDialog: true,
-        hasFocus: true,
-      });
+      .toEqual({ open: true, focused: 'Close dialog', inDialog: true, hasFocus: true });
     assert.deepEqual(await layout(), layoutBeforeDialog);
     await page.keyboard.press('Tab');
-    assert.equal(
-      await generated(
-        'document.activeElement?.tagName === "BUTTON" ? document.activeElement.textContent?.trim() : null',
-      ),
-      'Try it',
-    );
+    assert.equal(await focused(), 'Cancel');
     await page.keyboard.press('Tab');
-    assert.equal(
-      await generated(
-        'document.activeElement?.tagName === "BUTTON" ? document.activeElement.textContent?.trim() : null',
-      ),
-      'Close',
-    );
+    assert.equal(await focused(), 'Delete');
+    await page.keyboard.press('Tab');
+    assert.equal(await focused(), 'Close dialog');
     await page.keyboard.press('Shift+Tab');
-    assert.equal(
-      await generated(
-        'document.activeElement?.tagName === "BUTTON" ? document.activeElement.textContent?.trim() : null',
-      ),
-      'Try it',
-    );
+    assert.equal(await focused(), 'Delete');
     await page.keyboard.press('Escape');
     await expect
       .poll(() => active())
-      .toEqual({
-        open: false,
-        tag: 'BUTTON',
-        text: 'How it works',
-        placeholder: null,
-        inDialog: false,
-        hasFocus: true,
-      });
+      .toEqual({ open: false, focused: 'Delete chat', inDialog: false, hasFocus: true });
 
-    await click(
-      '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',
-    );
-    await click(
-      '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "Try it")',
-    );
+    await click(button('Delete chat'));
+    await click(button('Delete'));
     await expect
       .poll(() => active())
-      .toEqual({
-        open: false,
-        tag: 'INPUT',
-        text: null,
-        placeholder: 'How should we call you?',
-        inDialog: false,
-        hasFocus: true,
-      });
-
-    await click(
-      '[...document.querySelectorAll("button")].find(button => button.textContent?.includes("Get started"))',
-    );
-    await expect.poll(() => generated('document.querySelector("input")?.disabled')).toBe(true);
-    await click('document.querySelectorAll("[role=tab]")[1]');
-    await click(
-      '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "How it works")',
-    );
-    await click(
-      '[...document.querySelectorAll("button")].find(button => button.textContent?.trim() === "Try it")',
-    );
-    await expect
-      .poll(() => active())
-      .toEqual({
-        open: false,
-        tag: 'BUTTON',
-        text: 'Start over',
-        placeholder: null,
-        inDialog: false,
-        hasFocus: true,
-      });
-    assert.equal(await generated('document.activeElement?.matches(":disabled")'), false);
+      .toEqual({ open: false, focused: 'Delete chat', inDialog: false, hasFocus: true });
   });
 });
