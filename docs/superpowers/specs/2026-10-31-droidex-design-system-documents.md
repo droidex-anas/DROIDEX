@@ -1,6 +1,6 @@
 # DROIDEX design system documents
 
-Status: proposed. Nothing in this document is implemented yet. It supersedes two paragraphs of the [Canvas design specification](./2026-10-05-droidex-canvas-design.md) §10, **Choosing and managing systems** and **How a kit is written**, and the Manage design systems dialog they describe. The rest of §10 (Auto, the presets, the lift/press and no-layout-shift rules, per-request pinning, apply, images) still holds.
+Status: implemented in v1.7.0. It supersedes two paragraphs of the [Canvas design specification](./2026-10-05-droidex-canvas-design.md) §10, **Choosing and managing systems** and **How a kit is written**, and the Manage design systems dialog they describe, which v1.7.0 removes. The rest of §10 (Auto, the presets, the lift/press and no-layout-shift rules, per-request pinning, apply, images) still holds.
 
 Execution plan: [design system documents plan](../plans/2026-10-31-droidex-design-system-documents.md).
 
