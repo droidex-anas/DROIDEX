@@ -123,7 +123,7 @@ export function DesignSystemDocument({
                 void show(system.version ?? 'latest');
               }}
             />
-            <CanvasAction label="Back to board" onClick={onBack} />
+            <CanvasAction label={canvasKey === null ? 'Close' : 'Back to board'} onClick={onBack} />
           </div>
         </CanvasPlate>
       )}
@@ -333,6 +333,7 @@ function KitDocument({
           })
         }
         onBack={onBack}
+        hasBoard={canvasKey !== null}
         onShowVersion={(version) => {
           void onShow(version);
         }}
