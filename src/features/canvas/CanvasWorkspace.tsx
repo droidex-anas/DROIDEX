@@ -19,7 +19,7 @@ import { canvasClient as canvas, frameRemovals } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
 import type { CanvasBoardHandle } from './CanvasBoard';
-import { CanvasBoardMount, type ShownDocument } from './CanvasBoardMount';
+import { CanvasBoardMount, DocumentMount, type ShownDocument } from './CanvasBoardMount';
 import {
   CanvasAction,
   CanvasEmptyState,
@@ -360,6 +360,8 @@ function CanvasBody({
         </CanvasPlate>
       );
     case 'unattached':
+      if (shownDocument)
+        return <DocumentMount appSessionId={appSessionId} canvasId={null} shown={shownDocument} />;
       if (toolsMissing) return <CanvasToolsMissing canvasId={null} />;
       return (
         <CanvasEmptyState
