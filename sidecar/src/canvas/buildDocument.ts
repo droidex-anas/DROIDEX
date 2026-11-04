@@ -24,7 +24,7 @@ export type DocumentPart =
 
 type NotePart = Extract<DocumentPart, { kind: 'note' }>;
 
-export interface TokenGroup {
+interface TokenGroup {
   kind: TokenKind;
   title: string;
   names: string[];

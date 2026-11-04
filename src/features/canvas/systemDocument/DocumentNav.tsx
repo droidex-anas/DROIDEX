@@ -84,7 +84,7 @@ function sectionIcon(entry: NavEntry): LucideIcon {
   return KIND_ICON[entry.kind] ?? TITLE_ICON.get(titleKey) ?? Hash;
 }
 
-export function DocumentNav({
+function DocumentNav({
   entries,
   active,
   query,

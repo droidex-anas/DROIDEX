@@ -69,7 +69,7 @@ export function commandLifecycle(message: SDKMessage): { uuid: string; state: st
   return { uuid: frame.command_uuid, state: frame.state };
 }
 
-export function turnFailure(subtype: string, errors: string[]): string {
+function turnFailure(subtype: string, errors: string[]): string {
   // The CLI's own diagnostics are bracketed internals; the subtype is what a
   // user can act on.
   const detail = errors.filter((error) => !error.startsWith('[')).join('\n');

@@ -46,7 +46,7 @@ export function shadowSummary(layers: ShadowLayer[]): string {
   return `${String(layers.length)} ${layers.length === 1 ? 'layer' : 'layers'} · ${alpha}`;
 }
 
-export function formatLength({ amount, unit }: ShadowLength): string {
+function formatLength({ amount, unit }: ShadowLength): string {
   if (amount === 0 && unit === '') return '0';
   return `${String(amount)}${unit || 'px'}`;
 }
@@ -85,7 +85,7 @@ function formatLayer(layer: ShadowLayer): string {
 }
 
 /** A colour's alpha from 0 to 1, or null for one whose alpha cannot be rewritten, such as a name or a var(). */
-export function colorAlpha(color: string): number | null {
+function colorAlpha(color: string): number | null {
   if (HEX.test(color)) {
     const digits = color.slice(1);
     if (digits.length === 4) return parseInt(digits[3].repeat(2), 16) / 255;
@@ -103,7 +103,7 @@ export function colorAlpha(color: string): number | null {
 }
 
 /** `color` with `alpha`, in the colour's own notation. Takes only a colour `colorAlpha` reads. */
-export function withColorAlpha(color: string, alpha: number): string {
+function withColorAlpha(color: string, alpha: number): string {
   if (HEX.test(color)) {
     const digits = color.slice(1);
     // #rgb and #rgba write each digit once.
