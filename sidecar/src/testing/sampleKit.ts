@@ -32,7 +32,7 @@ export default function PricingCard() {
   const [chosen, setChosen] = useState('Starter');
   const price = (seat: number) => (billing === 'yearly' ? seat * 10 : seat);
   return (
-    <main className="flex min-h-screen flex-col items-center gap-6 bg-[color:var(--ds-canvas)] px-10 py-12">
+    <main className="flex h-[600px] w-[1040px] flex-col items-center gap-6 overflow-hidden bg-[color:var(--ds-canvas)] px-10 py-12">
       <div className="flex flex-col items-center gap-2 text-center">
         <h1>Choose a plan</h1>
         <p className="text-[color:var(--ds-fg-muted)]">Every plan includes unlimited invoices and the full API.</p>
@@ -87,7 +87,7 @@ const COVER_TSX = `import { Badge, Button, Card } from '@droidex/design-system';
 
 export default function Cover() {
   return (
-    <main className="flex min-h-screen items-center justify-between gap-10 bg-[color:var(--ds-canvas)] px-16">
+    <main className="flex h-[480px] w-[1200px] items-center justify-between gap-10 overflow-hidden bg-[color:var(--ds-canvas)] px-16">
       <div className="flex max-w-md flex-col gap-4">
         <Badge>Sample</Badge>
         <h1>Plans a team reads at a glance</h1>

@@ -48,7 +48,7 @@ import { Button } from '@droidex/design-system';
 
 export default function ButtonStates() {
   return (
-    <main className="flex min-h-screen flex-col justify-center gap-4 p-6">
+    <main className="flex h-[200px] w-[640px] flex-col justify-center gap-4 overflow-hidden p-6">
       <div className="flex flex-wrap items-center gap-3">
         <Button>
           Continue
@@ -81,7 +81,7 @@ import { Input } from '@droidex/design-system';
 export default function InputStates() {
   const [email, setEmail] = useState('');
   return (
-    <main className="grid min-h-screen grid-cols-2 content-center gap-6 p-6">
+    <main className="grid h-[360px] w-[640px] grid-cols-2 content-center gap-6 overflow-hidden p-6">
       <Input
         label="Email"
         type="email"
@@ -106,7 +106,7 @@ export default function InputStates() {
 
 export default function CardStates() {
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
+    <main className="flex h-[320px] w-[640px] items-center justify-center overflow-hidden p-6">
       <Card className="flex w-full max-w-md flex-col gap-4">
         <div className="space-y-2">
           <h2>Weekly summary</h2>
@@ -132,7 +132,7 @@ export default function CardStates() {
 
 export default function BadgeStates() {
   return (
-    <main className="flex min-h-screen flex-wrap items-center justify-center gap-3 p-6">
+    <main className="flex h-[160px] w-[480px] flex-wrap items-center justify-center gap-3 overflow-hidden p-6">
       <Badge>New</Badge>
       <Badge>In review</Badge>
       <Badge>Shipped</Badge>
@@ -151,7 +151,7 @@ import { Tabs } from '@droidex/design-system';
 export default function TabsStates() {
   const [tab, setTab] = useState('overview');
   return (
-    <main className="min-h-screen p-6">
+    <main className="h-[280px] w-[640px] overflow-hidden p-6">
       <Tabs
         label="Project"
         value={tab}
@@ -177,7 +177,7 @@ import { Button, Dialog } from '@droidex/design-system';
 export default function DialogStates() {
   const [open, setOpen] = useState(true);
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
+    <main className="flex h-[420px] w-[720px] items-center justify-center overflow-hidden p-6">
       <Button variant="secondary" onClick={() => setOpen(true)}>
         Rename project
       </Button>
