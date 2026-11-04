@@ -515,7 +515,7 @@ function saveSample() {
 test('export writes the kit into the chosen empty folder only, and its modes read back', async (t) => {
   const { parent, destination } = await exportFolder(t);
   await saveSample();
-  assert.deepEqual(await exportDesignSystem(SAMPLE_REF, destination), { filesWritten: 22 });
+  assert.deepEqual(await exportDesignSystem(SAMPLE_REF, destination), { filesWritten: 23 });
   assert.deepEqual((await readdir(parent)).sort(), ['chosen', 'neighbour.txt']);
   const primitives = ['Badge', 'Button', 'Card', 'Dialog', 'Input', 'Tabs'];
   assert.deepEqual(
@@ -530,6 +530,7 @@ test('export writes the kit into the chosen empty folder only, and its modes rea
       ),
       'src/fonts.css',
       'src/fonts/Inter-OFL.txt',
+      'src/fonts/Silkscreen-OFL.txt',
       'src/index.tsx',
       'src/tokens.css',
     ].sort(),
@@ -581,5 +582,5 @@ test('only Electron main’s token reaches the export route', async (t) => {
   assert.deepEqual(await readdir(destination), []);
   const exported = await post('host-token', request);
   assert.equal(exported.status, 200);
-  assert.deepEqual(await exported.json(), { filesWritten: 22 });
+  assert.deepEqual(await exported.json(), { filesWritten: 23 });
 });
