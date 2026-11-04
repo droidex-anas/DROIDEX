@@ -21,17 +21,17 @@ import {
   type DesignSystem,
 } from './designSystems.js';
 import { proposalPath } from './designSystemStorage.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
+import { SAMPLE_KIT } from '../testing/sampleKit.js';
 
 pinScratchProfile();
 
 const announced: string[] = [];
 onDesignSystemChange((id) => announced.push(id));
 
-/** A user kit at version 1, copied from DROIDEX. */
+/** A user kit at version 1. */
 async function userKit(id: string): Promise<DesignSystem> {
   await saveDesignSystem(
-    { ...GRIDLINE_DESIGN_SYSTEM, id, name: 'Studio' },
+    { ...SAMPLE_KIT, id },
     { mutationId: `${id}-v1`, baseVersion: null, savedBy: { actor: 'user' } },
   );
   return readDesignSystem({ id, version: 1 });
@@ -190,7 +190,8 @@ test('discard removes the proposal and is announced; presets and deleted kits ta
     [1],
   );
 
-  await assert.rejects(propose(GRIDLINE_DESIGN_SYSTEM, 'preset'), {
+  const preset = await readDesignSystem({ id: 'droidex', version: 1 });
+  await assert.rejects(propose(preset, 'preset'), {
     code: 'preset_read_only',
   });
   await setDesignSystemDeleted('discarded', true, 'delete');

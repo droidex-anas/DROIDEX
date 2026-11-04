@@ -2,12 +2,13 @@ import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
 import type { CompilerRequest, DesignCompileInput } from '../canvas/compiler.js';
-import { GRIDLINE_DESIGN_SYSTEM } from '../canvas/presets/gridline/index.js';
+import { AUTO_DESIGN_SYSTEM_REF } from '../canvas/designSystems.js';
 import type { SourceFiles } from '../canvas/protocol.js';
 
 /**
- * One design's compile request on a preset authored on the shared primitives,
- * so it does not change when DROIDEX is exported again, with the kit rule off unless named.
+ * One design's compile request under Auto, which is authored in code on the
+ * shared primitives, so it does not change when DROIDEX is exported again.
+ * Auto is never checked against a kit: a suite that needs the kit rule names its kit.
  */
 export function compileInput(
   files: SourceFiles,
@@ -19,11 +20,7 @@ export function compileInput(
     revisionId: 'revision-1',
     generation: 1,
     files,
-    designSystem: {
-      id: GRIDLINE_DESIGN_SYSTEM.id,
-      version: GRIDLINE_DESIGN_SYSTEM.version,
-      mode: 'dark',
-    },
+    designSystem: { ...AUTO_DESIGN_SYSTEM_REF, mode: 'dark' },
     designSystemAdherence,
   };
 }

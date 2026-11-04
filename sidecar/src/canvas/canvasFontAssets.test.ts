@@ -18,14 +18,12 @@ test('kit fonts become one host asset each instead of artifact data URLs', async
   const inter = JSON.parse(await readFile(join(fontDirectory, 'inter.json'), 'utf8')) as {
     css: string;
   };
-  const schibsted = JSON.parse(
-    await readFile(join(fontDirectory, 'schibsted-grotesk.json'), 'utf8'),
-  ) as { css: string };
-  const source = inter.css + schibsted.css;
+  const second = Buffer.from('wOF2second-font').toString('base64');
+  const source = `${inter.css}@font-face { font-family: Second; src: url(data:font/woff2;base64,${second}); }`;
   const hosted = await hostKitFonts(source);
   assert.equal(hosted.includes('data:font/woff2;base64,'), false);
   assert.equal((hosted.match(/droidex-canvas-preview:\/\/preview\/font\//g) ?? []).length, 2);
-  assert.ok(Buffer.byteLength(source) - Buffer.byteLength(hosted) > 100_000);
+  assert.ok(Buffer.byteLength(hosted) * 10 < Buffer.byteLength(source));
   assert.equal((await readdir(join(profile, 'canvas-fonts'))).length, 2);
   assert.equal(await hostKitFonts(source), hosted);
   const quoted = await hostKitFonts(inter.css.replace(/url\((data:[^)]*)\)/, 'url("$1")'));

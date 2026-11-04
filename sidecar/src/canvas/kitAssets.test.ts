@@ -15,7 +15,7 @@ import { readDesignSystem, saveDesignSystem, type DesignSystem } from './designS
 import { systemsRoot } from './designSystemStorage.js';
 import { importKitImage, kitImageImportSchema } from './kitAssets.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
+import { SAMPLE_KIT } from '../testing/sampleKit.js';
 
 pinScratchProfile();
 
@@ -63,11 +63,11 @@ test('kit image imports apply the canvas image checks and keep one copy', async 
 test('a kit document names only images that were imported', async (t) => {
   const assetId = createHash('sha256').update('not imported').digest('hex');
   const kit = (cover: DesignSystem['cover'], logo: string): Omit<DesignSystem, 'version'> => ({
-    ...structuredClone(GRIDLINE_DESIGN_SYSTEM),
+    ...structuredClone(SAMPLE_KIT),
     id: 'kit-with-images',
     cover,
     sections: [
-      ...GRIDLINE_DESIGN_SYSTEM.sections,
+      ...SAMPLE_KIT.sections,
       {
         kind: 'assets',
         id: 'brand',

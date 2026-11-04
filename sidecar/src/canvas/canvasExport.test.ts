@@ -15,7 +15,7 @@ import { kitGuidance } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
+import { SAMPLE_KIT } from '../testing/sampleKit.js';
 import type { DesignSystemRef } from './protocol.js';
 
 const canvasId = 'export-canvas';
@@ -95,12 +95,12 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
   const fontId = createHash('sha256').update(font).digest('hex');
   const kit = await saveDesignSystem(
     {
-      ...GRIDLINE_DESIGN_SYSTEM,
+      ...SAMPLE_KIT,
       id: 'export-kit',
       name: 'Export kit',
       files: {
-        ...GRIDLINE_DESIGN_SYSTEM.files,
-        'tokens.css': `${GRIDLINE_DESIGN_SYSTEM.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
+        ...SAMPLE_KIT.files,
+        'tokens.css': `${SAMPLE_KIT.files['tokens.css']}\n@font-face { font-family: Export; src: url(data:font/woff2;base64,${font.toString('base64')}); }`,
         'fonts/OFL.txt': 'Open Font License',
       },
     },
@@ -305,16 +305,16 @@ test('kit images travel with canvas and kit exports, one file per image', async 
   await ownImage(canvasOwner(root), PNG);
   const kit = await saveDesignSystem(
     {
-      ...GRIDLINE_DESIGN_SYSTEM,
+      ...SAMPLE_KIT,
       id: 'image-kit',
       name: 'Image kit',
       cover: { kind: 'image', assetId: coverId },
       files: {
-        ...GRIDLINE_DESIGN_SYSTEM.files,
-        'tokens.css': `${GRIDLINE_DESIGN_SYSTEM.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
+        ...SAMPLE_KIT.files,
+        'tokens.css': `${SAMPLE_KIT.files['tokens.css']}\n.texture { background: url(kit-asset:${textureId}); }`,
       },
       examples: {
-        ...GRIDLINE_DESIGN_SYSTEM.examples,
+        ...SAMPLE_KIT.examples,
         'hero/cover.tsx': `export default () => <img src="kit-asset:${textureId}" />;`,
       },
     },

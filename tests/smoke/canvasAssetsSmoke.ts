@@ -16,12 +16,10 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
     async (app, page) => {
       const profile = await app.evaluate(({ app }) => app.getPath('userData'));
       const fontRoot = path.join(profile, 'canvas-fonts');
-      const schibsted = JSON.parse(
-        await readFile('sidecar/src/canvas/presets/fonts/schibsted-grotesk.json', 'utf8'),
+      const inter = JSON.parse(
+        await readFile('sidecar/src/canvas/presets/fonts/inter.json', 'utf8'),
       ) as { css: string };
-      const encodedFont = /url\(data:font\/woff2;base64,([A-Za-z0-9+/=]+)\)/.exec(
-        schibsted.css,
-      )?.[1];
+      const encodedFont = /url\(data:font\/woff2;base64,([A-Za-z0-9+/=]+)\)/.exec(inter.css)?.[1];
       assert.ok(encodedFont);
       const font = Buffer.from(encodedFont, 'base64');
       const fontId = createHash('sha256').update(font).digest('hex');
@@ -163,6 +161,14 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         }, failedCanvas.canvasId);
         assert.equal(storageFailure?.code, 'storage_failed');
         assert.equal(storageFailure.message.includes(chosen), false);
+        // An imported kit starts from the starter's files, which embed Inter.
+        const kit = await send({
+          type: 'canvas.importDesignSystem',
+          mutationId: 'import-asset-kit',
+          name: 'Offline fonts',
+          source: { kind: 'cssOrTailwind', text: ':root { --primary: #3355ff; }' },
+        });
+        assert.ok(kit.kind === 'designSystemSaved');
         const added = await send({
           type: 'canvas.create',
           canvasId,
@@ -174,7 +180,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                 name: 'Owned assets',
                 width: 320,
                 height: 240,
-                designSystem: { id: 'margin', version: 1, mode: 'light' },
+                designSystem: { ...kit.ref, mode: 'light' },
               },
             ],
           },
@@ -191,7 +197,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
             designId: frame.designId,
             expectedRevisionId: null,
             files: {
-              'main.tsx': `export default function Assets() { return <div style={{fontFamily:'Schibsted Grotesk, sans-serif'}}><img id="owned-image" src="canvas-asset:${owned.assetId}" /><span id="fonted">Offline font</span></div> }`,
+              'main.tsx': `export default function Assets() { return <div style={{fontFamily:'Inter, sans-serif'}}><img id="owned-image" src="canvas-asset:${owned.assetId}" /><span id="fonted">Offline font</span></div> }`,
             },
             deletedPaths: [],
           },
@@ -283,12 +289,10 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                   const image = document.getElementById('owned-image');
                   if (!image) return { image: false, font: false };
                   try {
-                    const fonts = await document.fonts.load('16px "Schibsted Grotesk"');
-                    const headings = await document.fonts.load('16px "Newsreader"');
+                    const fonts = await document.fonts.load('16px "Inter"');
                     return {
                       image: image.complete && image.naturalWidth === 1,
                       font: fonts.length === 1 && fonts[0].status === 'loaded',
-                      headingFont: headings.length === 1 && headings[0].status === 'loaded',
                     };
                   } catch (error) {
                     return { image: image.complete && image.naturalWidth === 1, font: String(error) };
@@ -297,7 +301,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
               }, guestId),
             { timeout: 20_000, intervals: [200] },
           )
-          .toEqual({ image: true, font: true, headingFont: true });
+          .toEqual({ image: true, font: true });
         await expect
           .poll(() =>
             app.evaluate(
@@ -349,8 +353,8 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
               return frame.executeJavaScript(`(async () => {
                 const text = document.getElementById('fonted');
                 if (!text) return null;
-                try { await document.fonts.load('16px "Schibsted Grotesk"'); } catch {}
-                const face = [...document.fonts].find((font) => font.family === 'Schibsted Grotesk');
+                try { await document.fonts.load('16px "Inter"'); } catch {}
+                const face = [...document.fonts].find((font) => font.family === 'Inter');
                 return { text: text.textContent, fallback: getComputedStyle(text).fontFamily.includes('sans-serif'), status: face?.status };
               })()`);
             }, fallbackGuest),

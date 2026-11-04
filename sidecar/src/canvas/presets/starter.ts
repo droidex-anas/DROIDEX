@@ -1,8 +1,7 @@
-// The notes, previews and examples the presets authored in code share: the rules
-// that hold for any kit, and one note and one preview per shared primitive. Each
-// of those presets copies them into its own immutable version. A new kit that is not a copy (blank,
-// imported or extracted) starts from the same primitives with the starter's
-// token values and files.
+// The notes, previews and examples Auto and every new kit that is not a copy
+// (blank, imported or extracted) share: the rules that hold for any kit, and one
+// note and one preview per shared primitive. Auto pairs them with its neutral
+// tokens; a new kit starts from the starter's token values and files.
 
 import type { DocumentPart } from '../buildDocument.js';
 import inter from './fonts/inter.json' with { type: 'json' };

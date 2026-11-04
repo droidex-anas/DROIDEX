@@ -233,17 +233,21 @@ const worker = new CompilerWorker();
 after(() => worker.terminate());
 
 test('the compiler fails a straying build under strict and builds it with notes under guide', async () => {
-  const pinned = await readDesignSystem(compileInput(STRAYING).designSystem);
+  const designSystem = { id: 'droidex', version: 1, mode: 'dark' } as const;
+  const pinned = await readDesignSystem(designSystem);
   const expected = (rule: 'guide' | 'strict') =>
     places(checkDesignSystemAdherence(STRAYING, pinned, rule).diagnostics);
   const guided = await worker.compile(
-    compileInput(STRAYING, 'guide'),
+    { ...compileInput(STRAYING, 'guide'), designSystem },
     new AbortController().signal,
   );
   assert.deepEqual(places(guided.diagnostics), expected('guide'));
 
   await assert.rejects(
-    worker.compile(compileInput(STRAYING, 'strict'), new AbortController().signal),
+    worker.compile(
+      { ...compileInput(STRAYING, 'strict'), designSystem },
+      new AbortController().signal,
+    ),
     (error) => {
       assert.ok(error instanceof CompileFailedError);
       assert.deepEqual(places(error.diagnostics), expected('strict'));

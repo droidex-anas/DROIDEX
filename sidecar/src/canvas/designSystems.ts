@@ -10,11 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { canvasError, staleDesignSystemBase, storageFailure } from './canvasError.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
-import { BASALT_DESIGN_SYSTEM } from './presets/basalt/index.js';
 import { DROIDEX_KIT } from './presets/droidexKit.js';
-import { GRIDLINE_DESIGN_SYSTEM } from './presets/gridline/index.js';
-import { MARGIN_DESIGN_SYSTEM } from './presets/margin/index.js';
-import { POTLUCK_DESIGN_SYSTEM } from './presets/potluck/index.js';
 import { announceDesignSystemChange } from './designSystemChanges.js';
 import { convertLegacyVersion, legacySummary } from './designSystemConversion.js';
 import {
@@ -167,7 +163,7 @@ const headerSchema = z
   .strict();
 type VersionHeader = z.infer<typeof headerSchema>;
 
-/** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
+/** A row of the design-system list: Auto, the DROIDEX preset, then each user kit's latest version. */
 export interface DesignSystemSummary {
   id: string;
   version: number;
@@ -205,15 +201,10 @@ const savedVersionSchema = z
   .strict();
 const HEADER_BYTES = 8192;
 
-// Parsing snapshots the authored and exported kits and validates their limits at startup.
-const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [
-  AUTO_DESIGN_SYSTEM,
-  DROIDEX_KIT,
-  MARGIN_DESIGN_SYSTEM,
-  GRIDLINE_DESIGN_SYSTEM,
-  BASALT_DESIGN_SYSTEM,
-  POTLUCK_DESIGN_SYSTEM,
-].map((system) => designSystemSchema.parse(system));
+// Parsing snapshots Auto and the exported DROIDEX kit and validates their limits at startup.
+const BUILT_IN_DESIGN_SYSTEMS: readonly DesignSystem[] = [AUTO_DESIGN_SYSTEM, DROIDEX_KIT].map(
+  (system) => designSystemSchema.parse(system),
+);
 
 /**
  * What a request runs under when the user chose no kit and pinned no frame:
@@ -231,7 +222,7 @@ export function designSystemKind(id: string): DesignSystemSummary['kind'] {
 }
 
 /**
- * Auto, the presets, then the latest published version of each user kit that
+ * Auto, the DROIDEX preset, then the latest published version of each user kit that
  * is not deleted; reads only headers. A kit whose header is damaged is left out
  * and logged, so one bad kit never hides the others.
  */

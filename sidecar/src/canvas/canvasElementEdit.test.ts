@@ -117,7 +117,7 @@ test('a style edit answers what it resolved to, and its retry answers the same f
     },
   });
 
-  await canvas.handle(command('req-style', 'm-style', '8px'));
+  await canvas.handle(command('req-style', 'm-style', '0.5rem'));
   const first = okReply(canvas, 'req-style');
   assert.ok(first.kind === 'edited');
   assert.deepEqual(first.resolution, { kind: 'token', token: '--ds-space-2' });
@@ -130,7 +130,7 @@ test('a style edit answers what it resolved to, and its retry answers the same f
   );
 
   // The edit moved the revision on, so only the ledger can answer this retry.
-  await canvas.handle(command('req-style-retry', 'm-style', '8px'));
+  await canvas.handle(command('req-style-retry', 'm-style', '0.5rem'));
   assert.deepEqual(okReply(canvas, 'req-style-retry'), first);
   await canvas.handle(command('req-style-stale', 'm-style-raw', '13px'));
   assert.equal(errorOf(canvas, 'req-style-stale').code, 'stale_revision');
