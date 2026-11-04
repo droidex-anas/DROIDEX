@@ -19,16 +19,6 @@
   font-family: var(--kit-heading-font);
 }
 
-/* In the kit's notes, inline code naming a file is set in mono, where mono
-   reads as precision; any other inline code keeps the text's face. The note's
-   editor marks the path around its inline code. */
-.kit-text .inline-code[data-file-path],
-.kit-text [data-file-path] > .inline-code {
-  font-family: theme('fontFamily.mono');
-  font-size: var(--code-font-size);
-  font-weight: theme('fontWeight.normal');
-}
-
 /* A note's editor is laid out as the note renders (Markdown.tsx), so the text
    keeps its place when a click turns one into the other. noteFieldLayout marks
    the first line of a block that follows text directly, a later list item, a
@@ -50,6 +40,13 @@
 
 .kit-note-field .cm-line:has(> br:only-child) {
   line-height: theme('spacing.3');
+}
+
+/* A table's lines are edited in the note's face, as mono is only for code; the
+   composer keeps mono, which holds its pipes in a column. */
+.kit-note-field .cm-line.cm-md-table {
+  font-family: inherit;
+  font-size: inherit;
 }
 
 .kit-note-field .kit-note-block {
