@@ -14,6 +14,7 @@ const TOOL_SURFACES: Record<UtilityTool, LazySurface> = {
   canvas: 'canvas',
   agents: 'agents',
   threads: 'threads',
+  background: 'background',
   side: 'sideChats',
 };
 

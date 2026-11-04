@@ -400,7 +400,7 @@ export function MessageFeed({
                   density={density}
                   inlineDiffs={inlineDiffs}
                   isFinalResponse={isCopyableFinalResponse(item.key, finalResponseState, pending)}
-                  waitingOnThreads={!pending && index === lastReplyIdx}
+                  isLatestReply={!pending && index === lastReplyIdx}
                   onFork={fork ? callbacks.onFork : undefined}
                   forkPointId={fork?.forkPointId}
                   forking={fork ? forking : undefined}

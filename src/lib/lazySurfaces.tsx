@@ -79,6 +79,10 @@ export const LAZY_SURFACE_LOADERS = {
     const module = await import('../features/projects/ThreadsWorkspace');
     return { default: module.ThreadsWorkspace };
   },
+  background: async () => {
+    const module = await import('../features/background/BackgroundWorkspace');
+    return { default: module.BackgroundWorkspace };
+  },
   threadNotifier: async () => {
     const module = await import('../features/projects/ThreadAttentionNotifier');
     return { default: module.ThreadAttentionNotifier };
@@ -118,6 +122,7 @@ export const LazyCanvasColumnTabs = lazy(LAZY_SURFACE_LOADERS.canvasColumnTabs);
 export const LazyCanvasChatBootstrap = lazy(LAZY_SURFACE_LOADERS.canvasChatBootstrap);
 export const LazyCanvasTabName = lazy(LAZY_SURFACE_LOADERS.canvasTabName);
 export const LazyThreadsWorkspace = lazy(LAZY_SURFACE_LOADERS.threads);
+export const LazyBackgroundWorkspace = lazy(LAZY_SURFACE_LOADERS.background);
 export const LazyThreadAttentionNotifier = lazy(LAZY_SURFACE_LOADERS.threadNotifier);
 export const LazySideChatsWorkspace = lazy(LAZY_SURFACE_LOADERS.sideChats);
 export const LazySideChatWindow = lazy(LAZY_SURFACE_LOADERS.sideChatWindow);
@@ -136,6 +141,7 @@ export function utilityToolFallback(tool: UtilityTool) {
       return <PanelSkeleton title="canvas" />;
     case 'agents':
     case 'threads':
+    case 'background':
     case 'side':
       return <UtilityPaneSkeleton />;
   }

@@ -1,4 +1,5 @@
 import {
+  Activity,
   ChangesIcon,
   Files,
   Globe,
@@ -51,6 +52,15 @@ const CANVAS_TOOL_OPTION: UtilityToolOption = {
   shortcut: '',
 };
 
+// Opened from the line under a chat's last reply while its commands keep
+// processes running.
+const BACKGROUND_TOOL_OPTION: UtilityToolOption = {
+  tool: 'background',
+  label: 'Background',
+  icon: Activity,
+  shortcut: '',
+};
+
 // Opened by `/side`, `/btw`, or a chat's own side-chat action.
 const SIDE_TOOL_OPTION: UtilityToolOption = {
   tool: 'side',
@@ -62,6 +72,7 @@ const SIDE_TOOL_OPTION: UtilityToolOption = {
 export function utilityToolOption(tool: UtilityTool): UtilityToolOption {
   if (tool === 'agents') return AGENTS_TOOL_OPTION;
   if (tool === 'threads') return THREADS_TOOL_OPTION;
+  if (tool === 'background') return BACKGROUND_TOOL_OPTION;
   if (tool === 'side') return SIDE_TOOL_OPTION;
   if (tool === 'canvas') return CANVAS_TOOL_OPTION;
   return UTILITY_TOOL_OPTIONS.find((option) => option.tool === tool) ?? UTILITY_TOOL_OPTIONS[0];

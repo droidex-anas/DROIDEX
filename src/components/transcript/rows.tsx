@@ -10,7 +10,7 @@ import {
   isListingTool,
   isWebSearchTool,
   isWebFetchTool,
-  toolArgString,
+  shellCommandOf,
   type TodoStatus,
 } from '../../lib/tools';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
@@ -423,11 +423,7 @@ export function renderToolEvents(
           />,
         );
       } else if (cat === 'exec') {
-        const command =
-          toolArgString(e.toolArgs, 'command') ??
-          toolArgString(e.toolArgs, 'cmd') ??
-          toolArgString(e.toolArgs, 'script') ??
-          detail;
+        const command = shellCommandOf(e.toolArgs) ?? detail;
         // Detailed density shows the terminal body inline; other densities keep
         // a one-line row that expands to it (a live call shimmers until done).
         nodes.push(
