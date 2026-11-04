@@ -186,6 +186,36 @@ test('a change moves an existing token, and removals take items out by key', () 
   });
 });
 
+test('before puts a token just ahead of another in its group, so a scale reads in order', () => {
+  const sizes = (sections: DocumentSection[]) => {
+    const found = items(sections).find(
+      ({ item }) => item.kind === 'group' && item.title === 'Type sizes',
+    )?.item;
+    assert.ok(found?.kind === 'group');
+    return found.tokens.map((entry) => entry.name.replace('--ds-text-', ''));
+  };
+  const twoXs = {
+    set: 'token',
+    name: '--ds-text-2xs',
+    value: '0.625rem',
+    section: 'typography',
+    group: 'Type sizes',
+  } as const;
+  const inOrder = ['2xs', 'xs', 'sm', 'base', 'lg', 'xl'];
+
+  assert.deepEqual(sizes(apply({ ...twoXs, before: '--ds-text-xs' })), inOrder);
+  const moved = apply(twoXs, { set: 'token', name: '--ds-text-2xs', before: '--ds-text-xs' });
+  assert.deepEqual(sizes(moved), inOrder);
+  assert.deepEqual(token(moved, '--ds-text-2xs')?.token, {
+    name: '--ds-text-2xs',
+    value: '0.625rem',
+  });
+  assert.throws(() => apply({ ...twoXs, before: '--ds-accent' }), {
+    code: 'invalid_input',
+    message: /no --ds-accent in Type sizes/,
+  });
+});
+
 test('a save carries at most 200 changes, and an agent cannot bring an image of its own', () => {
   const change = { set: 'token', name: '--ds-accent', value: '#000' };
   assert.equal(documentChangesSchema.safeParse(Array(200).fill(change)).success, true);

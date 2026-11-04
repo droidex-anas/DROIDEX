@@ -2,9 +2,10 @@
 // §11). A change names its item by the document's natural key: a token by its
 // name, a note by its label, a preview by its title and an image by its name;
 // the sidecar assigns every id. A new token goes into the group and token
-// section its change names. Any other new item goes into the section its change
-// names, or else the first section of its kind, which is created at its
-// canonical place when the document has none.
+// section its change names, at the end or just before the token its `before`
+// names, which can also move an existing token. Any other new item goes
+// into the section its change names, or else the first section of its kind,
+// which is created at its canonical place when the document has none.
 
 import { z } from 'zod';
 import { SECTION_TITLES, uniqueId } from './buildDocument.js';
@@ -38,6 +39,11 @@ const changeSchema = z.union([
       note: noteSchema,
       section: z.enum(TOKEN_KINDS).optional(),
       group: titleSchema.optional().describe('The title of the token group, such as Accent.'),
+      before: tokenNameSchema
+        .optional()
+        .describe(
+          'A token in the same group to place this one just ahead of, keeping a scale in order.',
+        ),
     })
     .strict(),
   z
@@ -166,22 +172,28 @@ class DocumentEdit {
   }
 
   private setToken(change: TokenChange): void {
-    const found = this.findToken(change.name);
+    const { name, before } = change;
+    const found = this.findToken(name);
     const token = changedToken(found?.item, change);
-    if (!found) {
-      if (!change.section || !change.group)
-        throw refusal(`${change.name} is new, so name its section and group.`);
-      this.group(change.section, change.group).tokens.push(token);
+    const section = change.section ?? found?.section.kind;
+    const title = change.group ?? found?.group.title;
+    if (!section || !title) throw refusal(`${name} is new, so name its section and group.`);
+    if (found) {
+      const stays = section === found.section.kind && title === found.group.title;
+      if (stays && before === undefined) {
+        found.group.tokens[found.index] = token;
+        return;
+      }
+      this.takeToken(found);
+    }
+    const { tokens } = this.group(section, title);
+    if (before === undefined) {
+      tokens.push(token);
       return;
     }
-    const section = change.section ?? found.section.kind;
-    const title = change.group ?? found.group.title;
-    if (section === found.section.kind && title === found.group.title) {
-      found.group.tokens[found.index] = token;
-      return;
-    }
-    this.takeToken(found);
-    this.group(section, title).tokens.push(token);
+    const index = tokens.findIndex((other) => other.name === before);
+    if (index < 0) throw refusal(`There is no ${before} in ${title} to put ${name} before.`);
+    tokens.splice(index, 0, token);
   }
 
   private remove(kind: 'token' | KeyedKind, key: string): void {
