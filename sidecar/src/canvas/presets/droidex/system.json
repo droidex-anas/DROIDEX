@@ -38,14 +38,14 @@
           "kind": "note",
           "id": "3-interaction-note-2",
           "label": "3-interaction.md",
-          "body": "- Hover: one rung up the ramp (none → elevated → active), text one tone up, only under @media (hover: hover).\n- Pressed: buttons scale to 0.97 for 75ms. Toggles take the active fill.\n- Focus: a 1.5px --ds-focus outline on :focus-visible. Menu items show focus as a fill.\n- Disabled: 40% and not-allowed, with a tooltip saying why.\n- Invalid: danger-soft fill and a caption with the fix.\n- Hidden affordances keep their box: the caret, the row's … button and the tab's close appear on hover or focus without moving anything.\n\nMotion (--ds-ease is the app's smooth-out, 0.22 1 0.36 1): hover 150ms; menus 150ms rising 4px, close 100ms fade; dialogs 180ms from 0.96; Expand opens grid rows 0fr → 1fr in 240ms while the content settles 6px in 200ms; the caret turns 90°; cues fade in 160ms. Spinners turn at 1.8s. Reduced motion means none.",
+          "body": "- Hover: one rung up the ramp (none → elevated → active), text one tone up, only under @media (hover: hover).\n- Pressed: buttons scale to 0.97 for 75ms. Toggles take the active fill.\n- Focus: a 1.5px outline in the focus ring token on :focus-visible. Menu items show focus as a fill.\n- Disabled: 40% and not-allowed, with a tooltip saying why.\n- Invalid: danger-soft fill and a caption with the fix.\n- Hidden affordances keep their box: the caret, the row's … button and the tab's close appear on hover or focus without moving anything.\n\nMotion (the ease token is the app's smooth-out, 0.22 1 0.36 1): hover 150ms; menus 150ms rising 4px, close 100ms fade; dialogs 180ms from 0.96; Expand opens grid rows 0fr → 1fr in 240ms while the content settles 6px in 200ms; the caret turns 90°; cues fade in 160ms. Spinners turn at 1.8s. Reduced motion means none.",
           "author": "user"
         },
         {
           "kind": "note",
           "id": "4-layout-note-2",
           "label": "4-layout.md",
-          "body": "The window: a 280px sidebar on --ds-sidebar, then the main canvas. Both start with a 36px titlebar strip; the header tabs live in the main one.\n\nThe ruler test: lists sit in an 8px gutter (px-2) and rows pad 12px, so icons, titles and headings land on the 20px content edge. Row icons take a 16px slot and a 10px gap (labels at 46px); the session row's status slot is 14px. Trailing meta: a 32px right-aligned time column, then the 14px harness mark, ending 20px from the edge.\n\nTranscript: a 672px column (max-w-2xl) inside 24px padding, 16px between items, steps of a turn 10px apart. Tool bodies indent 20px under their line. The user bubble takes at most 80% and hugs the right edge. The composer is a 16px-radius elevated field; its toolbar sits under it, 10px in, model controls pushed right.\n\nHeights on the 4px grid: 20 badge, 28 small control and tab, 32 control and send, 36 field and titlebar, 52 composer row.",
+          "body": "The window: a 280px sidebar on the sidebar surface, then the main canvas. Both start with a 36px titlebar strip; the header tabs live in the main one.\n\nThe ruler test: lists sit in an 8px gutter (px-2) and rows pad 12px, so icons, titles and headings land on the 20px content edge. Row icons take a 16px slot and a 10px gap (labels at 46px); the session row's status slot is 14px. Trailing meta: a 32px right-aligned time column, then the 14px harness mark, ending 20px from the edge.\n\nTranscript: a 672px column (max-w-2xl) inside 24px padding, 16px between items, steps of a turn 10px apart. Tool bodies indent 20px under their line. The user bubble takes at most 80% and hugs the right edge. The composer is a 16px-radius elevated field; its toolbar sits under it, 10px in, model controls pushed right.\n\nHeights on the 4px grid: 20 badge, 28 small control and tab, 32 control and send, 36 field and titlebar, 52 composer row.",
           "author": "user"
         },
         {
@@ -921,7 +921,7 @@
           "kind": "note",
           "id": "field-note",
           "label": "field.md",
-          "body": "Filled, never outlined: 36px (32 compact) on --ds-field, label 12/16 above and a caption below. An invalid field fills danger-soft and the caption says how to fix it.",
+          "body": "Filled, never outlined: 36px (32 compact) on the field fill, label 12/16 above and a caption below. An invalid field fills danger-soft and the caption says how to fix it.",
           "author": "user"
         },
         {
