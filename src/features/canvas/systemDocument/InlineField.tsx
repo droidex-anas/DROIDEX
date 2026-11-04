@@ -33,7 +33,7 @@ export function InlineField({
 }: {
   ref?: Ref<InlineFieldHandle>;
   value: string;
-  /** What the value is, such as "Light value of --ds-accent". */
+  /** What the value is, such as "Light value of accent". */
   label: string;
   /** Why a value cannot be kept, or null when it can. */
   check: (text: string) => string | null;

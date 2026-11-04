@@ -201,6 +201,7 @@ const TokenRow = memo(function TokenRow({
   onChange: ((change: DraftChange) => void) | null;
 }) {
   const isRemoved = mark === 'removed';
+  const name = bareTokenName(token.name);
   const edit = isRemoved ? null : onChange;
   const setValue =
     edit &&
@@ -226,14 +227,14 @@ const TokenRow = memo(function TokenRow({
       <td className="py-2 pr-3">
         <span className="relative flex min-h-control-md items-center">
           <UnsavedMark mark={mark} was={wasLabel(base, token)} />
-          <Tooltip label={`var(${token.name})`} className="min-w-0">
+          <Tooltip label={name} className="min-w-0">
             <span
               className={cn(
                 'kit-body-font block truncate text-body-strong',
                 isRemoved ? 'text-muted line-through' : 'text-primary',
               )}
             >
-              {bareTokenName(token.name)}
+              {name}
             </span>
           </Tooltip>
         </span>
@@ -268,11 +269,7 @@ const TokenRow = memo(function TokenRow({
         {isRemoved ? (
           <span className="flex min-h-control-md items-center justify-end">
             {onChange && (
-              <UndoRemove
-                label={bareTokenName(token.name)}
-                removedKey={tokenKey(token.name)}
-                onChange={onChange}
-              />
+              <UndoRemove label={name} removedKey={tokenKey(token.name)} onChange={onChange} />
             )}
           </span>
         ) : (
@@ -303,8 +300,8 @@ function TokenActions({
     icon: Copy,
     run: () => {
       navigator.clipboard.writeText(reference).then(
-        () => pushToast(`Copied ${reference}`),
-        () => pushToast(`${reference} could not be copied.`, 'error'),
+        () => pushToast(`Copied the ${name} reference`),
+        () => pushToast(`The ${name} reference could not be copied.`, 'error'),
       );
     },
   };
