@@ -92,6 +92,9 @@ export interface LibraryItem {
   designSystem: DesignSystemRef;
 }
 
+/** One kit token a direct style edit may name, with its value in each mode. */
+export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
+
 /** A kit version as its document shows it: everything but its source. */
 export interface DesignSystemDocumentView {
   id: string;
@@ -597,6 +600,7 @@ export type CanvasCommand =
   // mutationId, so a retry finds the version it already saved.
   | { type: 'canvas.listDesignSystems'; requestId: string }
   | { type: 'canvas.readDesignSystem'; requestId: string; ref: DesignSystemVersionRef }
+  | { type: 'canvas.readEditTokens'; requestId: string; ref: DesignSystemVersionRef }
   | {
       type: 'canvas.saveDesignSystem';
       requestId: string;
@@ -735,6 +739,7 @@ export type CanvasReply =
   | { kind: 'source'; files: SourceFiles }
   | { kind: 'designSystems'; systems: DesignSystemSummary[] }
   | { kind: 'designSystem'; system: DesignSystemDocumentView }
+  | { kind: 'editTokens'; tokens: Record<string, EditToken[]> }
   | { kind: 'designSystemVersions'; versions: DesignSystemVersionEntry[] }
   // Import diagnostics name what could not become a token; unmapped tokens are
   // read from the saved kit instead.

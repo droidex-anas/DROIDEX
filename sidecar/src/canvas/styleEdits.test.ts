@@ -3,7 +3,7 @@ import test from 'node:test';
 import { STYLE_PROPERTIES as RENDERER_STYLE_PROPERTIES } from '../../../src/features/canvas/styleProperties.js';
 import { STARTER_TOKENS } from './presets/starter.js';
 import { SourceElementError } from './sourceElements.js';
-import { resolveStyleChange, STYLE_PROPERTIES, styleValue } from './styleEdits.js';
+import { editTokens, resolveStyleChange, STYLE_PROPERTIES, styleValue } from './styleEdits.js';
 
 const KIT = STARTER_TOKENS.light;
 type Change = Parameters<typeof resolveStyleChange>[0];
@@ -39,6 +39,36 @@ test('a style writes the kit token with its value, and the raw value only when t
     assert.equal(styleValue(resolution), css, change.property);
     assert.equal(resolution.kind, css.startsWith('var(') ? 'token' : 'raw', change.property);
   }
+});
+
+test('editTokens lists, per property, the kit tokens its rule accepts', () => {
+  const tokens = editTokens(STARTER_TOKENS.light, STARTER_TOKENS.dark);
+  // A keyword-only property is absent, and spacing serves padding but not width.
+  assert.ok(!('flexDirection' in tokens));
+  assert.deepEqual(
+    (tokens.padding ?? []).map(({ name }) => name),
+    ['--ds-space-1', '--ds-space-2', '--ds-space-3', '--ds-space-4', '--ds-space-6'],
+  );
+  assert.ok(!('width' in tokens));
+  // A colour-valued token serves every colour property, whatever its name.
+  for (const property of ['color', 'backgroundColor', 'borderColor'])
+    assert.ok(
+      (tokens[property] ?? []).some(({ name }) => name === '--ds-accent'),
+      property,
+    );
+  // A mode-dependent token carries both values; a fixed one collapses to one.
+  const accent = (tokens.color ?? []).find(({ name }) => name === '--ds-accent');
+  assert.deepEqual(accent, { name: '--ds-accent', light: '#8a5a1f', dark: '#e3a857' });
+  const space = (tokens.padding ?? []).find(({ name }) => name === '--ds-space-2');
+  assert.deepEqual(space, { name: '--ds-space-2', value: '0.5rem' });
+  // Every listed token is one the property's edit accepts.
+  for (const [property, options] of Object.entries(tokens))
+    for (const { name } of options)
+      assert.deepEqual(
+        resolveStyleChange({ property, value: name }, STARTER_TOKENS.light),
+        { kind: 'token', token: name },
+        `${property}: ${name}`,
+      );
 });
 
 test('a raw value resolves to the same token whatever order the kit lists its tokens in', () => {

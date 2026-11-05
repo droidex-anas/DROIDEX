@@ -232,6 +232,13 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.readEditTokens'),
+      ...request,
+      ref: designSystemVersionRefSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.saveDesignSystem'),
       ...request,
       mutationId: canvasIdentifierSchema,
