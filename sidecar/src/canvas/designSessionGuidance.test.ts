@@ -7,10 +7,21 @@ import {
 import { kitGuidance } from './designSystemDocument.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 
-test('every copy of the Auto rule takes the style from the request, the project, then the canvas', () => {
+test('every copy of the Auto rule puts the request, and a wish to explore, before the project and the canvas', () => {
   const autoBrief = kitGuidance(AUTO_DESIGN_SYSTEM.name, AUTO_DESIGN_SYSTEM.sections);
   for (const copy of [DESIGN_SESSION_GUIDANCE, DESIGN_CANVAS_MCP_INSTRUCTIONS, autoBrief])
-    assert.match(copy, /style from[^.]*request[^.]*project[^.]*frames/);
+    assert.match(
+      copy,
+      /style from[^.]*request[^.]*wish to explore outranks[^.]*project[^.]*frames/,
+    );
+});
+
+test('project and kit first is a default that a prompt asking to explore sets aside', () => {
+  for (const copy of [DESIGN_SESSION_GUIDANCE, DESIGN_CANVAS_MCP_INSTRUCTIONS])
+    assert.match(
+      copy,
+      /Project and kit first is the default[^.]*[.;] When the prompt asks to explore[^.]*the visual direction is free/i,
+    );
 });
 
 test('the Design brief and its MCP instructions stay within what every turn can afford', () => {

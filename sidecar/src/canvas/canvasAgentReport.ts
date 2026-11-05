@@ -160,7 +160,7 @@ function designSystemReport(
   return {
     diagnostics: diagnostics.slice(0, REPORTED_DIAGNOSTICS).map(agentDiagnostic),
     next: strays
-      ? 'This strays from the pinned design system: use its --ds-* tokens, fonts and primitives where noted and write again, or keep a deliberate change as a --ds-* token override in source.'
+      ? 'This strays from the pinned design system: use its --ds-* tokens, fonts and primitives where noted and write again, or keep a deliberate change as a --ds-* token override in source. If the user asked to explore a new direction, the departure is expected: keep it, with its values as --ds-* overrides rather than literals.'
       : 'The token overrides are kept as deliberate; nothing to change for the design system.',
   };
 }
