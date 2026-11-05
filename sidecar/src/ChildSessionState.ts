@@ -454,9 +454,14 @@ export function childAcceptsWork(child: ChildSessionState): boolean {
 // Work the parent must not close out from under: a running or queued child, a
 // turn in flight, or a mutation that has not settled.
 export function childHasWorkInFlight(child: ChildSessionState): boolean {
+  return child.status === 'pending' || childIsWorking(child);
+}
+
+// What quitting would cut off. A restored child keeps its persisted 'pending'
+// with no runtime or queue behind it, so that status alone is not work here.
+export function childIsWorking(child: ChildSessionState): boolean {
   return (
     child.status === 'running' ||
-    child.status === 'pending' ||
     child.queued === true ||
     child.turn.phase !== 'idle' ||
     child.turn.autoCompacting ||

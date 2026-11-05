@@ -25,6 +25,7 @@ import {
   childDurabilityKey,
   childHistoryProviderSessionIds,
   childIdentity,
+  childIsWorking,
   childStateFromRecord,
   childSummary,
   findChildByProvider,
@@ -170,9 +171,7 @@ export class ChildSessions {
         if (childAcceptsWork(child)) active += 1;
         if (child.runtime) live += 1;
         if (child.queued) queued += 1;
-        // A restored child keeps its persisted 'pending' with no runtime or
-        // queue behind it, so that status alone is not work in progress.
-        if (child.status === 'running' || child.queued || child.turn.phase !== 'idle') working += 1;
+        if (childIsWorking(child)) working += 1;
       }
     }
     return { total, active, live, queued, working };
