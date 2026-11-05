@@ -3,6 +3,7 @@
 // and takes its rules from the kit's token sections: a hard-coded colour
 // (colors), a font family or a font size outside the kit (typography), a corner
 // radius, spacing or shadow literal no token holds (radius, spacing, shadows),
+// a default-theme class where the kit defines that scale (rounded-md, text-lg),
 // and a design that uses none of the kit's primitives. A kit without a section
 // gets no check for it. A --ds-* token set in source is a deliberate override,
 // noted once and never flagged.
@@ -42,6 +43,11 @@ const COLOR_PROPERTY =
 const PALETTE_CLASS =
   /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
 const TAILWIND_FONT_CLASS = /^font-(?:sans|serif|mono)$/;
+// The default theme's own scale classes; where the kit defines that scale,
+// they sidestep its tokens.
+const STOCK_RADIUS_CLASS = /^-?rounded(?:-[a-z]{1,2})?-(?:none|sm|md|lg|xl|2xl|3xl|full)$/;
+const STOCK_TYPE_CLASS = /^-?text-(?:xs|sm|base|lg|[2-9]xl)$/;
+const STOCK_SHADOW_CLASS = /^-?shadow-(?:sm|md|lg|xl|2xl|inner|none)$/;
 const SPACING_PROPERTY = /^(?:padding|margin)(?:-|$)|^(?:row-|column-)?gap$/;
 const SPACING_CLASS = /^(?:[pm][xytrblse]?|gap(?:-[xy])?|space-[xy])$/;
 const RADIUS_CLASS = /^rounded(?:-[a-z]{1,2})?$/;
@@ -52,6 +58,15 @@ const SCALE_WORDING: Record<ScaleKind, { code: string; noun: string }> = {
   spacing: { code: ADHERENCE_CODES.spacing, noun: 'spacing value' },
   shadow: { code: ADHERENCE_CODES.shadow, noun: 'shadow' },
 };
+
+const CLASS_PREFIX = { type: 'text', radius: 'rounded', shadow: 'shadow' } as const;
+
+function stockScaleClass(utility: string): 'type' | 'radius' | 'shadow' | null {
+  if (utility === 'rounded' || STOCK_RADIUS_CLASS.test(utility)) return 'radius';
+  if (STOCK_TYPE_CLASS.test(utility)) return 'type';
+  if (utility === 'shadow' || STOCK_SHADOW_CLASS.test(utility)) return 'shadow';
+  return null;
+}
 
 /** Where a finding is: a design file and a 1-based line. */
 interface Place {
@@ -187,8 +202,12 @@ class DesignCheck {
       }
       if (TAILWIND_FONT_CLASS.test(utility)) {
         if (!this.kit.fonts) continue;
-        const message = `${utility} sets Tailwind's own font stack, not the kit's. Use font-[family-name:var(--ds-font-sans)] or inherit the kit font.`;
-        this.add(ADHERENCE_CODES.font, place, utility, message);
+        this.stockFontClass(place, utility);
+        continue;
+      }
+      const stockScale = stockScaleClass(utility);
+      if (stockScale !== null) {
+        this.stockScaleFinding(place, utility, stockScale);
         continue;
       }
       const arbitrary = arbitraryUtility(utility);
@@ -214,6 +233,38 @@ class DesignCheck {
     }
     if (this.kit.checksColors && colorLiterals(value).length > 0)
       this.add(ADHERENCE_CODES.color, place, utility, this.colorMessage(utility, prefix, prefix));
+  }
+
+  /** Tailwind's own font stack, where the kit provides the fonts. */
+  private stockFontClass(place: Place, utility: string): void {
+    const fonts = this.kit.fonts;
+    if (!fonts) return;
+    const classes = this.kit.themeClasses.font;
+    const example = `font-[family-name:var(${fonts.tokens[0] ?? '--ds-font-sans'})]`;
+    const message =
+      `${utility} sets Tailwind's own font stack, not the kit's.` +
+      (classes.length > 0 ? ` The kit's font classes: ${classes.join(', ')}.` : '') +
+      ` A kit token works as ${example}, or inherit the kit font.`;
+    this.add(ADHERENCE_CODES.font, place, utility, message);
+  }
+
+  /** Tailwind's default scale value, where the kit holds a scale of that kind. */
+  private stockScaleFinding(
+    place: Place,
+    utility: string,
+    kind: 'type' | 'radius' | 'shadow',
+  ): void {
+    const scale = this.kit.scales[kind];
+    if (!scale) return;
+    const { code, noun } = SCALE_WORDING[kind];
+    const classes = this.kit.themeClasses[kind];
+    const hint = kind === 'type' ? 'length:' : '';
+    const example = `${CLASS_PREFIX[kind]}-[${hint}var(${scale.tokens[0]})]`;
+    const message =
+      `${utility} sets Tailwind's default ${noun}, not the kit's.` +
+      (classes.length > 0 ? ` The kit's classes for it: ${classes.join(', ')}.` : '') +
+      ` Any kit token works as ${example}.`;
+    this.add(code, place, utility, message);
   }
 
   private font(place: Place, family: string, literal: string): void {

@@ -7,6 +7,7 @@ import valueParser from 'postcss-value-parser';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { kitPrimitives } from './designSystemBrief.js';
 import { kitModes, type DocumentSection, type TokenSectionKind } from './designSystemDocument.js';
+import { themeEntries, type ThemeNamespace } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
@@ -52,8 +53,20 @@ export interface Kit {
   fonts: { families: Set<string>; tokens: string[] } | null;
   scales: Partial<Record<ScaleKind, Scale>>;
   classes: Set<string>;
+  /** The kit's own Tailwind classes per rule kind, where its token names map to one. */
+  themeClasses: Record<'type' | 'radius' | 'shadow' | 'font', string[]>;
   primitives: string[];
 }
+
+// The theme namespaces that back a checkable rule, with each namespace's class prefix.
+const THEME_CLASS: Partial<
+  Record<ThemeNamespace, { kind: 'type' | 'radius' | 'shadow' | 'font'; prefix: string }>
+> = {
+  fontSize: { kind: 'type', prefix: 'text' },
+  borderRadius: { kind: 'radius', prefix: 'rounded' },
+  boxShadow: { kind: 'shadow', prefix: 'shadow' },
+  fontFamily: { kind: 'font', prefix: 'font' },
+};
 
 /**
  * A saved kit's CSS is first parsed here, before the stylesheet build reviews it,
@@ -113,9 +126,22 @@ export function readKit(
       fonts: typography.length > 0 ? { families, tokens: fontTokens } : null,
       scales,
       classes,
+      themeClasses: kitThemeClasses(system.sections),
       primitives: kitPrimitives(system),
     },
   };
+}
+
+/** The kit's own utility classes per rule kind, from the tokens that map to a theme key. */
+function kitThemeClasses(sections: DocumentSection[]): Kit['themeClasses'] {
+  const themeClasses: Kit['themeClasses'] = { type: [], radius: [], shadow: [], font: [] };
+  for (const entry of themeEntries(sections)) {
+    const themeClass = THEME_CLASS[entry.namespace];
+    if (!themeClass) continue;
+    const name = entry.key === 'DEFAULT' ? themeClass.prefix : `${themeClass.prefix}-${entry.key}`;
+    themeClasses[themeClass.kind].push(name);
+  }
+  return themeClasses;
 }
 
 interface SectionToken {

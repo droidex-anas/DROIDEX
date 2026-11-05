@@ -14,7 +14,7 @@ import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
-import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
+import { canvasTailwindOptions } from './designStylesheet.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
@@ -98,7 +98,7 @@ export async function exportCanvasSource(
   });
   files.push({
     path: 'canvas-export/tailwind-config.json',
-    content: `${JSON.stringify(CANVAS_TAILWIND_OPTIONS, null, 2)}\n`,
+    content: `${JSON.stringify(canvasTailwindOptions(kit), null, 2)}\n`,
   });
   files.push({ path: 'canvas-export/guidance.md', content: kitGuidance(kit.name, kit.sections) });
   files.push(

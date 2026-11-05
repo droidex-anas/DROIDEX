@@ -182,6 +182,61 @@ test('sizes, radii, spacing and shadows off the kit’s tokens are reported, and
   assert.equal(check(OFF_SCALE, 'strict').status, 'failed');
 });
 
+test('a default-theme class where the kit defines that scale is named, with the kit classes', () => {
+  const files = {
+    'main.tsx': `import { Card } from '@droidex/design-system';
+export default function Report() {
+  return (
+    <Card className="rounded-md rounded-tr-lg text-lg shadow-sm shadow font-sans hover:rounded-full">
+      Hey
+    </Card>
+  );
+}
+`,
+  };
+  const result = check(files);
+  assert.deepEqual(places(result.diagnostics), [
+    'design_system_radius main.tsx:4',
+    'design_system_radius main.tsx:4',
+    'design_system_type main.tsx:4',
+    'design_system_shadow main.tsx:4',
+    'design_system_shadow main.tsx:4',
+    'design_system_font main.tsx:4',
+    'design_system_radius main.tsx:4',
+  ]);
+  const [radius, , type, shadow, , font] = result.diagnostics;
+  assert.match(
+    radius.message,
+    /^rounded-md sets Tailwind's default corner radius.*rounded-pill.*rounded-\[var\(--ds-radius-sm\)\]/,
+  );
+  assert.match(
+    type.message,
+    /^text-lg sets Tailwind's default font size.*text-\[length:var\(--ds-text-xs\)\]/,
+  );
+  assert.match(
+    shadow.message,
+    /^shadow-sm sets Tailwind's default shadow.*shadow-\[var\(--ds-shadow-sm\)\]/,
+  );
+  assert.match(
+    font.message,
+    /^font-sans sets Tailwind's own font stack.*font-heading.*font-\[family-name:var\(--ds-font-sans\)\]/,
+  );
+});
+
+test('a default-theme class passes where the kit has no scale of its kind', () => {
+  const noRadius = {
+    ...KIT,
+    sections: KIT.sections.filter((section) => section.kind !== 'radius'),
+  };
+  const files = {
+    'main.tsx': `import { Card } from '@droidex/design-system';
+export default () => <Card className="rounded-md text-lg">Hey</Card>;
+`,
+  };
+  const result = checkDesignSystemAdherence(files, noRadius, 'strict');
+  assert.deepEqual(places(result.diagnostics), ['design_system_type main.tsx:2']);
+});
+
 test('a kit without a section gets no check for it', () => {
   const typographyOnly = {
     ...KIT,
