@@ -271,21 +271,8 @@ export function CanvasBoard({
     };
   }, [capturePointer, overlayCapture, view.scrolling]);
 
-  /**
-   * One layout write for the selection, computed from the rects it is drawn at.
-   */
-  const placeSelection = (nextRects: (rects: FrameRect[]) => FrameRect[]) => {
-    const selected = frames.filter((frame) =>
-      interaction.selectedFrameIds.includes(frame.designId),
-    );
-    const placed = nextRects(selected.map((frame) => gestures.rectFor(frame)));
-    gestures.place(
-      selected.map((frame, index) => ({
-        designId: frame.designId,
-        expectedLayoutVersion: frame.layoutVersion,
-        rect: placed[index],
-      })),
-    );
+  const placeSelection = (place: (rects: FrameRect[]) => FrameRect[]) => {
+    gestures.arrange(interaction.selectedFrameIds, place);
   };
 
   const onMode = (next: BoardMode) => {
