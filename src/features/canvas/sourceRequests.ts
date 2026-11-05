@@ -3,7 +3,7 @@
 // one direct edit to a selected element.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
-import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 import type { CanvasCommand, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
 export class SourceRequests {
@@ -36,12 +36,12 @@ export class SourceRequests {
     return reply(event, 'written').receipt;
   }
 
-  /** A retry with the same mutation ID answers the first run's resolution. */
+  /** A retry with the same mutation ID answers the first run's receipt. */
   async editElement(
     appSessionId: string,
     canvasId: string,
     input: EditElementInput,
-  ): Promise<ElementEditResult> {
+  ): Promise<WriteReceipt> {
     const event = await this.send({
       type: 'canvas.editElement',
       requestId: requestId(),
@@ -49,7 +49,6 @@ export class SourceRequests {
       canvasId,
       input,
     });
-    const { receipt, resolution } = reply(event, 'edited');
-    return { receipt, resolution };
+    return reply(event, 'written').receipt;
   }
 }

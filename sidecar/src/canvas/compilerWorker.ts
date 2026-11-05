@@ -29,14 +29,9 @@ import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { instrumentSource, SourceElementError } from './sourceElements.js';
-import { resolveStyleChange, styleValue } from './styleEdits.js';
+import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
-import type {
-  CanvasDiagnostic,
-  DesignSystemRef,
-  ElementEdit,
-  StyleResolution,
-} from './protocol.js';
+import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
 
@@ -227,11 +222,11 @@ async function runEdit(
   const { requestId, files, elements, edit, designSystem } = request;
   try {
     stopIfCancelled(signal);
-    const { change, resolution } = await sourceChange(edit.change, designSystem);
+    const change = await sourceChange(edit.change, designSystem);
     stopIfCancelled(signal);
     const changed = applyElementEdit(files, elements, { element: edit.element, change });
     stopIfCancelled(signal);
-    send({ requestId, status: 'edited', files: changed, resolution } satisfies CompilerResponse);
+    send({ requestId, status: 'edited', files: changed } satisfies CompilerResponse);
   } catch (error) {
     if (error instanceof SourceElementError) {
       const code = error.code === 'selection_limit' ? 'stale_reference' : error.code;
@@ -262,24 +257,20 @@ async function runEdit(
   }
 }
 
-/** Resolves a style edit against the pinned kit into the CSS value source receives. */
+/** Resolves each style of a style edit against the pinned kit. */
 async function sourceChange(
   change: ElementEdit['change'],
   designSystem: DesignSystemRef,
-): Promise<{ change: SourceChange; resolution: StyleResolution | null }> {
-  switch (change.kind) {
-    case 'text':
-    case 'image':
-      return { change, resolution: null };
-    default: {
-      const kit = await readDesignSystem(designSystem);
-      const resolution = resolveStyleChange(change, kitTokens(kit, designSystem.mode));
-      return {
-        change: { kind: 'style', property: change.property, value: styleValue(resolution) },
-        resolution,
-      };
-    }
-  }
+): Promise<SourceChange> {
+  if (change.kind !== 'style') return change;
+  const tokens = kitTokens(await readDesignSystem(designSystem), designSystem.mode);
+  return {
+    kind: 'style',
+    styles: change.styles.map((style) => ({
+      property: style.property,
+      resolution: resolveStyleChange(style, tokens),
+    })),
+  };
 }
 
 /** The kit's tokens in one mode: those its CSS declares, overridden by the mode's own values. */

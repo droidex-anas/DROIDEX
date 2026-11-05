@@ -35,7 +35,7 @@ import {
   toFrame,
   type CanvasManifest,
 } from './canvasManifest.js';
-import { recordedEdit, recordedRevision } from './canvasReceipts.js';
+import { recordedRevision } from './canvasReceipts.js';
 import type {
   ArrangeFramesInput,
   CanvasChange,
@@ -45,7 +45,6 @@ import type {
   CreateFramesInput,
   CreateFramesResult,
   EditElementInput,
-  ElementEditResult,
   OutdatedCanvas,
   OwnedAsset,
   SwitchRevisionInput,
@@ -198,10 +197,10 @@ export class CanvasWorkspace {
     return this.creation.create(scope, input);
   }
 
-  recordedEdit(scope: CanvasScope, input: EditElementInput): ElementEditResult | null {
+  recordedEdit(scope: CanvasScope, input: EditElementInput): WriteReceipt | null {
     this.commits.requireOpen();
     const manifest = this.leases.requireDesigns(scope, [input.edit.element.designId]);
-    return recordedEdit(manifest, input.mutationId, mutationFingerprint(input));
+    return recordedRevision(manifest, input.mutationId, 'edit', mutationFingerprint(input));
   }
 
   // Edits retain their original request fingerprint, not the derived file write.
@@ -250,9 +249,7 @@ export class CanvasWorkspace {
         };
         recordMutation(
           next,
-          mutation
-            ? { ...record, kind: 'edit', resolution: mutation.resolution }
-            : { ...record, kind: 'write' },
+          mutation ? { ...record, kind: 'edit' } : { ...record, kind: 'write' },
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, [input.designId]));

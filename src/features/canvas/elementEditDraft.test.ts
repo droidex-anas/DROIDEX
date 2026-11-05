@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  commitStyle,
+  commitStyles,
   editDraft,
   followRevision,
   previewStyle,
@@ -21,10 +21,11 @@ const site: SourceElement = {
   editability: 'literal',
 };
 
-function committed(property: string, value: string, mutationId: string) {
-  const draft = previewStyle(editDraft('canvas', element, site), property, value);
-  const commit = commitStyle(draft, property, mutationId);
-  assert.ok(commit, property);
+function committed(entries: [property: string, value: string][], mutationId: string) {
+  let draft = editDraft('canvas', element, site);
+  for (const [property, value] of entries) draft = previewStyle(draft, property, value);
+  const commit = commitStyles(draft, mutationId);
+  assert.ok(commit);
   return commit;
 }
 
@@ -45,39 +46,46 @@ function ready(revisionId: string, elements: SourceElement[]): CanvasBuildOutcom
   return { status: 'ready', revisionId, artifactId: `a_${revisionId}`, elements, diagnostics: [] };
 }
 
-test('a committed preview sends its property as the kind the whitelist names', () => {
-  for (const [property, value, kind] of [
-    ['paddingTop', '0.5rem', 'spacing'],
-    ['width', '320px', 'size'],
-    ['backgroundColor', '#fff', 'colour'],
-    ['lineHeight', '1.4', 'typography'],
-    ['alignItems', 'center', 'layout'],
-    ['opacity', '0.5', 'opacity'],
-  ]) {
-    const { draft, input } = committed(property, value, `m-${property}`);
-    assert.deepEqual(input, {
-      mutationId: `m-${property}`,
-      edit: { element, change: { kind, property, value } },
-    });
-    assert.equal(draft.pendingMutationId, `m-${property}`);
-  }
+test('a commit sends every previewed property as one style edit', () => {
+  const { draft, input } = committed(
+    [
+      ['fontSize', '28px'],
+      ['color', '#fff'],
+    ],
+    'm-both',
+  );
+  assert.deepEqual(input, {
+    mutationId: 'm-both',
+    edit: {
+      element,
+      change: {
+        kind: 'style',
+        styles: [
+          { property: 'fontSize', value: '28px' },
+          { property: 'color', value: '#fff' },
+        ],
+      },
+    },
+  });
+  assert.equal(draft.pendingMutationId, 'm-both');
 });
 
-test('a value is sent the way the grammar reads it: lowercase, and a zero length in px', () => {
+test('a value is sent the way the grammar reads it: lowercase and single-spaced', () => {
   for (const [property, value, sent] of [
     ['backgroundColor', '  #FFF ', '#fff'],
-    ['paddingTop', '0.5REM', '0.5rem'],
-    ['gap', '0', '0px'],
-    ['fontSize', '0', '0px'],
-    ['opacity', '0', '0'],
-    ['lineHeight', '0', '0'],
+    ['paddingTop', '0.5REM  ', '0.5rem'],
   ]) {
-    assert.equal(committed(property, value, 'm').input.edit.change.value, sent, property);
+    const { input } = committed([[property, value]], 'm');
+    assert.deepEqual(
+      input.edit.change,
+      { kind: 'style', styles: [{ property, value: sent }] },
+      property,
+    );
   }
 });
 
 test('every refusal drops the draft, and a reply for another mutation changes nothing', () => {
-  const { draft } = committed('gap', '4px', 'm-gap');
+  const { draft } = committed([['gap', '4px']], 'm-gap');
   assert.equal(settleCommit(draft, 'm-other', { status: 'refused' }), draft);
   assert.equal(settleCommit(draft, 'm-gap', { status: 'refused' }), null);
   // The edit's own revision has not built yet: nothing can be committed against the old one.
@@ -88,19 +96,19 @@ test('every refusal drops the draft, and a reply for another mutation changes no
   });
 });
 
-test('one commit at a time, and only for a previewed whitelisted property', () => {
-  const { draft } = committed('gap', '4px', 'm-gap');
-  assert.equal(commitStyle(previewStyle(draft, 'width', '1px'), 'width', 'm-width'), null);
+test('one commit at a time, and only with a previewed whitelisted property', () => {
+  const { draft } = committed([['gap', '4px']], 'm-gap');
+  assert.equal(commitStyles(previewStyle(draft, 'width', '1px'), 'm-width'), null);
   const idle = editDraft('canvas', element, site);
   assert.equal(previewStyle(idle, 'backgroundImage', 'url(x)'), idle);
-  assert.equal(commitStyle(idle, 'gap', 'm-unset'), null);
+  assert.equal(commitStyles(idle, 'm-unset'), null);
   const reverted = revertStyle(previewStyle(idle, 'gap', '4px'), 'gap');
   assert.deepEqual(reverted.values, {});
-  assert.equal(commitStyle(reverted, 'gap', 'm-reverted'), null);
+  assert.equal(commitStyles(reverted, 'm-reverted'), null);
 });
 
 test('the selection follows its source site into the revision that built after it', () => {
-  const draft: ElementEditDraft = committed('gap', '4px', 'm-gap').draft;
+  const draft: ElementEditDraft = committed([['gap', '4px']], 'm-gap').draft;
   const moved = { ...site, elementId: 'el_9', end: 104 };
 
   // Still building: the older revision is on show, and the draft stays on it.

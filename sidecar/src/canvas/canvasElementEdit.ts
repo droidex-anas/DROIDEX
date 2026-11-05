@@ -4,8 +4,8 @@
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
-import { CompileCancelledError, CompilerWorker, type EditedSource } from './compiler.js';
-import type { CanvasScope, EditElementInput, ElementEditResult } from './protocol.js';
+import { CompileCancelledError, CompilerWorker } from './compiler.js';
+import type { CanvasScope, EditElementInput, SourceFiles, WriteReceipt } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 export async function editCanvasElement(
@@ -13,7 +13,7 @@ export async function editCanvasElement(
   builds: CanvasBuilds,
   scope: Extract<CanvasScope, { origin: 'user' }>,
   input: EditElementInput,
-): Promise<ElementEditResult> {
+): Promise<WriteReceipt> {
   // A successful edit advanced this revision, so its retry must be answered first.
   const recorded = workspace.recordedEdit(scope, input);
   if (recorded) return recorded;
@@ -38,9 +38,9 @@ export async function editCanvasElement(
   const timer = setTimeout(() => {
     controller.abort();
   }, CANVAS_LIMITS.buildDeadlineMs).unref();
-  let edited: EditedSource;
+  let files: SourceFiles;
   try {
-    edited = await worker.edit(
+    files = await worker.edit(
       source,
       build.elements,
       input.edit,
@@ -55,11 +55,8 @@ export async function editCanvasElement(
     clearTimeout(timer);
     await worker.terminate();
   }
-  const { files, resolution } = edited;
   try {
-    // A concurrent duplicate resolved the same change against the same pinned
-    // kit version, so its resolution is the one the ledger recorded.
-    const receipt = await workspace.write(
+    return await workspace.write(
       scope,
       {
         mutationId: input.mutationId,
@@ -68,9 +65,8 @@ export async function editCanvasElement(
         files,
         deletedPaths: [],
       },
-      { mutation: { kind: 'edit', input, resolution } },
+      { mutation: { kind: 'edit', input } },
     );
-    return { receipt, resolution };
   } catch (error) {
     if (error instanceof CanvasCommandError && error.code === 'revision_conflict')
       throw canvasError(

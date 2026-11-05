@@ -625,13 +625,17 @@ outside canonical source, forces a rebuild. Inline source maps preserve canonica
 through bundling
 without shipping host runtime paths or canonical source content in the final artifact map.
 Direct edits reparse that source and
-replace one literal AST range; computed/shared sites require an agent edit and stale
-references require reselection. `canvas.editElement` sets text, or one whitelisted style
-property as a spacing, size, colour, typography, layout or opacity change. A style value is a
-pinned kit token's name, or a raw value that resolves to the kit token with that value and stays
-raw only when the kit has none; the reply and the edit's ledger record carry that resolution, so
-a retry answers it unchanged. The edit commits through the workspace's revision
-compare-and-swap. Image edits remain unavailable until the asset store can verify ownership.
+replace only literal ranges within the element's own site; computed/shared sites require an
+agent edit and stale references require reselection. A className spelled with string literals,
+including through a `cn()`/`clsx()` call whose arguments are all literals, is still a literal
+site. `canvas.editElement` sets text, or a batch of whitelisted style properties in one
+revision. A style value is a pinned kit token's name, or a raw value that resolves to the kit
+token with that value and stays raw only when the kit has none. What a style edit writes is
+what a person writing Tailwind would: the class that says the value in place of the classes it
+makes dead, with the style attribute only where no stock class says it or a frame-scoped class
+or inline shorthand would win. The edit commits through the workspace's revision
+compare-and-swap; its ledger record answers a retry with the original receipt. Image edits
+remain unavailable until the asset store can verify ownership.
 
 The source drawer keeps drafts and save operations in the feature-local
 `canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the

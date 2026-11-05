@@ -21,13 +21,11 @@ import type {
   DesignSystemRef,
   ElementEdit,
   SourceElement,
-  StyleResolution,
 } from './protocol.js';
 import {
   CANVAS_LIMITS,
   sourceElementSchema,
   sourceFilesSchema,
-  styleResolutionSchema,
   type SourceFiles,
 } from './schema.js';
 
@@ -120,15 +118,9 @@ type EditFailureCode =
   | 'invalid_edit'
   | 'unsupported_edit';
 
-/** An edit's changed files and what its style value resolved to. */
-export interface EditedSource {
-  files: SourceFiles;
-  resolution: StyleResolution | null;
-}
-
 export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
-  | ({ requestId: number; status: 'edited' } & EditedSource)
+  | { requestId: number; status: 'edited'; files: SourceFiles }
   | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
@@ -147,7 +139,7 @@ interface PendingCompile {
 }
 
 interface PendingEdit {
-  resolve(edited: EditedSource): void;
+  resolve(files: SourceFiles): void;
   reject(error: Error): void;
   release(): void;
 }
@@ -208,7 +200,7 @@ export class CompilerWorker {
     edit: ElementEdit,
     designSystem: DesignSystemRef,
     signal: AbortSignal,
-  ): Promise<EditedSource> {
+  ): Promise<SourceFiles> {
     if (this.termination !== null)
       return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     if (signal.aborted) return Promise.reject(new CompileCancelledError());
@@ -216,7 +208,7 @@ export class CompilerWorker {
       return this.retiring.then(() => this.edit(files, elements, edit, designSystem, signal));
     const requestId = this.nextRequestId++;
     const compiler = this.liveCompiler();
-    return new Promise<EditedSource>((resolve, reject) => {
+    return new Promise<SourceFiles>((resolve, reject) => {
       const onAbort = (): void => {
         this.settleEdit(requestId, () => {
           reject(new CompileCancelledError());
@@ -303,7 +295,7 @@ export class CompilerWorker {
       this.settleEdit(response.requestId, (call) => {
         switch (response.status) {
           case 'edited':
-            call.resolve({ files: response.files, resolution: response.resolution });
+            call.resolve(response.files);
             return;
           case 'edit_failed':
             call.reject(canvasError(response.code, response.message));
@@ -433,13 +425,11 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
 
 function editResponse(
   requestId: number,
-  { status, files, resolution, code, message }: Record<string, unknown>,
+  { status, files, code, message }: Record<string, unknown>,
 ): Extract<CompilerResponse, { status: 'edited' | 'edit_failed' }> | null | undefined {
   if (status === 'edited') {
     const parsedFiles = sourceFilesSchema.safeParse(files);
-    const parsedResolution = styleResolutionSchema.nullable().safeParse(resolution);
-    if (!parsedFiles.success || !parsedResolution.success) return null;
-    return { requestId, status, files: parsedFiles.data, resolution: parsedResolution.data };
+    return parsedFiles.success ? { requestId, status, files: parsedFiles.data } : null;
   }
   if (status === 'edit_failed')
     return typeof message === 'string' && EDIT_FAILURE_CODES.includes(code as EditFailureCode)

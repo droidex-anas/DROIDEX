@@ -41,7 +41,7 @@ import {
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 import { ElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
@@ -54,7 +54,13 @@ import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
+import type {
+  ArrangeFramesInput,
+  CanvasFrame,
+  CanvasSnapshot,
+  FrameRect,
+  WriteReceipt,
+} from './protocol';
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -75,7 +81,7 @@ export interface CanvasBoardProps {
   /** The one annotation write, bound to `CanvasClient.annotate` for this canvas. */
   onAnnotate: (input: AnnotateCanvasInput) => Promise<unknown>;
   /** The one direct element edit, bound to `CanvasClient.source.editElement` for this canvas. */
-  onEditElement: (input: EditElementInput) => Promise<ElementEditResult>;
+  onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
   /** Deletes frames from this canvas (`FrameRemovals.remove`); true once they are gone. */
   onRemoveFrames: (frames: CanvasFrame[]) => Promise<boolean>;
   /** Undoes this canvas's latest deletion; false when none is offered. */

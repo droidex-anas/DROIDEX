@@ -14,7 +14,6 @@ import type {
   CanvasSnapshot,
   CanvasSummary,
   EditElementInput,
-  StyleResolution,
 } from './protocol.js';
 import {
   CANVAS_LIMITS,
@@ -23,7 +22,6 @@ import {
   designSystemAdherenceSchema,
   designSystemRefSchema,
   frameRectSchema,
-  styleResolutionSchema,
 } from './schema.js';
 
 const CANVAS_MANIFEST_VERSION = 2;
@@ -106,8 +104,15 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       designId: canvasIdentifierSchema,
       revisionId: canvasIdentifierSchema,
       sequence: versionSchema,
-      // A retry cannot recompute it: the edit has already moved the revision on.
-      resolution: styleResolutionSchema.nullable(),
+      // What the one style of an edit saved before style edits were batched
+      // resolved to. Nothing reads it, but those canvases must still open.
+      resolution: z
+        .discriminatedUnion('kind', [
+          z.object({ kind: z.literal('token'), token: z.string().min(1).max(128) }).strict(),
+          z.object({ kind: z.literal('raw'), value: z.string().min(1).max(128) }).strict(),
+        ])
+        .nullable()
+        .optional(),
     })
     .strict(),
   z
@@ -262,7 +267,6 @@ export type CanvasManifest = z.infer<typeof canvasManifestSchema>;
 export interface SourceRevisionMutation {
   kind: 'edit';
   input: EditElementInput;
-  resolution: StyleResolution | null;
 }
 
 export function emptyCanvasManifest(canvasId: string, name: string, now: number): CanvasManifest {

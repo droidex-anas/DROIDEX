@@ -283,8 +283,8 @@ class CanvasDispatch {
           return { kind: 'written', receipt: await workspace.write(scope, command.input) };
         case 'canvas.editElement':
           return {
-            kind: 'edited',
-            ...(await editCanvasElement(workspace, this.builds, scope, command.input)),
+            kind: 'written',
+            receipt: await editCanvasElement(workspace, this.builds, scope, command.input),
           };
         case 'canvas.switchRevision':
           return { kind: 'written', receipt: await workspace.switchRevision(scope, command.input) };

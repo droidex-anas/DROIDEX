@@ -90,7 +90,10 @@ test('direct edits compile through the worker and its map points to canonical so
     { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
     {
       source: '<h1 style={{color:"var(--ds-text)"}}>Hello</h1>',
-      change: { kind: 'style', property: 'color', value: 'var(--ds-accent)' },
+      change: {
+        kind: 'style',
+        styles: [{ property: 'color', resolution: { kind: 'token', token: '--ds-accent' } }],
+      },
       rendered: 'var(--ds-accent)',
     },
     {
@@ -566,7 +569,6 @@ test('a reply the protocol does not define is not an answer', () => {
     requestId: 3,
     status: 'edited',
     files: { 'main.tsx': '<h1>Changed</h1>' },
-    resolution: null,
   };
   assert.deepEqual(compilerResponse(edited), edited);
 
@@ -584,7 +586,6 @@ test('a reply the protocol does not define is not an answer', () => {
     { requestId: 1, status: 'ready', design: { artifactId: 'a', html: 'h' } },
     { requestId: 1, status: 'failed' },
     { requestId: 1, status: 'edited', files: { '../outside.tsx': 'bad' } },
-    { ...edited, resolution: { kind: 'token' } },
     { requestId: 1, status: 'edit_failed', code: 'unknown', message: 'bad' },
   ]) {
     assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));

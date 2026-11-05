@@ -14,10 +14,7 @@ import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
-import type {
-  EditElementInput,
-  ElementEditResult,
-} from '../../../src/features/canvas/elementEditProtocol';
+import type { EditElementInput } from '../../../src/features/canvas/elementEditProtocol';
 import type {
   ArrangeFramesInput,
   CanvasChange,
@@ -30,6 +27,7 @@ import type {
   RevisionSummary,
   SourceElement,
   UndoRemovalInput,
+  WriteReceipt,
 } from '../../../src/features/canvas/protocol';
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
 import '../../../src/index.css';
@@ -60,7 +58,7 @@ interface BoardHarness {
   closeSource: () => void;
   editCalls: EditElementInput[];
   /** Answers one edit with the revision it wrote, and builds that revision. */
-  answerEdit: (index: number, resolution: ElementEditResult['resolution']) => void;
+  answerEdit: (index: number) => void;
   refuseEdit: (index: number) => void;
   removeCalls: RemoveFramesInput[];
   /** Removes one delete's frames the way the sidecar does, answering `undo_<index>`. */
@@ -234,7 +232,7 @@ const annotateReplies: { resolve: () => void; reject: (error: Error) => void }[]
 const previewClicks: string[] = [];
 const editCalls: EditElementInput[] = [];
 const editReplies: {
-  resolve: (result: ElementEditResult) => void;
+  resolve: (receipt: WriteReceipt) => void;
   reject: (error: Error) => void;
 }[] = [];
 const removeCalls: RemoveFramesInput[] = [];
@@ -411,13 +409,10 @@ function Harness() {
         frames: current.frames.map((frame) => ({ ...frame, build: built('rev_01') })),
       })),
     editCalls,
-    answerEdit: (index, resolution) => {
+    answerEdit: (index) => {
       const { designId } = editCalls[index].edit.element;
       const revisionId = `rev_0${String(index + 2)}`;
-      editReplies[index].resolve({
-        receipt: { designId, revisionId, sequence: index + 2 },
-        resolution,
-      });
+      editReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
       setSnapshot((current) => ({
         ...current,
         sequence: current.sequence + 1,
@@ -526,7 +521,7 @@ function Harness() {
           }}
           onEditElement={(input) => {
             editCalls.push(input);
-            return new Promise<ElementEditResult>((resolve, reject) =>
+            return new Promise<WriteReceipt>((resolve, reject) =>
               editReplies.push({ resolve, reject }),
             );
           }}

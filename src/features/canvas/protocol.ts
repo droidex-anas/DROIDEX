@@ -8,7 +8,7 @@
 
 import type { AnnotateCanvasInput, Annotation, AnnotationChange } from './annotationProtocol';
 import type { DocumentSection } from './designSystemDocumentProtocol';
-import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 
 export interface DesignSystemRef {
   id: string;
@@ -724,7 +724,6 @@ export type CanvasReply =
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
-  | ({ kind: 'edited' } & ElementEditResult)
   | { kind: 'arranged'; change: CanvasChange }
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }

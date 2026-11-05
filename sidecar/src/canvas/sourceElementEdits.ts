@@ -1,5 +1,5 @@
 // Applies one direct edit to a site in the element map: the map says which
-// canonical source range an element is, and an edit replaces exactly one range.
+// canonical source range an element is, and an edit replaces only bytes within it.
 
 import ts from 'typescript';
 import type { ElementEdit, ElementRef, SourceElement, SourceFiles } from './protocol.js';
@@ -8,24 +8,23 @@ import {
   attribute,
   attributeValue,
   isLiteral,
-  propertyName,
   SourceElementError,
   sourceSites,
   type ElementNode,
 } from './sourceElements.js';
-import { STYLE_PROPERTIES } from './styleEdits.js';
+import { styleReplacements, type ResolvedStyle } from './sourceStyles.js';
 
-/** One edit as source sees it: a style edit arrives already resolved to the CSS it writes. */
+/** One edit as source sees it: a style edit arrives with each style resolved against the kit. */
 export type SourceChange =
   | Extract<ElementEdit['change'], { kind: 'text' | 'image' }>
-  | { kind: 'style'; property: string; value: string };
+  | { kind: 'style'; styles: ResolvedStyle[] };
 
 export interface SourceEdit {
   element: ElementRef;
   change: SourceChange;
 }
 
-interface SourceReplacement {
+export interface SourceReplacement {
   start: number;
   end: number;
   replacement: string;
@@ -55,20 +54,31 @@ export function applyElementEdit(
   if (site.element.editability !== 'literal') throw ambiguous();
   const { node, source } = site;
   const opening = ts.isJsxElement(node) ? node.openingElement : node;
-  let changed: SourceReplacement;
+  let replacements: SourceReplacement[];
   switch (edit.change.kind) {
     case 'text':
-      changed = replaceText(node, source, edit.change.value);
+      replacements = [replaceText(node, source, edit.change.value)];
       break;
     case 'image':
-      changed = replaceImage(opening, source, edit.change.assetId);
+      replacements = [replaceImage(opening, source, edit.change.assetId)];
       break;
     case 'style':
-      changed = setStyle(opening, source, edit.change.property, edit.change.value);
+      replacements = styleReplacements(opening, source, edit.change.styles);
       break;
   }
-  const { start, end, replacement } = changed;
-  return { [source.fileName]: source.text.slice(0, start) + replacement + source.text.slice(end) };
+  return { [source.fileName]: replace(source.text, replacements) };
+}
+
+/** Applies non-overlapping replacements; two at one point keep the order they were made in. */
+function replace(text: string, replacements: readonly SourceReplacement[]): string {
+  let result = '';
+  let cursor = 0;
+  for (const { start, end, replacement } of replacements.toSorted((a, b) => a.start - b.start)) {
+    if (start < cursor) throw new Error('Canvas made overlapping source replacements.');
+    result += text.slice(cursor, start) + replacement;
+    cursor = end;
+  }
+  return result + text.slice(cursor);
 }
 
 function replaceText(node: ElementNode, source: ts.SourceFile, value: string): SourceReplacement {
@@ -90,45 +100,6 @@ function replaceText(node: ElementNode, source: ts.SourceFile, value: string): S
       replacement: JSON.stringify(value),
     };
   throw ambiguous();
-}
-
-/**
- * Sets one property in the element's literal style object: its value is
- * replaced where it is set, appended as the last entry where it is not, and a
- * style attribute is added last when the element has none. Inline style is
- * what the board previews, so the edit writes exactly what the user saw.
- */
-function setStyle(
-  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
-  source: ts.SourceFile,
-  property: string,
-  value: string,
-): SourceReplacement {
-  // The property becomes source text, so only a whitelisted name may reach it.
-  if (!Object.hasOwn(STYLE_PROPERTIES, property))
-    throw new SourceElementError('unsupported_edit', `${property} is not a style Canvas can edit.`);
-  const entry = `${property}: ${JSON.stringify(value)}`;
-  const styleAttribute = attribute(opening, 'style');
-  if (!styleAttribute) {
-    const end = opening.attributes.end;
-    return { start: end, end, replacement: ` style={{ ${entry} }}` };
-  }
-  const style = attributeValue(styleAttribute);
-  if (!style || !ts.isObjectLiteralExpression(style)) throw ambiguous();
-  const existing = style.properties.find(
-    (candidate) => candidate.name && propertyName(candidate.name) === property,
-  );
-  if (existing) {
-    if (!ts.isPropertyAssignment(existing)) throw ambiguous();
-    return {
-      start: existing.initializer.getStart(source),
-      end: existing.initializer.end,
-      replacement: JSON.stringify(value),
-    };
-  }
-  const last = style.properties.at(-1);
-  if (!last) return { start: style.getStart(source), end: style.end, replacement: `{ ${entry} }` };
-  return { start: last.end, end: last.end, replacement: `, ${entry}` };
 }
 
 function replaceImage(

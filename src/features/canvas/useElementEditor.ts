@@ -7,9 +7,9 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { elementStep } from './boardKeys';
 import { canvasMessage } from './client';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput, ElementEditResult, StyleResolution } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 import {
-  commitStyle,
+  commitStyles,
   editDraft,
   followRevision,
   previewStyle,
@@ -20,18 +20,13 @@ import {
 } from './elementEditDraft';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRun } from './previewRuntime';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame, WriteReceipt } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
-
-/** Every property a direct edit may set, which is what the guest reports. */
-const PROPERTIES = Object.keys(STYLE_PROPERTIES);
 
 export interface ElementSelection {
   draft: ElementEditDraft;
   /** The guest's last report: where the element is drawn and its computed values. */
   shown: PreviewElement;
-  /** What the last commit on this element wrote. */
-  written: { property: string; resolution: StyleResolution | null } | null;
 }
 
 interface ElementEditorInputs {
@@ -39,7 +34,7 @@ interface ElementEditorInputs {
   frames: CanvasFrame[];
   /** The board is in Edit; outside it nothing stays selected. */
   active: boolean;
-  onEditElement: (input: EditElementInput) => Promise<ElementEditResult>;
+  onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
 }
 
 export function useElementEditor({ canvasId, frames, active, onEditElement }: ElementEditorInputs) {
@@ -87,8 +82,8 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   useEffect(() => {
     const held = draft ? runs.current.get(draft.element.designId) : undefined;
     const next = draft && held?.revisionId === draft.element.revisionId ? held.run : null;
-    if (holder.current && holder.current !== next) holder.current.select(null, PROPERTIES);
-    if (draft && next) next.select(target(draft), PROPERTIES);
+    if (holder.current && holder.current !== next) holder.current.select(null, STYLE_PROPERTIES);
+    if (draft && next) next.select(target(draft), STYLE_PROPERTIES);
     holder.current = next;
   }, [draft]);
 
@@ -106,7 +101,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
       }
       const site = siteOf(latest.current.frames, designId, revisionId, element.elementId);
       if (!site) {
-        run.select(null, PROPERTIES);
+        run.select(null, STYLE_PROPERTIES);
         choose(null);
         setError('This design is still building. Pick the element again once it has.');
         return;
@@ -120,7 +115,6 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
           site,
         ),
         shown: element,
-        written: null,
       });
     };
 
@@ -129,7 +123,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
         runs.current.set(designId, { revisionId, run });
         const current = latest.current.selection?.draft;
         if (current?.element.designId === designId && current.element.revisionId === revisionId) {
-          run.select(target(current), PROPERTIES);
+          run.select(target(current), STYLE_PROPERTIES);
           holder.current = run;
         }
         return () => {
@@ -164,7 +158,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     }
     setError('');
     if (latest.current.selection?.draft.element.designId !== designId) choose(null);
-    picking.current = { run: held.run, sequence: held.run.pick(at, PROPERTIES) };
+    picking.current = { run: held.run, sequence: held.run.pick(at, STYLE_PROPERTIES) };
     return true;
   };
 
@@ -184,27 +178,27 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     if (current) choose({ ...current, draft: revertStyle(current.draft, property) });
   };
 
-  const commit = (property: string) => {
+  const commit = () => {
     const current = latest.current.selection;
     if (!current) return;
     const mutationId = crypto.randomUUID();
-    const committed = commitStyle(current.draft, property, mutationId);
+    const committed = commitStyles(current.draft, mutationId);
     if (!committed) return;
     choose({ ...current, draft: committed.draft });
-    const settle = (outcome: CommitOutcome, written: ElementSelection['written']) => {
+    const settle = (outcome: CommitOutcome) => {
       const now = latest.current.selection;
       if (now?.draft.pendingMutationId !== mutationId) return;
       const settled = settleCommit(now.draft, mutationId, outcome);
-      choose(settled && { ...now, draft: settled, written });
+      choose(settled && { ...now, draft: settled });
     };
     latest.current.onEditElement(committed.input).then(
-      ({ receipt, resolution }) => {
-        settle({ status: 'edited', revisionId: receipt.revisionId }, { property, resolution });
+      (receipt) => {
+        settle({ status: 'edited', revisionId: receipt.revisionId });
       },
       (refusal: unknown) => {
         if (latest.current.selection?.draft.pendingMutationId === mutationId)
           setError(canvasMessage(refusal));
-        settle({ status: 'refused' }, null);
+        settle({ status: 'refused' });
       },
     );
   };
