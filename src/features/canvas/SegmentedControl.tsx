@@ -11,6 +11,8 @@ export interface Segment<T extends string> {
   value: T;
   /** The accessible name; also the tooltip when the segment shows an icon. */
   label: string;
+  /** The face of an icon-less segment; defaults to the label. */
+  text?: string;
   icon?: IconComponent;
   /** Extra classes for the icon, such as a flip for a reversed direction. */
   iconClassName?: string;
@@ -80,7 +82,7 @@ export function SegmentedControl<T extends string>({
               {option.icon ? (
                 <option.icon aria-hidden className={cn('size-icon-sm', option.iconClassName)} />
               ) : (
-                <span className="truncate text-label">{option.label}</span>
+                <span className="truncate text-label">{option.text ?? option.label}</span>
               )}
             </button>
           );
