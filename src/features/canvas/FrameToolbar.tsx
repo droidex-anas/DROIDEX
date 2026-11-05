@@ -1,5 +1,6 @@
 // The selected frame's toolbar (spec §4): switch its version, run it, read its
-// source, add it to the chat, rename it, and the rest behind More. It floats
+// source, add it to the chat, rename it, make variants of it, and the rest
+// behind More. It floats
 // above the frame's label at screen size, so it follows the frame through pan
 // and zoom. It is one tab stop: the arrows move inside it and Escape hands the
 // keyboard back to the label. Its tools are icons; each says what it does on
@@ -21,13 +22,17 @@ import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHist
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
 import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
+import type { VariantChoice } from './variantRequests';
+import { VariantsTool } from './VariantsTool';
+
 /** What the toolbar does to the canvas, bound to the chat showing it. */
 export interface FrameActions {
   history: HistoryClient;
   /** False on a canvas this chat only views: the sidecar refuses its writes. */
   canEdit: boolean;
   rename: (frame: CanvasFrame, name: string) => Promise<unknown>;
-  makeVariants: (frame: CanvasFrame) => void;
+  /** Settles once the request has gone or failed, which it reports itself. */
+  makeVariants: (frame: CanvasFrame, choice: VariantChoice) => Promise<void>;
   saveToLibrary: (frame: CanvasFrame) => void;
 }
 
@@ -52,7 +57,23 @@ export interface FrameToolbarProps {
   onLeave: () => void;
 }
 
-type ToolId = 'history' | 'interact' | 'source' | 'chat' | 'rename' | 'more';
+export type ToolId =
+  | 'history'
+  | 'interact'
+  | 'source'
+  | 'chat'
+  | 'rename'
+  | 'variants'
+  | 'variant-options'
+  | 'more';
+
+/** What makes a button one of the bar's tools: its place in the arrow order and the tab stop. */
+export interface ToolButtonProps {
+  'data-tool': ToolId;
+  tabIndex: number;
+  className: string;
+  onFocus: () => void;
+}
 
 export function FrameToolbar(props: FrameToolbarProps) {
   if (!props.interacted) return <SelectToolbar {...props} />;
@@ -100,7 +121,7 @@ function SelectToolbar({
 
   const tools = toolsShown({ frame, actions, onOpenSource, onToggleChat });
   const tabStop = focusedTool !== null && tools.includes(focusedTool) ? focusedTool : tools[0];
-  const tool = (id: ToolId) => ({
+  const tool = (id: ToolId): ToolButtonProps => ({
     'data-tool': id,
     tabIndex: id === tabStop ? 0 : -1,
     className: 'canvas-frame-tool',
@@ -213,6 +234,12 @@ function SelectToolbar({
           </button>
         </Tooltip>
       )}
+      {actions.canEdit && frame.revisionId && (
+        <>
+          <ToolDivider />
+          <VariantsTool frame={frame} tool={tool} onMake={actions.makeVariants} />
+        </>
+      )}
       <ToolDivider />
       <Tooltip label="More">
         <button
@@ -253,14 +280,6 @@ function SelectToolbar({
           aria-label={`More for ${frame.name}`}
           className="min-h-0 overflow-y-auto p-1"
         >
-          <MenuRow
-            label="Make variants…"
-            disabled={!actions.canEdit || !frame.revisionId}
-            onRun={() => {
-              close();
-              actions.makeVariants(frame);
-            }}
-          />
           <MenuRow
             label="Save to library…"
             disabled={!frame.revisionId}
@@ -349,6 +368,7 @@ function toolsShown({
   if (onOpenSource) tools.push('source');
   if (onToggleChat) tools.push('chat');
   if (actions.canEdit) tools.push('rename');
+  if (actions.canEdit && frame.revisionId) tools.push('variants', 'variant-options');
   tools.push('more');
   return tools;
 }

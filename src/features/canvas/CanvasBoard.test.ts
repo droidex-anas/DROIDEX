@@ -23,7 +23,7 @@ const FRAME_ACTIONS: FrameActions = {
   history: { listRevisions: () => Promise.resolve([]), switchRevision: () => Promise.resolve() },
   canEdit: false,
   rename: () => Promise.resolve(),
-  makeVariants: () => undefined,
+  makeVariants: () => Promise.resolve(),
   saveToLibrary: () => undefined,
 };
 

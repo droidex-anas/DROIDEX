@@ -12,14 +12,14 @@ const source: VariantSource = {
   designSystem: { id: 'droidex', version: 2, mode: 'dark' },
 };
 
-test('variants are seeded from the pinned revision and placed beside the source', () => {
-  const input = variantFrames(source, { kind: 'layout', count: 2, direction: '' }, 'm1');
+test('variants are copies of the pinned revision, placed beside the source', () => {
+  const input = variantFrames(source, 2, 'm1', ['Hey']);
 
   assert.deepEqual(input.placeBeside, { designId: 'd1' });
   assert.equal(input.mutationId, 'm1');
   assert.deepEqual(
     input.frames.map((frame) => frame.name),
-    ['Hey · layout 1', 'Hey · layout 2'],
+    ['Hey (Variant 1)', 'Hey (Variant 2)'],
   );
   for (const frame of input.frames) {
     assert.deepEqual(frame.seed, {
@@ -33,23 +33,54 @@ test('variants are seeded from the pinned revision and placed beside the source'
   }
 });
 
+test('a second set is numbered after the variants of that name already on the board', () => {
+  const board = [
+    'Hey',
+    'Hey (Variant 1)',
+    'Hey (Variant 3)',
+    'Hello (Variant 7)',
+    'Hey (Variant 9) old',
+  ];
+
+  assert.deepEqual(
+    variantFrames(source, 2, 'm2', board).frames.map((frame) => frame.name),
+    ['Hey (Variant 4)', 'Hey (Variant 5)'],
+  );
+});
+
 test('a long source name is shortened so the variant name stays within the limit', () => {
   const long = { ...source, name: 'x'.repeat(MAX_FRAME_NAME_LENGTH) };
-  const [frame] = variantFrames(long, { kind: 'colour', count: 1, direction: '' }, 'm2').frames;
+  const [first] = variantFrames(long, 2, 'm3', []).frames;
 
-  assert.equal(frame.name.length, MAX_FRAME_NAME_LENGTH);
-  assert.ok(frame.name.endsWith(' · colour 1'));
+  assert.equal(first.name.length, MAX_FRAME_NAME_LENGTH);
+  assert.ok(first.name.endsWith(' (Variant 1)'));
+  const [next] = variantFrames(long, 2, 'm4', [first.name]).frames;
+  assert.ok(next.name.endsWith(' (Variant 2)'));
 });
 
 test('the request says what to change in the user words, and that the source stays', () => {
   assert.equal(
-    variantPrompt('Hey', { kind: 'style', count: 3, direction: '  softer\ncorners ' }),
-    'Make 3 style variants of Hey: softer corners\n' +
-      'Each pinned frame starts as a copy of Hey; give each a different visual style and leave Hey as it is.',
+    variantPrompt('Hey', { kind: 'style', count: 3, direction: '  softer corners, NOT our kit ' }),
+    'Make 3 style variants of Hey: softer corners, NOT our kit\n' +
+      'Each pinned frame starts as a copy of Hey; give each a different visual style, ' +
+      'distinct from the others, and leave Hey as it is.',
   );
   assert.equal(
-    variantPrompt('Hey', { kind: 'colour', count: 1, direction: '' }),
-    'Make a colour variant of Hey.\n' +
-      'The pinned frame starts as a copy of Hey; give it a different colour palette and leave Hey as it is.',
+    variantPrompt('Hey', { kind: 'any', count: 2, direction: '' }),
+    'Make 2 variants of Hey.\n' +
+      'Each pinned frame starts as a copy of Hey; give each a different take on it within the ' +
+      'current design system (layout, visual style or colour), distinct from the others, ' +
+      'and leave Hey as it is.',
+  );
+});
+
+test('an exploratory request frees the variants from the kit and the project look, not from tokens', () => {
+  assert.equal(
+    variantPrompt('Hey', { kind: 'explore', count: 4, direction: '' }),
+    'Make 4 exploratory variants of Hey.\n' +
+      'Each pinned frame starts as a copy of Hey; give each a clearly different visual direction, ' +
+      'distinct from the others, and leave Hey as it is.\n' +
+      'Explore freely: the variants need not follow the current design system or the project’s ' +
+      'look, but keep their code clean and their colours, type and spacing in tokens.',
   );
 });
