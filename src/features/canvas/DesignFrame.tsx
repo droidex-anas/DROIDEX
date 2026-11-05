@@ -8,7 +8,14 @@
 // at screen size: the board stylesheet divides it by --board-scale, because
 // chrome that shrinks with the board is unusable on a 50-frame canvas.
 
-import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import { flushSync } from 'react-dom';
 import {
   AlertTriangle,
@@ -101,6 +108,15 @@ export function DesignFrame(props: DesignFrameProps) {
   const animated = arriving && motion.frameArrivalMs > 0;
   const screenWidth = rect.width * scale;
   const focusLabel = () => label.current?.focus({ preventScroll: true });
+  // A press on a frame already selected keeps the selection, so all of it drags
+  // together; a click that never became a drag then picks the frame alone.
+  const press = (event: PointerEvent<HTMLElement>) => {
+    if (event.shiftKey || !selected) onPick(frame, event.shiftKey);
+    if (!event.shiftKey) onHold(frame, 'move', event);
+  };
+  const click = (event: MouseEvent<HTMLElement>) => {
+    if (!event.shiftKey) onPick(frame, false);
+  };
   return (
     <div
       data-design-frame={frame.designId}
@@ -136,7 +152,8 @@ export function DesignFrame(props: DesignFrameProps) {
           interacted={props.interacted}
           held={held}
           tabStop={props.tabStop}
-          onHold={onHold}
+          onPress={press}
+          onClick={click}
           onPick={onPick}
           onInteract={onInteract}
           onEnter={(picked) => {
@@ -199,9 +216,9 @@ export function DesignFrame(props: DesignFrameProps) {
                 });
                 return;
               }
-              onPick(frame, event.shiftKey);
-              if (!event.shiftKey) onHold(frame, 'move', event);
+              press(event);
             }}
+            onClick={click}
             onDoubleClick={(event) => {
               event.stopPropagation();
               if (mode === 'select') onInteract(frame);

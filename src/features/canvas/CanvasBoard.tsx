@@ -184,6 +184,7 @@ export function CanvasBoard({
     frames,
     scale: view.viewport.scale,
     mode: interaction.mode,
+    selectedFrameIds: interaction.selectedFrameIds,
     onStart: () => {
       view.markNavigated();
       view.stopAnimating();
@@ -381,7 +382,7 @@ export function CanvasBoard({
               selected={interaction.selectedFrameIds.includes(frame.designId)}
               showTools={showsFrameTools(interaction, frame.designId)}
               interacted={interaction.interactedFrameId === frame.designId}
-              held={gestures.heldDesignId === frame.designId}
+              held={gestures.heldDesignIds.includes(frame.designId)}
               agentWorking={agentWorking}
               capturePointer={overlayCapture}
               shownRevisionId={previews.shown.get(frame.designId) ?? null}

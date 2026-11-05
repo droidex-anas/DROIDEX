@@ -3,7 +3,13 @@
 // neighbours, and the lines and gaps the board draws to say so. A snapped rect
 // is in whole pixels, as every rect a drag commits is.
 
-import { clampDimension, roundRect, type FrameHandle } from './canvasGeometry';
+import {
+  boundsOf,
+  clampDimension,
+  roundRect,
+  type FrameHandle,
+  type Point,
+} from './canvasGeometry';
 import type { FrameRect } from './protocol';
 
 /** Screen pixels within which an edge, a centre or a spacing pulls the hand. */
@@ -39,6 +45,10 @@ export interface SnapMarks {
 
 export interface FrameSnap extends SnapMarks {
   rect: FrameRect;
+}
+
+export interface GroupSnap extends SnapMarks {
+  rects: FrameRect[];
 }
 
 /** How a handle moves a rect along one axis: all of it, its far edge, or not at all. */
@@ -83,6 +93,30 @@ export function snapFrameRect(
     guides: guidesFor(snapped, handle, others),
     gaps:
       handle === 'move' ? [...gapsFor(snapped, others, 'x'), ...gapsFor(snapped, others, 'y')] : [],
+  };
+}
+
+/**
+ * Frames carried together by `offset`, snapped as one: their bounds pull onto
+ * `others` as a single moved frame's would, and each frame keeps its place in
+ * the group.
+ */
+export function snapGroupMove(
+  starts: readonly FrameRect[],
+  offset: Point,
+  others: readonly FrameRect[],
+  scale: number,
+): GroupSnap {
+  const bounds = boundsOf(starts);
+  if (bounds === null) return { rects: [], guides: [], gaps: [] };
+  const moved = { ...bounds, x: bounds.x + offset.x, y: bounds.y + offset.y };
+  const { rect, ...marks } = snapFrameRect(moved, 'move', others, scale);
+  const carried = { x: rect.x - bounds.x, y: rect.y - bounds.y };
+  return {
+    rects: starts.map((start) =>
+      roundRect({ ...start, x: start.x + carried.x, y: start.y + carried.y }),
+    ),
+    ...marks,
   };
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MIN_FRAME_PX } from './canvasGeometry';
-import { snapFrameRect } from './frameSnap';
+import { snapFrameRect, snapGroupMove } from './frameSnap';
 import type { FrameRect } from './protocol';
 
 function rect(x: number, y: number, width: number, height: number): FrameRect {
@@ -38,6 +38,15 @@ test('the snap distance is in screen pixels, so it covers more of the world zoom
 test('a frame with nothing near it moves freely and draws no lines', () => {
   const free = snapFrameRect(rect(700, 900, 200, 100), 'move', [ANCHOR], 1);
   assert.deepEqual(free, { rect: rect(700, 900, 200, 100), guides: [], gaps: [] });
+});
+
+test('a moved selection snaps on its bounds, and each frame keeps its place in it', () => {
+  // The pair spans x 0 to 300; carried 103 right, its right edge is 3 past the anchor's.
+  const pair = [rect(0, 500, 100, 100), rect(150, 520, 150, 80)];
+  const moved = snapGroupMove(pair, { x: 103, y: 0 }, [ANCHOR], 1);
+
+  assert.deepEqual(moved.rects, [rect(100, 500, 100, 100), rect(250, 520, 150, 80)]);
+  assert.deepEqual(moved.guides, [{ axis: 'x', at: 400, from: 0, to: 600 }]);
 });
 
 test('a resize snaps only the edge in the hand', () => {

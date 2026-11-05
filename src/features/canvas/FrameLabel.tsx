@@ -6,9 +6,8 @@
 // the frame focus last rested on, and the board moves focus between them with
 // the arrows, Home and End in reading order.
 
-import { useEffect, useRef, useState, type PointerEvent, type Ref } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type Ref } from 'react';
 import { toast } from '../../lib/toast';
-import type { FrameHandle } from './canvasGeometry';
 import { canvasMessage } from './client';
 import type { CanvasFrame } from './protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
@@ -21,7 +20,8 @@ export function FrameLabel({
   interacted,
   held,
   tabStop,
-  onHold,
+  onPress,
+  onClick,
   onPick,
   onInteract,
   onEnter,
@@ -36,7 +36,9 @@ export function FrameLabel({
   held: boolean;
   /** This label holds the frames' one tab stop. */
   tabStop: boolean;
-  onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
+  /** A press on the label, which picks or drags the frame. */
+  onPress: (event: PointerEvent<HTMLElement>) => void;
+  onClick: (event: MouseEvent<HTMLElement>) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
   onEnter: (frame: CanvasFrame) => void;
@@ -59,9 +61,9 @@ export function FrameLabel({
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.stopPropagation();
-        onPick(frame, event.shiftKey);
-        if (!event.shiftKey) onHold(frame, 'move', event);
+        onPress(event);
       }}
+      onClick={onClick}
       onDoubleClick={(event) => {
         event.stopPropagation();
         onInteract(frame);
