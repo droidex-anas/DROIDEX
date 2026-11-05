@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useCallback, Suspense, type ReactNode } from 'react';
-import { GripVertical, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { Square } from '@droidex/icons';
 import { Button } from './ui/Button';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
@@ -69,6 +69,7 @@ import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReac
 import { activeProduct, showsTabStrip, viewRowLeadPx } from '../features/tabs/tabStrip';
 import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
 import { tileHandleProps } from '../features/tabs/tileDrag';
+import { SESSION_CONTROLS_TRAIL_PX } from '../lib/windowChrome';
 
 const NO_LIVE_PROCESSES: readonly AgentProcess[] = [];
 
@@ -194,9 +195,7 @@ interface ChatHeaderSub {
 
 function ChatTitleText({ title, live }: { title: string; live: boolean }) {
   return (
-    <span
-      className={`truncate text-body-strong max-w-60 ${live ? 'shimmer-text' : 'text-primary'}`}
-    >
+    <span className={`truncate text-body-strong ${live ? 'shimmer-text' : 'text-primary'}`}>
       {title}
     </span>
   );
@@ -248,6 +247,7 @@ function ChatHeader({
   live,
   sub,
   leadPx,
+  trailPx,
   canvas,
   tile,
 }: {
@@ -257,6 +257,8 @@ function ChatHeader({
   // Room left at the row's start for the window controls and the sidebar
   // toggle while the sidebar is collapsed.
   leadPx: number;
+  // Room left at the row's end for the session controls floating over it.
+  trailPx: number;
   // The chat's own canvas, which turns the title into its attached-chats menu.
   canvas?: { appSessionId: string; canvasId: string };
   // In a split tab the title is the tile's drag handle and close button.
@@ -266,16 +268,19 @@ function ChatHeader({
     <div
       // Only the top row of tiles is the window's drag row.
       data-electron-drag-region={tile && !tile.atTop ? undefined : true}
-      className="shrink-0 flex items-center gap-2 h-9 pr-4"
-      style={{ paddingLeft: leadPx }}
+      className="shrink-0 flex items-center gap-2 h-9"
+      style={{ paddingLeft: leadPx, paddingRight: trailPx }}
     >
+      {/* The title's text starts on the content edge and its padding hangs into
+          the gutter, where a tile's drag handle lights up on hover. */}
       <div
         {...(tile ? tileHandleProps(tile.id) : {})}
-        className={`flex min-w-0 items-center gap-1.5 rounded-lg pl-2 py-1.5 transition-colors ${
-          tile ? 'no-drag cursor-grab pr-2 active:cursor-grabbing' : 'pr-3'
-        } ${tile && !tile.focused ? 'bg-elevated/25' : 'bg-elevated/60'}`}
+        className={`-ml-1 flex h-control-sm min-w-0 items-center gap-1.5 rounded-md px-2 ${
+          tile
+            ? 'no-drag cursor-grab transition-colors hover:bg-elevated active:cursor-grabbing'
+            : ''
+        } ${tile && !tile.focused ? 'opacity-60' : ''}`}
       >
-        <GripVertical className="w-3.5 h-3.5 shrink-0 text-muted/40" />
         <HeaderTitle title={title} live={live} sub={sub} canvas={canvas} />
         {sub && (
           <>
@@ -704,6 +709,7 @@ export default function ChatView({
       appSessionId !== null &&
       sessionAttention(appSessionId, current.pendingPermissions, current.pendingQuestions) !== null,
   );
+  const working = live && !blockedOnUser;
   const chatHeaderSub = viewingChildSession
     ? {
         label: selectedChildLabel,
@@ -717,7 +723,7 @@ export default function ChatView({
     : origin
       ? {
           label: origin.threadTitle,
-          running: live && !blockedOnUser,
+          running: working,
           backTitle: 'Back to the chat that started this thread',
           onBack: () => {
             dispatch({ type: 'SET_ACTIVE_SESSION', id: origin.ownerAppSessionId });
@@ -885,6 +891,10 @@ export default function ChatView({
 
   // Only the top-left tile's header row takes in the window controls.
   const leadPx = rowLeadPx !== null && (!tile || (tile.atTop && tile.atLeft)) ? rowLeadPx : 16;
+  // Without a tab strip or a utility pane to hold them, the session controls
+  // float at the window's top-right corner, over the header of the view there.
+  const trailPx =
+    !tabStripShown && !besidePane && (!tile || tile.atTop) ? SESSION_CONTROLS_TRAIL_PX : 16;
   // A lone chat in a tab is named by its tab, so it needs a header only for a
   // crumb back — or for the canvas on its board, whose chats this column's
   // header owns (spec §4).
@@ -908,8 +918,9 @@ export default function ChatView({
           // crumb walks back to this chat instead, so it keeps its own title.
           (viewingChildSession ? undefined : origin?.ownerTitle) ?? displayTitle
         }
-        live={live}
+        live={working}
         leadPx={leadPx}
+        trailPx={trailPx}
         tile={tile}
         {...(chatHeaderSub !== undefined ? { sub: chatHeaderSub } : {})}
         {...(boardCanvasId !== null
@@ -918,7 +929,9 @@ export default function ChatView({
       />
     );
   } else if (!activeSession && tile) {
-    header = <ChatHeader title="New chat" live={false} leadPx={leadPx} tile={tile} />;
+    header = (
+      <ChatHeader title="New chat" live={false} leadPx={leadPx} trailPx={trailPx} tile={tile} />
+    );
   } else if (!tabStripShown) {
     // The welcome screen has no header of its own, but the top row still
     // belongs to the window chrome.
