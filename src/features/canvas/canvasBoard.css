@@ -102,6 +102,49 @@
   color: var(--selection-label);
 }
 
+/* The frame's tag in the chat: the selection tint while tagged, revealed by
+   hovering the frame while not. The inset gives the small glyph a 28px target. */
+.canvas-frame-tag {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms,
+    background 120ms,
+    color 120ms;
+}
+
+.canvas-frame-tag::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+@media (hover: hover) {
+  .canvas-frame:hover .canvas-frame-tag {
+    opacity: 1;
+  }
+
+  .canvas-frame-tag:hover {
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text);
+  }
+}
+
+.canvas-frame-tag[data-tagged],
+.canvas-frame-tag[data-tagged]:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--selection) 14%, transparent);
+  color: var(--selection-label);
+}
+
 /* The selected frame's toolbar, above its label row, starting where the label
    does, or ending where the frame does when the board would cut it off. The
    wrapper is what scales, so the gap under the bar is in screen pixels. */

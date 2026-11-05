@@ -95,10 +95,10 @@ export interface CanvasBoardProps {
   /** This chat's agent has a turn running, so frames with no source are being written. */
   agentWorking: boolean;
   onOpenSource?: (designId: string) => void;
-  /** The frames pinned to the chat's next prompt. */
+  /** The frames tagged in the chat's next prompt. */
   pinnedIds?: ReadonlySet<string>;
-  /** Pins a frame to the chat's next prompt or takes it off; absent where frames cannot be pinned. */
-  onToggleChat?: (frame: CanvasFrame) => void;
+  /** Tags frames in the chat's next prompt, or untags them; absent where frames cannot be tagged. */
+  onTagFrames?: (designIds: readonly string[]) => void;
   /** What the selected frame's toolbar does to the canvas. */
   frameActions: FrameActions;
   /** Where the board was left for a document; it reopens there instead of fitting. */
@@ -121,7 +121,7 @@ export function CanvasBoard({
   agentWorking,
   onOpenSource,
   pinnedIds,
-  onToggleChat,
+  onTagFrames,
   frameActions,
   restoredViewport,
   onLeave,
@@ -364,6 +364,7 @@ export function CanvasBoard({
             undoRemoval: onUndoRemoval,
             focusBoard: () => board.current?.focus({ preventScroll: true }),
             focusLabel,
+            tagFrames: onTagFrames,
           });
         }}
         onKeyUp={(event) => {
@@ -408,8 +409,8 @@ export function CanvasBoard({
                 board.current?.focus({ preventScroll: true });
               }}
               onOpenSource={onOpenSource}
-              inChat={pinnedIds?.has(frame.designId) ?? false}
-              onToggleChat={onToggleChat}
+              tagged={pinnedIds?.has(frame.designId) ?? false}
+              onTagFrames={onTagFrames}
               actions={frameActions}
               onDelete={removeSelection}
               onHold={gestures.onFramePointerDown}

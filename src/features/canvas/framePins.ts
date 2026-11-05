@@ -49,14 +49,19 @@ export function useFramePins(appSessionId: string | null): readonly FramePin[] {
   return useSyncExternalStore(subscribe, () => (appSessionId ? framePins(appSessionId) : NONE));
 }
 
-function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
+/** A frame's size on the board, as its chip and the size badge show it. */
+export function frameSize(frame: CanvasFrame): string {
   const { width, height } = frame.rect;
+  return `${String(Math.round(width))} × ${String(Math.round(height))}`;
+}
+
+function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
   return {
     canvasId,
     designId: frame.designId,
     revisionId: frame.revisionId,
     name: frame.name,
-    size: `${String(Math.round(width))} × ${String(Math.round(height))}`,
+    size: frameSize(frame),
     designSystem: frame.designSystem,
   };
 }
@@ -79,18 +84,38 @@ function samePin(a: FramePin, b: FramePin): boolean {
   );
 }
 
+function isTagged(pins: readonly FramePin[], canvasId: string, frame: CanvasFrame): boolean {
+  return pins.some((pin) => pin.canvasId === canvasId && pin.designId === frame.designId);
+}
+
+/** Every one of these frames is tagged already, so tagging them again untags them. */
+export function allTagged(
+  pins: readonly FramePin[],
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): boolean {
+  return frames.length > 0 && frames.every((frame) => isTagged(pins, canvasId, frame));
+}
+
 /**
- * Adds a frame to the chat's next prompt, or takes it off if it is there. A
- * request pins frames of one canvas, so a frame from another starts over.
+ * Tags these frames in the chat's next prompt, or untags them when `allTagged`.
+ * Frames already tagged stay where they are; the rest join by `addFramePins`.
  */
-export function toggleFramePin(appSessionId: string, canvasId: string, frame: CanvasFrame): void {
-  const held = framePins(appSessionId).filter((pin) => pin.canvasId === canvasId);
-  if (held.some((pin) => pin.designId === frame.designId))
-    publish(
+export function toggleFramePins(
+  appSessionId: string,
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): void {
+  const held = framePins(appSessionId);
+  if (allTagged(held, canvasId, frames)) {
+    unpinFrames(
       appSessionId,
-      held.filter((pin) => pin.designId !== frame.designId),
+      frames.map((frame) => pinOf(canvasId, frame)),
     );
-  else if (held.length < MAX_PINNED) publish(appSessionId, [...held, pinOf(canvasId, frame)]);
+    return;
+  }
+  const untagged = frames.filter((frame) => !isTagged(held, canvasId, frame));
+  if (untagged.length > 0) addFramePins(appSessionId, canvasId, untagged);
 }
 
 /**

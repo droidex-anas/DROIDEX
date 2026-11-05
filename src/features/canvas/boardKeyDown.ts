@@ -10,6 +10,7 @@ import {
   isBoardControl,
   isBoardEditor,
   isDeleteKey,
+  isTagKey,
   isUndoKey,
   modeShortcut,
   zoomShortcut,
@@ -44,6 +45,8 @@ export interface BoardKeyActions {
   undoRemoval: () => boolean;
   focusBoard: () => void;
   focusLabel: (designId: string) => void;
+  /** Tags these frames in the chat, or untags them; absent where frames cannot be tagged. */
+  tagFrames?: (designIds: readonly string[]) => void;
 }
 
 export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: BoardKeyActions) {
@@ -51,6 +54,10 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
   if (isBoardEditor(event.target)) return;
   const header = frameHeaderOf(event.target);
   const mark = annotationMarkOf(event.target);
+  if (isTagKey(event)) {
+    if (runTagKey(header, actions)) event.preventDefault();
+    return;
+  }
   // Board commands belong to the board and its frame labels. Its own tools take
   // the zoom and mode keys too, so a key still works after one was clicked;
   // Space, Enter and the arrows stay theirs. A focused mark takes the
@@ -69,6 +76,19 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
           runBoardKey(event, header, actions)));
   }
   if (handled) event.preventDefault();
+}
+
+/**
+ * The tag key, wherever on the board it is pressed: the selected frames, or a
+ * focused label's own frame when it is not among them.
+ */
+function runTagKey(header: string | null, { interaction, tagFrames }: BoardKeyActions): boolean {
+  const { selectedFrameIds } = interaction;
+  const designIds =
+    header !== null && !selectedFrameIds.includes(header) ? [header] : selectedFrameIds;
+  if (!tagFrames || designIds.length === 0) return false;
+  tagFrames(designIds);
+  return true;
 }
 
 function soleSelection({ selectedFrameIds }: BoardInteraction): string | null {

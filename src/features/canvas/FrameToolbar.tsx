@@ -1,5 +1,5 @@
 // The selected frame's toolbar (spec §4): switch its version, run it, read its
-// source, add it to the chat, rename it, and the rest behind More. It floats
+// source, tag it in the chat, rename it, and the rest behind More. It floats
 // above the frame's label at screen size, so it follows the frame through pan
 // and zoom. It is one tab stop: the arrows move inside it and Escape hands the
 // keyboard back to the label. Its tools are icons; each says what it does on
@@ -16,6 +16,7 @@ import {
 import { Check, Ellipsis, MessageThread, Pencil, Play } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
+import { TAG_KEY_LABEL } from './boardKeys';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
 import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
@@ -39,12 +40,12 @@ export interface FrameToolbarProps {
   roomRight: number;
   /** Spec §11's timings; the bar reveals on the popover token. */
   motion: CanvasMotion;
-  inChat: boolean;
+  tagged: boolean;
   actions: FrameActions;
   onInteract: (frame: CanvasFrame) => void;
   onExitInteract: () => void;
   onOpenSource?: (designId: string) => void;
-  onToggleChat?: (frame: CanvasFrame) => void;
+  onTagFrames?: (designIds: readonly string[]) => void;
   /** Turns the frame's label into its name field. */
   onRename: () => void;
   onDelete: () => void;
@@ -52,7 +53,7 @@ export interface FrameToolbarProps {
   onLeave: () => void;
 }
 
-type ToolId = 'history' | 'interact' | 'source' | 'chat' | 'rename' | 'more';
+type ToolId = 'history' | 'interact' | 'source' | 'tag' | 'rename' | 'more';
 
 export function FrameToolbar(props: FrameToolbarProps) {
   if (!props.interacted) return <SelectToolbar {...props} />;
@@ -80,11 +81,11 @@ function SelectToolbar({
   frame,
   roomRight,
   motion,
-  inChat,
+  tagged,
   actions,
   onInteract,
   onOpenSource,
-  onToggleChat,
+  onTagFrames,
   onRename,
   onDelete,
   onLeave,
@@ -98,7 +99,7 @@ function SelectToolbar({
     setOpen(null);
   }, []);
 
-  const tools = toolsShown({ frame, actions, onOpenSource, onToggleChat });
+  const tools = toolsShown({ frame, actions, onOpenSource, onTagFrames });
   const tabStop = focusedTool !== null && tools.includes(focusedTool) ? focusedTool : tools[0];
   const tool = (id: ToolId) => ({
     'data-tool': id,
@@ -180,20 +181,24 @@ function SelectToolbar({
           </button>
         </Tooltip>
       )}
-      {onToggleChat && (
-        <Tooltip label={inChat ? 'In chat. Take it out' : 'Add to chat'}>
+      {onTagFrames && (
+        <Tooltip
+          label={
+            tagged ? `Tagged in chat. Untag (${TAG_KEY_LABEL})` : `Tag in chat (${TAG_KEY_LABEL})`
+          }
+        >
           <button
             type="button"
-            {...tool('chat')}
-            aria-pressed={inChat}
+            {...tool('tag')}
+            aria-pressed={tagged}
             aria-label={
-              inChat ? `Take ${frame.name} out of the chat` : `Add ${frame.name} to the chat`
+              tagged ? `Untag ${frame.name} from the chat` : `Tag ${frame.name} in the chat`
             }
             onClick={() => {
-              onToggleChat(frame);
+              onTagFrames([frame.designId]);
             }}
           >
-            {inChat ? (
+            {tagged ? (
               <Check className="h-4 w-4" aria-hidden />
             ) : (
               <MessageThread className="h-4 w-4" aria-hidden />
@@ -341,13 +346,13 @@ function toolsShown({
   frame,
   actions,
   onOpenSource,
-  onToggleChat,
-}: Pick<FrameToolbarProps, 'frame' | 'actions' | 'onOpenSource' | 'onToggleChat'>): ToolId[] {
+  onTagFrames,
+}: Pick<FrameToolbarProps, 'frame' | 'actions' | 'onOpenSource' | 'onTagFrames'>): ToolId[] {
   const tools: ToolId[] = [];
   if (frame.revisionId) tools.push('history');
   tools.push('interact');
   if (onOpenSource) tools.push('source');
-  if (onToggleChat) tools.push('chat');
+  if (onTagFrames) tools.push('tag');
   if (actions.canEdit) tools.push('rename');
   tools.push('more');
   return tools;

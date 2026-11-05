@@ -17,7 +17,7 @@ import { lacksCanvasTools, type BoardInteraction } from './canvasState';
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import { DesignPreview } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
-import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
+import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
 import { useFrameActions } from './useFrameActions';
 
@@ -54,7 +54,7 @@ export function CanvasBoardMount({
   restoredViewport: Viewport | undefined;
   shownDocument: ShownDocument | null;
   onLeaveBoard: (viewport: Viewport) => void;
-  /** It is the chat's own canvas, so its frames can be pinned to the chat's next prompt. */
+  /** It is the chat's own canvas, so its frames can be tagged in the chat's next prompt. */
   pinnable: boolean;
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
@@ -156,10 +156,13 @@ export function CanvasBoardMount({
           agentWorking={agentWorking}
           pinnedIds={pinnedIds}
           frameActions={frameActions.actions}
-          onToggleChat={
+          onTagFrames={
             pinnable
-              ? (frame) => {
-                  toggleFramePin(appSessionId, canvasId, frame);
+              ? (designIds) => {
+                  const tagging = designIds.flatMap((designId) =>
+                    frames.filter((frame) => frame.designId === designId),
+                  );
+                  toggleFramePins(appSessionId, canvasId, tagging);
                 }
               : undefined
           }

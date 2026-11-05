@@ -12,6 +12,7 @@ import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canva
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
+import { toggleFramePins, useFramePins } from '../../../src/features/canvas/framePins';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import type {
@@ -315,6 +316,7 @@ function Harness() {
   const [interaction, setInteraction] = useState(SELECT_MODE);
   const [width, setWidth] = useState(1000);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
+  const tagged = useFramePins('chat_1');
   const board = useRef<CanvasBoardHandle>(null);
   const live = useRef(interaction);
   live.current = interaction;
@@ -533,6 +535,11 @@ function Harness() {
           onOpenSource={setSourceOpen}
           onRemoveFrames={(frames) => removals.remove('chat_1', snapshot.canvasId, frames)}
           onUndoRemoval={() => removals.undoLatest(snapshot.canvasId)}
+          pinnedIds={new Set(tagged.map((pin) => pin.designId))}
+          onTagFrames={(designIds) => {
+            const frames = snapshot.frames.filter((frame) => designIds.includes(frame.designId));
+            toggleFramePins('chat_1', snapshot.canvasId, frames);
+          }}
           frameActions={frameActions}
         />
         {sourceOpen && (
