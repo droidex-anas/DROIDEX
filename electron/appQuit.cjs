@@ -1,6 +1,8 @@
 // Quitting stops every agent, so it asks first while any is mid-turn, and the
 // app exits only after the sidecar has written its history and released its
 // locks. Leaving that to the orphaned sidecar loses both when the OS ends it.
+const IDLE_RECHECK_MS = 30_000;
+
 function installAppQuit({
   app,
   dialog,
@@ -14,8 +16,10 @@ function installAppQuit({
 }) {
   let sidecarStopped = false;
   let quitting = null;
+  let idleRecheck = null;
 
   app.on('before-quit', (event) => {
+    clearTimeout(idleRecheck);
     if (sidecarStopped || !sidecar.isReady()) {
       closeServices();
       void sidecar.stop();
@@ -34,12 +38,13 @@ function installAppQuit({
       app.quit();
       return;
     }
-    if (!keepsSidecarWithoutWindows()) void stopIdleSidecar();
+    clearTimeout(idleRecheck);
+    void stopSidecarWhenIdle();
   });
 
   async function quitAfterSidecarStops() {
     const working = await workingSessionCount();
-    if (working > 0 && !(await confirmQuit(working))) {
+    if (working !== 0 && !(await confirmQuit(working))) {
       await openMainWindow();
       return;
     }
@@ -48,24 +53,37 @@ function installAppQuit({
     app.quit();
   }
 
-  async function stopIdleSidecar() {
-    if ((await workingSessionCount()) > 0 || getMainWindow()) return;
+  function needsSidecar() {
+    return keepsSidecarWithoutWindows() || Boolean(getMainWindow());
+  }
+
+  async function stopSidecarWhenIdle() {
+    if (needsSidecar()) return;
+    const working = await workingSessionCount();
+    if (needsSidecar()) return;
+    if (working !== 0) {
+      clearTimeout(idleRecheck);
+      idleRecheck = setTimeout(() => void stopSidecarWhenIdle(), IDLE_RECHECK_MS);
+      idleRecheck.unref?.();
+      return;
+    }
     await sidecar.stop();
   }
 
+  // Null when the sidecar cannot answer, which a quit treats as possibly working.
   async function workingSessionCount() {
     try {
       return await sidecar.workingSessionCount();
     } catch (error) {
       logError('Could not ask the sidecar which agents are working', error);
-      return 0;
+      return null;
     }
   }
 
   async function confirmQuit(working) {
     const options = {
       type: 'warning',
-      message: working === 1 ? 'An agent is still working' : `${working} agents are still working`,
+      message: workingMessage(working),
       detail: `Quitting stops them mid-task. Their progress so far is saved, and you can continue them when you open ${app.getName()} again.`,
       buttons: ['Cancel', 'Quit'],
       defaultId: 0,
@@ -77,6 +95,12 @@ function installAppQuit({
       : await dialog.showMessageBox(options);
     return response === 1;
   }
+}
+
+function workingMessage(working) {
+  if (working === null) return 'Agents may still be working';
+  if (working === 1) return 'An agent is still working';
+  return `${working} agents are still working`;
 }
 
 module.exports = { installAppQuit };

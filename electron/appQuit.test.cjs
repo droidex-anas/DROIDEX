@@ -20,7 +20,10 @@ function harness({ working, answer = 0, window = {} }) {
   const sidecar = {
     working,
     isReady: () => true,
-    workingSessionCount: async () => sidecar.working,
+    workingSessionCount: async () => {
+      if (sidecar.working instanceof Error) throw sidecar.working;
+      return sidecar.working;
+    },
     stop: () => {
       calls.push('stop sidecar');
       return stopped.promise;
@@ -72,14 +75,23 @@ test('a confirmed quit exits only after the sidecar has stopped', async () => {
   ]);
 });
 
-test('closing the last window on macOS keeps the sidecar while agents work', async () => {
+test('a quit asks first when the sidecar cannot say whether agents work', async () => {
+  const { app, calls, dialogs } = harness({ working: new Error('timed out'), answer: 0 });
+  app.quit();
+  await settle();
+  assert.deepEqual(dialogs, ['Agents may still be working']);
+  assert.deepEqual(calls, ['quit', 'open window']);
+});
+
+test('closing the last window on macOS keeps the sidecar until its agents finish', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { app, sidecar, calls } = harness({ working: 1, window: null });
   app.emit('window-all-closed');
   await settle();
   assert.deepEqual(calls, []);
 
   sidecar.working = 0;
-  app.emit('window-all-closed');
+  t.mock.timers.tick(30_000);
   await settle();
   assert.deepEqual(calls, ['stop sidecar']);
 });

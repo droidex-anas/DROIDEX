@@ -95,14 +95,19 @@ function createSidecarSupervisor(options) {
 
   async function workingSessionCount() {
     const info = bridgeInfo;
+    const run = activeRun;
     if (!info || !isLiveChild(child)) return 0;
     const health = await requestHealth({
       port: info.port,
       token: info.token,
       timeoutMs: heartbeatTimeoutMs,
     });
+    if (activeRun !== run) throw new Error('The sidecar stopped before reporting its work.');
     const count = health?.workingSessions;
-    return Number.isSafeInteger(count) && count > 0 ? count : 0;
+    if (!Number.isSafeInteger(count) || count < 0) {
+      throw new Error('Sidecar health did not report its working sessions.');
+    }
+    return count;
   }
 
   function start() {
