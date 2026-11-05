@@ -6,6 +6,7 @@ import { listCanvasAssets } from '../../../sidecar/src/canvas/canvasAssets.js';
 import { createCanvasCommandHandler } from '../../../sidecar/src/canvas/canvasBridge.js';
 import { CanvasScopes } from '../../../sidecar/src/canvas/canvasScopes.js';
 import { CanvasWorkspace } from '../../../sidecar/src/canvas/CanvasWorkspace.js';
+import { KitPreviews } from '../../../sidecar/src/canvas/kitPreviews.js';
 import {
   CANVAS_PNG,
   CANVAS_PNG_ASSET_ID,
@@ -197,6 +198,7 @@ test('asset listing round trips through the renderer boundary and rejects a refu
     Promise.resolve(workspace),
     scopes,
     builds,
+    new KitPreviews(),
     { secret: 'test-canvas-secret', list: (id) => listCanvasAssets(root, id) },
     (event) => {
       const serialized: Record<string, unknown> = JSON.parse(JSON.stringify(event));
@@ -238,6 +240,7 @@ test('a replayed Create keeps the current attachment in the bridge reply, pane a
     Promise.resolve(workspace),
     scopes,
     builds,
+    new KitPreviews(),
     { secret: 'test-canvas-secret', list: (canvasId) => listCanvasAssets(root, canvasId) },
     (event) => {
       if (!event.type.startsWith('canvas.')) return;
@@ -312,6 +315,7 @@ test('library replies from the sidecar pass the renderer boundary', async (t) =>
     Promise.resolve(workspace),
     scopes,
     builds,
+    new KitPreviews(),
     { secret: 'test-canvas-secret', list: (id) => listCanvasAssets(root, id) },
     (event) => {
       if (!event.type.startsWith('canvas.')) return;
@@ -354,6 +358,7 @@ test('deleting a canvas round trips its preview and refuses one the canvas has m
     Promise.resolve(workspace),
     scopes,
     builds,
+    new KitPreviews(),
     { secret: 'test-canvas-secret', list: (id) => listCanvasAssets(root, id) },
     (event) => {
       if (!event.type.startsWith('canvas.')) return;

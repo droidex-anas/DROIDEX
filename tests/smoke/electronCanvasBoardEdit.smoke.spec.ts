@@ -104,7 +104,7 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
     window.boardHarness.answerEdit(0, { kind: 'token', token: '--ds-font-size-xl' }),
   );
   await page.clock.runFor(240);
-  await expect(panel.getByRole('status')).toHaveText('Font size now uses --ds-font-size-xl.');
+  await expect(panel.getByRole('status')).toHaveText('Font size now uses font-size-xl.');
   await expect
     .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
     .toMatchObject({ command: 'select', target: { elementId: 'el_title', styles: {} } });

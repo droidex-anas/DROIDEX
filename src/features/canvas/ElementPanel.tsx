@@ -8,6 +8,7 @@ import type { KeyboardEvent, Ref } from 'react';
 import { Input } from '../../components/ui/Field';
 import { cn } from '../../components/ui/cn';
 import type { SourceElement } from './protocol';
+import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
 
 /** One field: the style property it edits and the short name shown in it. */
@@ -219,7 +220,7 @@ function status({ draft, written }: ElementSelection, editable: boolean): string
   if (written) {
     const name = propertyLabel(written.property);
     if (written.resolution?.kind === 'token')
-      return `${name} now uses ${written.resolution.token}.`;
+      return `${name} now uses ${bareTokenName(written.resolution.token)}.`;
     if (written.resolution?.kind === 'raw')
       return `${name} is now ${written.resolution.value}; no design system token matches it.`;
   }

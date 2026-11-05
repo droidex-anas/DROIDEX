@@ -85,7 +85,8 @@ export interface SidecarSupervisorSnapshot {
 export interface CanvasPreviewCaptureRequest {
   requestId: string;
   guestId: number;
-  canvasId: string;
+  /** Null for a kit-bound guest, whose capture main returns but does not keep. */
+  canvasId: string | null;
   designId: string;
   revisionId: string;
   generation: number;
@@ -291,6 +292,12 @@ export interface DroidexApi {
   pickFiles: () => Promise<string[]>;
   canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
   canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
+  canvasPickKitImage: () => Promise<OwnedAsset | null>;
+  canvasDropKitImage: (file: File) => Promise<OwnedAsset>;
+  /** A kit image's bytes, or null when the store does not hold that image intact. */
+  canvasReadKitImage: (
+    assetId: string,
+  ) => Promise<{ mime: OwnedAsset['mediaType']; data: Uint8Array } | null>;
   listDirectories: (path: string) => Promise<DirectoryListing>;
   saveImage: (dataUrl: string) => Promise<string>;
   saveAttachment: (name: string, dataUrl: string) => Promise<string>;
@@ -307,7 +314,7 @@ export interface DroidexApi {
   getPerformanceMetrics: () => Promise<DesktopPerformanceMetrics>;
   /** Null where previews cannot run, such as a Remote browser. */
   canvasPreviewUrl: string | null;
-  canvasPreviewBind: (guestId: number, canvasId: string) => Promise<boolean>;
+  canvasPreviewBind: (guestId: number, binding: PreviewGuestBinding) => Promise<boolean>;
   canvasPreviewTerminate: (guestId: number) => Promise<boolean>;
   canvasPreviewCapture: (
     request: CanvasPreviewCaptureRequest,
@@ -604,6 +611,25 @@ export async function importCanvasImage(canvasId: string, file: File): Promise<O
   );
 }
 
+// Kit images (design system documents spec §8) enter the kit store only through
+// main's picker or a drop; main rejects with a curated { code, message }.
+export async function pickKitImage(): Promise<OwnedAsset | null> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasPickKitImage();
+}
+
+export async function importKitImage(file: File): Promise<OwnedAsset> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasDropKitImage(file);
+}
+
+// Main reads a kit image's bytes for the document: one can pass the bridge socket's buffer.
+export async function readKitImage(
+  assetId: string,
+): Promise<{ mime: OwnedAsset['mediaType']; data: Uint8Array } | null> {
+  return requireDesktopApi('Design system images need the desktop app.').canvasReadKitImage(
+    assetId,
+  );
+}
+
 // Absolute path behind a dropped or pasted File, or '' when there is none
 // (clipboard snapshot, plain browser). A real path is attached by reference
 // instead of being copied into the temp store.
@@ -832,10 +858,16 @@ export function canvasPreviewUrl(): string | null {
   return desktopApi()?.canvasPreviewUrl ?? null;
 }
 
-export async function bindCanvasPreviewGuest(guestId: number, canvasId: string): Promise<boolean> {
+/** What a preview guest may read: one canvas's images and kit fonts, or kit fonts only. */
+export type PreviewGuestBinding = { kind: 'canvas'; canvasId: string } | { kind: 'kit' };
+
+export async function bindCanvasPreviewGuest(
+  guestId: number,
+  binding: PreviewGuestBinding,
+): Promise<boolean> {
   const api = desktopApi();
   if (!api) return false;
-  return api.canvasPreviewBind(guestId, canvasId);
+  return api.canvasPreviewBind(guestId, binding);
 }
 
 /**

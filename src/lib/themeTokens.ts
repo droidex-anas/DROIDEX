@@ -187,6 +187,10 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     // Fields share the elevated rung today: a raised pad on dark, a recessed
     // well on light. Kept separate so fields can move on their own.
     '--field': elevated,
+    // A field inside a floating layer, where index.css makes it --field. On
+    // dark the layer is the elevated rung itself, so the field sinks halfway
+    // to the canvas as a recessed well; light fields already read on near-white.
+    '--field-raised': scheme === 'dark' ? mixHex(raised, theme.bg, 0.5) : elevated,
     '--active': active,
     '--raised': raised,
     ...sidebarTokens(sidebar, scheme, theme.translucentSidebar),

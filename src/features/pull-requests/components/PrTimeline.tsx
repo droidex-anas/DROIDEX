@@ -52,7 +52,7 @@ function CommitRow({ commit }: { commit: PrCommit }) {
       <span className="min-w-0 flex-1 truncate text-body text-primary">
         {commit.headline || shortSha(commit.oid)}
       </span>
-      <span className="shrink-0 font-mono text-code text-muted">{shortSha(commit.oid)}</span>
+      <span className="shrink-0 text-caption tabular-nums text-muted">{shortSha(commit.oid)}</span>
       {time ? (
         <span
           title={prAbsoluteTime(commit.committedDate)}

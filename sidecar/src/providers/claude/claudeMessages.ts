@@ -69,13 +69,25 @@ export function commandLifecycle(message: SDKMessage): { uuid: string; state: st
   return { uuid: frame.command_uuid, state: frame.state };
 }
 
-export function turnFailure(subtype: string, errors: string[]): string {
+function turnFailure(subtype: string, errors: string[]): string {
   // The CLI's own diagnostics are bracketed internals; the subtype is what a
   // user can act on.
   const detail = errors.filter((error) => !error.startsWith('[')).join('\n');
   return detail
     ? `Claude Code ended the turn (${subtype}): ${detail}`
     : `Claude Code ended the turn (${subtype}).`;
+}
+
+// The failure a result settles its turn with, if any. The CLI marks a request
+// it could not run (logged out, API down) is_error on a 'success' result: a
+// failed turn, not an answer.
+export function resultFailure(
+  message: Extract<SDKMessage, { type: 'result' }>,
+  authFailure?: string,
+): Error | undefined {
+  if (message.subtype !== 'success') return new Error(turnFailure(message.subtype, message.errors));
+  if (message.is_error) return new Error(authFailure ?? message.result);
+  return undefined;
 }
 
 export function isSlashCommand(text: string): boolean {

@@ -1,5 +1,6 @@
 import { CanvasCommandError } from './canvasError.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
+import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { unmappedTokens } from './designSystemTokens.js';
 import type { CanvasDiagnostic, CanvasScope, DesignSystemRef, WriteReceipt } from './protocol.js';
@@ -43,7 +44,7 @@ export async function applyDesignSystem(
           const system = await readDesignSystem(input.system);
           const diagnostics = unmappedTokens(
             Object.fromEntries(files),
-            system.modes[input.system.mode],
+            kitModes(system.sections)[input.system.mode],
             input.system.mode,
           );
           if (diagnostics.length > 0) throw new TokenMappingError(diagnostics);

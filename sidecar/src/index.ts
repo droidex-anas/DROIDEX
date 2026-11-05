@@ -5,6 +5,8 @@ import { createCanvasCommandHandler } from './canvas/canvasBridge.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import { importKitImage } from './canvas/kitAssets.js';
+import { KitPreviews } from './canvas/kitPreviews.js';
 import { prepareSessionFirstTurn } from './canvas/canvasSessionCreate.js';
 import { ProjectService } from './projects/ProjectService.js';
 import { ProjectStore } from './projects/store.js';
@@ -74,6 +76,7 @@ const server = startBridgeServer({
   canvasImages: {
     secret: CANVAS_ASSET_SECRET,
     importImage: async (request) => (await canvasReady).importCanvasImage(request),
+    importKitImage,
   },
   canvasExportToken: CANVAS_EXPORT_TOKEN,
   onCommand: async (command, pageId) => {
@@ -104,6 +107,7 @@ const server = startBridgeServer({
 // one per mutation request, and each turn's lease is registered here.
 const canvasScopes = new CanvasScopes();
 let canvasWorkspace: CanvasWorkspace | undefined;
+const kitPreviews = new KitPreviews();
 const canvasTurns = new CanvasTurns(
   canvasScopes,
   (appSessionId) => canvasWorkspace?.attachedCanvasId(appSessionId) ?? null,
@@ -125,6 +129,7 @@ const manager = new SessionManager(
     canvasTurns,
     canvasWorkspace: () => canvasReady,
     canvasCapture: (canvasId, ref, signal) => canvasBridge.capture(canvasId, ref, signal),
+    kitPreviews,
     onUserPrompt: (appSessionId) => {
       void projects?.userContinued(appSessionId).catch(reportProjectError);
     },
@@ -215,6 +220,7 @@ const canvasBridge = createCanvasCommandHandler(
   canvasReady,
   canvasScopes,
   canvasBuilds,
+  kitPreviews,
   {
     secret: CANVAS_ASSET_SECRET,
     list: (canvasId) => listCanvasAssets(canvasDir(), canvasId),
@@ -311,7 +317,7 @@ async function shutdown(): Promise<void> {
         }
       },
       shutdownCanvas: () =>
-        shutdownCanvas(canvasBuilds, canvasScopes, canvasReady, canvasWorkspace),
+        shutdownCanvas(canvasBuilds, kitPreviews, canvasScopes, canvasReady, canvasWorkspace),
       shutdownUsage: async () => {
         try {
           await queueUsageSessions([]);

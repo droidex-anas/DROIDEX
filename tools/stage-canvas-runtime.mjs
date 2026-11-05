@@ -43,6 +43,8 @@ const BUNDLED_SPECIFIERS = [
   'react-dom/client',
   'lucide-react/dist/esm/lucide-react.js',
   'recharts/es6/index.js',
+  // Its exports map gives esbuild the ESM barrel, index.mjs.
+  'simple-icons',
 ];
 
 // No runtime path reads these, and a packaged app may not carry source maps.

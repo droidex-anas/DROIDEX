@@ -19,6 +19,7 @@ import valueParser from 'postcss-value-parser';
 import type { Config } from 'tailwindcss';
 import { canvasRuntime } from './canvasRuntime.js';
 import { hostKitFonts } from './canvasFontAssets.js';
+import { kitModes } from './designSystemDocument.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -40,10 +41,10 @@ const UTILITIES = '@tailwind utilities;\n';
 
 export async function buildDesignStylesheet(
   files: SourceFiles,
-  system: DesignSystem,
+  system: Pick<DesignSystem, 'files' | 'sections'>,
 ): Promise<DesignStylesheetResult> {
   const sources: [string, string][] = [
-    [TOKENS_FILE, modeTokens(system)],
+    [TOKENS_FILE, modeTokens(kitModes(system.sections))],
     ...cssFiles(system.files).map(([path, css]): [string, string] => [
       `${KIT_SPECIFIER}/${path}`,
       css,
@@ -94,8 +95,8 @@ export async function buildDesignStylesheet(
 // anything legitimate to reach for.
 const LOADING_AT_RULES = new Set(['config', 'plugin', 'import', 'use', 'forward']);
 
-// A preview loads with no network. Its only URL resources are owned images and
-// locally installed kit fonts served by the preview host.
+// A preview loads with no network. Its only URL resources are owned images, kit
+// images and locally installed kit fonts, all served by the preview host.
 const RESOURCE_SETS = new Set(['image-set', '-webkit-image-set']);
 const REFERENCE_IN_MESSAGE = 80;
 
@@ -145,7 +146,7 @@ function refuseExternalResources(
     if (reference === null) return;
     refusals.push({
       code: 'css_error',
-      message: `"${declaration.prop}" refers to ${shorten(reference)}, which is outside the design. Use data: or an owned canvas-asset: image.`,
+      message: `"${declaration.prop}" refers to ${shorten(reference)}, which is outside the design. Use data:, an owned canvas-asset: image or a kit-asset: image.`,
       ...locate(declaration),
     });
   });
@@ -190,7 +191,7 @@ function isOwnedResource(reference: string): boolean {
   const value = decodeCssEscapes(reference).trim().toLowerCase();
   return (
     value.startsWith('data:') ||
-    /^canvas-asset:[0-9a-f]{64}$/.test(value) ||
+    /^(canvas|kit)-asset:[0-9a-f]{64}$/.test(value) ||
     /^droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}$/.test(value)
   );
 }
@@ -226,10 +227,10 @@ const TOKENS_FILE = `${KIT_SPECIFIER}/tokens`;
  * Both modes are emitted, and `data-mode` on the document picks one. Switching
  * mode is then an attribute change rather than a rebuild.
  */
-export function modeTokens(system: Pick<DesignSystem, 'modes'>): string {
+export function modeTokens(modes: ReturnType<typeof kitModes>): string {
   return (['light', 'dark'] as const)
     .map((mode) => {
-      const declarations = Object.entries(system.modes[mode])
+      const declarations = Object.entries(modes[mode])
         .map(([name, value]) => `  ${name}: ${value};`)
         .join('\n');
       return `[data-mode='${mode}'] {\n${declarations}\n}`;
@@ -243,7 +244,7 @@ export const CANVAS_TAILWIND_OPTIONS = {
   plugins: [],
 } satisfies Pick<Config, 'darkMode' | 'theme' | 'plugins'>;
 
-function tailwindConfig(files: SourceFiles, system: DesignSystem): Config {
+function tailwindConfig(files: SourceFiles, system: Pick<DesignSystem, 'files'>): Config {
   return {
     // Every design and kit file is scanned, so a class only appears when some
     // source literally spells it out; no partial class names are guessed.

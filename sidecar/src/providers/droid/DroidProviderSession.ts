@@ -47,7 +47,8 @@ export class DroidProviderSession implements ProviderSession {
   // on, then each one DROIDEX set, then each one Droid switched to itself.
   private modelId: string | undefined;
   private modelWritesInFlight = 0;
-  // Droid's own switch, held until it says why or a turn reaches its result.
+  // Droid's own switch, held only until the notice that follows its settings
+  // echo, which says whether the usage limit caused it.
   private pendingSwitch: HarnessModelSwitch | undefined;
   // The refusal Droid gave this turn, if any.
   private limitDetail: string | undefined;
@@ -145,19 +146,17 @@ export class DroidProviderSession implements ProviderSession {
   async *stream(prompt: string): AsyncGenerator<NormalizedEvent, void, undefined> {
     while (!this.permissions.isApplied) await this.permissions.synchronize();
     this.permissions.requireOpen();
-    // The raw listener hears each notification before the stream yields it. A
-    // switch waits until Droid says the usage limit caused it, or a turn reaches
-    // its result; one not yet reported when a turn fails goes with the next.
+    // The raw listener hears each notification before the stream yields it, so
+    // by the event after a settings echo the notice explaining the switch, if
+    // any, has been read. The chat follows the switch from there, or as the
+    // turn ends however it ends.
     this.limitDetail = undefined;
     try {
       for await (const event of this.runtime.streamTurn(this.droid, prompt, {
         includePartialMessages: true,
       })) {
-        const pending = this.pendingSwitch;
-        if (pending && (pending.cause === 'usage_limit' || event.type === 'result')) {
-          yield { harnessModelSwitch: pending };
-          this.pendingSwitch = undefined;
-        }
+        if (this.pendingSwitch && event.type !== 'settings_updated')
+          yield this.reportSwitch(this.pendingSwitch);
         // Droid can stream the refusal as an error and still end the turn
         // with a result.
         if (event.type === 'error' && droidErrorDetails(event.message).errorKind)
@@ -173,14 +172,21 @@ export class DroidProviderSession implements ProviderSession {
         if (normalized) yield normalized;
       }
     } catch (error) {
+      if (this.pendingSwitch) yield this.reportSwitch(this.pendingSwitch);
       const message = errMsg(error);
       // A limit notice already proved the refusal; a later error does not undo it.
       if (!droidErrorDetails(message).errorKind && this.limitDetail === undefined) throw error;
       this.limitDetail ??= message;
     }
+    if (this.pendingSwitch) yield this.reportSwitch(this.pendingSwitch);
     // A turn refused on the limit can still end in a successful result; only
     // the notice or the streamed error says it was refused.
     if (this.limitDetail !== undefined) throw await this.usageLimitError(this.limitDetail);
+  }
+
+  private reportSwitch(harnessModelSwitch: HarnessModelSwitch): NormalizedEvent {
+    this.pendingSwitch = undefined;
+    return { harnessModelSwitch };
   }
 
   // Droid's refusal names no reset. With a Factory key, one billing read says

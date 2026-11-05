@@ -1,35 +1,58 @@
-// A user kit from a pasted DESIGN.md, CSS variables or a Tailwind config (spec
-// §10). Names the shared primitives know are mapped onto their `--ds-*` tokens;
-// every other token is kept under its own name and read back as unmapped, and a
-// declaration that cannot become a token is reported, never dropped quietly.
+// A user kit from a DESIGN.md, CSS variables and Tailwind configs, pasted (spec
+// §10) or read from a project (design system documents spec §12). Names the
+// shared primitives know are mapped onto their `--ds-*` tokens; every other
+// token keeps its own name in the kit's namespace (`--bg` is `--ds-bg`) and is
+// read back as unmapped, and a declaration that cannot become a token is
+// reported, never dropped quietly.
 
 import valueParser from 'postcss-value-parser';
+import { buildDocument, CONTRACT_TOKEN_NAMES, type DocumentPart } from './buildDocument.js';
+import { kitPrimitives } from './designSystemBrief.js';
 import {
-  designSystemSchema,
   DESIGN_SYSTEM_LIMITS,
-  tokenValueSchema,
+  designSystemSchema,
   type DesignSystem,
+  type DesignSystemProvenance,
   type DesignSystemSource,
 } from './designSystems.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import { UNIVERSAL_GUIDANCE } from './presets/starter.js';
+import { DOCUMENT_LIMITS, kitModes, tokenValueSchema } from './designSystemDocument.js';
 import {
+  LICENSED_FONTS,
+  PRIMITIVE_EXAMPLES,
+  PRIMITIVE_PARTS,
+  rulesNote,
+  STARTER_FILES,
+  STARTER_TOKENS,
+} from './presets/starter.js';
+import {
+  declarePlaceholders,
+  emptyDeclared,
   fencedBlocks,
   looksLikeConfig,
+  placeOf,
   readCss,
   readTailwind,
   tokenName,
   type Declared,
   type Mode,
+  type TextOrigin,
 } from './designSystemSources.js';
 import type { CanvasDiagnostic } from './protocol.js';
+import { readTokenModule } from './tokenModules.js';
 
 export type ImportDesignSystemResult =
   | { status: 'imported'; system: DesignSystem; diagnostics: CanvasDiagnostic[] }
   | { status: 'refused'; diagnostics: CanvasDiagnostic[] };
 
-/** The tokens Button, Input, Card, Badge, Tabs and Dialog read, with DROIDEX's values. */
-const CONTRACT = DROIDEX_DESIGN_SYSTEM.modes;
+/** One text a kit is made from; a project's names the file it was read from. */
+export interface ImportSource {
+  kind: 'designMd' | 'css' | 'tailwind' | 'tokens';
+  text: string;
+  file?: string;
+}
+
+/** The tokens Button, Input, Card, Badge, Tabs and Dialog read, with the starter's values. */
+const CONTRACT = STARTER_TOKENS;
 const MODES: readonly Mode[] = ['light', 'dark'];
 const MAX_DIAGNOSTICS = 64;
 // Messages can quote pasted names; the renderer drops a reply with an overlong one.
@@ -78,25 +101,61 @@ const ALIASES: Record<string, string[]> = {
   ),
 };
 
-/** Kit tokens outside the shared primitive contract; presets have none. */
-export function unmappedKitTokens(system: Pick<DesignSystem, 'modes'>): string[] {
-  return Object.keys(system.modes.light)
-    .filter((name) => !Object.hasOwn(CONTRACT.light, name))
+const SHARED_PRIMITIVES = new Set(kitPrimitives({ files: STARTER_FILES }));
+
+/**
+ * The tokens left in Other tokens: outside the shared primitive contract and in
+ * no section of their own, as an import keeps the names it could not map. Only a
+ * kit built on the shared primitives maps onto them; one with primitives of its
+ * own reads its own tokens.
+ */
+export function unmappedKitTokens(system: Pick<DesignSystem, 'sections' | 'files'>): string[] {
+  if (kitPrimitives(system).some((name) => !SHARED_PRIMITIVES.has(name))) return [];
+  const others = system.sections.filter((section) => section.kind === 'tokens');
+  return Object.keys(kitModes(others).light)
+    .filter((name) => !CONTRACT_TOKEN_NAMES.has(name))
     .sort();
 }
 
-/** A complete version-1 kit, or why none can be made. The same input always yields the same kit. */
+/** The New menu's pasted text as a source: a config or a stylesheet, told apart by its shape. */
+export function pastedSource({ kind, text }: DesignSystemSource): ImportSource {
+  if (kind === 'designMd') return { kind, text };
+  return { kind: looksLikeConfig(text) ? 'tailwind' : 'css', text };
+}
+
+/**
+ * A complete version-1 kit from its sources, in order, or why none can be made.
+ * The same input always yields the same kit.
+ */
 export function importDesignSystem(
-  source: DesignSystemSource,
-  kit: { id: string; name: string },
+  sources: readonly ImportSource[],
+  kit: { id: string; name: string; provenance?: DesignSystemProvenance },
 ): ImportDesignSystemResult {
+  if (sources.filter((source) => source.kind === 'designMd').length > 1)
+    return refused('Name one DESIGN.md; a kit keeps one design.md note.');
   const diagnostics: CanvasDiagnostic[] = [];
-  const declared: Declared = { scopes: { shared: {}, light: {}, dark: {} }, lines: new Map() };
-  const read =
-    source.kind === 'designMd'
-      ? readDesignMd(source.text, declared, diagnostics)
-      : readTokenSource(source.text, declared, diagnostics);
-  if (read.status === 'refused') return read;
+  const declared = emptyDeclared();
+  const notes: DocumentPart[] = [];
+  for (const source of sources) {
+    const read = readSource(source, declared, diagnostics);
+    if (read.status === 'refused') return read;
+    notes.push(...read.notes);
+  }
+  declarePlaceholders(declared, diagnostics);
+  if (declared.places.size === 0) {
+    if (notes.length === 0)
+      return refused(
+        diagnostics.length > 0
+          ? `No tokens could be imported. ${diagnostics[0].message}`
+          : 'No CSS custom properties or Tailwind theme values were found.',
+        diagnostics,
+      );
+    diagnostics.push({
+      code: 'no_tokens',
+      message:
+        'This DESIGN.md has no css or Tailwind config block, so the kit keeps the default tokens.',
+    });
+  }
   const unreadable = tokenRefusal(declared, diagnostics);
   if (unreadable) return unreadable;
 
@@ -104,79 +163,95 @@ export function importDesignSystem(
     id: kit.id,
     version: 1,
     name: kit.name,
-    modes: mapOntoContract(declared, diagnostics),
-    files: DROIDEX_DESIGN_SYSTEM.files,
-    guidance: read.guidance,
-    examples: DROIDEX_DESIGN_SYSTEM.examples,
+    ...starterKit(mapOntoContract(declared, diagnostics), notes),
+    ...(kit.provenance ? { provenance: kit.provenance } : {}),
   });
   if (!parsed.success)
     return refused(parsed.error.issues[0]?.message ?? 'That design system is not valid.');
   return { status: 'imported', system: parsed.data, diagnostics: bounded(diagnostics) };
 }
 
-type SourceRead = { status: 'read'; guidance: string } | Refused;
+/**
+ * A new kit's document and source before anything else is written into it: the
+ * shared primitives with their notes and previews, these tokens (the starter's
+ * values for the primitives' tokens unless given) and these overview notes.
+ */
+export function starterKit(
+  tokens: Record<Mode, Record<string, string>> = CONTRACT,
+  notes: DocumentPart[] = [],
+): Pick<DesignSystem, 'cover' | 'sections' | 'files' | 'examples'> {
+  return {
+    cover: null,
+    sections: buildDocument({
+      tokens,
+      overview: [rulesNote(LICENSED_FONTS), ...notes],
+      components: PRIMITIVE_PARTS,
+    }),
+    files: STARTER_FILES,
+    examples: PRIMITIVE_EXAMPLES,
+  };
+}
+
+type SourceRead = { status: 'read'; notes: DocumentPart[] } | Refused;
 
 // Competing values are refused, as extraction refuses them: neither is the
 // kit's. Bounding the token count also bounds how deep a reference chain runs.
 function tokenRefusal(declared: Declared, diagnostics: CanvasDiagnostic[]): Refused | null {
   const competing = diagnostics.find((entry) => entry.code === 'ambiguous_token');
   if (competing) return failed([competing, ...diagnostics.filter((entry) => entry !== competing)]);
-  const { maxTokensPerMode } = DESIGN_SYSTEM_LIMITS;
-  if (declared.lines.size <= maxTokensPerMode) return null;
+  const { maxTokens } = DOCUMENT_LIMITS;
+  if (declared.places.size <= maxTokens) return null;
   return refused(
-    `That source declares ${String(declared.lines.size)} tokens; a kit holds at most ${String(maxTokensPerMode)} in each mode.`,
+    `That source declares ${String(declared.places.size)} tokens; a kit holds at most ${String(maxTokens)}.`,
   );
 }
 
-/** The whole text becomes guidance beside the primitive notes; its css and config blocks set tokens. */
-function readDesignMd(
-  text: string,
+function readSource(
+  source: ImportSource,
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
 ): SourceRead {
-  if (text.trim() === '') return refused('Write or paste a DESIGN.md first.');
-  const guidance = `${UNIVERSAL_GUIDANCE}\n${text.trim()}\n`;
-  if (Buffer.byteLength(guidance) > DESIGN_SYSTEM_LIMITS.maxGuidanceBytes) {
-    const allowance = DESIGN_SYSTEM_LIMITS.maxGuidanceBytes - Buffer.byteLength(UNIVERSAL_GUIDANCE);
+  const { kind, text, file } = source;
+  if (text.trim() === '') {
+    if (file !== undefined) return refused(`${file} is empty.`);
     return refused(
-      `A DESIGN.md holds at most ${String(Math.floor(allowance / 1024))} KiB beside the primitive notes. Shorten it; it is never truncated.`,
+      kind === 'designMd'
+        ? 'Write or paste a DESIGN.md first.'
+        : 'Paste CSS variables or a Tailwind config first.',
     );
   }
-  for (const block of fencedBlocks(text)) {
-    let failure: CanvasDiagnostic | null = null;
-    if (block.language === 'css') failure = readCss(block.text, block.line, declared, diagnostics);
-    else if (/\btheme\s*:/.test(block.text))
-      failure = readTailwind(block.text, block.line, declared, diagnostics);
-    if (failure) return failed([failure, ...diagnostics]);
-  }
-  if (declared.lines.size === 0)
-    diagnostics.push({
-      code: 'no_tokens',
-      message:
-        'This DESIGN.md has no css or Tailwind config block, so the kit keeps DROIDEX tokens.',
-    });
-  return { status: 'read', guidance };
+  const origin: TextOrigin = file === undefined ? { lineOffset: 0 } : { file, lineOffset: 0 };
+  if (kind === 'designMd') return readDesignMd(text, origin, declared, diagnostics);
+  const failure =
+    kind === 'tailwind'
+      ? readTailwind(text, origin, declared, diagnostics)
+      : kind === 'tokens'
+        ? readTokenModule(text, origin, declared, diagnostics)
+        : readCss(text, origin, declared, diagnostics);
+  return failure ? failed([failure, ...diagnostics]) : { status: 'read', notes: [] };
 }
 
-/** Pasted CSS variables or a Tailwind config: tokens only, so the kit keeps the primitive notes alone. */
-function readTokenSource(
+/** The whole text becomes the kit's design.md notes; its css and config blocks set tokens. */
+function readDesignMd(
   text: string,
+  origin: TextOrigin,
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
 ): SourceRead {
-  if (text.trim() === '') return refused('Paste CSS variables or a Tailwind config first.');
-  const failure = looksLikeConfig(text)
-    ? readTailwind(text, 0, declared, diagnostics)
-    : readCss(text, 0, declared, diagnostics);
-  if (failure) return failed([failure, ...diagnostics]);
-  if (declared.lines.size === 0)
+  const body = `${text.trim()}\n`;
+  if (Buffer.byteLength(body) > DESIGN_SYSTEM_LIMITS.maxGuidanceBytes)
     return refused(
-      diagnostics.length > 0
-        ? `No tokens could be imported. ${diagnostics[0].message}`
-        : 'No CSS custom properties or Tailwind theme values were found.',
-      diagnostics,
+      `A DESIGN.md holds at most ${String(DESIGN_SYSTEM_LIMITS.maxGuidanceBytes / 1024)} KiB. Shorten it; it is never truncated.`,
     );
-  return { status: 'read', guidance: UNIVERSAL_GUIDANCE };
+  for (const block of fencedBlocks(text)) {
+    const blockOrigin = { ...origin, lineOffset: block.line };
+    let failure: CanvasDiagnostic | null = null;
+    if (block.language === 'css') failure = readCss(block.text, blockOrigin, declared, diagnostics);
+    else if (/\btheme\s*:/.test(block.text))
+      failure = readTailwind(block.text, blockOrigin, declared, diagnostics);
+    if (failure) return failed([failure, ...diagnostics]);
+  }
+  return { status: 'read', notes: [{ kind: 'note', label: 'design.md', body }] };
 }
 
 type Refused = Extract<ImportDesignSystemResult, { status: 'refused' }>;
@@ -224,25 +299,39 @@ function mapOntoContract(
     if (alias) assign(contractName, `--${alias}`);
   }
 
-  for (const [name, line] of declared.lines) {
+  // A name keeps its own spelling when its --ds- form is a primitive's or another source token's.
+  const kitName = (name: string): string => {
+    if (name.startsWith('--ds-')) return name;
+    const prefixed = `--ds-${name.slice('--'.length)}`;
+    const taken = Object.hasOwn(CONTRACT.light, prefixed) || declared.places.has(prefixed);
+    return taken ? name : prefixed;
+  };
+  for (const name of declared.places.keys()) {
     if (claimed.has(name)) continue;
     const light = resolved.light.get(name);
     const dark = resolved.dark.get(name);
     const either = light ?? dark;
     if (either === undefined) continue;
+    const only: Mode = light === undefined ? 'dark' : 'light';
     if (light === undefined || dark === undefined)
       diagnostics.push({
         code: 'single_mode_token',
-        message: `${name} has only a ${light === undefined ? 'dark' : 'light'} value; both modes use it.`,
-        line,
+        message: `${name} has only a ${only} value; both modes use it.`,
+        ...placeOf(declared, name, only),
       });
-    modes.light[name] = light ?? either;
-    modes.dark[name] = dark ?? either;
+    const kept = kitName(name);
+    modes.light[kept] = light ?? either;
+    modes.dark[kept] = dark ?? either;
   }
   return modes;
 }
 
-type Resolution = { value: string } | { problem: string };
+/**
+ * A token's final value, and what a reference to it inlines: its value before
+ * bare HSL channels are wrapped, so shadcn's `hsl(var(--primary))` stays one `hsl()`.
+ */
+type Resolution = { value: string; inline: string } | { problem: string };
+type Inlined = { value: string } | { problem: string };
 
 /** Each token's final light and dark values; a token whose value cannot be used is reported once. */
 function resolveValues(
@@ -250,7 +339,7 @@ function resolveValues(
   diagnostics: CanvasDiagnostic[],
 ): Record<Mode, Map<string, string>> {
   const resolved = { light: new Map<string, string>(), dark: new Map<string, string>() };
-  const problems = new Map<string, string>();
+  const problems = new Map<string, { problem: string; mode: Mode }>();
   for (const mode of MODES) {
     // One resolution per token keeps fanned-out references linear, and a token
     // still being resolved when it is reached again is a cycle.
@@ -265,20 +354,20 @@ function resolveValues(
       resolutions.set(name, resolution);
       return resolution;
     };
-    for (const name of declared.lines.keys()) {
+    for (const name of declared.places.keys()) {
       const resolution = resolve(name);
       if (resolution === undefined) continue;
       if ('value' in resolution) resolved[mode].set(name, resolution.value);
-      else if (!problems.has(name)) problems.set(name, resolution.problem);
+      else if (!problems.has(name)) problems.set(name, { problem: resolution.problem, mode });
     }
   }
-  for (const [name, line] of declared.lines) {
-    const problem = problems.get(name);
-    if (problem !== undefined)
+  for (const name of declared.places.keys()) {
+    const failure = problems.get(name);
+    if (failure !== undefined)
       diagnostics.push({
         code: 'unusable_value',
-        message: `${name} was not imported. ${problem}`,
-        line,
+        message: `${name} was not imported. ${failure.problem}`,
+        ...placeOf(declared, name, failure.mode),
       });
   }
   return resolved;
@@ -299,7 +388,7 @@ function usableValue(raw: string, resolve: (name: string) => Resolution | undefi
   if (!checked.success)
     return { problem: checked.error.issues[0]?.message ?? 'That is not a token value.' };
   if (/\burl\(|image-set\(/i.test(value)) return { problem: 'A kit token cannot load a resource.' };
-  return { value };
+  return { value, inline: inlined.value };
 }
 
 /**
@@ -325,7 +414,7 @@ function functionDepth(value: string): number {
 function inlineReferences(
   value: string,
   resolve: (name: string) => Resolution | undefined,
-): Resolution {
+): Inlined {
   if (!value.includes('var(')) return { value };
   const replacements: { start: number; end: number; text: string }[] = [];
   const problems: string[] = [];
@@ -336,19 +425,21 @@ function inlineReferences(
     const comma = node.nodes.findIndex((part) => part.type === 'div' && part.value === ',');
     const fallback =
       comma < 0 ? undefined : valueParser.stringify(node.nodes.slice(comma + 1)).trim();
-    let resolution = resolve(tokenName(name) ?? '');
-    if (resolution === undefined && fallback !== undefined)
-      resolution = inlineReferences(fallback, resolve);
+    const resolution = resolve(tokenName(name) ?? '');
+    let replacement: Inlined | undefined =
+      resolution && 'inline' in resolution ? { value: resolution.inline } : resolution;
+    if (replacement === undefined && fallback !== undefined)
+      replacement = inlineReferences(fallback, resolve);
     // A contract token the source never set is still in the kit.
-    if (resolution === undefined && Object.hasOwn(CONTRACT.light, name))
-      resolution = { value: `var(${name})` };
-    if (resolution === undefined) problems.push(UNDEFINED_REFERENCE);
-    else if ('problem' in resolution) problems.push(UNUSABLE_REFERENCE);
+    if (replacement === undefined && Object.hasOwn(CONTRACT.light, name))
+      replacement = { value: `var(${name})` };
+    if (replacement === undefined) problems.push(UNDEFINED_REFERENCE);
+    else if ('problem' in replacement) problems.push(UNUSABLE_REFERENCE);
     else
       replacements.push({
         start: node.sourceIndex,
         end: node.sourceEndIndex,
-        text: resolution.value,
+        text: replacement.value,
       });
     return false;
   });

@@ -71,6 +71,7 @@ The UI uses the platform system face (`sans`: SF Pro on macOS), code uses the na
 - Badges: `overline` (10/12, medium, uppercase, 0.08em).
 - Titles: `display` 24/30, `title` 22/28, `heading` 18/22, `subheading` 16/20, all semibold with negative tracking.
 - Code, terminal, diffs: `code` (12/18) and `code-sm` (11/16) in `mono`, tabular figures.
+- Inline code in running text: the face and size of the text around it at weight 500, with no box. Mono is for code surfaces, not names in a sentence.
 - Weights are 400, 500 and 600 only. Medium (500) is the working weight for interactive labels; semibold (600) is for headings. Never bold (700).
 
 ### Text by surface
@@ -129,6 +130,10 @@ Use the **DROIDEX icon set** (`packages/icons`). It has 166 curved 24px outline 
 ## Logo
 
 The mark is a pixel **DX** monogram built on an 80px grid. On the light tile (`brand-paper`) the D is `brand-ink`, and on the dark tile (`brand-ink`) the D is `brand-paper`. The X is always `brand-orange`. In text the wordmark is set in `wordmark` style (Silkscreen, tracking −0.04em) as DROIDE + X, so the X can take `brand-orange`. Use the files in `assets/brand` (`icon.svg`, `icon-dark.svg`) as they are; don't redraw, recolour or stretch them. The DROIDEX name and mark are trademarks, so forks must use their own.
+
+## Canvas kit
+
+The built-in DROIDEX kit in Design canvases is this system as a kit: its tokens, notes, primitives, cover and component previews live in `sidecar/src/canvas/presets/droidex/`, exported from a kit made in the app. To change it, duplicate DROIDEX in the app, edit the copy and let its cover and previews render in both modes, then write it back with `npm run kits:export -- --profile <profile dir> --kit <copy id> --as droidex`. The export takes the copy's latest version and the captures it has, and lists the ones still missing.
 
 ## Not covered yet
 

@@ -2,13 +2,27 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import postcss from 'postcss';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
-import { DESIGN_SYSTEM_LIMITS, readDesignSystem, saveDesignSystem } from './designSystems.js';
+import { kitModes } from './designSystemDocument.js';
+import {
+  DESIGN_SYSTEM_LIMITS,
+  readDesignSystem,
+  saveDesignSystem,
+  type DesignSystem,
+} from './designSystems.js';
 import { extractDesignSystem } from './extractDesignSystem.js';
 import { CompilerWorker } from './compiler.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import { HEY_TSX } from './presets/starter.js';
+import { STARTER_TOKENS } from './presets/starter.js';
+import { PRICING_TSX } from '../testing/sampleKit.js';
 
 pinScratchProfile();
+
+function save(system: DesignSystem) {
+  return saveDesignSystem(system, {
+    mutationId: system.id,
+    baseVersion: null,
+    savedBy: { actor: 'user' },
+  });
+}
 
 const input = {
   name: 'Owned studio',
@@ -18,33 +32,35 @@ const input = {
 
 test('a saved token-only extraction compiles all six shared primitives with styles and tokens in both modes', async (t) => {
   const result = extractDesignSystem(
-    { 'tokens.css': ':root { --ds-accent: #ff0000; }', 'main.tsx': HEY_TSX },
+    { 'tokens.css': ':root { --ds-accent: #ff0000; }', 'main.tsx': PRICING_TSX },
     input,
   );
   assert.equal(result.status, 'extracted');
   if (result.status !== 'extracted') return;
-  const ref = await saveDesignSystem(result.system);
+  const ref = await save(result.system);
   const worker = new CompilerWorker();
   t.after(() => worker.terminate());
   for (const mode of ['light', 'dark'] as const) {
     const compiled = await worker.compile(
       {
+        kind: 'design',
         designId: input.from.designId,
         revisionId: input.from.revisionId,
         generation: 1,
         designSystemAdherence: 'guide',
         designSystem: { ...ref, mode },
-        files: { 'main.tsx': HEY_TSX },
+        files: { 'main.tsx': PRICING_TSX },
       },
       new AbortController().signal,
     );
     assert.deepEqual(compiled.diagnostics, []);
-    assert.equal(result.system.modes[mode]['--ds-accent'], '#ff0000');
+    const tokens: Record<string, string> = kitModes(result.system.sections)[mode];
+    assert.equal(tokens['--ds-accent'], '#ff0000');
     for (const name of ['button', 'input', 'card', 'badge', 'tab', 'dialog']) {
       assert.ok(compiled.html.includes('.ds-' + name), `${name} retains its base styles`);
     }
     for (const match of compiled.html.matchAll(/var\((--ds-[\w-]+)/g)) {
-      assert.ok(Object.hasOwn(result.system.modes[mode], match[1]), `${match[1]} is mapped`);
+      assert.ok(Object.hasOwn(tokens, match[1]), `${match[1]} is mapped`);
     }
   }
 });
@@ -65,9 +81,9 @@ test('extraction keeps owned tokens and primitive modules, reports inherited val
   );
   assert.equal(extracted.status, 'extracted');
   if (extracted.status !== 'extracted') return;
-  assert.deepEqual(extracted.system.modes, {
-    light: { ...DROIDEX_DESIGN_SYSTEM.modes.light, '--ds-space': '8px', '--ds-accent': '#123456' },
-    dark: { ...DROIDEX_DESIGN_SYSTEM.modes.dark, '--ds-space': '8px', '--ds-accent': '#abcdef' },
+  assert.deepEqual(kitModes(extracted.system.sections), {
+    light: { ...STARTER_TOKENS.light, '--ds-space': '8px', '--ds-accent': '#123456' },
+    dark: { ...STARTER_TOKENS.dark, '--ds-space': '8px', '--ds-accent': '#abcdef' },
   });
   assert.deepEqual(extracted.system.provenance, {
     sourceCanvasId: input.sourceCanvasId,
@@ -88,12 +104,13 @@ test('extraction keeps owned tokens and primitive modules, reports inherited val
       (entry) => entry.code === 'not_source_owned' && entry.file === 'main.tsx',
     ),
   );
-  const ref = await saveDesignSystem(extracted.system);
+  const ref = await save(extracted.system);
   assert.deepEqual((await readDesignSystem(ref)).provenance, extracted.system.provenance);
   const worker = new CompilerWorker();
   t.after(() => worker.terminate());
   const compiled = await worker.compile(
     {
+      kind: 'design',
       designId: input.from.designId,
       revisionId: input.from.revisionId,
       generation: 1,
@@ -121,11 +138,12 @@ export function Badge() { return <span className='b'><Label /></span>; }`,
   );
   assert.equal(result.status, 'extracted');
   if (result.status !== 'extracted') return;
-  const ref = await saveDesignSystem(result.system);
+  const ref = await save(result.system);
   const worker = new CompilerWorker();
   t.after(() => worker.terminate());
   const compiled = await worker.compile(
     {
+      kind: 'design',
       designId: input.from.designId,
       revisionId: input.from.revisionId,
       generation: 1,
@@ -154,7 +172,7 @@ test('a wrapper around an imported kit primitive is reported instead of copying 
   if (result.status !== 'extracted') return;
   assert.ok(!Object.hasOwn(result.system.files, 'source/button.tsx'));
   assert.ok(result.diagnostics.some((entry) => entry.code === 'not_source_owned'));
-  assert.deepEqual(result.system.modes, DROIDEX_DESIGN_SYSTEM.modes);
+  assert.deepEqual(kitModes(result.system.sections), STARTER_TOKENS);
 });
 
 test('extraction filters imported stylesheets to primitive rules regardless of source record order', () => {
@@ -190,8 +208,9 @@ test('extraction maps shared root defaults and an explicit dark override without
     const result = extractDesignSystem({ 'tokens.css': css }, input);
     assert.equal(result.status, 'extracted');
     if (result.status !== 'extracted') return;
-    assert.equal(result.system.modes.light['--ds-accent'], '#ffffff');
-    assert.equal(result.system.modes.dark['--ds-accent'], '#000000');
+    const { light, dark } = kitModes(result.system.sections);
+    assert.equal(light['--ds-accent'], '#ffffff');
+    assert.equal(dark['--ds-accent'], '#000000');
     assert.ok(!result.diagnostics.some((entry) => entry.code === 'ambiguous_token'));
   }
 });
@@ -212,7 +231,15 @@ test('extraction refuses guidance over 16 KiB in UTF-8 without truncating it', (
   const accepted = extractDesignSystem({ 'DESIGN.md': guidance }, input);
   assert.equal(accepted.status, 'extracted');
   if (accepted.status !== 'extracted') return;
-  assert.equal(accepted.system.guidance, guidance);
+  // Longer than one note holds, so it continues in design-2.md.
+  const notes = accepted.system.sections[0]?.items.flatMap((item) =>
+    item.kind === 'note' ? [item] : [],
+  );
+  assert.deepEqual(
+    notes?.map((note) => note.label),
+    ['design.md', 'design-2.md'],
+  );
+  assert.equal(notes?.map((note) => note.body).join(''), guidance);
   const refused = extractDesignSystem({ 'DESIGN.md': guidance + 'é' }, input);
   assert.equal(refused.status, 'refused');
   assert.match(refused.diagnostics[0]?.message ?? '', /16 KiB/);

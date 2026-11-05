@@ -40,7 +40,11 @@ const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
-const { readCanvasPreviewAsset } = require('./canvasPreviewAssets.cjs');
+const {
+  mayRequestPreviewAsset,
+  readCanvasPreviewAsset,
+  readKitImage,
+} = require('./canvasPreviewAssets.cjs');
 const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
@@ -77,6 +81,11 @@ const userDataOverride = configuredUserData?.trim() ? configuredUserData : undef
 if (userDataOverride && !path.isAbsolute(userDataOverride)) {
   throw new Error('DROIDEX_USER_DATA_DIR must be an absolute path.');
 }
+// Dev builds all show in the Dock as the same "Electron" tile; the window title
+// (listed in the tile's menu) and the Dock badge say which one this is.
+const devInstance = app.isPackaged ? null : describeDevInstance();
+// Set only by quit paths that know their cause; a Dock, menu or signal quit leaves it null.
+let quitReason = null;
 const buildMetadata = readBuildMetadata();
 const terminalManager = createTerminalManager({
   defaultCwd: async () => {
@@ -241,10 +250,18 @@ try {
   );
 }
 app.setPath('userData', userDataPath);
+if (!app.isPackaged) {
+  // Electron turns SIGTERM, SIGINT and SIGHUP into the same clean exit 0 as a
+  // Dock or menu Quit; this makes it log "Handling shutdown for signal N" first.
+  app.commandLine.appendSwitch('enable-logging');
+  app.commandLine.appendSwitch('log-level', '2');
+  app.commandLine.appendSwitch('vmodule', 'electron_browser_main_parts_posix=1');
+}
 // One app per profile. A second copy on the same profile, such as a dev build
 // an agent launches without its own DROIDEX_USER_DATA_DIR, would boot a sidecar
 // that reaps every agent process this one recorded.
 if (!app.requestSingleInstanceLock()) {
+  logExit('another instance already owns this profile');
   app.exit(0);
   return;
 }
@@ -333,6 +350,8 @@ app.whenReady().then(async () => {
   // Pin the DROIDEX mark on the dock/taskbar up front so OS notifications
   // inherit it instead of the bare Electron atom in dev builds.
   applyAppIcon();
+  if (devInstance && process.platform === 'darwin' && app.dock)
+    app.dock.setBadge(devInstance.badge);
   // Repaint the icon when the OS appearance flips while 'system' is selected.
   nativeTheme.on('updated', () => {
     if (appIconMode === 'system') applyAppIcon();
@@ -347,6 +366,10 @@ app.whenReady().then(async () => {
   powerMonitor.on('resume', () => remoteAccess.reconnect());
 });
 
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') quitReason = 'all windows closed';
+});
+
 installAppQuit({
   app,
   dialog,
@@ -356,6 +379,7 @@ installAppQuit({
   openMainWindow,
   keepsSidecarWithoutWindows: () => remoteAccess.isEnabled(),
   closeServices: () => {
+    logExit(quitReason ?? 'Quit from the app menu, the Dock, or a signal logged above');
     void remoteAccess.close().catch(() => console.error('[remote] Could not flush local state'));
     githubVcs.cancelSetup();
     closeAllDesktopNotifications();
@@ -395,7 +419,7 @@ function createMainWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 600,
-    title: APP_NAME,
+    title: devInstance?.title ?? APP_NAME,
     icon: path.join(__dirname, 'assets', process.platform === 'darwin' ? 'icon.icns' : 'icon.png'),
     backgroundColor: process.platform === 'darwin' ? '#00000000' : '#0a0a0a',
     vibrancy: process.platform === 'darwin' ? 'under-window' : undefined,
@@ -413,6 +437,7 @@ function createMainWindow() {
       webviewTag: true,
     },
   });
+  if (devInstance) mainWindow.on('page-title-updated', (event) => event.preventDefault());
   installWebviewAttachment(mainWindow.webContents);
   installRendererNavigationGuard(mainWindow.webContents, rendererEntryUrl, (url) =>
     shell.openExternal(url),
@@ -620,13 +645,18 @@ function previewGuestSession() {
   return session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION);
 }
 
+function kitStoreRoot() {
+  return path.join(app.getPath('userData'), 'canvases', 'design-systems');
+}
+
 function registerCanvasPreviewProtocol() {
   const document = canvasPreview.canvasPreviewDocument();
-  const assetRequest = /^droidex-canvas-preview:\/\/preview\/(?:asset|font)\//;
+  const assetRequest = /^droidex-canvas-preview:\/\/preview\/(?:asset|kit-asset|font)\//;
   const serve = async (request) => {
     if (assetRequest.test(request.url)) {
       const asset = await readCanvasPreviewAsset(request.url, {
         canvasRoot: path.join(app.getPath('userData'), 'canvases'),
+        kitRoot: kitStoreRoot(),
         fontRoot: path.join(app.getPath('userData'), 'canvas-fonts'),
         secret: sidecarSupervisor.canvasAssetSecret(),
       });
@@ -667,12 +697,8 @@ function registerCanvasPreviewProtocol() {
     { urls: ['droidex-canvas-preview://preview/*'] },
     (details, callback) => {
       if (!assetRequest.test(details.url)) return callback({});
-      const canvasId = canvasPreviewHosts.canvasForFrame(details.webContentsId, details.frame);
-      const requestedCanvas = /^\/asset\/([A-Za-z0-9_-]{1,128})\//.exec(
-        new URL(details.url).pathname,
-      )?.[1];
-      if (canvasId !== null && (requestedCanvas === undefined || requestedCanvas === canvasId))
-        return callback({});
+      const binding = canvasPreviewHosts.bindingForFrame(details.webContentsId, details.frame);
+      if (mayRequestPreviewAsset(binding, details.url)) return callback({});
       callback({ redirectURL: 'droidex-canvas-preview://preview/not-found' });
     },
   );
@@ -721,18 +747,34 @@ function registerIpc() {
     const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
     return result.canceled ? [] : result.filePaths;
   });
-  ipcMain.handle('canvas-pick-image', async (event, { canvasId }) => {
-    assertMainRenderer(event);
+  const pickImage = async (owner) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    return canvasImageImportResult(importCanvasImage, canvasId, result.filePaths[0]);
+    return canvasImageImportResult(importCanvasImage, owner, result.filePaths[0]);
+  };
+  ipcMain.handle('canvas-pick-image', (event, { canvasId }) => {
+    assertMainRenderer(event);
+    return pickImage({ kind: 'canvas', canvasId });
   });
   ipcMain.handle('canvas-drop-image', (event, { canvasId, filePath }) => {
     assertMainRenderer(event);
-    return canvasImageImportResult(importCanvasImage, canvasId, filePath);
+    return canvasImageImportResult(importCanvasImage, { kind: 'canvas', canvasId }, filePath);
+  });
+  ipcMain.handle('canvas-pick-kit-image', (event) => {
+    assertMainRenderer(event);
+    return pickImage({ kind: 'kit' });
+  });
+  ipcMain.handle('canvas-drop-kit-image', (event, { filePath }) => {
+    assertMainRenderer(event);
+    return canvasImageImportResult(importCanvasImage, { kind: 'kit' }, filePath);
+  });
+  // The document shows kit images from here: up to 10 MiB is too large for the bridge socket.
+  ipcMain.handle('canvas-read-kit-image', (event, { assetId }) => {
+    assertMainRenderer(event);
+    return readKitImage(kitStoreRoot(), assetId);
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.
@@ -827,13 +869,9 @@ function registerIpc() {
     assertMainRenderer(event);
     return Number.isSafeInteger(guestId) && canvasPreviewHosts.terminate(guestId);
   });
-  ipcMain.handle('canvas-preview-bind', (event, { guestId, canvasId }) => {
+  ipcMain.handle('canvas-preview-bind', (event, { guestId, binding }) => {
     assertMainRenderer(event);
-    return (
-      Number.isSafeInteger(guestId) &&
-      /^[A-Za-z0-9_-]{1,128}$/.test(canvasId) &&
-      canvasPreviewHosts.bindCanvas(guestId, canvasId)
-    );
+    return Number.isSafeInteger(guestId) && canvasPreviewHosts.bind(guestId, binding);
   });
   ipcMain.handle('canvas-preview-capture', (event, request) => {
     assertMainRenderer(event);
@@ -1529,7 +1567,26 @@ function setOnboarding(patch) {
   return run;
 }
 
+function describeDevInstance() {
+  const startUrl = process.env.ELECTRON_START_URL;
+  const port = startUrl && URL.canParse(startUrl) ? new URL(startUrl).port : '';
+  const profile = userDataOverride ? path.basename(userDataOverride) : '';
+  if (!port && !profile) return null;
+  const name = [port && `:${port}`, profile].filter(Boolean).join(' ');
+  return { title: `${APP_NAME} dev ${name}`, badge: port || profile };
+}
+
+function logExit(reason) {
+  console.warn(
+    '[lifecycle] pid %d exiting after %ds: %s',
+    process.pid,
+    Math.round(process.uptime()),
+    reason,
+  );
+}
+
 function relaunchApp() {
+  logExit('relaunch requested');
   app.relaunch();
   app.exit(0);
 }

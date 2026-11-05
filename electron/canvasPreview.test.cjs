@@ -174,14 +174,27 @@ test('a preview frame is bound once to its canvas and loses that binding on clos
   const { hosts } = createHosts();
   const frame = createGeneratedFrame();
   const guest = createGuest(42, [frame]);
+  const canvasA = { kind: 'canvas', canvasId: 'canvas-a' };
   hosts.attach(guest);
-  assert.equal(hosts.canvasForFrame(42, frame), null);
-  assert.equal(hosts.bindCanvas(42, 'canvas-a'), true);
-  assert.equal(hosts.canvasForFrame(42, frame), 'canvas-a');
-  assert.equal(hosts.canvasForFrame(42, {}), null);
-  assert.equal(hosts.bindCanvas(42, 'canvas-b'), false);
+  assert.equal(hosts.bindingForFrame(42, frame), null);
+  assert.equal(hosts.bind(42, { kind: 'canvas', canvasId: '../canvas-a' }), false);
+  assert.equal(hosts.bind(42, canvasA), true);
+  assert.deepEqual(hosts.bindingForFrame(42, frame), canvasA);
+  assert.equal(hosts.bindingForFrame(42, {}), null);
+  assert.equal(hosts.bind(42, canvasA), true);
+  assert.equal(hosts.bind(42, { kind: 'canvas', canvasId: 'canvas-b' }), false);
+  assert.equal(hosts.bind(42, { kind: 'kit' }), false);
   hosts.terminate(42);
-  assert.equal(hosts.canvasForFrame(42, frame), null);
+  assert.equal(hosts.bindingForFrame(42, frame), null);
+});
+
+test('a kit-bound guest cannot be rebound to a canvas', () => {
+  const { hosts } = createHosts();
+  const frame = createGeneratedFrame();
+  hosts.attach(createGuest(43, [frame]));
+  assert.equal(hosts.bind(43, { kind: 'kit' }), true);
+  assert.equal(hosts.bind(43, { kind: 'canvas', canvasId: 'canvas-a' }), false);
+  assert.deepEqual(hosts.bindingForFrame(43, frame), { kind: 'kit' });
 });
 
 test("main's own watchdog ends an unresponsive guest", () => {
@@ -421,6 +434,27 @@ test('main captures only the attached guest at CSS size and device scale, and ke
   assert.deepEqual(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), result.bytes);
   assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_02'), null);
   assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+});
+
+test('a kit-bound guest is captured without a canvas, and main keeps no copy', async () => {
+  const { hosts } = createHosts();
+  const kitGuest = createGuest(41);
+  const canvasGuest = createGuest(42);
+  hosts.attach(kitGuest);
+  hosts.attach(canvasGuest);
+  hosts.bind(41, { kind: 'kit' });
+  hosts.bind(42, { kind: 'canvas', canvasId: 'cv_01' });
+  const kitRequest = { ...captureRequest, canvasId: null };
+
+  const refused = await hosts.capture({ ...kitRequest, requestId: 'capture_02', guestId: 42 });
+  assert.equal(refused.ok, false);
+  const capture = hosts.capture(kitRequest);
+  await new Promise(setImmediate);
+  kitGuest.captures[0].resolve(capturedImage());
+
+  assert.equal((await capture).ok, true);
+  assert.equal(canvasGuest.captures.length, 0);
+  assert.equal(hosts.readThumbnail('kit', 'dsg_01', 'rev_01'), null);
 });
 
 test('capture timeout ends overdue native work once and releases every guest timer', async () => {

@@ -303,7 +303,7 @@ function McpServerCard({
               <span className="truncate text-body-strong text-primary">{server.name}</span>
               <Badge>{sourceLabel(server.source)}</Badge>
               {server.serverType && (
-                <span className="font-mono text-code-sm text-muted">{server.serverType}</span>
+                <span className="text-caption text-muted">{server.serverType}</span>
               )}
             </span>
             <span className="mt-0.5 block text-caption capitalize text-muted">

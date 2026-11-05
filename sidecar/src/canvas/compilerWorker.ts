@@ -17,12 +17,15 @@ import {
   type CompiledDesign,
   type CompilerRequest,
   type CompilerResponse,
+  type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
-import { designEntryDiagnostic } from './designEntry.js';
+import { DESIGN_ENTRY, designEntryDiagnostic } from './designEntry.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
+import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
+import { resolveKitAssetReferences } from './kitAssets.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { instrumentSource, SourceElementError } from './sourceElements.js';
 import { resolveStyleChange, styleValue } from './styleEdits.js';
@@ -47,6 +50,7 @@ export async function compileDesign(
   input: CompileInput,
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
+  if (input.kind === 'kitPreview') return compileKitPreview(input, signal);
   const entryDiagnostic = designEntryDiagnostic(Object.keys(input.files));
   if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
@@ -101,13 +105,41 @@ export async function compileDesign(
   };
 }
 
+/**
+ * One kit example as a one-file design under that kit. Nothing on it can be
+ * selected, and the kit is not held to its own rules.
+ */
+async function compileKitPreview(
+  input: KitPreviewCompileInput,
+  signal: AbortSignal,
+): Promise<CompiledDesign> {
+  const files = { [DESIGN_ENTRY]: input.example };
+  const bundle = await bundleDesign({ files, kitFiles: input.kit.files });
+  stopIfCancelled(signal);
+  if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
+  const unbound = unboundNameDiagnostics(files);
+  if (unbound.length > 0) throw new CompileFailedError(unbound);
+  const stylesheet = await buildDesignStylesheet(files, input.kit);
+  stopIfCancelled(signal);
+  if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
+
+  const html = previewDocument(stylesheet.css, bundle.js, input.mode);
+  return {
+    artifactId: createHash('sha256').update(html).digest('hex'),
+    html,
+    diagnostics: boundDiagnostics(bundle.warnings),
+    elements: [],
+  };
+}
+
 function stopIfCancelled(signal: AbortSignal): void {
   if (signal.aborted) throw new CompileCancelledError();
 }
 
 /**
  * One document, with the stylesheet and the bundle inline. The preview host
- * loads it with no network, so an external reference would simply be missing.
+ * loads it with no network, so an external reference would simply be missing;
+ * kit images are the preview host's to serve.
  */
 function previewDocument(css: string, js: string, mode: DesignSystemRef['mode']): string {
   return `<!doctype html>
@@ -119,13 +151,13 @@ function previewDocument(css: string, js: string, mode: DesignSystemRef['mode'])
 ${EARLY_FAILURE_SCRIPT}
 </script>
 <style>
-${escapeClosingTag(css, 'style')}
+${escapeClosingTag(resolveKitAssetReferences(css), 'style')}
 </style>
 </head>
 <body>
 <div id="${ROOT_ELEMENT_ID}"></div>
 <script>
-${escapeClosingTag(js, 'script')}
+${escapeClosingTag(resolveKitAssetReferences(js), 'script')}
 </script>
 </body>
 </html>
@@ -256,7 +288,7 @@ function kitTokens(kit: DesignSystem, mode: DesignSystemRef['mode']): Record<str
       if (declaration.prop.startsWith('--')) tokens[declaration.prop] = declaration.value;
     });
   }
-  return { ...tokens, ...kit.modes[mode] };
+  return { ...tokens, ...kitModes(kit.sections)[mode] };
 }
 
 /** Releases the service process, flushes the acknowledgement, and exits. */

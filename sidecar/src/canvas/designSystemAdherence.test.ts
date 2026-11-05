@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { CompileFailedError, CompilerWorker } from './compiler.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
-import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
+import { starterKit } from './designSystemImport.js';
+import { AUTO_DESIGN_SYSTEM_REF, readDesignSystem, type DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
+
+// The shared primitives on the starter's tokens, so the cases below read a kit that never changes.
+const KIT: DesignSystem = { id: 'starter', version: 1, name: 'Starter', ...starterKit() };
 
 const ON_KIT: SourceFiles = {
   'main.tsx': `import { LineChart, Line } from 'recharts';
@@ -60,7 +63,7 @@ export default function Report() {
 };
 
 function check(files: SourceFiles, rule: 'off' | 'guide' | 'strict' = 'guide') {
-  return checkDesignSystemAdherence(files, DROIDEX_DESIGN_SYSTEM, rule);
+  return checkDesignSystemAdherence(files, KIT, rule);
 }
 
 function places(diagnostics: CanvasDiagnostic[]): string[] {
@@ -97,8 +100,8 @@ test('hard-coded colours and fonts are reported by file and line, an override on
 });
 
 test('a kit whose CSS does not parse is reported at its own file and line', () => {
-  const broken = { ...DROIDEX_DESIGN_SYSTEM.files, 'tokens.css': '.x {\n  color: red;\n' };
-  const kit = { ...DROIDEX_DESIGN_SYSTEM, files: broken };
+  const broken = { ...KIT.files, 'tokens.css': '.x {\n  color: red;\n' };
+  const kit = { ...KIT, files: broken };
   const result = checkDesignSystemAdherence(ON_KIT, kit, 'guide');
   assert.equal(result.status, 'failed');
   assert.deepEqual(places(result.diagnostics), ['css_error @droidex/design-system/tokens.css:1']);
@@ -131,21 +134,123 @@ test('strict fails on what guide reports, keeping overrides out of it, and off c
   assert.deepEqual(check(STRAYING, 'off'), { status: 'passed', diagnostics: [] });
 });
 
+const OFF_SCALE: SourceFiles = {
+  'main.tsx': `import { Card } from '@droidex/design-system';
+import './styles.css';
+
+export default function Plans() {
+  return (
+    <Card className="rounded-[7px] p-[13px] gap-[8px] text-[13px] shadow-[0_2px_4px_#000]">
+      <h2 className="rounded-[10px] text-[0.875rem]" style={{ fontSize: '13px', padding: '0.5rem' }}>Plans</h2>
+    </Card>
+  );
+}
+`,
+  'styles.css': `.plan {
+  font-size: 13px;
+  border-radius: 7px 6px;
+  margin: 0 auto -13px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+.plan:focus {
+  box-shadow: 0 0 0 2px var(--ds-focus);
+  font-size: 14px;
+  padding: 1rem 16px;
+}
+`,
+};
+
+test('sizes, radii, spacing and shadows off the kit’s tokens are reported, and values on them are not', () => {
+  const result = check(OFF_SCALE);
+  assert.deepEqual(places(result.diagnostics), [
+    'design_system_radius main.tsx:6',
+    'design_system_spacing main.tsx:6',
+    'design_system_type main.tsx:6',
+    'design_system_shadow main.tsx:6',
+    'design_system_type main.tsx:7',
+    'design_system_type styles.css:2',
+    'design_system_radius styles.css:3',
+    'design_system_spacing styles.css:4',
+    'design_system_shadow styles.css:5',
+  ]);
+  assert.equal(
+    result.diagnostics[0].message,
+    'rounded-[7px] is a corner radius the kit does not define. Use one of its tokens (var(--ds-radius-sm), var(--ds-radius-md), var(--ds-radius-lg), var(--ds-radius-pill)) instead.',
+  );
+  assert.equal(check(OFF_SCALE, 'strict').status, 'failed');
+});
+
+test('a kit without a section gets no check for it', () => {
+  const typographyOnly = {
+    ...KIT,
+    sections: KIT.sections.filter(
+      (section) => !['colors', 'spacing', 'radius', 'shadows'].includes(section.kind),
+    ),
+  };
+  const offScale = checkDesignSystemAdherence(OFF_SCALE, typographyOnly, 'strict');
+  assert.deepEqual(places(offScale.diagnostics), [
+    'design_system_type main.tsx:6',
+    'design_system_type main.tsx:7',
+    'design_system_type styles.css:2',
+  ]);
+  const straying = checkDesignSystemAdherence(STRAYING, typographyOnly, 'guide');
+  assert.deepEqual(places(straying.diagnostics), [
+    'design_system_font main.tsx:7',
+    'design_system_font styles.css:6',
+    'design_system_override :',
+  ]);
+});
+
+test('a compound value one token holds is on the kit, and a number in a style object is pixels', () => {
+  const kit = structuredClone(KIT);
+  for (const section of kit.sections)
+    if (section.kind === 'radius')
+      for (const item of section.items)
+        if (item.kind === 'group')
+          for (const token of item.tokens)
+            if (token.name === '--ds-radius-sm' && 'value' in token) token.value = '4px 8px';
+  const files = {
+    'main.tsx': `import { Card } from '@droidex/design-system';
+export default () => (
+  <Card style={{ borderRadius: '4px 8px' }}>
+    <p style={{ padding: 13, margin: -7, gap: 0, fontSize: 13 }}>Plans</p>
+    <p style={{ padding: 8 * 2, fontSize: 14 + 2 }}>Total</p>
+    <svg><text fontSize={13}>1</text></svg>
+    <Chart layout={{ padding: 13 }} />
+  </Card>
+);
+`,
+  };
+  const result = checkDesignSystemAdherence(files, kit, 'strict');
+  assert.deepEqual(places(result.diagnostics), [
+    'design_system_spacing main.tsx:4',
+    'design_system_spacing main.tsx:4',
+    'design_system_type main.tsx:4',
+  ]);
+});
+
 const worker = new CompilerWorker();
 after(() => worker.terminate());
 
 test('the compiler fails a straying build under strict and builds it with notes under guide', async () => {
+  const designSystem = { id: 'droidex', version: 1, mode: 'dark' } as const;
+  const pinned = await readDesignSystem(designSystem);
+  const expected = (rule: 'guide' | 'strict') =>
+    places(checkDesignSystemAdherence(STRAYING, pinned, rule).diagnostics);
   const guided = await worker.compile(
-    compileInput(STRAYING, 'guide'),
+    { ...compileInput(STRAYING, 'guide'), designSystem },
     new AbortController().signal,
   );
-  assert.deepEqual(places(guided.diagnostics), places(check(STRAYING).diagnostics));
+  assert.deepEqual(places(guided.diagnostics), expected('guide'));
 
   await assert.rejects(
-    worker.compile(compileInput(STRAYING, 'strict'), new AbortController().signal),
+    worker.compile(
+      { ...compileInput(STRAYING, 'strict'), designSystem },
+      new AbortController().signal,
+    ),
     (error) => {
       assert.ok(error instanceof CompileFailedError);
-      assert.deepEqual(places(error.diagnostics), places(check(STRAYING, 'strict').diagnostics));
+      assert.deepEqual(places(error.diagnostics), expected('strict'));
       return true;
     },
   );

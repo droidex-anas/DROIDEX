@@ -10,6 +10,9 @@ import { canvasError, EXPIRED_TURN } from './canvasError.js';
 
 // The SDK's HTTP layer strips unknown arguments and formats Zod failures before
 // our handler runs. Dispatch raw arguments here; retain SDK tool objects for Codex.
+// The listed schemas leave out additionalProperties: false, because Droid checks
+// arguments with Ajv's removeAdditional, which deletes a key while it tries a
+// union branch that lacks it. Each handler's strict Zod schema refuses extra keys.
 export class CanvasMcpServer extends SdkMcpServer {
   private listener: ReturnType<typeof createServer> | null = null;
   private endpoint: McpServerConfig | null = null;
@@ -76,6 +79,7 @@ export class CanvasMcpServer extends SdkMcpServer {
         inputSchema: zodToJsonSchema(z.object(entry.inputSchema ?? {}).strict(), {
           target: 'jsonSchema7',
           $refStrategy: 'none',
+          rejectedAdditionalProperties: undefined,
         }),
       })),
     }));

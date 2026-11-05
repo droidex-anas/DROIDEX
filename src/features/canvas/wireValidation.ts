@@ -3,6 +3,12 @@
 // any feature code can observe it.
 
 import { isAnnotation, isAnnotationChange, MAX_ANNOTATIONS } from './annotationValidation';
+import {
+  isKitDocument,
+  isKitSummary,
+  isKitVersion,
+  isKitVersionEntry,
+} from './designSystemDocumentValidation';
 import type { CanvasEvent } from './protocol';
 import {
   boundedList,
@@ -58,7 +64,11 @@ const REPLY_KINDS = new Set([
   'revisionDiff',
   'designSystems',
   'designSystem',
+  'designSystemVersions',
   'designSystemSaved',
+  'kitPreview',
+  'kitCapture',
+  'kitFonts',
   'libraryItem',
   'libraryItems',
   'libraryThumbnail',
@@ -85,15 +95,15 @@ const MAX_LIBRARY_ITEMS = 50;
 // A tile's picture: `MAX_THUMBNAIL_BASE64_LENGTH` in the sidecar's canvasLibrary.ts
 // and `MAX_COVER_BASE64_LENGTH` in its canvasCovers.ts.
 export const MAX_TILE_BASE64_LENGTH = Math.ceil((512 * 1024) / 3) * 4;
+// A kit preview's capture in device pixels: `MAX_KIT_CAPTURE_BASE64_LENGTH` in the sidecar's kitCaptures.ts.
+export const MAX_KIT_CAPTURE_BASE64_LENGTH = Math.ceil((2 * 1024 * 1024) / 3) * 4;
+// `MAX_KIT_FONT_FACES` and `MAX_FONT_DESCRIPTOR_LENGTH` in the sidecar's kitFonts.ts.
+const MAX_KIT_FONT_FACES = 16;
+const MAX_FONT_DESCRIPTOR_LENGTH = 1024;
 // The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
 const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
 export const MAX_FRAME_NAME_LENGTH = 120;
-// A kit's bounds, matching `DESIGN_SYSTEM_LIMITS` in the sidecar's designSystems.ts.
-export const MAX_KIT_NAME_LENGTH = 120;
-const MAX_KIT_TOKENS = 128;
-const MAX_TOKEN_VALUE_LENGTH = 160;
-const TOKEN_NAME = /^--[a-z0-9]+(-[a-z0-9]+)*$/;
 const utf8 = new TextEncoder();
 
 export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEvent {
@@ -108,6 +118,8 @@ export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEv
       return (
         id(value.captureId) && id(value.canvasId) && id(value.designId) && id(value.revisionId)
       );
+    case 'canvas.designSystemsChanged':
+      return id(value.id);
     case 'canvas.result':
       if (!id(value.requestId)) return false;
       return value.ok === true ? isReply(value.reply) : value.ok === false && isError(value.error);
@@ -179,7 +191,9 @@ function isReply(value: unknown): boolean {
     case 'designSystems':
       return list(value.systems, isKitSummary);
     case 'designSystem':
-      return isKitDetail(value.system);
+      return isKitDocument(value.system);
+    case 'designSystemVersions':
+      return list(value.versions, isKitVersionEntry);
     case 'designSystemSaved':
       return (
         isKitVersion(value.ref) &&
@@ -189,12 +203,15 @@ function isReply(value: unknown): boolean {
       return isLibraryItem(value.item);
     case 'libraryItems':
       return boundedList(value.items, MAX_LIBRARY_ITEMS, isLibraryItem);
+    case 'kitPreview':
+      return isKitPreview(value.preview);
     case 'libraryThumbnail':
     case 'cover':
-      return (
-        value.png === null ||
-        (typeof value.png === 'string' && value.png.length <= MAX_TILE_BASE64_LENGTH)
-      );
+      return isPngOrNone(value.png, MAX_TILE_BASE64_LENGTH);
+    case 'kitCapture':
+      return isPngOrNone(value.png, MAX_KIT_CAPTURE_BASE64_LENGTH);
+    case 'kitFonts':
+      return boundedList(value.faces, MAX_KIT_FONT_FACES, isKitFontFace);
     case 'removalPreview':
       return (
         record(value.preview) &&
@@ -208,6 +225,23 @@ function isReply(value: unknown): boolean {
     default:
       return true;
   }
+}
+
+/** A base64 PNG within `maxLength`, or null where there is none. */
+function isPngOrNone(value: unknown, maxLength: number): boolean {
+  return value === null || (typeof value === 'string' && value.length <= maxLength);
+}
+
+// A face's WOFF2 data is part of one kit stylesheet.
+function isKitFontFace(value: unknown): boolean {
+  return (
+    record(value) &&
+    boundedText(value.family, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.style, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.weight, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.unicodeRange, MAX_FONT_DESCRIPTOR_LENGTH) &&
+    boundedText(value.woff2, MAX_SOURCE_FILE_BYTES)
+  );
 }
 
 function isLibraryItem(value: unknown): boolean {
@@ -231,60 +265,6 @@ function isFrameDimension(value: unknown): boolean {
     Number.isFinite(value) &&
     value > 0 &&
     value <= MAX_FRAME_DIMENSION_PX
-  );
-}
-
-function isKitVersion(value: unknown): value is Record<string, unknown> {
-  return record(value) && id(value.id) && count(value.version);
-}
-
-function isKitSummary(value: unknown): boolean {
-  if (!isKitVersion(value) || !record(value.swatches)) return false;
-  const { light, dark } = value.swatches;
-  return (
-    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
-    (value.kind === 'auto' || value.kind === 'preset' || value.kind === 'user') &&
-    [light, dark].every(
-      (swatch) =>
-        record(swatch) &&
-        boundedText(swatch.surface, MAX_TOKEN_VALUE_LENGTH) &&
-        boundedText(swatch.accent, MAX_TOKEN_VALUE_LENGTH),
-    )
-  );
-}
-
-function isKitDetail(value: unknown): boolean {
-  if (!isKitVersion(value) || !record(value.modes)) return false;
-  return (
-    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
-    isKitTokens(value.modes.light) &&
-    isKitTokens(value.modes.dark) &&
-    boundedList(
-      value.unmapped,
-      MAX_KIT_TOKENS,
-      (name) => typeof name === 'string' && TOKEN_NAME.test(name),
-    ) &&
-    (value.provenance === null || isKitProvenance(value.provenance))
-  );
-}
-
-function isKitTokens(value: unknown): boolean {
-  if (!record(value)) return false;
-  const names = Object.keys(value);
-  return (
-    names.length <= MAX_KIT_TOKENS &&
-    names.every((name) => TOKEN_NAME.test(name) && boundedText(value[name], MAX_TOKEN_VALUE_LENGTH))
-  );
-}
-
-function isKitProvenance(value: unknown): boolean {
-  if (!record(value)) return false;
-  if (value.copiedFrom !== undefined) return isKitVersion(value.copiedFrom);
-  return (
-    id(value.sourceCanvasId) &&
-    record(value.revision) &&
-    id(value.revision.designId) &&
-    id(value.revision.revisionId)
   );
 }
 
@@ -357,6 +337,14 @@ function isArtifact(value: unknown): boolean {
     typeof value.html === 'string' &&
     value.html.length > 0 &&
     value.html.length <= MAX_ARTIFACT_BYTES
+  );
+}
+
+function isKitPreview(value: unknown): boolean {
+  if (!record(value)) return false;
+  if (value.status === 'ready') return isArtifact(value.artifact);
+  return (
+    value.status === 'failed' && boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
   );
 }
 
@@ -488,6 +476,10 @@ function isError(value: unknown): boolean {
     typeof value.code === 'string' &&
     ERROR_CODES.has(value.code) &&
     text(value.message) &&
-    (value.code === 'layout_conflict' ? isRect(value.currentRect) : value.currentRect === undefined)
+    (value.code === 'layout_conflict'
+      ? isRect(value.currentRect)
+      : value.currentRect === undefined) &&
+    (value.latestVersion === undefined ||
+      (value.code === 'revision_conflict' && count(value.latestVersion)))
   );
 }

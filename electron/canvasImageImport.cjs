@@ -1,5 +1,6 @@
-// Main's file-picker/drop boundary for Canvas. It decodes the selected bytes
-// before asking the sidecar to own them; a digest rejects a changed path.
+// Main's file-picker/drop boundary for Canvas images and kit images. It decodes
+// the selected bytes before asking the sidecar to own them; a digest rejects a
+// changed path. The owner is `{ kind: 'canvas', canvasId }` or `{ kind: 'kit' }`.
 
 const { createHash } = require('node:crypto');
 const { constants } = require('node:fs');
@@ -33,13 +34,8 @@ function storageFailure() {
 }
 
 function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
-  return async function importCanvasImage(canvasId, filePath) {
-    if (
-      typeof canvasId !== 'string' ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(canvasId) ||
-      typeof filePath !== 'string' ||
-      !isAbsolute(filePath)
-    )
+  return async function importCanvasImage(owner, filePath) {
+    if (!isImageOwner(owner) || typeof filePath !== 'string' || !isAbsolute(filePath))
       throw invalidImage('Choose a canvas and an image first.');
     let bytes;
     try {
@@ -96,14 +92,15 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
     let response;
     try {
       const { port } = await sidecarSupervisor.getBridgeInfo();
-      response = await fetch(`http://127.0.0.1:${String(port)}/canvas/import-image`, {
+      const route = owner.kind === 'kit' ? 'import-kit-image' : 'import-image';
+      response = await fetch(`http://127.0.0.1:${String(port)}/canvas/${route}`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-canvas-secret': sidecarSupervisor.canvasAssetSecret(),
         },
         body: JSON.stringify({
-          canvasId,
+          ...(owner.kind === 'canvas' ? { canvasId: owner.canvasId } : {}),
           filePath,
           digest: createHash('sha256').update(bytes).digest('hex'),
           width,
@@ -130,6 +127,15 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
     }
     return answer;
   };
+}
+
+function isImageOwner(owner) {
+  if (owner?.kind === 'kit') return true;
+  return (
+    owner?.kind === 'canvas' &&
+    typeof owner.canvasId === 'string' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(owner.canvasId)
+  );
 }
 
 function assertImageDimensions(width, height) {
@@ -206,9 +212,9 @@ function webpDimensions(bytes) {
   return null;
 }
 
-async function canvasImageImportResult(importImage, canvasId, filePath) {
+async function canvasImageImportResult(importImage, owner, filePath) {
   try {
-    return { ok: true, asset: await importImage(canvasId, filePath) };
+    return { ok: true, asset: await importImage(owner, filePath) };
   } catch (error) {
     const failure = error instanceof CanvasImageImportError ? error : storageFailure();
     return { ok: false, error: { code: failure.code, message: failure.message } };

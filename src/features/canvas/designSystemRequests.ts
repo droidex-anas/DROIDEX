@@ -1,15 +1,22 @@
-// The Manage design systems dialog's requests, correlated by the Canvas client
-// like any other. Kits are global, so none of them names a canvas.
+// The design system requests, correlated by the Canvas client like any other.
+// Kits are global, so none of them names a canvas.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
 import type {
   CanvasCommand,
   CanvasDiagnostic,
-  DesignSystemDetail,
+  DesignSystemCover,
+  DesignSystemDocumentView,
+  DesignSystemProposalRef,
+  DesignSystemRef,
   DesignSystemSource,
   DesignSystemSummary,
+  DesignSystemVersionEntry,
   DesignSystemVersionRef,
+  KitFontFace,
+  KitPreview,
 } from './protocol';
+import type { DocumentSection } from './designSystemDocumentProtocol';
 
 export interface SavedDesignSystem {
   ref: DesignSystemVersionRef;
@@ -24,9 +31,105 @@ export class DesignSystemRequests {
     return reply(event, 'designSystems').systems;
   }
 
-  async read(ref: DesignSystemVersionRef): Promise<DesignSystemDetail> {
+  async read(ref: DesignSystemVersionRef): Promise<DesignSystemDocumentView> {
     const event = await this.send({ type: 'canvas.readDesignSystem', requestId: requestId(), ref });
     return reply(event, 'designSystem').system;
+  }
+
+  /**
+   * Saves the document's edits as the version after `baseVersion`. A base that
+   * is no longer the newest fails with `revision_conflict` and its `latestVersion`.
+   */
+  async save(
+    mutationId: string,
+    id: string,
+    baseVersion: number,
+    document: { name: string; cover: DesignSystemCover; sections: DocumentSection[] },
+  ): Promise<SavedDesignSystem> {
+    const event = await this.send({
+      type: 'canvas.saveDesignSystem',
+      requestId: requestId(),
+      mutationId,
+      id,
+      baseVersion,
+      ...document,
+    });
+    const { ref, diagnostics } = reply(event, 'designSystemSaved');
+    return { ref, diagnostics };
+  }
+
+  /** Newest first. */
+  async versions(id: string): Promise<DesignSystemVersionEntry[]> {
+    const event = await this.send({
+      type: 'canvas.listDesignSystemVersions',
+      requestId: requestId(),
+      id,
+    });
+    return reply(event, 'designSystemVersions').versions;
+  }
+
+  /** Saves `version` again as the version after `onto`, the newest the user saw. */
+  async restore(
+    mutationId: string,
+    id: string,
+    version: number,
+    onto: number,
+  ): Promise<SavedDesignSystem> {
+    const event = await this.send({
+      type: 'canvas.restoreDesignSystemVersion',
+      requestId: requestId(),
+      mutationId,
+      id,
+      version,
+      onto,
+    });
+    const { ref, diagnostics } = reply(event, 'designSystemSaved');
+    return { ref, diagnostics };
+  }
+
+  /** Takes a user kit out of every list, or puts it back; its versions stay readable. */
+  async setDeleted(mutationId: string, id: string, deleted: boolean): Promise<void> {
+    const event = await this.send({
+      type: 'canvas.setDesignSystemDeleted',
+      requestId: requestId(),
+      mutationId,
+      id,
+      deleted,
+    });
+    reply(event, 'ok');
+  }
+
+  /**
+   * Saves the agent's proposal `proposalId` as the version after `onto`, the
+   * newest the user saw. A proposal replaced since fails with `invalid_input`.
+   */
+  async acceptProposal(
+    mutationId: string,
+    id: string,
+    proposalId: string,
+    onto: number,
+  ): Promise<SavedDesignSystem> {
+    const event = await this.send({
+      type: 'canvas.acceptDesignSystemProposal',
+      requestId: requestId(),
+      mutationId,
+      id,
+      proposalId,
+      onto,
+    });
+    const { ref, diagnostics } = reply(event, 'designSystemSaved');
+    return { ref, diagnostics };
+  }
+
+  /** Removes the proposal `proposalId`; one that replaced it stays. */
+  async discardProposal(id: string, proposalId: string): Promise<void> {
+    const event = await this.send({
+      type: 'canvas.discardDesignSystemProposal',
+      requestId: requestId(),
+      id,
+      proposalId,
+    });
+    reply(event, 'ok');
   }
 
   /** `mutationId` names the copy; reuse it to retry a save whose answer was lost. */
@@ -61,5 +164,48 @@ export class DesignSystemRequests {
     });
     const { ref, diagnostics } = reply(event, 'designSystemSaved');
     return { ref, diagnostics };
+  }
+
+  /** `item` is a preview's id or `cover`. */
+  async readPreview(
+    ref: DesignSystemRef | DesignSystemProposalRef,
+    item: string,
+  ): Promise<KitPreview> {
+    const event = await this.send({
+      type: 'canvas.readKitPreview',
+      requestId: requestId(),
+      ref,
+      item,
+    });
+    return reply(event, 'kitPreview').preview;
+  }
+
+  /** `png` is base64; it replaces any earlier capture of that preview and mode. */
+  async saveCapture(ref: DesignSystemRef, item: string, png: string): Promise<void> {
+    const event = await this.send({
+      type: 'canvas.saveKitCapture',
+      requestId: requestId(),
+      ref,
+      item,
+      png,
+    });
+    reply(event, 'ok');
+  }
+
+  /** The base64 PNG, or null before that preview first rendered live in that mode. */
+  async readCapture(ref: DesignSystemRef, item: string): Promise<string | null> {
+    const event = await this.send({
+      type: 'canvas.readKitCapture',
+      requestId: requestId(),
+      ref,
+      item,
+    });
+    return reply(event, 'kitCapture').png;
+  }
+
+  /** The fonts the version's stylesheets embed as WOFF2 data; a face of any other source is left out. */
+  async readFonts(ref: DesignSystemVersionRef): Promise<KitFontFace[]> {
+    const event = await this.send({ type: 'canvas.readKitFonts', requestId: requestId(), ref });
+    return reply(event, 'kitFonts').faces;
   }
 }

@@ -8,7 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { expect, test, type Page } from '@playwright/test';
 import type { SourceFiles } from '../../sidecar/src/canvas/schema';
 import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
-import { DROIDEX_DESIGN_SYSTEM } from '../../sidecar/src/canvas/presets/droidex';
+import { readDesignSystem } from '../../sidecar/src/canvas/designSystems';
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
@@ -233,7 +233,7 @@ test('the production preview host renders a compiled chart offline', async () =>
 });
 
 test('[C8] captures the kit starter at its rendered size and refuses a released guest', async () => {
-  const starter = DROIDEX_DESIGN_SYSTEM.examples['Hey.tsx'];
+  const starter = (await readDesignSystem({ id: 'droidex', version: 1 })).examples['Card.tsx'];
   assert.ok(starter);
   const design = await compileDesign({ 'main.tsx': starter });
   await withCanvasHost(async (app, page) => {

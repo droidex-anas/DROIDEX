@@ -7,6 +7,7 @@
 // renderer only ever sends the pinned CanvasTurnContext beside its prompt.
 
 import type { AnnotateCanvasInput, Annotation, AnnotationChange } from './annotationProtocol';
+import type { DocumentSection } from './designSystemDocumentProtocol';
 import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
 
 export interface DesignSystemRef {
@@ -21,6 +22,13 @@ export interface DesignSystemVersionRef {
   version: number;
 }
 
+/** The proposal a kit has waiting, in one mode; a new proposal gets a new `proposalId`. */
+export interface DesignSystemProposalRef {
+  id: string;
+  proposalId: string;
+  mode: DesignSystemRef['mode'];
+}
+
 /** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
 export interface DesignSystemSummary {
   id: string;
@@ -31,11 +39,32 @@ export interface DesignSystemSummary {
     light: { surface: string; accent: string };
     dark: { surface: string; accent: string };
   };
+  cover: boolean;
+  /** When the listed version was saved; a built-in kit was never saved. */
+  savedAt: string | null;
+  /** Whether an agent proposal waits for review. */
+  proposal: boolean;
+}
+
+/** A kit's visual: a preview of one of its examples, or an image the user chose. */
+export type DesignSystemCover =
+  | { kind: 'preview'; example: string }
+  | { kind: 'image'; assetId: string }
+  | null;
+
+export type SavedBy = { actor: 'user' } | { actor: 'agent'; appSessionId: string };
+
+/** One saved version as the version history lists it. */
+export interface DesignSystemVersionEntry {
+  version: number;
+  savedAt: string;
+  savedBy: SavedBy;
 }
 
 export type DesignSystemProvenance =
   | { sourceCanvasId: string; revision: { designId: string; revisionId: string } }
-  | { copiedFrom: { id: string; version: number } };
+  | { copiedFrom: { id: string; version: number } }
+  | { project: { name: string; files: string[] } };
 
 /** What deleting a canvas would end, which the renderer discloses before the user confirms. */
 export interface CanvasRemovalPreview {
@@ -63,15 +92,40 @@ export interface LibraryItem {
   designSystem: DesignSystemRef;
 }
 
-/** One kit version as the Manage dialog shows it: its tokens, without source files. */
-export interface DesignSystemDetail {
+/** A kit version as its document shows it: everything but its source. */
+export interface DesignSystemDocumentView {
   id: string;
   version: number;
+  /** The kit's newest version, which a save must build on. */
+  latestVersion: number;
   name: string;
-  modes: { light: Record<string, string>; dark: Record<string, string> };
-  /** Tokens the shared primitives do not read, kept under their own names (spec §10). */
+  kind: DesignSystemSummary['kind'];
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
+  /** The example file names its previews may name. */
+  examples: string[];
+  /** Tokens a kit built on the shared primitives has beyond the ones they read. */
   unmapped: string[];
   provenance: DesignSystemProvenance | null;
+  /** When and by whom this version was saved; a built-in kit was never saved. */
+  savedAt: string | null;
+  savedBy: SavedBy | null;
+  /** The agent proposal waiting for review, if there is one. */
+  proposal: DesignSystemProposal | null;
+}
+
+/** A kit's pending agent proposal: the version it was made on and the document it proposes. */
+export interface DesignSystemProposal {
+  /** A proposal is never changed, only replaced by one with another ID. */
+  proposalId: string;
+  baseVersion: number;
+  proposedAt: string;
+  /** The chat whose agent proposed it. */
+  appSessionId: string;
+  /** A proposal may rename the kit. */
+  name: string;
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
 }
 
 /** A new kit's source from the dialog's New menu. */
@@ -144,6 +198,20 @@ export interface CanvasTurnContext {
 export interface PreviewArtifact {
   artifactId: string;
   html: string;
+}
+
+/** What a kit preview tile loads, or the diagnostics it shows instead. */
+export type KitPreview =
+  | { status: 'ready'; artifact: PreviewArtifact }
+  | { status: 'failed'; diagnostics: CanvasDiagnostic[] };
+
+/** One `@font-face` a kit declares, its descriptors as written and its WOFF2 file as base64. */
+export interface KitFontFace {
+  family: string;
+  style: string;
+  weight: string;
+  unicodeRange: string;
+  woff2: string;
 }
 
 /**
@@ -393,6 +461,8 @@ export interface CanvasError {
   code: CanvasErrorCode;
   message: string;
   currentRect?: FrameRect;
+  /** The kit's newest version, when a design system save names an older base. */
+  latestVersion?: number;
 }
 
 // ── Bridge commands and events ───────────────────────────────────────
@@ -521,11 +591,56 @@ export type CanvasCommand =
       canvasId: string;
       input: AnnotateCanvasInput;
     }
-  // The Manage design systems dialog (spec §10). Kits are global, not a
-  // canvas's. A new kit is named by its mutationId, so a retry finds the
-  // version it already saved.
+  // The design system document (design system documents spec §14). Kits are
+  // global, not a canvas's. A save names the version it edited and is refused,
+  // writing nothing, once that is not the newest. A new kit is named by its
+  // mutationId, so a retry finds the version it already saved.
   | { type: 'canvas.listDesignSystems'; requestId: string }
   | { type: 'canvas.readDesignSystem'; requestId: string; ref: DesignSystemVersionRef }
+  | {
+      type: 'canvas.saveDesignSystem';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      baseVersion: number;
+      name: string;
+      cover: DesignSystemCover;
+      sections: DocumentSection[];
+    }
+  | { type: 'canvas.listDesignSystemVersions'; requestId: string; id: string }
+  | {
+      type: 'canvas.restoreDesignSystemVersion';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      version: number;
+      /** The newest version the user saw; the restored copy goes on top of it. */
+      onto: number;
+    }
+  | {
+      type: 'canvas.setDesignSystemDeleted';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      deleted: boolean;
+    }
+  // The agent proposal the user reviewed, while it is still the one waiting:
+  // accept saves it as the version after `onto`, the newest the user saw, and
+  // discard removes it.
+  | {
+      type: 'canvas.acceptDesignSystemProposal';
+      requestId: string;
+      mutationId: string;
+      id: string;
+      proposalId: string;
+      onto: number;
+    }
+  | {
+      type: 'canvas.discardDesignSystemProposal';
+      requestId: string;
+      id: string;
+      proposalId: string;
+    }
   | {
       type: 'canvas.copyDesignSystem';
       requestId: string;
@@ -540,6 +655,25 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
+  // A kit version's previews in one mode, or a waiting proposal's. `item` is a
+  // preview's id or `cover`. A capture is a base64 PNG the document took from a
+  // saved version's live preview; a later one replaces it.
+  | {
+      type: 'canvas.readKitPreview';
+      requestId: string;
+      ref: DesignSystemRef | DesignSystemProposalRef;
+      item: string;
+    }
+  | {
+      type: 'canvas.saveKitCapture';
+      requestId: string;
+      ref: DesignSystemRef;
+      item: string;
+      png: string;
+    }
+  | { type: 'canvas.readKitCapture'; requestId: string; ref: DesignSystemRef; item: string }
+  // The fonts a kit version's stylesheets embed, which its document sets the kit's words in.
+  | { type: 'canvas.readKitFonts'; requestId: string; ref: DesignSystemVersionRef }
   // The local library (spec §7). A new item is named by its mutationId, so a
   // retried save finds the copy it already made. `thumbnail` is a base64 PNG
   // of that revision, which the item keeps as its own; a listing carries none,
@@ -601,10 +735,14 @@ export type CanvasReply =
   | { kind: 'artifact'; artifact: PreviewArtifact | null }
   | { kind: 'source'; files: SourceFiles }
   | { kind: 'designSystems'; systems: DesignSystemSummary[] }
-  | { kind: 'designSystem'; system: DesignSystemDetail }
+  | { kind: 'designSystem'; system: DesignSystemDocumentView }
+  | { kind: 'designSystemVersions'; versions: DesignSystemVersionEntry[] }
   // Import diagnostics name what could not become a token; unmapped tokens are
   // read from the saved kit instead.
   | { kind: 'designSystemSaved'; ref: DesignSystemVersionRef; diagnostics: CanvasDiagnostic[] }
+  | { kind: 'kitPreview'; preview: KitPreview }
+  | { kind: 'kitCapture'; png: string | null }
+  | { kind: 'kitFonts'; faces: KitFontFace[] }
   | { kind: 'libraryItem'; item: LibraryItem }
   | { kind: 'libraryItems'; items: LibraryItem[] }
   | { kind: 'libraryThumbnail'; png: string | null }
@@ -628,4 +766,6 @@ export type CanvasEvent =
       canvasId: string;
       designId: string;
       revisionId: string;
-    };
+    }
+  // After any write to a kit, so every open list and document reads it again.
+  | { type: 'canvas.designSystemsChanged'; id: string };

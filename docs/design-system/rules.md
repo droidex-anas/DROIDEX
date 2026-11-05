@@ -61,7 +61,7 @@ Leave surfaces that already work without lines alone.
 - bold (700), light (300), or italic in UI chrome;
 - uppercase for anything but `overline` badges;
 - `prose` in menus or rows, or `caption` for anything people read for more than a glance;
-- mono for numbers that aren't code (use tabular figures in the sans face instead);
+- mono anywhere but code, terminal output and diffs: labels, file names, IDs, token names and values, and numbers that aren't code are sans (with tabular figures for numbers);
 - centred text in lists, menus or forms (centre only empty states and the welcome screen);
 - more than three text styles in one component.
 
@@ -201,6 +201,15 @@ If a screen has more than three colours besides the neutrals, something is decor
 - **No exclamation marks, no emoji, no "please"** in UI chrome.
 - **Status words are states:** Waiting, Working, Ready to review, Done.
 - **Numbers and units:** "2m ago", "14 files", "+42 −7".
+
+## Illustrations, frames and design systems
+
+- **A kit cover is a brand poster.** It is the picture of the kit's feel, not a screen: the brand colours at full strength, one graphic idea from the brand's geometry or mark, a large headline in the kit's own faces and the mark small, with layered blocks or a sticker for depth. It has no app chrome, window, device, buttons or inputs, since the demos show the product. It works in light and dark, fills its 1200 × 480 box and still reads as a thumbnail.
+- **Illustrations are real product screens.** A picker tile, an empty-state picture or a demo inside a document shows the product's own screen as it would ship, cropped hard to what it is about: real words and honest data on the subject, placeholder bars for the rest, no lorem, no plate behind it, no device frame or browser window unless that chrome is the product, and no stock AI decoration. It fills its box exactly, sized in pixels, never to the window.
+- **Agent frames look like a serious product.** What the agent draws on the canvas uses real icons and brand marks, the product's own chrome and final copy. No lorem ipsum, placeholder logos, a letter in a coloured square, or "Button" as a label.
+- **Token names read as the standard ones.** A design system shows `accent`, `radius-card`, `shadow-md`, never the `--ds-` prefix it is stored under, and a value that refers to another token reads `{accent}`. The full `var(--ds-…)` is only what Copy reference puts on the clipboard; tooltips and toasts name the token bare too.
+- **A design system is whole.** Every colour has light and dark values, type sizes come with weights and line heights in fonts that load, the key tokens and each primitive carry a usage note, a cover poster carries its feel and a few demos show it applied. Every scale reads in order, smallest first, and the kit has one rules note.
+- **Documents name no author.** A design system document, its notes and an agent proposal never say who wrote or proposed them.
 
 ## Before shipping a screen
 

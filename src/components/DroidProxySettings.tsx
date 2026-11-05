@@ -166,7 +166,7 @@ export function DroidProxySettings() {
             </Button>
           ) : install ? (
             <div className="flex shrink-0 items-center gap-2">
-              <span className="font-mono text-code text-muted">{installLabel(install)}</span>
+              <span className="text-body tabular-nums text-muted">{installLabel(install)}</span>
               {canCancelInstall && (
                 <Button
                   size="sm"
@@ -203,9 +203,7 @@ export function DroidProxySettings() {
         </SettingRow>
         <SettingRow label="Local proxy" description={proxyDescription(status)}>
           <div className="flex shrink-0 items-center gap-2">
-            <span
-              className={`font-mono text-code ${status.proxyRunning ? 'text-success' : 'text-muted'}`}
-            >
+            <span className={`text-body ${status.proxyRunning ? 'text-success' : 'text-muted'}`}>
               {status.proxyRunning ? 'running' : 'stopped'}
             </span>
             <Button
@@ -448,7 +446,7 @@ function ProviderAction({
   if (loggingIn) {
     return (
       <div className="flex shrink-0 items-center gap-2">
-        <span className="font-mono text-code text-muted">waiting…</span>
+        <span className="text-body text-muted">waiting…</span>
         <Button
           size="sm"
           onClick={() => {

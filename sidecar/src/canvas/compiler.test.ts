@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { SourceMap } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, test, type TestContext } from 'node:test';
+import { siGithub } from 'simple-icons';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -14,11 +15,10 @@ import {
   compilerResponse,
   type CompiledDesign,
 } from './compiler.js';
-import { CompilerProcesses } from './canvasCompilerProcesses.js';
+import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesses.js';
+import { readDesignSystem } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
-import { CLAUDE_INSPIRED_DESIGN_SYSTEM } from './presets/claude-inspired.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
-import { OPENAI_INSPIRED_DESIGN_SYSTEM } from './presets/openai-inspired.js';
+import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import type { SourceFiles } from './schema.js';
@@ -167,31 +167,29 @@ test('Tailwind emits exactly the utilities the source spells out', async () => {
   assert.equal(/\.grid \{/.test(html), false, 'an unused utility is not emitted');
 });
 
-test('every kit starter compiles in both pinned modes with offline fonts', async () => {
-  for (const kit of [
-    DROIDEX_DESIGN_SYSTEM,
-    OPENAI_INSPIRED_DESIGN_SYSTEM,
-    CLAUDE_INSPIRED_DESIGN_SYSTEM,
-  ]) {
-    const example = kit.examples['Hey.tsx'];
-    assert.ok(example);
-    for (const mode of ['light', 'dark'] as const) {
-      const input = {
-        ...compileInput({ 'main.tsx': example }),
-        designSystem: { id: kit.id, version: kit.version, mode },
-      };
-      const design = await shared.compile(input, new AbortController().signal);
-      assert.deepEqual(design.diagnostics, []);
-      assert.ok(design.html.includes("You're all set"));
-      assert.ok(design.html.includes('data-mode="' + mode + '"'));
-      assert.match(design.html, /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/);
-      assert.doesNotMatch(design.html, /data:font\/woff2;base64,/);
-      assert.doesNotMatch(design.html, /url\(\s*['"]?https?:/);
+test('every preview and cover a built-in kit shows builds strictly in both pinned modes', async () => {
+  const offlineFont = /droidex-canvas-preview:\/\/preview\/font\/[0-9a-f]{64}/;
+  for (const kit of [AUTO_DESIGN_SYSTEM, await readDesignSystem({ id: 'droidex', version: 1 })]) {
+    for (const item of [kit.cover, ...kit.sections.flatMap((section) => [...section.items])]) {
+      if (item?.kind !== 'preview') continue;
+      const { example } = item;
+      for (const mode of ['light', 'dark'] as const) {
+        const input = {
+          ...compileInput({ 'main.tsx': kit.examples[example] }, 'strict'),
+          designSystem: { id: kit.id, version: kit.version, mode },
+        };
+        const design = await shared.compile(input, new AbortController().signal);
+        const where = `${kit.id} ${example} ${mode}`;
+        assert.deepEqual(design.diagnostics, [], where);
+        assert.ok(design.html.includes('data-mode="' + mode + '"'), where);
+        assert.doesNotMatch(design.html, /data:font\/woff2;base64,|url\(\s*['"]?https?:/, where);
+        assert.equal(offlineFont.test(design.html), kit !== AUTO_DESIGN_SYSTEM, where);
+      }
     }
   }
 });
 
-test('a named Lucide import adds only the used icon code', async () => {
+test('a named Lucide icon or Simple Icons brand mark adds only its own code', async () => {
   const base = await compile({
     'main.tsx': 'export default function Hey() { return <p>Hey</p>; }',
   });
@@ -199,11 +197,18 @@ test('a named Lucide import adds only the used icon code', async () => {
     'main.tsx':
       "import { Activity } from 'lucide-react'; export default function Hey() { return <Activity aria-label='Activity' />; }",
   });
-  const addedBytes = Buffer.byteLength(icon.html) - Buffer.byteLength(base.html);
-  assert.ok(
-    addedBytes > 0 && addedBytes < 10_000,
-    'one icon adds under 10 KiB, not the full catalog: ' + addedBytes,
-  );
+  const mark = await compile({
+    'main.tsx':
+      "import { siGithub } from 'simple-icons'; export default function Hey() { return <svg viewBox='0 0 24 24'><path d={siGithub.path} /></svg>; }",
+  });
+  assert.ok(mark.html.includes(siGithub.path), 'the svg draws the official mark');
+  for (const design of [icon, mark]) {
+    const addedBytes = Buffer.byteLength(design.html) - Buffer.byteLength(base.html);
+    assert.ok(
+      addedBytes > 0 && addedBytes < 10_000,
+      'adds under 10 KiB, not a catalog: ' + addedBytes,
+    );
+  }
 });
 
 test('an allowed chart import compiles into a self-contained document', async () => {
@@ -275,6 +280,7 @@ test('an import that leaves the design is refused', async () => {
     ['fs', 'unsupported_import'],
     ['lucide-react/dist/cjs/lucide-react.js', 'unsupported_import'],
     ['recharts/es6/index.js', 'unsupported_import'],
+    ['simple-icons/icons/github.svg', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];
 
@@ -341,16 +347,13 @@ test('an already aborted signal never starts a compile', async () => {
 
 test('terminating rejects every in-flight compile and accepts no more', async () => {
   const worker = new CompilerWorker();
-  const pending = worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
+  const pending = compileStateful(worker);
   const settled = assert.rejects(pending, CompilerUnavailableError);
 
   await worker.terminate();
 
   await settled;
-  await assert.rejects(
-    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
-    CompilerUnavailableError,
-  );
+  await assert.rejects(compileStateful(worker), CompilerUnavailableError);
 });
 
 test('concurrent termination waits for child exit, not a stopped acknowledgement', async (t) => {
@@ -375,10 +378,7 @@ test('concurrent termination waits for child exit, not a stopped acknowledgement
   );
 
   await Promise.all(rejected);
-  await assert.rejects(
-    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
-    CompilerUnavailableError,
-  );
+  await assert.rejects(compileStateful(worker), CompilerUnavailableError);
   for (const controller of controllers) controller.abort();
   assert.deepEqual(
     child.requests.map((request) => request.type),
@@ -405,17 +405,14 @@ for (const failure of ['IPC error', 'malformed reply'] as const) {
     t.mock.method(console, 'error', () => undefined);
     const children = mockCompilerProcesses(t);
     const worker = new CompilerWorker();
-    const rejected = assert.rejects(
-      worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
-      CompilerUnavailableError,
-    );
+    const rejected = assert.rejects(compileStateful(worker), CompilerUnavailableError);
     const child = children[0];
     assert.ok(child);
     Object.defineProperty(child, 'pid', { value: 1234 });
     if (failure === 'IPC error') child.emit('error', new Error('IPC failed with a live process'));
     else child.emit('message', { status: 'not-a-compiler-reply' });
     await rejected;
-    const replacement = worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
+    const replacement = compileStateful(worker);
     const refused = assert.rejects(replacement, CompilerUnavailableError);
     let closed = false;
     const closing = worker.terminate().then(() => {
@@ -439,10 +436,7 @@ test('a failed spawn close settles concurrent termination and the process drain'
   const processes = new CompilerProcesses();
   const slot = { compiler: null };
   const worker = processes.of(slot);
-  const rejected = assert.rejects(
-    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
-    CompilerUnavailableError,
-  );
+  const rejected = assert.rejects(compileStateful(worker), CompilerUnavailableError);
   const child = children[0];
   assert.ok(child);
   Object.defineProperty(child, 'pid', { value: undefined });
@@ -473,10 +467,7 @@ test('a failed spawn close settles concurrent termination and the process drain'
 test('the shutdown grace kills the compiler but waits for its exit', async (t) => {
   const children = mockCompilerProcesses(t);
   const worker = new CompilerWorker();
-  const rejected = assert.rejects(
-    worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
-    CompilerUnavailableError,
-  );
+  const rejected = assert.rejects(compileStateful(worker), CompilerUnavailableError);
   let completed = false;
   const ending = worker.terminate().then(() => {
     completed = true;
@@ -528,9 +519,7 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     );
 
     const worker = new CompilerWorker();
-    const compiling = withOwnedRuntime(runtime, () =>
-      worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
-    );
+    const compiling = withOwnedRuntime(runtime, () => compileStateful(worker));
     // The reason reaches a caller, so it is the one curated sentence and
     // carries no machine path, exactly like a design's own diagnostics.
     await assert.rejects(compiling, (error: unknown) => {
@@ -547,7 +536,7 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
     // to stop cleanly rather than be killed on the grace timeout.
     await worker.terminate();
     await assert.rejects(
-      worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal),
+      compileStateful(worker),
       CompilerUnavailableError,
       `${reason}, after terminating`,
     );
@@ -826,7 +815,7 @@ test('ending the compiler leaves no process of its own behind', async (t) => {
     const others = compilerProcessIds();
     const worker = new CompilerWorker();
     t.after(() => worker.terminate());
-    await worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
+    await compileStateful(worker);
 
     const compiler = [...compilerProcessIds()].find((pid) => !others.has(pid));
     assert.ok(compiler, 'the compiler runs in a process of its own');
@@ -892,6 +881,10 @@ function scratchDirectory(t: TestContext): string {
 
 async function compile(files: SourceFiles): Promise<CompiledDesign> {
   return await shared.compile(compileInput(files), new AbortController().signal);
+}
+
+function compileStateful(worker: DesignCompiler): Promise<CompiledDesign> {
+  return worker.compile(compileInput(STATEFUL_DESIGN), new AbortController().signal);
 }
 
 /**

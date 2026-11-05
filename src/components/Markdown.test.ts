@@ -70,7 +70,7 @@ test('plain fenced blocks preserve preformatted multiline layout', () => {
   );
 
   assert.match(html, /<pre[^>]*>/);
-  // A fence without a language is still a code card, not an inline pill on
+  // A fence without a language is still a code card, not inline code on
   // every line, and it does not gain the parser's trailing newline.
   assert.match(html, />Copy<\/span><\/button>/);
   assert.match(html, /first line\nsecond line<\/code>/);

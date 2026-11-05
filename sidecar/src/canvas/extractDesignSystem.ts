@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import postcss from 'postcss';
 import ts from 'typescript';
+import { buildDocument } from './buildDocument.js';
 import { designSystemSchema, type DesignSystem } from './designSystems.js';
 import { lineAt, sourceTokens } from './designSystemTokens.js';
-import { DROIDEX_DESIGN_SYSTEM } from './presets/droidex.js';
 import { PRIMITIVES_TSX } from './presets/primitives.js';
+import { STARTER_TOKENS } from './presets/starter.js';
 import { KIT_CSS } from './presets/styles.js';
 import type { CanvasDiagnostic, RevisionRef, SourceFiles } from './protocol.js';
 import { sourceFilesSchema } from './schema.js';
@@ -21,7 +22,7 @@ export type ExtractDesignSystemResult =
   | { status: 'refused'; diagnostics: CanvasDiagnostic[] };
 
 const PRIMITIVES = new Set(['Button', 'Input', 'Card', 'Badge', 'Tabs', 'Dialog']);
-const OWNED_IMPORTS = new Set(['react', 'react/jsx-runtime', 'lucide-react']);
+const OWNED_IMPORTS = new Set(['react', 'react/jsx-runtime', 'lucide-react', 'simple-icons']);
 const PRIMITIVE_SELECTOR =
   /\.ds-(?:button|input|field|hint|error|card|badge|tab|tablist|tabpanel|dialog)(?:[-\s.:[#>,+~]|$)/;
 
@@ -63,16 +64,20 @@ export function extractDesignSystem(
       line: reference.line,
     });
   }
+  const designMd = source['DESIGN.md'];
   const kit = designSystemSchema.safeParse({
     id: randomUUID(),
     version: 1,
     name: input.name,
-    modes: {
-      light: { ...DROIDEX_DESIGN_SYSTEM.modes.light, ...tokens.modes.light },
-      dark: { ...DROIDEX_DESIGN_SYSTEM.modes.dark, ...tokens.modes.dark },
-    },
+    cover: null,
+    sections: buildDocument({
+      tokens: {
+        light: { ...STARTER_TOKENS.light, ...tokens.modes.light },
+        dark: { ...STARTER_TOKENS.dark, ...tokens.modes.dark },
+      },
+      overview: designMd ? [{ kind: 'note', label: 'design.md', body: designMd }] : [],
+    }),
     files: primitives.files,
-    guidance: source['DESIGN.md'] ?? '',
     examples: {},
     provenance: { sourceCanvasId: input.sourceCanvasId, revision: input.from },
   });

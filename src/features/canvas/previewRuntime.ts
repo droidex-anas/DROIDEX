@@ -16,6 +16,7 @@ import {
   previewNonce,
   previewPickScript,
   previewSelectScript,
+  previewSetTokensScript,
   previewStartScript,
   readPreviewSnapshot,
   type PreviewElement,
@@ -109,11 +110,13 @@ export interface PreviewRunOptions {
  * One running preview. `stop` is idempotent and releases every timer. The two
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
+ * `setTokens` reaches the same guests and is not answered.
  */
 export interface PreviewRun {
   stop(): void;
   pick(pick: PreviewPick, properties: readonly string[]): number;
   select(target: PreviewTarget | null, properties: readonly string[]): number;
+  setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
 const realPreviewClock: PreviewClock = {
@@ -218,6 +221,10 @@ class GuestRun implements PreviewRun {
 
   select(target: PreviewTarget | null, properties: readonly string[]): number {
     return this.command((sequence) => previewSelectScript(target, properties, sequence));
+  }
+
+  setTokens(tokens: Readonly<Record<string, string>>): void {
+    if (!this.stopped && this.started) void this.ask(previewSetTokensScript(tokens));
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */

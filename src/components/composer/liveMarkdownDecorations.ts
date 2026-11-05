@@ -218,8 +218,9 @@ export function buildMarkdownDecorations(state: EditorState): MarkdownDecoration
         case 'StrikethroughMark':
           builder.fold(syntax.from, syntax.to);
           return;
+        // The transcript's own rule, so a draft's code reads as the message will.
         case 'InlineCode':
-          builder.mark(syntax.from, syntax.to, 'cm-md-code');
+          builder.mark(syntax.from, syntax.to, 'inline-code');
           return;
         // The `` ` `` fences of inline code fold; the ``` fences of a block stay
         // visible but muted, so block boundaries remain obvious.

@@ -10,6 +10,7 @@ import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
+import { KitPreviews } from '../canvas/kitPreviews.js';
 import type {
   CanvasEvent,
   CanvasReply,
@@ -26,7 +27,8 @@ import {
   writeInput,
 } from './canvasStorageSupport.js';
 
-export const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
+// Auto is authored in code, so a frame's kit does not change when DROIDEX is exported again.
+export const designSystem = { id: 'auto', version: 1, mode: 'light' } as const;
 export const APP = 'app-1';
 export const PAGE = 'page-1';
 export const EDITABLE =
@@ -55,6 +57,7 @@ export function canvasCommandHandler(options: {
     options.ready,
     options.scopes,
     options.builds,
+    new KitPreviews(),
     {
       secret: ASSET_SECRET,
       list: (canvasId) => listCanvasAssets(options.root, canvasId),

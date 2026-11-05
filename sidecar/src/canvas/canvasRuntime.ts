@@ -18,7 +18,7 @@
 // resolves through, so no two anchors can disagree about where a package comes
 // from.
 
-import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,7 +58,12 @@ const RUNTIME_SPECIFIERS: readonly string[] = [
   'react-dom/client',
   'lucide-react/dist/esm/lucide-react.js',
   'recharts/es6/index.js',
+  'simple-icons/index.mjs',
 ];
+
+// Simple Icons exports its ESM barrel to `import` only, so `require` cannot
+// name it. It is read at its path inside the package `require` would find.
+const EXPORT_HIDDEN_ENTRIES = new Set(['simple-icons/index.mjs']);
 
 // victory-vendor embeds these distributions without their package manifests.
 const VICTORY_VENDOR_LICENSES = [
@@ -157,7 +162,7 @@ function load(runtimeRequire: NodeJS.Require, modules: string | null): string | 
   for (const specifier of RUNTIME_SPECIFIERS) {
     let resolved;
     try {
-      resolved = runtimeRequire.resolve(specifier);
+      resolved = resolveEntry(runtimeRequire, specifier);
     } catch {
       return `${specifier} does not resolve`;
     }
@@ -170,12 +175,23 @@ function load(runtimeRequire: NodeJS.Require, modules: string | null): string | 
       esbuild: runtimeRequire('esbuild') as typeof esbuild,
       postcss: runtimeRequire('postcss') as typeof postcssModule.default,
       tailwindcss: runtimeRequire('tailwindcss') as typeof tailwindModule.default,
-      resolve: (specifier) => runtimeRequire.resolve(specifier),
+      resolve: (specifier) => resolveEntry(runtimeRequire, specifier),
     };
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
   return null;
+}
+
+function resolveEntry(runtimeRequire: NodeJS.Require, specifier: string): string {
+  if (!EXPORT_HIDDEN_ENTRIES.has(specifier)) return runtimeRequire.resolve(specifier);
+  const name = specifier.slice(0, specifier.indexOf('/'));
+  const modules = runtimeRequire.resolve
+    .paths(name)
+    ?.find((directory) => existsSync(join(directory, name, 'package.json')));
+  const file = modules === undefined ? undefined : join(modules, specifier);
+  if (file === undefined || !existsSync(file)) throw new Error(`${specifier} does not resolve`);
+  return file;
 }
 
 /**

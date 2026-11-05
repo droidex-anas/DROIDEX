@@ -1,0 +1,243 @@
+// The document's top row (spec §5): Back to the board (Close in a chat without
+// a canvas), the kit's name and its version history on the left; the caller's
+// controls on the right. DocumentNotice is the quiet line under it for a kit
+// that is read-only, and OlderVersionNotice that line over an older version.
+
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { ArrowLeft, PanelLeft, X } from '@droidex/icons';
+import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
+import { pushToast } from '../../../lib/toast';
+import { canvasClient } from '../canvasClient';
+import { canvasMessage, CanvasRequestError } from '../client';
+import type { DesignSystemDocumentView } from '../protocol';
+import { InlineField } from './InlineField';
+import { UnsavedMark } from './UnsavedMark';
+import { useIsMounted } from './useIsMounted';
+import { VersionMenu } from './VersionMenu';
+
+const MAX_NAME_LENGTH = 120;
+
+/**
+ * What the header keeps as its row narrows. It drops, in order, the back and
+ * Sections labels, most of the primary action's label and last the version
+ * button; the name truncates throughout. Widths are the row's content box,
+ * chosen so the row never overflows with every control present.
+ */
+export interface HeaderRoom {
+  navWords: boolean;
+  fullPrimary: boolean;
+  version: boolean;
+}
+
+function headerRoom(widthPx: number): HeaderRoom {
+  return {
+    navWords: widthPx >= 560,
+    fullPrimary: widthPx >= 440,
+    version: widthPx >= 340,
+  };
+}
+
+export function DocumentHeader({
+  view,
+  name,
+  onRename,
+  onBack,
+  hasBoard,
+  onShowVersion,
+  navToggle,
+  children,
+}: {
+  view: DesignSystemDocumentView;
+  /** The draft's name, which may differ from the shown version's. */
+  name: string;
+  /** Null for a kit that cannot be edited. */
+  onRename: ((name: string) => void) | null;
+  onBack: () => void;
+  /** False in a chat without a canvas, where leaving closes the document. */
+  hasBoard: boolean;
+  onShowVersion: (version: number) => void;
+  /** Hides and shows the nav beside the document; null while the canvas is too narrow for it. */
+  navToggle: { isHidden: boolean; onToggle: () => void } | null;
+  /** The right end: sections, mode, more menu and the primary action. */
+  children: (room: HeaderRoom) => ReactNode;
+}) {
+  const headerRef = useRef<HTMLElement>(null);
+  const room = headerRoom(useContentWidth(headerRef));
+  const renamed = name !== view.name;
+  const back = hasBoard ? { label: 'Board', icon: ArrowLeft } : { label: 'Close', icon: X };
+  return (
+    <header
+      ref={headerRef}
+      className="design-system-document-header flex h-12 shrink-0 items-center gap-2 px-4"
+    >
+      {/* The first button's padding hangs, so its icon starts on the edge the notice and a narrow column share. */}
+      {navToggle && (
+        <Tooltip label={navToggle.isHidden ? 'Show sections' : 'Hide sections'} placement="bottom">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={PanelLeft}
+            aria-label={navToggle.isHidden ? 'Show sections' : 'Hide sections'}
+            aria-expanded={!navToggle.isHidden}
+            onClick={navToggle.onToggle}
+            className="-ml-1.5"
+          />
+        </Tooltip>
+      )}
+      {room.navWords ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={back.icon}
+          onClick={onBack}
+          className={navToggle ? undefined : '-ml-2.5'}
+        >
+          {back.label}
+        </Button>
+      ) : (
+        <Tooltip label={back.label} placement="bottom">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={back.icon}
+            aria-label={back.label}
+            onClick={onBack}
+            className={navToggle ? undefined : '-ml-1.5'}
+          />
+        </Tooltip>
+      )}
+      {/* The margin keeps the unsaved dot's place between the back button and the name. */}
+      <div className="relative ml-3.5 flex min-w-0 items-center">
+        <UnsavedMark
+          mark={renamed ? 'changed' : undefined}
+          was={renamed ? `Was ${view.name}` : undefined}
+        />
+        {onRename ? (
+          <InlineField
+            value={name}
+            label="Design system name"
+            check={(text) =>
+              text.length > 0 && text.length <= MAX_NAME_LENGTH
+                ? null
+                : 'A name is 1 to 120 characters.'
+            }
+            onCommit={onRename}
+            className="text-body-strong text-primary"
+          />
+        ) : (
+          <h1 className="truncate text-body-strong text-primary">{name}</h1>
+        )}
+      </div>
+      {room.version && <VersionMenu id={view.id} shown={view.version} onShow={onShowVersion} />}
+      <div className="ml-auto flex shrink-0 items-center gap-2">{children(room)}</div>
+    </header>
+  );
+}
+
+/** The primary action; short, it reads “Use” and names itself in full. */
+export function UseInCanvas({ short, onUse }: { short: boolean; onUse: () => void }) {
+  if (!short)
+    return (
+      <Button variant="primary" size="sm" onClick={onUse}>
+        Use in this canvas
+      </Button>
+    );
+  return (
+    <Tooltip label="Use in this canvas" placement="bottom">
+      <Button variant="primary" size="sm" aria-label="Use in this canvas" onClick={onUse}>
+        Use
+      </Button>
+    </Tooltip>
+  );
+}
+
+/** The element's width inside its padding, measured before paint and on every resize. */
+function useContentWidth(ref: RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(Number.POSITIVE_INFINITY);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const style = getComputedStyle(element);
+    setWidth(element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [ref]);
+  return width;
+}
+
+export function DocumentNotice({ text, children }: { text: string; children: ReactNode }) {
+  return (
+    <div className="mx-4 mb-2 flex shrink-0 items-center gap-2 rounded-lg bg-surface py-1.5 pl-4 pr-1.5">
+      <p className="min-w-0 flex-1 truncate text-body text-secondary">{text}</p>
+      {children}
+    </div>
+  );
+}
+
+/** Shown over an older version: back to the latest, or restore this one as the next. */
+export function OlderVersionNotice({
+  view,
+  onShow,
+}: {
+  view: DesignSystemDocumentView;
+  onShow: (target: number | 'latest') => Promise<void>;
+}) {
+  const [restoring, setRestoring] = useState(false);
+  const isMounted = useIsMounted();
+
+  const restore = async () => {
+    setRestoring(true);
+    try {
+      await canvasClient.designSystems.restore(
+        crypto.randomUUID(),
+        view.id,
+        view.version,
+        view.latestVersion,
+      );
+      // Only while this version is on screen: the user may have moved on.
+      if (isMounted()) await onShow('latest');
+    } catch (error) {
+      // A version saved meanwhile reaches the notice by its change event, which
+      // turns Restore into Restore as the version after it.
+      if (!(error instanceof CanvasRequestError && error.code === 'revision_conflict'))
+        pushToast(canvasMessage(error), 'error');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <DocumentNotice
+      text={`Viewing version ${String(view.version)} · latest is version ${String(view.latestVersion)}`}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          void onShow('latest');
+        }}
+      >
+        Back to latest
+      </Button>
+      {view.kind === 'user' && (
+        <Button
+          variant="primary"
+          size="sm"
+          loading={restoring}
+          disabled={restoring}
+          onClick={() => {
+            void restore();
+          }}
+        >
+          Restore as version {view.latestVersion + 1}
+        </Button>
+      )}
+    </DocumentNotice>
+  );
+}

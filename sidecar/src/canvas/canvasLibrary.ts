@@ -15,7 +15,7 @@ import { canvasLibraryDir } from '../droidexPaths.js';
 import {
   imageMediaType,
   ownedAssetSchema,
-  readOwnedImage,
+  readImageIn,
   referencedAssetIds,
   type OwnedImage,
 } from './canvasAssets.js';
@@ -158,7 +158,7 @@ export async function readRevisionCopy(
   const metadata = await history.readRevisionMetadata(canvasId, ref.designId, ref.revisionId);
   const images: OwnedImage[] = [];
   for (const assetId of referencedAssetIds(Object.values(files)))
-    images.push(await readOwnedImage(root, canvasId, assetId));
+    images.push(await readImageIn(join(root, canvasId), assetId));
   return { files: new Map(Object.entries(files)), designSystem: metadata.designSystem, images };
 }
 
