@@ -21,10 +21,14 @@ test('canvas asset replies accept owned images and reject malformed metadata', (
   };
   const result = { type: 'canvas.result', requestId: 'assets-1', ok: true };
   assertAccepted({ ...result, reply: { kind: 'assets', assets: [asset] } });
+  assertAccepted({
+    ...result,
+    reply: { kind: 'assets', assets: [{ ...asset, mediaType: 'image/svg+xml' }] },
+  });
   assertAccepted({ ...result, reply: { kind: 'assets', assets: [] } });
   for (const malformed of [
     { ...asset, assetId: 'not-an-image-digest' },
-    { ...asset, mediaType: 'image/svg+xml' },
+    { ...asset, mediaType: 'image/gif' },
     { ...asset, byteLength: 0 },
     { ...asset, width: 1.5 },
     { ...asset, height: 8193 },

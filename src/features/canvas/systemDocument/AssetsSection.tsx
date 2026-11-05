@@ -22,6 +22,7 @@ const TYPE_NAMES: Record<OwnedAsset['mediaType'], string> = {
   'image/png': 'PNG',
   'image/jpeg': 'JPEG',
   'image/webp': 'WebP',
+  'image/svg+xml': 'SVG',
 };
 
 export function AssetGrid({

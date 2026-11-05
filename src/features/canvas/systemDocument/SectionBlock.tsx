@@ -237,7 +237,7 @@ export function SectionBlock({
           <div className="flex items-center gap-3">
             <p className="text-body text-muted">
               {imports.pick
-                ? 'Drop PNG, JPEG or WebP images here.'
+                ? 'Drop PNG, JPEG, WebP or SVG images here.'
                 : 'Nothing in this section yet.'}
             </p>
             {editing && (

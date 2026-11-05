@@ -452,6 +452,7 @@ if (process.argv.includes('--serve')) {
     if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
     if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
     if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+    if (bytes.toString('utf8', 0, 64).startsWith('<svg xmlns="http://www.w3.org/2000/svg"')) return 'image/svg+xml';
     return 'application/octet-stream';
   };
   const server = createServer(async (request, response) => {
@@ -459,7 +460,8 @@ if (process.argv.includes('--serve')) {
     const name = asset ? join('assets', asset[1]) : request.url === '/app.js' ? 'app.js' : request.url === '/style.css' ? 'style.css' : 'index.html';
     try {
       const bytes = await readFile(join('dist', name));
-      response.writeHead(200, { 'content-type': asset ? imageType(bytes) : types[name.slice(name.lastIndexOf('.'))], 'x-content-type-options': 'nosniff' });
+      const imageHeaders = asset ? { 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } : {};
+      response.writeHead(200, { 'content-type': asset ? imageType(bytes) : types[name.slice(name.lastIndexOf('.'))], 'x-content-type-options': 'nosniff', ...imageHeaders });
       response.end(bytes);
     } catch (error) {
       response.writeHead(error.code === 'ENOENT' ? 404 : 500).end();

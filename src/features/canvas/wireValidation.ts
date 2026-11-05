@@ -143,7 +143,8 @@ function isReply(value: unknown): boolean {
           /^[0-9a-f]{64}$/.test(asset.assetId) &&
           (asset.mediaType === 'image/png' ||
             asset.mediaType === 'image/jpeg' ||
-            asset.mediaType === 'image/webp') &&
+            asset.mediaType === 'image/webp' ||
+            asset.mediaType === 'image/svg+xml') &&
           count(asset.byteLength) &&
           asset.byteLength > 0 &&
           asset.byteLength <= 10 * 1024 * 1024 &&

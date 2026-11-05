@@ -92,12 +92,16 @@ async function readOwnedFile(target, directories, maxBytes) {
   }
 }
 
+// The sidecar's SVG sanitiser starts everything it keeps with exactly this.
+const SANITISED_SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"');
+
 function imageMediaType(data) {
   if (data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff)
     return 'image/jpeg';
   if (data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP')
     return 'image/webp';
+  if (data.subarray(0, SANITISED_SVG.length).equals(SANITISED_SVG)) return 'image/svg+xml';
   return null;
 }
 

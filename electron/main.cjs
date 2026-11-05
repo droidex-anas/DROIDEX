@@ -661,11 +661,14 @@ function registerCanvasPreviewProtocol() {
         secret: sidecarSupervisor.canvasAssetSecret(),
       });
       if (!asset) return new Response('Not found', { status: 404 });
+      // The inert-body policy local images use: a sanitised SVG stays an image
+      // even if something navigates to it or embeds it directly.
       return new Response(asset.data, {
         headers: {
           'content-type': asset.mime,
           'cache-control':
             asset.mime === 'font/woff2' ? 'public, max-age=31536000, immutable' : 'no-store',
+          'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
           'x-content-type-options': 'nosniff',
           ...(asset.mime === 'font/woff2' ? { 'access-control-allow-origin': '*' } : {}),
         },
@@ -750,7 +753,7 @@ function registerIpc() {
   const pickImage = async (owner) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
     return canvasImageImportResult(importCanvasImage, owner, result.filePaths[0]);

@@ -68,6 +68,26 @@ test('the preview host serves a kit image by its content hash', async (t) => {
   assert.equal(await readKitImage(kitRoot, `../assets/${assetId}`), null);
 });
 
+test('the preview host serves SVG only as the sidecar sanitised it', async (t) => {
+  const kitRoot = await mkdtemp(join(tmpdir(), 'preview-kit-svg-'));
+  t.after(() => rm(kitRoot, { recursive: true, force: true }));
+  await mkdir(join(kitRoot, 'assets'));
+  const store = async (markup) => {
+    const data = Buffer.from(markup);
+    const assetId = createHash('sha256').update(data).digest('hex');
+    await writeFile(join(kitRoot, 'assets', assetId), data);
+    return { assetId, data };
+  };
+  const sanitised = await store('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>');
+  const raw = await store('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>');
+
+  assert.deepEqual(await readKitImage(kitRoot, sanitised.assetId), {
+    mime: 'image/svg+xml',
+    data: sanitised.data,
+  });
+  assert.equal(await readKitImage(kitRoot, raw.assetId), null);
+});
+
 test('a kit guest reads kit images and fonts but no canvas image; an unbound guest reads nothing', () => {
   const font = `droidex-canvas-preview://preview/font/${'a'.repeat(64)}`;
   const kitImage = `droidex-canvas-preview://preview/kit-asset/${'d'.repeat(64)}`;

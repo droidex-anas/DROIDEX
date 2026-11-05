@@ -229,7 +229,7 @@ export interface PreviewReport {
 
 export interface OwnedAsset {
   assetId: string;
-  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/svg+xml';
   byteLength: number;
   width: number;
   height: number;

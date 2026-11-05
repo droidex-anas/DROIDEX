@@ -650,7 +650,11 @@ own picker. Main checks the 10 MiB limit and matching extension, decodes PNG/JPE
 with `nativeImage` and WebP with `@napi-rs/canvas`, then checks the 8192-pixel
 dimension limit. Its private loopback route sends the
 selected path with a digest and decoded dimensions to the sidecar; the sidecar
-rejects a changed file and stores accepted bytes by hash under the canvas. Each
+rejects a changed file and stores accepted bytes by hash under the canvas. An
+SVG is not decoded in main: the sidecar rebuilds it from an allowlist
+(`canvasSvg.ts`), keeping vectors and dropping script, outside references and
+entity declarations, and stores only the rebuilt markup. Main serves an SVG
+asset only when it starts with that rebuilt prefix, under an inert CSP. Each
 asset has a durable metadata record, and `canvas.listAssets` recovers its ID
 even when the import reply or original file is lost.
 `canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
