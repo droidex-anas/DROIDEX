@@ -212,11 +212,12 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
 
   /** Enter in Edit: into the panel when `designId` holds the selected element, else its first element. */
   const enter = (designId: string) => {
-    if (latest.current.selection?.draft.element.designId === designId)
-      panel.current
-        ?.querySelector<HTMLElement>('input:not([readonly]), button:not([disabled])')
-        ?.focus();
-    else pick(designId, { step: 'first' });
+    if (latest.current.selection?.draft.element.designId === designId) {
+      const first =
+        panel.current?.querySelector<HTMLElement>('input:not([readonly])') ??
+        panel.current?.querySelector<HTMLElement>('button:not([disabled])');
+      first?.focus();
+    } else pick(designId, { step: 'first' });
   };
 
   /**
