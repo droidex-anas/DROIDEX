@@ -29,6 +29,7 @@ import type {
 } from './canvasAnnotationSchema.js';
 import type { DocumentSection } from './designSystemDocument.js';
 import type { DesignSystemDocumentView } from './designSystemCommands.js';
+import type { EditToken } from './styleEdits.js';
 import type { KitFontFace } from './kitFonts.js';
 import type { KitPreview } from './kitPreviews.js';
 import type {
@@ -456,6 +457,7 @@ export type CanvasCommand =
   // so a retry finds the version it saved.
   | { type: 'canvas.listDesignSystems'; requestId: string }
   | { type: 'canvas.readDesignSystem'; requestId: string; ref: DesignSystemVersionRef }
+  | { type: 'canvas.readEditTokens'; requestId: string; ref: DesignSystemVersionRef }
   | {
       type: 'canvas.saveDesignSystem';
       requestId: string;
@@ -607,6 +609,7 @@ export type CanvasReply =
   | { kind: 'source'; files: SourceFiles }
   | { kind: 'designSystems'; systems: DesignSystemSummary[] }
   | { kind: 'designSystem'; system: DesignSystemDocumentView }
+  | { kind: 'editTokens'; tokens: Record<string, EditToken[]> }
   | { kind: 'designSystemVersions'; versions: DesignSystemVersionEntry[] }
   // Import diagnostics name what could not become a token; unmapped tokens are
   // read from the saved kit instead.

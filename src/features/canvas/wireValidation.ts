@@ -8,6 +8,8 @@ import {
   isKitSummary,
   isKitVersion,
   isKitVersionEntry,
+  isTokenName,
+  isTokenValue,
 } from './designSystemDocumentValidation';
 import type { CanvasEvent } from './protocol';
 import {
@@ -63,6 +65,7 @@ const REPLY_KINDS = new Set([
   'revisionDiff',
   'designSystems',
   'designSystem',
+  'editTokens',
   'designSystemVersions',
   'designSystemSaved',
   'kitPreview',
@@ -187,6 +190,8 @@ function isReply(value: unknown): boolean {
       return list(value.systems, isKitSummary);
     case 'designSystem':
       return isKitDocument(value.system);
+    case 'editTokens':
+      return isEditTokens(value.tokens);
     case 'designSystemVersions':
       return list(value.versions, isKitVersionEntry);
     case 'designSystemSaved':
@@ -379,6 +384,25 @@ function isSummary(value: unknown): boolean {
 
 function isReceipt(value: unknown): boolean {
   return record(value) && id(value.designId) && id(value.revisionId) && count(value.sequence);
+}
+
+// Property keys bound at the whitelisted properties; the token caps are the
+// document's (MAX_TOKENS in designSystemDocumentValidation.ts).
+const MAX_EDIT_TOKEN_PROPERTIES = 64;
+const MAX_EDIT_TOKENS_PER_PROPERTY = 256;
+
+function isEditTokens(value: unknown): boolean {
+  if (!record(value) || Object.keys(value).length > MAX_EDIT_TOKEN_PROPERTIES) return false;
+  return Object.values(value).every((options) =>
+    boundedList(options, MAX_EDIT_TOKENS_PER_PROPERTY, isEditToken),
+  );
+}
+
+function isEditToken(token: unknown): boolean {
+  if (!record(token) || !isTokenName(token.name)) return false;
+  if (token.value !== undefined)
+    return isTokenValue(token.value) && token.light === undefined && token.dark === undefined;
+  return isTokenValue(token.light) && isTokenValue(token.dark);
 }
 
 function isFrame(value: unknown): boolean {

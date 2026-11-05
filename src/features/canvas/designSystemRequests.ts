@@ -13,6 +13,7 @@ import type {
   DesignSystemSummary,
   DesignSystemVersionEntry,
   DesignSystemVersionRef,
+  EditToken,
   KitFontFace,
   KitPreview,
 } from './protocol';
@@ -34,6 +35,15 @@ export class DesignSystemRequests {
   async read(ref: DesignSystemVersionRef): Promise<DesignSystemDocumentView> {
     const event = await this.send({ type: 'canvas.readDesignSystem', requestId: requestId(), ref });
     return reply(event, 'designSystem').system;
+  }
+
+  /**
+   * The version's tokens by the style property that accepts them, for the
+   * inspector's pickers; keyed by property, keyword-only properties absent.
+   */
+  async editTokens(ref: DesignSystemVersionRef): Promise<Record<string, EditToken[]>> {
+    const event = await this.send({ type: 'canvas.readEditTokens', requestId: requestId(), ref });
+    return reply(event, 'editTokens').tokens;
   }
 
   /**

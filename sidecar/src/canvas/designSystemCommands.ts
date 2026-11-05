@@ -3,7 +3,7 @@
 // save through the same owner as the agent's canvas_theme tool.
 
 import { canvasError } from './canvasError.js';
-import type { DocumentSection } from './designSystemDocument.js';
+import { kitModes, type DocumentSection } from './designSystemDocument.js';
 import { importDesignSystem, pastedSource, unmappedKitTokens } from './designSystemImport.js';
 import {
   acceptProposal,
@@ -25,6 +25,7 @@ import {
   type SavedBy,
 } from './designSystems.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
+import { editTokens } from './styleEdits.js';
 import { readKitFonts } from './kitFonts.js';
 import type { KitPreviews } from './kitPreviews.js';
 import type { CanvasCommand, CanvasReply, DesignSystemVersionRef } from './protocol.js';
@@ -57,6 +58,7 @@ export type DesignSystemCommand = Extract<
     type: `canvas.${
       | 'listDesignSystems'
       | 'readDesignSystem'
+      | 'readEditTokens'
       | 'saveDesignSystem'
       | 'listDesignSystemVersions'
       | 'restoreDesignSystemVersion'
@@ -75,6 +77,7 @@ export type DesignSystemCommand = Extract<
 const COMMAND_TYPES = new Set<CanvasCommand['type']>([
   'canvas.listDesignSystems',
   'canvas.readDesignSystem',
+  'canvas.readEditTokens',
   'canvas.saveDesignSystem',
   'canvas.listDesignSystemVersions',
   'canvas.restoreDesignSystemVersion',
@@ -104,6 +107,10 @@ export async function answerDesignSystemCommand(
       return { kind: 'designSystems', systems: await listDesignSystems() };
     case 'canvas.readDesignSystem':
       return { kind: 'designSystem', system: await readDocument(command.ref) };
+    case 'canvas.readEditTokens': {
+      const modes = kitModes((await readDesignSystem(command.ref)).sections);
+      return { kind: 'editTokens', tokens: editTokens(modes.light, modes.dark) };
+    }
     case 'canvas.listDesignSystemVersions':
       return { kind: 'designSystemVersions', versions: await listDesignSystemVersions(command.id) };
     case 'canvas.saveDesignSystem': {

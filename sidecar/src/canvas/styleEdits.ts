@@ -143,6 +143,36 @@ export function resolveStyleChange(
   return token ? { kind: 'token', token } : { kind: 'raw', value: change.value };
 }
 
+/** One kit token a property's edit may name, with its value in each mode. */
+export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
+
+/**
+ * The pinned kit's tokens by the property that accepts them, for the
+ * inspector's pickers; a property with none to offer is absent. Names are
+ * sorted, the order a raw value's token match prefers.
+ */
+export function editTokens(
+  light: Readonly<Record<string, string>>,
+  dark: Readonly<Record<string, string>>,
+): Record<string, EditToken[]> {
+  const byProperty: Record<string, EditToken[]> = {};
+  for (const [property, rule] of Object.entries(STYLE_PROPERTIES)) {
+    if (rule.tokens === null) continue;
+    const names = Object.keys(light)
+      .filter((name) => isFamilyToken(rule, name, light))
+      .sort();
+    if (names.length === 0) continue;
+    byProperty[property] = names.map((name) => {
+      const lightValue = light[name] ?? '';
+      const darkValue = dark[name] ?? lightValue;
+      return lightValue === darkValue
+        ? { name, value: lightValue }
+        : { name, light: lightValue, dark: darkValue };
+    });
+  }
+  return byProperty;
+}
+
 /** The CSS a resolution writes into the element's style. */
 export function styleValue(resolution: StyleResolution): string {
   return resolution.kind === 'token' ? `var(${resolution.token})` : resolution.value;
