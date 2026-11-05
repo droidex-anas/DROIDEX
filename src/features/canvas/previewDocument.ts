@@ -17,7 +17,7 @@ export const MAX_PREVIEW_SNAPSHOT_EVENTS = 64;
 const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_TEXT = 512;
 /** Style properties one selection command may name, as the intermediate caps them. */
-const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+const MAX_PREVIEW_STYLE_PROPERTIES = 64;
 /** Bytes one queued event may measure, as the intermediate accepts it. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
 /** The queue cap times the largest event the guest will keep, with headroom. */

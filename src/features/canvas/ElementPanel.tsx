@@ -26,11 +26,13 @@ const SECTIONS: { title: string; rows: StyleRow[] }[] = [
   {
     title: 'Layout',
     rows: [
-      [field('flexDirection', 'Direction')],
-      [field('alignItems', 'Align')],
+      [field('display', 'Display'), field('flexDirection', 'Direction')],
+      [field('flexWrap', 'Wrap'), field('flexGrow', 'Grow')],
+      [field('alignItems', 'Align'), field('alignSelf', 'Self')],
       [field('justifyContent', 'Justify')],
       [field('gap', 'Gap')],
       [field('rowGap', 'Row'), field('columnGap', 'Column')],
+      [field('overflow', 'Overflow')],
     ],
   },
   {
@@ -60,22 +62,24 @@ const SECTIONS: { title: string; rows: StyleRow[] }[] = [
       [field('fontFamily', 'Font')],
       [field('fontSize', 'Size'), field('fontWeight', 'Weight')],
       [field('lineHeight', 'Line'), field('letterSpacing', 'Letter')],
+      [field('textAlign', 'Align'), field('textTransform', 'Case')],
     ],
   },
   {
     title: 'Colour',
+    rows: [[field('color', 'Colour')], [field('backgroundColor', 'Background')]],
+  },
+  {
+    title: 'Border',
     rows: [
-      [field('color', 'Colour')],
-      [field('backgroundColor', 'Background')],
-      [field('borderColor', 'Border')],
+      [field('borderColor', 'Colour')],
+      [field('borderWidth', 'Width'), field('borderStyle', 'Style')],
+      [field('borderRadius', 'Radius')],
     ],
   },
   {
     title: 'Appearance',
-    rows: [
-      [field('opacity', 'Opacity'), field('borderRadius', 'Radius')],
-      [field('boxShadow', 'Shadow')],
-    ],
+    rows: [[field('opacity', 'Opacity')], [field('boxShadow', 'Shadow')]],
   },
 ];
 

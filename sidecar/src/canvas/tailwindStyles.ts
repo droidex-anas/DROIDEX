@@ -45,6 +45,7 @@ const LONGHANDS: Readonly<Record<string, readonly string[]>> = {
   margin: MARGIN,
   gap: GAP,
   borderRadius: RADII,
+  borderWidth: SIDES.map((side) => `border${side}Width`),
   borderColor: SIDES.map((side) => `border${side}Color`),
 };
 
@@ -125,7 +126,7 @@ const FONT_SIZE_LINE_HEIGHT: Scale = {
 };
 const FONT_FAMILIES = new Set(['sans', 'serif', 'mono']);
 const SHADOWS = new Set(['', 'sm', 'md', 'lg', 'xl', '2xl', 'inner', 'none']);
-const BORDER_WIDTHS = new Set(['', '0', '2', '4', '8']);
+const BORDER_WIDTH: Scale = { '': '1px', '0': '0px', '2': '2px', '4': '4px', '8': '8px' };
 const COLOUR_KEY =
   /^(?:inherit|current|transparent|black|white|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950))$/;
 const COLOUR_LIKE =
@@ -167,10 +168,58 @@ const UTILITIES: Readonly<Record<string, Utility>> = {
   lineHeight: { prefix: 'leading', scale: LINE_HEIGHT },
   letterSpacing: { prefix: 'tracking', scale: TRACKING, signed: true },
   opacity: { prefix: 'opacity', scale: OPACITY },
+  borderWidth: { prefix: 'border', hint: 'length', scale: BORDER_WIDTH },
 };
 
 /** Keyword properties, by the CSS value each stock class sets. */
 const KEYWORD_CLASSES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  display: {
+    block: 'block',
+    'inline-block': 'inline-block',
+    inline: 'inline',
+    flex: 'flex',
+    'inline-flex': 'inline-flex',
+    grid: 'grid',
+    none: 'hidden',
+  },
+  flexWrap: { nowrap: 'flex-nowrap', wrap: 'flex-wrap', 'wrap-reverse': 'flex-wrap-reverse' },
+  flexGrow: { '1': 'grow', '0': 'grow-0' },
+  alignSelf: {
+    auto: 'self-auto',
+    'flex-start': 'self-start',
+    center: 'self-center',
+    'flex-end': 'self-end',
+    stretch: 'self-stretch',
+    baseline: 'self-baseline',
+  },
+  borderStyle: {
+    solid: 'border-solid',
+    dashed: 'border-dashed',
+    dotted: 'border-dotted',
+    double: 'border-double',
+    none: 'border-none',
+  },
+  textAlign: {
+    left: 'text-left',
+    center: 'text-center',
+    right: 'text-right',
+    justify: 'text-justify',
+    start: 'text-start',
+    end: 'text-end',
+  },
+  textTransform: {
+    none: 'normal-case',
+    uppercase: 'uppercase',
+    lowercase: 'lowercase',
+    capitalize: 'capitalize',
+  },
+  overflow: {
+    visible: 'overflow-visible',
+    hidden: 'overflow-hidden',
+    clip: 'overflow-clip',
+    scroll: 'overflow-scroll',
+    auto: 'overflow-auto',
+  },
   flexDirection: {
     row: 'flex-row',
     'row-reverse': 'flex-row-reverse',
@@ -340,6 +389,9 @@ function utilityStyle(utility: string): Omit<ClassStyle, 'scope'> | null {
       return isShadow(value) ? { sets: ['boxShadow'] } : null;
     case 'font':
       return fontStyle(value);
+    case 'grow':
+      // `grow` and `grow-0` are keywords above; this reads an arbitrary one.
+      return arbitrary(value) ? { sets: ['flexGrow'] } : null;
     default:
       return null;
   }
@@ -369,7 +421,7 @@ function borderStyle(value: string): Omit<ClassStyle, 'scope'> | null {
   const rest = side === '' ? value : value.slice(side.length + 1);
   const custom = arbitrary(rest);
   const isWidth =
-    BORDER_WIDTHS.has(rest) ||
+    Object.hasOwn(BORDER_WIDTH, rest) ||
     custom?.hint === 'length' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
   if (isWidth) return { sets: sides.map((each) => `border${each}Width`) };

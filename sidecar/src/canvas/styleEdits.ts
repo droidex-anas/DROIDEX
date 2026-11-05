@@ -22,6 +22,7 @@ type ValueForm =
   | 'colour'
   | 'weight'
   | 'line-height'
+  | 'unitless'
   | 'fraction'
   | readonly string[];
 
@@ -73,6 +74,21 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
     values: ['flex-start', 'center', 'flex-end', 'space-between', 'space-around', 'space-evenly'],
   },
   opacity: { tokens: '--ds-opacity-', values: 'fraction' },
+  display: {
+    tokens: null,
+    values: ['block', 'inline-block', 'inline', 'flex', 'inline-flex', 'grid', 'none'],
+  },
+  flexWrap: { tokens: null, values: ['nowrap', 'wrap', 'wrap-reverse'] },
+  flexGrow: { tokens: null, values: 'unitless' },
+  alignSelf: {
+    tokens: null,
+    values: ['auto', 'flex-start', 'center', 'flex-end', 'stretch', 'baseline'],
+  },
+  borderWidth: { tokens: null, values: 'length' },
+  borderStyle: { tokens: null, values: ['solid', 'dashed', 'dotted', 'double', 'none'] },
+  textAlign: { tokens: null, values: ['left', 'center', 'right', 'justify', 'start', 'end'] },
+  textTransform: { tokens: null, values: ['none', 'uppercase', 'lowercase', 'capitalize'] },
+  overflow: { tokens: null, values: ['visible', 'hidden', 'clip', 'scroll', 'auto'] },
 };
 
 const LENGTH = /^(?:0|(?:\d+|\d*\.\d+)(?:px|rem|em|%))$/;
@@ -167,6 +183,8 @@ function acceptsValue(form: ValueForm, value: string): boolean {
       return WEIGHT.test(value);
     case 'line-height':
       return UNITLESS.test(value) || LENGTH.test(value);
+    case 'unitless':
+      return UNITLESS.test(value);
     case 'fraction':
       return FRACTION.test(value);
   }

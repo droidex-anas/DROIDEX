@@ -53,7 +53,7 @@ interface InlineStyle {
 }
 
 // React writes a bare number in these as it is, and in any other property as pixels.
-const UNITLESS_PROPERTIES = new Set(['opacity', 'fontWeight', 'lineHeight']);
+const UNITLESS_PROPERTIES = new Set(['opacity', 'fontWeight', 'lineHeight', 'flexGrow']);
 const BARE_NUMBER = /^(-?(?:\d+|\d*\.\d+))$/;
 const PIXELS = /^(-?(?:\d+|\d*\.\d+))px$|^(0)$/;
 
