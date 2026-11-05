@@ -202,6 +202,32 @@ test('stop waits for a child killed during startup to exit', async () => {
   assert.equal(supervisor.isStopping(), false);
 });
 
+test('stopping a replacement run still waits for the run stopping before it', async () => {
+  const first = fakeChild();
+  const second = fakeChild();
+  const { supervisor } = harness([first, second]);
+  const firstStart = supervisor.start();
+  first.stdout.write('SIDECAR_READY 43001\n');
+  await firstStart;
+  void supervisor.stop();
+  const secondStart = supervisor.start();
+  second.stdout.write('SIDECAR_READY 43002\n');
+  await secondStart;
+
+  let stopped = false;
+  const stop = supervisor.stop().then(() => {
+    stopped = true;
+  });
+  second.emit('exit', 0, null);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stopped, false);
+  assert.equal(supervisor.isStopping(), true);
+
+  first.emit('exit', 0, null);
+  await stop;
+  assert.equal(supervisor.isStopping(), false);
+});
+
 test('the working-agent count comes from /health of the run still active', async () => {
   const child = fakeChild();
   let health = async () => ({ ok: true, workingSessions: 3 });

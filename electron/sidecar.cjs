@@ -407,10 +407,13 @@ function createSidecarSupervisor(options) {
     });
     const exited = Promise.race([run?.exitPromise ?? Promise.resolve(), forcedExit]).finally(() => {
       clearTimeout(timeout);
-      if (stopping === exited) stopping = null;
     });
-    stopping = exited;
-    return exited;
+    // A run started while an earlier one stops must not let that earlier exit be forgotten.
+    const allExited = Promise.all([stopping, exited]).then(() => {
+      if (stopping === allExited) stopping = null;
+    });
+    stopping = allExited;
+    return allExited;
   }
 
   return {
