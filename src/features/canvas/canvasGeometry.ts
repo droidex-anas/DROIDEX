@@ -110,7 +110,7 @@ export function fitFrames(rects: readonly FrameRect[], viewportSize: Point): Vie
 }
 
 /** The box every rect sits inside, or null when there is nothing to frame. */
-function boundsOf(rects: readonly FrameRect[]): FrameRect | null {
+export function boundsOf(rects: readonly FrameRect[]): FrameRect | null {
   if (rects.length === 0) return null;
   let left = Infinity;
   let top = Infinity;
