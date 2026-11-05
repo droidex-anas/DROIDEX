@@ -3,6 +3,7 @@ import test from 'node:test';
 import { chipNamedBy, composerMenu, composerTrigger, type MenuEntry } from './menuItems';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import type { SlashCommand } from '../ComposerMenu';
+import type { CanvasFrame } from '../../features/canvas/protocol';
 import type { ProviderKind, SkillInfo } from '../../types/bridge';
 
 const command = (cmd: string): SlashCommand => ({
@@ -40,17 +41,35 @@ const painted = (entries: MenuEntry[]) =>
         return entry.item.item.name;
       case 'file':
         return entry.item.path;
+      case 'frame':
+        return entry.item.frame.name;
     }
   });
 
-const menuFor = (text: string, catalog: SkillInfo[] = [], files: string[] = []) => {
+const menuFor = (
+  text: string,
+  catalog: SkillInfo[] = [],
+  files: string[] = [],
+  frames: CanvasFrame[] = [],
+) => {
   const trigger = composerTrigger(text, text.length);
   assert.ok(trigger, `expected a trigger in ${JSON.stringify(text)}`);
-  return composerMenu(trigger, { commands, catalog, files });
+  return composerMenu(trigger, { commands, catalog, files, frames });
 };
 
-const rowsFor = (text: string, catalog: SkillInfo[] = [], files: string[] = []) =>
-  painted(menuFor(text, catalog, files).entries).filter((label) => !label.endsWith(':'));
+const rowsFor = (...args: Parameters<typeof menuFor>) =>
+  painted(menuFor(...args).entries).filter((label) => !label.endsWith(':'));
+
+const frame = (designId: string, name: string): CanvasFrame => ({
+  designId,
+  name,
+  rect: { x: 0, y: 0, width: 1440, height: 900 },
+  layoutVersion: 1,
+  manifestVersion: 1,
+  revisionId: 'r1',
+  designSystem: { id: 'droidex', version: 2, mode: 'dark' },
+  build: { status: 'pending', generation: 1 },
+});
 
 test('a slash token opens the menu on what follows it', () => {
   assert.deepEqual(composerTrigger('/rev', 4), {
@@ -94,7 +113,12 @@ test('a fully typed name narrows the menu to it, and a space stages a named skil
   const chipFor = (text: string, extra: SlashCommand[] = []) => {
     const trigger = composerTrigger(text, text.length);
     assert.ok(trigger);
-    const menu = composerMenu(trigger, { commands: [...commands, ...extra], catalog, files: [] });
+    const menu = composerMenu(trigger, {
+      commands: [...commands, ...extra],
+      catalog,
+      files: [],
+      frames: [],
+    });
     return chipNamedBy(trigger, menu);
   };
   assert.deepEqual(chipFor('/mod'), { type: 'catalog', item: catalog[1] });
@@ -161,6 +185,20 @@ test('mentions list files, then the apps and plugins the harness published', () 
   ]);
 });
 
+test("in a chat on a canvas, mentions lead with the canvas's frames, matched by name", () => {
+  const frames = [frame('d1', 'Pricing'), frame('d2', 'Hero')];
+  assert.deepEqual(painted(menuFor('@', [], ['src/roadmap.md'], frames).entries), [
+    'Frames:',
+    'Pricing',
+    'Hero',
+    'Files:',
+    'src/roadmap.md',
+  ]);
+  // A query puts the better match first: a file named for it leads a frame that only contains it.
+  assert.deepEqual(rowsFor('@ro', [], ['src/roadmap.md'], frames), ['src/roadmap.md', 'Hero']);
+  assert.deepEqual(rowsFor('@pri', [], [], frames), ['Pricing']);
+});
+
 test('a query that matches nothing offers no rows, which closes the menu', () => {
   assert.deepEqual(rowsFor('/zzz', [row('review')]), []);
 });
@@ -190,6 +228,7 @@ test("a command that supersedes the harness's own hides that catalog row", () =>
     commands: [{ ...command('/fast'), supersedesHarnessCommand: true }],
     catalog: [harnessFast],
     files: [],
+    frames: [],
   });
 
   assert.deepEqual(
