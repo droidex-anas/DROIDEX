@@ -84,7 +84,8 @@ export function Popover({
   // anchor instead. React clears panelRef and unmounts the portal before this
   // cleanup runs, so containment is tracked live via focusin. A close by an
   // outside press moves focus to the pressed target first, clears the flag,
-  // and does not steal focus back.
+  // and does not steal focus back. A panel still in the document has not
+  // closed (StrictMode replaying the effect), so its content keeps focus.
   const focusInsideRef = useRef(false);
   useEffect(() => {
     const panel = panelRef.current;
@@ -107,7 +108,7 @@ export function Popover({
     const anchor = anchorRef.current;
     return () => {
       document.removeEventListener('focusin', track);
-      if (focusInsideRef.current) anchor?.focus();
+      if (focusInsideRef.current && !panel.isConnected) anchor?.focus();
       focusInsideRef.current = false;
     };
   }, [open, anchorRef, panelRef]);

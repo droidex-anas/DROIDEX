@@ -5,7 +5,7 @@ import { SKETCH_INK as INK, SKETCH_MARK as MARK } from '../../components/Starter
 
 export const DESIGN_PLACEHOLDER = 'Describe a screen, a flow, or a component…';
 
-type SketchKind = 'page' | 'component' | 'dashboard' | 'form';
+type SketchKind = 'system' | 'page' | 'component' | 'dashboard' | 'form';
 
 export const DESIGN_STARTERS: readonly {
   label: string;
@@ -14,34 +14,70 @@ export const DESIGN_STARTERS: readonly {
   sketch: SketchKind;
 }[] = [
   {
+    label: 'Design system',
+    hint: 'for your product',
+    prompt: 'Create a design system for ',
+    sketch: 'system',
+  },
+  {
     label: 'Page',
-    hint: 'a settings page with a theme toggle',
+    hint: 'a settings page',
     prompt: 'Design a settings page with a theme toggle',
     sketch: 'page',
   },
   {
     label: 'Component',
-    hint: 'a pricing card with three tiers',
+    hint: 'a pricing card',
     prompt: 'Design a pricing card with three tiers',
     sketch: 'component',
   },
   {
     label: 'Dashboard',
-    hint: 'usage over time with filters',
+    hint: 'usage over time',
     prompt: 'Design a dashboard that shows usage over time, with filters',
     sketch: 'dashboard',
   },
   {
     label: 'Form',
-    hint: 'sign-in with inline errors',
+    hint: 'a sign-in form',
     prompt: 'Design a sign-in form with inline errors',
     sketch: 'form',
   },
 ];
 
-/** A wireframe of what the starter asks for, drawn in the board's quiet tones. */
-export function StarterSketch({ kind }: { kind: SketchKind }) {
+/**
+ * A wireframe of what the starter asks for, drawn in the board's quiet tones.
+ * `wide` lays the design system's swatches beside its type for a tile that spans two columns.
+ */
+export function StarterSketch({ kind, wide = false }: { kind: SketchKind; wide?: boolean }) {
   switch (kind) {
+    case 'system':
+      if (wide)
+        return (
+          <span className="flex items-center gap-6">
+            <span className="grid grid-cols-3 gap-1.5">
+              {[MARK, INK, INK, INK, INK, INK].map((tone, index) => (
+                <span key={index} className={`size-4 rounded-xs ${tone}`} />
+              ))}
+            </span>
+            <span className="flex w-28 flex-col gap-2">
+              <span className={`h-2.5 w-20 rounded-full ${INK}`} />
+              <span className={`h-1.5 w-28 rounded-full ${INK}`} />
+              <span className={`h-1.5 w-24 rounded-full ${INK}`} />
+            </span>
+          </span>
+        );
+      return (
+        <span className="flex w-24 flex-col gap-2">
+          <span className="flex gap-1.5">
+            {[MARK, INK, INK, INK].map((tone, index) => (
+              <span key={index} className={`size-4 rounded-xs ${tone}`} />
+            ))}
+          </span>
+          <span className={`mt-0.5 h-2.5 w-16 rounded-full ${INK}`} />
+          <span className={`h-1.5 w-20 rounded-full ${INK}`} />
+        </span>
+      );
     case 'page':
       return (
         <span className="flex w-24 flex-col gap-2">

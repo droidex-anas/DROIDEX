@@ -22,6 +22,12 @@ export function isCompactionCompleteStatus(text?: string): boolean {
   return /compact/i.test(t) && /complete/i.test(t);
 }
 
+// The divider a finished compaction leaves: the daemon's automatic marker or
+// the manual completion line.
+export function isCompactionDivider(event: TranscriptEvent): boolean {
+  return event.kind === 'compaction' || isCompactionCompleteStatus(event.text);
+}
+
 export function isSettingsStatus(event: TranscriptEvent): boolean {
   return event.modelSwitch !== undefined;
 }
@@ -299,6 +305,10 @@ export function buildFeed(
     if (!e.isError) resultById.set(e.toolUseId, e);
   }
   const claimed = new Set<TranscriptEvent>();
+  // This turn's "Compacting…" line still waiting for its completion, and the
+  // lines already retired by one. A steer or a reply can land in between.
+  let compacting: FeedItem | undefined;
+  const retired = new Set<FeedItem>();
   // Each turn's browser calls and their results, in transcript order, under the
   // turn's first browser call. A result carries no tool name and can land in a
   // later turn, so it joins its call's turn by id; one with no id belongs to
@@ -348,6 +358,7 @@ export function buildFeed(
       continue;
     }
     if (ev.author === 'user' || ev.kind === 'text') {
+      if (ev.author === 'user' && !isSteeredPrompt(ev)) compacting = undefined;
       items.push({ type: 'message', key: ev.id, event: ev });
       i++;
       continue;
@@ -365,7 +376,16 @@ export function buildFeed(
       continue;
     }
     if (ev.kind === 'compaction' || ev.kind === 'status') {
-      items.push({ type: 'status', key: ev.id, event: ev });
+      const item: FeedItem = { type: 'status', key: ev.id, event: ev };
+      // A finished compaction retires its own "Compacting…" line, which would
+      // otherwise linger above the divider as if still running.
+      if (isCompactionDivider(ev) && compacting) {
+        retired.add(compacting);
+        compacting = undefined;
+      } else if (isCompactingStatus(ev.text)) {
+        compacting = item;
+      }
+      items.push(item);
       i++;
       continue;
     }
@@ -558,7 +578,7 @@ export function buildFeed(
     } else i++;
     continue;
   }
-  return items;
+  return retired.size ? items.filter((item) => !retired.has(item)) : items;
 }
 
 // Repeated TodoWrite calls in one activity group are noise (#20): keep only the

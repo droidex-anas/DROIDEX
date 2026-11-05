@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { canvasDir } from '../droidexPaths.js';
-import { readOwnedImage, referencedAssetIds } from './canvasAssets.js';
+import { readImageIn, referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
+import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
 import type { RevisionRef } from './protocol.js';
@@ -79,7 +81,7 @@ export async function exportCanvasSource(
     const images: ExportFile[] = [];
     for (const assetId of referencedAssetIds(revision.files.values())) {
       signal?.throwIfAborted();
-      const { bytes } = await readOwnedImage(canvasDir(), canvasId, assetId);
+      const { bytes } = await readImageIn(join(canvasDir(), canvasId), assetId);
       images.push({ path: `assets/${assetId}`, content: bytes });
     }
     return { saved: revision, assets: images };
@@ -92,13 +94,13 @@ export async function exportCanvasSource(
     files.push({ path: `design-system/${path}`, content });
   files.push({
     path: 'canvas-export/modes.json',
-    content: `${JSON.stringify({ selected: saved.designSystem.mode, modes: kit.modes }, null, 2)}\n`,
+    content: `${JSON.stringify({ selected: saved.designSystem.mode, modes: kitModes(kit.sections) }, null, 2)}\n`,
   });
   files.push({
     path: 'canvas-export/tailwind-config.json',
     content: `${JSON.stringify(CANVAS_TAILWIND_OPTIONS, null, 2)}\n`,
   });
-  files.push({ path: 'canvas-export/guidance.md', content: kit.guidance });
+  files.push({ path: 'canvas-export/guidance.md', content: kitGuidance(kit.name, kit.sections) });
   files.push(
     ...Object.entries(kit.examples).map(([path, content]) => ({
       path: `canvas-export/examples/${path}`,
@@ -106,7 +108,14 @@ export async function exportCanvasSource(
     })),
   );
 
-  files.push(...assets);
+  // One file per hash: the same bytes can be both a canvas image and a kit image.
+  const kitImageIds = referencedKitAssetIds([
+    ...saved.files.values(),
+    ...Object.values(kit.files),
+    ...Object.values(kit.examples),
+  ]);
+  for (const assetId of referencedAssetIds(saved.files.values())) kitImageIds.delete(assetId);
+  files.push(...assets, ...(await kitImageFiles(kitImageIds, signal)));
 
   const fonts = new Map<string, Buffer>();
   for (const content of Object.values(kit.files)) {
@@ -153,6 +162,7 @@ function exportPackageJson(): string {
           'lucide-react': '0.460.0',
           recharts: version('recharts'),
           'react-is': version('react-is'),
+          'simple-icons': '16.36.0',
         },
         devDependencies: {
           esbuild: version('esbuild'),
@@ -369,13 +379,13 @@ const README = `# Canvas source export
 The selected revision starts at \`src/main.tsx\`. Its pinned design system is in
 \`design-system/\`: React primitives, token CSS and font licences. The kit's
 guidance and examples are in \`canvas-export/\`. Font copies are in \`fonts/\`,
-selected light/dark values in \`canvas-export/modes.json\`, and referenced owned
-images in \`assets/\`.
+selected light/dark values in \`canvas-export/modes.json\`, and the canvas and kit
+images the source and kit refer to in \`assets/\`.
 
 Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
 \`npm run preview\` to serve the result locally. The supported runtime imports
-are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, and
-\`@droidex/design-system\`. Direct dependency versions are exact in
+are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
+and \`@droidex/design-system\`. Direct dependency versions are exact in
 \`package.json\`. No lockfile is generated during export: npm resolves transitive
 dependencies when you install, without the export needing registry access.
 `;
@@ -412,7 +422,7 @@ css += '@tailwind utilities;\\n';
 const content = await Promise.all([...source, ...kit].filter((path) => /\\.[jt]sx?$/.test(path)).map((path) => readFile(path, 'utf8')));
 const stylesheet = await postcss([tailwindcss({ ...tailwindOptions, content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
 await mkdir('dist', { recursive: true });
-const assetUrl = (text) => text.replace(/canvas-asset:([0-9a-f]{64})\\b/g, '/assets/$1');
+const assetUrl = (text) => text.replace(/(?:canvas|kit)-asset:([0-9a-f]{64})\\b/g, '/assets/$1');
 await writeFile('dist/style.css', assetUrl(stylesheet.css));
 const bundle = await esbuild.build({
   stdin: {

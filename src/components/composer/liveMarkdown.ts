@@ -7,7 +7,7 @@ import { syntaxTree } from '@codemirror/language';
 import { markdown, markdownLanguage, insertNewlineContinueMarkup } from '@codemirror/lang-markdown';
 import { drawSelection, EditorView, keymap, ViewPlugin } from '@codemirror/view';
 import { history, historyKeymap, insertNewline } from '@codemirror/commands';
-import { StateField } from '@codemirror/state';
+import { StateField, type Extension } from '@codemirror/state';
 import {
   buildMarkdownDecorations,
   caretOf,
@@ -178,13 +178,15 @@ function sideInsets(element: HTMLElement): string {
   return `${style.paddingLeft} ${style.paddingRight}`;
 }
 
-// One editor package for the composer: GFM parsing, live decorations, link
-// clicks, undo, and the newline bindings. Plain Enter never reaches here — the
-// composer intercepts it to send — so Shift+Enter and Alt+Enter are the ways to
-// break a line, both continuing the list or quote the caret sits in. Backspace
-// unwinds that markup (bound by `markdown()` itself), which is how a folded
-// `### ` marker is removed.
-export function liveMarkdown() {
+// One editor package for live markdown: GFM parsing, live decorations, link
+// clicks, undo, and the newline bindings. The theme is the caller's — the
+// composer's field by default, the note editor's own in the document. Plain
+// Enter never reaches the composer — it intercepts Enter to send — so
+// Shift+Enter and Alt+Enter are the ways to break a line there, both
+// continuing the list or quote the caret sits in. Backspace unwinds that
+// markup (bound by `markdown()` itself), which is how a folded `### ` marker
+// is removed.
+export function liveMarkdown(theme: Extension = liveMarkdownTheme) {
   return [
     // `markdownLanguage` rather than the default commonmark base: it already
     // carries the GFM extensions this composer parses.
@@ -192,7 +194,7 @@ export function liveMarkdown() {
     headingAutoSpace,
     markdownDecorations,
     linkInteraction(),
-    liveMarkdownTheme,
+    theme,
     // The browser's own caret is a hairline with no width control, so the
     // editor draws its own and the theme gives it the composer's weight.
     drawSelection(),

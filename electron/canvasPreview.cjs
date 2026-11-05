@@ -84,6 +84,9 @@ const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_TEXT_BYTES = 512;
 /** Style properties one selection command may read and preview. */
 const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+/** Draft token values one `setTokens` may carry, and how long each may be: a kit's caps. */
+const MAX_PREVIEW_TOKENS = 128;
+const MAX_PREVIEW_TOKEN_VALUE_LENGTH = 160;
 /** The nonce charset the intermediate will embed; the renderer mints hex. */
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 
@@ -93,7 +96,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * instance and nothing can replace it, so a second start reaches a fresh guest
  * or nothing; `drain` throws when this document was never started, which the
  * renderer reads as a guest it no longer owns. `pick` and `select` pass a
- * bounded selection command on to the generated frame.
+ * bounded selection command on to the generated frame, and `setTokens` a kit's
+ * draft custom properties, which the reporter sets on the design's root.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -291,6 +295,24 @@ const INTERMEDIATE_SCRIPT = `(() => {
         target: { elementId: text(target.elementId), instancePath: target.instancePath, styles },
         properties,
       });
+    },
+    setTokens(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      const given = request && typeof request === 'object' ? request.tokens : null;
+      if (!given || typeof given !== 'object') return 'invalid_request';
+      const entries = Object.entries(given);
+      if (entries.length > ${String(MAX_PREVIEW_TOKENS)}) return 'invalid_request';
+      const tokens = {};
+      for (const [name, value] of entries) {
+        if (!/^--[a-z0-9]+(-[a-z0-9]+)*$/.test(name) || typeof value !== 'string') return 'invalid_request';
+        if (value.length > ${String(MAX_PREVIEW_TOKEN_VALUE_LENGTH)}) return 'invalid_request';
+        tokens[name] = value;
+      }
+      frame.contentWindow.postMessage(
+        { canvasPreviewCommand: instance.nonce, command: 'setTokens', tokens },
+        '*',
+      );
+      return 'sent';
     },
     identity() {
       if (!instance) return null;

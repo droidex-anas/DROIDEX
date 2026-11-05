@@ -301,6 +301,8 @@ export interface TranscriptEvent {
     title?: string;
     // This create gave an unattached chat its canvas: the chat's first artifact.
     firstArtifact?: true;
+    // The kit a theme call saved, proposed or applied; its reference only.
+    designSystem?: { id: string; version: number; status: 'saved' | 'proposed' | 'applied' };
   };
   isError?: boolean;
   // A 'tool_call' the provider knows is about a child session it is already

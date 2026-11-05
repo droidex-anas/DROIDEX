@@ -616,7 +616,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
           description={env?.cli.present ? env.cli.path : 'Not detected on this machine.'}
         >
           <div className="flex items-center gap-2">
-            <span className="font-mono text-code text-muted">
+            <span className="text-body tabular-nums text-muted">
               {env?.cli.present ? (env.cli.version ?? 'installed') : 'missing'}
             </span>
             <Button

@@ -132,7 +132,7 @@ export function FeedbackModal({ initialReport, onClose }: FeedbackModalProps) {
               onFocus={(event) => {
                 event.currentTarget.select();
               }}
-              className="font-mono"
+              className="tabular-nums"
             />
             <Button
               ref={copyButtonRef}

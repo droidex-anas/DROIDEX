@@ -3,7 +3,6 @@
 // be done to the canvas itself. The + at the row's end starts the next chat.
 
 import { useRef, useState, type MouseEvent } from 'react';
-import { Palette } from 'lucide-react';
 import {
   Check,
   ChevronDown,
@@ -24,7 +23,6 @@ import { searchCanvases } from './canvasChats';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import { useCanvases, type Canvases } from './useCanvases';
-import { useManageDesignSystems } from './useManageDesignSystems';
 import { useOpenCanvas } from './useOpenCanvas';
 
 const MENU_WIDTH_PX = 260;
@@ -63,7 +61,6 @@ function CanvasNameMenu({ appSessionId, canvasId }: { appSessionId: string; canv
     canvases.status === 'listed'
       ? (canvases.summaries.find((summary) => summary.canvasId === canvasId) ?? null)
       : null;
-  const designSystems = useManageDesignSystems();
   const leaveDeletedCanvas = useLeaveDeletedCanvas();
   const close = () => {
     setOpen(false);
@@ -106,9 +103,6 @@ function CanvasNameMenu({ appSessionId, canvasId }: { appSessionId: string; canv
         <Menu.Divider />
         <OtherCanvases canvases={canvases} canvasId={canvasId} />
         <Menu.Divider />
-        <Menu.Item icon={Palette} onSelect={designSystems.open}>
-          Manage design systems…
-        </Menu.Item>
         <Menu.Item
           icon={Trash}
           danger
@@ -120,7 +114,6 @@ function CanvasNameMenu({ appSessionId, canvasId }: { appSessionId: string; canv
         </Menu.Item>
       </Menu>
 
-      {designSystems.dialog}
       {deleting && (
         <DeleteCanvasDialog
           canvasId={canvasId}

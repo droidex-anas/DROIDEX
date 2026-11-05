@@ -12,6 +12,7 @@ import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { resolveCanvasAssetReferences } from './canvasAssets.js';
 import { canvasCommandSchema, type CanvasMutation } from './canvasCommandSchema.js';
+import { onDesignSystemChange } from './designSystemChanges.js';
 import {
   answerDesignSystemCommand,
   isDesignSystemCommand,
@@ -22,6 +23,7 @@ import { answerLibraryCommand, isLibraryCommand } from './canvasLibrary.js';
 import { answerRemovalCommand, isRemovalCommand } from './canvasRemoval.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
+import type { KitPreviews } from './kitPreviews.js';
 import type {
   CanvasCommand,
   CanvasError,
@@ -47,6 +49,7 @@ class CanvasDispatch {
     ready: Promise<CanvasWorkspace>,
     private readonly scopes: CanvasScopes,
     private readonly builds: CanvasBuilds,
+    private readonly previews: KitPreviews,
     private readonly assets: {
       secret: string;
       list: (canvasId: string) => Promise<OwnedAsset[]>;
@@ -59,6 +62,9 @@ class CanvasDispatch {
     onPageGone((pageId) => {
       this.watches.forget(pageId);
       this.captures.forget(pageId);
+    });
+    onDesignSystemChange((id) => {
+      this.emit({ type: 'canvas.designSystemsChanged', id });
     });
     this.workspace = ready.then(
       (opened) => {
@@ -87,13 +93,10 @@ class CanvasDispatch {
         return await this.watch(command, pageId);
       if (command.type === 'canvas.readArtifact') return await this.readArtifact(command);
       // Kits are not a canvas's, so they stay reachable when Canvas storage is not.
-      if (isDesignSystemCommand(command))
-        return {
-          type: 'canvas.result',
-          requestId: command.requestId,
-          ok: true,
-          reply: await answerDesignSystemCommand(command),
-        };
+      if (isDesignSystemCommand(command)) {
+        const reply = await answerDesignSystemCommand(command, this.previews);
+        return { type: 'canvas.result', requestId: command.requestId, ok: true, reply };
+      }
       const workspace = await this.workspace;
       const reply = await this.answer(workspace, command);
       if (CHANGES_SUMMARIES.has(command.type))
@@ -345,6 +348,7 @@ export function createCanvasCommandHandler(
   ready: Promise<CanvasWorkspace>,
   scopes: CanvasScopes,
   builds: CanvasBuilds,
+  previews: KitPreviews,
   assets: { secret: string; list: (canvasId: string) => Promise<OwnedAsset[]> },
   emit: (event: ServerEvent) => void,
   onPageGone: (listener: (pageId: string) => void) => () => void,
@@ -353,7 +357,7 @@ export function createCanvasCommandHandler(
   capture: CanvasCapture;
 } {
   const requests = new Map<string, { input: string; reply: Promise<CanvasEvent>; done: boolean }>();
-  const dispatch = new CanvasDispatch(ready, scopes, builds, assets, emit, onPageGone);
+  const dispatch = new CanvasDispatch(ready, scopes, builds, previews, assets, emit, onPageGone);
 
   const handle = async (value: unknown, pageId: string | null): Promise<boolean> => {
     if (!isCanvasRequest(value)) return false;
@@ -466,6 +470,7 @@ function canvasFailure(error: unknown): CanvasError {
       code: error.code,
       message: error.message,
       ...(error.currentRect ? { currentRect: error.currentRect } : {}),
+      ...(error.latestVersion === undefined ? {} : { latestVersion: error.latestVersion }),
     };
   console.error('Canvas command failed:', error);
   return {

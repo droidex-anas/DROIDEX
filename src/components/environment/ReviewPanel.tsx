@@ -157,7 +157,7 @@ const FileRow = memo(function FileRow({
         </>
       }
       trailing={
-        <span className="shrink-0 font-mono text-code-sm">
+        <span className="shrink-0 text-caption tabular-nums">
           {file.additions > 0 && (
             <span style={{ color: 'var(--diff-add-fg)' }}>+{file.additions}</span>
           )}{' '}
@@ -766,7 +766,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
                 <span>
                   {review.files.length} file{review.files.length === 1 ? '' : 's'}
                 </span>
-                <span className="font-mono">
+                <span className="tabular-nums">
                   <span style={{ color: 'var(--diff-add-fg)' }}>+{totalAdd}</span>{' '}
                   <span style={{ color: 'var(--diff-del-fg)' }}>-{totalDel}</span>
                 </span>

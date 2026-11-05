@@ -6,6 +6,7 @@ import { createCanvasMcpServer } from './canvas/canvasMcpServer.js';
 import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import type { CanvasCapture } from './canvas/canvasCaptures.js';
 import { canvasError } from './canvas/canvasError.js';
+import type { KitPreviews } from './canvas/kitPreviews.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -221,6 +222,8 @@ export interface SessionManagerOptions {
   canvasWorkspace?: () => Promise<CanvasWorkspace>;
   // Asks the renderer pages showing a canvas for an inspect screenshot.
   canvasCapture?: CanvasCapture;
+  // Compiles a kit an agent saves before it is written.
+  kitPreviews?: Pick<KitPreviews, 'check'>;
   onUserPrompt?: (appSessionId: string) => void;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -332,6 +335,7 @@ export class SessionManager {
   private readonly canvasTurns: CanvasTurns;
   private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
   private readonly canvasCapture: CanvasCapture;
+  private readonly kitPreviews: Pick<KitPreviews, 'check'>;
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
@@ -415,6 +419,9 @@ export class SessionManager {
         Promise.reject(
           canvasError('capture_unavailable', 'No DROIDEX window can capture this design.'),
         ));
+    this.kitPreviews = options.kitPreviews ?? {
+      check: () => Promise.reject(new Error('Design system builds are unavailable.')),
+    };
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -1665,7 +1672,13 @@ export class SessionManager {
       this.canvasWorkspace,
       this.canvasTurns,
       this.canvasCapture,
+      this.kitPreviews,
       () => ref.id,
+      (appSessionId) => {
+        const summary = this.registry.resolveSummary(appSessionId);
+        if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
+        return summary.cwd;
+      },
       ref.purpose,
     );
     if (kind === 'codex') {

@@ -1,11 +1,55 @@
-// The Manage design systems dialog's commands (spec §10). Kits are global, so
-// these need no canvas, attachment or scope; they read and save through the
-// same owner as the agent's canvas_theme tool.
+// The design system document's commands (design system documents spec §14).
+// Kits are global, so these need no canvas, attachment or scope; they read and
+// save through the same owner as the agent's canvas_theme tool.
 
 import { canvasError } from './canvasError.js';
-import { importDesignSystem, unmappedKitTokens } from './designSystemImport.js';
-import { listDesignSystems, readDesignSystem, saveDesignSystem } from './designSystems.js';
-import type { CanvasCommand, CanvasReply } from './protocol.js';
+import type { DocumentSection } from './designSystemDocument.js';
+import { importDesignSystem, pastedSource, unmappedKitTokens } from './designSystemImport.js';
+import {
+  acceptProposal,
+  discardProposal,
+  readProposal,
+  type DesignSystemProposal,
+} from './designSystemProposals.js';
+import {
+  designSystemKind,
+  listDesignSystems,
+  listDesignSystemVersions,
+  readDesignSystem,
+  saveDesignSystem,
+  setDesignSystemDeleted,
+  type DesignSystem,
+  type DesignSystemCover,
+  type DesignSystemProvenance,
+  type DesignSystemSummary,
+  type SavedBy,
+} from './designSystems.js';
+import { readKitCapture, saveKitCapture } from './kitCaptures.js';
+import { readKitFonts } from './kitFonts.js';
+import type { KitPreviews } from './kitPreviews.js';
+import type { CanvasCommand, CanvasReply, DesignSystemVersionRef } from './protocol.js';
+
+/** A kit version as its document shows it: everything but its source. */
+export interface DesignSystemDocumentView {
+  id: string;
+  version: number;
+  /** The kit's newest version, which a save must build on. */
+  latestVersion: number;
+  name: string;
+  kind: DesignSystemSummary['kind'];
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
+  /** The example file names its previews may name. */
+  examples: string[];
+  /** Tokens a kit built on the shared primitives has beyond the ones they read. */
+  unmapped: string[];
+  provenance: DesignSystemProvenance | null;
+  /** When and by whom this version was saved; a built-in kit was never saved. */
+  savedAt: string | null;
+  savedBy: SavedBy | null;
+  /** The agent proposal waiting for review, if there is one. */
+  proposal: DesignSystemProposal | null;
+}
 
 export type DesignSystemCommand = Extract<
   CanvasCommand,
@@ -13,75 +57,149 @@ export type DesignSystemCommand = Extract<
     type: `canvas.${
       | 'listDesignSystems'
       | 'readDesignSystem'
+      | 'saveDesignSystem'
+      | 'listDesignSystemVersions'
+      | 'restoreDesignSystemVersion'
+      | 'setDesignSystemDeleted'
+      | 'acceptDesignSystemProposal'
+      | 'discardDesignSystemProposal'
       | 'copyDesignSystem'
-      | 'importDesignSystem'}`;
+      | 'importDesignSystem'
+      | 'readKitPreview'
+      | 'saveKitCapture'
+      | 'readKitCapture'
+      | 'readKitFonts'}`;
   }
 >;
 
 const COMMAND_TYPES = new Set<CanvasCommand['type']>([
   'canvas.listDesignSystems',
   'canvas.readDesignSystem',
+  'canvas.saveDesignSystem',
+  'canvas.listDesignSystemVersions',
+  'canvas.restoreDesignSystemVersion',
+  'canvas.setDesignSystemDeleted',
+  'canvas.acceptDesignSystemProposal',
+  'canvas.discardDesignSystemProposal',
   'canvas.copyDesignSystem',
   'canvas.importDesignSystem',
+  'canvas.readKitPreview',
+  'canvas.saveKitCapture',
+  'canvas.readKitCapture',
+  'canvas.readKitFonts',
 ]);
+
+const BY_USER: SavedBy = { actor: 'user' };
 
 export function isDesignSystemCommand(command: CanvasCommand): command is DesignSystemCommand {
   return COMMAND_TYPES.has(command.type);
 }
 
-// A new kit's id is its mutationId: a retried save finds the version it already
-// published and answers with it instead of saving a second kit.
 export async function answerDesignSystemCommand(
   command: DesignSystemCommand,
+  previews: KitPreviews,
 ): Promise<CanvasReply> {
   switch (command.type) {
     case 'canvas.listDesignSystems':
       return { kind: 'designSystems', systems: await listDesignSystems() };
-    case 'canvas.readDesignSystem': {
-      const system = await readDesignSystem(command.ref);
-      return {
-        kind: 'designSystem',
-        system: {
-          id: system.id,
-          version: system.version,
-          name: system.name,
-          modes: system.modes,
-          unmapped: unmappedKitTokens(system),
-          provenance: system.provenance ?? null,
-        },
-      };
+    case 'canvas.readDesignSystem':
+      return { kind: 'designSystem', system: await readDocument(command.ref) };
+    case 'canvas.listDesignSystemVersions':
+      return { kind: 'designSystemVersions', versions: await listDesignSystemVersions(command.id) };
+    case 'canvas.saveDesignSystem': {
+      // The document edits only what it shows; source and examples stay the base's.
+      const base = await readDesignSystem({ id: command.id, version: command.baseVersion });
+      const ref = await saveDesignSystem(
+        { ...base, name: command.name, cover: command.cover, sections: command.sections },
+        { mutationId: command.mutationId, baseVersion: command.baseVersion, savedBy: BY_USER },
+      );
+      return saved(ref, []);
     }
+    case 'canvas.restoreDesignSystemVersion': {
+      const ref = await saveDesignSystem(await readDesignSystem(command), {
+        mutationId: command.mutationId,
+        baseVersion: command.onto,
+        savedBy: BY_USER,
+      });
+      return saved(ref, []);
+    }
+    case 'canvas.setDesignSystemDeleted':
+      await setDesignSystemDeleted(command.id, command.deleted, command.mutationId);
+      return { kind: 'ok' };
+    case 'canvas.acceptDesignSystemProposal': {
+      const { proposalId, mutationId, onto } = command;
+      return saved(await acceptProposal(command.id, { proposalId, mutationId, onto }), []);
+    }
+    case 'canvas.discardDesignSystemProposal':
+      await discardProposal(command.id, command.proposalId);
+      return { kind: 'ok' };
+    // A new kit's id is its mutationId: a retried save finds the version it
+    // already published and answers with it instead of saving a second kit.
     case 'canvas.copyDesignSystem': {
       const original = await readDesignSystem(command.source);
       const ref = await saveDesignSystem(
         {
           ...original,
           id: command.mutationId,
-          version: 1,
           name: command.name,
           provenance: { copiedFrom: { id: original.id, version: original.version } },
         },
-        { mutationId: command.mutationId },
+        { mutationId: command.mutationId, baseVersion: null, savedBy: BY_USER },
       );
-      return {
-        kind: 'designSystemSaved',
-        ref: { id: ref.id, version: ref.version },
-        diagnostics: [],
-      };
+      return saved(ref, []);
     }
     case 'canvas.importDesignSystem': {
-      const imported = importDesignSystem(command.source, {
+      const imported = importDesignSystem([pastedSource(command.source)], {
         id: command.mutationId,
         name: command.name,
       });
       if (imported.status === 'refused')
         throw canvasError('invalid_input', imported.diagnostics[0].message);
-      const ref = await saveDesignSystem(imported.system, { mutationId: command.mutationId });
-      return {
-        kind: 'designSystemSaved',
-        ref: { id: ref.id, version: ref.version },
-        diagnostics: imported.diagnostics,
-      };
+      const ref = await saveDesignSystem(imported.system, {
+        mutationId: command.mutationId,
+        baseVersion: null,
+        savedBy: BY_USER,
+      });
+      return saved(ref, imported.diagnostics);
     }
+    case 'canvas.readKitPreview':
+      return { kind: 'kitPreview', preview: await previews.read(command.ref, command.item) };
+    case 'canvas.saveKitCapture':
+      await saveKitCapture(command.ref, command.item, Buffer.from(command.png, 'base64'));
+      return { kind: 'ok' };
+    case 'canvas.readKitCapture': {
+      const png = await readKitCapture(command.ref, command.item);
+      return { kind: 'kitCapture', png: png?.toString('base64') ?? null };
+    }
+    case 'canvas.readKitFonts':
+      return { kind: 'kitFonts', faces: readKitFonts(await readDesignSystem(command.ref)) };
   }
+}
+
+function saved(
+  ref: DesignSystemVersionRef,
+  diagnostics: Extract<CanvasReply, { kind: 'designSystemSaved' }>['diagnostics'],
+): CanvasReply {
+  return { kind: 'designSystemSaved', ref: { id: ref.id, version: ref.version }, diagnostics };
+}
+
+async function readDocument(ref: DesignSystemVersionRef): Promise<DesignSystemDocumentView> {
+  const system: DesignSystem = await readDesignSystem(ref);
+  const versions = await listDesignSystemVersions(ref.id);
+  const entry = versions.find((candidate) => candidate.version === system.version);
+  return {
+    id: system.id,
+    version: system.version,
+    latestVersion: versions[0]?.version ?? system.version,
+    name: system.name,
+    kind: designSystemKind(system.id),
+    cover: system.cover,
+    sections: system.sections,
+    examples: Object.keys(system.examples).sort(),
+    unmapped: unmappedKitTokens(system),
+    provenance: system.provenance ?? null,
+    savedAt: entry?.savedAt ?? null,
+    savedBy: entry?.savedBy ?? null,
+    proposal: await readProposal(system.id),
+  };
 }

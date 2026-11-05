@@ -137,10 +137,19 @@ export function selectorScopes(
   return [...scopes];
 }
 
+/** A value as a scope keeps it: hex shorthand is expanded, so `#abc` and `#aabbcc` agree. */
+export function scopeValue(value: string): string {
+  return value.replace(
+    /^#([\da-f]{3,4})$/i,
+    (_match, hex: string) =>
+      '#' + hex.replace(/[\da-f]/gi, (digit) => digit.repeat(2)).toLowerCase(),
+  );
+}
+
 /**
- * Records one custom property in each scope it applies to. Hex shorthand is
- * expanded, so `#abc` and `#aabbcc` agree; a different value in a scope that
- * already has one is reported as competing, and callers refuse it.
+ * Records one custom property in each scope it applies to, as `scopeValue`
+ * spells it; a different value in a scope that already has one is reported as
+ * competing, and callers refuse it.
  */
 export function declareToken(
   scopes: Record<TokenScope, Record<string, string>>,
@@ -148,11 +157,7 @@ export function declareToken(
   diagnostics: CanvasDiagnostic[],
 ): void {
   const { name, targets, file, line } = token;
-  const value = token.value.replace(
-    /^#([\da-f]{3,4})$/i,
-    (_match, hex: string) =>
-      '#' + hex.replace(/[\da-f]/gi, (digit) => digit.repeat(2)).toLowerCase(),
-  );
+  const value = scopeValue(token.value);
   for (const scope of targets) {
     const tokens = scopes[scope];
     if (Object.hasOwn(tokens, name) && tokens[name] !== value)

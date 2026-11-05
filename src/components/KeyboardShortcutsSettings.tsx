@@ -79,7 +79,7 @@ export function KeyboardShortcutsSettings() {
             >
               <div className="flex shrink-0 items-center gap-2">
                 <kbd
-                  className={`min-w-12 rounded-sm px-2 py-1 text-center font-mono text-code-sm ${
+                  className={`min-w-12 rounded-sm px-2 py-1 text-center font-sans text-caption tabular-nums ${
                     active ? 'bg-active text-primary' : 'bg-elevated text-muted'
                   }`}
                 >
@@ -104,7 +104,7 @@ export function KeyboardShortcutsSettings() {
         })}
         {/* Browser tab numbering is fixed, so it is listed but not rebindable. */}
         <SettingRow label="Go to tab 1–9" description="9 always opens the last tab.">
-          <kbd className="min-w-12 shrink-0 rounded-sm bg-elevated px-2 py-1 text-center font-mono text-code-sm text-muted">
+          <kbd className="min-w-12 shrink-0 rounded-sm bg-elevated px-2 py-1 text-center font-sans text-caption tabular-nums text-muted">
             {formatChord('Meta+1')}–{formatChord('Meta+9')}
           </kbd>
         </SettingRow>

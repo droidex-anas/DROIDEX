@@ -1,4 +1,5 @@
 import type { SessionSummary } from '../../types/bridge';
+import type { Viewport } from './canvasGeometry';
 import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from './protocol';
 
 export type CanvasPaneState =
@@ -21,6 +22,8 @@ export type CanvasPaneState =
       snapshot: CanvasSnapshot;
       /** The frame the source drawer is open on, or null while it is closed. */
       sourceDesignId: string | null;
+      /** Where the board was when a document took its place, so Back returns there. */
+      boardViewport?: Viewport;
     }
   | { status: 'failed'; message: string };
 
@@ -36,7 +39,8 @@ export type CanvasPaneEvent =
   | { type: 'reopened' }
   // The toolbar's Source action (Task 5d binds it) and the drawer closing.
   | { type: 'open-source'; designId: string }
-  | { type: 'close-source' };
+  | { type: 'close-source' }
+  | { type: 'board-left'; viewport: Viewport };
 
 /** The event the toolbar's Source action dispatches for one frame. */
 export function openSourcePanel(designId: string): CanvasPaneEvent {
@@ -120,11 +124,15 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
       // A resync answers with a snapshot taken before the changes already
       // applied to this projection; rolling back to it would lose them.
       if (state.status === 'ready' && snapshot.sequence <= state.snapshot.sequence) return state;
+      // An emptied board forgets its place, so the frames that come next are fitted.
+      const boardViewport =
+        state.status === 'ready' && snapshot.frames.length > 0 ? state.boardViewport : undefined;
       return {
         status: 'ready',
         canvasId: snapshot.canvasId,
         snapshot,
         sourceDesignId: keptSourceDesignId(state, snapshot),
+        ...(boardViewport ? { boardViewport } : {}),
       };
     }
     case 'failed':
@@ -137,6 +145,9 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
       const designId = event.type === 'open-source' ? event.designId : null;
       return { ...state, sourceDesignId: designId };
     }
+    case 'board-left':
+      if (state.status !== 'ready' || state.snapshot.frames.length === 0) return state;
+      return { ...state, boardViewport: event.viewport };
   }
 }
 

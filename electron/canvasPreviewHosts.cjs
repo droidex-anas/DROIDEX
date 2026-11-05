@@ -23,12 +23,23 @@ function captureFailure(message = UNAVAILABLE) {
   return { ok: false, error: { code: 'capture_unavailable', message } };
 }
 
+function isIdentifier(id) {
+  return typeof id === 'string' && IDENTIFIER.test(id);
+}
+
 function captureKey(canvasId, designId, revisionId) {
-  if (
-    ![canvasId, designId, revisionId].every((id) => typeof id === 'string' && IDENTIFIER.test(id))
-  )
-    return null;
+  if (![canvasId, designId, revisionId].every(isIdentifier)) return null;
   return JSON.stringify([canvasId, designId, revisionId]);
+}
+
+/** A kit preview names no canvas; its capture is stored with the kit, so main keeps none. */
+function isKitCapture(guest, canvasId, designId, revisionId) {
+  return (
+    canvasId === null &&
+    guest?.binding?.kind === 'kit' &&
+    isIdentifier(designId) &&
+    isIdentifier(revisionId)
+  );
 }
 
 function captureBounds(width, height, scaleFactor) {
@@ -169,26 +180,30 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
       contents.on('destroyed', () => forget(guestId));
       guests.set(guestId, {
         contents,
-        canvasId: null,
+        binding: null,
         stopProbing: watchGeneratedFrame(guestId, contents),
       });
     },
 
-    /** Binds a guest to the one canvas whose assets its design may read. */
-    bindCanvas(guestId, canvasId) {
+    /**
+     * Binds a guest once, before its code runs: to the one canvas whose images
+     * it may read, or to a kit, which reads fonts only.
+     */
+    bind(guestId, binding) {
       const guest = guests.get(guestId);
-      if (!guest || guest.contents.isDestroyed()) return false;
-      if (guest.canvasId !== null && guest.canvasId !== canvasId) return false;
-      guest.canvasId = canvasId;
+      const requested = previewBinding(binding);
+      if (!requested || !guest || guest.contents.isDestroyed()) return false;
+      if (guest.binding !== null) return sameBinding(guest.binding, requested);
+      guest.binding = requested;
       return true;
     },
 
-    /** The bound canvas of a request's own generated frame, or null. */
-    canvasForFrame(guestId, frame) {
+    /** The binding of a request's own generated frame, or null. */
+    bindingForFrame(guestId, frame) {
       const guest = guests.get(guestId);
       if (!guest || guest.contents.isDestroyed()) return null;
       if (frame !== generatedFrameOf(guest.contents)) return null;
-      return guest.canvasId;
+      return guest.binding;
     },
 
     terminate(guestId) {
@@ -220,13 +235,14 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         height,
         scaleFactor,
       } = request;
-      const key = captureKey(canvasId, designId, revisionId);
       const guest = guests.get(guestId);
+      const isKit = isKitCapture(guest, canvasId, designId, revisionId);
+      const key = isKit ? null : captureKey(canvasId, designId, revisionId);
       if (
         typeof requestId !== 'string' ||
         !IDENTIFIER.test(requestId) ||
         captures.has(requestId) ||
-        !key ||
+        (!isKit && !key) ||
         !guest ||
         guest.capture ||
         guest.contents.isDestroyed() ||
@@ -298,7 +314,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
                 complete(captureFailure());
                 return;
               }
-              cache(key, bytes);
+              if (key) cache(key, bytes);
               complete({ ok: true, mediaType: 'image/png', bytes });
             });
           })
@@ -317,6 +333,20 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
       return thumbnail.bytes;
     },
   };
+}
+
+function previewBinding(value) {
+  if (value?.kind === 'kit') return { kind: 'kit' };
+  if (value?.kind !== 'canvas') return null;
+  const { canvasId } = value;
+  return typeof canvasId === 'string' && IDENTIFIER.test(canvasId)
+    ? { kind: 'canvas', canvasId }
+    : null;
+}
+
+function sameBinding(bound, requested) {
+  if (bound.kind === 'kit') return requested.kind === 'kit';
+  return requested.kind === 'canvas' && requested.canvasId === bound.canvasId;
 }
 
 function generatedFrameOf(contents) {

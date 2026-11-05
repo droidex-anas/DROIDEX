@@ -63,14 +63,14 @@ export const DiffFileSection = memo(function DiffFileSection({
           className={`size-icon-sm shrink-0 text-muted/60 transition-transform ${open ? 'rotate-90' : ''}`}
         />
         <FileTypeIcon filename={file.path} className="size-icon-sm" />
-        <span className="min-w-0 flex-1 truncate font-mono text-code">
+        <span className="min-w-0 flex-1 truncate text-body">
           {dir && <span className="text-muted/70">{dir}</span>}
           <span className="text-secondary">{name}</span>
         </span>
         {entry?.loading && (
           <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow text-muted" />
         )}
-        <span className="shrink-0 font-mono text-code-sm">
+        <span className="shrink-0 text-caption tabular-nums">
           {file.additions > 0 && (
             <span style={{ color: 'var(--diff-add-fg)' }}>+{file.additions}</span>
           )}{' '}

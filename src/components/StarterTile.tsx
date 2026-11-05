@@ -37,9 +37,10 @@ export function StarterTiles({
     <ul
       aria-label="Starting points"
       className="grid gap-3"
-      // As many columns as fit at a readable width: four beside a full
-      // composer, two in a narrow tile.
-      style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(9rem, 1fr))' }}
+      // As many columns as fit at a readable width: five beside the composer
+      // at the smallest window, two in a narrow tile. Hints are kept short
+      // enough to fit the narrowest column.
+      style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(7.5rem, 1fr))' }}
     >
       {starters.map((starter) => (
         <li key={starter.label}>

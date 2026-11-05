@@ -1,0 +1,200 @@
+/* The docked canvas pane floats its menu and expand button over the top-right
+   corner, where the document's header ends; keep the header's controls clear of
+   it (the corner is about 110px wide, 8px in from the edge). */
+.canvas-pane-column:has(> .canvas-pane-corner) .design-system-document-header {
+  padding-right: theme('spacing.32');
+}
+
+.design-system-document-column {
+  scrollbar-gutter: stable;
+}
+
+/* The kit's own words, set in its type once useKitTypeface has loaded it. An
+   unset property inherits, so until then they keep the app's. */
+.kit-body-font {
+  font-family: var(--kit-body-font);
+}
+
+.kit-heading-font {
+  font-family: var(--kit-heading-font);
+}
+
+/* A note's editor is laid out as the note renders (Markdown.tsx), so the text
+   keeps its place when a click turns one into the other. noteFieldLayout marks
+   the first line of a block that follows text directly, a later list item, a
+   blank line inside a list, and each line of a list item with its depth; a
+   blank line between blocks is the gap itself. */
+.kit-note-field {
+  --note-list-indent: calc(theme('spacing.5') + theme('spacing[0.5]'));
+}
+
+.kit-note-field .cm-line {
+  text-wrap-style: pretty;
+}
+
+/* Wrap like the rendered note: CodeMirror's break-spaces keeps a line-ending
+   space inside the line, which can push the next word down. */
+.kit-note-field .cm-content.cm-lineWrapping {
+  white-space: pre-wrap;
+}
+
+.kit-note-field .cm-line:has(> br:only-child) {
+  line-height: theme('spacing.3');
+}
+
+/* A table's lines are edited in the note's face, as mono is only for code; the
+   composer keeps mono, which holds its pipes in a column. */
+.kit-note-field .cm-line.cm-md-table {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.kit-note-field .kit-note-block {
+  padding-top: theme('spacing.3');
+}
+
+.kit-note-field .kit-note-item {
+  padding-top: theme('spacing.1');
+}
+
+.kit-note-field .cm-line.kit-note-blank:not(.kit-note-blank-open) {
+  height: 0;
+  line-height: 0;
+}
+
+/* A heading has the rendered size, its air above, and what follows tucked
+   under it, whether a blank line or the next block's first line holds the space. */
+.kit-note-field .cm-line.cm-md-h1 {
+  font-size: theme('fontSize.display');
+  line-height: theme('fontSize.display[1].lineHeight');
+  letter-spacing: theme('fontSize.display[1].letterSpacing');
+}
+
+.kit-note-field .cm-line:is(.cm-md-h2, .cm-md-h3) {
+  font-size: theme('fontSize.heading');
+  line-height: theme('fontSize.heading[1].lineHeight');
+  letter-spacing: theme('fontSize.heading[1].letterSpacing');
+}
+
+.kit-note-field .kit-note-block.cm-md-h1 {
+  padding-top: theme('spacing.6');
+}
+
+.kit-note-field .cm-line:has(> br:only-child):has(+ .cm-md-h1) {
+  line-height: theme('spacing.6');
+}
+
+.kit-note-field .kit-note-block.cm-md-h2 {
+  padding-top: theme('spacing.5');
+}
+
+.kit-note-field .cm-line:has(> br:only-child):has(+ .cm-md-h2) {
+  line-height: theme('spacing.5');
+}
+
+.kit-note-field .kit-note-block.cm-md-h3 {
+  padding-top: theme('spacing.4');
+}
+
+.kit-note-field .cm-line:has(> br:only-child):has(+ .cm-md-h3) {
+  line-height: theme('spacing.4');
+}
+
+.kit-note-field .cm-md-h1 + .kit-note-block {
+  padding-top: theme('spacing.2');
+}
+
+.kit-note-field .cm-md-h1 + .cm-line:has(> br:only-child) {
+  line-height: theme('spacing.2');
+}
+
+.kit-note-field .cm-md-h2 + .kit-note-block {
+  padding-top: theme('spacing[1.5]');
+}
+
+.kit-note-field .cm-md-h2 + .cm-line:has(> br:only-child) {
+  line-height: theme('spacing[1.5]');
+}
+
+.kit-note-field .cm-md-h3 + .kit-note-block {
+  padding-top: theme('spacing.1');
+}
+
+.kit-note-field .cm-md-h3 + .cm-line:has(> br:only-child) {
+  line-height: theme('spacing.1');
+}
+
+.kit-note-field .kit-note-indent {
+  padding-left: calc(var(--note-list-indent) * var(--note-depth));
+}
+
+/* The marker ends a space (about a quarter em) short of the indent, where the
+   item's text starts; a marker wider than that, such as 10., grows to the left. */
+.kit-note-field .cm-md-listmark {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: calc(var(--note-list-indent) - 0.25em);
+  margin-left: calc(var(--note-list-indent) * -1);
+  padding-right: theme('spacing[0.5]');
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-weight: theme('fontWeight.normal');
+}
+
+/* A bullet item is a list item with the rendered list's own marker, the same
+   glyph in the same place: each list's indent, then the item's. */
+.kit-note-field .kit-note-bullet {
+  display: list-item;
+  list-style: disc outside;
+  margin-left: calc(var(--note-list-indent) * var(--note-depth) - theme('spacing[0.5]'));
+  padding-left: theme('spacing[0.5]');
+}
+
+.kit-note-field .kit-note-bullet::marker {
+  color: var(--text-muted);
+}
+
+/* A type sample fills its column; a line wider than that runs to the edge and
+   fades there, as on a specimen sheet, instead of ending on an ellipsis. */
+.kit-type-sample {
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, #000 calc(100% - theme('spacing.8')), transparent);
+}
+
+/* The swatch's invisible colour input takes keyboard focus; the ring goes on
+   the swatch it covers. */
+.kit-colour-swatch:has(input:focus-visible) {
+  outline: 1.5px solid var(--focus-ring);
+}
+
+/* Asset tiles keep a readable size and fill the column's width in whole tiles. */
+.kit-asset-grid {
+  grid-template-columns: repeat(auto-fill, minmax(theme('spacing.40'), 1fr));
+}
+
+/* A kit tile's layers cross-fade as icon and text swaps do: a capture as it
+   arrives, and the live guest once it has painted. */
+@keyframes kit-tile-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+.kit-tile-reveal {
+  animation: kit-tile-reveal var(--duration-fast) var(--ease-in-out) both;
+}
+
+.kit-tile-fade {
+  transition: opacity var(--duration-fast) var(--ease-in-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kit-tile-reveal {
+    animation: none;
+  }
+
+  .kit-tile-fade {
+    transition: none;
+  }
+}

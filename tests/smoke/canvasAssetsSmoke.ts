@@ -8,6 +8,8 @@ import {
   previewNonce,
   previewStartScript,
 } from '../../src/features/canvas/previewDocument';
+import { saveDesignSystem } from '../../sidecar/src/canvas/designSystems';
+import { SAMPLE_KIT } from '../../sidecar/src/testing/sampleKit';
 import { askGuest, mountPreviewGuest } from './canvasPreviewHost';
 import { withCanvasBridge, withCanvasHost } from './canvasSmoke';
 
@@ -161,6 +163,18 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         }, failedCanvas.canvasId);
         assert.equal(storageFailure?.code, 'storage_failed');
         assert.equal(storageFailure.message.includes(chosen), false);
+        // The sample kit embeds two faces, Inter and Silkscreen. It is saved
+        // into this profile, where the app's sidecar reads kits.
+        const testProfile = process.env.DROIDEX_USER_DATA_DIR;
+        process.env.DROIDEX_USER_DATA_DIR = profile;
+        const kitRef = await saveDesignSystem(SAMPLE_KIT, {
+          mutationId: 'save-asset-kit',
+          baseVersion: null,
+          savedBy: { actor: 'user' },
+        }).finally(() => {
+          if (testProfile === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+          else process.env.DROIDEX_USER_DATA_DIR = testProfile;
+        });
         const added = await send({
           type: 'canvas.create',
           canvasId,
@@ -172,7 +186,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                 name: 'Owned assets',
                 width: 320,
                 height: 240,
-                designSystem: { id: 'claude-inspired', version: 1, mode: 'light' },
+                designSystem: { ...kitRef, mode: 'light' },
               },
             ],
           },
@@ -257,10 +271,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
 
         const guestId = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
-            guestId,
-            canvasId,
-          ] as const),
+          await page.evaluate(
+            ([id, canvas]) =>
+              window.droidex!.canvasPreviewBind(id, { kind: 'canvas', canvasId: canvas }),
+            [guestId, canvasId] as const,
+          ),
           true,
         );
         const instance = {
@@ -281,11 +296,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
                   if (!image) return { image: false, font: false };
                   try {
                     const fonts = await document.fonts.load('16px "Inter"');
-                    const headings = await document.fonts.load('16px "Lora"');
+                    const wordmarks = await document.fonts.load('16px "Silkscreen"');
                     return {
                       image: image.complete && image.naturalWidth === 1,
                       font: fonts.length === 1 && fonts[0].status === 'loaded',
-                      headingFont: headings.length === 1 && headings[0].status === 'loaded',
+                      wordmarkFont: wordmarks.length === 1 && wordmarks[0].status === 'loaded',
                     };
                   } catch (error) {
                     return { image: image.complete && image.naturalWidth === 1, font: String(error) };
@@ -294,7 +309,7 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
               }, guestId),
             { timeout: 20_000, intervals: [200] },
           )
-          .toEqual({ image: true, font: true, headingFont: true });
+          .toEqual({ image: true, font: true, wordmarkFont: true });
         await expect
           .poll(() =>
             app.evaluate(
@@ -321,10 +336,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         const missingFontUrl = `droidex-canvas-preview://preview/font/${'f'.repeat(64)}`;
         const fallbackGuest = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
-            fallbackGuest,
-            canvasId,
-          ] as const),
+          await page.evaluate(
+            ([id, canvas]) =>
+              window.droidex!.canvasPreviewBind(id, { kind: 'canvas', canvasId: canvas }),
+            [fallbackGuest, canvasId] as const,
+          ),
           true,
         );
         assert.equal(
@@ -362,10 +378,11 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
         assert.ok(second.kind === 'canvasCreated' && second.canvasId);
         const secondGuest = await mountPreviewGuest(page);
         assert.equal(
-          await page.evaluate(([id, canvas]) => window.droidex!.canvasPreviewBind(id, canvas), [
-            secondGuest,
-            second.canvasId,
-          ] as const),
+          await page.evaluate(
+            ([id, canvas]) =>
+              window.droidex!.canvasPreviewBind(id, { kind: 'canvas', canvasId: canvas }),
+            [secondGuest, second.canvasId] as const,
+          ),
           true,
         );
         assert.equal(

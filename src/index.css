@@ -65,6 +65,7 @@
     --surface: #111111;
     --elevated: #1e1e1e;
     --field: #1e1e1e;
+    --field-raised: #141414;
     --active: #2b2b2b;
     --raised: #1e1e1e;
     --sidebar: #111111;
@@ -184,6 +185,11 @@
   /* An input with leading text (ui/Field) rings its whole filled box. */
   .field-affix:has(input:focus-visible) {
     outline: 1.5px solid var(--focus-ring);
+  }
+
+  /* An inline input (ui/Field) is as wide as its text, like the text it replaces. */
+  .field-sizing-content {
+    field-sizing: content;
   }
 
   /* Anything clickable shows a pointer so it reads as clickable; a disabled
@@ -896,24 +902,56 @@
     text-wrap: balance;
   }
 
-  /* Inline code in prose. A selection highlights glyphs, never an inline box's
-     padding, so padding would open a gap in the band at every chip and push
-     the following punctuation away. The chip takes no padding; its tint
-     reaches 2px past the text through a shadow, which leaves layout and
-     selection alone. Shadows are sliced like the box, so a wrapped chip still
-     runs off the line end and resumes on the next. */
+  /* Inline code in running text is a name, not a code surface, so it stays in
+     the text's own face and size and reads by weight alone. No box and no
+     padding: a selection highlights glyphs, never an inline box's padding, so
+     padding would open a gap in the band and push the following punctuation away. */
   .inline-code {
-    --inline-code-tint: color-mix(in srgb, var(--text) 7%, transparent);
-    background-color: var(--inline-code-tint);
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: theme('fontWeight.medium');
+    font-variant-numeric: inherit;
+    color: var(--text);
+    overflow-wrap: break-word;
+  }
+
+  /* In a heading or bold run the text is already heavier than 500. */
+  :where(h1, h2, h3, h4, h5, h6, strong, b, th) .inline-code {
+    font-weight: inherit;
+  }
+
+  /* Without a box, a link's colour is what marks code inside it as a link. */
+  a .inline-code {
+    color: inherit;
+  }
+
+  /* A mention that opens in Review: a hairline underline in a faint mix of the
+     text colour, below the descenders, that firms up on hover and keyboard
+     focus. Focus adds a soft fill of the ring colour instead of a ring, which
+     would crowd the words beside it; shadows carry the fill past the text
+     without moving the line. */
+  .inline-code[role='button'] {
+    text-decoration-line: underline;
+    text-decoration-thickness: theme('textDecorationThickness.1');
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-underline-offset: theme('textUnderlineOffset.4');
+    transition: text-decoration-color var(--duration-quick) ease-out;
+  }
+
+  .inline-code[role='button']:focus-visible {
+    --inline-code-focus: color-mix(in srgb, var(--focus-ring) 30%, transparent);
+    outline: none;
+    border-radius: theme('borderRadius.xs');
+    background-color: var(--inline-code-focus);
     box-shadow:
-      -2px 0 0 var(--inline-code-tint),
-      2px 0 0 var(--inline-code-tint);
-    padding-block: 1px;
+      -2px 0 0 var(--inline-code-focus),
+      2px 0 0 var(--inline-code-focus);
+    text-decoration-color: currentColor;
   }
 
   @media (hover: hover) {
     .inline-code[role='button']:hover {
-      --inline-code-tint: color-mix(in srgb, var(--text) 14%, transparent);
+      text-decoration-color: currentColor;
     }
   }
 
@@ -1009,11 +1047,13 @@
      <body>, outside #root's zoom, so it applies the UI zoom itself, and its
      max height converts the room usePopoverPosition measured in screen
      pixels into its own zoomed units. A layer can reach over the title bar,
-     so it punches a no-drag hole there to keep its controls pressable. */
+     so it punches a no-drag hole there to keep its controls pressable. Its
+     fields take the fill tuned for the raised layer (deriveThemeTokens). */
   .floating-layer {
     zoom: var(--ui-zoom);
     max-height: calc(var(--available-height, 100vh) / var(--ui-zoom));
     -webkit-app-region: no-drag;
+    --field: var(--field-raised);
   }
 
   /* Enter from the side the layer actually landed on (data-side): fade in

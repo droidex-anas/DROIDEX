@@ -203,7 +203,7 @@ export function ColorPicker({
             commitHex(e.target.value);
           }}
           spellCheck={false}
-          className="h-control-sm min-w-0 flex-1 rounded-sm bg-field px-2 font-mono text-code-sm text-primary"
+          className="h-control-sm min-w-0 flex-1 rounded-sm bg-field px-2 text-caption tabular-nums text-primary"
         />
         {hasEyeDropper && (
           <button
@@ -294,7 +294,7 @@ export function ColorField({
           }}
           spellCheck={false}
           aria-label={`${label} hex value`}
-          className="w-24 font-mono text-code-sm"
+          className="w-24 text-caption tabular-nums"
         />
         {open && (
           <ColorPopover

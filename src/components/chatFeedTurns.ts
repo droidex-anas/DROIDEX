@@ -6,13 +6,12 @@ import {
   buildFeed,
   collectTurnFiles,
   isCancellationArtifact,
-  isCompactionCompleteStatus,
+  isCompactionDivider,
   isSteeredPrompt,
   startsTurn,
   type BuildFeedOptions,
   type FeedItem,
 } from './chatFeed';
-import { cleanFeed } from './chatFeedClean';
 import { isAutomationProposalCall } from '../features/automations/toolNames';
 import { isThreadSpawnCall } from '../features/projects/threadToolNames';
 
@@ -108,17 +107,14 @@ function isSubagentPoll(event: TranscriptEvent): boolean {
 export type GroupedFeedOptions = BuildFeedOptions & {
   specContent?: string;
   changes?: boolean;
-  /** A design chat's feed: the conversation and its designs only (`cleanFeed`). */
-  clean?: boolean;
 };
 
 export function buildGroupedFeed(
   events: TranscriptEvent[],
   pending: boolean,
-  { specContent, changes = false, clean = false, ...feedOptions }: GroupedFeedOptions = {},
+  { specContent, changes = false, ...feedOptions }: GroupedFeedOptions = {},
 ): FeedItem[] {
-  const grouped = groupTurns(buildFeed(events, feedOptions), pending, specContent, changes);
-  return clean ? cleanFeed(grouped) : grouped;
+  return groupTurns(buildFeed(events, feedOptions), pending, specContent, changes);
 }
 
 // Public helper so the chat view can derive the same anchors MessageFeed stamps.
@@ -232,10 +228,7 @@ function mergeAssistantMessages(
 // else (a bare /compact), where it stays top-level: there is no work to fold it
 // into, and a one-item "Worked for 0s" disclosure would hide the boundary.
 function isCompactionMarker(it: FeedItem): boolean {
-  return (
-    it.type === 'status' &&
-    (it.event.kind === 'compaction' || isCompactionCompleteStatus(it.event.text))
-  );
+  return it.type === 'status' && isCompactionDivider(it.event);
 }
 
 // Collapse a completed assistant turn: everything the turn did — thinking,

@@ -1,6 +1,7 @@
 import type { CanvasBuilds } from './canvas/CanvasBuilds.js';
 import type { CanvasScopes } from './canvas/canvasScopes.js';
 import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
+import type { KitPreviews } from './canvas/kitPreviews.js';
 import type { CanvasEvent } from './canvas/protocol.js';
 import type { ClientCommand } from './protocol.js';
 
@@ -17,6 +18,7 @@ export interface SidecarShutdownStages {
 /** Invalidates pane authority and publication before waiting for owned cleanup. */
 export async function shutdownCanvas(
   builds: CanvasBuilds,
+  previews: KitPreviews,
   scopes: CanvasScopes,
   ready: Promise<CanvasWorkspace>,
   workspace?: CanvasWorkspace,
@@ -25,6 +27,7 @@ export async function shutdownCanvas(
   const closing = workspace?.close();
   await Promise.all([
     builds.close(),
+    previews.close(),
     closing ??
       ready.then(
         (opened) => opened.close(),

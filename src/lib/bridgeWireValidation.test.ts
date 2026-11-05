@@ -398,7 +398,18 @@ test('transient transcript events accept only the literal true or an absent flag
     firstArtifact: true,
   };
   assertAccepted({ type: 'event.appended', event: { ...event, canvasActivity } });
-  for (const wrong of [{ canvasId: 1 }, { designIds: 'design-1' }, { firstArtifact: false }]) {
+  const designSystem = { id: 'droidex', version: 2, status: 'proposed' };
+  assertAccepted({
+    type: 'event.appended',
+    event: { ...event, canvasActivity: { ...canvasActivity, designSystem } },
+  });
+  for (const wrong of [
+    { canvasId: 1 },
+    { designIds: 'design-1' },
+    { firstArtifact: false },
+    { designSystem: { ...designSystem, version: 0 } },
+    { designSystem: { ...designSystem, status: 'accepted' } },
+  ]) {
     assertRejected({
       type: 'event.appended',
       event: { ...event, canvasActivity: { ...canvasActivity, ...wrong } },

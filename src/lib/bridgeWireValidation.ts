@@ -153,6 +153,7 @@ export function isServerEvent(value: unknown): value is ServerEvent {
     case 'canvas.change':
     case 'canvas.result':
     case 'canvas.captureRequest':
+    case 'canvas.designSystemsChanged':
       return isCanvasEvent(value);
     case 'connection':
       return value.status === 'connected' || value.status === 'error';
@@ -537,7 +538,18 @@ function isCanvasActivity(value: unknown): boolean {
     stringArray(value.designIds) &&
     isOptionalString(value.canvasId) &&
     isOptionalString(value.title) &&
-    (value.firstArtifact === undefined || value.firstArtifact === true)
+    (value.firstArtifact === undefined || value.firstArtifact === true) &&
+    (value.designSystem === undefined || isKitActivity(value.designSystem))
+  );
+}
+
+// A kit chip opens the document this names.
+function isKitActivity(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    positiveSafeInteger(value.version) &&
+    ['saved', 'proposed', 'applied'].includes(value.status as string)
   );
 }
 

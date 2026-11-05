@@ -56,7 +56,9 @@ export function SystemStep({
             <StatusDot status={row.status} />
             <div className="min-w-0 flex-1">
               <div className="text-body text-primary">{row.label}</div>
-              <div className="mt-0.5 truncate font-mono text-code-sm text-muted">{row.detail}</div>
+              <div className="mt-0.5 truncate text-caption tabular-nums text-muted">
+                {row.detail}
+              </div>
             </div>
           </div>
         ))}

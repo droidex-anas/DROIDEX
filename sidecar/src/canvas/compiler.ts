@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
 import { canvasError } from './canvasError.js';
+import type { DesignSystem } from './designSystems.js';
 import type {
   CanvasDiagnostic,
   DesignSystemAdherence,
@@ -30,7 +31,9 @@ import {
   type SourceFiles,
 } from './schema.js';
 
-export interface CompileInput {
+/** One frame revision's compile. */
+export interface DesignCompileInput {
+  kind: 'design';
   designId: string;
   revisionId: string;
   /** The owning lifecycle generation, carried back so a result can be pinned. */
@@ -40,6 +43,17 @@ export interface CompileInput {
   /** The canvas's rule at the time the build started. */
   designSystemAdherence: DesignSystemAdherence;
 }
+
+/** One example under a kit, saved or not: no revision to select in, no kit to be held to. */
+export interface KitPreviewCompileInput {
+  kind: 'kitPreview';
+  kit: Pick<DesignSystem, 'files' | 'sections'>;
+  mode: DesignSystemRef['mode'];
+  /** The example's source, compiled as the entry of a one-file design. */
+  example: string;
+}
+
+export type CompileInput = DesignCompileInput | KitPreviewCompileInput;
 
 export interface CompiledDesign {
   /** sha256 of `html`, so identical input names one artifact. */

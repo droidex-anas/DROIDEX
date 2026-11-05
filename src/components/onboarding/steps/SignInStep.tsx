@@ -107,7 +107,6 @@ export function SignInStep({
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
-                className="font-mono"
               />
               <Button
                 variant="primary"
