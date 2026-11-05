@@ -80,12 +80,15 @@ export function fullTokenName(bare: string): string {
 
 // A reference to a kit token reads and is typed as {accent}, or {accent, red}
 // with a fallback. A token value cannot hold a brace, so the form is never CSS.
-const VAR_REFERENCE = /^\s*--ds-([a-z0-9]+(?:-[a-z0-9]+)*)\s*(?:,([\s\S]*))?$/;
+const KIT_VAR_REFERENCE = /^\s*--ds-([a-z0-9]+(?:-[a-z0-9]+)*)\s*(?:,([\s\S]*))?$/;
+const VAR_REFERENCE = /^\s*(--[a-z0-9]+(?:-[a-z0-9]+)*)\s*(?:,([\s\S]*))?$/;
 const BRACE_REFERENCE = /^\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*(?:,([\s\S]*))?$/;
-const REFERENCED_NAME = /var\(\s*(--[a-z0-9]+(?:-[a-z0-9]+)*)\s*[,)]/g;
 const CLOSING_BRACKET: Record<string, string> = { '(': ')', '{': '}' };
 
-interface KitReference {
+interface TokenReference {
+  /** Where the reference starts in its value, and where it ends past its closing bracket. */
+  start: number;
+  end: number;
   name: string;
   /** What CSS uses where the token is not set, or null without one. */
   fallback: string | null;
@@ -93,7 +96,7 @@ interface KitReference {
 
 /** What the document shows of a value: `var(--ds-accent)` is `{accent}`, `var(--ds-accent, red)` is `{accent, red}`. */
 export function displayTokenValue(value: string): string {
-  return rewriteReferences(value, 'var(', VAR_REFERENCE, ({ name, fallback }) =>
+  return rewriteReferences(value, 'var(', KIT_VAR_REFERENCE, ({ name, fallback }) =>
     fallback === null ? `{${name}}` : `{${name}, ${displayTokenValue(fallback)}}`,
   );
 }
@@ -108,47 +111,83 @@ export function cssTokenValue(text: string): string {
 
 /** Why the token `name` cannot hold the CSS `value` as far as references go, or null. */
 export function selfReferenceProblem(name: string, value: string): string | null {
-  const referred = Array.from(value.matchAll(REFERENCED_NAME), (match) => match[1]);
-  return referred.includes(name) ? `${bareTokenName(name)} cannot refer to itself.` : null;
+  return refersTo(value, name) ? `${bareTokenName(name)} cannot refer to itself.` : null;
 }
 
-// Each reference from `opener` to its balanced closing bracket whose inside
-// `inner` reads is rewritten by `write`; everything else stays as it is.
+function refersTo(value: string, name: string): boolean {
+  return findReferences(value, 'var(', VAR_REFERENCE).some(
+    (reference) =>
+      reference.name === name ||
+      (reference.fallback !== null && refersTo(reference.fallback, name)),
+  );
+}
+
 function rewriteReferences(
   text: string,
   opener: 'var(' | '{',
   inner: RegExp,
-  write: (reference: KitReference) => string,
+  write: (reference: TokenReference) => string,
 ): string {
   let rewritten = '';
   let copiedTo = 0;
-  let start = text.indexOf(opener);
-  while (start >= 0) {
-    const contentStart = start + opener.length;
-    const end = closingBracket(text, contentStart - 1);
-    const match = end < 0 ? null : inner.exec(text.slice(contentStart, end));
-    if (match) {
-      rewritten +=
-        text.slice(copiedTo, start) +
-        write({ name: match[1], fallback: match.at(2)?.trim() ?? null });
-      copiedTo = end + 1;
-    }
-    start = text.indexOf(opener, match ? copiedTo : contentStart);
+  for (const reference of findReferences(text, opener, inner)) {
+    rewritten += text.slice(copiedTo, reference.start) + write(reference);
+    copiedTo = reference.end;
   }
   return rewritten + text.slice(copiedTo);
 }
 
-/** Where the bracket at `open` closes, counting the same brackets inside it, or -1. */
+// Each reference from `opener` to its balanced closing bracket whose inside
+// `inner` reads. As in CSS, `var(` matches in any case and a quoted string
+// holds no references or brackets.
+function findReferences(text: string, opener: 'var(' | '{', inner: RegExp): TokenReference[] {
+  const references: TokenReference[] = [];
+  let index = 0;
+  while (index < text.length) {
+    if (isQuote(text[index])) {
+      index = quoteEnd(text, index) + 1;
+      continue;
+    }
+    const contentStart = index + opener.length;
+    const isOpener = text.slice(index, contentStart).toLowerCase() === opener;
+    const end = isOpener ? closingBracket(text, contentStart - 1) : -1;
+    const match = isOpener ? inner.exec(text.slice(contentStart, end)) : null;
+    if (!match) {
+      index += 1;
+      continue;
+    }
+    const fallback = match.at(2)?.trim() ?? null;
+    references.push({ start: index, end: end + 1, name: match[1], fallback });
+    index = end + 1;
+  }
+  return references;
+}
+
+/** Where the bracket at `open` closes, counting the same brackets outside quoted strings; an unclosed one closes at the end, as in CSS. */
 function closingBracket(text: string, open: number): number {
   const opening = text[open];
   const closing = CLOSING_BRACKET[opening];
   let depth = 0;
   for (let index = open; index < text.length; index += 1) {
-    if (text[index] === opening) depth += 1;
-    if (text[index] === closing) depth -= 1;
+    if (isQuote(text[index])) index = quoteEnd(text, index);
+    else if (text[index] === opening) depth += 1;
+    else if (text[index] === closing) depth -= 1;
     if (depth === 0) return index;
   }
-  return -1;
+  return text.length;
+}
+
+function isQuote(char: string): boolean {
+  return char === '"' || char === "'";
+}
+
+/** Where the string quoted at `open` closes, past backslash escapes; an unclosed one runs to the end, as in CSS. */
+function quoteEnd(text: string, open: number): number {
+  for (let index = open + 1; index < text.length; index += 1) {
+    if (text[index] === '\\') index += 1;
+    else if (text[index] === text[open]) return index;
+  }
+  return text.length;
 }
 
 /** What a note's label reads as: "1-rules.md" is "Rules", "design-engineering.md" "Design engineering". */
