@@ -19,13 +19,16 @@ function harness({ working, answer = 0, window = {} }) {
   };
   const sidecar = {
     working,
+    lifecycle: 'healthy',
     isReady: () => true,
+    snapshot: () => ({ lifecycle: sidecar.lifecycle }),
     workingSessionCount: async () => {
       if (sidecar.working instanceof Error) throw sidecar.working;
       return sidecar.working;
     },
     stop: () => {
       calls.push('stop sidecar');
+      sidecar.lifecycle = 'stopped';
       return stopped.promise;
     },
   };
@@ -67,6 +70,24 @@ test('a confirmed quit exits only after the sidecar has stopped', async () => {
   await settle();
   assert.deepEqual(calls, [
     'quit',
+    'stop sidecar',
+    'quit',
+    'close services',
+    'stop sidecar',
+    'exit',
+  ]);
+});
+
+test('a sidecar started while a confirmed quit waits is stopped before the app exits', async () => {
+  const { app, sidecar, calls, finishStop } = harness({ working: 1, answer: 1 });
+  app.quit();
+  await settle();
+  sidecar.lifecycle = 'starting';
+  finishStop();
+  await settle();
+  assert.deepEqual(calls, [
+    'quit',
+    'stop sidecar',
     'stop sidecar',
     'quit',
     'close services',

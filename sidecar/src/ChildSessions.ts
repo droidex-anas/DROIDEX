@@ -158,20 +158,24 @@ export class ChildSessions {
       .map((record) => childSummary({ ...record, status: restoredChildStatus(record.status) }));
   }
 
-  counts(): { total: number; active: number; live: number; queued: number } {
+  counts(): { total: number; active: number; live: number; queued: number; working: number } {
     let total = 0;
     let active = 0;
     let live = 0;
     let queued = 0;
+    let working = 0;
     for (const parent of this.parents.values()) {
       for (const child of parent.children.values()) {
         total += 1;
         if (childAcceptsWork(child)) active += 1;
         if (child.runtime) live += 1;
         if (child.queued) queued += 1;
+        // A restored child keeps its persisted 'pending' with no runtime or
+        // queue behind it, so that status alone is not work in progress.
+        if (child.status === 'running' || child.queued || child.turn.phase !== 'idle') working += 1;
       }
     }
-    return { total, active, live, queued };
+    return { total, active, live, queued, working };
   }
 
   hasUnsettledChildren(parentAppSessionId: string): boolean {

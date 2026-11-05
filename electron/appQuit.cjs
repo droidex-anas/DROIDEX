@@ -48,7 +48,10 @@ function installAppQuit({
       await openMainWindow();
       return;
     }
-    await sidecar.stop();
+    // A Dock click while the sidecar stops opens a window that starts a new one.
+    do {
+      await sidecar.stop();
+    } while (sidecar.snapshot().lifecycle !== 'stopped');
     sidecarStopped = true;
     app.quit();
   }

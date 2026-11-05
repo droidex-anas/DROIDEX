@@ -1017,10 +1017,7 @@ export class SessionManager {
     const streaming = this.registry
       .liveSessionsSnapshot()
       .filter((live) => live.summary.streaming === true).length;
-    const children = this.childSessions
-      .liveChildSummaries()
-      .filter((child) => child.status === 'pending' || child.status === 'running').length;
-    return streaming + children;
+    return streaming + this.childSessions.counts().working;
   }
 
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {
