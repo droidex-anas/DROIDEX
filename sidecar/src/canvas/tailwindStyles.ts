@@ -57,7 +57,8 @@ const SPACING: Scale = {
   px: '1px',
   ...Object.fromEntries(SPACING_STEPS.map((step) => [String(step), `${String(step / 4)}rem`])),
 };
-const SIZE: Scale = { ...SPACING, full: '100%' };
+const SIZE: Scale = { ...SPACING, full: '100%', auto: 'auto', fit: 'fit-content' };
+const MAX_SIZE: Scale = { ...SIZE, none: 'none' };
 const RADIUS: Scale = {
   none: '0px',
   sm: '0.125rem',
@@ -154,8 +155,8 @@ const UTILITIES: Readonly<Record<string, Utility>> = {
   height: { prefix: 'h', scale: SIZE },
   minWidth: { prefix: 'min-w', scale: SIZE },
   minHeight: { prefix: 'min-h', scale: SIZE },
-  maxWidth: { prefix: 'max-w', scale: SIZE },
-  maxHeight: { prefix: 'max-h', scale: SIZE },
+  maxWidth: { prefix: 'max-w', scale: MAX_SIZE },
+  maxHeight: { prefix: 'max-h', scale: MAX_SIZE },
   borderRadius: { prefix: 'rounded', scale: RADIUS },
   color: { prefix: 'text', hint: 'color' },
   backgroundColor: { prefix: 'bg', hint: 'color' },

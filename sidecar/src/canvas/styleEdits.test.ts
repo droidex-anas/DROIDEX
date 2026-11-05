@@ -33,6 +33,9 @@ test('a style writes the kit token with its value, and the raw value only when t
     [{ property: 'fontWeight', value: '600' }, '600'],
     [{ property: 'justifyContent', value: 'space-between' }, 'space-between'],
     [{ property: 'opacity', value: '0.5' }, '0.5'],
+    [{ property: 'width', value: 'fit-content' }, 'fit-content'],
+    [{ property: 'height', value: 'auto' }, 'auto'],
+    [{ property: 'maxWidth', value: 'none' }, 'none'],
   ];
   for (const [change, css] of cases) {
     const resolution = resolveStyleChange(change, KIT);
@@ -86,6 +89,8 @@ test('a token outside the property family and a value it cannot take are invalid
     { property: 'color', value: '--ds-space-2' },
     { property: 'flexDirection', value: '--ds-space-2' },
     { property: 'padding', value: 'calc(1px + 2px)' },
+    { property: 'padding', value: 'fit-content' },
+    { property: 'maxWidth', value: 'auto' },
     { property: 'padding', value: '-4px' },
     { property: 'color', value: 'red;background:url(x)' },
     { property: 'opacity', value: '1.5' },
