@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Ellipsis, GitFork, Sketch, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
@@ -179,23 +179,14 @@ export const SessionRow = memo(function SessionRow({
   }, [renaming]);
 
   // A title longer than the sidebar rests truncated ("name…"); hovering the
-  // row sweeps it left to reveal the full name, then slides back. The travel
-  // distance and duration are per-row CSS vars measured on hover (fonts and
-  // sidebar width can change between renders, so measure fresh every time).
+  // row sweeps it left to reveal the full name, then slides back. The overflow
+  // is measured on every hover, since fonts and sidebar width can change.
   const handleMarqueeEnter = () => {
     const el = titleRef.current;
     if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const px = el.scrollWidth - el.clientWidth;
     if (px <= 4) return;
-    el.style.setProperty('--title-marquee-x', `${String(-px)}px`);
-    el.style.setProperty('--title-marquee-duration', `${String(Math.min(10, 2.5 + px / 50))}s`);
     setMarqueePx(px);
-  };
-  const handleMarqueeLeave = () => {
-    setMarqueePx(0);
-    const el = titleRef.current;
-    el?.style.removeProperty('--title-marquee-x');
-    el?.style.removeProperty('--title-marquee-duration');
   };
   const marquee = marqueePx > 0;
   // Scale the right-edge fade with the overflow so a barely-overflowing title
@@ -293,12 +284,15 @@ export const SessionRow = memo(function SessionRow({
         className="block min-w-0 overflow-hidden"
         style={
           marquee
-            ? // Fade the right edge so the sliding title never collides with
-              // the hover "..." button.
-              {
+            ? // The travel is set here rather than on the title, which a new
+              // name remounts mid-hover. The right edge fades so the sliding
+              // title never collides with the hover "..." button.
+              ({
+                '--title-marquee-x': `${String(-marqueePx)}px`,
+                '--title-marquee-duration': `${String(Math.min(10, 2.5 + marqueePx / 50))}s`,
                 maskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
                 WebkitMaskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
-              }
+              } as CSSProperties)
             : undefined
         }
       >
@@ -322,7 +316,9 @@ export const SessionRow = memo(function SessionRow({
     <div
       className="group relative"
       onMouseEnter={handleMarqueeEnter}
-      onMouseLeave={handleMarqueeLeave}
+      onMouseLeave={() => {
+        setMarqueePx(0);
+      }}
     >
       <button
         ref={rowButtonRef}

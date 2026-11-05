@@ -8,7 +8,7 @@ import { SIDEBAR_VISIBLE_SESSION_LIMIT, type WorkspaceSection } from '../lib/wor
 import type { SessionSummary } from '../types/bridge';
 import { SidebarSectionHeading } from './SidebarSectionHeading';
 import { SidebarWorkspaceRow } from './SidebarWorkspaceRow';
-import { SidebarMovingRow, SidebarSessionList } from './SidebarSessionList';
+import { SidebarMovingRow, SidebarSessionList, sidebarOrder } from './SidebarSessionList';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -74,12 +74,18 @@ export function SidebarWorkspaceList({
     });
   };
 
+  const order = sidebarOrder([
+    pinnedSessions,
+    ...workspaces.map((ws) => ws.sessions),
+    chatSessions,
+  ]);
   // A chat sent a prompt rises to the top of its section, and a pinned one
   // moves to Pinned; each section lists a chat once, so one layout id suffices.
   const renderMovingRow = (session: SessionSummary) => (
     <SidebarMovingRow
       key={session.appSessionId}
       layoutId={`workspaces-${session.appSessionId}`}
+      order={order}
       arriving={session.createdAt > shownAt}
     >
       {renderRow(session)}

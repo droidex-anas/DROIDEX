@@ -4,7 +4,7 @@ import { LayoutGroup, MotionConfig } from 'framer-motion';
 import type { SessionSummary } from '../types/bridge';
 import { ACTIVITY_GROUPS, type SessionActivityStatus } from '../lib/sidebarActivity';
 import { SidebarSectionHeading } from './SidebarSectionHeading';
-import { SidebarMovingRow, SidebarSessionList } from './SidebarSessionList';
+import { SidebarMovingRow, SidebarSessionList, sidebarOrder } from './SidebarSessionList';
 
 interface Props {
   sessions: SessionSummary[];
@@ -31,6 +31,11 @@ export function SidebarActivity({
   const [openGroups, setOpenGroups] = useState<Partial<Record<string, boolean>>>({});
   const { defaultVisibleCount, visibleCountFor, showMore, showLess } = useSidebarPagination(limit);
   const [shownAt] = useState(Date.now);
+  const groups = ACTIVITY_GROUPS.map((group) => ({
+    group,
+    rows: sessions.filter((session) => group.statuses.includes(statusFor(session))),
+  }));
+  const order = sidebarOrder(groups.map(({ rows }) => rows));
   // A chat that changes state moves to another group. The groups are separate
   // lists, so the row would unmount in one and mount in the other and read as
   // a blink; a shared layout id lets it glide to its new place instead.
@@ -38,6 +43,7 @@ export function SidebarActivity({
     <SidebarMovingRow
       key={session.appSessionId}
       layoutId={`inbox-${session.appSessionId}`}
+      order={order}
       arriving={session.createdAt > shownAt}
     >
       {renderRow(session)}
@@ -52,8 +58,7 @@ export function SidebarActivity({
               {hiddenCount > 0 ? 'Nothing to show right now.' : 'No tasks match this view.'}
             </p>
           )}
-          {ACTIVITY_GROUPS.map((group) => {
-            const rows = sessions.filter((session) => group.statuses.includes(statusFor(session)));
+          {groups.map(({ group, rows }) => {
             if (rows.length === 0) return null;
             // Settled starts folded away unless the view asks to show it.
             const open = openGroups[group.label] ?? (group.label !== 'Settled' || showSettled);

@@ -161,14 +161,16 @@ export function chatDisplayTitle(session: SessionSummary, meta: ChatMetadata | u
 }
 
 // A chat's name until its harness writes one: the opening message's first
-// sentence, cut at a word boundary so it never ends mid-word.
+// sentence, cut at a word boundary so it never ends mid-word. Markdown reads as
+// the words it shows, so a list number or a code fence never names a chat.
 export function draftChatTitle(text: string, maxLength = 48): string {
-  const firstLine = text
+  const opening = text
     .split('\n')
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .find((line) => line.length > 0);
-  if (!firstLine) return '';
-  const sentence = firstLine.split(/(?<=[.!?])\s/)[0].replace(/\.$/, '');
+    .filter((line) => !line.trimStart().startsWith('```'))
+    .map((line) => markdownToPlainText(line).replace(/\s+/g, ' ').trim())
+    .find((line) => /[\p{L}\p{N}]/u.test(line));
+  if (!opening) return '';
+  const sentence = opening.split(/(?<=[.!?])\s/)[0].replace(/\.$/, '');
   if (sentence.length <= maxLength) return sentence;
   const lastSpace = sentence.lastIndexOf(' ', maxLength);
   const cut = lastSpace > 0 ? sentence.slice(0, lastSpace) : sentence.slice(0, maxLength);
@@ -193,7 +195,8 @@ export function forkNumbers(
   }
   const numbers = new Map<string, number>();
   for (const forks of forksBySource.values()) {
-    forks.sort((a, b) => a.forkedAt - b.forkedAt);
+    // Hydration restores sessions in recency order, so ties need a stable key.
+    forks.sort((a, b) => a.forkedAt - b.forkedAt || a.appSessionId.localeCompare(b.appSessionId));
     forks.forEach((fork, index) => {
       if (byId[fork.appSessionId]?.displayTitle === undefined) {
         numbers.set(fork.appSessionId, index + 1);
