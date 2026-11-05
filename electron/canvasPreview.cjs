@@ -83,7 +83,7 @@ const MAX_PREVIEW_DIAGNOSTICS = 8;
  */
 const MAX_PREVIEW_TEXT_BYTES = 512;
 /** Style properties one selection command may read and preview. */
-const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+const MAX_PREVIEW_STYLE_PROPERTIES = 64;
 /** Draft token values one `setTokens` may carry, and how long each may be: a kit's caps. */
 const MAX_PREVIEW_TOKENS = 128;
 const MAX_PREVIEW_TOKEN_VALUE_LENGTH = 160;
