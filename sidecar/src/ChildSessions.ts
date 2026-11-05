@@ -24,8 +24,8 @@ import {
   childAcceptsWork,
   childDurabilityKey,
   childHistoryProviderSessionIds,
+  childHasWorkInFlight,
   childIdentity,
-  childIsWorking,
   childStateFromRecord,
   childSummary,
   findChildByProvider,
@@ -171,7 +171,7 @@ export class ChildSessions {
         if (childAcceptsWork(child)) active += 1;
         if (child.runtime) live += 1;
         if (child.queued) queued += 1;
-        if (childIsWorking(child)) working += 1;
+        if (childHasWorkInFlight(child)) working += 1;
       }
     }
     return { total, active, live, queued, working };

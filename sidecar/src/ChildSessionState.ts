@@ -152,11 +152,11 @@ export function childSettingsFromInit(init: SessionInitResult): ChildSettings {
 
 /** Nothing in this process is driving a child that comes back from history: the
     session that was streaming it died with the lease that persisted it, so a
-    stored 'running' would read as work in flight forever. */
+    stored 'running' or 'pending' would read as work in flight forever. */
 export function restoredChildStatus(
   status: PersistedChildSession['status'],
 ): PersistedChildSession['status'] {
-  return status === 'running' ? 'paused' : status;
+  return status === 'running' || status === 'pending' ? 'paused' : status;
 }
 
 export function childStateFromRecord(record: PersistedChildSession): ChildSessionState {
@@ -454,14 +454,9 @@ export function childAcceptsWork(child: ChildSessionState): boolean {
 // Work the parent must not close out from under: a running or queued child, a
 // turn in flight, or a mutation that has not settled.
 export function childHasWorkInFlight(child: ChildSessionState): boolean {
-  return child.status === 'pending' || childIsWorking(child);
-}
-
-// What quitting would cut off. A restored child keeps its persisted 'pending'
-// with no runtime or queue behind it, so that status alone is not work here.
-export function childIsWorking(child: ChildSessionState): boolean {
   return (
     child.status === 'running' ||
+    child.status === 'pending' ||
     child.queued === true ||
     child.turn.phase !== 'idle' ||
     child.turn.autoCompacting ||

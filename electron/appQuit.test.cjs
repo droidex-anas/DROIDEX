@@ -20,7 +20,9 @@ function harness({ working, answer = 0, window = {} }) {
   const sidecar = {
     working,
     lifecycle: 'healthy',
-    isReady: () => true,
+    stopping: false,
+    isReady: () => sidecar.lifecycle === 'healthy',
+    isStopping: () => sidecar.stopping,
     snapshot: () => ({ lifecycle: sidecar.lifecycle }),
     workingSessionCount: async () => {
       if (sidecar.working instanceof Error) throw sidecar.working;
@@ -29,7 +31,10 @@ function harness({ working, answer = 0, window = {} }) {
     stop: () => {
       calls.push('stop sidecar');
       sidecar.lifecycle = 'stopped';
-      return stopped.promise;
+      sidecar.stopping = true;
+      return stopped.promise.then(() => {
+        sidecar.stopping = false;
+      });
     },
   };
   installAppQuit({
@@ -71,6 +76,27 @@ test('a confirmed quit exits only after the sidecar has stopped', async () => {
   assert.deepEqual(calls, [
     'quit',
     'stop sidecar',
+    'quit',
+    'close services',
+    'stop sidecar',
+    'exit',
+  ]);
+});
+
+test('a second quit while the sidecar stops still waits for it to exit', async () => {
+  const { app, calls, finishStop } = harness({ working: 0 });
+  app.quit();
+  await settle();
+  app.quit();
+  await settle();
+  assert.deepEqual(calls, ['quit', 'stop sidecar', 'quit']);
+
+  finishStop();
+  await settle();
+  assert.deepEqual(calls, [
+    'quit',
+    'stop sidecar',
+    'quit',
     'quit',
     'close services',
     'stop sidecar',

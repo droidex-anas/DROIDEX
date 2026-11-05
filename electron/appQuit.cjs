@@ -14,13 +14,13 @@ function installAppQuit({
   closeServices,
   logError,
 }) {
-  let sidecarStopped = false;
   let quitting = null;
   let idleRecheck = null;
 
   app.on('before-quit', (event) => {
     clearTimeout(idleRecheck);
-    if (sidecarStopped || !sidecar.isReady()) {
+    // A sidecar still stopping is flushing history, so even a repeated quit waits.
+    if (!sidecar.isReady() && !sidecar.isStopping()) {
       closeServices();
       void sidecar.stop();
       return;
@@ -43,7 +43,7 @@ function installAppQuit({
   });
 
   async function quitAfterSidecarStops() {
-    const working = await workingSessionCount();
+    const working = sidecar.isReady() ? await workingSessionCount() : 0;
     if (working !== 0 && !(await confirmQuit(working))) {
       await openMainWindow();
       return;
@@ -52,7 +52,6 @@ function installAppQuit({
     do {
       await sidecar.stop();
     } while (sidecar.snapshot().lifecycle !== 'stopped');
-    sidecarStopped = true;
     app.quit();
   }
 
@@ -73,7 +72,7 @@ function installAppQuit({
     await sidecar.stop();
   }
 
-  // Null when the sidecar cannot answer, which a quit treats as possibly working.
+  // Null when the sidecar cannot answer yet; both callers treat that as possibly working.
   async function workingSessionCount() {
     try {
       return await sidecar.workingSessionCount();

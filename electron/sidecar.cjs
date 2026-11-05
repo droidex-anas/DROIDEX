@@ -49,6 +49,7 @@ function createSidecarSupervisor(options) {
   let readyWaiters = [];
   let cancelHeartbeat = null;
   let cancelRestart = null;
+  let stopping = null;
   const listeners = new Set();
 
   function snapshot() {
@@ -93,7 +94,15 @@ function createSidecarSupervisor(options) {
     return Boolean(bridgeInfo) && isLiveChild(child);
   }
 
+  function isStopping() {
+    return stopping !== null;
+  }
+
   async function workingSessionCount() {
+    // A sidecar coming up may resume the agents an earlier run left working.
+    if (lifecycle === 'starting' || lifecycle === 'restarting') {
+      throw new Error('The sidecar is starting and cannot report its work yet.');
+    }
     const info = bridgeInfo;
     const run = activeRun;
     if (!info || !isLiveChild(child)) return 0;
@@ -388,7 +397,7 @@ function createSidecarSupervisor(options) {
     bridgeResponsive = false;
     setLifecycle('stopped');
     rejectWaiters(new Error('Sidecar is stopped.'));
-    if (!current || current.killed) return Promise.resolve();
+    if (!current || current.killed) return stopping ?? Promise.resolve();
     current.stdin?.end();
     current.kill('SIGTERM');
     let timeout;
@@ -399,9 +408,12 @@ function createSidecarSupervisor(options) {
       }, shutdownTimeoutMs);
       timeout.unref?.();
     });
-    return Promise.race([run?.exitPromise ?? Promise.resolve(), forcedExit]).finally(() => {
+    const exited = Promise.race([run?.exitPromise ?? Promise.resolve(), forcedExit]).finally(() => {
       clearTimeout(timeout);
+      if (stopping === exited) stopping = null;
     });
+    stopping = exited;
+    return exited;
   }
 
   return {
@@ -413,6 +425,7 @@ function createSidecarSupervisor(options) {
     snapshot,
     subscribe,
     isReady,
+    isStopping,
     workingSessionCount,
   };
 }

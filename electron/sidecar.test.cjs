@@ -171,12 +171,15 @@ test('stop resolves only after the sidecar process exits', async () => {
   const stop = supervisor.stop().then(() => {
     stopped = true;
   });
+  const repeated = supervisor.stop();
   await Promise.resolve();
   assert.equal(stopped, false);
+  assert.equal(supervisor.isStopping(), true);
 
   child.emit('exit', 0, null);
-  await stop;
+  await Promise.all([stop, repeated]);
   assert.equal(stopped, true);
+  assert.equal(supervisor.isStopping(), false);
 });
 
 test('the working-agent count comes from /health of the run still active', async () => {
@@ -185,6 +188,7 @@ test('the working-agent count comes from /health of the run still active', async
   const { supervisor } = harness([child], { requestHealth: () => health() });
   assert.equal(await supervisor.workingSessionCount(), 0);
   const started = supervisor.start();
+  await assert.rejects(supervisor.workingSessionCount(), /cannot report its work yet/);
   child.stdout.write('SIDECAR_READY 43001\n');
   await started;
   assert.equal(await supervisor.workingSessionCount(), 3);

@@ -867,12 +867,21 @@ test('a child counts as working only while it has work in flight', async () => {
   };
   const busy = childRecord('busy', 'provider-busy');
   const h = createHarness([restoredPending, busy]);
+  assert.equal(h.owner.list(h.parentId)[0]?.status, 'paused');
   assert.equal(h.owner.counts().working, 0);
 
   const release = await keepChildBusy(h, busy);
   assert.equal(h.owner.counts().working, 1);
   await release();
   assert.equal(h.owner.counts().working, 0);
+
+  observe(h, {
+    providerSessionId: restoredPending.providerSessionId,
+    role: 'worker',
+    transcriptAvailable: false,
+    status: 'pending',
+  });
+  assert.equal(h.owner.counts().working, 1);
 });
 
 test('completed child under a live parent opens only as history', async () => {

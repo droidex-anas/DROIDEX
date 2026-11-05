@@ -1019,12 +1019,19 @@ export class SessionManager {
     }
   }
 
-  // What quitting now would cut off: turns in progress and children still at work.
+  // What quitting now would cut off: turns and compactions in progress, and
+  // children still at work.
   workingSessionCount(): number {
-    const streaming = this.registry
+    const sessions = this.registry
       .liveSessionsSnapshot()
-      .filter((live) => live.summary.streaming === true).length;
-    return streaming + this.childSessions.counts().working;
+      .filter(
+        (live) =>
+          live.streaming ||
+          live.summary.streaming === true ||
+          live.compacting === true ||
+          live.autoCompacting,
+      ).length;
+    return sessions + this.childSessions.counts().working;
   }
 
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {
