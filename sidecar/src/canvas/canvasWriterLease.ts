@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { lstatSync } from 'node:fs';
+import { lstatSync, statSync } from 'node:fs';
 import { mkdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { isRecordedProcessAlive } from '../processes/isProcessAlive.js';
 import { canvasError, storageFailure } from './canvasError.js';
 
 const OWNER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -48,7 +49,9 @@ export class CanvasWriterLease {
         ) {
           throw canvasError('storage_failed', 'The saved Canvas writer lease is invalid.');
         }
-        if (isProcessAlive(current.process_id)) {
+        // Only a claim or a release writes this file, so its modification time
+        // is when the current owner claimed it.
+        if (isRecordedProcessAlive(current.process_id, statSync(dbPath).mtimeMs)) {
           throw canvasError(
             'storage_failed',
             'The Canvas storage directory is already open in another workspace.',
@@ -86,19 +89,5 @@ export class CanvasWriterLease {
     } finally {
       db.close();
     }
-  }
-}
-
-function isProcessAlive(processId: number): boolean {
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    return !(
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'ESRCH'
-    );
   }
 }
