@@ -1,17 +1,20 @@
 // The Canvas wordmark, and the picker it opens: the canvas on screen with what
-// can be done to it (variants, the library and deletion, spec §4 and §7), New
-// canvas and the saved ones (spec §4). The wordmark stays the label so the row
-// reads the same before and after the list is read; the canvas's own name heads
-// the popover. Which chats work on that canvas is the chat column header's menu
-// (`AttachedChatsMenu`), beside the transcript they write.
+// can be done to it (tagging in the chat, variants, the library and deletion,
+// spec §4 and §7), New canvas and the saved ones (spec §4). The wordmark stays
+// the label so the row reads the same before and after the list is read; the
+// canvas's own name heads the popover. Which chats work on that canvas is the
+// chat column header's menu (`AttachedChatsMenu`), beside the transcript they
+// write.
 
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
+import { TAG_KEY_LABEL } from './boardKeys';
 import { useBoardOnScreen, type BoardOnScreen } from './boardOnScreen';
 import { canvasClient, frameRemovals } from './canvasClient';
 import { CanvasRequestError } from './client';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
+import { allTagged, toggleFramePins, useFramePins } from './framePins';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import { LibraryPicker } from './LibraryPicker';
 import { libraryFrame } from './libraryRequests';
@@ -100,6 +103,10 @@ export function CanvasMenu({
                 close();
                 void frameRemovals.remove(shown.appSessionId, shown.canvasId, shown.selected);
               }}
+              onTagFrames={(shown) => {
+                close();
+                toggleFramePins(shown.appSessionId, shown.canvasId, shown.selected);
+              }}
             />
           )}
 
@@ -151,6 +158,7 @@ function CanvasActions({
   board,
   onRun,
   onDeleteFrames,
+  onTagFrames,
 }: {
   appSessionId: string;
   canvasId: string;
@@ -158,6 +166,8 @@ function CanvasActions({
   board: BoardOnScreen | null;
   onRun: (dialog: MenuDialog) => void;
   onDeleteFrames: (board: BoardOnScreen) => void;
+  /** Tags the selected frames in the board's chat, or untags them, as the tag key does. */
+  onTagFrames: (board: BoardOnScreen) => void;
 }) {
   const selectedCount = board?.selected.length ?? 0;
   // Only a built frame has a revision to save or vary, and each names one frame.
@@ -193,6 +203,7 @@ function CanvasActions({
             onRun({ kind: 'variants', appSessionId: attached.appSessionId, source: variants });
         }}
       />
+      <TagFramesRow canvasId={canvasId} attached={attached} onTagFrames={onTagFrames} />
       <MenuRow
         label={selectedCount > 1 ? `Delete ${String(selectedCount)} frames` : 'Delete frame'}
         hint="⌫"
@@ -208,6 +219,34 @@ function CanvasActions({
         }}
       />
     </>
+  );
+}
+
+/** The selected frames, tagged in the board's chat or untagged, as the tag key does. */
+function TagFramesRow({
+  canvasId,
+  attached,
+  onTagFrames,
+}: {
+  canvasId: string;
+  /** The board, when its chat is attached to this canvas and so can tag its frames. */
+  attached: BoardOnScreen | null;
+  onTagFrames: (board: BoardOnScreen) => void;
+}) {
+  const pins = useFramePins(attached?.appSessionId ?? null);
+  const selected = attached?.selected ?? [];
+  const untag = allTagged(pins, canvasId, selected);
+  const count = selected.length > 1 ? ` ${String(selected.length)} frames` : '';
+  const label = untag ? `Untag${count} from chat` : `Tag${count} in chat`;
+  return (
+    <MenuRow
+      label={label}
+      hint={TAG_KEY_LABEL}
+      disabled={selected.length === 0}
+      onRun={() => {
+        if (attached && selected.length > 0) onTagFrames(attached);
+      }}
+    />
   );
 }
 
