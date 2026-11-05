@@ -182,6 +182,26 @@ test('stop resolves only after the sidecar process exits', async () => {
   assert.equal(supervisor.isStopping(), false);
 });
 
+test('stop waits for a child killed during startup to exit', async () => {
+  const child = fakeChild();
+  const { supervisor } = harness([child]);
+  const started = supervisor.start();
+  child.stdout.write('SIDECAR_READY 0\n');
+  await assert.rejects(started, /invalid port/);
+
+  let stopped = false;
+  const stop = supervisor.stop().then(() => {
+    stopped = true;
+  });
+  await Promise.resolve();
+  assert.equal(stopped, false);
+  assert.equal(supervisor.isStopping(), true);
+
+  child.emit('exit', null, 'SIGTERM');
+  await stop;
+  assert.equal(supervisor.isStopping(), false);
+});
+
 test('the working-agent count comes from /health of the run still active', async () => {
   const child = fakeChild();
   let health = async () => ({ ok: true, workingSessions: 3 });

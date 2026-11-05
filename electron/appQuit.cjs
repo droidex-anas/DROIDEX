@@ -19,8 +19,8 @@ function installAppQuit({
 
   app.on('before-quit', (event) => {
     clearTimeout(idleRecheck);
-    // A sidecar still stopping is flushing history, so even a repeated quit waits.
-    if (!sidecar.isReady() && !sidecar.isStopping()) {
+    // Any sidecar process, even one starting or still stopping, may hold history and locks.
+    if (!sidecar.snapshot().processAlive && !sidecar.isStopping()) {
       closeServices();
       void sidecar.stop();
       return;
@@ -43,7 +43,7 @@ function installAppQuit({
   });
 
   async function quitAfterSidecarStops() {
-    const working = sidecar.isReady() ? await workingSessionCount() : 0;
+    const working = sidecar.isStopping() ? 0 : await workingSessionCount();
     if (working !== 0 && !(await confirmQuit(working))) {
       await openMainWindow();
       return;

@@ -21,9 +21,11 @@ function harness({ working, answer = 0, window = {} }) {
     working,
     lifecycle: 'healthy',
     stopping: false,
-    isReady: () => sidecar.lifecycle === 'healthy',
     isStopping: () => sidecar.stopping,
-    snapshot: () => ({ lifecycle: sidecar.lifecycle }),
+    snapshot: () => ({
+      lifecycle: sidecar.lifecycle,
+      processAlive: sidecar.lifecycle !== 'stopped',
+    }),
     workingSessionCount: async () => {
       if (sidecar.working instanceof Error) throw sidecar.working;
       return sidecar.working;
@@ -128,6 +130,29 @@ test('a quit asks first when the sidecar cannot say whether agents work', async 
   await settle();
   assert.deepEqual(dialogs, ['Agents may still be working']);
   assert.deepEqual(calls, ['quit', 'open window']);
+});
+
+test('a quit while the sidecar starts asks first and waits for it to exit', async () => {
+  const { app, sidecar, calls, dialogs, finishStop } = harness({
+    working: new Error('starting'),
+    answer: 1,
+  });
+  sidecar.lifecycle = 'starting';
+  app.quit();
+  await settle();
+  assert.deepEqual(dialogs, ['Agents may still be working']);
+  assert.deepEqual(calls, ['quit', 'stop sidecar']);
+
+  finishStop();
+  await settle();
+  assert.deepEqual(calls, [
+    'quit',
+    'stop sidecar',
+    'quit',
+    'close services',
+    'stop sidecar',
+    'exit',
+  ]);
 });
 
 test('closing the last window on macOS keeps the sidecar until its agents finish', async (t) => {

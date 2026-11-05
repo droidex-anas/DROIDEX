@@ -882,6 +882,18 @@ test('a child counts as working only while it has work in flight', async () => {
     status: 'pending',
   });
   assert.equal(h.owner.counts().working, 1);
+
+  observe(h, {
+    providerSessionId: 'provider-new',
+    role: 'worker',
+    spawnLink: { kind: 'tool-use', id: 'tool-new' },
+    transcriptAvailable: false,
+    modelId: 'model-default',
+  });
+  const children = h.owner.list(h.parentId);
+  assert.equal(children.length, 3);
+  assert.equal(children.at(-1)?.status, 'pending');
+  assert.equal(h.owner.counts().working, 2);
 });
 
 test('completed child under a live parent opens only as history', async () => {

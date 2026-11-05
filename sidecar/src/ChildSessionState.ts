@@ -194,7 +194,7 @@ export function newChildState(input: {
   reasoningEffort?: ReasoningEffort;
   updatedAt: number;
 }): ChildSessionState {
-  return childStateFromRecord({
+  const child = childStateFromRecord({
     parentAppSessionId: input.parentAppSessionId,
     childSessionId: input.childSessionId,
     role: input.role,
@@ -205,6 +205,9 @@ export function newChildState(input: {
     transcriptAvailable: false,
     updatedAt: input.updatedAt,
   });
+  // Unlike a child restored from history, a new one really is about to start.
+  child.status = 'pending';
+  return child;
 }
 
 const isSettledStatus = (status: ChildStatus): boolean =>

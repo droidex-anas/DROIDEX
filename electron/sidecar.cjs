@@ -90,10 +90,6 @@ function createSidecarSupervisor(options) {
     );
   }
 
-  function isReady() {
-    return Boolean(bridgeInfo) && isLiveChild(child);
-  }
-
   function isStopping() {
     return stopping !== null;
   }
@@ -397,7 +393,8 @@ function createSidecarSupervisor(options) {
     bridgeResponsive = false;
     setLifecycle('stopped');
     rejectWaiters(new Error('Sidecar is stopped.'));
-    if (!current || current.killed) return stopping ?? Promise.resolve();
+    // A child killed for a failed startup can still be running, so it is waited for too.
+    if (!current) return stopping ?? Promise.resolve();
     current.stdin?.end();
     current.kill('SIGTERM');
     let timeout;
@@ -424,7 +421,6 @@ function createSidecarSupervisor(options) {
     stop,
     snapshot,
     subscribe,
-    isReady,
     isStopping,
     workingSessionCount,
   };
