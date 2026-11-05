@@ -225,6 +225,13 @@
   transform: translateX(-50%);
 }
 
+/* A multiple selection's own box, a hairline at any zoom, with its size under it. */
+.canvas-selection-bounds {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 calc(1px / var(--board-scale)) var(--selection);
+}
+
 /* Resize: a square at the corner, and the two edges as invisible strips. */
 .canvas-frame-handle {
   position: absolute;

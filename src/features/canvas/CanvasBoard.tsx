@@ -46,6 +46,7 @@ import { ElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
+import { SelectionBounds } from './SelectionBounds';
 import { SnapGuides } from './SnapGuides';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
@@ -383,6 +384,7 @@ export function CanvasBoard({
               visible={visible.includes(frame.designId)}
               mode={interaction.mode}
               selected={interaction.selectedFrameIds.includes(frame.designId)}
+              multiSelect={interaction.selectedFrameIds.length > 1}
               showTools={showsFrameTools(interaction, frame.designId)}
               interacted={interaction.interactedFrameId === frame.designId}
               held={gestures.heldDesignIds.includes(frame.designId)}
@@ -422,6 +424,7 @@ export function CanvasBoard({
               onFocusLabel={onFocusLabel}
             />
           ))}
+          <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
           <AnnotationLayer
             {...annotation.layer}
             frames={frames}

@@ -10,6 +10,7 @@ import {
   isBoardControl,
   isBoardEditor,
   isDeleteKey,
+  isSelectAllKey,
   isUndoKey,
   modeShortcut,
   zoomShortcut,
@@ -120,6 +121,10 @@ function runBoardKey(
   }
   if (isDeleteKey(event)) return actions.removeSelection();
   if (isUndoKey(event)) return actions.undoRemoval();
+  if (isSelectAllKey(event)) {
+    actions.dispatch({ type: 'pick-all', designIds: [...actions.order] });
+    return true;
+  }
   if (event.key === ' ') {
     actions.holdSpace();
     return true;

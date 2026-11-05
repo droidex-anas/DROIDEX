@@ -29,6 +29,7 @@ import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
 import { FrameLabel, FrameNameField } from './FrameLabel';
+import { FrameSizing } from './FrameSizing';
 import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
 import { PendingBloom } from './PendingBloom';
@@ -57,6 +58,8 @@ export interface DesignFrameProps {
   visible: boolean;
   mode: BoardMode;
   selected: boolean;
+  /** Several frames are selected, so a selected one leaves its size and handles to their box. */
+  multiSelect: boolean;
   /** It is the only frame selected, or the one Interact drives: it shows its toolbar. */
   showTools: boolean;
   /** This is the frame Interact is driving. */
@@ -245,30 +248,15 @@ export function DesignFrame(props: DesignFrameProps) {
         )}
       </div>
 
-      {selected && !elementBox && (
-        <div className="canvas-frame-size canvas-chrome">
-          <span>
-            {Math.round(rect.width)} × {Math.round(rect.height)}
-          </span>
-        </div>
+      {selected && !props.multiSelect && (
+        <FrameSizing
+          frame={frame}
+          rect={rect}
+          mode={mode}
+          elementPicked={elementBox !== null}
+          onHold={onHold}
+        />
       )}
-
-      {selected &&
-        mode === 'select' &&
-        (['east', 'south', 'southeast'] as const).map((handle) => (
-          <span
-            key={handle}
-            role="presentation"
-            aria-hidden
-            data-handle={handle}
-            className="canvas-frame-handle"
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              onHold(frame, handle, event);
-            }}
-          />
-        ))}
     </div>
   );
 }

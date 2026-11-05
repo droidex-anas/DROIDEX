@@ -59,6 +59,12 @@ export function isUndoKey(event: KeyboardEvent): boolean {
   return event.key.toLowerCase() === 'z';
 }
 
+/** ⌘A, or Ctrl+A off the Mac. */
+export function isSelectAllKey(event: KeyboardEvent): boolean {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return false;
+  return event.key.toLowerCase() === 'a';
+}
+
 /** Edit's keys: Enter for the first element, or into the panel once one is picked; the arrows step. */
 export function elementStep(event: KeyboardEvent): 'first' | 'next' | 'previous' | null {
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
