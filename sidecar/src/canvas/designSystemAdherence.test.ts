@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { CompileFailedError, CompilerWorker } from './compiler.js';
+import { checkCodeQuality } from './designCodeQuality.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { starterKit } from './designSystemImport.js';
+import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { AUTO_DESIGN_SYSTEM_REF, readDesignSystem, type DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
@@ -241,7 +243,11 @@ test('the compiler fails a straying build under strict and builds it with notes 
     { ...compileInput(STRAYING, 'guide'), designSystem },
     new AbortController().signal,
   );
-  assert.deepEqual(places(guided.diagnostics), expected('guide'));
+  // A guided build carries its code-quality notes beside the kit findings.
+  assert.deepEqual(places(guided.diagnostics), [
+    ...expected('guide'),
+    ...places(checkCodeQuality(STRAYING, pinned, 'guide')),
+  ]);
 
   await assert.rejects(
     worker.compile(
@@ -261,6 +267,10 @@ test('Auto holds a design to no kit: a straying build passes strict, keeping its
     { ...compileInput(STRAYING, 'strict'), designSystem: AUTO_DESIGN_SYSTEM_REF },
     new AbortController().signal,
   );
-  assert.deepEqual(compiled.diagnostics, []);
+  // No kit findings, so the build's notes are the code-quality ones, which never fail it.
+  assert.deepEqual(
+    places(compiled.diagnostics),
+    places(checkCodeQuality(STRAYING, AUTO_DESIGN_SYSTEM, 'strict')),
+  );
   assert.match(compiled.html, /--ds-accent: #d9480f/);
 });

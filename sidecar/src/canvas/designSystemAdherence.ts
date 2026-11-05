@@ -13,9 +13,9 @@
 // and computed values are not read, and a `var()` fallback is not a literal.
 
 import postcss from 'postcss';
-import valueParser from 'postcss-value-parser';
 import ts from 'typescript';
 import { ADHERENCE_CODES } from './canvasDiagnostics.js';
+import { colorLiterals } from './cssColors.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import {
@@ -28,6 +28,7 @@ import {
   type ScaleKind,
 } from './designSystemAdherenceKit.js';
 import { AUTO_DESIGN_SYSTEM_REF, type DesignSystem } from './designSystems.js';
+import { arbitraryUtility, withoutVariants } from './tailwindClasses.js';
 import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './protocol.js';
 
 export type AdherenceResult =
@@ -38,24 +39,8 @@ const MAX_FINDINGS = 12;
 const SCRIPT_FILE = /\.(tsx|ts|jsx|js)$/;
 const COLOR_PROPERTY =
   /(?:^|-)(?:color|background|border|outline|shadow|fill|stroke|caret|accent|decoration)(?:-|$)/;
-const COLOR_FUNCTIONS = new Set([
-  'rgb',
-  'rgba',
-  'hsl',
-  'hsla',
-  'hwb',
-  'lab',
-  'lch',
-  'oklab',
-  'oklch',
-  'color',
-]);
-const HEX_COLOR = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i;
-// prettier-ignore
-const NAMED_COLORS = new Set(('aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen').split(' '));
 const PALETTE_CLASS =
   /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
-const ARBITRARY_CLASS = /^-?([a-z][\w-]*?)-\[(.+)\](?:\/\S+)?$/;
 const TAILWIND_FONT_CLASS = /^font-(?:sans|serif|mono)$/;
 const SPACING_PROPERTY = /^(?:padding|margin)(?:-|$)|^(?:row-|column-)?gap$/;
 const SPACING_CLASS = /^(?:[pm][xytrblse]?|gap(?:-[xy])?|space-[xy])$/;
@@ -74,18 +59,22 @@ interface Place {
   line: number;
 }
 
+/** Whether `rule` holds a design to `system`. Auto is no standard to stray from. */
+export function holdsToKit(system: DesignSystem, rule: DesignSystemAdherence): boolean {
+  return rule !== 'off' && system.id !== AUTO_DESIGN_SYSTEM_REF.id;
+}
+
 /**
  * Checks `files` against `system` under `rule`. Guide passes with its findings;
- * strict fails on any finding other than the override note; off checks nothing.
- * Auto is no standard to stray from, so a design under it is never checked.
+ * strict fails on any finding other than the override note; a design the rule
+ * does not hold to the kit is not checked.
  */
 export function checkDesignSystemAdherence(
   files: SourceFiles,
   system: DesignSystem,
   rule: DesignSystemAdherence,
 ): AdherenceResult {
-  if (rule === 'off' || system.id === AUTO_DESIGN_SYSTEM_REF.id)
-    return { status: 'passed', diagnostics: [] };
+  if (!holdsToKit(system, rule)) return { status: 'passed', diagnostics: [] };
   const kit = readKit(system);
   if (!kit.ok) return { status: 'failed', diagnostics: [kit.diagnostic] };
   const check = new DesignCheck(kit.kit);
@@ -202,14 +191,13 @@ class DesignCheck {
         this.add(ADHERENCE_CODES.font, place, utility, message);
         continue;
       }
-      const arbitrary = ARBITRARY_CLASS.exec(utility);
-      if (arbitrary) this.arbitraryClass(place, utility, arbitrary[1], arbitrary[2]);
+      const arbitrary = arbitraryUtility(utility);
+      if (arbitrary) this.arbitraryClass(place, utility, arbitrary.prefix, arbitrary.value);
     }
   }
 
   /** A `prefix-[value]` class: a font, a scale value or a colour the kit may not define. */
-  private arbitraryClass(place: Place, utility: string, prefix: string, raw: string): void {
-    const value = raw.replace(/_/g, ' ').replace(/^[a-z-]+:(?!\/)/, '');
+  private arbitraryClass(place: Place, utility: string, prefix: string, value: string): void {
     if (prefix === 'font') {
       // `font-[600]` is a weight.
       for (const family of fontFamilies(value))
@@ -268,7 +256,8 @@ class DesignCheck {
   }
 }
 
-function isTextLiteral(
+/** A string, or a template's literal part: where a class list or a style value is written. */
+export function isTextLiteral(
   node: ts.Node,
 ): node is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.TemplateLiteralLikeNode {
   return (
@@ -341,41 +330,6 @@ function styledValue(literal: ts.Node): ts.Node | null {
     node = node.parent;
   }
   return node;
-}
-
-/** `hover:data-[state=open]:bg-red-500` is `bg-red-500`; a colon inside brackets is part of it. */
-function withoutVariants(token: string): string {
-  let depth = 0;
-  let start = 0;
-  for (let index = 0; index < token.length; index += 1) {
-    const character = token[index];
-    if (character === '[') depth += 1;
-    else if (character === ']') depth -= 1;
-    else if (character === ':' && depth === 0) start = index + 1;
-  }
-  return token.slice(start).replace(/^!/, '');
-}
-
-/** Hex, colour functions and named colours, outside any `var()`. */
-function colorLiterals(value: string): string[] {
-  const found: string[] = [];
-  valueParser(value).walk((node) => {
-    if (node.type === 'function') {
-      const name = node.value.toLowerCase();
-      // `var()` names a token and `url(#fade)` a gradient, not a colour.
-      if (name === 'var' || name === 'url') return false;
-      if (!COLOR_FUNCTIONS.has(name)) return undefined;
-      found.push(valueParser.stringify(node));
-      return false;
-    }
-    if (
-      node.type === 'word' &&
-      (HEX_COLOR.test(node.value) || NAMED_COLORS.has(node.value.toLowerCase()))
-    )
-      found.push(node.value);
-    return undefined;
-  });
-  return found;
 }
 
 function scaleOfProperty(property: string): Exclude<ScaleKind, 'shadow'> | null {

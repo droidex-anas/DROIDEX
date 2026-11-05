@@ -36,3 +36,18 @@ const ADHERENCE_CODE_SET: ReadonlySet<string> = new Set(Object.values(ADHERENCE_
 export function isAdherenceDiagnostic(diagnostic: CanvasDiagnostic): boolean {
   return ADHERENCE_CODE_SET.has(diagnostic.code);
 }
+
+/** What designCodeQuality.ts reports: advice on a frame that built, never an error. */
+export const CODE_QUALITY_CODES = {
+  unused: 'code_quality_unused',
+  staticStyle: 'code_quality_static_style',
+  rawValue: 'code_quality_raw_value',
+  repeatedMarkup: 'code_quality_repeated_markup',
+  size: 'code_quality_size',
+} as const;
+
+const CODE_QUALITY_CODE_SET: ReadonlySet<string> = new Set(Object.values(CODE_QUALITY_CODES));
+
+export function isCodeQualityDiagnostic(diagnostic: CanvasDiagnostic): boolean {
+  return CODE_QUALITY_CODE_SET.has(diagnostic.code);
+}

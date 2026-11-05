@@ -20,6 +20,7 @@ import {
   type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
+import { checkCodeQuality } from './designCodeQuality.js';
 import { DESIGN_ENTRY, designEntryDiagnostic } from './designEntry.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
@@ -91,6 +92,7 @@ export async function compileDesign(
   const stylesheet = await buildDesignStylesheet(input.files, system);
   stopIfCancelled(signal);
   if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
+  const codeQuality = checkCodeQuality(input.files, system, input.designSystemAdherence);
 
   const html = previewDocument(stylesheet.css, bundle.js, input.designSystem.mode);
   return {
@@ -100,6 +102,7 @@ export async function compileDesign(
       ...selectionDiagnostics,
       ...bundle.warnings,
       ...adherence.diagnostics,
+      ...codeQuality,
     ]),
     elements: instrumented.elements,
   };
