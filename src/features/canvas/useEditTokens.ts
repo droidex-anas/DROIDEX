@@ -22,9 +22,14 @@ export function useEditTokens(
     key: string;
     byProperty: Record<string, EditToken[]>;
   } | null>(null);
-  const cached = kitKey === null ? undefined : kits.current.get(kitKey);
-  if (loaded?.key !== kitKey && (kitKey === null || cached !== undefined)) {
-    setLoaded(kitKey === null || cached === undefined ? null : { key: kitKey, byProperty: cached });
+  if (kitKey === null) {
+    if (loaded !== null) setLoaded(null);
+  } else if (loaded?.key !== kitKey) {
+    // A kit already read this session is back without a round trip; a kit
+    // never read must not wear the previous selection's tokens meanwhile.
+    const cached = kits.current.get(kitKey);
+    if (cached !== undefined) setLoaded({ key: kitKey, byProperty: cached });
+    else if (loaded !== null) setLoaded(null);
   }
   useEffect(() => {
     if (kitKey === null || system === undefined || kits.current.has(kitKey)) return;
