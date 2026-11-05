@@ -462,6 +462,8 @@ export function CanvasBoard({
         <ElementPanel
           ref={editor.panel}
           selection={editor.selection}
+          tokens={editor.tokens}
+          mode={editor.mode}
           onPreview={editor.preview}
           onRevert={editor.revert}
           onCommit={editor.commit}

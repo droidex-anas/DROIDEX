@@ -22,6 +22,7 @@ import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocume
 import type { PreviewRun } from './previewRuntime';
 import type { CanvasFrame, WriteReceipt } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
+import { useEditTokens } from './useEditTokens';
 
 export interface ElementSelection {
   draft: ElementEditDraft;
@@ -51,6 +52,12 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
    */
   const picking = useRef<{ run: PreviewRun; sequence: number } | null>(null);
   const panel = useRef<HTMLDivElement>(null);
+
+  const { tokens, mode } = useEditTokens(
+    selection
+      ? frames.find((frame) => frame.designId === selection.draft.element.designId)?.designSystem
+      : undefined,
+  );
 
   if (!active && (selection !== null || error !== '')) {
     setSelection(null);
@@ -206,7 +213,9 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   /** Enter in Edit: into the panel when `designId` holds the selected element, else its first element. */
   const enter = (designId: string) => {
     if (latest.current.selection?.draft.element.designId === designId)
-      panel.current?.querySelector<HTMLElement>('input')?.focus();
+      panel.current
+        ?.querySelector<HTMLElement>('input:not([readonly]), button:not([disabled])')
+        ?.focus();
     else pick(designId, { step: 'first' });
   };
 
@@ -234,6 +243,8 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     error,
     selections,
     panel,
+    tokens,
+    mode,
     pick,
     clear,
     preview,
