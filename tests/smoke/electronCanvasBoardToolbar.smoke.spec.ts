@@ -1,6 +1,6 @@
 // The selected frame's toolbar against the harness: rename, the version
-// menu and switching, Source and More, the keyboard's way through it, and
-// when it steps aside.
+// menu and switching, Source, Variants and More, the keyboard's way through
+// it, and when it steps aside.
 
 import { expect, test } from '@playwright/test';
 import { box, boardUrl, frame, openBoard, serveBoard } from './board/boardPage';
@@ -113,9 +113,9 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
 
   await page.keyboard.press('Enter');
   const menu = page.getByRole('menu', { name: 'More for Design B' });
-  await expect(menu.getByRole('menuitem', { name: 'Make variants…' })).toBeFocused();
+  await expect(menu.getByRole('menuitem', { name: 'Save to library…' })).toBeFocused();
   await page.keyboard.press('Enter');
-  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['variants:b']);
+  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['save:b']);
   await expect(menu).toHaveCount(0);
   await expect(more).toBeFocused();
 
@@ -130,6 +130,41 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   await page.keyboard.press('ArrowRight');
   await expect(versions).toBeFocused();
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('Variants asks for three in one click, and its options choose kind, count and direction', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  const toolbar = page.getByRole('toolbar', { name: 'Design B actions' });
+
+  // A second click while the first set is being made makes no second set.
+  const variants = toolbar.getByRole('button', { name: 'Make 3 variants of Design B' });
+  await variants.click();
+  await variants.click();
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toEqual([
+    { designId: 'b', kind: 'any', count: 3, direction: '' },
+  ]);
+  await page.evaluate(() => window.boardHarness.answerVariants(0));
+
+  const chevron = toolbar.getByRole('button', { name: 'Variant options for Design B' });
+  await chevron.click();
+  const options = page.getByRole('dialog', { name: 'Variants of Design B' });
+  await options.getByRole('button', { name: 'Colour' }).click();
+  await expect(options.getByRole('button', { name: 'Colour' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await options.getByRole('button', { name: '2', exact: true }).click();
+  await options.getByRole('textbox', { name: 'Direction (optional)' }).fill('warmer, rounder');
+  await page.keyboard.press('Enter');
+  await expect(options).toHaveCount(0);
+  await expect(chevron).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toEqual([
+    { designId: 'b', kind: 'any', count: 3, direction: '' },
+    { designId: 'b', kind: 'colour', count: 2, direction: 'warmer, rounder' },
+  ]);
 });
 
 test('the toolbar steps aside while a drag holds the frame and offers only Done in Interact', async ({

@@ -316,6 +316,11 @@
   padding: 0 10px;
 }
 
+/* Opens the options of the text tool before it, as one split button. */
+.canvas-frame-tool-chevron {
+  width: 18px;
+}
+
 /* The version on show, as a tinted chip that opens the list of versions. */
 .canvas-frame-version {
   width: auto;

@@ -15,6 +15,7 @@ import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
+import type { VariantChoice } from '../../../src/features/canvas/variantRequests';
 import type { EditElementInput } from '../../../src/features/canvas/elementEditProtocol';
 import type {
   ArrangeFramesInput,
@@ -86,6 +87,9 @@ interface BoardHarness {
   refuseSwitch: (index: number) => void;
   /** The toolbar's dialogs asked for, as `<kind>:<designId>`. */
   dialogs: string[];
+  variantCalls: (VariantChoice & { designId: string })[];
+  /** Settles one variants request, as its send does. */
+  answerVariants: (index: number) => void;
 }
 
 declare global {
@@ -283,6 +287,8 @@ const renameReplies: PromiseWithResolvers<void>[] = [];
 const switchCalls: SwitchRevisionInput[] = [];
 const switchReplies: PromiseWithResolvers<void>[] = [];
 const dialogs: string[] = [];
+const variantCalls: BoardHarness['variantCalls'] = [];
+const variantReplies: PromiseWithResolvers<void>[] = [];
 const frameActions: FrameActions = {
   history: {
     listRevisions: (designId) => {
@@ -310,7 +316,12 @@ const frameActions: FrameActions = {
     renameReplies.push(reply);
     return reply.promise;
   },
-  makeVariants: (frame) => dialogs.push(`variants:${frame.designId}`),
+  makeVariants: (frame, choice) => {
+    variantCalls.push({ designId: frame.designId, ...choice });
+    const reply = Promise.withResolvers<void>();
+    variantReplies.push(reply);
+    return reply.promise;
+  },
   saveToLibrary: (frame) => dialogs.push(`save:${frame.designId}`),
 };
 
@@ -502,6 +513,10 @@ function Harness() {
     refuseSwitch: (index) =>
       switchReplies[index].reject(new CanvasRequestError('revision_conflict', 'The head moved.')),
     dialogs,
+    variantCalls,
+    answerVariants: (index) => {
+      variantReplies[index].resolve();
+    },
   };
   return (
     <div style={{ padding: 24 }}>
