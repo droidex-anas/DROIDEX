@@ -147,6 +147,11 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
   assert.equal(css.modes.dark['--ds-focus'], 'hsl(210 40% 98%)');
   assert.equal(css.modes.light['--ds-danger'], STARTER_TOKENS.light['--ds-danger']);
   assert.deepEqual(css.unmapped, ['--ds-chart-1']);
+  // A mapped name stays in the kit as an alias of the contract token, out of unmapped.
+  assert.equal(css.modes.light['--ds-primary'], 'var(--ds-accent)');
+  assert.equal(css.modes.dark['--ds-primary'], 'var(--ds-accent)');
+  assert.equal(css.modes.light['--ds-background'], 'var(--ds-canvas)');
+  assert.equal(css.modes.light['--ds-ring'], 'var(--ds-focus)');
 
   const fromConfig = await importKit(canvas, 'from-config', {
     kind: 'cssOrTailwind',
@@ -160,6 +165,7 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
   assert.equal(config.modes.dark['--ds-accent'], '#123456');
   assert.equal(config.modes.light['--ds-radius-lg'], '14px');
   assert.deepEqual(config.unmapped, ['--ds-color-brand-500']);
+  assert.equal(config.modes.dark['--ds-color-brand'], 'var(--ds-accent)');
 
   // A stylesheet that does not parse saves nothing.
   await canvas.handle({
