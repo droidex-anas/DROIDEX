@@ -39,6 +39,7 @@ import {
   type BoardInteractionEvent,
   type BoardMode,
 } from './canvasState';
+import type { CanvasPresence } from './canvasPresence';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
@@ -92,8 +93,7 @@ export interface CanvasBoardProps {
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
-  /** This chat's agent has a turn running, so frames with no source are being written. */
-  agentWorking: boolean;
+  presence: CanvasPresence;
   onOpenSource?: (designId: string) => void;
   /** The frames pinned to the chat's next prompt. */
   pinnedIds?: ReadonlySet<string>;
@@ -118,7 +118,7 @@ export function CanvasBoard({
   renderPreview,
   interaction,
   onInteractionChange,
-  agentWorking,
+  presence,
   onOpenSource,
   pinnedIds,
   onToggleChat,
@@ -398,7 +398,7 @@ export function CanvasBoard({
               showTools={showsFrameTools(interaction, frame.designId)}
               interacted={interaction.interactedFrameId === frame.designId}
               held={gestures.heldDesignId === frame.designId}
-              agentWorking={agentWorking}
+              worker={presence.get(frame.designId)}
               capturePointer={overlayCapture}
               shownRevisionId={previews.shown.get(frame.designId) ?? null}
               preview={previews.preview(frame)}

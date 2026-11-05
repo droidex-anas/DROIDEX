@@ -1,0 +1,192 @@
+// Who is at work on which frame of a board, read from the board's chat: the
+// frames its running canvas creates and writes name, and the frames still
+// waiting for their first source while the agent that made them is live. An
+// agent is the chat itself or one of its child sessions, and each one present
+// gets a name and a colour of its own.
+
+import { PRESENCE_COLORS, type PresenceColor } from '../../lib/themeTokens';
+import type { TranscriptEvent } from '../../types/bridge';
+import type { CanvasFrame } from './protocol';
+
+export interface PresenceAgent {
+  /** The chat's id for its own agent, or `<chat>/<child session>` for a child's. */
+  key: string;
+  name: string;
+  color: PresenceColor;
+}
+
+/** The agent at work on each frame, by design id. */
+export type CanvasPresence = ReadonlyMap<string, PresenceAgent>;
+
+export const NO_PRESENCE: CanvasPresence = new Map();
+
+const AGENT_NAMES = [
+  'Kairo',
+  'Lyra',
+  'Juno',
+  'Orin',
+  'Vega',
+  'Nova',
+  'Sable',
+  'Iris',
+  'Atlas',
+  'Rhea',
+  'Soren',
+  'Wren',
+] as const;
+const COLORS = Object.keys(PRESENCE_COLORS.light) as PresenceColor[];
+const PRIMARY = 'primary';
+
+export interface PresenceSources {
+  appSessionId: string;
+  /** The chat's loaded transcript, its child sessions' events included. */
+  events: readonly TranscriptEvent[];
+  /** The chat's own turn is running. */
+  primaryLive: boolean;
+  /** The child sessions with a turn running. */
+  liveChildren: ReadonlySet<string>;
+}
+
+/**
+ * Reads the chat's current turn, from its latest prompt on. A canvas create or
+ * write without its result yet is running; a frame it names is being worked on
+ * while its agent is live. A frame with no source yet belongs to the agent
+ * whose create made it this turn, otherwise to the chat while its turn runs.
+ */
+export function canvasPresence(
+  sources: PresenceSources,
+  frames: readonly Pick<CanvasFrame, 'designId' | 'revisionId'>[],
+): CanvasPresence {
+  const { primaryLive, liveChildren } = sources;
+  if (!primaryLive && liveChildren.size === 0) return NO_PRESENCE;
+  const isLive = (source: string) => (source === PRIMARY ? primaryLive : liveChildren.has(source));
+  const work = turnWork(sources.events);
+  const workers = frameWorkers(work, frames, isLive);
+  if (workers.size === 0) return NO_PRESENCE;
+
+  const present = new Set(workers.values());
+  const agents = assignAgents(
+    sources.appSessionId,
+    new Set([...work.arrivals, PRIMARY].filter((source) => present.has(source))),
+  );
+  const presence = new Map<string, PresenceAgent>();
+  for (const [designId, source] of workers) {
+    const agent = agents.get(source);
+    if (agent) presence.set(designId, agent);
+  }
+  return presence;
+}
+
+/** What the turn's canvas calls say, by agent: `PRIMARY` or a child session id. */
+interface TurnWork {
+  /** Each create or write still running: its agent and the frames it names. */
+  running: { source: string; designIds: string[] }[];
+  /** The agent whose create this turn made each frame. */
+  createdBy: ReadonlyMap<string, string>;
+  /** Agents in the order they first touched the canvas, so one keeps its look when another joins. */
+  arrivals: ReadonlySet<string>;
+}
+
+function turnWork(events: readonly TranscriptEvent[]): TurnWork {
+  const running = new Map<string, { source: string; designIds: string[] }>();
+  const createdBy = new Map<string, string>();
+  const arrivals = new Set<string>();
+  for (let index = turnStart(events); index < events.length; index += 1) {
+    const event = events[index];
+    const activity = event.canvasActivity;
+    if (activity?.action !== 'create' && activity?.action !== 'write') continue;
+    const source = event.role === 'primary' ? PRIMARY : event.sourceSessionId;
+    const call = `${source}\0${activity.toolUseId}`;
+    arrivals.add(source);
+    if (event.kind === 'tool_call' && activity.state === 'running') {
+      running.set(call, { source, designIds: activity.designIds });
+      continue;
+    }
+    running.delete(call);
+    if (activity.action === 'create' && activity.state === 'completed')
+      for (const designId of activity.designIds) createdBy.set(designId, source);
+  }
+  return { running: [...running.values()], createdBy, arrivals };
+}
+
+/** The agent at work on each frame on the board, by design id. */
+function frameWorkers(
+  work: TurnWork,
+  frames: readonly Pick<CanvasFrame, 'designId' | 'revisionId'>[],
+  isLive: (source: string) => boolean,
+): Map<string, string> {
+  const onBoard = new Set(frames.map((frame) => frame.designId));
+  const workers = new Map<string, string>();
+  for (const { source, designIds } of work.running) {
+    if (!isLive(source)) continue;
+    for (const designId of designIds) if (onBoard.has(designId)) workers.set(designId, source);
+  }
+  for (const frame of frames) {
+    if (frame.revisionId !== null || workers.has(frame.designId)) continue;
+    const source = work.createdBy.get(frame.designId) ?? PRIMARY;
+    if (isLive(source)) workers.set(frame.designId, source);
+  }
+  return workers;
+}
+/** Where the chat's latest turn starts: its own latest prompt that was not a steer. */
+function turnStart(events: readonly TranscriptEvent[]): number {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.author === 'user' && event.role === 'primary' && !event.steered) return index;
+  }
+  return 0;
+}
+
+/**
+ * Each agent's name and colour, from a hash of its stable identity. An agent
+ * whose pick another present agent already holds takes the next free one, in
+ * order of arrival, so two agents on one board never look alike while there
+ * are enough colours.
+ */
+function assignAgents(
+  appSessionId: string,
+  sources: ReadonlySet<string>,
+): Map<string, PresenceAgent> {
+  const names = new Set<string>();
+  const colors = new Set<PresenceColor>();
+  const agents = new Map<string, PresenceAgent>();
+  for (const source of sources) {
+    const key = source === PRIMARY ? appSessionId : `${appSessionId}/${source}`;
+    const hash = fnv1a(key);
+    const name = pick(AGENT_NAMES, hash, names);
+    const color = pick(COLORS, Math.floor(hash / AGENT_NAMES.length), colors);
+    names.add(name);
+    colors.add(color);
+    agents.set(source, { key, name, color });
+  }
+  return agents;
+}
+
+function pick<T>(options: readonly T[], hash: number, taken: ReadonlySet<T>): T {
+  for (let step = 0; step < options.length; step += 1) {
+    const option = options[(hash + step) % options.length];
+    if (!taken.has(option)) return option;
+  }
+  return options[hash % options.length];
+}
+
+function fnv1a(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/** Whether two presences show the same agents on the same frames. */
+export function samePresence(left: CanvasPresence, right: CanvasPresence): boolean {
+  if (left === right) return true;
+  if (left.size !== right.size) return false;
+  for (const [designId, agent] of left) {
+    const other = right.get(designId);
+    if (other?.key !== agent.key || other.name !== agent.name || other.color !== agent.color)
+      return false;
+  }
+  return true;
+}

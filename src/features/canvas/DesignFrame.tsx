@@ -20,10 +20,12 @@ import {
 } from '@droidex/icons';
 import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
+import type { PresenceAgent } from './canvasPresence';
 import type { BoardMode } from './canvasState';
 import { FrameLabel, FrameNameField } from './FrameLabel';
 import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
+import { FrameWorkingState } from './FrameWorkingState';
 import { PendingBloom } from './PendingBloom';
 import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
@@ -56,8 +58,8 @@ export interface DesignFrameProps {
   interacted: boolean;
   /** A hand gesture is holding this frame right now. */
   held: boolean;
-  /** This chat's agent has a turn running, so a frame with no source is being written. */
-  agentWorking: boolean;
+  /** The agent at work on this frame, if any. */
+  worker: PresenceAgent | undefined;
   /**
    * Spec §4: Select and Edit install a transparent overlay over the guest and
    * Interact removes it. The board owns when flipping it is safe; this only paints it.
@@ -181,6 +183,7 @@ export function DesignFrame(props: DesignFrameProps) {
         className="canvas-sheet"
       >
         <FrameBody {...props} />
+        <FrameWorkingState {...props} />
         <RebuildBadge {...props} />
         {capturePointer && (
           <div
@@ -301,11 +304,11 @@ function FrameBody({
   shownRevisionId,
   preview,
   released,
-  agentWorking,
+  worker,
   onOpenSource,
 }: DesignFrameProps) {
   if (preview) return preview;
-  const state = sheetState(frame, shownRevisionId, agentWorking, released);
+  const state = sheetState(frame, shownRevisionId, worker !== undefined, released);
   const fits = (box: { width: number; height: number }) =>
     rect.width * scale >= box.width && rect.height * scale >= box.height;
   const content = (

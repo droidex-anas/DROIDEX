@@ -14,6 +14,7 @@ export default defineConfig({
     'electronCanvasBoardToolbar.smoke.spec.ts',
     'electronCanvasNavigator.smoke.spec.ts',
     'electronCanvasLibrary.smoke.spec.ts',
+    'electronCanvasPresence.smoke.spec.ts',
   ],
   timeout: 120_000,
   workers: 1,

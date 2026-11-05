@@ -19,6 +19,7 @@ import { DesignPreview } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
+import { useCanvasPresence } from './useCanvasPresence';
 import { useFrameActions } from './useFrameActions';
 
 const LazyDesignSystemDocument = lazy(async () => ({
@@ -96,6 +97,7 @@ export function CanvasBoardMount({
   );
   const { frames } = snapshot;
   useCoverCapture(canvasId, frames);
+  const presence = useCanvasPresence(appSessionId, frames);
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
   useEffect(() => {
@@ -153,7 +155,7 @@ export function CanvasBoardMount({
           onUndoRemoval={undoRemoval}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
-          agentWorking={agentWorking}
+          presence={presence}
           pinnedIds={pinnedIds}
           frameActions={frameActions.actions}
           onToggleChat={

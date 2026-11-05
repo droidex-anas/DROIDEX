@@ -1,0 +1,52 @@
+/* A frame an agent is at work on (FrameWorkingState). Chrome-sized like the
+   board's own: lengths divide by --board-scale so the edge and the lattice keep
+   their screen size at any zoom. Only opacity moves. */
+
+.canvas-working {
+  position: absolute;
+  inset: 0;
+  /* Above the sheet's own message, which it stands in for while the sheet is
+     blank; the Select overlay below still takes every press. */
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.canvas-working-sheet {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: var(--raised);
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--text) 13%, transparent) calc(0.6px / var(--board-scale)),
+    transparent calc(1px / var(--board-scale))
+  );
+  background-size: calc(8px / var(--board-scale)) calc(8px / var(--board-scale));
+}
+
+/* The agent's edge, inside the sheet's clip and over what the agent draws. */
+.canvas-working::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 calc(2px / var(--board-scale)) var(--worker);
+}
+
+/* Selection's edge is the one that answers the user. */
+.canvas-frame[data-selected] .canvas-working::after {
+  content: none;
+}
+
+@keyframes canvas-working-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes canvas-working-out {
+  to {
+    opacity: 0;
+  }
+}
