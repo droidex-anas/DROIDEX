@@ -78,31 +78,77 @@ export function fullTokenName(bare: string): string {
   return bare.startsWith('--') ? bare : KIT_TOKEN_PREFIX + bare;
 }
 
-const KIT_REFERENCE = /var\(--ds-([a-z0-9]+(?:-[a-z0-9]+)*)\)/g;
-// A whole word of a value: not part of a longer name, a number's unit or a function's name.
-const VALUE_WORD = /(?<![\w-])[a-z0-9]+(?:-[a-z0-9]+)*(?![\w(-])/g;
+// A reference to a kit token reads and is typed as {accent}, or {accent, red}
+// with a fallback. A token value cannot hold a brace, so the form is never CSS.
+const VAR_REFERENCE = /^\s*--ds-([a-z0-9]+(?:-[a-z0-9]+)*)\s*(?:,([\s\S]*))?$/;
+const BRACE_REFERENCE = /^\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*(?:,([\s\S]*))?$/;
+const REFERENCED_NAME = /var\(\s*(--[a-z0-9]+(?:-[a-z0-9]+)*)\s*[,)]/g;
+const CLOSING_BRACKET: Record<string, string> = { '(': ')', '{': '}' };
 
-/** What the document shows of a value: a reference to a kit token reads as its bare name, so `var(--ds-accent)` is "accent". */
-export function displayTokenValue(value: string): string {
-  return value.replace(KIT_REFERENCE, (_reference, bare: string) => bare);
+interface KitReference {
+  name: string;
+  /** What CSS uses where the token is not set, or null without one. */
+  fallback: string | null;
 }
 
-/**
- * What an edit keeps of `text`, typed over what `was` showed: a name shown for
- * one of `was`'s references refers again, and a value that is only a token's
- * bare name refers to that token. Any other word stands as typed.
- */
-export function storedTokenValue(
-  text: string,
-  was: string,
-  tokenNames: ReadonlySet<string>,
-): string {
-  const whole = fullTokenName(text);
-  if (tokenNames.has(whole)) return `var(${whole})`;
-  const referenced = new Set(Array.from(was.matchAll(KIT_REFERENCE), ([, bare]) => bare));
-  return text.replace(VALUE_WORD, (word) =>
-    referenced.has(word) ? `var(${KIT_TOKEN_PREFIX}${word})` : word,
+/** What the document shows of a value: `var(--ds-accent)` is `{accent}`, `var(--ds-accent, red)` is `{accent, red}`. */
+export function displayTokenValue(value: string): string {
+  return rewriteReferences(value, 'var(', VAR_REFERENCE, ({ name, fallback }) =>
+    fallback === null ? `{${name}}` : `{${name}, ${displayTokenValue(fallback)}}`,
   );
+}
+
+/** The CSS a value typed as the document shows it stands for: `{accent}` is `var(--ds-accent)`. */
+export function cssTokenValue(text: string): string {
+  return rewriteReferences(text, '{', BRACE_REFERENCE, ({ name, fallback }) => {
+    const token = KIT_TOKEN_PREFIX + name;
+    return fallback === null ? `var(${token})` : `var(${token}, ${cssTokenValue(fallback)})`;
+  });
+}
+
+/** Why the token `name` cannot hold the CSS `value` as far as references go, or null. */
+export function selfReferenceProblem(name: string, value: string): string | null {
+  const referred = Array.from(value.matchAll(REFERENCED_NAME), (match) => match[1]);
+  return referred.includes(name) ? `${bareTokenName(name)} cannot refer to itself.` : null;
+}
+
+// Each reference from `opener` to its balanced closing bracket whose inside
+// `inner` reads is rewritten by `write`; everything else stays as it is.
+function rewriteReferences(
+  text: string,
+  opener: 'var(' | '{',
+  inner: RegExp,
+  write: (reference: KitReference) => string,
+): string {
+  let rewritten = '';
+  let copiedTo = 0;
+  let start = text.indexOf(opener);
+  while (start >= 0) {
+    const contentStart = start + opener.length;
+    const end = closingBracket(text, contentStart - 1);
+    const match = end < 0 ? null : inner.exec(text.slice(contentStart, end));
+    if (match) {
+      rewritten +=
+        text.slice(copiedTo, start) +
+        write({ name: match[1], fallback: match.at(2)?.trim() ?? null });
+      copiedTo = end + 1;
+    }
+    start = text.indexOf(opener, match ? copiedTo : contentStart);
+  }
+  return rewritten + text.slice(copiedTo);
+}
+
+/** Where the bracket at `open` closes, counting the same brackets inside it, or -1. */
+function closingBracket(text: string, open: number): number {
+  const opening = text[open];
+  const closing = CLOSING_BRACKET[opening];
+  let depth = 0;
+  for (let index = open; index < text.length; index += 1) {
+    if (text[index] === opening) depth += 1;
+    if (text[index] === closing) depth -= 1;
+    if (depth === 0) return index;
+  }
+  return -1;
 }
 
 /** What a note's label reads as: "1-rules.md" is "Rules", "design-engineering.md" "Design engineering". */

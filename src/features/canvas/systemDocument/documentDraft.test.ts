@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import type {
   DocumentAsset,
   DocumentNote,
@@ -19,9 +19,10 @@ import {
 import {
   changedTokenValues,
   changeSummary,
+  cssTokenValue,
   displayTokenValue,
   draftDiff,
-  storedTokenValue,
+  selfReferenceProblem,
   tokenKey,
   withItems,
   withRemoved,
@@ -217,21 +218,38 @@ test('live previews get only the draft values that differ in their mode and a sa
   discardDraft('tokens');
 });
 
-test('a reference shows as its bare name, and an edit keeps the references it showed', () => {
-  const names = new Set(['--ds-bg', '--ds-accent']);
-  const mixed = 'color-mix(in srgb, var(--ds-accent) 20%, white)';
-  assert.equal(displayTokenValue('var(--ds-accent)'), 'accent');
-  assert.equal(displayTokenValue(mixed), 'color-mix(in srgb, accent 20%, white)');
-  assert.equal(storedTokenValue('bg', '#fff', names), 'var(--ds-bg)');
-  assert.equal(
-    storedTokenValue('color-mix(in srgb, accent 30%, white)', mixed, names),
-    'color-mix(in srgb, var(--ds-accent) 30%, white)',
-  );
-  // Inside a longer value, only a name the edited value referred to refers again.
-  assert.equal(
-    storedTokenValue('color-mix(in srgb, bg 30%, white)', mixed, names),
-    'color-mix(in srgb, bg 30%, white)',
-  );
+describe('a reference to another token reads and is typed as {name}', () => {
+  test('an exact reference, a fallback and a nested fallback round-trip', () => {
+    for (const [css, shown] of [
+      ['var(--ds-accent)', '{accent}'],
+      ['var(--ds-accent, red)', '{accent, red}'],
+      ['var(--ds-a, var(--ds-b))', '{a, {b}}'],
+    ]) {
+      assert.equal(displayTokenValue(css), shown);
+      assert.equal(cssTokenValue(shown), css);
+    }
+  });
+
+  test('a reference written with spaces reads the same and saves without them', () => {
+    assert.equal(displayTokenValue('var( --ds-accent )'), '{accent}');
+    assert.equal(cssTokenValue('{ accent }'), 'var(--ds-accent)');
+  });
+
+  test('a literal spelled like a token stays literal, beside its reference or alone', () => {
+    const shown = displayTokenValue('color-mix(in srgb, var(--ds-red) 20%, red)');
+    assert.equal(shown, 'color-mix(in srgb, {red} 20%, red)');
+    assert.equal(
+      cssTokenValue(shown.replace('20%', '30%')),
+      'color-mix(in srgb, var(--ds-red) 30%, red)',
+    );
+    assert.equal(cssTokenValue('red'), 'red');
+  });
+
+  test('a value may refer to any token but its own', () => {
+    const own = cssTokenValue('color-mix(in srgb, {accent} 20%, red)');
+    assert.equal(selfReferenceProblem('--ds-accent', own), 'accent cannot refer to itself.');
+    assert.equal(selfReferenceProblem('--ds-accent', 'var(--ds-missing, red)'), null);
+  });
 });
 
 test('a removed note shows where it was, Undo puts it back there, and undoing every edit ends the draft', () => {

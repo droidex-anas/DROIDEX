@@ -1,6 +1,6 @@
 // The form under a token group that adds a token to it (spec §6). The name is
 // typed bare, as the document shows it; the kit's --ds- prefix is added back.
-// A value that is another token's bare name refers to it.
+// A reference to another token in the value is typed as {name}, as it shows.
 
 import { useEffect, useRef, useState } from 'react';
 import { Plus } from '@droidex/icons';
@@ -10,7 +10,7 @@ import { pushEscapeLayer } from '../../../components/ui/escapeStack';
 import type { TokenKind } from '../designSystemDocumentProtocol';
 import { isTokenName } from '../designSystemDocumentValidation';
 import type { DraftChange } from './documentDraft';
-import { fullTokenName, storedTokenValue } from './documentSections';
+import { cssTokenValue, fullTokenName, selfReferenceProblem } from './documentSections';
 import { tokenValueProblem } from './specimenStyle';
 
 export function AddToken({
@@ -68,7 +68,7 @@ export function AddToken({
 
   const add = () => {
     const trimmed = name.trim();
-    const stored = storedTokenValue(value.trim(), '', tokenNames);
+    const stored = cssTokenValue(value.trim());
     const why = newTokenProblem(kind, trimmed, stored, tokenNames);
     if (why !== null) {
       setProblem(why);
@@ -147,5 +147,5 @@ function newTokenProblem(
   if (!isTokenName(name))
     return 'A token name is lowercase words joined by hyphens, such as accent or space-2.';
   if (tokenNames.has(name)) return `${bare} is already in this design system.`;
-  return tokenValueProblem(kind, value);
+  return selfReferenceProblem(name, value) ?? tokenValueProblem(kind, value);
 }

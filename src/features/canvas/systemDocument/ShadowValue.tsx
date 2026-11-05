@@ -36,7 +36,6 @@ export function ShadowValue({
   kind,
   label,
   surfaces,
-  tokenNames,
   isRemoved,
   onCommit,
 }: {
@@ -47,8 +46,6 @@ export function ShadowValue({
   label: string;
   /** The kit's specimen tokens in each mode the value is for, which the tiles paint. */
   surfaces: CSSProperties[];
-  /** Every token name in the draft, which a typed bare name may refer to. */
-  tokenNames: ReadonlySet<string>;
   isRemoved: boolean;
   /** Null for a value that cannot be edited. */
   onCommit: ((value: string) => void) | null;
@@ -73,10 +70,10 @@ export function ShadowValue({
         />
       ) : (
         <TokenValue
+          name={name}
           value={value}
           kind={kind}
           label={label}
-          tokenNames={tokenNames}
           isRemoved={isRemoved}
           onCommit={onCommit}
         />

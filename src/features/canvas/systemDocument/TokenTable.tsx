@@ -156,7 +156,6 @@ export function TokenTable({
                 specimens={specimens}
                 mark={marks.get(tokenKey(token.name))}
                 base={baseTokens.get(token.name)}
-                tokenNames={tokenNames}
                 hasSpecimen={hasSpecimen}
                 onChange={onChange}
               />
@@ -187,7 +186,6 @@ const TokenRow = memo(function TokenRow({
   specimens,
   mark,
   base,
-  tokenNames,
   hasSpecimen,
   onChange,
 }: {
@@ -199,7 +197,6 @@ const TokenRow = memo(function TokenRow({
   specimens: Specimens;
   mark: DraftMark | undefined;
   base: DocumentToken | undefined;
-  tokenNames: ReadonlySet<string>;
   hasSpecimen: boolean;
   onChange: ((change: DraftChange) => void) | null;
 }) {
@@ -220,7 +217,6 @@ const TokenRow = memo(function TokenRow({
       shape={shape}
       kitId={kitId}
       specimens={specimens}
-      tokenNames={tokenNames}
       isRemoved={isRemoved}
       onSet={setValue}
     />

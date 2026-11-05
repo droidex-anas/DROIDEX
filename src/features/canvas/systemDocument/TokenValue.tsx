@@ -1,30 +1,30 @@
 // A token's value as text (spec §5). One number and a unit, such as 12px,
 // shows the unit as a quiet suffix; editing changes the number and keeps the
 // unit unless another is typed. A reference to another token shows and is
-// typed as that token's bare name.
+// typed as {name}.
 
 import { cn } from '../../../components/ui/cn';
 import type { TokenKind } from '../designSystemDocumentProtocol';
-import { displayTokenValue, storedTokenValue } from './documentSections';
+import { cssTokenValue, displayTokenValue, selfReferenceProblem } from './documentSections';
 import { InlineField } from './InlineField';
 import { tokenValueProblem } from './specimenStyle';
 import { splitUnit, withUnit } from './tokenUnit';
 
 export function TokenValue({
+  name,
   value,
   kind,
   label,
-  tokenNames,
   isRemoved,
   onDraft,
   onCommit,
 }: {
+  /** The token's name, which its value may not refer to. */
+  name: string;
   value: string;
   kind: TokenKind;
   /** What the value is, such as "Value of space-2". */
   label: string;
-  /** Every token name in the draft, which a typed bare name may refer to. */
-  tokenNames: ReadonlySet<string>;
   isRemoved: boolean;
   /** Follows the value being edited, then null. */
   onDraft?: (value: string | null) => void;
@@ -46,14 +46,16 @@ export function TokenValue({
       </span>
     );
 
-  const edited = (text: string) =>
-    storedTokenValue(unit ? withUnit(text, unit.unit) : text, value, tokenNames);
+  const edited = (text: string) => cssTokenValue(unit ? withUnit(text, unit.unit) : text);
   return (
     <InlineField
       value={unit ? unit.number : shown}
       suffix={unit?.unit}
       label={label}
-      check={(text) => tokenValueProblem(kind, edited(text))}
+      check={(text) => {
+        const css = edited(text);
+        return selfReferenceProblem(name, css) ?? tokenValueProblem(kind, css);
+      }}
       onDraft={
         onDraft &&
         ((text) => {
