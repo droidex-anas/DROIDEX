@@ -1,0 +1,100 @@
+// One choice among a few, as a design tool shows it: a row of icon or short
+// text segments with radio semantics. Arrow keys move the choice like native
+// radios; picking a segment applies it at once.
+
+import { useId, useRef, type KeyboardEvent, type RefObject } from 'react';
+import type { IconComponent } from '@droidex/icons';
+import { cn } from '../../components/ui/cn';
+import { Tooltip } from '../../components/ui/Tooltip';
+
+export interface Segment<T extends string> {
+  value: T;
+  /** The accessible name; also the tooltip when the segment shows an icon. */
+  label: string;
+  icon?: IconComponent;
+  /** Extra classes for the icon, such as a flip for a reversed direction. */
+  iconClassName?: string;
+}
+
+export function SegmentedControl<T extends string>({
+  label,
+  options,
+  value,
+  disabled,
+  selectedRef,
+  onPick,
+}: {
+  label: string;
+  options: readonly Segment<T>[];
+  /** The chosen value, or '' when the element's value matches no segment. */
+  value: T | '';
+  disabled: boolean;
+  /** Takes the chosen segment, so a caller can focus the group. */
+  selectedRef?: RefObject<HTMLButtonElement | null>;
+  onPick: (value: T) => void;
+}) {
+  const labelId = useId();
+  const groupRef = useRef<HTMLDivElement>(null);
+  const current = options.findIndex((option) => option.value === value);
+  const onKeyDown = (event: KeyboardEvent) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const next = (Math.max(current, 0) + step + options.length) % options.length;
+    const option = options.at(next);
+    if (option === undefined) return;
+    onPick(option.value);
+    groupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <span id={labelId} className="text-label text-muted">
+        {label}
+      </span>
+      <div
+        ref={groupRef}
+        role="radiogroup"
+        aria-labelledby={labelId}
+        onKeyDown={onKeyDown}
+        className="flex h-control-sm items-stretch gap-0.5 rounded-md bg-field p-0.5"
+      >
+        {options.map((option, index) => {
+          const selected = option.value === value;
+          const button = (
+            <button
+              ref={selected ? selectedRef : undefined}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              aria-label={option.label}
+              tabIndex={selected || (current === -1 && index === 0) ? 0 : -1}
+              disabled={disabled}
+              onClick={() => {
+                onPick(option.value);
+              }}
+              className={cn(
+                'flex h-full w-full min-w-0 flex-1 cursor-pointer items-center justify-center rounded-sm px-1 transition-colors duration-quick ease-smooth-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default',
+                selected ? 'bg-active text-primary' : 'text-muted hover:text-primary',
+              )}
+            >
+              {option.icon ? (
+                <option.icon aria-hidden className={cn('size-icon-sm', option.iconClassName)} />
+              ) : (
+                <span className="truncate text-label">{option.label}</span>
+              )}
+            </button>
+          );
+          return option.icon ? (
+            <Tooltip key={option.value} label={option.label} className="min-w-0 flex-1">
+              {button}
+            </Tooltip>
+          ) : (
+            <span key={option.value} className="min-w-0 flex-1">
+              {button}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

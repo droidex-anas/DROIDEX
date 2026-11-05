@@ -124,3 +124,180 @@ export const Boxes = createIcon(
     <path d="M16.5 16.5v4" />
   </>,
 );
+/* ── the inspector's glyphs: flex alignment and justification, text alignment,
+   border styles, and wrap, drawn for a row direction ── */
+
+/** A small filled bar, as these glyphs draw the items a flex row holds. */
+function bar(x: number, y: number, width: number, height: number) {
+  return (
+    <rect
+      key={`${String(x)}-${String(y)}`}
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      rx="1.2"
+      fill="currentColor"
+      stroke="none"
+    />
+  );
+}
+
+/** The line an alignment glyph sits its bars against. */
+function guide(d: string) {
+  return <path d={d} />;
+}
+
+export const AlignItemsStart = createIcon(
+  'align-items-start',
+  <>
+    {guide('M3 4.5h18')}
+    {bar(6.5, 6.5, 4.5, 8)}
+    {bar(13, 6.5, 4.5, 5.5)}
+  </>,
+);
+
+export const AlignItemsCenter = createIcon(
+  'align-items-center',
+  <>
+    {guide('M3 12h18')}
+    {bar(6.5, 8, 4.5, 8)}
+    {bar(13, 9.5, 4.5, 5)}
+  </>,
+);
+
+export const AlignItemsEnd = createIcon(
+  'align-items-end',
+  <>
+    {guide('M3 19.5h18')}
+    {bar(6.5, 10, 4.5, 8)}
+    {bar(13, 12.5, 4.5, 5.5)}
+  </>,
+);
+
+export const AlignItemsBaseline = createIcon(
+  'align-items-baseline',
+  <>
+    {guide('M3 16.5h18')}
+    {bar(6.5, 7.5, 4.5, 9)}
+    {bar(13, 10.5, 4.5, 6)}
+  </>,
+);
+
+export const AlignItemsStretch = createIcon(
+  'align-items-stretch',
+  <>
+    {bar(6.5, 5, 4.5, 14)}
+    {bar(13, 5, 4.5, 14)}
+  </>,
+);
+
+export const JustifyStart = createIcon(
+  'justify-start',
+  <>
+    {bar(4, 7, 3.5, 10)}
+    {bar(8.5, 7, 3.5, 10)}
+    {bar(13, 7, 3.5, 10)}
+  </>,
+);
+
+export const JustifyCenter = createIcon(
+  'justify-center',
+  <>
+    {bar(6, 7, 3.5, 10)}
+    {bar(10.5, 7, 3.5, 10)}
+    {bar(15, 7, 3.5, 10)}
+  </>,
+);
+
+export const JustifyEnd = createIcon(
+  'justify-end',
+  <>
+    {bar(8, 7, 3.5, 10)}
+    {bar(12.5, 7, 3.5, 10)}
+    {bar(17, 7, 3.5, 10)}
+  </>,
+);
+
+export const JustifyBetween = createIcon(
+  'justify-between',
+  <>
+    {bar(4, 7, 3.5, 10)}
+    {bar(10.25, 7, 3.5, 10)}
+    {bar(16.5, 7, 3.5, 10)}
+  </>,
+);
+
+export const JustifyAround = createIcon(
+  'justify-around',
+  <>
+    {bar(5.5, 7, 3.5, 10)}
+    {bar(10.75, 7, 3.5, 10)}
+    {bar(16, 7, 3.5, 10)}
+  </>,
+);
+
+export const JustifyEvenly = createIcon(
+  'justify-evenly',
+  <>
+    {bar(4.5, 7, 3.5, 10)}
+    {bar(10.5, 7, 3.5, 10)}
+    {bar(16.5, 7, 3.5, 10)}
+  </>,
+);
+
+export const AlignCenter = createIcon(
+  'align-center',
+  <>
+    <path d="M6 6h12" />
+    <path d="M8.5 12h7" />
+    <path d="M7 18h10" />
+  </>,
+);
+
+export const AlignRight = createIcon(
+  'align-right',
+  <>
+    <path d="M8 6h12" />
+    <path d="M13 12h7" />
+    <path d="M11 18h9" />
+  </>,
+);
+
+export const AlignJustify = createIcon(
+  'align-justify',
+  <>
+    <path d="M4 6h16" />
+    <path d="M4 12h16" />
+    <path d="M4 18h16" />
+  </>,
+);
+
+export const BorderSolid = createIcon('border-solid', <path d="M4 12h16" strokeWidth="2.5" />);
+
+export const BorderDashed = createIcon(
+  'border-dashed',
+  <path d="M4 12h16" strokeWidth="2.5" strokeDasharray="4.5 3.5" />,
+);
+
+export const BorderDotted = createIcon(
+  'border-dotted',
+  <path d="M4 12h16" strokeWidth="2.5" strokeDasharray="0.5 3.5" />,
+);
+
+export const BorderDouble = createIcon(
+  'border-double',
+  <>
+    <path d="M4 9h16" />
+    <path d="M4 15h16" />
+  </>,
+);
+
+export const NoWrap = createIcon(
+  'no-wrap',
+  <>
+    <path d="M4 12h10.5" />
+    <path d="m10.5 8 4 4-4 4" />
+    <path d="M19 7v10" />
+  </>,
+);
