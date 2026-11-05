@@ -135,7 +135,7 @@ export function NumberField({
             aria-hidden
             onPointerDown={onScrub}
             className={cn(
-              'flex min-w-7 shrink-0 cursor-ew-resize touch-none select-none items-center whitespace-nowrap text-label',
+              'flex min-w-7 shrink-0 cursor-ew-resize touch-none select-none items-center pr-1 whitespace-nowrap text-label',
               previewed ? 'text-primary' : 'text-muted',
             )}
           >

@@ -70,7 +70,7 @@ const ALIGN: Segment<string>[] = [
   { value: 'stretch', label: 'Align stretched', icon: AlignItemsStretch },
 ];
 const ALIGN_SELF: Segment<string>[] = [
-  { value: 'auto', label: 'Align self: as its container' },
+  { value: 'auto', label: 'Align self: as its container', text: 'Auto' },
   ...ALIGN.map((segment) => ({ ...segment, label: segment.label.replace('Align', 'Align self') })),
 ];
 const TEXT_ALIGN: Segment<string>[] = [
