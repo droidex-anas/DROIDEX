@@ -239,6 +239,8 @@ export type BoardInteractionEvent =
   | { type: 'pick'; designId: string; additive: boolean }
   /** A finished rubber-band. */
   | { type: 'pick-band'; designIds: string[]; additive: boolean }
+  /** ⌘A: every frame, in reading order. */
+  | { type: 'pick-all'; designIds: string[] }
   /** A click on the board background. */
   | { type: 'clear' }
   /** Double-click, or Enter on a single selected frame. */
@@ -274,6 +276,8 @@ export function reduceBoardInteraction(
         : event.designIds;
       return settle(state, selected);
     }
+    case 'pick-all':
+      return settle(state, event.designIds);
     case 'clear':
       return settle(state, []);
     case 'interact':
@@ -287,17 +291,21 @@ export function reduceBoardInteraction(
     case 'escape':
       if (state.mode !== 'select') return { ...state, mode: 'select', interactedFrameId: null };
       return state.selectedFrameIds.length === 0 ? state : settle(state, []);
-    case 'frames': {
-      const held = new Set(event.designIds);
-      const selected = state.selectedFrameIds.filter((id) => held.has(id));
-      if (
-        selected.length === state.selectedFrameIds.length &&
-        (state.interactedFrameId === null || held.has(state.interactedFrameId))
-      )
-        return state;
-      return settle(state, selected);
-    }
+    case 'frames':
+      return keepFrames(state, event.designIds);
   }
+}
+
+/** The state pointing only at designs the canvas still has, unchanged when it lost none in use. */
+function keepFrames(state: BoardInteraction, designIds: string[]): BoardInteraction {
+  const held = new Set(designIds);
+  const selected = state.selectedFrameIds.filter((id) => held.has(id));
+  if (
+    selected.length === state.selectedFrameIds.length &&
+    (state.interactedFrameId === null || held.has(state.interactedFrameId))
+  )
+    return state;
+  return settle(state, selected);
 }
 
 /** A frame shows its actions while it is the one selection, or Interact drives it. */

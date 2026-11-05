@@ -11,6 +11,7 @@ import {
   isBoardEditor,
   historyStep,
   isDeleteKey,
+  isSelectAllKey,
   modeShortcut,
   zoomShortcut,
 } from './boardKeys';
@@ -122,6 +123,10 @@ function runBoardKey(
   if (isDeleteKey(event)) return actions.removeSelection();
   const step = historyStep(event);
   if (step) return actions.history(step);
+  if (isSelectAllKey(event)) {
+    actions.dispatch({ type: 'pick-all', designIds: [...actions.order] });
+    return true;
+  }
   if (event.key === ' ') {
     actions.holdSpace();
     return true;

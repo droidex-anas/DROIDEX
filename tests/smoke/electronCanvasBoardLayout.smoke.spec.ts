@@ -49,3 +49,26 @@ test('dragging one frame of a selection moves all of it in one arrange, and a cl
   expect(await selection(page)).toEqual(['a']);
   expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
 });
+
+test('⌘A selects every frame, and a multiple selection is measured by its own box', async ({
+  page,
+}) => {
+  await openBoard(page);
+  // Off the board ⌘A is the page's own.
+  await page.locator('#outside').focus();
+  await page.keyboard.press('ControlOrMeta+a');
+  expect(await selection(page)).toEqual([]);
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+a');
+  expect(await selection(page)).toEqual(['a', 'b']);
+
+  // A spans x 100 to 500 from y 50, and B x 650 to 1050 down to y 600.
+  const bounds = page.locator('.canvas-selection-bounds');
+  await expect(bounds).toHaveText('950 × 550');
+  // The frames leave their own sizes and resize handles to it.
+  await expect(page.locator('[data-design-frame] .canvas-frame-size')).toHaveCount(0);
+  await expect(page.locator('[data-handle]')).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  await expect(bounds).toHaveCount(0);
+});
