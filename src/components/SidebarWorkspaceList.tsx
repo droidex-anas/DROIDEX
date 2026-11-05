@@ -8,7 +8,7 @@ import { SIDEBAR_VISIBLE_SESSION_LIMIT, type WorkspaceSection } from '../lib/wor
 import type { SessionSummary } from '../types/bridge';
 import { SidebarSectionHeading } from './SidebarSectionHeading';
 import { SidebarWorkspaceRow } from './SidebarWorkspaceRow';
-import { SidebarSessionList } from './SidebarSessionList';
+import { SidebarMovingRow, SidebarSessionList } from './SidebarSessionList';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -64,6 +64,7 @@ export function SidebarWorkspaceList({
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const { defaultVisibleCount, visibleCountFor, showMore, showLess } = useSidebarPagination(limit);
+  const [shownAt] = useState(Date.now);
   const toggleCollapse = (key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -72,6 +73,18 @@ export function SidebarWorkspaceList({
       return next;
     });
   };
+
+  // A chat sent a prompt rises to the top of its section, and a pinned one
+  // moves to Pinned; each section lists a chat once, so one layout id suffices.
+  const renderMovingRow = (session: SessionSummary) => (
+    <SidebarMovingRow
+      key={session.appSessionId}
+      layoutId={`workspaces-${session.appSessionId}`}
+      arriving={session.createdAt > shownAt}
+    >
+      {renderRow(session)}
+    </SidebarMovingRow>
+  );
 
   const renderSessionList = (
     sectionKey: string,
@@ -83,7 +96,7 @@ export function SidebarWorkspaceList({
       defaultVisibleCount={defaultVisibleCount}
       visibleCount={visibleCountFor(sectionKey)}
       activeAppSessionId={activeAppSessionId}
-      renderRow={renderRow}
+      renderRow={renderMovingRow}
       onShowMore={() => {
         showMore(sectionKey);
       }}

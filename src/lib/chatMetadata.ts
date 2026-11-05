@@ -160,6 +160,49 @@ export function chatDisplayTitle(session: SessionSummary, meta: ChatMetadata | u
   return markdownToPlainText(presentSlashCommandTitle(meta?.displayTitle ?? session.title));
 }
 
+// A chat's name until its harness writes one: the opening message's first
+// sentence, cut at a word boundary so it never ends mid-word.
+export function draftChatTitle(text: string, maxLength = 48): string {
+  const firstLine = text
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) return '';
+  const sentence = firstLine.split(/(?<=[.!?])\s/)[0].replace(/\.$/, '');
+  if (sentence.length <= maxLength) return sentence;
+  const lastSpace = sentence.lastIndexOf(' ', maxLength);
+  const cut = lastSpace > 0 ? sentence.slice(0, lastSpace) : sentence.slice(0, maxLength);
+  return cut.replace(/[\s,;:-]+$/, '');
+}
+
+// Forks of one chat are numbered in the order they were made, so copies that
+// still carry their source's name can be told apart. A fork the user renamed
+// keeps its place in the count but needs no number.
+export function forkNumbers(
+  sessions: Readonly<Record<string, SessionSummary>>,
+  metadata: ChatMetadataMap,
+): Map<string, number> {
+  const byId: Partial<ChatMetadataMap> = metadata;
+  const forksBySource = new Map<string, { appSessionId: string; forkedAt: number }[]>();
+  for (const session of Object.values(sessions)) {
+    if (session.lineage?.kind !== 'fork') continue;
+    const { sourceAppSessionId, forkedAt } = session.lineage;
+    const forks = forksBySource.get(sourceAppSessionId) ?? [];
+    forks.push({ appSessionId: session.appSessionId, forkedAt });
+    forksBySource.set(sourceAppSessionId, forks);
+  }
+  const numbers = new Map<string, number>();
+  for (const forks of forksBySource.values()) {
+    forks.sort((a, b) => a.forkedAt - b.forkedAt);
+    forks.forEach((fork, index) => {
+      if (byId[fork.appSessionId]?.displayTitle === undefined) {
+        numbers.set(fork.appSessionId, index + 1);
+      }
+    });
+  }
+  return numbers;
+}
+
 // Chats for the Pinned section: pinned and not hidden. Callers keep their
 // usual recency ordering.
 export function pinnedChats(

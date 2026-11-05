@@ -11,6 +11,7 @@ import type { SessionSummary } from '../types/bridge';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
 import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
+import { TitleSweep } from './ui/TitleSweep';
 import { PrStateIcon } from './environment/GithubIcons';
 import { ModelIcon, type Provider } from './ModelIcon';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
@@ -67,6 +68,8 @@ export interface SessionRowProps {
   pr?: { kind: PrKind; checks?: PrChecksRollup | null };
   // A chat a design send created, which opens as a design.
   design: boolean;
+  // A fork still carrying its source's name: its place among that chat's forks.
+  forkNumber?: number;
   renaming: boolean;
   now: number;
   onSelect: (appSessionId: string) => void;
@@ -97,6 +100,7 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.pr?.kind === next.pr?.kind &&
     prev.pr?.checks === next.pr?.checks &&
     prev.design === next.design &&
+    prev.forkNumber === next.forkNumber &&
     prev.renaming === next.renaming &&
     prev.now === next.now &&
     prev.onSelect === next.onSelect &&
@@ -121,6 +125,7 @@ export const SessionRow = memo(function SessionRow({
   detail,
   pr,
   design,
+  forkNumber,
   renaming,
   now,
   onSelect,
@@ -283,27 +288,33 @@ export const SessionRow = memo(function SessionRow({
   };
 
   const titleLine = (
-    <span
-      className="block min-w-0 flex-1 overflow-hidden"
-      style={
-        marquee
-          ? // Fade the right edge so the sliding title never collides with
-            // the hover "..." button.
-            {
-              maskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
-              WebkitMaskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
-            }
-          : undefined
-      }
-    >
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
       <span
-        ref={titleRef}
-        className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
-          active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
-        } ${unread && !active ? 'font-semibold' : ''}`}
+        className="block min-w-0 overflow-hidden"
+        style={
+          marquee
+            ? // Fade the right edge so the sliding title never collides with
+              // the hover "..." button.
+              {
+                maskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
+                WebkitMaskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
+              }
+            : undefined
+        }
       >
-        {title}
+        {/* Follows the chat header's sweep a beat later. */}
+        <TitleSweep
+          ref={titleRef}
+          title={title}
+          delayMs={80}
+          className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
+            active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
+          } ${unread && !active ? 'font-semibold' : ''}`}
+        />
       </span>
+      {forkNumber !== undefined && (
+        <span className="shrink-0 text-caption tabular-nums text-muted">fork {forkNumber}</span>
+      )}
     </span>
   );
 

@@ -514,6 +514,50 @@
     }
   }
 
+  /* A renamed title writes itself in: a soft edge sweeps left to right over the
+     new name while the old one blurs away beneath it. At rest the mask sits
+     fully opaque. */
+  @keyframes title-sweep-in {
+    from {
+      mask-position: 100% 0;
+    }
+    to {
+      mask-position: 0 0;
+    }
+  }
+
+  @keyframes title-sweep-out {
+    to {
+      opacity: 0;
+      filter: blur(var(--blur-small));
+    }
+  }
+
+  .title-sweep-in {
+    display: block;
+    mask-image: linear-gradient(90deg, black 40%, transparent 60%);
+    mask-size: 250% 100%;
+    mask-repeat: no-repeat;
+    animation: title-sweep-in 600ms var(--ease-smooth-out) backwards;
+  }
+
+  .title-sweep-out {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    animation: title-sweep-out 120ms ease-in forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .title-sweep-in {
+      animation: none;
+    }
+
+    .title-sweep-out {
+      display: none;
+    }
+  }
+
   /* Gentle rise-in used to stagger the welcome screen elements. */
   @keyframes droid-rise {
     from {

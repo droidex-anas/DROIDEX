@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { SIDEBAR_VISIBLE_SESSION_LIMIT } from '../lib/workspaces';
 import type { SessionSummary } from '../types/bridge';
 
@@ -17,6 +18,34 @@ export interface SidebarSessionListProps {
 }
 
 const CONTROL_CLASS = 'text-label text-muted hover:text-primary transition-colors';
+
+// A chat that moves, re-sorted when it starts working or carried to another
+// section, glides to its new place (position only, 250ms on the smooth-out
+// curve) and the rows around it close the gap the same way; one layout id lets
+// it travel between lists. A chat created while the list is on screen fades in
+// where it lands.
+export function SidebarMovingRow({
+  layoutId,
+  arriving,
+  children,
+}: {
+  layoutId: string;
+  arriving: boolean;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      layoutId={reduceMotion ? undefined : layoutId}
+      layout={reduceMotion ? false : 'position'}
+      initial={arriving ? { opacity: 0 } : false}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 // Shows the latest sessions and tucks the rest behind "Show more". A folder
 // that also has older pre-existing Droid sessions the sidecar withheld offers

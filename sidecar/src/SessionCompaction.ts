@@ -27,9 +27,15 @@ import {
 
 export type { CompactionExecutionResult } from './sessionCompactionExecution.js';
 
-// Raw notices the SDK stream never yields; every other type reaches the event
-// flow through the stream, and forwarding it here too would duplicate it.
-const PRIMARY_RAW_NOTIFICATIONS = new Set(['create_message', 'child_session_available']);
+// Raw notices the SDK stream never yields, and the title Droid names a chat
+// with, which can land after the turn's stream ended. Every other type reaches
+// the event flow through the stream, and forwarding it here too would
+// duplicate it.
+const PRIMARY_RAW_NOTIFICATIONS = new Set([
+  'create_message',
+  'child_session_available',
+  'session_title_updated',
+]);
 
 export interface CompactionLimitRequest {
   modelId?: string;

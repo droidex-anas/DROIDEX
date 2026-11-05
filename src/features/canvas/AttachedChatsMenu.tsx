@@ -6,6 +6,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
+import { TitleSweep } from '../../components/ui/TitleSweep';
 import { shallowEqual, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { MENU_WIDTH_PX, MenuHeading, MenuNote, MenuRow } from './menuRows';
@@ -53,11 +54,10 @@ export function AttachedChatsMenu({
         }}
         className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md text-left"
       >
-        <span
-          className={`min-w-0 truncate text-body-strong ${live ? 'shimmer-text' : 'text-primary'}`}
-        >
-          {title}
-        </span>
+        <TitleSweep
+          title={title}
+          className={`block truncate text-body-strong ${live ? 'shimmer-text' : 'text-primary'}`}
+        />
         <ChevronDown aria-hidden className="h-3 w-3 shrink-0 text-muted" />
       </button>
 

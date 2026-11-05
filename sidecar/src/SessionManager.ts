@@ -237,6 +237,8 @@ export interface SessionManagerOptions {
   requestBrowser?: RequestBrowser;
 }
 
+// The renderer caps chat titles the same way (MAX_CHAT_TITLE_LENGTH).
+const MAX_SESSION_TITLE_LENGTH = 200;
 const MAX_OPEN_CHILD_SESSIONS = boundedInt(
   process.env.DROID_CONTROL_MAX_OPEN_CHILD_SESSIONS,
   4,
@@ -1942,6 +1944,13 @@ export class SessionManager {
     this.missionControlPolicy.apply(appSessionId, n);
     if (n.harnessModelSwitch)
       this.modelSettings.adoptHarnessModel(appSessionId, n.harnessModelSwitch);
+    // A name is not activity: it must not lift the chat in the sidebar.
+    if (n.sessionTitle)
+      this.registry.updateSummary(
+        appSessionId,
+        { title: n.sessionTitle.slice(0, MAX_SESSION_TITLE_LENGTH) },
+        { touchActivity: false },
+      );
     if (n.childSession) {
       const { toolUseId, ...childSession } = n.childSession;
       this.childSessions.admitChildObservation({
@@ -2219,10 +2228,9 @@ export class SessionManager {
   }
 
   private async renameSession(requestedAppSessionId: string, title: string): Promise<void> {
-    // Renderer metadata caps titles at 200 chars (MAX_CHAT_TITLE_LENGTH); the
-    // bridge is the trusted boundary, so clamp here too before forwarding to
-    // the harness.
-    const safeTitle = title.trim().slice(0, 200);
+    // The bridge is the trusted boundary, so clamp here too before forwarding
+    // to the harness.
+    const safeTitle = title.trim().slice(0, MAX_SESSION_TITLE_LENGTH);
     // Droid keeps the title in its own session file and has to be told; every
     // other provider's title is DROIDEX's alone, so only the daemon call is
     // skipped and the chat is still renamed.

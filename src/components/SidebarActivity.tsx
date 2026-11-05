@@ -1,10 +1,10 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
 import { useState, type ReactNode } from 'react';
-import { LayoutGroup, MotionConfig, motion } from 'framer-motion';
+import { LayoutGroup, MotionConfig } from 'framer-motion';
 import type { SessionSummary } from '../types/bridge';
 import { ACTIVITY_GROUPS, type SessionActivityStatus } from '../lib/sidebarActivity';
 import { SidebarSectionHeading } from './SidebarSectionHeading';
-import { SidebarSessionList } from './SidebarSessionList';
+import { SidebarMovingRow, SidebarSessionList } from './SidebarSessionList';
 
 interface Props {
   sessions: SessionSummary[];
@@ -30,20 +30,18 @@ export function SidebarActivity({
 }: Props) {
   const [openGroups, setOpenGroups] = useState<Partial<Record<string, boolean>>>({});
   const { defaultVisibleCount, visibleCountFor, showMore, showLess } = useSidebarPagination(limit);
+  const [shownAt] = useState(Date.now);
   // A chat that changes state moves to another group. The groups are separate
   // lists, so the row would unmount in one and mount in the other and read as
-  // a blink; a shared layout id lets it glide to its new place instead
-  // (position only: 250ms on the smooth-out curve, the skill's token for a
-  // position change), and the rows around it close the gap the same way.
+  // a blink; a shared layout id lets it glide to its new place instead.
   const renderMovingRow = (session: SessionSummary) => (
-    <motion.div
+    <SidebarMovingRow
       key={session.appSessionId}
       layoutId={`inbox-${session.appSessionId}`}
-      layout="position"
-      transition={{ layout: { duration: 0.25, ease: [0.22, 1, 0.36, 1] } }}
+      arriving={session.createdAt > shownAt}
     >
       {renderRow(session)}
-    </motion.div>
+    </SidebarMovingRow>
   );
   return (
     <MotionConfig reducedMotion="user">
