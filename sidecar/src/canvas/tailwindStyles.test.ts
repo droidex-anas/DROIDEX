@@ -105,6 +105,20 @@ test('every class a style edit writes sets its property to the value the edit me
   }
 });
 
+test('the size keywords write and read back as their stock classes', async () => {
+  const written = [
+    { property: 'width', name: 'w-fit', value: 'fit-content' },
+    { property: 'height', name: 'h-auto', value: 'auto' },
+    { property: 'maxWidth', name: 'max-w-none', value: 'none' },
+  ];
+  const rules = await compiled(written.map(({ name }) => name));
+  for (const { property, name, value } of written) {
+    const css = property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+    assert.equal(canonicalCss(rules.get(name)?.get(css) ?? ''), value, name);
+    assert.deepEqual(classStyle(name), { sets: [property], scope: 'always' }, name);
+  }
+});
+
 test('a class under a breakpoint or colour mode applies per frame, under any other variant per state', () => {
   assert.equal(classStyle('md:p-4')?.scope, 'frame');
   assert.equal(classStyle('dark:hover:bg-black')?.scope, 'frame');

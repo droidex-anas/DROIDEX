@@ -24,6 +24,8 @@ type ValueForm =
   | 'line-height'
   | 'unitless'
   | 'fraction'
+  | 'size'
+  | 'max-size'
   | readonly string[];
 
 interface StyleRule {
@@ -33,7 +35,8 @@ interface StyleRule {
 
 const SPACING = { tokens: '--ds-space-', values: 'length' } as const;
 const MARGIN = { tokens: '--ds-space-', values: 'signed-length' } as const;
-const SIZE = { tokens: '--ds-size-', values: 'length' } as const;
+const SIZE = { tokens: '--ds-size-', values: 'size' } as const;
+const MAX_SIZE = { tokens: '--ds-size-', values: 'max-size' } as const;
 const COLOUR = { tokens: 'colour', values: 'colour' } as const;
 
 export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
@@ -54,8 +57,8 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   height: SIZE,
   minWidth: SIZE,
   minHeight: SIZE,
-  maxWidth: SIZE,
-  maxHeight: SIZE,
+  maxWidth: MAX_SIZE,
+  maxHeight: MAX_SIZE,
   borderRadius: { tokens: '--ds-radius-', values: 'length' },
   color: COLOUR,
   backgroundColor: COLOUR,
@@ -215,6 +218,10 @@ function acceptsValue(form: ValueForm, value: string): boolean {
       return UNITLESS.test(value) || LENGTH.test(value);
     case 'unitless':
       return UNITLESS.test(value);
+    case 'size':
+      return LENGTH.test(value) || value === 'auto' || value === 'fit-content';
+    case 'max-size':
+      return LENGTH.test(value) || value === 'none';
     case 'fraction':
       return FRACTION.test(value);
   }
