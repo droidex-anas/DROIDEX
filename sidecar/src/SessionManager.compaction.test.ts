@@ -265,6 +265,27 @@ test('a historical compaction load cannot settle a runtime opened while it waite
   }
 });
 
+test('a closed chat being compacted counts as work until its compaction ends', async () => {
+  const h = createSessionManagerTestContext();
+  const appSessionId = 'closed-app';
+  const providerSessionId = 'closed-native';
+  try {
+    h.fixture.seedHistorySummaries([historicalSummary(appSessionId, providerSessionId)]);
+    writeProviderConversation(h.home, providerSessionId, 'Closed chat');
+    const load = h.runtime.deferNextLoad();
+    const compacting = h.handle({ type: 'session.compact', appSessionId });
+    await h.runtime.waitForLoad(providerSessionId);
+    assert.equal(h.workingSessionCount(), 1);
+
+    load.resolve();
+    await compacting;
+    assert.equal(callCount(h.calls, 'provider', 'compactSession', providerSessionId), 1);
+    assert.equal(h.workingSessionCount(), 0);
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('create arms daemon compaction, and its notifications stream before an active turn settles', async () => {
   const h = createSessionManagerTestContext();
   try {

@@ -43,7 +43,7 @@ function installAppQuit({
   });
 
   async function quitAfterSidecarStops() {
-    const working = sidecar.isStopping() ? 0 : await workingSessionCount();
+    const working = await workingSessionCount();
     if (working !== 0 && !(await confirmQuit(working))) {
       await openMainWindow();
       return;

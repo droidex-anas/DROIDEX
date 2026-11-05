@@ -1019,8 +1019,8 @@ export class SessionManager {
     }
   }
 
-  // What quitting now would cut off: turns and compactions in progress, and
-  // children still at work.
+  // What quitting now would cut off: turns and compactions in progress, closed
+  // chats being compacted, and children still at work.
   workingSessionCount(): number {
     const sessions = this.registry
       .liveSessionsSnapshot()
@@ -1031,7 +1031,9 @@ export class SessionManager {
           live.compacting === true ||
           live.autoCompacting,
       ).length;
-    return sessions + this.childSessions.counts().working;
+    return (
+      sessions + this.compaction.historicalCompactionCount() + this.childSessions.counts().working
+    );
   }
 
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {

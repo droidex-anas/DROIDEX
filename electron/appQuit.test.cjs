@@ -28,7 +28,7 @@ function harness({ working, answer = 0, window = {} }) {
     }),
     workingSessionCount: async () => {
       if (sidecar.working instanceof Error) throw sidecar.working;
-      return sidecar.working;
+      return sidecar.lifecycle === 'stopped' ? 0 : sidecar.working;
     },
     stop: () => {
       calls.push('stop sidecar');
@@ -104,6 +104,15 @@ test('a second quit while the sidecar stops still waits for it to exit', async (
     'stop sidecar',
     'exit',
   ]);
+});
+
+test('a quit while an older sidecar still stops asks whether its replacement works', async () => {
+  const { app, sidecar, calls, dialogs } = harness({ working: 1, answer: 0 });
+  sidecar.stopping = true;
+  app.quit();
+  await settle();
+  assert.deepEqual(dialogs, ['An agent is still working']);
+  assert.deepEqual(calls, ['quit', 'open window']);
 });
 
 test('a sidecar started while a confirmed quit waits is stopped before the app exits', async () => {
