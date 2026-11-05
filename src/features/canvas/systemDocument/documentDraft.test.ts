@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import type {
   DocumentAsset,
   DocumentNote,
@@ -19,7 +19,10 @@ import {
 import {
   changedTokenValues,
   changeSummary,
+  cssTokenValue,
+  displayTokenValue,
   draftDiff,
+  selfReferenceProblem,
   tokenKey,
   withItems,
   withRemoved,
@@ -213,6 +216,61 @@ test('live previews get only the draft values that differ in their mode and a sa
   assert.deepEqual(changedTokenValues(base, sections, 'light'), {});
   assert.deepEqual(changedTokenValues(base, sections, 'dark'), { '--ds-bg': '#000' });
   discardDraft('tokens');
+});
+
+describe('a reference to another token reads and is typed as {name}', () => {
+  test('an exact reference, a fallback and a nested fallback round-trip', () => {
+    for (const [css, shown] of [
+      ['var(--ds-accent)', '{accent}'],
+      ['var(--ds-accent, red)', '{accent, red}'],
+      ['var(--ds-a, var(--ds-b))', '{a, {b}}'],
+    ]) {
+      assert.equal(displayTokenValue(css), shown);
+      assert.equal(cssTokenValue(shown), css);
+    }
+  });
+
+  test('a reference written with spaces reads the same and saves without them', () => {
+    assert.equal(displayTokenValue('var( --ds-accent )'), '{accent}');
+    assert.equal(cssTokenValue('{ accent }'), 'var(--ds-accent)');
+  });
+
+  test('a literal spelled like a token stays literal, beside its reference or alone', () => {
+    const shown = displayTokenValue('color-mix(in srgb, var(--ds-red) 20%, red)');
+    assert.equal(shown, 'color-mix(in srgb, {red} 20%, red)');
+    assert.equal(
+      cssTokenValue(shown.replace('20%', '30%')),
+      'color-mix(in srgb, var(--ds-red) 30%, red)',
+    );
+    assert.equal(cssTokenValue('red'), 'red');
+  });
+
+  test('a value may refer to any token but its own', () => {
+    const own = cssTokenValue('color-mix(in srgb, {accent} 20%, red)');
+    assert.equal(selfReferenceProblem('--ds-accent', own), 'accent cannot refer to itself.');
+    assert.equal(selfReferenceProblem('--ds-accent', 'var(--ds-missing, red)'), null);
+  });
+
+  test('as in CSS, VAR( in any case and one left unclosed are references, saved as var(', () => {
+    assert.equal(displayTokenValue('VAR(--ds-a, Var(--ds-b))'), '{a, {b}}');
+    assert.equal(cssTokenValue('{a, {b}}'), 'var(--ds-a, var(--ds-b))');
+    assert.equal(displayTokenValue('var(--ds-a'), '{a}');
+    for (const own of ['VAR(--ds-accent)', 'var(--ds-accent'])
+      assert.equal(selfReferenceProblem('--ds-accent', own), 'accent cannot refer to itself.');
+  });
+
+  test('a quoted string holds no references, and its brackets do not end one', () => {
+    for (const [css, shown] of [
+      ['var(--ds-font, "A(B")', '{font, "A(B"}'],
+      [String.raw`var(--ds-font, 'A\')B')`, String.raw`{font, 'A\')B'}`],
+    ]) {
+      assert.equal(displayTokenValue(css), shown);
+      assert.equal(cssTokenValue(shown), css);
+    }
+    assert.equal(displayTokenValue('"var(--ds-a)"'), '"var(--ds-a)"');
+    assert.equal(cssTokenValue('"{a}"'), '"{a}"');
+    assert.equal(selfReferenceProblem('--ds-a', '"var(--ds-a)"'), null);
+  });
 });
 
 test('a removed note shows where it was, Undo puts it back there, and undoing every edit ends the draft', () => {

@@ -8,6 +8,7 @@ import { pushToast } from '../../../lib/toast';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage, CanvasRequestError } from '../client';
 import type { DesignSystemDocumentView } from '../protocol';
+import { useIsMounted } from './useIsMounted';
 
 /**
  * Null for the user's draft. In a review, whether an addition is labelled: an
@@ -58,6 +59,7 @@ export function useProposalDecision(
 ) {
   const [decision, setDecision] = useState<ProposalDecision>('idle');
   const decidingRef = useRef(false);
+  const isMounted = useIsMounted();
   // A retry after a lost answer reuses the mutation ID, so it finds the version
   // already saved instead of refusing for want of a proposal.
   const attemptRef = useRef<{ proposalId: string; onto: number; mutationId: string } | null>(null);
@@ -69,7 +71,8 @@ export function useProposalDecision(
     try {
       await send();
       attemptRef.current = null;
-      await onShow('latest');
+      // Only while this kit is on screen: the user may have opened another.
+      if (isMounted()) await onShow('latest');
       endReview(view.id);
     } catch (error) {
       if (error instanceof CanvasRequestError) attemptRef.current = null;

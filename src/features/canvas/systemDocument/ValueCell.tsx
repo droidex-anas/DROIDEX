@@ -70,6 +70,7 @@ export function ValueCell({
   else
     shown = (
       <TokenValue
+        name={token.name}
         value={value}
         kind={kind}
         label={label}

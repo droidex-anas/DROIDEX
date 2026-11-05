@@ -9,8 +9,7 @@
 // stays off what is hidden, so typing never lands in front of an item's
 // marker, and a step passes blank lines by, as the rendered note has no line
 // there. Backspace at the start of a line's text removes what shows before it:
-// an item's bullet or number first, then the line break. Inline code naming a
-// file is marked as the rendered note marks it.
+// an item's bullet or number first, then the line break.
 // designSystemDocument.css sizes what these classes mark.
 
 import { syntaxTree } from '@codemirror/language';
@@ -25,14 +24,12 @@ import {
   type Text,
 } from '@codemirror/state';
 import { Decoration, EditorView, keymap, type DecorationSet } from '@codemirror/view';
-import { repoPathInProse } from '../../../lib/prosePaths';
 
 const blockStart = Decoration.line({ class: 'kit-note-block' });
 const itemStart = Decoration.line({ class: 'kit-note-item' });
 const blankInList = Decoration.line({ class: 'kit-note-blank' });
 const blankWithCaret = Decoration.line({ class: 'kit-note-blank-open' });
 const hidden = Decoration.replace({});
-const filePath = Decoration.mark({ attributes: { 'data-file-path': '' } });
 
 type SyntaxNode = ReturnType<typeof syntaxTree>['topNode'];
 
@@ -85,16 +82,10 @@ function itemLine(kind: 'bullet' | 'indent', depth: number) {
   });
 }
 
-function isFilePath(doc: Text, node: SyntaxNode): boolean {
-  if (node.name !== 'InlineCode') return false;
-  return repoPathInProse(doc.sliceString(node.from, node.to).replace(/^`+|`+$/g, '')) !== null;
-}
-
 function layoutOf(state: EditorState): Layout {
   const { doc } = state;
   const lines: Range<Decoration>[] = [];
   const folds: Range<Decoration>[] = [];
-  const paths: Range<Decoration>[] = [];
   const textLines = new Map<number, TextLine>();
   const blankDepths = new Map<number, number>();
 
@@ -145,7 +136,6 @@ function layoutOf(state: EditorState): Layout {
       if (node.name === 'Paragraph') layOutLaterLines(node);
       if (node.name === 'HardBreak' && doc.sliceString(node.from, node.from + 1) === '\\')
         folds.push(hidden.range(node.from, node.from + 1));
-      if (isFilePath(doc, node)) paths.push(filePath.range(node.from, node.to));
     },
   });
   // The rendered list ignores its blank lines; its steps are the items'. One
@@ -157,7 +147,7 @@ function layoutOf(state: EditorState): Layout {
     textLines.set(from, { kind: 'continued', textFrom: blank.to });
   }
   return {
-    all: Decoration.set([...lines, ...folds, ...paths], true),
+    all: Decoration.set([...lines, ...folds], true),
     hidden: Decoration.set(folds, true),
     textLines,
     blankLines: new Set(blankDepths.keys()),

@@ -1,7 +1,8 @@
 // The board, bound to the canvas it is showing, or the design system document
 // shown in its place (spec §4). The document swaps in below the workspace, so
 // the canvas projection and its subscription stay; the board's live previews
-// go with the board and its viewport waits in the pane state for Back.
+// go with the board and its viewport waits in the pane state for Back. Kits
+// belong to no canvas, so a chat without one shows a kit's document too.
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, type RefObject } from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
@@ -128,26 +129,7 @@ export function CanvasBoardMount({
   ]);
 
   if (shownDocument)
-    return (
-      <div className="min-h-0 flex-1">
-        <Suspense fallback={null}>
-          <LazyDesignSystemDocument
-            appSessionId={appSessionId}
-            canvasKey={canvasId}
-            system={shownDocument}
-            onBack={() => {
-              dispatch({
-                type: 'OPEN_UTILITY_TOOL',
-                tool: 'canvas',
-                appSessionId,
-                designSystemId: null,
-                designSystemVersion: null,
-              });
-            }}
-          />
-        </Suspense>
-      </div>
-    );
+    return <DocumentMount appSessionId={appSessionId} canvasId={canvasId} shown={shownDocument} />;
 
   return (
     <div data-canvas-board className="min-h-0 flex-1">
@@ -194,6 +176,39 @@ export function CanvasBoardMount({
         />
       )}
       {frameActions.dialog}
+    </div>
+  );
+}
+
+/** A design system document in the pane; `canvasId` is null in a chat without a canvas. */
+export function DocumentMount({
+  appSessionId,
+  canvasId,
+  shown,
+}: {
+  appSessionId: string;
+  canvasId: string | null;
+  shown: ShownDocument;
+}) {
+  const dispatch = useStoreDispatch();
+  return (
+    <div className="min-h-0 flex-1">
+      <Suspense fallback={null}>
+        <LazyDesignSystemDocument
+          appSessionId={appSessionId}
+          canvasKey={canvasId}
+          system={shown}
+          onBack={() => {
+            dispatch({
+              type: 'OPEN_UTILITY_TOOL',
+              tool: 'canvas',
+              appSessionId,
+              designSystemId: null,
+              designSystemVersion: null,
+            });
+          }}
+        />
+      </Suspense>
     </div>
   );
 }

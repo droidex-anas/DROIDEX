@@ -91,8 +91,8 @@ export function DesignSystemDocument({
 }: {
   /** The chat whose canvas area shows the document. */
   appSessionId: string;
-  /** The canvas whose choice Use in this canvas sets. */
-  canvasKey: string;
+  /** The canvas whose choice Use in this canvas sets, or null in a chat without one. */
+  canvasKey: string | null;
   system: { id: string; version?: number };
   onBack: () => void;
 }) {
@@ -123,7 +123,7 @@ export function DesignSystemDocument({
                 void show(system.version ?? 'latest');
               }}
             />
-            <CanvasAction label="Back to board" onClick={onBack} />
+            <CanvasAction label={canvasKey === null ? 'Close' : 'Back to board'} onClick={onBack} />
           </div>
         </CanvasPlate>
       )}
@@ -150,7 +150,7 @@ function KitDocument({
 }: {
   view: DesignSystemDocumentView;
   appSessionId: string;
-  canvasKey: string;
+  canvasKey: string | null;
   onShow: (target: number | 'latest') => Promise<void>;
   onBack: () => void;
 }) {
@@ -333,6 +333,7 @@ function KitDocument({
           })
         }
         onBack={onBack}
+        hasBoard={canvasKey !== null}
         onShowVersion={(version) => {
           void onShow(version);
         }}
@@ -343,7 +344,7 @@ function KitDocument({
             {!showsNav && <SectionsMenu {...navProps} labelled={room.navWords} />}
             <PreviewModeButton mode={mode} onChange={setMode} />
             <DocumentMenu view={view} onDuplicate={duplicate} onBack={onBack} />
-            {isLatest && !editing && !reviewed && !isChosen && (
+            {canvasKey !== null && isLatest && !editing && !reviewed && !isChosen && (
               <UseInCanvas
                 short={!room.fullPrimary}
                 onUse={() => {

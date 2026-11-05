@@ -1,10 +1,10 @@
-// The document's top row (spec §5): Back to the board, the kit's name and its
-// version history on the left; the caller's controls on the
-// right. DocumentNotice is the quiet line under it for a kit that is read-only,
-// and OlderVersionNotice that line over an older version.
+// The document's top row (spec §5): Back to the board (Close in a chat without
+// a canvas), the kit's name and its version history on the left; the caller's
+// controls on the right. DocumentNotice is the quiet line under it for a kit
+// that is read-only, and OlderVersionNotice that line over an older version.
 
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ArrowLeft, PanelLeft } from '@droidex/icons';
+import { ArrowLeft, PanelLeft, X } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { pushToast } from '../../../lib/toast';
@@ -19,7 +19,7 @@ import { VersionMenu } from './VersionMenu';
 const MAX_NAME_LENGTH = 120;
 
 /**
- * What the header keeps as its row narrows. It drops, in order, the Board and
+ * What the header keeps as its row narrows. It drops, in order, the back and
  * Sections labels, most of the primary action's label and last the version
  * button; the name truncates throughout. Widths are the row's content box,
  * chosen so the row never overflows with every control present.
@@ -43,6 +43,7 @@ export function DocumentHeader({
   name,
   onRename,
   onBack,
+  hasBoard,
   onShowVersion,
   navToggle,
   children,
@@ -53,6 +54,8 @@ export function DocumentHeader({
   /** Null for a kit that cannot be edited. */
   onRename: ((name: string) => void) | null;
   onBack: () => void;
+  /** False in a chat without a canvas, where leaving closes the document. */
+  hasBoard: boolean;
   onShowVersion: (version: number) => void;
   /** Hides and shows the nav beside the document; null while the canvas is too narrow for it. */
   navToggle: { isHidden: boolean; onToggle: () => void } | null;
@@ -62,6 +65,7 @@ export function DocumentHeader({
   const headerRef = useRef<HTMLElement>(null);
   const room = headerRoom(useContentWidth(headerRef));
   const renamed = name !== view.name;
+  const back = hasBoard ? { label: 'Board', icon: ArrowLeft } : { label: 'Close', icon: X };
   return (
     <header
       ref={headerRef}
@@ -85,25 +89,25 @@ export function DocumentHeader({
         <Button
           variant="ghost"
           size="sm"
-          icon={ArrowLeft}
+          icon={back.icon}
           onClick={onBack}
           className={navToggle ? undefined : '-ml-2.5'}
         >
-          Board
+          {back.label}
         </Button>
       ) : (
-        <Tooltip label="Board" placement="bottom">
+        <Tooltip label={back.label} placement="bottom">
           <Button
             variant="ghost"
             size="sm"
-            icon={ArrowLeft}
-            aria-label="Board"
+            icon={back.icon}
+            aria-label={back.label}
             onClick={onBack}
             className={navToggle ? undefined : '-ml-1.5'}
           />
         </Tooltip>
       )}
-      {/* The margin keeps the unsaved dot's place between Board and the name. */}
+      {/* The margin keeps the unsaved dot's place between the back button and the name. */}
       <div className="relative ml-3.5 flex min-w-0 items-center">
         <UnsavedMark
           mark={renamed ? 'changed' : undefined}

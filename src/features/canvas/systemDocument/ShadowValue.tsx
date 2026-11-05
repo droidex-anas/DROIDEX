@@ -70,6 +70,7 @@ export function ShadowValue({
         />
       ) : (
         <TokenValue
+          name={name}
           value={value}
           kind={kind}
           label={label}
