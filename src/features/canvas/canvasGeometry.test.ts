@@ -140,6 +140,15 @@ test('a dragged frame follows the hand 1:1 at any zoom', () => {
   }
 });
 
+test('a drag at any zoom commits whole pixels', () => {
+  // At 75% ten screen pixels is 13.3 world units, which no one could type.
+  assert.deepEqual(applyFrameHandle(rect(100, 50), 'move', { x: 10, y: 7 }, 0.75), rect(113, 59));
+  assert.deepEqual(
+    applyFrameHandle(rect(100, 50), 'southeast', { x: 10, y: 7 }, 0.75),
+    rect(100, 50, 413, 309),
+  );
+});
+
 test('a fit animation starts where it was and ends on the target', () => {
   const from: Viewport = { x: 0, y: 0, scale: 1 };
   const to: Viewport = { x: -200, y: 60, scale: 0.4 };

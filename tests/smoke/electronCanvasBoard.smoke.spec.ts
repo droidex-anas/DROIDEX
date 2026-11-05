@@ -301,8 +301,9 @@ test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13
     const beforeDrag = await box(frame(page, 'A'));
     await drag(page, 'A');
     const afterDrag = await box(frame(page, 'A'));
-    expect(afterDrag.x - beforeDrag.x).toBeCloseTo(60, 1);
-    expect(afterDrag.y - beforeDrag.y).toBeCloseTo(40, 1);
+    // A drag commits whole world pixels, so the frame lands within half a pixel of the hand.
+    expect(afterDrag.x - beforeDrag.x).toBeCloseTo(60, 0);
+    expect(afterDrag.y - beforeDrag.y).toBeCloseTo(40, 0);
     expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
     const board = await box(page.getByTestId('canvas-board'));
     await page.mouse.move(Math.round(board.x + 10), Math.round(board.y + 10));

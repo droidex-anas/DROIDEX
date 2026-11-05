@@ -46,6 +46,7 @@ import { ElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
+import { SnapGuides } from './SnapGuides';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
@@ -450,6 +451,7 @@ export function CanvasBoard({
           />
         )}
         {gestures.band && <RubberBand band={gestures.band} />}
+        {gestures.snapMarks && <SnapGuides marks={gestures.snapMarks} viewport={view.viewport} />}
 
         <BoardControls
           scale={scale}
