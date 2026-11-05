@@ -1012,6 +1012,17 @@ export class SessionManager {
     }
   }
 
+  // What quitting now would cut off: turns in progress and children still at work.
+  workingSessionCount(): number {
+    const streaming = this.registry
+      .liveSessionsSnapshot()
+      .filter((live) => live.summary.streaming === true).length;
+    const children = this.childSessions
+      .liveChildSummaries()
+      .filter((child) => child.status === 'pending' || child.status === 'running').length;
+    return streaming + children;
+  }
+
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {
     let persistence = this.history.persistenceRecovery?.() ?? {
       durable: true,

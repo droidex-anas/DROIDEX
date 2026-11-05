@@ -89,6 +89,22 @@ function createSidecarSupervisor(options) {
     );
   }
 
+  function isReady() {
+    return Boolean(bridgeInfo) && isLiveChild(child);
+  }
+
+  async function workingSessionCount() {
+    const info = bridgeInfo;
+    if (!info || !isLiveChild(child)) return 0;
+    const health = await requestHealth({
+      port: info.port,
+      token: info.token,
+      timeoutMs: heartbeatTimeoutMs,
+    });
+    const count = health?.workingSessions;
+    return Number.isSafeInteger(count) && count > 0 ? count : 0;
+  }
+
   function start() {
     if (lifecycle === 'recovery-required') {
       return Promise.reject(new Error('Sidecar recovery is required.'));
@@ -391,6 +407,8 @@ function createSidecarSupervisor(options) {
     stop,
     snapshot,
     subscribe,
+    isReady,
+    workingSessionCount,
   };
 }
 
@@ -403,7 +421,7 @@ async function defaultRequestHealth({ port, token, timeoutMs }) {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Sidecar health returned ${String(response.status)}.`);
-    // Success is HTTP 200. eventLoopDelayMs and other body fields are unused.
+    // The heartbeat needs only HTTP 200; a quit reads workingSessions.
     return response.json();
   } finally {
     clearTimeout(timer);

@@ -47,6 +47,7 @@ const { createCanvasSourceExport, createDesignSystemExport } = require('./canvas
 const editorApps = require('./editorApps.cjs');
 const { openProject } = require('./projectLauncher.cjs');
 const { createSidecarSupervisor } = require('./sidecar.cjs');
+const { installAppQuit } = require('./appQuit.cjs');
 const { installRendererNavigationGuard } = require('./rendererSecurity.cjs');
 const { installApplicationMenu } = require('./applicationMenu.cjs');
 const { installContextMenu } = require('./contextMenu.cjs');
@@ -346,19 +347,23 @@ app.whenReady().then(async () => {
   powerMonitor.on('resume', () => remoteAccess.reconnect());
 });
 
-app.on('window-all-closed', () => {
-  if (!remoteAccess.isEnabled()) sidecarSupervisor.stop();
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('before-quit', () => {
-  void remoteAccess.close().catch(() => console.error('[remote] Could not flush local state'));
-  sidecarSupervisor.stop();
-  githubVcs.cancelSetup();
-  closeAllDesktopNotifications();
-  terminalManager.closeAll();
-  terminalSubscriptions.clear();
-  filesRootAccess.clear();
+installAppQuit({
+  app,
+  dialog,
+  platform: process.platform,
+  sidecar: sidecarSupervisor,
+  getMainWindow: () => (isWindowUsable(mainWindow) ? mainWindow : null),
+  openMainWindow,
+  keepsSidecarWithoutWindows: () => remoteAccess.isEnabled(),
+  closeServices: () => {
+    void remoteAccess.close().catch(() => console.error('[remote] Could not flush local state'));
+    githubVcs.cancelSetup();
+    closeAllDesktopNotifications();
+    terminalManager.closeAll();
+    terminalSubscriptions.clear();
+    filesRootAccess.clear();
+  },
+  logError: (message, error) => console.error('[quit] %s:', message, error),
 });
 
 app.on('activate', () => {

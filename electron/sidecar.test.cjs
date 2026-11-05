@@ -179,6 +179,21 @@ test('stop resolves only after the sidecar process exits', async () => {
   assert.equal(stopped, true);
 });
 
+test('the working-agent count comes from /health once the sidecar is ready', async () => {
+  const child = fakeChild();
+  const { supervisor } = harness([child], {
+    requestHealth: async () => ({ ok: true, workingSessions: 3 }),
+  });
+  assert.equal(await supervisor.workingSessionCount(), 0);
+  const started = supervisor.start();
+  child.stdout.write('SIDECAR_READY 43001\n');
+  await started;
+  assert.equal(await supervisor.workingSessionCount(), 3);
+  const stopping = supervisor.stop();
+  child.emit('exit', 0, null);
+  await stopping;
+});
+
 test('heartbeat arms one timeout at the interval and does not stack', async () => {
   const child = fakeChild();
   const { supervisor, scheduled } = harness([child]);
