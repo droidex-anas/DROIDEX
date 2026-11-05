@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { documentIdSchema } from './designSystemDocument.js';
-import { DESIGN_SYSTEM_LIMITS, designSystemSchema } from './designSystems.js';
+import { DESIGN_SYSTEM_LIMITS, designSystemObjectSchema } from './designSystems.js';
 import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
@@ -45,7 +45,7 @@ const kitName = {
   name: z.string().trim().min(1).max(DESIGN_SYSTEM_LIMITS.maxNameLength),
 };
 const kitVersionSchema = z.number().int().positive().safe();
-const kitDocument = designSystemSchema.innerType().shape;
+const kitDocument = designSystemObjectSchema.shape;
 const designSystemProposalRefSchema = z
   .object({
     id: canvasIdentifierSchema,

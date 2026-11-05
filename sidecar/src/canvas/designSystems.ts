@@ -72,7 +72,7 @@ const coverSchema = z
   ])
   .nullable();
 
-const designSystemObjectSchema = z
+export const designSystemObjectSchema = z
   .object({
     id: canvasIdentifierSchema,
     version: z.number().int().positive().safe(),
