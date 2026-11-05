@@ -83,6 +83,7 @@ export interface SessionManagerTestContext {
   readonly home: string;
   readonly mcpServerCloseCalls: number;
   deliverScheduledMessage: SessionManager['deliverScheduledMessage'];
+  workingSessionCount: SessionManager['workingSessionCount'];
   setChildHistoryWatch: SessionManager['setChildHistoryWatch'];
   clearChildHistoryWatch: SessionManager['clearChildHistoryWatch'];
   handle(command: Protocol.ClientCommand): Promise<void>;
@@ -288,6 +289,7 @@ export function createSessionManagerTestContext(
     },
     handle,
     deliverScheduledMessage: manager.deliverScheduledMessage.bind(manager),
+    workingSessionCount: () => manager.workingSessionCount(),
     setChildHistoryWatch: manager.setChildHistoryWatch.bind(manager),
     clearChildHistoryWatch: manager.clearChildHistoryWatch.bind(manager),
     create: (command) => handle({ type: 'session.create', ...command }),

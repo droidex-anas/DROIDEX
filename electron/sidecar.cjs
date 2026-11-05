@@ -49,6 +49,7 @@ function createSidecarSupervisor(options) {
   let readyWaiters = [];
   let cancelHeartbeat = null;
   let cancelRestart = null;
+  let stopping = null;
   const listeners = new Set();
 
   function snapshot() {
@@ -87,6 +88,31 @@ function createSidecarSupervisor(options) {
     return (
       candidate && candidate.exitCode === null && candidate.signalCode === null && !candidate.killed
     );
+  }
+
+  function isStopping() {
+    return stopping !== null;
+  }
+
+  async function workingSessionCount() {
+    // A sidecar coming up may resume the agents an earlier run left working.
+    if (lifecycle === 'starting' || lifecycle === 'restarting') {
+      throw new Error('The sidecar is starting and cannot report its work yet.');
+    }
+    const info = bridgeInfo;
+    const run = activeRun;
+    if (!info || !isLiveChild(child)) return 0;
+    const health = await requestHealth({
+      port: info.port,
+      token: info.token,
+      timeoutMs: heartbeatTimeoutMs,
+    });
+    if (activeRun !== run) throw new Error('The sidecar stopped before reporting its work.');
+    const count = health?.workingSessions;
+    if (!Number.isSafeInteger(count) || count < 0) {
+      throw new Error('Sidecar health did not report its working sessions.');
+    }
+    return count;
   }
 
   function start() {
@@ -367,7 +393,8 @@ function createSidecarSupervisor(options) {
     bridgeResponsive = false;
     setLifecycle('stopped');
     rejectWaiters(new Error('Sidecar is stopped.'));
-    if (!current || current.killed) return Promise.resolve();
+    // A child killed for a failed startup can still be running, so it is waited for too.
+    if (!current) return stopping ?? Promise.resolve();
     current.stdin?.end();
     current.kill('SIGTERM');
     let timeout;
@@ -378,9 +405,15 @@ function createSidecarSupervisor(options) {
       }, shutdownTimeoutMs);
       timeout.unref?.();
     });
-    return Promise.race([run?.exitPromise ?? Promise.resolve(), forcedExit]).finally(() => {
+    const exited = Promise.race([run?.exitPromise ?? Promise.resolve(), forcedExit]).finally(() => {
       clearTimeout(timeout);
     });
+    // A run started while an earlier one stops must not let that earlier exit be forgotten.
+    const allExited = Promise.all([stopping, exited]).then(() => {
+      if (stopping === allExited) stopping = null;
+    });
+    stopping = allExited;
+    return allExited;
   }
 
   return {
@@ -391,6 +424,8 @@ function createSidecarSupervisor(options) {
     stop,
     snapshot,
     subscribe,
+    isStopping,
+    workingSessionCount,
   };
 }
 
@@ -403,7 +438,7 @@ async function defaultRequestHealth({ port, token, timeoutMs }) {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Sidecar health returned ${String(response.status)}.`);
-    // Success is HTTP 200. eventLoopDelayMs and other body fields are unused.
+    // The heartbeat needs only HTTP 200; a quit reads workingSessions.
     return response.json();
   } finally {
     clearTimeout(timer);

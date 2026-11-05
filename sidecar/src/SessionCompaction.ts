@@ -271,6 +271,10 @@ export class SessionCompaction {
     this.watchdogs.clearAll();
   }
 
+  historicalCompactionCount(): number {
+    return this.execution.historicalCompactionCount();
+  }
+
   watchdogCount(): number {
     return this.watchdogs.size();
   }

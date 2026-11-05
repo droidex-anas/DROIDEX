@@ -171,12 +171,82 @@ test('stop resolves only after the sidecar process exits', async () => {
   const stop = supervisor.stop().then(() => {
     stopped = true;
   });
+  const repeated = supervisor.stop();
   await Promise.resolve();
   assert.equal(stopped, false);
+  assert.equal(supervisor.isStopping(), true);
 
   child.emit('exit', 0, null);
-  await stop;
+  await Promise.all([stop, repeated]);
   assert.equal(stopped, true);
+  assert.equal(supervisor.isStopping(), false);
+});
+
+test('stop waits for a child killed during startup to exit', async () => {
+  const child = fakeChild();
+  const { supervisor } = harness([child]);
+  const started = supervisor.start();
+  child.stdout.write('SIDECAR_READY 0\n');
+  await assert.rejects(started, /invalid port/);
+
+  let stopped = false;
+  const stop = supervisor.stop().then(() => {
+    stopped = true;
+  });
+  await Promise.resolve();
+  assert.equal(stopped, false);
+  assert.equal(supervisor.isStopping(), true);
+
+  child.emit('exit', null, 'SIGTERM');
+  await stop;
+  assert.equal(supervisor.isStopping(), false);
+});
+
+test('stopping a replacement run still waits for the run stopping before it', async () => {
+  const first = fakeChild();
+  const second = fakeChild();
+  const { supervisor } = harness([first, second]);
+  const firstStart = supervisor.start();
+  first.stdout.write('SIDECAR_READY 43001\n');
+  await firstStart;
+  void supervisor.stop();
+  const secondStart = supervisor.start();
+  second.stdout.write('SIDECAR_READY 43002\n');
+  await secondStart;
+
+  let stopped = false;
+  const stop = supervisor.stop().then(() => {
+    stopped = true;
+  });
+  second.emit('exit', 0, null);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stopped, false);
+  assert.equal(supervisor.isStopping(), true);
+
+  first.emit('exit', 0, null);
+  await stop;
+  assert.equal(supervisor.isStopping(), false);
+});
+
+test('the working-agent count comes from /health of the run still active', async () => {
+  const child = fakeChild();
+  let health = async () => ({ ok: true, workingSessions: 3 });
+  const { supervisor } = harness([child], { requestHealth: () => health() });
+  assert.equal(await supervisor.workingSessionCount(), 0);
+  const started = supervisor.start();
+  await assert.rejects(supervisor.workingSessionCount(), /cannot report its work yet/);
+  child.stdout.write('SIDECAR_READY 43001\n');
+  await started;
+  assert.equal(await supervisor.workingSessionCount(), 3);
+
+  const answer = Promise.withResolvers();
+  health = () => answer.promise;
+  const counting = supervisor.workingSessionCount();
+  const stopping = supervisor.stop();
+  child.emit('exit', 0, null);
+  await stopping;
+  answer.resolve({ ok: true, workingSessions: 3 });
+  await assert.rejects(counting, /stopped before reporting/);
 });
 
 test('heartbeat arms one timeout at the interval and does not stack', async () => {
