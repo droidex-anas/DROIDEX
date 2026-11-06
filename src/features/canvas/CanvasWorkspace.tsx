@@ -15,7 +15,7 @@ import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useStoreSelector } from '../../hooks/useStore';
 import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
-import { canvasClient as canvas, frameRemovals } from './canvasClient';
+import { boardHistory, canvasClient as canvas, frameRemovals } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
 import type { CanvasBoardHandle } from './CanvasBoard';
@@ -168,6 +168,7 @@ export function CanvasWorkspace({
     return canvas.subscribeSummaries((summaries) => {
       if (summaries.some((summary) => summary.canvasId === watched)) return;
       frameRemovals.forget(watched);
+      boardHistory.forget(watched);
       if (namedCanvasId === undefined) attach(null);
       else closeCanvasTab(appSessionId);
     });

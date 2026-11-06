@@ -4,7 +4,7 @@
 // panel from the selection this returns.
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { elementStep } from './boardKeys';
+import { elementStep, historyStep } from './boardKeys';
 import { canvasMessage } from './client';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
@@ -223,11 +223,13 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   /**
    * Edit's keys on the board, for the frame `designId` the keyboard is on:
    * Enter as `enter`, and once an element is picked the arrows step through
-   * its design's elements. Without one the arrows stay the board's.
+   * its design's elements. Without one the arrows stay the board's. The
+   * history's keys wait while a commit is saving, as they do in the panel.
    */
   const runKey = (event: KeyboardEvent, designId: string | null): boolean => {
-    const step = active ? elementStep(event) : null;
     const current = latest.current.selection;
+    if (historyStep(event)) return current !== null && current.draft.pendingMutationId !== null;
+    const step = active ? elementStep(event) : null;
     if (step === 'first') {
       const on = designId ?? current?.draft.element.designId;
       if (on === undefined) return false;

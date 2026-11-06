@@ -9,7 +9,8 @@ import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { showBoard } from './boardOnScreen';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
-import { canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
+import { revisionEntry, type HistoryStep } from './boardHistory';
+import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
 import { CanvasInvitation, CanvasToolsMissing } from './CanvasPaneStates';
@@ -18,7 +19,12 @@ import type { AnnotateCanvasInput } from './annotationProtocol';
 import { DesignPreview } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import { syncFramePins, toggleFramePin, useFramePins } from './framePins';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
+import type {
+  ArrangeFramesInput,
+  CanvasFrame,
+  CanvasSnapshot,
+  SwitchRevisionInput,
+} from './protocol';
 import { useFrameActions } from './useFrameActions';
 
 const LazyDesignSystemDocument = lazy(async () => ({
@@ -61,7 +67,7 @@ export function CanvasBoardMount({
   boardRef: RefObject<CanvasBoardHandle | null>;
   onOpenSource: (designId: string) => void;
 }) {
-  const { canvasId } = snapshot;
+  const { canvasId, frames } = snapshot;
   const dispatch = useStoreDispatch();
   const agentWorking = useSessionLive(appSessionId);
   const toolsMissing = useStoreSelector((current) =>
@@ -75,15 +81,42 @@ export function CanvasBoardMount({
     (input: AnnotateCanvasInput) => canvas.annotate(appSessionId, canvasId, input),
     [appSessionId, canvasId],
   );
-  const editElement = useCallback(
-    (input: EditElementInput) => canvas.source.editElement(appSessionId, canvasId, input),
+  const switchRevision = useCallback(
+    (input: SwitchRevisionInput) => canvas.revisions.switchTo(appSessionId, canvasId, input),
     [appSessionId, canvasId],
+  );
+  // Each edit that made a revision is a step in the board's history.
+  const editElement = useCallback(
+    async (input: EditElementInput) => {
+      const receipt = await canvas.source.editElement(appSessionId, canvasId, input);
+      const { designId, revisionId } = input.edit.element;
+      const frame = frames.find((each) => each.designId === designId);
+      if (frame && receipt.revisionId !== revisionId)
+        boardHistory.record(
+          canvasId,
+          revisionEntry(
+            switchRevision,
+            { designId, name: frame.name },
+            revisionId,
+            receipt.revisionId,
+          ),
+        );
+      return receipt;
+    },
+    [appSessionId, canvasId, frames, switchRevision],
   );
   const removeFrames = useCallback(
     (removing: CanvasFrame[]) => frameRemovals.remove(appSessionId, canvasId, removing),
     [appSessionId, canvasId],
   );
-  const undoRemoval = useCallback(() => frameRemovals.undoLatest(canvasId), [canvasId]);
+  // A deletion keeps its own Undo, which goes first while its toast offers it.
+  const stepHistory = useCallback(
+    (step: HistoryStep) =>
+      step === 'undo'
+        ? frameRemovals.undoLatest(canvasId) || boardHistory.undo(canvasId)
+        : boardHistory.redo(canvasId),
+    [canvasId],
+  );
   const frameActions = useFrameActions(appSessionId, canvasId, pinnable);
   const pins = useFramePins(appSessionId);
   const pinnedIds = useMemo(
@@ -94,7 +127,6 @@ export function CanvasBoardMount({
     () => (pinnable ? syncFramePins(appSessionId, snapshot) : undefined),
     [appSessionId, pinnable, snapshot],
   );
-  const { frames } = snapshot;
   useCoverCapture(canvasId, frames);
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
@@ -150,7 +182,7 @@ export function CanvasBoardMount({
           onAnnotate={annotate}
           onEditElement={editElement}
           onRemoveFrames={removeFrames}
-          onUndoRemoval={undoRemoval}
+          onHistory={stepHistory}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           agentWorking={agentWorking}

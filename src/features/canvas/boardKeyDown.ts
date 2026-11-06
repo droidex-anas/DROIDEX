@@ -9,12 +9,13 @@ import {
   frameHeaderOf,
   isBoardControl,
   isBoardEditor,
+  historyStep,
   isDeleteKey,
-  isUndoKey,
   modeShortcut,
   zoomShortcut,
 } from './boardKeys';
 import type { ZoomCommand } from './BoardControls';
+import type { HistoryStep } from './boardHistory';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardInteraction, BoardInteractionEvent, BoardMode } from './canvasState';
 
@@ -40,8 +41,8 @@ export interface BoardKeyActions {
   nudge: (step: Point) => void;
   /** Deletes the selected frames; false when there is nothing Delete can take. */
   removeSelection: () => boolean;
-  /** Undoes this canvas's latest deletion; false when none is offered. */
-  undoRemoval: () => boolean;
+  /** Steps this canvas's history back or on; false when there is no step. */
+  history: (step: HistoryStep) => boolean;
   focusBoard: () => void;
   focusLabel: (designId: string) => void;
 }
@@ -119,7 +120,8 @@ function runBoardKey(
     return true;
   }
   if (isDeleteKey(event)) return actions.removeSelection();
-  if (isUndoKey(event)) return actions.undoRemoval();
+  const step = historyStep(event);
+  if (step) return actions.history(step);
   if (event.key === ' ') {
     actions.holdSpace();
     return true;

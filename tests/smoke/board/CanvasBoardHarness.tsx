@@ -527,7 +527,7 @@ function Harness() {
           }}
           onOpenSource={setSourceOpen}
           onRemoveFrames={(frames) => removals.remove('chat_1', snapshot.canvasId, frames)}
-          onUndoRemoval={() => removals.undoLatest(snapshot.canvasId)}
+          onHistory={(step) => step === 'undo' && removals.undoLatest(snapshot.canvasId)}
           frameActions={frameActions}
         />
         {sourceOpen && (

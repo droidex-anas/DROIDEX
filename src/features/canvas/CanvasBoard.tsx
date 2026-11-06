@@ -20,6 +20,7 @@ import { AnnotationLayer, DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
 import { BoardControls, type ZoomCommand } from './BoardControls';
 import { useBoardAnnouncer } from './boardAnnouncer';
+import type { HistoryStep } from './boardHistory';
 import { onBoardKeyDown } from './boardKeyDown';
 import {
   alignRects,
@@ -78,8 +79,8 @@ export interface CanvasBoardProps {
   onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
   /** Deletes frames from this canvas (`FrameRemovals.remove`); true once they are gone. */
   onRemoveFrames: (frames: CanvasFrame[]) => Promise<boolean>;
-  /** Undoes this canvas's latest deletion; false when none is offered. */
-  onUndoRemoval: () => boolean;
+  /** ⌘Z and its kin on the board or the element panel; false when there is no step. */
+  onHistory: (step: HistoryStep) => boolean;
   /**
    * One frame's live preview of `revisionId`, mounted only while it holds a
    * slot, reporting to the board's element editor through `selections`.
@@ -114,7 +115,7 @@ export function CanvasBoard({
   onAnnotate,
   onEditElement,
   onRemoveFrames,
-  onUndoRemoval,
+  onHistory,
   renderPreview,
   interaction,
   onInteractionChange,
@@ -344,7 +345,7 @@ export function CanvasBoard({
               );
             },
             removeSelection,
-            undoRemoval: onUndoRemoval,
+            history: onHistory,
             focusBoard: () => board.current?.focus({ preventScroll: true }),
             focusLabel,
           });
@@ -467,6 +468,7 @@ export function CanvasBoard({
           onPreview={editor.preview}
           onRevert={editor.revert}
           onCommit={editor.commit}
+          onHistory={onHistory}
           onLeave={() => board.current?.focus({ preventScroll: true })}
         />
       )}

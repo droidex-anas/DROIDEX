@@ -5,6 +5,7 @@
 import type { KeyboardEvent } from 'react';
 import { draftBounds, isTextDraft, type AnnotationTool } from './annotationGeometry';
 import type { ShownMark } from './annotationWrites';
+import type { HistoryStep } from './boardHistory';
 import type { ZoomCommand } from './BoardControls';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
@@ -53,10 +54,13 @@ export function isDeleteKey(event: KeyboardEvent): boolean {
   return event.key === 'Backspace' || event.key === 'Delete';
 }
 
-/** ⌘Z, or Ctrl+Z off the Mac. */
-export function isUndoKey(event: KeyboardEvent): boolean {
-  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return false;
-  return event.key.toLowerCase() === 'z';
+/** ⌘Z undoes; ⇧⌘Z and ⌘Y redo. Ctrl stands in for ⌘ off the Mac. */
+export function historyStep(event: KeyboardEvent): HistoryStep | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const key = event.key.toLowerCase();
+  if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
+  if (key === 'y' && !event.shiftKey) return 'redo';
+  return null;
 }
 
 /** Edit's keys: Enter for the first element, or into the panel once one is picked; the arrows step. */

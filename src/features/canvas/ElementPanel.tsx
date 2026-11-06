@@ -6,6 +6,8 @@
 // commits every preview as one edit and Escape takes one back.
 
 import type { ReactNode, Ref } from 'react';
+import type { HistoryStep } from './boardHistory';
+import { historyStep, isBoardEditor } from './boardKeys';
 import { ColourField } from './ColourField';
 import {
   ALIGN,
@@ -38,6 +40,8 @@ export interface ElementPanelProps {
   onPreview: (property: string, value: string) => void;
   onRevert: (property: string) => void;
   onCommit: () => void;
+  /** ⌘Z and its kin once nothing typed here is waiting to be saved. */
+  onHistory: (step: HistoryStep) => boolean;
   /** Escape on a field with nothing to take back hands the keyboard to the board. */
   onLeave: () => void;
 }
@@ -50,6 +54,7 @@ export function ElementPanel({
   onPreview,
   onRevert,
   onCommit,
+  onHistory,
   onLeave,
 }: ElementPanelProps) {
   const { draft, shown } = selection;
@@ -152,6 +157,14 @@ export function ElementPanel({
       role="region"
       aria-label={`Styles of the selected ${draft.site.tagName}`}
       className="canvas-element-panel my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
+      onKeyDown={(event) => {
+        const step = historyStep(event);
+        // Typing not yet saved comes back through the field's own undo first.
+        if (!step || (isBoardEditor(event.target) && Object.keys(draft.values).length > 0)) return;
+        event.preventDefault();
+        // A step now would move the head out from under the commit still saving.
+        if (draft.pendingMutationId === null) onHistory(step);
+      }}
     >
       <header className="shrink-0 px-3 pb-2 pt-3">
         <h2 className="flex min-w-0 items-baseline gap-2">
