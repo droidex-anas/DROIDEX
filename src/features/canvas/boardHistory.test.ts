@@ -106,6 +106,43 @@ test('a design that moved on loses its steps and says so; the other designs keep
   ]);
 });
 
+test('a step recorded while a press runs stays on top of it, and a refused press keeps it', async () => {
+  const redoing = fakeBoard();
+  redoing.edit(hero, 'h1', 'h2');
+  redoing.history.undo('cv');
+  redoing.switches[0].resolve(undefined);
+  await settle();
+  redoing.history.redo('cv');
+  redoing.edit(card, 'c1', 'c2');
+  redoing.switches[1].resolve(undefined);
+  await settle();
+  redoing.history.undo('cv');
+  assert.deepEqual(redoing.moves()[2], ['card', 'c1', 'c2']);
+
+  // Hero changed while its undo ran; the newer edit is the one left to undo.
+  const { history, switches, edit, moves } = fakeBoard();
+  edit(hero, 'h1', 'h2');
+  history.undo('cv');
+  edit(hero, 'h2', 'h3');
+  switches[0].reject(new CanvasRequestError('revision_conflict', 'The head moved.'));
+  await settle();
+  assert.equal(history.undo('cv'), true);
+  assert.deepEqual(moves()[1], ['hero', 'h2', 'h3']);
+});
+
+test('a deleted canvas runs none of the presses still waiting', async () => {
+  const { history, switches, edit } = fakeBoard();
+  edit(hero, 'h1', 'h2');
+  edit(card, 'c1', 'c2');
+  history.undo('cv');
+  history.undo('cv');
+  history.forget('cv');
+  switches[0].resolve(undefined);
+  await settle();
+  assert.equal(switches.length, 1);
+  assert.deepEqual(shown, []);
+});
+
 function frame(designId: string, name: string, y: number): CanvasFrame {
   return {
     designId,
@@ -202,4 +239,30 @@ test('a placement of two frames undoes and redoes as one step, while they sit wh
     ['Can’t undo moving 2 frames. Hero and Card changed since.'],
   );
   assert.equal(history.undo('cv'), false);
+});
+
+test('a press while a placement is on its way is ignored, so it never takes back the step under it', async () => {
+  const { history, place, arranges, land, sent } = fakeLayout();
+  const moveHero = (y: number, expectedLayoutVersion: number) =>
+    place({
+      mutationId: `to ${String(y)}`,
+      frames: [
+        { designId: 'hero', expectedLayoutVersion, rect: { x: 0, y, width: 400, height: 300 } },
+      ],
+    });
+  const first = moveHero(50, 1);
+  land(0);
+  await first;
+  const second = moveHero(60, 2);
+  assert.equal(history.undo('cv'), false);
+  assert.equal(arranges.length, 2);
+  land(1);
+  await second;
+
+  assert.equal(history.undo('cv'), true);
+  assert.deepEqual(sent(2), ['hero 50@3']);
+  land(2);
+  await settle();
+  assert.equal(history.redo('cv'), true);
+  assert.deepEqual(sent(3), ['hero 60@4']);
 });

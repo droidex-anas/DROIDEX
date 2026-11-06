@@ -135,9 +135,10 @@ test('an edit after a deletion is undone first, and ends the toast’s Undo', as
     switches.push({ ...input, ...answer });
     return answer.promise;
   };
-  const removing = removals.remove('chat', 'cv', [frame('a')]);
+  const removing = removals.remove('chat', 'cv', [frame('a'), frame('c')]);
   removes[0].resolve('undo-a');
   await removing;
+  assert.equal(shown[0].message, 'Deleted 2 frames');
   history.record('cv', revisionEntry(switchRevision, frame('b'), 'b1', 'b2'));
   assert.deepEqual(shown, []);
 

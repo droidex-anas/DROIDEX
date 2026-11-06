@@ -38,14 +38,16 @@ export class FrameRemovals {
     const generation = this.generationOf(canvasId);
     for (const key of keys) this.sending.add(key);
     try {
-      const undoId = await this.client.removeFrames(appSessionId, canvasId, {
-        mutationId: crypto.randomUUID(),
-        designIds: removing.map((frame) => frame.designId),
+      return await this.history.recording(canvasId, async () => {
+        const undoId = await this.client.removeFrames(appSessionId, canvasId, {
+          mutationId: crypto.randomUUID(),
+          designIds: removing.map((frame) => frame.designId),
+        });
+        if (this.generationOf(canvasId) !== generation) return false;
+        this.history.record(canvasId, this.deletion(appSessionId, canvasId, removing, undoId));
+        this.offerUndo(canvasId, removing);
+        return true;
       });
-      if (this.generationOf(canvasId) !== generation) return false;
-      this.history.record(canvasId, this.deletion(appSessionId, canvasId, removing, undoId));
-      this.offerUndo(canvasId, removing);
-      return true;
     } catch (error) {
       if (this.generationOf(canvasId) === generation)
         toast.error(`Couldn’t delete ${designsLabel(removing)}. ${canvasMessage(error)}`);

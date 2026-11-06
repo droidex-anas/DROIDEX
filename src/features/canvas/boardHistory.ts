@@ -43,8 +43,8 @@ interface Line {
   running: HistoryStep | null;
   /** Presses waiting behind it, oldest first. */
   pressed: HistoryStep[];
-  /** Bumped by every recorded step, which ends what an undo in flight could offer to redo. */
-  records: number;
+  /** Writes on their way whose steps are recorded when they land. */
+  writing: number;
 }
 
 export class BoardHistory {
@@ -57,7 +57,6 @@ export class BoardHistory {
     line.done = [...line.done, entry].slice(-MAX_STEPS);
     line.undone = [];
     line.pressed = [];
-    line.records += 1;
   }
 
   /** Takes the newest step back, after any presses still running; false when there is none. */
@@ -70,14 +69,31 @@ export class BoardHistory {
     return this.press(canvasId, 'redo');
   }
 
-  /** The canvas was deleted: its steps go, and a press still running says nothing. */
+  /**
+   * Runs `write`, a change that records its step when it lands. Presses are
+   * ignored until it settles: one run meanwhile would take back the step under
+   * it, and the record would then drop that step's redo.
+   */
+  async recording<Answer>(canvasId: string, write: () => Promise<Answer>): Promise<Answer> {
+    const line = this.lineOf(canvasId);
+    line.writing += 1;
+    try {
+      return await write();
+    } finally {
+      line.writing -= 1;
+    }
+  }
+
+  /** The canvas was deleted: its steps and waiting presses go, and a press still running says nothing. */
   forget(canvasId: string): void {
+    const line = this.lines.get(canvasId);
+    if (line) line.pressed = [];
     this.lines.delete(canvasId);
   }
 
   private press(canvasId: string, step: HistoryStep): boolean {
     const line = this.lines.get(canvasId);
-    if (!line || !reaches(line, step)) return false;
+    if (!line || line.writing > 0 || !reaches(line, step)) return false;
     line.pressed.push(step);
     if (line.running === null) void this.run(canvasId, line);
     return true;
@@ -97,7 +113,8 @@ export class BoardHistory {
   private async take(canvasId: string, line: Line, step: HistoryStep): Promise<boolean> {
     const entry = (step === 'undo' ? line.done : line.undone).at(-1);
     if (!entry) return false;
-    const records = line.records;
+    // Steps recorded while the press runs were taken after it, on the designs as they are then.
+    const earlier = new Set(line.done);
     let applied: boolean;
     try {
       applied = await entry[step]();
@@ -108,18 +125,20 @@ export class BoardHistory {
     }
     if (!applied) {
       const moved = new Set(entry.designs.map((design) => design.designId));
-      line.done = line.done.filter((each) => !touches(each, moved));
+      line.done = line.done.filter((each) => !earlier.has(each) || !touches(each, moved));
       line.undone = line.undone.filter((each) => !touches(each, moved));
       if (this.lines.get(canvasId) === line)
         toast.error(`Can’t ${step} ${entry.label}. ${designNames(entry)} changed since.`);
       return false;
     }
+    const later = line.done.filter((each) => !earlier.has(each));
     if (step === 'undo') {
       line.done = line.done.filter((each) => each !== entry);
-      if (line.records === records) line.undone = [...line.undone, entry];
+      if (later.length === 0) line.undone = [...line.undone, entry];
     } else {
       line.undone = line.undone.filter((each) => each !== entry);
-      line.done = [...line.done, entry];
+      if (later.length === 0) line.done.at(-1)?.covered?.();
+      line.done = [...line.done.filter((each) => earlier.has(each)), entry, ...later];
     }
     return true;
   }
@@ -127,7 +146,7 @@ export class BoardHistory {
   private lineOf(canvasId: string): Line {
     let line = this.lines.get(canvasId);
     if (!line) {
-      line = { done: [], undone: [], running: null, pressed: [], records: 0 };
+      line = { done: [], undone: [], running: null, pressed: [], writing: 0 };
       this.lines.set(canvasId, line);
     }
     return line;
@@ -212,15 +231,16 @@ export function recordPlacements<Answer>(
   arrange: (input: ArrangeFramesInput) => Promise<Answer>,
   frames: () => readonly CanvasFrame[],
 ): (input: ArrangeFramesInput) => Promise<Answer> {
-  return async (input) => {
-    const moves = input.frames.flatMap(({ designId, rect }): FrameMove[] => {
-      const frame = frames().find((each) => each.designId === designId);
-      return frame ? [{ designId, name: frame.name, before: frame.rect, after: rect }] : [];
+  return (input) =>
+    history.recording(canvasId, async () => {
+      const moves = input.frames.flatMap(({ designId, rect }): FrameMove[] => {
+        const frame = frames().find((each) => each.designId === designId);
+        return frame ? [{ designId, name: frame.name, before: frame.rect, after: rect }] : [];
+      });
+      const answer = await arrange(input);
+      history.record(canvasId, placementEntry(arrange, frames, moves));
+      return answer;
     });
-    const answer = await arrange(input);
-    history.record(canvasId, placementEntry(arrange, frames, moves));
-    return answer;
-  };
 }
 
 /** One frame a placement moved, from where it was to where it went. */
