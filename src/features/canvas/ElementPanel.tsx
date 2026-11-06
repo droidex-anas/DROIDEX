@@ -378,7 +378,7 @@ export function ElementPanel({
             })}
             {number('letterSpacing', 'Letter spacing', 'Letter', { step: 0.1, shiftStep: 1 })}
           </Pair>
-          {segmented('textAlign', 'Align', TEXT_ALIGN)}
+          {segmented('textAlign', 'Text align', TEXT_ALIGN)}
           <Labelled label="Case">
             <ValuePickerField
               label="Text transform"
