@@ -14,11 +14,19 @@
  *
  * It also answers the board's selection commands with a `selection` event for
  * the element picked or named, and again whenever that element's box moves,
- * each echoing the sequence number of the command it answers. A kit preview's
+ * each echoing the sequence number of the command it answers, and its hover
+ * command with a `hover` event naming the element under a point. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
  */
+/**
+ * Bytes one `selection` event may measure. It is the one event the board must
+ * never lose, so it has its own cap, and the reporter cuts long style values
+ * until its answer fits rather than let the intermediate drop it.
+ */
+const MAX_PREVIEW_SELECTION_BYTES = 16384;
+
 const GENERATED_FRAME_REPORTER = `(() => {
   const nonce = '__CANVAS_PREVIEW_NONCE__';
   const post = (event, payload) => {
@@ -101,24 +109,43 @@ const GENERATED_FRAME_REPORTER = `(() => {
     return only && only.nodeType === Node.TEXT_NODE ? only : null;
   };
   const encoder = new TextEncoder();
+  const bytes = (value) => encoder.encode(value).length;
   const textOf = (node) => {
     const value = previewedText ? previewedText.value : soleText(node)?.data;
-    return typeof value === 'string' && encoder.encode(value).length <= 512 ? value : null;
+    return typeof value === 'string' && bytes(value) <= 512 ? value : null;
+  };
+  const rectOf = (node) => {
+    const box = node.getBoundingClientRect();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  };
+  // Over the intermediate's cap the answer would be dropped and the board
+  // would lose the selection, so every style value is cut to the same length,
+  // shorter each round, until it fits. The text stays whole or goes last.
+  const SELECTION_BUDGET = ${String(MAX_PREVIEW_SELECTION_BYTES - 512)};
+  const fitted = (element) => {
+    for (const longest of [256, 64, 16, 0]) {
+      const styles = {};
+      for (const name of Object.keys(element.styles))
+        styles[name] = element.styles[name].slice(0, longest);
+      const candidate = Object.assign({}, element, { styles: styles });
+      if (bytes(JSON.stringify(candidate)) <= SELECTION_BUDGET) return candidate;
+    }
+    return Object.assign({}, element, { styles: {}, text: null });
   };
   const describe = () => {
     if (!selected || !selected.node.isConnected) return null;
-    const box = selected.node.getBoundingClientRect();
-    const computed = getComputedStyle(selected.node);
+    const node = selected.node;
+    const computed = getComputedStyle(node);
     const styles = {};
-    for (const name of selected.properties)
-      styles[name] = computed.getPropertyValue(kebab(name)).slice(0, 96);
-    return {
+    for (const name of selected.properties) styles[name] = computed.getPropertyValue(kebab(name));
+    return fitted({
       elementId: selected.elementId,
       instancePath: selected.instancePath,
-      rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+      rect: rectOf(node),
       styles: styles,
-      text: textOf(selected.node),
-    };
+      text: textOf(node),
+      parentDisplay: node.parentElement ? getComputedStyle(node.parentElement).display : '',
+    });
   };
   const reportSelection = () => {
     if (selectionQueued) return;
@@ -206,6 +233,22 @@ const GENERATED_FRAME_REPORTER = `(() => {
       } else {
         select(node || null, command.properties, {}, null, command.sequence);
       }
+    } else if (command.command === 'hover') {
+      const hit = document.elementFromPoint(command.x, command.y);
+      const node = hit && hit.closest('[' + MARKER + ']');
+      const instancePath = node ? pathOf(node) : null;
+      post('hover', {
+        sequence: command.sequence,
+        element:
+          node && instancePath !== null
+            ? {
+                elementId: node.getAttribute(MARKER),
+                instancePath: instancePath,
+                rect: rectOf(node),
+                tagName: node.localName,
+              }
+            : null,
+      });
     } else if (command.command === 'select') {
       const target = command.target;
       const node = target ? atPath(target.instancePath) : null;
@@ -221,4 +264,4 @@ const GENERATED_FRAME_REPORTER = `(() => {
   });
 })();`;
 
-module.exports = { GENERATED_FRAME_REPORTER };
+module.exports = { GENERATED_FRAME_REPORTER, MAX_PREVIEW_SELECTION_BYTES };

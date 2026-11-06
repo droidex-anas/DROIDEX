@@ -1,6 +1,7 @@
-// A colour: its swatch and text, then a popover that lists the kit's colour
-// tokens first and picks any colour after them. Typing previews; a token or
-// swatch pick commits at once; a custom drag previews and commits as the
+// A colour: its swatch and value, then a popover that lists the kit's colour
+// tokens first and picks any colour after them. At rest it reads as its
+// token's name, else hex with any opacity, else None. Typing previews; a token
+// or swatch pick commits at once; a custom drag previews and commits as the
 // popover closes.
 
 import { useRef, useState, type KeyboardEvent } from 'react';
@@ -9,6 +10,7 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { Input } from '../../components/ui/Field';
 import { Popover } from '../../components/ui/Popover';
 import { cn } from '../../components/ui/cn';
+import { colourFace } from './panelValues';
 import { OptionList, Swatch, type ValueOption } from './ValuePickerField';
 
 const HEX = /^#(?:[0-9a-f]{3}){1,2}$/i;
@@ -54,6 +56,8 @@ export function ColourField({
   const [open, setOpen] = useState(false);
   /** The picker was dragged since the popover opened, so closing it commits the colour. */
   const dragged = useRef(false);
+  const [editing, setEditing] = useState(false);
+  const face = editing || previewed ? value : colourFace(value, tokens).text;
   const close = () => {
     setOpen(false);
     if (!dragged.current) return;
@@ -72,23 +76,18 @@ export function ColourField({
     }
   };
   return (
-    <div ref={field}>
+    <div ref={field} className="min-w-0">
       <Input
         variant="compact"
         aria-label={label}
-        value={value}
+        value={face}
         title={value}
         readOnly={disabled}
         spellCheck={false}
         className={cn(previewed && 'bg-active')}
         leading={
-          <span className="flex shrink-0 items-center gap-1.5 pr-1">
+          <span className="flex shrink-0 items-center pr-1.5">
             <Swatch colour={value} />
-            <span
-              className={cn('w-16 truncate text-label', previewed ? 'text-primary' : 'text-muted')}
-            >
-              {label}
-            </span>
           </span>
         }
         actions={
@@ -108,11 +107,18 @@ export function ColourField({
             <ChevronDown aria-hidden className="size-icon-sm" />
           </button>
         }
+        onFocus={() => {
+          setEditing(true);
+        }}
+        onBlur={() => {
+          setEditing(false);
+        }}
         onChange={(event) => {
           onPreview(event.target.value);
         }}
         onKeyDown={onKeyDown}
       />
+      {/* Beside the panel rather than over the fields below it. */}
       <Popover
         open={open}
         onClose={close}
@@ -120,6 +126,7 @@ export function ColourField({
         alignRef={field}
         label={label}
         width={232}
+        placement="left-start"
       >
         <div className="flex flex-col gap-1 p-1.5">
           {tokens.length > 0 && (

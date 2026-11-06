@@ -319,8 +319,20 @@
 
 /* ── Pane ───────────────────────────────────────────────────────────────── */
 
-/* The element panel docks inside the board's column, so the side pane's corner
-   controls step left of it instead of covering its header. */
+/* The element panel docks inside the board's column, full height, so the side
+   pane's corner controls step left of it instead of covering its header. */
 .canvas-pane-column:has(.canvas-element-panel) > .canvas-pane-corner {
-  right: calc(theme('width.80') + theme('spacing.4'));
+  right: calc(theme('width.sidebar') + theme('spacing.2'));
+}
+
+/* A colour that paints nothing, as the element panel's swatch shows it. */
+.canvas-swatch-none {
+  background-color: var(--surface);
+  background-image: conic-gradient(
+    color-mix(in srgb, var(--text) 22%, transparent) 25%,
+    transparent 0 50%,
+    color-mix(in srgb, var(--text) 22%, transparent) 0 75%,
+    transparent 0
+  );
+  background-size: 6px 6px;
 }

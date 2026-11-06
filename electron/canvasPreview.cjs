@@ -19,7 +19,10 @@
  * Kept free of `require('electron')` so it runs under plain Node.
  */
 
-const { GENERATED_FRAME_REPORTER } = require('./canvasPreviewReporter.cjs');
+const {
+  GENERATED_FRAME_REPORTER,
+  MAX_PREVIEW_SELECTION_BYTES,
+} = require('./canvasPreviewReporter.cjs');
 
 const CANVAS_PREVIEW_SCHEME = 'droidex-canvas-preview';
 /** The only URL the handler serves, and the only `src` an attachment allows. */
@@ -70,7 +73,7 @@ const CANVAS_PREVIEW_CSP = [
   "form-action 'none'",
 ].join('; ');
 
-/** One message from the generated frame, as JSON. Diagnostics are the largest. */
+/** One message from the generated frame, as JSON, except a selection, which has its own cap. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
 /** Events held between two polls. Over this, a message is dropped and counted. */
 const MAX_PREVIEW_QUEUED_EVENTS = 64;
@@ -87,6 +90,8 @@ const MAX_PREVIEW_STYLE_PROPERTIES = 64;
 /** Draft token values one `setTokens` may carry, and how long each may be: a kit's caps. */
 const MAX_PREVIEW_TOKENS = 128;
 const MAX_PREVIEW_TOKEN_VALUE_LENGTH = 160;
+/** How long a hover waits for the design to answer before it answers nothing. */
+const PREVIEW_HOVER_DEADLINE_MS = 250;
 /** The nonce charset the intermediate will embed; the renderer mints hex. */
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 
@@ -98,6 +103,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * renderer reads as a guest it no longer owns. `pick` and `select` pass a
  * bounded selection command on to the generated frame, and `setTokens` a kit's
  * draft custom properties, which the reporter sets on the design's root.
+ * `hover` asks which element is under a point and answers with it directly,
+ * outside the queue, so the board's outline keeps up with the pointer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -130,20 +137,24 @@ const INTERMEDIATE_SCRIPT = `(() => {
   let asked = [];
   // A command's sequence number, which its answer echoes.
   const isSequence = (value) => Number.isSafeInteger(value) && value > 0;
+  // A box in the design's pixels, which may start above or left of its viewport.
+  const rectOf = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const rect = {};
+    for (const side of ['x', 'y', 'width', 'height']) {
+      if (typeof value[side] !== 'number' || !Number.isFinite(value[side])) return null;
+      rect[side] = value[side];
+    }
+    return rect.width < 0 || rect.height < 0 ? null : rect;
+  };
   const normalizeSelection = (data) => {
     if (!isSequence(data.sequence)) return null;
     const element = data.element;
     if (element === null) return { event: 'selection', sequence: data.sequence, element: null };
-    if (!element || typeof element !== 'object' || !element.rect || typeof element.rect !== 'object')
-      return null;
-    const rect = {};
-    for (const side of ['x', 'y', 'width', 'height']) {
-      const value = element.rect[side];
-      if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-      rect[side] = value;
-    }
+    if (!element || typeof element !== 'object') return null;
+    const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
-    if (!elementId || rect.width < 0 || rect.height < 0) return null;
+    if (!rect || !elementId) return null;
     const given = element.styles && typeof element.styles === 'object' ? element.styles : {};
     const styles = {};
     for (const name of asked) if (typeof given[name] === 'string') styles[name] = text(given[name]);
@@ -156,9 +167,25 @@ const INTERMEDIATE_SCRIPT = `(() => {
         rect,
         styles,
         text: whole(element.text),
+        parentDisplay: text(element.parentDisplay),
       },
     };
   };
+  const normalizeHover = (element) => {
+    if (!element || typeof element !== 'object') return null;
+    const rect = rectOf(element.rect);
+    const elementId = text(element.elementId);
+    if (!rect || !elementId) return null;
+    return {
+      elementId,
+      instancePath: text(element.instancePath),
+      rect,
+      tagName: text(element.tagName),
+    };
+  };
+  // The one hover waiting for the frame's answer; a newer one answers it with nothing.
+  let hovering = null;
+  let hoverSequence = 0;
 
   // Only these shapes leave the intermediate, rebuilt field by field so no
   // getter, prototype or extra property from generated code ever travels.
@@ -216,8 +243,17 @@ const INTERMEDIATE_SCRIPT = `(() => {
     }
     // Bytes, not code units: a string of astral characters is four times its
     // length and would otherwise pass a cap named in bytes.
-    if (typeof encoded !== 'string' || bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)}) {
+    if (typeof encoded !== 'string') return;
+    const oversized =
+      data.event === 'selection'
+        ? bytes(encoded) > ${String(MAX_PREVIEW_SELECTION_BYTES)}
+        : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
+    if (oversized) {
       dropped += 1;
+      return;
+    }
+    if (data.event === 'hover') {
+      if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
     const event = normalize(data);
@@ -309,6 +345,28 @@ const INTERMEDIATE_SCRIPT = `(() => {
           text: whole(target.text),
         },
         properties,
+      });
+    },
+    hover(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      if (!request || typeof request !== 'object') return 'invalid_request';
+      if (!Number.isFinite(request.x) || !Number.isFinite(request.y)) return 'invalid_request';
+      if (hovering) hovering.settle(null);
+      hoverSequence += 1;
+      const sequence = hoverSequence;
+      return new Promise((resolve) => {
+        let deadline = null;
+        const settle = (element) => {
+          clearTimeout(deadline);
+          if (hovering && hovering.sequence === sequence) hovering = null;
+          resolve(JSON.stringify(element));
+        };
+        hovering = { sequence, settle };
+        deadline = setTimeout(() => settle(null), ${String(PREVIEW_HOVER_DEADLINE_MS)});
+        frame.contentWindow.postMessage(
+          { canvasPreviewCommand: instance.nonce, command: 'hover', sequence, x: request.x, y: request.y },
+          '*',
+        );
       });
     },
     setTokens(request) {

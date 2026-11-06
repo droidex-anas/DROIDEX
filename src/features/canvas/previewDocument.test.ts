@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MAX_PREVIEW_SNAPSHOT_EVENTS,
+  previewHoverScript,
   previewNonce,
   previewSelectScript,
+  readPreviewHover,
   readPreviewSnapshot,
   type PreviewInstance,
 } from './previewDocument';
@@ -32,6 +34,7 @@ const selected = {
   rect: { x: -4, y: 2.5, width: 120, height: 0 },
   styles: { gap: '4px', color: 'rgb(0, 0, 0)' },
   text: 'Welcome',
+  parentDisplay: 'flex',
 };
 
 test('every bounded event shape is accepted', () => {
@@ -89,6 +92,9 @@ test('a malformed or oversized answer is refused whole', () => {
     }),
     answer({
       events: [{ event: 'selection', sequence: 1, element: { ...selected, styles: { gap: 4 } } }],
+    }),
+    answer({
+      events: [{ event: 'selection', sequence: 1, element: { ...selected, parentDisplay: null } }],
     }),
     answer({ events: [{ event: 'diagnostics', diagnostics: [{ code: 'x' }] }] }),
     // One good event does not carry a bad one past the boundary.
@@ -176,6 +182,47 @@ test('a snapshot over its own byte bound is still refused whole', () => {
   );
 
   assert.equal(readPreviewSnapshot(huge, instance), null);
+});
+
+test('a selection the size of its own cap is read, not refused', () => {
+  // The intermediate keeps one selection of up to 16 KB beside a full queue,
+  // so the snapshot bound has to leave room for it.
+  const styles = Object.fromEntries(
+    Array.from({ length: 60 }, (_, index) => [`p${String(index)}`, 'a'.repeat(250)]),
+  );
+  const fill = {
+    event: 'diagnostics',
+    diagnostics: Array.from({ length: 8 }, () => ({ code: 'e', message: 'a'.repeat(470) })),
+  };
+  const selection = { event: 'selection', sequence: 1, element: { ...selected, styles } };
+  const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+  assert.ok(size(fill) <= 4096 && size(selection) <= 16384);
+  const events = [
+    ...Array.from({ length: MAX_PREVIEW_SNAPSHOT_EVENTS - 1 }, () => fill),
+    selection,
+  ];
+
+  assert.equal(readPreviewSnapshot(answer({ events }), instance)?.events.length, events.length);
+});
+
+test('a hover is a fixed call, and only a well-formed answer names an element', () => {
+  assert.equal(
+    previewHoverScript({ x: 12.5, y: -3 }),
+    'globalThis.__droidexCanvasPreview.hover({"x":12.5,"y":-3})',
+  );
+  const hovered = { elementId: 'el_1', instancePath: '0/2', rect: selected.rect, tagName: 'h1' };
+
+  assert.deepEqual(readPreviewHover(JSON.stringify(hovered)), hovered);
+  for (const value of [
+    'null',
+    'invalid_request',
+    null,
+    JSON.stringify({ ...hovered, tagName: '' }),
+    JSON.stringify({ ...hovered, rect: { ...hovered.rect, height: -1 } }),
+    JSON.stringify({ ...hovered, instancePath: 2 }),
+  ]) {
+    assert.equal(readPreviewHover(value), null, String(value));
+  }
 });
 
 test('a selection command is a fixed call whose previewed styles are data, not code', () => {

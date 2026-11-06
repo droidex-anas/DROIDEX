@@ -1,12 +1,14 @@
 // A number, usually with a unit: typing previews (a bare number gains the
 // field's unit), the arrow keys step it (Shift by the large step), dragging
 // its short name scrubs it, Enter commits and Escape takes it back. A button
-// lists the kit's tokens for the property when it has any.
+// lists the kit's tokens for the property when it has any. At rest it reads
+// as the token it matches, and zero or a keyword as a muted placeholder.
 
-import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { Hash } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { cn } from '../../components/ui/cn';
+import { lengthFace } from './panelValues';
 import { ValuePickerButton, type ValueOption } from './ValuePickerField';
 
 // The unit group wraps the choice so a bare number still yields a string.
@@ -72,6 +74,9 @@ export function NumberField({
   const input = useRef<HTMLInputElement>(null);
   /** The drag in progress, held by pointer capture so it ends with the pointer or the field. */
   const scrub = useRef<{ startX: number; start: { amount: number; unit: string } } | null>(null);
+  const [editing, setEditing] = useState(false);
+  // What it reads as at rest; typing, and a preview, always show the value itself.
+  const face = editing || previewed ? { text: value, placeholder: '' } : lengthFace(value, tokens);
   const clamp = (amount: number): number => {
     if (min !== undefined) amount = Math.max(min, amount);
     if (max !== undefined) amount = Math.min(max, amount);
@@ -125,11 +130,18 @@ export function NumberField({
         ref={input}
         variant="compact"
         aria-label={label}
-        value={value}
-        title={value}
+        value={face.text}
+        placeholder={face.placeholder}
+        title={face.text || value}
         readOnly={disabled}
         spellCheck={false}
         inputMode="decimal"
+        onFocus={() => {
+          setEditing(true);
+        }}
+        onBlur={() => {
+          setEditing(false);
+        }}
         className={cn('tabular-nums', previewed && 'bg-active')}
         leading={
           <span

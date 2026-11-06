@@ -250,6 +250,7 @@ const picked: PreviewElement = {
   rect: { x: 8, y: 12, width: 120, height: 32 },
   styles: { gap: '4px' },
   text: null,
+  parentDisplay: 'block',
 };
 
 test('selection commands reach only a guest this run started and has not stopped', async () => {
@@ -272,6 +273,25 @@ test('selection commands reach only a guest this run started and has not stopped
   session.preview.stop();
   session.preview.select(null, ['gap']);
   assert.equal(session.calls.length, 4);
+});
+
+test('a hover asks a started guest directly and answers null once the run stops', async () => {
+  const session = run();
+  assert.equal(await session.preview.hover({ x: 1, y: 2 }), null, 'nothing to ask before start');
+  assert.equal(session.calls.length, 1);
+
+  await started(session);
+  const answer = session.preview.hover({ x: 10, y: 20 });
+  const call = session.calls[2];
+  assert.equal(call.code, 'globalThis.__droidexCanvasPreview.hover({"x":10,"y":20})');
+  const hovered = { elementId: 'el_1', instancePath: '0/1', rect: picked.rect, tagName: 'h1' };
+  call.settle(JSON.stringify(hovered));
+  assert.deepEqual(await answer, hovered);
+
+  // A guest that never answers cannot keep a stopped run's hover waiting.
+  const stranded = session.preview.hover({ x: 10, y: 20 });
+  session.preview.stop();
+  assert.equal(await stranded, null);
 });
 
 test('draft tokens reach a started guest as data and nothing after the run stops', async () => {

@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { elementStep, historyStep } from './boardKeys';
+import type { Point } from './canvasGeometry';
 import { canvasMessage } from './client';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
@@ -282,6 +283,9 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     },
     enter,
     runKey,
+    /** What is under a point in one design's live preview, for the hover outline. */
+    hover: (designId: string, at: Point) =>
+      runs.current.get(designId)?.run.hover(at) ?? Promise.resolve(null),
   };
 }
 

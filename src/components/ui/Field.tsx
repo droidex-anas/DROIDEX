@@ -112,7 +112,7 @@ export function Input({
         !hasAffix
           ? cn(
               width,
-              'min-w-0 text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
+              'min-w-0 text-ellipsis text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
               VARIANT[variant],
               fill,
               hovers && 'enabled:hover:bg-active',
@@ -120,7 +120,7 @@ export function Input({
             )
           : cn(
               width,
-              'h-full min-w-0 bg-transparent text-primary placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed',
+              'h-full min-w-0 text-ellipsis bg-transparent text-primary placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed',
             )
       }
     />

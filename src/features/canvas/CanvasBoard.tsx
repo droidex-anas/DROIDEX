@@ -30,7 +30,8 @@ import { showsFrameTools, type BoardInteraction } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
-import { ElementPanel } from './ElementPanel';
+import { ElementOutlines } from './ElementOutlines';
+import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
@@ -43,6 +44,7 @@ import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardToastPlacement } from './useBoardToastPlacement';
 import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
+import { useElementHover } from './useElementHover';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
 import { useInteractionDispatch } from './useInteractionDispatch';
@@ -169,6 +171,7 @@ export function CanvasBoard({
     active: interaction.mode === 'edit',
     onEditElement,
   });
+  const hover = useElementHover(interaction.mode === 'edit', editor.hover);
 
   const gestures = useBoardGestures({
     board,
@@ -263,8 +266,9 @@ export function CanvasBoard({
   const focusBoard = () => board.current?.focus({ preventScroll: true });
 
   return (
-    // The element panel is a column beside the board, not a layer over it, so
-    // it takes its own wheel and the board only gives up width.
+    // Edit's element panel is a full-height column beside the board, not a
+    // layer over it, so it takes its own wheel and the board only gives up
+    // width; the board's view keeps its top-left, so no frame moves as it opens.
     <div className="flex h-full min-h-0 w-full bg-bg">
       <div
         ref={board}
@@ -370,18 +374,20 @@ export function CanvasBoard({
               onPickElement={(picked, at) => {
                 editor.pick(picked.designId, at);
               }}
+              onHoverElement={(hovered, at) => {
+                if (at) hover.move(hovered.designId, at);
+                else hover.clear();
+              }}
               onEditEnter={(picked) => {
                 editor.enter(picked.designId);
               }}
-              elementBox={
-                editor.selection?.draft.element.designId === frame.designId
-                  ? editor.selection.shown.rect
-                  : null
-              }
+              elementPicked={editor.selection?.draft.element.designId === frame.designId}
+              elementHovered={hover.hovered?.designId === frame.designId}
               tabStop={frame.designId === tabStopId}
               onFocusLabel={onFocusLabel}
             />
           ))}
+          <ElementOutlines drawn={drawn} selection={editor.selection} hovered={hover.hovered} />
           <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
           <AnnotationLayer
             {...annotation.layer}
@@ -422,10 +428,15 @@ export function CanvasBoard({
           {announcement}
         </p>
       </div>
+      {interaction.mode === 'edit' && !editor.selection && <EmptyElementPanel />}
       {editor.selection && (
         <ElementPanel
           ref={editor.panel}
           selection={editor.selection}
+          frameName={
+            frames.find((frame) => frame.designId === editor.selection?.draft.element.designId)
+              ?.name ?? ''
+          }
           tokens={editor.tokens}
           mode={editor.mode}
           onPreview={editor.preview}

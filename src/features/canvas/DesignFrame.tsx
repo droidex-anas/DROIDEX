@@ -89,10 +89,14 @@ export interface DesignFrameProps {
   onInteract: (frame: CanvasFrame) => void;
   /** A press in Edit, at a point in the design's own pixels. */
   onPickElement: (frame: CanvasFrame, at: Point) => void;
+  /** The pointer moving over the design in Edit, at a point in its pixels, or leaving it. */
+  onHoverElement: (frame: CanvasFrame, at: Point | null) => void;
   /** Enter on the label, or a double-click on the design, in Edit. */
   onEditEnter: (frame: CanvasFrame) => void;
-  /** The box of the element Edit has picked in this frame, in the design's pixels. */
-  elementBox: FrameRect | null;
+  /** Edit has picked an element in this frame, so its size is the element's to show. */
+  elementPicked: boolean;
+  /** The pointer is over an element Edit can pick in this frame. */
+  elementHovered: boolean;
   /** This frame's label holds the frames' one tab stop. */
   tabStop: boolean;
   onFocusLabel: (frame: CanvasFrame) => void;
@@ -110,7 +114,7 @@ export interface DesignFrameProps {
 export function DesignFrame(props: DesignFrameProps) {
   const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, held } = props;
   const { capturePointer, onHold, onPick, onInteract, onPickElement, onEditEnter } = props;
-  const { elementBox } = props;
+  const { onHoverElement } = props;
   const [renaming, setRenaming] = useState(false);
   const label = useRef<HTMLDivElement>(null);
   const animated = arriving && motion.frameArrivalMs > 0;
@@ -125,6 +129,14 @@ export function DesignFrame(props: DesignFrameProps) {
   const click = (event: MouseEvent<HTMLElement>) => {
     if (!event.shiftKey) onPick(frame, false);
   };
+  /** Where the pointer is in the design's own pixels. */
+  const designPoint = (event: PointerEvent<HTMLElement>): Point => {
+    const box = event.currentTarget.getBoundingClientRect();
+    return { x: (event.clientX - box.left) / scale, y: (event.clientY - box.top) / scale };
+  };
+  let cursor = 'default';
+  if (held) cursor = 'grabbing';
+  else if (mode === 'edit' && props.elementHovered) cursor = 'pointer';
   return (
     <div
       data-design-frame={frame.designId}
@@ -211,20 +223,22 @@ export function DesignFrame(props: DesignFrameProps) {
           <div
             data-canvas-input-overlay
             className="absolute inset-0"
-            style={{ cursor: held ? 'grabbing' : 'default', touchAction: 'none' }}
+            style={{ cursor, touchAction: 'none' }}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.stopPropagation();
               if (mode === 'edit') {
                 onPick(frame, false);
-                const box = event.currentTarget.getBoundingClientRect();
-                onPickElement(frame, {
-                  x: (event.clientX - box.left) / scale,
-                  y: (event.clientY - box.top) / scale,
-                });
+                onPickElement(frame, designPoint(event));
                 return;
               }
               press(event);
+            }}
+            onPointerMove={(event) => {
+              if (mode === 'edit') onHoverElement(frame, designPoint(event));
+            }}
+            onPointerLeave={() => {
+              if (mode === 'edit') onHoverElement(frame, null);
             }}
             onClick={click}
             onDoubleClick={(event) => {
@@ -234,24 +248,6 @@ export function DesignFrame(props: DesignFrameProps) {
             }}
           />
         )}
-        {elementBox && (
-          <div
-            aria-hidden
-            className="canvas-element-outline"
-            style={{
-              left: elementBox.x,
-              top: elementBox.y,
-              width: elementBox.width,
-              height: elementBox.height,
-            }}
-          >
-            <div className="canvas-frame-size canvas-chrome">
-              <span>
-                {Math.round(elementBox.width)} × {Math.round(elementBox.height)}
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
       {selected && !props.multiSelect && (
@@ -259,7 +255,7 @@ export function DesignFrame(props: DesignFrameProps) {
           frame={frame}
           rect={rect}
           mode={mode}
-          elementPicked={elementBox !== null}
+          elementPicked={props.elementPicked}
           onHold={onHold}
           onResize={props.onResize}
           onLeave={focusLabel}

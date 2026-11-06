@@ -1,5 +1,6 @@
-// The fixed choices the element panel offers: the segments for flex layout,
-// text alignment and border style, and the options for keyword properties.
+// The fixed choices the element panel offers: the segments for layout, flex
+// alignment, text alignment and border style, and the options for keyword
+// properties.
 
 import {
   AlignCenter,
@@ -31,6 +32,11 @@ import {
 import type { Segment } from './SegmentedControl';
 import type { ValueOption } from './ValuePickerField';
 
+export const LAYOUT: Segment<string>[] = [
+  { value: 'block', label: 'Layout: block', text: 'Block' },
+  { value: 'flex', label: 'Layout: flex', text: 'Flex' },
+  { value: 'grid', label: 'Layout: grid', text: 'Grid' },
+];
 export const DIRECTION: Segment<string>[] = [
   { value: 'row', label: 'Direction: row', icon: ArrowRight },
   { value: 'column', label: 'Direction: column', icon: ArrowDown },
@@ -57,6 +63,9 @@ export const ALIGN: Segment<string>[] = [
   { value: 'baseline', label: 'Align to the baseline', icon: AlignItemsBaseline },
   { value: 'stretch', label: 'Align stretched', icon: AlignItemsStretch },
 ];
+/** The same choices for a column, whose main axis runs down: the glyphs turn with it. */
+export const JUSTIFY_COLUMN = turned(JUSTIFY, 'rotate-90');
+export const ALIGN_COLUMN = turned(ALIGN, '-rotate-90');
 export const ALIGN_SELF: Segment<string>[] = [
   { value: 'auto', label: 'Align self: as its container', text: 'Auto' },
   ...ALIGN.map((segment) => ({ ...segment, label: segment.label.replace('Align', 'Align self') })),
@@ -72,18 +81,13 @@ export const BORDER_STYLE: Segment<string>[] = [
   { value: 'dashed', label: 'Border: dashed', icon: BorderDashed },
   { value: 'dotted', label: 'Border: dotted', icon: BorderDotted },
   { value: 'double', label: 'Border: double', icon: BorderDouble },
-  { value: 'none', label: 'Border: none' },
+  { value: 'none', label: 'Border: none', text: 'None' },
 ];
 
-export const DISPLAY: ValueOption[] = [
-  { value: 'block', label: 'Block' },
-  { value: 'inline-block', label: 'Inline block' },
-  { value: 'inline', label: 'Inline' },
-  { value: 'flex', label: 'Flex' },
-  { value: 'inline-flex', label: 'Inline flex' },
-  { value: 'grid', label: 'Grid' },
-  { value: 'none', label: 'Hidden' },
-];
+function turned(segments: readonly Segment<string>[], turn: string): Segment<string>[] {
+  return segments.map((segment) => ({ ...segment, iconClassName: turn }));
+}
+
 export const OVERFLOW: ValueOption[] = [
   { value: 'visible', label: 'Visible' },
   { value: 'hidden', label: 'Hidden' },

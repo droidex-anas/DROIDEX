@@ -1,7 +1,7 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the five audited literals below.
+// element's `executeJavaScript`, with exactly the six audited literals below.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -20,8 +20,11 @@ const MAX_PREVIEW_TEXT = 512;
 const MAX_PREVIEW_STYLE_PROPERTIES = 64;
 /** Bytes one queued event may measure, as the intermediate accepts it. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
-/** The queue cap times the largest event the guest will keep, with headroom. */
-const MAX_PREVIEW_SNAPSHOT_BYTES = MAX_PREVIEW_SNAPSHOT_EVENTS * MAX_PREVIEW_EVENT_BYTES + 1024;
+/** Bytes a selection may measure: the intermediate gives it its own cap and keeps only one. */
+const MAX_PREVIEW_SELECTION_BYTES = 16384;
+/** The queue cap times the largest event, plus the one selection the guest keeps, with headroom. */
+const MAX_PREVIEW_SNAPSHOT_BYTES =
+  MAX_PREVIEW_SNAPSHOT_EVENTS * MAX_PREVIEW_EVENT_BYTES + MAX_PREVIEW_SELECTION_BYTES + 1024;
 
 /** One live preview's identity, minted by the board and echoed by the guest. */
 export interface PreviewInstance {
@@ -51,6 +54,16 @@ export interface PreviewElement {
    * since what the board shows here it may write back as the whole text.
    */
   text: string | null;
+  /** Its parent's computed `display`, which decides whether it is a flex or grid item. */
+  parentDisplay: string;
+}
+
+/** The element under the pointer, which the board outlines and names before it is picked. */
+export interface PreviewHover {
+  elementId: string;
+  instancePath: string;
+  rect: FrameRect;
+  tagName: string;
 }
 
 /**
@@ -121,6 +134,11 @@ export function previewSelectScript(
   sequence: number,
 ): string {
   return `globalThis.__droidexCanvasPreview.select(${jsonArgument({ target, properties, sequence })})`;
+}
+
+/** Asks which element is under a point in the design's pixels; the call itself answers. */
+export function previewHoverScript(at: { x: number; y: number }): string {
+  return `globalThis.__droidexCanvasPreview.hover(${jsonArgument({ x: at.x, y: at.y })})`;
 }
 
 /**
@@ -213,10 +231,35 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   return { event: 'diagnostics', diagnostics };
 }
 
+/** A hover's answer, or null when nothing marked is under the point or the answer is not one. */
+export function readPreviewHover(value: unknown): PreviewHover | null {
+  if (typeof value !== 'string' || utf8Bytes(value) > MAX_PREVIEW_EVENT_BYTES) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!record(parsed) || !present(parsed.elementId) || !present(parsed.tagName)) return null;
+  const rect = readRect(parsed.rect);
+  if (!rect || typeof parsed.instancePath !== 'string') return null;
+  return {
+    elementId: clampPreviewText(parsed.elementId),
+    instancePath: clampPreviewText(parsed.instancePath),
+    rect,
+    tagName: clampPreviewText(parsed.tagName),
+  };
+}
+
 function readSelection({ sequence, element }: Record<string, unknown>): PreviewEvent | null {
   if (!count(sequence) || sequence === 0) return null;
   if (element === null) return { event: 'selection', sequence, element: null };
-  if (!record(element) || !present(element.elementId) || typeof element.instancePath !== 'string')
+  if (
+    !record(element) ||
+    !present(element.elementId) ||
+    typeof element.instancePath !== 'string' ||
+    typeof element.parentDisplay !== 'string'
+  )
     return null;
   const rect = readRect(element.rect);
   if (!rect || !record(element.styles)) return null;
@@ -236,6 +279,7 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
       rect,
       styles,
       text: whole(element.text),
+      parentDisplay: clampPreviewText(element.parentDisplay),
     },
   };
 }
