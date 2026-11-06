@@ -4,10 +4,9 @@
 import { useRef, useState } from 'react';
 import { ChevronUp, Minus, Plus } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
-import { Popover } from '../../components/ui/Popover';
+import { Menu } from '../../components/ui/Menu';
 import { Tool } from './BoardTool';
 import { MAX_SCALE, MIN_SCALE } from './canvasGeometry';
-import { MenuRow } from './menuRows';
 
 /** What the zoom menu and its shortcuts can ask the board to do. */
 export type ZoomCommand = 'in' | 'out' | 'fit' | 'selection' | 'actual';
@@ -80,7 +79,7 @@ export function ZoomControl({
       >
         <ChevronUp className="h-3.5 w-3.5" aria-hidden />
       </button>
-      <Popover
+      <Menu
         open={open}
         onClose={() => {
           setOpen(false);
@@ -90,21 +89,19 @@ export function ZoomControl({
         placement="top-start"
         width={208}
       >
-        <div role="menu" aria-label="Zoom" className="p-1">
-          {ZOOM_ACTIONS.map(({ command, label, hint }) => (
-            <MenuRow
-              key={command}
-              label={label}
-              hint={hint}
-              disabled={!enabled[command]}
-              onRun={() => {
-                setOpen(false);
-                onZoom(command);
-              }}
-            />
-          ))}
-        </div>
-      </Popover>
+        {ZOOM_ACTIONS.map(({ command, label, hint }) => (
+          <Menu.Item
+            key={command}
+            disabled={!enabled[command]}
+            onSelect={() => {
+              onZoom(command);
+            }}
+          >
+            {label}
+            <Menu.Shortcut>{hint}</Menu.Shortcut>
+          </Menu.Item>
+        ))}
+      </Menu>
     </div>
   );
 }

@@ -166,10 +166,20 @@ test('the zoom bar and the ⌘ zoom keys zoom the board, and a typed percentage 
     await zoomed(shown);
   }
 
+  // The zoom menu takes the arrow keys like every menu, past what it cannot do.
+  await page.getByRole('button', { name: 'Zoom options' }).click();
+  await expect(page.getByRole('menuitem', { name: /^Zoom in/ })).toBeFocused();
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByRole('menuitem', { name: /^Zoom to fit/ })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await zoomed('90%');
+  await expect(page.getByRole('menu', { name: 'Zoom' })).toHaveCount(0);
+
   // Off the board the keys are the app's.
   await page.locator('#outside').focus();
   await page.keyboard.press('ControlOrMeta+0');
-  await zoomed('75%');
+  await zoomed('90%');
 });
 
 /** Where the board draws a frame, in board pixels. */
