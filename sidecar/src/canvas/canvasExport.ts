@@ -14,6 +14,7 @@ import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
+import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
@@ -452,7 +453,7 @@ if (process.argv.includes('--serve')) {
     if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
     if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
     if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
-    if (bytes.toString('utf8', 0, 64).startsWith('<svg xmlns="http://www.w3.org/2000/svg"')) return 'image/svg+xml';
+    if (bytes.toString('utf8', 0, 64).startsWith(${JSON.stringify(SANITISED_SVG_PREFIX)})) return 'image/svg+xml';
     return 'application/octet-stream';
   };
   const server = createServer(async (request, response) => {
