@@ -170,7 +170,11 @@ test('a frame with no live preview says only what is true of it', () => {
   const reserved = { ...base, revisionId: null };
   const empty = render(snapshotOf(reserved));
   const kairo = { key: 'ses_1', name: 'Kairo', color: 'crimson' } as const;
-  const writing = render(snapshotOf(reserved), SELECT_MODE, new Map([['dsg_hey', kairo]]));
+  const writing = render(
+    snapshotOf(reserved),
+    SELECT_MODE,
+    new Map([['dsg_hey', { agent: kairo, named: false }]]),
+  );
   const building = render(snapshotOf(withBuild(base, { status: 'building', generation: 2 })));
   const cancelled = render(snapshotOf(withBuild(base, { status: 'cancelled', generation: 2 })));
   const failed = render(

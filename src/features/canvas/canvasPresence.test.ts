@@ -75,7 +75,8 @@ test('a running create or write puts its agent on the frames it names until its 
   const presence = canvasPresence(sources(writing), frames);
 
   assert.deepEqual([...presence.keys()], ['a']);
-  assert.equal(presence.get('a')?.key, 'chat');
+  assert.equal(presence.get('a')?.agent.key, 'chat');
+  assert.equal(presence.get('a')?.named, true);
   assert.equal(canvasPresence(sources([...writing, result('t1', 'write', ['a'])]), frames).size, 0);
   // A settled chat has no one at work, whatever its transcript left open.
   assert.equal(canvasPresence(sources(writing, { primary: false }), frames), NO_PRESENCE);
@@ -91,7 +92,7 @@ test('a frame with no source yet belongs to the live agent whose create made it 
     result('t2', 'create', ['theirs'], 'w1'),
   ];
   const keys = (presence: CanvasPresence) =>
-    [...presence].map(([designId, agent]) => [designId, agent.key]);
+    [...presence].map(([designId, worker]) => [designId, worker.agent.key]);
 
   const both = canvasPresence(sources(events, { primary: true, children: ['w1'] }), frames);
   // The frame an earlier turn left empty is no one's.
@@ -99,6 +100,7 @@ test('a frame with no source yet belongs to the live agent whose create made it 
     ['mine', 'chat'],
     ['theirs', 'chat/w1'],
   ]);
+  assert.equal(both.get('mine')?.named, false);
   // The worker that made it is done, so its frame is not being written, even
   // while the chat's own turn runs on.
   const workerDone = canvasPresence(sources(events, { primary: true }), frames);
@@ -153,7 +155,7 @@ test('each agent keeps one look, distinct from every other agent on the board', 
   const all = canvasPresence(sources(joined, live), frames);
   // Joining agents never restyle the one already working.
   assert.deepEqual(all.get('a'), first);
-  const agents = [...all.values()];
+  const agents = [...all.values()].map((worker) => worker.agent);
   assert.equal(new Set(agents.map((agent) => agent.name)).size, 3);
   assert.equal(new Set(agents.map((agent) => agent.color)).size, 3);
   assert.ok(samePresence(all, canvasPresence(sources(joined, live), frames)));

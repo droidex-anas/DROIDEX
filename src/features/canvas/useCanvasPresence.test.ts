@@ -92,7 +92,7 @@ test('a subagent is at work on the frame it writes while it runs, though it has 
   ])
     state = reducer(state, { type: 'SESSION_TRANSCRIPT', event });
 
-  assert.equal(presenceIn(state).get('pricing')?.key, 'chat/worker');
+  assert.equal(presenceIn(state).get('pricing')?.agent.key, 'chat/worker');
   state = reducer(state, {
     type: 'SESSION_CHILD',
     child: child('completed'),

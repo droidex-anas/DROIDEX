@@ -16,8 +16,14 @@ export interface PresenceAgent {
   color: PresenceColor;
 }
 
+export interface FrameWorker {
+  agent: PresenceAgent;
+  /** A running call names the frame, rather than it waiting, empty, on the agent that made it. */
+  named: boolean;
+}
+
 /** The agent at work on each frame, by design id. */
-export type CanvasPresence = ReadonlyMap<string, PresenceAgent>;
+export type CanvasPresence = ReadonlyMap<string, FrameWorker>;
 
 export const NO_PRESENCE: CanvasPresence = new Map();
 
@@ -66,15 +72,15 @@ export function canvasPresence(
   const workers = frameWorkers(work, frames, isLive);
   if (workers.size === 0) return NO_PRESENCE;
 
-  const present = new Set(workers.values());
+  const present = new Set([...workers.values()].map((worker) => worker.source));
   const agents = assignAgents(
     sources.appSessionId,
     new Set([...work.arrivals, PRIMARY].filter((source) => present.has(source))),
   );
-  const presence = new Map<string, PresenceAgent>();
-  for (const [designId, source] of workers) {
+  const presence = new Map<string, FrameWorker>();
+  for (const [designId, { source, named }] of workers) {
     const agent = agents.get(source);
-    if (agent) presence.set(designId, agent);
+    if (agent) presence.set(designId, { agent, named });
   }
   return presence;
 }
@@ -140,12 +146,13 @@ function frameWorkers(
   work: TurnWork,
   frames: readonly Pick<CanvasFrame, 'designId' | 'revisionId'>[],
   isLive: (source: string) => boolean,
-): Map<string, string> {
+): Map<string, { source: string; named: boolean }> {
   const onBoard = new Set(frames.map((frame) => frame.designId));
-  const workers = new Map<string, string>();
+  const workers = new Map<string, { source: string; named: boolean }>();
   for (const { source, designIds } of work.running) {
     if (!isLive(source)) continue;
-    for (const designId of designIds) if (onBoard.has(designId)) workers.set(designId, source);
+    for (const designId of designIds)
+      if (onBoard.has(designId)) workers.set(designId, { source, named: true });
   }
   // A create names its frames only in its result, which comes after they reach the board.
   const creating = work.running.findLast(
@@ -154,7 +161,8 @@ function frameWorkers(
   for (const frame of frames) {
     if (frame.revisionId !== null || workers.has(frame.designId)) continue;
     const source = work.createdBy.get(frame.designId) ?? creating;
-    if (source !== undefined && isLive(source)) workers.set(frame.designId, source);
+    if (source !== undefined && isLive(source))
+      workers.set(frame.designId, { source, named: false });
   }
   return workers;
 }
@@ -210,9 +218,14 @@ export function fnv1a(text: string): number {
 export function samePresence(left: CanvasPresence, right: CanvasPresence): boolean {
   if (left === right) return true;
   if (left.size !== right.size) return false;
-  for (const [designId, agent] of left) {
+  for (const [designId, { agent, named }] of left) {
     const other = right.get(designId);
-    if (other?.key !== agent.key || other.name !== agent.name || other.color !== agent.color)
+    if (
+      other?.named !== named ||
+      other.agent.key !== agent.key ||
+      other.agent.name !== agent.name ||
+      other.agent.color !== agent.color
+    )
       return false;
   }
   return true;

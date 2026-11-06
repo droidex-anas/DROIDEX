@@ -349,7 +349,7 @@ export function CanvasBoard({
               }
               interacted={interaction.interactedFrameId === frame.designId}
               held={gestures.heldDesignIds.includes(frame.designId)}
-              worker={presence.get(frame.designId)}
+              worker={presence.get(frame.designId)?.agent}
               capturePointer={overlayCapture}
               shownRevisionId={previews.shown.get(frame.designId) ?? null}
               preview={previews.preview(frame)}

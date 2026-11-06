@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { AgentCursor } from '../../components/AgentCursor';
 import type { PlacedFrame } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
-import { fnv1a, type CanvasPresence, type PresenceAgent } from './canvasPresence';
+import { fnv1a, type CanvasPresence, type FrameWorker, type PresenceAgent } from './canvasPresence';
 import type { FrameRect } from './protocol';
 
 const CURSOR_SIZE = 22;
@@ -33,23 +33,24 @@ export function CanvasPresenceLayer({
   motion: CanvasMotion;
 }) {
   // One cursor per agent: an agent at work on several frames is drawn over
-  // the first of them on screen, and its other frames keep only their edge.
-  const drawnAgents = new Set<string>();
-  const worked: { designId: string; rect: FrameRect; agent: PresenceAgent }[] = [];
+  // the one on screen its running call names, else over the first of them on
+  // screen, and its other frames keep only their edge.
+  const cursors = new Map<string, { designId: string; rect: FrameRect; worker: FrameWorker }>();
   for (const { designId, rect } of drawn) {
-    const agent = presence.get(designId);
-    if (!agent || drawnAgents.has(agent.key) || !visible.includes(designId)) continue;
-    drawnAgents.add(agent.key);
-    worked.push({ designId, rect, agent });
+    const worker = presence.get(designId);
+    if (!worker || !visible.includes(designId)) continue;
+    const shown = cursors.get(worker.agent.key);
+    if (shown && (shown.worker.named || !worker.named)) continue;
+    cursors.set(worker.agent.key, { designId, rect, worker });
   }
   return (
     <AnimatePresence>
-      {worked.map(({ designId, rect, agent }) => (
+      {[...cursors.values()].map(({ designId, rect, worker }) => (
         <FramePresence
-          key={`${designId}\0${agent.key}`}
+          key={`${designId}\0${worker.agent.key}`}
           designId={designId}
           rect={rect}
-          agent={agent}
+          agent={worker.agent}
           motion={motion}
         />
       ))}
