@@ -22,7 +22,10 @@ export function useInteractionDispatch(
   const dispatch = useCallback(
     (event: BoardInteractionEvent) => {
       const next = reduceBoardInteraction(latest.current, event);
-      if (next !== latest.current) onInteractionChange(next);
+      if (next === latest.current) return;
+      // A second event before the next render reduces against this one's result.
+      latest.current = next;
+      onInteractionChange(next);
     },
     [onInteractionChange],
   );
