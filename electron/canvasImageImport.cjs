@@ -1,6 +1,7 @@
 // Main's file-picker/drop boundary for Canvas images and kit images. It decodes
-// the selected bytes before asking the sidecar to own them; a digest rejects a
-// changed path. The owner is `{ kind: 'canvas', canvasId }` or `{ kind: 'kit' }`.
+// raster bytes before asking the sidecar to own them; an SVG is markup, which
+// the sidecar sanitises and measures itself. A digest rejects a changed path.
+// The owner is `{ kind: 'canvas', canvasId }` or `{ kind: 'kit' }`.
 
 const { createHash } = require('node:crypto');
 const { constants } = require('node:fs');
@@ -13,6 +14,7 @@ const EXTENSIONS = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
 };
 
 class CanvasImageImportError extends Error {
@@ -60,34 +62,16 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
     }
 
     const expectedType = EXTENSIONS[extname(filePath).toLowerCase()];
-    if (!expectedType || imageMediaType(bytes) !== expectedType)
-      throw invalidImage('Choose a PNG, JPEG or WebP image whose extension matches its contents.');
-    const declared = imageDimensions(bytes, expectedType);
-    if (!declared) throw invalidImage('Choose a valid PNG, JPEG or WebP image.');
-    assertImageDimensions(declared.width, declared.height);
-
-    let width;
-    let height;
-    try {
-      if (expectedType === 'image/webp') {
-        const { createCanvas, loadImage } = require('@napi-rs/canvas');
-        const decoded = await loadImage(bytes);
-        ({ width, height } = decoded);
-        assertImageDimensions(width, height);
-        createCanvas(1, 1).getContext('2d').drawImage(decoded, 0, 0, 1, 1);
-      } else {
-        const decoded = nativeImage.createFromBuffer(bytes);
-        if (decoded.isEmpty()) throw invalidImage('Choose a valid PNG or JPEG image.');
-        ({ width, height } = decoded.getSize());
-        assertImageDimensions(width, height);
-        // Force pixel decode, so a plausible header with a broken body is refused.
-        if (decoded.toBitmap().length !== width * height * 4)
-          throw invalidImage('The selected image could not be decoded.');
-      }
-    } catch (error) {
-      if (error instanceof CanvasImageImportError) throw error;
-      throw invalidImage('The selected image could not be decoded.');
-    }
+    const actualType = imageMediaType(bytes);
+    // Only an SVG the sidecar already sanitised is recognisable here; any other is still markup.
+    const matches =
+      actualType === expectedType || (expectedType === 'image/svg+xml' && actualType === null);
+    if (!expectedType || !matches)
+      throw invalidImage(
+        'Choose a PNG, JPEG, WebP or SVG image whose extension matches its contents.',
+      );
+    const size =
+      expectedType === 'image/svg+xml' ? null : await decodedSize(nativeImage, bytes, expectedType);
 
     let response;
     try {
@@ -103,8 +87,7 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
           ...(owner.kind === 'canvas' ? { canvasId: owner.canvasId } : {}),
           filePath,
           digest: createHash('sha256').update(bytes).digest('hex'),
-          width,
-          height,
+          ...size,
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -127,6 +110,32 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
     }
     return answer;
   };
+}
+
+async function decodedSize(nativeImage, bytes, mediaType) {
+  const declared = imageDimensions(bytes, mediaType);
+  if (!declared) throw invalidImage('Choose a valid PNG, JPEG or WebP image.');
+  assertImageDimensions(declared.width, declared.height);
+  try {
+    if (mediaType === 'image/webp') {
+      const { createCanvas, loadImage } = require('@napi-rs/canvas');
+      const decoded = await loadImage(bytes);
+      assertImageDimensions(decoded.width, decoded.height);
+      createCanvas(1, 1).getContext('2d').drawImage(decoded, 0, 0, 1, 1);
+      return { width: decoded.width, height: decoded.height };
+    }
+    const decoded = nativeImage.createFromBuffer(bytes);
+    if (decoded.isEmpty()) throw invalidImage('Choose a valid PNG or JPEG image.');
+    const { width, height } = decoded.getSize();
+    assertImageDimensions(width, height);
+    // Force pixel decode, so a plausible header with a broken body is refused.
+    if (decoded.toBitmap().length !== width * height * 4)
+      throw invalidImage('The selected image could not be decoded.');
+    return { width, height };
+  } catch (error) {
+    if (error instanceof CanvasImageImportError) throw error;
+    throw invalidImage('The selected image could not be decoded.');
+  }
 }
 
 function isImageOwner(owner) {

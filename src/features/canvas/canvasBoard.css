@@ -64,6 +64,7 @@
   transform-origin: 0 100%;
   outline: none;
   touch-action: none;
+  user-select: none;
 }
 
 .canvas-frame-name {
@@ -471,6 +472,65 @@
   border-radius: 2px;
   border: 1px solid var(--selection);
   background: color-mix(in srgb, var(--selection) 8%, transparent);
+}
+
+/* What a snapped drag lined up on and the spaces it measured, in screen space
+   above the frames. They come and go with the snap, with no motion, so they
+   never trail the hand. */
+.canvas-snap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.canvas-snap-line,
+.canvas-snap-gap,
+.canvas-snap-gap::before,
+.canvas-snap-gap::after {
+  position: absolute;
+  background: var(--selection);
+}
+
+.canvas-snap-gap::before,
+.canvas-snap-gap::after {
+  content: '';
+}
+
+/* The measured line's end ticks, across it at each frame's edge. */
+.canvas-snap-gap[data-axis='x']::before,
+.canvas-snap-gap[data-axis='x']::after {
+  top: -3px;
+  width: 1px;
+  height: 7px;
+}
+
+.canvas-snap-gap[data-axis='x']::after {
+  right: 0;
+}
+
+.canvas-snap-gap[data-axis='y']::before,
+.canvas-snap-gap[data-axis='y']::after {
+  left: -3px;
+  width: 7px;
+  height: 1px;
+}
+
+.canvas-snap-gap[data-axis='y']::after {
+  bottom: 0;
+}
+
+/* The distance, centred on its line, in the size pill's shape. */
+.canvas-snap-pill {
+  position: absolute;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--selection);
+  color: var(--on-selection);
+  font: 500 11px / 16px var(--ui-font-family, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
 }
 
 /* The element Edit has picked, outlined over the guest that draws it. */

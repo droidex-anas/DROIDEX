@@ -14,7 +14,8 @@ import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
-import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
+import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
+import { canvasTailwindOptions } from './designStylesheet.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
@@ -98,7 +99,7 @@ export async function exportCanvasSource(
   });
   files.push({
     path: 'canvas-export/tailwind-config.json',
-    content: `${JSON.stringify(CANVAS_TAILWIND_OPTIONS, null, 2)}\n`,
+    content: `${JSON.stringify(canvasTailwindOptions(kit), null, 2)}\n`,
   });
   files.push({ path: 'canvas-export/guidance.md', content: kitGuidance(kit.name, kit.sections) });
   files.push(
@@ -452,6 +453,7 @@ if (process.argv.includes('--serve')) {
     if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
     if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
     if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+    if (bytes.toString('utf8', 0, 64).startsWith(${JSON.stringify(SANITISED_SVG_PREFIX)})) return 'image/svg+xml';
     return 'application/octet-stream';
   };
   const server = createServer(async (request, response) => {
@@ -459,7 +461,8 @@ if (process.argv.includes('--serve')) {
     const name = asset ? join('assets', asset[1]) : request.url === '/app.js' ? 'app.js' : request.url === '/style.css' ? 'style.css' : 'index.html';
     try {
       const bytes = await readFile(join('dist', name));
-      response.writeHead(200, { 'content-type': asset ? imageType(bytes) : types[name.slice(name.lastIndexOf('.'))], 'x-content-type-options': 'nosniff' });
+      const imageHeaders = asset ? { 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" } : {};
+      response.writeHead(200, { 'content-type': asset ? imageType(bytes) : types[name.slice(name.lastIndexOf('.'))], 'x-content-type-options': 'nosniff', ...imageHeaders });
       response.end(bytes);
     } catch (error) {
       response.writeHead(error.code === 'ENOENT' ? 404 : 500).end();

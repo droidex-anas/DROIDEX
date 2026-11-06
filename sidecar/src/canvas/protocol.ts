@@ -19,7 +19,6 @@ import type {
   RevisionPage,
   RevisionRef,
   SourceFiles,
-  StyleResolution,
   UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
@@ -57,18 +56,11 @@ export type {
   RevisionPage,
   RevisionRef,
   SourceFiles,
-  StyleResolution,
   UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 
 export type ElementEdit = EditElementInput['edit'];
-
-/** A direct edit's revision and what its style value resolved to; null for a text edit. */
-export interface ElementEditResult {
-  receipt: WriteReceipt;
-  resolution: StyleResolution | null;
-}
 
 /**
  * What one mutation is authorized to change. A turn lease pins the references
@@ -165,7 +157,7 @@ export interface PreviewReport {
 /** An image copied into one canvas; no private path crosses this contract. */
 export interface OwnedAsset {
   assetId: string;
-  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/svg+xml';
   byteLength: number;
   width: number;
   height: number;
@@ -604,7 +596,6 @@ export type CanvasReply =
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
-  | ({ kind: 'edited' } & ElementEditResult)
   | { kind: 'arranged'; change: CanvasChange }
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }

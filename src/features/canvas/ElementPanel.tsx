@@ -1,14 +1,12 @@
 // The selected element's styles while Edit has one, in a column at the board's
 // right: the values its preview computes, one field per property the edit
-// whitelist allows, grouped the way a designer reads them, and what the last
-// commit wrote. Typing previews in the guest; Enter commits one property and
-// Escape takes its preview back.
+// whitelist allows, grouped the way a designer reads them. Typing previews in
+// the guest; Enter commits every preview as one edit and Escape takes one back.
 
 import type { KeyboardEvent, Ref } from 'react';
 import { Input } from '../../components/ui/Field';
 import { cn } from '../../components/ui/cn';
 import type { SourceElement } from './protocol';
-import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
 
 /** One field: the style property it edits and the short name shown in it. */
@@ -88,7 +86,7 @@ export interface ElementPanelProps {
   selection: ElementSelection;
   onPreview: (property: string, value: string) => void;
   onRevert: (property: string) => void;
-  onCommit: (property: string) => void;
+  onCommit: () => void;
   /** Escape on a field with nothing to take back hands the keyboard to the board. */
   onLeave: () => void;
 }
@@ -107,7 +105,7 @@ export function ElementPanel({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>, property: string) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      onCommit(property);
+      onCommit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       if (Object.hasOwn(draft.values, property)) onRevert(property);
@@ -189,7 +187,7 @@ export function ElementPanel({
         ))}
       </div>
       <p role="status" className="shrink-0 px-3 pb-3 pt-2 text-caption text-muted">
-        {status(selection, editable)}
+        {status(draft, editable)}
       </p>
     </div>
   );
@@ -214,17 +212,10 @@ function agentRoute(editability: SourceElement['editability']): string {
     : 'This element’s styles are worked out in code. Ask the agent to change it.';
 }
 
-function status({ draft, written }: ElementSelection, editable: boolean): string {
+function status(draft: ElementSelection['draft'], editable: boolean): string {
   if (!editable) return 'Read only.';
   if (draft.pendingMutationId !== null) return 'Saving…';
-  if (written) {
-    const name = propertyLabel(written.property);
-    if (written.resolution?.kind === 'token')
-      return `${name} now uses ${bareTokenName(written.resolution.token)}.`;
-    if (written.resolution?.kind === 'raw')
-      return `${name} is now ${written.resolution.value}; no design system token matches it.`;
-  }
-  return 'Enter saves a change; Escape takes it back.';
+  return 'Enter saves your changes; Escape takes one back.';
 }
 
 /** `backgroundColor` as a person reads it: "Background colour". */

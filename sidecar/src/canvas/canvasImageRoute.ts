@@ -2,11 +2,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import {
   canvasImageImportSchema,
+  chosenImageSchema,
   type CanvasImageImport,
   type ChosenImage,
 } from './canvasAssets.js';
 import { CanvasCommandError } from './canvasError.js';
-import { kitImageImportSchema } from './kitAssets.js';
 import type { OwnedAsset } from './protocol.js';
 
 export interface CanvasImages {
@@ -44,7 +44,7 @@ export function serveCanvasImageImport(
       }
       const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const asset = intoKit
-        ? await images.importKitImage(parsed(kitImageImportSchema.safeParse(body)))
+        ? await images.importKitImage(parsed(chosenImageSchema.safeParse(body)))
         : await images.importImage(parsed(canvasImageImportSchema.safeParse(body)));
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify(asset));

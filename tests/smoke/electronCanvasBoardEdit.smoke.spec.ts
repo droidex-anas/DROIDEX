@@ -94,17 +94,17 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
           elementId: 'el_title',
           instancePath: '0/0',
         },
-        change: { kind: 'typography', property: 'fontSize', value: '28px' },
+        change: { kind: 'style', styles: [{ property: 'fontSize', value: '28px' }] },
       },
     },
   ]);
 
   // The written revision builds and the selection follows the title into it.
-  await page.evaluate(() =>
-    window.boardHarness.answerEdit(0, { kind: 'token', token: '--ds-font-size-xl' }),
-  );
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
   await page.clock.runFor(240);
-  await expect(panel.getByRole('status')).toHaveText('Font size now uses font-size-xl.');
+  await expect(panel.getByRole('status')).toHaveText(
+    'Enter saves your changes; Escape takes one back.',
+  );
   await expect
     .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
     .toMatchObject({ command: 'select', target: { elementId: 'el_title', styles: {} } });

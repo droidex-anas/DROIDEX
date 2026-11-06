@@ -3,9 +3,9 @@
 // on, so a refused commit drops the draft, and a newer revision of the design
 // takes the selection along without its previews.
 
-import type { EditElementInput, StyleChange } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 import type { CanvasFrame, ElementRef, SourceElement } from './protocol';
-import { styleKind } from './styleProperties';
+import { STYLE_PROPERTIES } from './styleProperties';
 
 export interface ElementEditDraft {
   canvasId: string;
@@ -36,7 +36,7 @@ export function previewStyle(
   property: string,
   value: string,
 ): ElementEditDraft {
-  if (styleKind(property) === null) return draft;
+  if (!STYLE_PROPERTIES.includes(property)) return draft;
   return { ...draft, values: { ...draft.values, [property]: value } };
 }
 
@@ -49,40 +49,24 @@ export function revertStyle(draft: ElementEditDraft, property: string): ElementE
   return { ...draft, values };
 }
 
-/** The edit that commits one previewed property, or null while another commit is pending. */
-export function commitStyle(
+/**
+ * The one edit that commits every previewed property, so they make one
+ * revision; null while another commit is pending or nothing is previewed.
+ */
+export function commitStyles(
   draft: ElementEditDraft,
-  property: string,
   mutationId: string,
 ): { draft: ElementEditDraft; input: EditElementInput } | null {
-  const kind = styleKind(property);
-  if (draft.pendingMutationId !== null || kind === null || !Object.hasOwn(draft.values, property))
-    return null;
-  const change: StyleChange = {
-    kind,
+  const styles = Object.entries(draft.values).map(([property, value]) => ({
     property,
-    value: canonicalValue(property, draft.values[property]),
-  };
+    // The sidecar's grammar reads values lowercase and single-spaced.
+    value: value.trim().toLowerCase().replace(/\s+/g, ' '),
+  }));
+  if (draft.pendingMutationId !== null || styles.length === 0) return null;
   return {
     draft: { ...draft, pendingMutationId: mutationId },
-    input: { mutationId, edit: { element: draft.element, change } },
+    input: { mutationId, edit: { element: draft.element, change: { kind: 'style', styles } } },
   };
-}
-
-/**
- * The value as the sidecar's grammar reads it: lowercase, single-spaced, and a
- * bare zero length as `0px`, which is what a kit's zero token holds.
- */
-function canonicalValue(property: string, value: string): string {
-  const canonical = value.trim().toLowerCase().replace(/\s+/g, ' ');
-  return canonical === '0' && isLength(property) ? '0px' : canonical;
-}
-
-function isLength(property: string): boolean {
-  const kind = styleKind(property);
-  return (
-    kind === 'spacing' || kind === 'size' || property === 'fontSize' || property === 'letterSpacing'
-  );
 }
 
 export type CommitOutcome = { status: 'edited'; revisionId: string } | { status: 'refused' };

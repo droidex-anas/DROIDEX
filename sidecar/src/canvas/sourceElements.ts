@@ -272,7 +272,8 @@ function hasComputedAttributes(attributes: ts.JsxAttributes): boolean {
     )
       return true;
     const value = attributeValue(attr);
-    if ((name === 'className' || name === 'src') && value && !isLiteral(value)) return true;
+    if (name === 'className' && value && classLiterals(value) === null) return true;
+    if (name === 'src' && value && !isLiteral(value)) return true;
     if (name === 'style' && hasComputedStyle(value)) return true;
   }
   return false;
@@ -284,7 +285,7 @@ function hasComputedStyle(value: ts.Expression | undefined): boolean {
   for (const property of value.properties) {
     if (
       !ts.isPropertyAssignment(property) ||
-      (!isLiteral(property.initializer) && !ts.isNumericLiteral(property.initializer))
+      (!isLiteral(property.initializer) && !isNumber(property.initializer))
     )
       return true;
     const key = propertyName(property.name);
@@ -303,6 +304,38 @@ export function attributeValue(attr: ts.JsxAttribute | undefined): ts.Expression
   const value = attr?.initializer;
   if (!value) return undefined;
   return ts.isJsxExpression(value) ? value.expression : value;
+}
+
+const CLASS_JOINERS = new Set(['cn', 'clsx', 'cx']);
+
+/**
+ * The string literals a className is spelled with: the value itself, or every
+ * argument of a class-joining call such as `cn("p-4", "flex")`. Null when any
+ * part of it is computed.
+ */
+export function classLiterals(
+  value: ts.Expression,
+): (ts.StringLiteral | ts.NoSubstitutionTemplateLiteral)[] | null {
+  if (isLiteral(value)) return [value];
+  if (
+    !ts.isCallExpression(value) ||
+    !ts.isIdentifier(value.expression) ||
+    !CLASS_JOINERS.has(value.expression.text) ||
+    value.arguments.length === 0
+  )
+    return null;
+  const literals = value.arguments.filter(isLiteral);
+  return literals.length === value.arguments.length ? literals : null;
+}
+
+/** A number as a style object writes it: `12` or `-12`. */
+function isNumber(node: ts.Expression): boolean {
+  if (ts.isNumericLiteral(node)) return true;
+  return (
+    ts.isPrefixUnaryExpression(node) &&
+    node.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(node.operand)
+  );
 }
 export function propertyName(name: ts.PropertyName): string {
   return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : '';

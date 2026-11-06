@@ -5,6 +5,7 @@ import type { SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { applyElementEdit, type SourceChange, type SourceEdit } from './sourceElementEdits.js';
 import { instrumentSource, SourceElementError } from './sourceElements.js';
+import type { ResolvedStyle } from './sourceStyles.js';
 
 function reference(element: SourceElement, revisionId = 'r1') {
   return { designId: 'design', revisionId, elementId: element.elementId, instancePath: '0' };
@@ -42,8 +43,11 @@ test('text, style and image edits return complete changed files without touching
     },
     {
       markup: "<h1 style={{ color: 'var(--ds-text)' }}>Hello</h1>",
-      change: { kind: 'style', property: 'color', value: 'var(--ds-accent)' },
-      changed: '<h1 style={{ color: "var(--ds-accent)" }}>Hello</h1>',
+      change: {
+        kind: 'style',
+        styles: [{ property: 'color', resolution: { kind: 'token', token: '--ds-accent' } }],
+      },
+      changed: '<h1 className="text-[color:var(--ds-accent)]">Hello</h1>',
     },
     {
       markup: '<img src={`canvas-asset:old`} style={{opacity:1}} />',
@@ -76,57 +80,70 @@ test('text, style and image edits return complete changed files without touching
   }
 });
 
-test('a style edit replaces a set property, appends a missing one, and adds style last', () => {
-  const cases: { markup: string; property: string; value: string; changed: string }[] = [
+const token = (name: string) => ({ kind: 'token', token: name }) as const;
+const raw = (value: string) => ({ kind: 'raw', value }) as const;
+
+test('a style edit writes the class that says it in place of the classes it makes dead', () => {
+  const cases: { markup: string; styles: ResolvedStyle[]; changed: string }[] = [
     {
-      markup: "<h1 style={{ padding: '1rem' }}>Hi</h1>",
-      property: 'padding',
-      value: 'var(--ds-space-2)',
-      changed: '<h1 style={{ padding: "var(--ds-space-2)" }}>Hi</h1>',
+      markup: '<h1 className="p-4 text-lg">Hi</h1>',
+      styles: [{ property: 'padding', resolution: token('--ds-space-2') }],
+      changed: '<h1 className="p-[var(--ds-space-2)] text-lg">Hi</h1>',
     },
     {
-      markup: '<h1 style={{ color: "var(--ds-fg)", }}>Hi</h1>',
-      property: 'gap',
-      value: '4px',
-      changed: '<h1 style={{ color: "var(--ds-fg)", gap: "4px", }}>Hi</h1>',
+      markup: '<h1 className="flex px-2  pt-1 gap-2">Hi</h1>',
+      styles: [{ property: 'padding', resolution: raw('16px') }],
+      changed: '<h1 className="flex p-4 gap-2">Hi</h1>',
+    },
+    {
+      markup: '<h1 className={cn("flex", "pt-1", "pb-1")}>Hi</h1>',
+      styles: [{ property: 'padding', resolution: raw('1rem') }],
+      changed: '<h1 className={cn("flex", "p-4")}>Hi</h1>',
+    },
+    {
+      markup: '<h1 className="text-sm font-bold">Hi</h1>',
+      styles: [{ property: 'fontSize', resolution: token('--ds-text-lg') }],
+      changed: '<h1 className="text-[length:var(--ds-text-lg)] font-bold leading-5">Hi</h1>',
+    },
+    {
+      markup: '<h1 className="flex flex-row">Hi</h1>',
+      styles: [{ property: 'flexDirection', resolution: raw('column') }],
+      changed: '<h1 className="flex flex-col">Hi</h1>',
+    },
+    {
+      markup: '<h1 style={{ color: "var(--ds-fg)", gap: 4 }}>Hi</h1>',
+      styles: [{ property: 'color', resolution: token('--ds-accent') }],
+      changed: '<h1 className="text-[color:var(--ds-accent)]" style={{ gap: 4 }}>Hi</h1>',
     },
     {
       markup: '<h1 style={{opacity:1}}>Hi</h1>',
-      property: 'opacity',
-      value: '0.5',
-      changed: '<h1 style={{opacity:"0.5"}}>Hi</h1>',
+      styles: [{ property: 'opacity', resolution: raw('0.5') }],
+      changed: '<h1 className="opacity-50">Hi</h1>',
     },
     {
-      markup: '<h1 style={{}}>Hi</h1>',
-      property: 'fontWeight',
-      value: '600',
-      changed: '<h1 style={{ fontWeight: "600" }}>Hi</h1>',
+      markup: '<h1 className="!p-2">Hi</h1>',
+      styles: [{ property: 'padding', resolution: raw('16px') }],
+      changed: '<h1 className="!p-4">Hi</h1>',
     },
     {
-      markup: '<h1 className="title">Hi</h1>',
-      property: 'flexDirection',
-      value: 'column',
-      changed: '<h1 className="title" style={{ flexDirection: "column" }}>Hi</h1>',
-    },
-    {
-      markup: '<img src="canvas-asset:a" />',
-      property: 'width',
-      value: '320px',
-      changed: '<img src="canvas-asset:a" style={{ width: "320px" }} />',
-    },
-    {
-      markup: '<h1>Hi</h1>',
-      property: 'backgroundColor',
-      value: 'var(--ds-accent)',
-      changed: '<h1 style={{ backgroundColor: "var(--ds-accent)" }}>Hi</h1>',
+      markup: '<div className="p-2 flex">Hi</div>',
+      styles: [
+        { property: 'padding', resolution: token('--ds-space-4') },
+        { property: 'gap', resolution: raw('8px') },
+        { property: 'backgroundColor', resolution: token('--ds-surface') },
+        { property: 'marginTop', resolution: raw('-16px') },
+        { property: 'color', resolution: raw('#a1b2c3') },
+      ],
+      changed:
+        '<div className="p-[var(--ds-space-4)] flex gap-2 bg-[color:var(--ds-surface)] -mt-4" style={{ color: "#a1b2c3" }}>Hi</div>',
     },
   ];
-  for (const { markup, property, value, changed } of cases) {
+  for (const { markup, styles, changed } of cases) {
     const files = { 'main.tsx': `export default () => ${markup};\n` };
     const mapped = onlyElement(files);
     const edit: SourceEdit = {
       element: reference(mapped.element),
-      change: { kind: 'style', property, value },
+      change: { kind: 'style', styles },
     };
     const first = applyElementEdit(files, mapped.elements, edit);
     assert.deepEqual(first, { 'main.tsx': `export default () => ${changed};\n` });
@@ -136,6 +153,40 @@ test('a style edit replaces a set property, appends a missing one, and adds styl
       'same edit, same bytes',
     );
     assert.equal(onlyElement(first).element.editability, 'literal', 'still directly editable');
+  }
+});
+
+test('a style no class can say, or one a class would not win for, is written inline', () => {
+  const cases: { markup: string; styles: ResolvedStyle[]; changed: string }[] = [
+    {
+      markup: '<img src="canvas-asset:a" />',
+      styles: [{ property: 'width', resolution: raw('321px') }],
+      changed: '<img src="canvas-asset:a" style={{ width: 321 }} />',
+    },
+    {
+      markup: '<h1 style={{ lineHeight: 1.2, }}>Hi</h1>',
+      styles: [{ property: 'lineHeight', resolution: raw('1.4') }],
+      changed: '<h1 style={{ lineHeight: 1.4, }}>Hi</h1>',
+    },
+    {
+      markup: '<h1 className="md:p-2">Hi</h1>',
+      styles: [{ property: 'padding', resolution: raw('0') }],
+      changed: '<h1 className="md:p-2" style={{ padding: 0 }}>Hi</h1>',
+    },
+    {
+      markup: '<h1 style={{ padding: 8 }}>Hi</h1>',
+      styles: [{ property: 'paddingTop', resolution: token('--ds-space-4') }],
+      changed: '<h1 style={{ padding: 8, paddingTop: "var(--ds-space-4)" }}>Hi</h1>',
+    },
+  ];
+  for (const { markup, styles, changed } of cases) {
+    const files = { 'main.tsx': `export default () => ${markup};\n` };
+    const mapped = onlyElement(files);
+    const first = applyElementEdit(files, mapped.elements, {
+      element: reference(mapped.element),
+      change: { kind: 'style', styles },
+    });
+    assert.deepEqual(first, { 'main.tsx': `export default () => ${changed};\n` });
   }
 });
 test('revision, source changes and forged ranges cannot retarget a selection', () => {
@@ -173,6 +224,7 @@ test('shared and computed sites report their scope and refuse direct edits', () 
     ['export default () => <h1>{`Hello ${name}`}</h1>', 'computed'],
     ['export default () => <h1>Hello {"world"}</h1>', 'computed'],
     ['export default () => <h1 className={active ? "yes" : "no"}>Hello</h1>', 'computed'],
+    ['export default () => <h1 className={cn("p-2", active && "on")}>Hello</h1>', 'computed'],
     ['export default () => <h1 style={{...styles, color:"var(--ds-text)"}}>Hello</h1>', 'computed'],
     [
       'export default () => <h1 style={{color:"var(--ds-text)", color:"var(--ds-accent)"}}>Hello</h1>',
@@ -309,8 +361,14 @@ test('image and style edits cannot introduce an arbitrary image URL or style pro
   const mapped = onlyElement(files);
   for (const [change, code] of [
     [{ kind: 'image', assetId: '../../private' }, 'invalid_edit'],
-    [{ kind: 'style', property: 'backgroundImage', value: 'url(x)' }, 'unsupported_edit'],
-    [{ kind: 'style', property: 'a}} onClick={evil} b={{c', value: '1' }, 'unsupported_edit'],
+    [
+      { kind: 'style', styles: [{ property: 'backgroundImage', resolution: raw('url(x)') }] },
+      'unsupported_edit',
+    ],
+    [
+      { kind: 'style', styles: [{ property: 'a}} onClick={evil} b={{c', resolution: raw('1') }] },
+      'unsupported_edit',
+    ],
   ] satisfies [SourceChange, string][]) {
     assert.throws(
       () =>

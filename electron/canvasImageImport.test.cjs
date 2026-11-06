@@ -105,6 +105,31 @@ test('a kit image goes to the kit route without a canvas', async (t) => {
   });
 });
 
+test('an SVG goes to the sidecar as markup, without dimensions and without decoding', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'canvas-import-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, 'logo.svg');
+  await writeFile(filePath, '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>');
+  const originalFetch = global.fetch;
+  const bodies = [];
+  global.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ assetId: 'svg' }), { status: 200 });
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  const nativeImage = { createFromBuffer: t.mock.fn() };
+  const importImage = createCanvasImageImporter(nativeImage, {
+    getBridgeInfo: async () => ({ port: 1234 }),
+    canvasAssetSecret: () => 'secret',
+  });
+
+  assert.deepEqual(await importImage(CANVAS, filePath), { assetId: 'svg' });
+  assert.deepEqual(Object.keys(bodies[0]).sort(), ['canvasId', 'digest', 'filePath']);
+  assert.equal(nativeImage.createFromBuffer.mock.callCount(), 0);
+});
+
 test('a missing selection returns a curated error without its private path', async () => {
   const filePath = join(tmpdir(), 'canvas-missing-private.png');
   await assert.rejects(importer()(CANVAS, filePath), (error) => {

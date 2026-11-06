@@ -233,7 +233,7 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
         if (SUPPORTED_IMPORTS.includes(args.path)) return { path: runtimePath(args.path) };
         return refuse(
           'unsupported_import',
-          `"${truncateDiagnosticText(args.path, 512)}" is not available in a design. Supported imports: ${SUPPORTED_LIST}, and relative files in the design.`,
+          `"${truncateDiagnosticText(args.path, 512)}" is not available in a design. Supported imports: ${SUPPORTED_LIST}, and relative files in the design; copy project code in as a relative file.`,
         );
       });
 

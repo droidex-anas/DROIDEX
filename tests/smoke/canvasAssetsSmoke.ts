@@ -111,9 +111,13 @@ export async function runCanvasAssetsSmoke(): Promise<void> {
           'UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoBAAEAAgA0JaACdLoB+AADsAD+8MQL/yC5YXXI1/8gP+QH/ID/+PIAAAA=',
           'base64',
         );
+        const svg = Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" onload="alert(1)"><rect width="1" height="1"/></svg>',
+        );
         for (const [name, bytes, mediaType] of [
           ['positive.jpg', jpeg, 'image/jpeg'],
           ['positive.webp', webp, 'image/webp'],
+          ['positive.svg', svg, 'image/svg+xml'],
         ] as const) {
           const selected = path.join(profile, name);
           await writeFile(selected, bytes);

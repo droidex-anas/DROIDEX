@@ -112,9 +112,17 @@ const SHARED_PRIMITIVES = new Set(kitPrimitives({ files: STARTER_FILES }));
 export function unmappedKitTokens(system: Pick<DesignSystem, 'sections' | 'files'>): string[] {
   if (kitPrimitives(system).some((name) => !SHARED_PRIMITIVES.has(name))) return [];
   const others = system.sections.filter((section) => section.kind === 'tokens');
-  return Object.keys(kitModes(others).light)
+  const light = kitModes(others).light;
+  return Object.keys(light)
     .filter((name) => !CONTRACT_TOKEN_NAMES.has(name))
+    .filter((name) => !isContractAlias(name, light[name]))
     .sort();
+}
+
+/** An import alias reads as mapped: its whole value is a reference to a contract token. */
+function isContractAlias(name: string, value: string): boolean {
+  const reference = /^var\((--ds-[a-z0-9-]+)\)$/.exec(value);
+  return reference !== null && reference[1] !== name && CONTRACT_TOKEN_NAMES.has(reference[1]);
 }
 
 /** The New menu's pasted text as a source: a config or a stylesheet, told apart by its shape. */
@@ -281,12 +289,26 @@ function mapOntoContract(
   const resolved = resolveValues(declared, diagnostics);
   const modes = { light: { ...CONTRACT.light }, dark: { ...CONTRACT.dark } };
   const claimed = new Set<string>();
+  // A name keeps its own spelling when its --ds- form is a primitive's or another source token's.
+  const kitName = (name: string): string => {
+    if (name.startsWith('--ds-')) return name;
+    const prefixed = `--ds-${name.slice('--'.length)}`;
+    const taken = Object.hasOwn(CONTRACT.light, prefixed) || declared.places.has(prefixed);
+    return taken ? name : prefixed;
+  };
   const assign = (contractName: string, sourceName: string): void => {
     claimed.add(sourceName);
     for (const mode of MODES) {
       const value = resolved[mode].get(sourceName);
       if (value !== undefined) modes[mode][contractName] = value;
     }
+    if (sourceName === contractName) return;
+    // The source's own name stays as an alias, so a frame using the source's
+    // names still resolves to the contract token.
+    const alias = kitName(sourceName);
+    if (alias === contractName || Object.hasOwn(modes.light, alias)) return;
+    modes.light[alias] = `var(${contractName})`;
+    modes.dark[alias] = `var(${contractName})`;
   };
   // A token whose value could not be used was already reported and maps nowhere.
   const usable = (name: string) => resolved.light.has(name) || resolved.dark.has(name);
@@ -299,13 +321,6 @@ function mapOntoContract(
     if (alias) assign(contractName, `--${alias}`);
   }
 
-  // A name keeps its own spelling when its --ds- form is a primitive's or another source token's.
-  const kitName = (name: string): string => {
-    if (name.startsWith('--ds-')) return name;
-    const prefixed = `--ds-${name.slice('--'.length)}`;
-    const taken = Object.hasOwn(CONTRACT.light, prefixed) || declared.places.has(prefixed);
-    return taken ? name : prefixed;
-  };
   for (const name of declared.places.keys()) {
     if (claimed.has(name)) continue;
     const light = resolved.light.get(name);

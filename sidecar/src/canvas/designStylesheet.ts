@@ -20,6 +20,7 @@ import type { Config } from 'tailwindcss';
 import { canvasRuntime } from './canvasRuntime.js';
 import { hostKitFonts } from './canvasFontAssets.js';
 import { kitModes } from './designSystemDocument.js';
+import { kitTailwindTheme } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -238,18 +239,35 @@ export function modeTokens(modes: ReturnType<typeof kitModes>): string {
     .join('\n');
 }
 
+/** The canvas's Tailwind setup independent of any kit: dark by data-mode, no plugins. */
 export const CANVAS_TAILWIND_OPTIONS = {
   darkMode: ['selector', "[data-mode='dark']"],
   theme: {},
   plugins: [],
 } satisfies Pick<Config, 'darkMode' | 'theme' | 'plugins'>;
 
-function tailwindConfig(files: SourceFiles, system: Pick<DesignSystem, 'files'>): Config {
+/**
+ * A frame's Tailwind: the stock setup plus the pinned kit's tokens as theme
+ * classes (bg-surface, rounded-pill, text-display).
+ */
+export function canvasTailwindOptions(
+  system: Pick<DesignSystem, 'sections'>,
+): Pick<Config, 'darkMode' | 'theme' | 'plugins'> {
+  return {
+    ...CANVAS_TAILWIND_OPTIONS,
+    theme: { extend: kitTailwindTheme(system.sections) },
+  };
+}
+
+function tailwindConfig(
+  files: SourceFiles,
+  system: Pick<DesignSystem, 'files' | 'sections'>,
+): Config {
   return {
     // Every design and kit file is scanned, so a class only appears when some
     // source literally spells it out; no partial class names are guessed.
     content: [...rawSources(system.files), ...rawSources(files)],
-    ...CANVAS_TAILWIND_OPTIONS,
+    ...canvasTailwindOptions(system),
   };
 }
 

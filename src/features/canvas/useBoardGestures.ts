@@ -2,6 +2,9 @@
 // that keeps it, the one transform per animation frame it coalesces into, and
 // the ways it ends — released, cancelled, or the capture lost out from under it.
 //
+// A frame under the hand snaps to the others (frameSnap.ts) unless ⌘ or Ctrl is
+// held, and the gesture keeps the lines it snapped on for the board to draw.
+//
 // It also owns every layout write and the transient rects drawn before one is
 // acknowledged, because a release and a finished nudge, align or distribute are
 // the same compare-and-set: one `arrangeFrames` carrying the layout version each
@@ -18,6 +21,7 @@ import {
   type Point,
 } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
+import { snapFrameRect, type SnapMarks } from './frameSnap';
 import type { ArrangeFramesInput, CanvasFrame, FrameRect } from './protocol';
 
 /** Movement in board pixels before a frame press becomes a captured drag. */
@@ -60,8 +64,9 @@ export function useBoardGestures({
   const [panning, setPanning] = useState(false);
   const [refusal, setRefusal] = useState<LayoutRefusal | null>(null);
   const gesture = useRef<Gesture | null>(null);
-  const move = useRef<{ pointer: Point | null; frame: number | null }>({
+  const move = useRef<{ pointer: Point | null; snapping: boolean; frame: number | null }>({
     pointer: null,
+    snapping: true,
     frame: null,
   });
   const latest = useRef({ scale, onPan, onBand });
@@ -71,7 +76,7 @@ export function useBoardGestures({
 
   const stopCoalescing = useCallback(() => {
     if (move.current.frame !== null) cancelAnimationFrame(move.current.frame);
-    move.current = { pointer: null, frame: null };
+    move.current = { pointer: null, snapping: true, frame: null };
   }, []);
 
   /** Ends the gesture writing nothing. Answers whether there was one to end. */
@@ -168,7 +173,7 @@ export function useBoardGestures({
     });
   };
 
-  const applyPointer = useCallback((pointer: Point) => {
+  const applyPointer = useCallback((pointer: Point, snapping: boolean) => {
     const active = gesture.current;
     if (active === null) return;
     if (active.kind === 'pan') {
@@ -181,16 +186,38 @@ export function useBoardGestures({
       setBand({ origin: active.origin, current: pointer });
       return;
     }
+    const { scale } = latest.current;
     const stepped = reduceFrameDrag(active.drag, {
       type: 'move',
       pointerId: active.drag.pointerId,
       pointer,
-      scale: latest.current.scale,
+      scale,
     }).drag;
     if (stepped === null) return;
-    active.drag = stepped;
-    setDrag({ designId: stepped.designId, rect: stepped.rect });
+    const { rect, ...marks } = snapping
+      ? snapFrameRect(stepped.rect, stepped.handle, active.others, scale)
+      : { rect: stepped.rect, ...NO_MARKS };
+    active.drag = { ...stepped, rect };
+    setDrag({ designId: stepped.designId, rect, marks });
   }, []);
+
+  useEffect(() => {
+    // Holding or letting go of ⌘ or Ctrl mid-drag re-places the frame at once,
+    // without waiting for the pointer to move.
+    const onModifier = (event: KeyboardEvent) => {
+      if (event.key !== 'Meta' && event.key !== 'Control') return;
+      move.current.snapping = snapsWith(event);
+      const { pointer } = move.current;
+      if (gesture.current?.kind === 'frame' && pointer !== null)
+        applyPointer(pointer, move.current.snapping);
+    };
+    window.addEventListener('keydown', onModifier);
+    window.addEventListener('keyup', onModifier);
+    return () => {
+      window.removeEventListener('keydown', onModifier);
+      window.removeEventListener('keyup', onModifier);
+    };
+  }, [applyPointer]);
 
   const takePointer = () => {
     const root = board.current;
@@ -263,8 +290,11 @@ export function useBoardGestures({
         startRect: rect,
         rect,
       },
+      others: frames
+        .filter((other) => other.designId !== frame.designId)
+        .map((other) => rectFor(other)),
     };
-    setDrag({ designId: frame.designId, rect });
+    setDrag({ designId: frame.designId, rect, marks: NO_MARKS });
   };
 
   const onPointerMove = useCallback(
@@ -282,11 +312,13 @@ export function useBoardGestures({
         root.setPointerCapture(event.pointerId);
       }
       move.current.pointer = pointer;
+      move.current.snapping = snapsWith(event);
       // Spec §11: the transform updates once per animation frame, and the pointer
       // is followed 1:1 with no easing behind the hand.
       move.current.frame ??= requestAnimationFrame(() => {
         move.current.frame = null;
-        if (move.current.pointer !== null) applyPointer(move.current.pointer);
+        if (move.current.pointer !== null)
+          applyPointer(move.current.pointer, move.current.snapping);
       });
     },
     [applyPointer, board],
@@ -320,7 +352,10 @@ export function useBoardGestures({
     // Release may arrive before the queued frame applies the last movement.
     // An uncaptured frame press is a click, including any sub-threshold jitter.
     if (active.kind !== 'frame' || root?.hasPointerCapture(event.pointerId))
-      applyPointer(boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }));
+      applyPointer(
+        boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY }),
+        snapsWith(event),
+      );
     gesture.current = null;
     if (root?.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
     setPanning(false);
@@ -352,15 +387,19 @@ export function useBoardGestures({
   };
 
   /**
-   * One layout write for frames the user has already finished placing. Frames
-   * the operation did not actually move are left out, so an align that moves
-   * one frame writes one frame.
+   * One layout write for frames the user has already finished placing: those
+   * `designIds` names, at the rects `nextRects` gives for where they are drawn.
+   * Frames it did not actually move are left out, so an align that moves one
+   * frame writes one frame.
    */
-  const place = (placements: FramePlacement[]) => {
+  const place = (designIds: readonly string[], nextRects: (rects: FrameRect[]) => FrameRect[]) => {
+    const placed = frames.filter((frame) => designIds.includes(frame.designId));
+    const rects = nextRects(placed.map((frame) => rectFor(frame)));
     commit(
-      placements.filter(({ designId, rect }) => {
-        const frame = frames.find((candidate) => candidate.designId === designId);
-        return frame !== undefined && !sameRect(rect, rectFor(frame));
+      placed.flatMap((frame, index) => {
+        const rect = rects[index];
+        if (sameRect(rect, rectFor(frame))) return [];
+        return [{ designId: frame.designId, expectedLayoutVersion: frame.layoutVersion, rect }];
       }),
     );
   };
@@ -373,6 +412,7 @@ export function useBoardGestures({
     layoutError: refusal && isUnanswered(refusal, frames) ? refusal.message : '',
     rectFor,
     heldDesignId: drag?.designId ?? null,
+    snapMarks: drag?.marks ?? null,
     place,
     cancel: cancelGesture,
     onBackgroundPointerDown,
@@ -385,6 +425,14 @@ export function useBoardGestures({
 interface DraggedFrame {
   designId: string;
   rect: FrameRect;
+  marks: SnapMarks;
+}
+
+const NO_MARKS: SnapMarks = { guides: [], gaps: [] };
+
+/** ⌘ or Ctrl held suspends snapping, so a frame can sit a pixel off its neighbours. */
+function snapsWith(event: { metaKey: boolean; ctrlKey: boolean }): boolean {
+  return !event.metaKey && !event.ctrlKey;
 }
 
 /** The rubber band the hand is drawing, in board-local pixels. */
@@ -428,7 +476,7 @@ function withoutHolds(
 type Gesture =
   | { kind: 'pan'; pointerId: number; last: Point }
   | { kind: 'band'; pointerId: number; origin: Point; current: Point }
-  | { kind: 'frame'; pointerId: number; drag: FrameDrag };
+  | { kind: 'frame'; pointerId: number; drag: FrameDrag; others: FrameRect[] };
 
 function boardCursor(panning: boolean, banding: boolean, spaceHeld: boolean): string {
   if (panning) return 'grabbing';

@@ -54,7 +54,7 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
-function clampDimension(px: number): number {
+export function clampDimension(px: number): number {
   return Math.min(MAX_FRAME_PX, Math.max(MIN_FRAME_PX, px));
 }
 
@@ -128,11 +128,21 @@ function boundsOf(rects: readonly FrameRect[]): FrameRect | null {
 /** What the hand took hold of: the whole frame, or one of its resize edges. */
 export type FrameHandle = 'move' | 'east' | 'south' | 'southeast';
 
+/** The rect in whole pixels, which is what every drag commits. */
+export function roundRect(rect: FrameRect): FrameRect {
+  return {
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  };
+}
+
 /**
  * A held frame's rect after the pointer moved `screenDelta` screen pixels,
  * which is `screenDelta / scale` world units, so the frame keeps up with the
- * hand at any zoom. A resize changes the frame's viewport dimensions, which is
- * what makes a responsive layout real (spec §4).
+ * hand at any zoom, rounded to whole pixels. A resize changes the frame's
+ * viewport dimensions, which is what makes a responsive layout real (spec §4).
  */
 export function applyFrameHandle(
   rect: FrameRect,
@@ -141,12 +151,12 @@ export function applyFrameHandle(
   scale: number,
 ): FrameRect {
   const world = { x: screenDelta.x / scale, y: screenDelta.y / scale };
-  if (handle === 'move') return { ...rect, x: rect.x + world.x, y: rect.y + world.y };
-  return {
+  if (handle === 'move') return roundRect({ ...rect, x: rect.x + world.x, y: rect.y + world.y });
+  return roundRect({
     ...rect,
     width: handle === 'south' ? rect.width : clampDimension(rect.width + world.x),
     height: handle === 'east' ? rect.height : clampDimension(rect.height + world.y),
-  };
+  });
 }
 
 /** World units one arrow key moves a selection, and with Shift held (spec §4). */

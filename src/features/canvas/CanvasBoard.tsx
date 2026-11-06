@@ -41,11 +41,12 @@ import {
 } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 import { ElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
+import { SnapGuides } from './SnapGuides';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
@@ -53,7 +54,7 @@ import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, WriteReceipt } from './protocol';
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -74,7 +75,7 @@ export interface CanvasBoardProps {
   /** The one annotation write, bound to `CanvasClient.annotate` for this canvas. */
   onAnnotate: (input: AnnotateCanvasInput) => Promise<unknown>;
   /** The one direct element edit, bound to `CanvasClient.source.editElement` for this canvas. */
-  onEditElement: (input: EditElementInput) => Promise<ElementEditResult>;
+  onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
   /** Deletes frames from this canvas (`FrameRemovals.remove`); true once they are gone. */
   onRemoveFrames: (frames: CanvasFrame[]) => Promise<boolean>;
   /** Undoes this canvas's latest deletion; false when none is offered. */
@@ -270,23 +271,6 @@ export function CanvasBoard({
     };
   }, [capturePointer, overlayCapture, view.scrolling]);
 
-  /**
-   * One layout write for the selection, computed from the rects it is drawn at.
-   */
-  const placeSelection = (nextRects: (rects: FrameRect[]) => FrameRect[]) => {
-    const selected = frames.filter((frame) =>
-      interaction.selectedFrameIds.includes(frame.designId),
-    );
-    const placed = nextRects(selected.map((frame) => gestures.rectFor(frame)));
-    gestures.place(
-      selected.map((frame, index) => ({
-        designId: frame.designId,
-        expectedLayoutVersion: frame.layoutVersion,
-        rect: placed[index],
-      })),
-    );
-  };
-
   const onMode = (next: BoardMode) => {
     annotation.pickTool(null);
     if (next === interaction.mode) return;
@@ -355,7 +339,7 @@ export function CanvasBoard({
               view.panByScreen(delta);
             },
             nudge: (step) => {
-              placeSelection((rects) =>
+              gestures.place(interaction.selectedFrameIds, (rects) =>
                 rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
               );
             },
@@ -450,6 +434,7 @@ export function CanvasBoard({
           />
         )}
         {gestures.band && <RubberBand band={gestures.band} />}
+        {gestures.snapMarks && <SnapGuides marks={gestures.snapMarks} viewport={view.viewport} />}
 
         <BoardControls
           scale={scale}
@@ -461,10 +446,10 @@ export function CanvasBoard({
           onMode={onMode}
           onZoom={onZoom}
           onAlign={(edge: AlignEdge) => {
-            placeSelection((rects) => alignRects(rects, edge));
+            gestures.place(interaction.selectedFrameIds, (rects) => alignRects(rects, edge));
           }}
           onDistribute={(axis: DistributeAxis) => {
-            placeSelection((rects) => distributeRects(rects, axis));
+            gestures.place(interaction.selectedFrameIds, (rects) => distributeRects(rects, axis));
           }}
           annotationTools={<AnnotationTools {...annotation.rail} />}
         />

@@ -24,6 +24,8 @@ export const CANVAS_LIMITS = {
   maxInstancePathLength: 512,
   maxRevisionPageSize: 50,
   maxRevisionDiffBytes: 256 * 1024,
+  /** More than the inspector's style properties, so one edit can set them all. */
+  maxStylesPerEdit: 64,
   /** Spec §5: two compiler jobs run at once, across every open canvas. */
   buildSlots: 2,
   /** Spec §5: one build gets this long before its worker is ended. */
@@ -53,6 +55,8 @@ const TOTAL_BYTES_MESSAGE = `The source written for one design must stay under $
 const FRAME_COUNT_MESSAGE = `One create reserves 1 to ${String(CANVAS_LIMITS.maxFramesPerCreate)} frames.`;
 const ARRANGE_COUNT_MESSAGE = `One arrange moves 1 to ${String(CANVAS_LIMITS.maxFramesPerArrange)} frames.`;
 const ARRANGE_REPEAT_MESSAGE = 'A frame can appear only once in an arrange.';
+const STYLE_COUNT_MESSAGE = `One edit sets 1 to ${String(CANVAS_LIMITS.maxStylesPerEdit)} styles.`;
+const STYLE_REPEAT_MESSAGE = 'A style property can appear only once in an edit.';
 
 // Canvas IDs, design IDs, revision IDs and mutation IDs share one rule: an
 // opaque token that is safe to log and can never widen a filesystem path.
@@ -266,23 +270,11 @@ export const writeFilesInputSchema = z
     });
   });
 
-// A style edit's value is a kit token's name (`--ds-space-2`) or a raw CSS value,
+// A style's value is a kit token's name (`--ds-space-2`) or a raw CSS value,
 // which the edit resolves to a kit token with that value when the kit has one.
-function styleChangeSchema<Kind extends string>(kind: Kind) {
-  return z
-    .object({
-      kind: z.literal(kind),
-      property: z.string().min(1).max(64),
-      value: z.string().min(1).max(128),
-    })
-    .strict();
-}
-
-/** What a direct edit wrote: a kit token, or the raw value the kit had no token for. */
-export const styleResolutionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('token'), token: z.string().min(1).max(128) }).strict(),
-  z.object({ kind: z.literal('raw'), value: z.string().min(1).max(128) }).strict(),
-]);
+const styleSchema = z
+  .object({ property: z.string().min(1).max(64), value: z.string().min(1).max(128) })
+  .strict();
 
 export const editElementInputSchema = z
   .object({
@@ -299,12 +291,19 @@ export const editElementInputSchema = z
           .strict(),
         change: z.discriminatedUnion('kind', [
           z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
-          styleChangeSchema('spacing'),
-          styleChangeSchema('size'),
-          styleChangeSchema('colour'),
-          styleChangeSchema('typography'),
-          styleChangeSchema('layout'),
-          styleChangeSchema('opacity'),
+          z
+            .object({
+              kind: z.literal('style'),
+              styles: z
+                .array(styleSchema)
+                .min(1, STYLE_COUNT_MESSAGE)
+                .max(CANVAS_LIMITS.maxStylesPerEdit, STYLE_COUNT_MESSAGE)
+                // Two values for one property would contradict each other.
+                .refine((styles) => !hasDuplicate(styles.map((style) => style.property)), {
+                  message: STYLE_REPEAT_MESSAGE,
+                }),
+            })
+            .strict(),
           z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
         ]),
       })
@@ -408,7 +407,6 @@ export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
 export type EditElementInput = z.infer<typeof editElementInputSchema>;
-export type StyleResolution = z.infer<typeof styleResolutionSchema>;
 export type RevisionPage = z.infer<typeof revisionPageSchema>;
 export type SwitchRevisionInput = z.infer<typeof switchRevisionInputSchema>;
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;

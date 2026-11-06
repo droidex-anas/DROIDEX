@@ -104,6 +104,8 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
       assert.match(result.instructions, /foreground as currentColor on dark or coloured fills/);
       assert.equal(result.instructions.includes(DESIGN_SESSION_GUIDANCE), false);
     }
+    const read = server.tools.find((entry) => entry.name === 'canvas_read');
+    assert.match(read?.description ?? '', /style from[^.]*request[^.]*project[^.]*frames/);
     const write = server.tools.find((entry) => entry.name === 'canvas_write');
     assert.ok(write);
     assert.ok(write.description);

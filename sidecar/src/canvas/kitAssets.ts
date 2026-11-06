@@ -1,4 +1,4 @@
-// Kit images (design system documents spec §8): PNG, JPEG and WebP the user
+// Kit images (design system documents spec §8): PNG, JPEG, WebP and SVG the user
 // chose through main's picker or drop, kept once by content hash in
 // `canvases/design-systems/assets` with the same record as a canvas image. A
 // document names one by asset ID; its name and note live in the document, so
@@ -7,13 +7,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import { join, posix } from 'node:path';
-import {
-  canvasImageImportSchema,
-  readChosenImage,
-  readImageIn,
-  saveImageIn,
-  type ChosenImage,
-} from './canvasAssets.js';
+import { readChosenImage, readImageIn, saveImageIn, type ChosenImage } from './canvasAssets.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
 import type { ExportFile } from './canvasExport.js';
 import type { DesignSystem } from './designSystems.js';
@@ -22,8 +16,6 @@ import type { OwnedAsset } from './protocol.js';
 
 const KIT_ASSET_REFERENCE = /kit-asset:([0-9a-f]{64})\b/g;
 const MISSING_KIT_ASSET = 'An image this design system uses is not in DROIDEX. Import it first.';
-
-export const kitImageImportSchema = canvasImageImportSchema.omit({ canvasId: true });
 
 /** Keeps the chosen image in the kit store; importing the same bytes again changes nothing. */
 export async function importKitImage(request: ChosenImage): Promise<OwnedAsset> {

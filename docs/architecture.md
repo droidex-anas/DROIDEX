@@ -625,13 +625,17 @@ outside canonical source, forces a rebuild. Inline source maps preserve canonica
 through bundling
 without shipping host runtime paths or canonical source content in the final artifact map.
 Direct edits reparse that source and
-replace one literal AST range; computed/shared sites require an agent edit and stale
-references require reselection. `canvas.editElement` sets text, or one whitelisted style
-property as a spacing, size, colour, typography, layout or opacity change. A style value is a
-pinned kit token's name, or a raw value that resolves to the kit token with that value and stays
-raw only when the kit has none; the reply and the edit's ledger record carry that resolution, so
-a retry answers it unchanged. The edit commits through the workspace's revision
-compare-and-swap. Image edits remain unavailable until the asset store can verify ownership.
+replace only literal ranges within the element's own site; computed/shared sites require an
+agent edit and stale references require reselection. A className spelled with string literals,
+including through a `cn()`/`clsx()` call whose arguments are all literals, is still a literal
+site. `canvas.editElement` sets text, or a batch of whitelisted style properties in one
+revision. A style value is a pinned kit token's name, or a raw value that resolves to the kit
+token with that value and stays raw only when the kit has none. What a style edit writes is
+what a person writing Tailwind would: the class that says the value in place of the classes it
+makes dead, with the style attribute only where no stock class says it or a frame-scoped class
+or inline shorthand would win. The edit commits through the workspace's revision
+compare-and-swap; its ledger record answers a retry with the original receipt. Image edits
+remain unavailable until the asset store can verify ownership.
 
 The source drawer keeps drafts and save operations in the feature-local
 `canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the
@@ -650,7 +654,11 @@ own picker. Main checks the 10 MiB limit and matching extension, decodes PNG/JPE
 with `nativeImage` and WebP with `@napi-rs/canvas`, then checks the 8192-pixel
 dimension limit. Its private loopback route sends the
 selected path with a digest and decoded dimensions to the sidecar; the sidecar
-rejects a changed file and stores accepted bytes by hash under the canvas. Each
+rejects a changed file and stores accepted bytes by hash under the canvas. An
+SVG is not decoded in main: the sidecar rebuilds it from an allowlist
+(`canvasSvg.ts`), keeping vectors and dropping script, outside references and
+entity declarations, and stores only the rebuilt markup. Main serves an SVG
+asset only when it starts with that rebuilt prefix, under an inert CSP. Each
 asset has a durable metadata record, and `canvas.listAssets` recovers its ID
 even when the import reply or original file is lost.
 `canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
