@@ -30,12 +30,14 @@
   box-shadow:
     0 0 0 calc(1px / var(--board-scale)) var(--canvas-sheet-edge),
     var(--shadow-sm);
-  transition: box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: box-shadow var(--duration-quick) var(--ease-smooth-out);
 }
 
+/* Hover and selection draw the line the element Edit picks is drawn with,
+   1px on hover and 1.5px once selected. */
 .canvas-frame:hover > .canvas-sheet {
   box-shadow:
-    0 0 0 calc(1px / var(--board-scale)) color-mix(in srgb, var(--selection) 55%, transparent),
+    0 0 0 calc(1px / var(--board-scale)) var(--selection),
     var(--shadow-sm);
 }
 
@@ -79,14 +81,11 @@
   font: 500 12px / 18px var(--canvas-chrome-font);
   color: var(--text-muted);
   transition:
-    color 120ms,
-    box-shadow 120ms;
+    color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-quick) var(--ease-smooth-out);
 }
 
-.canvas-frame:hover .canvas-frame-name {
-  color: var(--text);
-}
-
+.canvas-frame:hover .canvas-frame-name,
 .canvas-frame[data-selected] .canvas-frame-name {
   color: var(--selection-label);
 }
