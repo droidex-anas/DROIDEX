@@ -1,4 +1,13 @@
-import { lazy, memo, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  lazy,
+  memo,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { Ellipsis, GitFork, Sketch, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
@@ -112,6 +121,14 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
   );
 }
 
+// How far a hovered title slides to show its end: none when it fits, or when
+// the user asked for less motion.
+function marqueeTravelPx(title: HTMLElement): number {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
+  const px = title.scrollWidth - title.clientWidth;
+  return px > 4 ? px : 0;
+}
+
 // `running` is derived by the parent so this row can skip unrelated store updates.
 export const SessionRow = memo(function SessionRow({
   session,
@@ -139,6 +156,7 @@ export const SessionRow = memo(function SessionRow({
   // input's unmount does not commit (or commit twice). Reset on every focus.
   const renameHandled = useRef(false);
   const titleRef = useRef<HTMLSpanElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   const rowButtonRef = useRef<HTMLButtonElement>(null);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
   const wasRenaming = useRef(false);
@@ -180,14 +198,15 @@ export const SessionRow = memo(function SessionRow({
 
   // A title longer than the sidebar rests truncated ("name…"); hovering the
   // row sweeps it left to reveal the full name, then slides back. The overflow
-  // is measured on every hover, since fonts and sidebar width can change.
+  // is measured on every hover, since fonts and sidebar width can change, and
+  // again when a new name arrives under the pointer.
   const handleMarqueeEnter = () => {
-    const el = titleRef.current;
-    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const px = el.scrollWidth - el.clientWidth;
-    if (px <= 4) return;
-    setMarqueePx(px);
+    if (titleRef.current) setMarqueePx(marqueeTravelPx(titleRef.current));
   };
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (el && rowRef.current?.matches(':hover')) setMarqueePx(marqueeTravelPx(el));
+  }, [title]);
   const marquee = marqueePx > 0;
   // Scale the right-edge fade with the overflow so a barely-overflowing title
   // is not revealed entirely inside the faded zone.
@@ -314,6 +333,7 @@ export const SessionRow = memo(function SessionRow({
 
   return (
     <div
+      ref={rowRef}
       className="group relative"
       onMouseEnter={handleMarqueeEnter}
       onMouseLeave={() => {

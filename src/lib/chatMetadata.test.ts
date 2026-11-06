@@ -122,6 +122,7 @@ test('draftChatTitle names a chat from its first sentence without cutting a word
     ],
     ['Replace config.json, then restart', 'Replace config.json, then restart'],
     ['1. Fix the login bug', 'Fix the login bug'],
+    ['   1. Fix the login bug', 'Fix the login bug'],
     ['# Fix the **login** issue.', 'Fix the login issue'],
     ['```\nFix the crash in the session registry\n```', 'Fix the crash in the session registry'],
     ['a'.repeat(60), 'a'.repeat(48)],

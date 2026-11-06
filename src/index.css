@@ -487,7 +487,7 @@
 
   /* Sidebar titles longer than the row rest truncated; on hover the title
      sweeps left to reveal the full name, holds, then slides back. Travel
-     distance and duration are per-row CSS vars set on mouseenter. */
+     distance and duration are per-row CSS vars measured while it is hovered. */
   @keyframes title-marquee {
     0%,
     12% {

@@ -166,8 +166,9 @@ export function chatDisplayTitle(session: SessionSummary, meta: ChatMetadata | u
 export function draftChatTitle(text: string, maxLength = 48): string {
   const opening = text
     .split('\n')
-    .filter((line) => !line.trimStart().startsWith('```'))
-    .map((line) => markdownToPlainText(line).replace(/\s+/g, ' ').trim())
+    .map((line) => line.trim())
+    .filter((line) => !line.startsWith('```'))
+    .map((line) => markdownToPlainText(line).replace(/\s+/g, ' '))
     .find((line) => /[\p{L}\p{N}]/u.test(line));
   if (!opening) return '';
   const sentence = opening.split(/(?<=[.!?])\s/)[0].replace(/\.$/, '');
