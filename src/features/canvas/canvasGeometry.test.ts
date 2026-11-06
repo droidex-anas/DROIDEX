@@ -291,6 +291,32 @@ test('a resize changes the frame viewport by the edge it was taken by', () => {
   assert.equal(applyFrameHandle(start, 'east', { x: 100, y: 0 }, 0.5).width, 600);
 });
 
+test('a resize from a west or north edge or corner keeps the opposite edges where they were', () => {
+  const start = rect(100, 50, 400, 300);
+
+  assert.deepEqual(applyFrameHandle(start, 'west', { x: -40, y: 999 }, 1), rect(60, 50, 440, 300));
+  assert.deepEqual(applyFrameHandle(start, 'north', { x: 999, y: 30 }, 1), rect(100, 80, 400, 270));
+  assert.deepEqual(
+    applyFrameHandle(start, 'northwest', { x: 20, y: -10 }, 1),
+    rect(120, 40, 380, 310),
+  );
+  assert.deepEqual(
+    applyFrameHandle(start, 'northeast', { x: 20, y: -10 }, 1),
+    rect(100, 40, 420, 310),
+  );
+  assert.deepEqual(
+    applyFrameHandle(start, 'southwest', { x: 20, y: -10 }, 1),
+    rect(120, 50, 380, 290),
+  );
+  // Past the smallest size the frame stops rather than sliding after the hand.
+  assert.deepEqual(
+    applyFrameHandle(start, 'northwest', { x: 9999, y: 9999 }, 1),
+    rect(500 - MIN_FRAME_PX, 350 - MIN_FRAME_PX, MIN_FRAME_PX, MIN_FRAME_PX),
+  );
+  // A fractional world delta still leaves the right edge on its whole pixel.
+  const zoomed = applyFrameHandle(start, 'west', { x: 10, y: 0 }, 0.75);
+  assert.deepEqual(zoomed, rect(113, 50, 387, 300));
+});
 test('a resize stays inside the dimensions the sidecar will accept', () => {
   const start = rect(0, 0, 400, 300);
 

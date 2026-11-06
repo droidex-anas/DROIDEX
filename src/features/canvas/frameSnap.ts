@@ -5,10 +5,12 @@
 
 import {
   boundsOf,
-  clampDimension,
+  moveEdge,
+  resizeEdge,
   roundRect,
   type FrameHandle,
   type Point,
+  type ResizeEdge,
 } from './canvasGeometry';
 import type { FrameRect } from './protocol';
 
@@ -51,20 +53,11 @@ export interface GroupSnap extends SnapMarks {
   rects: FrameRect[];
 }
 
-/** How a handle moves a rect along one axis: all of it, its far edge, or not at all. */
-type AxisHold = 'move' | 'end' | null;
+/** How a handle moves a rect along one axis: all of it, one of its edges, or not at all. */
+type AxisHold = 'move' | ResizeEdge | null;
 
 function holdOf(handle: FrameHandle, axis: Axis): AxisHold {
-  switch (handle) {
-    case 'move':
-      return 'move';
-    case 'southeast':
-      return 'end';
-    case 'east':
-      return axis === 'x' ? 'end' : null;
-    case 'south':
-      return axis === 'y' ? 'end' : null;
-  }
+  return handle === 'move' ? 'move' : resizeEdge(handle, axis);
 }
 
 /**
@@ -85,7 +78,8 @@ export function snapFrameRect(
     const hold = holdOf(handle, axis);
     if (hold === null) continue;
     const offset = nearestOffset(snapOffsets(snapped, hold, others, axis), threshold);
-    snapped = hold === 'move' ? shift(snapped, axis, offset) : grow(snapped, axis, offset);
+    snapped =
+      hold === 'move' ? shift(snapped, axis, offset) : moveEdge(snapped, axis, hold, offset);
   }
   snapped = roundRect(snapped);
   return {
@@ -143,17 +137,12 @@ function lines(rect: FrameRect, axis: Axis): number[] {
 
 /** The lines of `rect` that a handle moves, and so the only ones that may snap. */
 function heldLines(rect: FrameRect, hold: Exclude<AxisHold, null>, axis: Axis): number[] {
-  return hold === 'move' ? lines(rect, axis) : [end(rect, axis)];
+  if (hold === 'move') return lines(rect, axis);
+  return [hold === 'start' ? start(rect, axis) : end(rect, axis)];
 }
 
 function shift(rect: FrameRect, axis: Axis, by: number): FrameRect {
   return axis === 'x' ? { ...rect, x: rect.x + by } : { ...rect, y: rect.y + by };
-}
-
-function grow(rect: FrameRect, axis: Axis, by: number): FrameRect {
-  return axis === 'x'
-    ? { ...rect, width: clampDimension(rect.width + by) }
-    : { ...rect, height: clampDimension(rect.height + by) };
 }
 
 /** Every distance the held lines could travel to land on another frame's line or spacing. */

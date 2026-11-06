@@ -54,7 +54,7 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
-export function clampDimension(px: number): number {
+function clampDimension(px: number): number {
   return Math.min(MAX_FRAME_PX, Math.max(MIN_FRAME_PX, px));
 }
 
@@ -125,8 +125,56 @@ export function boundsOf(rects: readonly FrameRect[]): FrameRect | null {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
-/** What the hand took hold of: the whole frame, or one of its resize edges. */
-export type FrameHandle = 'move' | 'east' | 'south' | 'southeast';
+/** What the hand took hold of: the whole frame, or one of its edges or corners to resize it. */
+export type FrameHandle = 'move' | ResizeHandle;
+
+export type ResizeHandle =
+  | 'north'
+  | 'south'
+  | 'east'
+  | 'west'
+  | 'northeast'
+  | 'northwest'
+  | 'southeast'
+  | 'southwest';
+
+/** The side of a rect a resize moves on one axis: left or top, or right or bottom. */
+export type ResizeEdge = 'start' | 'end';
+
+const RESIZE_EDGES: Record<ResizeHandle, { x: ResizeEdge | null; y: ResizeEdge | null }> = {
+  north: { x: null, y: 'start' },
+  south: { x: null, y: 'end' },
+  east: { x: 'end', y: null },
+  west: { x: 'start', y: null },
+  northeast: { x: 'end', y: 'start' },
+  northwest: { x: 'start', y: 'start' },
+  southeast: { x: 'end', y: 'end' },
+  southwest: { x: 'start', y: 'end' },
+};
+
+/** The edge `handle` moves on `axis`, or null when that axis keeps its size. */
+export function resizeEdge(handle: ResizeHandle, axis: 'x' | 'y'): ResizeEdge | null {
+  return RESIZE_EDGES[handle][axis];
+}
+
+/**
+ * `rect` with its `edge` on `axis` moved by `by` world units while the opposite
+ * edge stays where it was, in whole pixels and within the frame size limits.
+ */
+export function moveEdge(
+  rect: FrameRect,
+  axis: 'x' | 'y',
+  edge: ResizeEdge,
+  by: number,
+): FrameRect {
+  const start = axis === 'x' ? rect.x : rect.y;
+  const size = axis === 'x' ? rect.width : rect.height;
+  const resized = clampDimension(Math.round(edge === 'end' ? size + by : size - by));
+  const moved = edge === 'end' ? start : start + size - resized;
+  return axis === 'x'
+    ? { ...rect, x: moved, width: resized }
+    : { ...rect, y: moved, height: resized };
+}
 
 /** The rect in whole pixels, which is what every drag commits. */
 export function roundRect(rect: FrameRect): FrameRect {
@@ -152,11 +200,12 @@ export function applyFrameHandle(
 ): FrameRect {
   const world = { x: screenDelta.x / scale, y: screenDelta.y / scale };
   if (handle === 'move') return roundRect({ ...rect, x: rect.x + world.x, y: rect.y + world.y });
-  return roundRect({
-    ...rect,
-    width: handle === 'south' ? rect.width : clampDimension(rect.width + world.x),
-    height: handle === 'east' ? rect.height : clampDimension(rect.height + world.y),
-  });
+  let resized = roundRect(rect);
+  for (const axis of ['x', 'y'] as const) {
+    const edge = resizeEdge(handle, axis);
+    if (edge !== null) resized = moveEdge(resized, axis, edge, world[axis]);
+  }
+  return resized;
 }
 
 /** World units one arrow key moves a selection, and with Shift held (spec §4). */

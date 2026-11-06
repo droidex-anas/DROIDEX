@@ -403,6 +403,11 @@ export function CanvasBoard({
               actions={frameActions}
               onDelete={removeSelection}
               onHold={gestures.onFramePointerDown}
+              onResize={(resized, size) => {
+                gestures.place([resized.designId], (rects) =>
+                  rects.map((rect) => ({ ...rect, ...size })),
+                );
+              }}
               onPick={(picked, additive) => {
                 dispatch({ type: 'pick', designId: picked.designId, additive });
               }}

@@ -1,42 +1,113 @@
-import type { PointerEvent } from 'react';
-import type { FrameHandle } from './canvasGeometry';
+// A frame selected on its own: its size under it, which opens the size menu in
+// Select, and the handles on every edge and corner that resize it.
+
+import { useRef, useState, type PointerEvent } from 'react';
+import { ChevronDown } from '@droidex/icons';
+import type { FrameHandle, ResizeHandle } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
+import { FrameSizeMenu, type FrameSize } from './FrameSizeMenu';
 import type { CanvasFrame, FrameRect } from './protocol';
 
-/**
- * A frame selected on its own: its size under it, unless Edit is measuring an
- * element instead, and in Select the handles that resize it.
- */
+/** Edges first, so the corner squares sit above the strips they overlap. */
+const HANDLES: readonly ResizeHandle[] = [
+  'north',
+  'south',
+  'east',
+  'west',
+  'northwest',
+  'northeast',
+  'southwest',
+  'southeast',
+];
+
+const CORNERS: ReadonlySet<ResizeHandle> = new Set([
+  'northwest',
+  'northeast',
+  'southwest',
+  'southeast',
+]);
+
 export function FrameSizing({
   frame,
   rect,
   mode,
   elementPicked,
   onHold,
+  onResize,
+  onLeave,
 }: {
   frame: CanvasFrame;
   rect: FrameRect;
   mode: BoardMode;
+  /** Edit is measuring an element instead, under its own outline. */
   elementPicked: boolean;
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
+  onResize: (frame: CanvasFrame, size: FrameSize) => void;
+  /** Hands the keyboard back to the frame's label. */
+  onLeave: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const size = `${String(Math.round(rect.width))} × ${String(Math.round(rect.height))}`;
+  const resizable = mode === 'select';
   return (
     <>
       {!elementPicked && (
-        <div className="canvas-frame-size canvas-chrome">
-          <span>
-            {Math.round(rect.width)} × {Math.round(rect.height)}
-          </span>
+        <div
+          className="canvas-frame-size canvas-chrome"
+          // The menu portals out, but React still bubbles its presses through
+          // here; a press that reached the board would pan and eat the click.
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          {resizable ? (
+            <>
+              <button
+                ref={trigger}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                aria-label={`Size ${size}`}
+                title="Set size"
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onLeave();
+                }}
+                onClick={() => {
+                  setOpen((current) => !current);
+                }}
+              >
+                {size}
+                <ChevronDown className="h-3 w-3" aria-hidden />
+              </button>
+              <FrameSizeMenu
+                open={open}
+                onClose={() => {
+                  setOpen(false);
+                }}
+                anchorRef={trigger}
+                rect={rect}
+                onResize={(next) => {
+                  onResize(frame, next);
+                }}
+              />
+            </>
+          ) : (
+            <span>{size}</span>
+          )}
         </div>
       )}
-      {mode === 'select' &&
-        (['east', 'south', 'southeast'] as const).map((handle) => (
+      {resizable &&
+        HANDLES.map((handle) => (
           <span
             key={handle}
             role="presentation"
             aria-hidden
             data-handle={handle}
-            className="canvas-frame-handle"
+            className={`canvas-frame-handle ${CORNERS.has(handle) ? 'canvas-frame-corner' : ''}`}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.stopPropagation();

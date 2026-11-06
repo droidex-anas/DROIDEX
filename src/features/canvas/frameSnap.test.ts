@@ -68,6 +68,11 @@ test('a resize snaps only the edge in the hand', () => {
     rect(0, 0, 600, 300),
   );
 
+  // The west edge pulls onto the anchor's right, and the right edge stays put.
+  const west = snapFrameRect(rect(404, 0, 296, 300), 'west', [ANCHOR], 1);
+  assert.deepEqual(west.rect, rect(400, 0, 300, 300));
+  assert.deepEqual(west.guides, [{ axis: 'x', at: 400, from: 0, to: 300 }]);
+
   // The left edge three pixels off the anchor's is not held, so it never moves.
   const below = rect(0, 400, 200, 100);
   assert.deepEqual(

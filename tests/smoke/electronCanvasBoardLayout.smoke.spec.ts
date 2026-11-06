@@ -1,6 +1,6 @@
 // The board's layout tools against the harness: a selection dragged as one,
-// picking every frame, the box a multiple selection is measured by, and the
-// zoom bar and keys.
+// picking every frame, the box a multiple selection is measured by, resizing
+// from any edge or to a typed size, and the zoom bar and keys.
 
 import { expect, test, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
@@ -17,16 +17,26 @@ async function arranged(page: Page, call: number): Promise<Record<string, FrameR
   return Object.fromEntries(frames.map(({ designId, rect }) => [designId, rect]));
 }
 
-/** Presses a frame's name label and moves the hand by screen pixels. */
-async function dragLabel(page: Page, name: string, x: number, y: number) {
-  const label = await box(frame(page, name).locator('[data-frame-header]'));
-  const origin = { x: Math.round(label.x + 30), y: Math.round(label.y + 8) };
+/** Presses at a point and moves the hand by screen pixels. */
+async function dragFrom(page: Page, origin: { x: number; y: number }, x: number, y: number) {
   await page.mouse.move(origin.x, origin.y);
   await page.mouse.down();
   await page.mouse.move(origin.x + x, origin.y + y);
   await page.clock.runFor(32);
   await page.mouse.up();
 }
+
+async function dragLabel(page: Page, name: string, x: number, y: number) {
+  const label = await box(frame(page, name).locator('[data-frame-header]'));
+  await dragFrom(page, { x: Math.round(label.x + 30), y: Math.round(label.y + 8) }, x, y);
+}
+
+async function dragHandle(page: Page, handle: string, x: number, y: number) {
+  const grip = await box(page.locator(`[data-handle="${handle}"]`));
+  await dragFrom(page, { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 }, x, y);
+}
+
+const arrangeCount = (page: Page) => page.evaluate(() => window.boardHarness.calls.length);
 
 test('dragging one frame of a selection moves all of it in one arrange, and a click picks it alone', async ({
   page,
@@ -72,6 +82,50 @@ test('⌘A selects every frame, and a multiple selection is measured by its own 
 
   await page.keyboard.press('Escape');
   await expect(bounds).toHaveCount(0);
+});
+
+test('a frame resizes from an edge or a corner, and the edges opposite stay put', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  // 45 screen pixels at the opening zoom, about 90%, are 50 board pixels.
+  await dragHandle(page, 'northwest', 45, 45);
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  expect((await arranged(page, 0)).a).toEqual({ x: 150, y: 100, width: 350, height: 250 });
+
+  // The next drag starts from the unanswered write, where the frame is drawn.
+  await dragHandle(page, 'west', -45, 0);
+  await expect.poll(() => arrangeCount(page)).toBe(2);
+  expect((await arranged(page, 1)).a).toEqual({ x: 100, y: 100, width: 400, height: 250 });
+});
+
+test('the size menu sets a typed size or a screen, each in one arrange from the same corner', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await page.getByRole('button', { name: 'Size 400 × 300' }).click();
+  const width = page.getByRole('textbox', { name: 'Width' });
+  await expect(width).toBeFocused();
+
+  // A size no frame can take is refused, and the menu says why.
+  await width.fill('40');
+  await width.press('Enter');
+  await expect(page.getByRole('alert')).toHaveText('Width and height run from 120 to 8192.');
+  expect(await arrangeCount(page)).toBe(0);
+
+  await width.fill('320');
+  await page.getByRole('textbox', { name: 'Height' }).fill('240');
+  await width.press('Enter');
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  expect((await arranged(page, 0)).a).toEqual({ x: 100, y: 50, width: 320, height: 240 });
+  await expect(width).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Size 320 × 240' }).click();
+  await page.getByRole('menuitem', { name: /^Desktop/ }).click();
+  await expect.poll(() => arrangeCount(page)).toBe(2);
+  expect((await arranged(page, 1)).a).toEqual({ x: 100, y: 50, width: 1440, height: 900 });
 });
 
 test('the zoom bar and the ⌘ zoom keys zoom the board, and a typed percentage goes there', async ({

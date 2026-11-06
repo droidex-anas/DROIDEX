@@ -29,6 +29,7 @@ import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
 import { FrameLabel, FrameNameField } from './FrameLabel';
+import type { FrameSize } from './FrameSizeMenu';
 import { FrameSizing } from './FrameSizing';
 import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
@@ -80,6 +81,8 @@ export interface DesignFrameProps {
   /** It held a live slot and lost it, so returning reloads the design. */
   released: boolean;
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
+  /** A size typed or picked for the frame, which keeps its top-left corner. */
+  onResize: (frame: CanvasFrame, size: FrameSize) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
   /** A press in Edit, at a point in the design's own pixels. */
@@ -256,6 +259,8 @@ export function DesignFrame(props: DesignFrameProps) {
           mode={mode}
           elementPicked={elementBox !== null}
           onHold={onHold}
+          onResize={props.onResize}
+          onLeave={focusLabel}
         />
       )}
     </div>

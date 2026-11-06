@@ -212,8 +212,11 @@
   pointer-events: none;
 }
 
-.canvas-frame-size > span {
-  display: block;
+.canvas-frame-size > span,
+.canvas-frame-size > button {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-top: 8px;
   padding: 1px 6px;
   border-radius: 5px;
@@ -225,6 +228,20 @@
   transform: translateX(-50%);
 }
 
+/* In Select the size opens the size menu. */
+.canvas-frame-size > button {
+  padding-right: 4px;
+  pointer-events: auto;
+  transition: background 120ms;
+}
+
+.canvas-frame-size > button:hover,
+.canvas-frame-size > button:focus-visible,
+.canvas-frame-size > button[aria-expanded='true'] {
+  outline: none;
+  background: color-mix(in srgb, var(--selection) 82%, var(--text));
+}
+
 /* A multiple selection's own box, a hairline at any zoom, with its size under it. */
 .canvas-selection-bounds {
   position: absolute;
@@ -232,40 +249,79 @@
   box-shadow: 0 0 0 calc(1px / var(--board-scale)) var(--selection);
 }
 
-/* Resize: a square at the corner, and the two edges as invisible strips. */
+/* Resize: a square at each corner, and the four edges as invisible strips. */
+/* A press that selects text would make the next press on it a native drag. */
 .canvas-frame-handle {
   position: absolute;
   touch-action: none;
+  user-select: none;
 }
 
-.canvas-frame-handle[data-handle='southeast'] {
-  left: 100%;
-  top: 100%;
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--selection);
-  border-radius: 2px;
-  background: var(--raised);
-  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
-  cursor: nwse-resize;
+.canvas-frame-handle[data-handle='north'],
+.canvas-frame-handle[data-handle='south'] {
+  left: 0;
+  width: 100%;
+  height: calc(10px / var(--board-scale));
+  margin-top: calc(-5px / var(--board-scale));
+  cursor: ns-resize;
 }
 
-.canvas-frame-handle[data-handle='east'] {
+.canvas-frame-handle[data-handle='north'] {
   top: 0;
-  left: 100%;
+}
+
+.canvas-frame-handle[data-handle='south'] {
+  top: 100%;
+}
+
+.canvas-frame-handle[data-handle='east'],
+.canvas-frame-handle[data-handle='west'] {
+  top: 0;
   width: calc(10px / var(--board-scale));
   height: 100%;
   margin-left: calc(-5px / var(--board-scale));
   cursor: ew-resize;
 }
 
-.canvas-frame-handle[data-handle='south'] {
+.canvas-frame-handle[data-handle='east'] {
+  left: 100%;
+}
+
+.canvas-frame-handle[data-handle='west'] {
+  left: 0;
+}
+
+.canvas-frame-corner {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--selection);
+  border-radius: 2px;
+  background: var(--raised);
+  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
+}
+
+.canvas-frame-handle[data-handle='northwest'] {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+
+.canvas-frame-handle[data-handle='northeast'] {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+
+.canvas-frame-handle[data-handle='southwest'] {
   left: 0;
   top: 100%;
-  width: 100%;
-  height: calc(10px / var(--board-scale));
-  margin-top: calc(-5px / var(--board-scale));
-  cursor: ns-resize;
+  cursor: nesw-resize;
+}
+
+.canvas-frame-handle[data-handle='southeast'] {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
 }
 
 /* What a sheet says when it has no live preview: centred, at screen size. It
