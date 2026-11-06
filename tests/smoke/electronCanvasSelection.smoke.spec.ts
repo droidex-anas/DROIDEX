@@ -44,6 +44,9 @@ export default function Card() {
       <h1 style={{ margin: '0px', fontSize: '24px' }}>Title</h1>
       <p style={{ margin: '0px' }}>Body</p>
       <footer style={LONG_STYLES}>{'é'.repeat(256)}</footer>
+      <p style={{ margin: '0px', width: '10ch', fontFamily: 'monospace' }}>
+        aaaaaaaaa aaaa <b>bbbb</b> ccccccccc
+      </p>
     </section>
   );
 }
@@ -108,6 +111,8 @@ export default function Card() {
     assert.equal(hovered?.elementId, heading.elementId);
     assert.equal(hovered.tagName, 'h1');
     assert.equal(hovered.rect.y, 8);
+    // Only its section is above it, and the paragraph follows with no margin.
+    assert.deepEqual(hovered.room, { above: null, below: 0 });
     assert.equal(
       readPreviewHover(await askGuest(page, previewHoverScript({ x: 5000, y: 5000 }))),
       null,
@@ -143,6 +148,18 @@ export default function Card() {
     assert.equal(footer.text, 'é'.repeat(256));
     assert.deepEqual(Object.keys(footer.styles), long);
     for (const name of long) assert.equal(footer.styles[name]?.length, 512, name);
+
+    // A word in wrapped text has the text's line before it just above and its
+    // line after just below, though that text also runs beside it.
+    await pick({ step: 'next' });
+    const word = await pick({ step: 'next' });
+    assert.equal(word?.elementId, design.elements.find((e) => e.tagName === 'b')?.elementId);
+    const inText = readPreviewHover(
+      await askGuest(page, previewHoverScript({ x: word.rect.x + 1, y: word.rect.y + 1 })),
+    );
+    assert.equal(inText?.elementId, word.elementId);
+    assert.ok(inText.room.above !== null && inText.room.above < 4, 'the line before');
+    assert.ok(inText.room.below !== null && inText.room.below < 4, 'the line after');
 
     // A preview is an inline style the guest computes, and moving away puts it back.
     const parent = await pick({ x: 2, y: 2 });

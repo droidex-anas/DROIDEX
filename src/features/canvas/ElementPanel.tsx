@@ -25,6 +25,7 @@ import {
   LAYOUT,
   layoutOf,
   type Layout,
+  MORE_DISPLAYS,
   OVERFLOW,
   TEXT_ALIGN,
   TEXT_TRANSFORM,
@@ -35,8 +36,9 @@ import { Labelled, Pair, Section } from './ElementPanelRows';
 import { ElementTextField } from './ElementTextField';
 import { NumberField } from './NumberField';
 import { firstFamily, sameFontStack } from './panelValues';
-import { SegmentedControl, type Segment } from './SegmentedControl';
-import type { EditToken, SourceElement } from './protocol';
+import { isDrawn } from './previewDocument';
+import { MoreSegments, SegmentedControl, type Segment } from './SegmentedControl';
+import type { EditToken, FrameRect, SourceElement } from './protocol';
 import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
@@ -215,9 +217,7 @@ export function ElementPanel({
           <span className="truncate" title={draft.site.file}>
             {fileName(draft.site.file)}
           </span>
-          <span className="ml-auto shrink-0 tabular-nums">
-            {Math.round(shown.rect.width)} × {Math.round(shown.rect.height)}
-          </span>
+          <span className="ml-auto shrink-0 tabular-nums">{sizeText(shown.rect)}</span>
         </p>
         {!editable && (
           <p className="mt-1.5 text-caption text-secondary">{agentRoute(draft.site.editability)}</p>
@@ -246,6 +246,15 @@ export function ElementPanel({
             onPick={(next) => {
               pick('display')(displayFor(display, next));
             }}
+            more={
+              <MoreSegments
+                label="More displays"
+                options={MORE_DISPLAYS}
+                value={display}
+                disabled={readOnly}
+                onPick={pick('display')}
+              />
+            }
           />
           {layout === 'flex' && (
             <>
@@ -263,7 +272,7 @@ export function ElementPanel({
           {layout === 'grid' && (
             <Pair>
               {number('rowGap', 'Row gap', 'Row', { min: 0 })}
-              {number('columnGap', 'Column gap', 'Column', { min: 0 })}
+              {number('columnGap', 'Column gap', 'Col', { min: 0 })}
             </Pair>
           )}
           {placesItems(parent) && segmented('alignSelf', 'Align self', ALIGN_SELF)}
@@ -463,6 +472,11 @@ function status(draft: ElementSelection['draft'], editable: boolean): string {
   if (!editable) return 'Read only.';
   if (draft.pending !== null) return 'Saving…';
   return 'Enter saves your changes; Escape takes one back.';
+}
+
+function sizeText(rect: FrameRect): string {
+  if (!isDrawn(rect)) return 'Hidden';
+  return `${String(Math.round(rect.width))} × ${String(Math.round(rect.height))}`;
 }
 
 function fileName(path: string): string {

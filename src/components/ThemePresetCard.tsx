@@ -95,7 +95,7 @@ function ThemeColorRow({
         }}
         title={`Pick ${label.toLowerCase()}`}
         // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-        className="flex h-control-md min-w-32 shrink-0 items-center gap-2 rounded-md px-2.5 text-caption tabular-nums ring-1 ring-inset ring-divider-strong transition duration-150 ease-out hover:opacity-90 active:scale-97"
+        className="flex h-control-md min-w-32 shrink-0 items-center gap-2 rounded-md px-2.5 text-caption tabular-nums ring-1 ring-inset ring-text/40 transition duration-150 ease-out hover:opacity-90 active:scale-97"
         style={{ backgroundColor: value, color: ink }}
       >
         <span

@@ -15,7 +15,7 @@ import { Check, ChevronDown } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { Popover } from '../../components/ui/Popover';
 import { cn } from '../../components/ui/cn';
-import { colourFace } from './panelValues';
+import { colourFace, sameValue } from './panelValues';
 
 export interface ValueOption {
   /** What picking writes: a token name or a CSS value. */
@@ -37,9 +37,12 @@ interface ValuePickerProps {
   onPick: (value: string) => void;
 }
 
-/** The option whose value or hint is the element's current value, if any. */
+/** The option whose value, or the value its hint stands for, is the element's current value. */
 function currentOption(options: readonly ValueOption[], value: string): ValueOption | undefined {
-  return options.find((option) => option.value === value || option.hint === value);
+  return options.find(
+    (option) =>
+      option.value === value || (option.hint !== undefined && sameValue(option.hint, value)),
+  );
 }
 
 /**
@@ -279,7 +282,7 @@ export function Swatch({ colour }: { colour: string }) {
       aria-hidden
       className={cn(
         // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-        'size-3 shrink-0 rounded-xs ring-1 ring-inset ring-divider-strong',
+        'size-3 shrink-0 rounded-xs ring-1 ring-inset ring-text/40',
         none && 'canvas-swatch-none',
       )}
       style={{ backgroundColor: none ? undefined : colour }}

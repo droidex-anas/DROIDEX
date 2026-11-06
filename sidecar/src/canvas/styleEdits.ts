@@ -143,7 +143,7 @@ export function resolveStyleChange(
     );
   const wanted = canonicalCss(change.value);
   const token = Object.keys(tokens)
-    .sort()
+    .sort((a, b) => NAME_ORDER.compare(a, b))
     .find((name) => inFamily(name) && canonicalCss(tokens[name] ?? '') === wanted);
   return token ? { kind: 'token', token } : { kind: 'raw', value: change.value };
 }
@@ -153,8 +153,8 @@ export type EditToken = { name: string } & ({ value: string } | { light: string;
 
 /**
  * The pinned kit's tokens by the property that accepts them, for the
- * inspector's pickers; a property with none to offer is absent. Names are
- * sorted, the order a raw value's token match prefers.
+ * inspector's pickers; a property with none to offer is absent. Each list
+ * runs in scale order (see `scaleOrder`).
  */
 export function editTokens(
   light: Readonly<Record<string, string>>,
@@ -165,7 +165,7 @@ export function editTokens(
     if (rule.tokens === null) continue;
     const names = Object.keys(light)
       .filter((name) => isFamilyToken(rule, name, light))
-      .sort();
+      .sort(scaleOrder(light));
     if (names.length === 0) continue;
     byProperty[property] = names.map((name) => {
       const lightValue = light[name] ?? '';
@@ -197,6 +197,40 @@ export function canonicalCss(value: string): string {
   if (amount === 0 && LENGTH_UNITS.has(unit)) return '0';
   if (unit === 'rem') return `${String(amount * PX_PER_REM)}px`;
   return `${String(amount)}${unit}`;
+}
+
+const NAME_ORDER = new Intl.Collator('en', { numeric: true });
+// Units whose numbers a scale can compare, in the order their groups list.
+const SCALE_UNITS = new Map([
+  ['', 0],
+  ['px', 0],
+  ['em', 1],
+  ['%', 2],
+]);
+const UNSCALED = SCALE_UNITS.size;
+
+/**
+ * A scale reads smallest first: pixels and plain numbers, then em, then
+ * percentages, each by its number, then the rest. A rem counts as pixels at the
+ * 16px root; the kit's own html font-size is not read. Equal steps and the rest
+ * go by name, its numbers read as numbers, so space-2 comes before space-10. A
+ * kit's document order is no guide, as an import appends the steps it adds.
+ */
+function scaleOrder(values: Readonly<Record<string, string>>) {
+  return (a: string, b: string): number => {
+    const left = scaleStep(values[a] ?? '');
+    const right = scaleStep(values[b] ?? '');
+    if (left.group !== right.group) return left.group - right.group;
+    if (left.amount !== right.amount) return left.amount - right.amount;
+    return NAME_ORDER.compare(a, b);
+  };
+}
+
+function scaleStep(value: string): { group: number; amount: number } {
+  const parts = NUMBER_WITH_UNIT.exec(canonicalCss(value));
+  const group = parts ? SCALE_UNITS.get(parts[2]) : undefined;
+  if (!parts || group === undefined) return { group: UNSCALED, amount: 0 };
+  return { group, amount: Number(parts[1]) };
 }
 
 function isFamilyToken(rule: StyleRule, name: string, tokens: Readonly<Record<string, string>>) {

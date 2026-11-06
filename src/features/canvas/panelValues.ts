@@ -20,10 +20,12 @@ const KEYWORD_PLACEHOLDERS: Record<string, string> = {
 export interface LengthFace {
   text: string;
   placeholder: string;
+  /** The whole name of the token whose step alone is the text. */
+  token?: string;
 }
 
 /**
- * A length at rest: `space-2` when it matches one of the property's tokens,
+ * A length at rest: `space-2` or `md` when it matches one of the property's tokens,
  * as a colour reads as its token, a muted `0`, `Auto`, `None` or `Normal`
  * for zero and keywords, else the value with its fraction rounded.
  */
@@ -35,8 +37,20 @@ export function lengthFace(value: string, tokens: readonly ValueOption[] = []): 
   if (px === 0) return { text: '', placeholder: '0' };
   const token =
     px === null ? undefined : tokens.find((option) => pixelsOf(option.hint ?? '') === px);
-  if (token) return { text: token.label, placeholder: '' };
+  if (token) return tokenFace(token.label);
   return { text: roundedPixels(trimmed), placeholder: '' };
+}
+
+/**
+ * A length field's token is named `<scale>-<step>` and the field already names
+ * the scale, so a step that is a word reads alone (`md` for `radius-md`) and
+ * fits a half-width field. A step such as `2`, `2-5` or `px` keeps its scale,
+ * as alone it would read as a length.
+ */
+function tokenFace(name: string): LengthFace {
+  const step = name.slice(name.indexOf('-') + 1);
+  if (step === name || /^(?:[\d-]+|px)$/.test(step)) return { text: name, placeholder: '' };
+  return { text: step, placeholder: '', token: name };
 }
 
 /**
@@ -74,8 +88,7 @@ export interface ColourFace {
 export function colourFace(value: string, tokens: readonly ValueOption[] = []): ColourFace {
   const trimmed = value.trim();
   const colour = parseColour(trimmed);
-  if (trimmed.toLowerCase() === 'transparent' || colour?.alpha === 0)
-    return { text: 'None', none: true };
+  if (colour?.alpha === 0) return { text: 'None', none: true };
   const token = tokens.find((option) => sameColour(option.hint ?? '', trimmed));
   if (token) return { text: token.label, none: false };
   if (colour?.space !== 'rgb') return { text: trimmed, none: false };
@@ -84,6 +97,15 @@ export function colourFace(value: string, tokens: readonly ValueOption[] = []): 
   return { text: hex + opacity, none: false };
 }
 
+/**
+ * Whether a token's value, as the kit wrote it, is the value the preview
+ * computed: the same length in pixels, the same colour, or the same text.
+ */
+export function sameValue(written: string, computed: string): boolean {
+  const px = pixelsOf(written);
+  if (px !== null) return px === pixelsOf(computed);
+  return sameColour(written, computed);
+}
 function sameColour(a: string, b: string): boolean {
   const left = parseColour(a);
   const right = parseColour(b);
@@ -96,10 +118,10 @@ function sameColour(a: string, b: string): boolean {
 }
 
 /**
- * A colour the way Chromium computes it: hex, rgb(), hsl() and hwb() become
- * whole sRGB channels in `rgb`, while lab(), lch(), oklab(), oklch() and
- * color() keep their own space, with percentages and angles resolved to the
- * numbers it writes.
+ * A colour the way Chromium computes it: hex, transparent, rgb(), hsl() and
+ * hwb() become whole sRGB channels in `rgb`, while lab(), lch(), oklab(),
+ * oklch() and color() keep their own space, with percentages and angles
+ * resolved to the numbers it writes.
  */
 interface Colour {
   space: string;
@@ -109,6 +131,7 @@ interface Colour {
 
 /** The forms a kit's colour token may take, as the style edits accept them; null for any other. */
 function parseColour(value: string): Colour | null {
+  if (value.toLowerCase() === 'transparent') return { space: 'rgb', channels: [0, 0, 0], alpha: 0 };
   const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value);
   if (hex) {
     const full = hex[1].length <= 4 ? hex[1].replace(/./g, '$&$&') : hex[1];

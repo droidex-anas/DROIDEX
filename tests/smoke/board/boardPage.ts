@@ -59,7 +59,8 @@ export async function openBoard(
  * guest 41, bound to this canvas, and reports ready once `boardGuestReady` is set.
  * Pick and select commands are recorded in `guestCommands` and answered by
  * `guestAnswer`, as an element in a block parent unless it names another; a
- * hover is answered by `guestAnswer` directly and not recorded.
+ * hover is answered by `guestAnswer` directly, with nothing beside the element
+ * unless it says, and not recorded.
  */
 export async function stubGuests(page: Page) {
   await page.addInitScript(() => {
@@ -104,7 +105,10 @@ export async function stubGuests(page: Page) {
               });
               return 'sent';
             }
-            if (call?.[1] === 'hover') return JSON.stringify(window.guestAnswer('hover', argument));
+            if (call?.[1] === 'hover') {
+              const element = window.guestAnswer('hover', argument);
+              return JSON.stringify(element && { room: { above: null, below: null }, ...element });
+            }
             const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];
             if (events.length > 0) sent = true;
             events.push(...answers.splice(0));

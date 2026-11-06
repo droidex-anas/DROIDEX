@@ -58,12 +58,22 @@ export interface PreviewElement {
   parentDisplay: string;
 }
 
+/** Whether the guest draws the element at all; one it does not, as under `display: none`, measures 0 × 0 at the origin. */
+export function isDrawn(rect: FrameRect): boolean {
+  return rect.x !== 0 || rect.y !== 0 || rect.width !== 0 || rect.height !== 0;
+}
+
 /** The element under the pointer, which the board outlines and names before it is picked. */
 export interface PreviewHover {
   elementId: string;
   instancePath: string;
   rect: FrameRect;
   tagName: string;
+  /**
+   * How far its box can grow up and down, across its width, before it meets
+   * other content, in the design's pixels; null where nothing is in the way.
+   */
+  room: { above: number | null; below: number | null };
 }
 
 /**
@@ -242,13 +252,20 @@ export function readPreviewHover(value: unknown): PreviewHover | null {
   }
   if (!record(parsed) || !present(parsed.elementId) || !present(parsed.tagName)) return null;
   const rect = readRect(parsed.rect);
-  if (!rect || typeof parsed.instancePath !== 'string') return null;
+  if (!rect || typeof parsed.instancePath !== 'string' || !record(parsed.room)) return null;
+  const { above, below } = parsed.room;
+  if (!isRoom(above) || !isRoom(below)) return null;
   return {
     elementId: clampPreviewText(parsed.elementId),
     instancePath: clampPreviewText(parsed.instancePath),
     rect,
     tagName: clampPreviewText(parsed.tagName),
+    room: { above, below },
   };
+}
+
+function isRoom(value: unknown): value is number | null {
+  return value === null || (finite(value) && value >= 0);
 }
 
 function readSelection({ sequence, element }: Record<string, unknown>): PreviewEvent | null {

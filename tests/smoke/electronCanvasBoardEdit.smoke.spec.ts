@@ -299,10 +299,10 @@ test('Edit outlines the element under the pointer by its tag, through a zoom, un
   // Its tag would leave the sheet above it, so it sits under it instead, and
   // a box filling the sheet holds its tag in its corner.
   const tag = hover.locator('.canvas-element-tag > span');
-  expect((await box(tag)).y).toBeGreaterThan(titleBox.y + titleBox.height);
+  expect((await box(tag)).y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 0.5);
   await pointAt(300, 200);
   await expect(hover).toHaveAttribute('data-element-hover', 'section');
-  expect((await box(tag)).y).toBeGreaterThan(drawn.y);
+  expect((await box(tag)).y).toBeGreaterThanOrEqual(drawn.y - 0.5);
   expect((await box(tag)).y).toBeLessThan(drawn.y + 30);
 
   // The picked element has its own outline, so the pointer over it adds none.
@@ -343,4 +343,149 @@ test('Edit outlines the element under the pointer by its tag, through a zoom, un
   await page.keyboard.press('e');
   await expect(board).toHaveAttribute('data-board-mode', 'edit');
   await expect(hover).toHaveCount(0);
+});
+
+test('the hover tag keeps off other content and off the picked size chip', async ({ page }) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = {
+      elementId: 'el_title',
+      instancePath: '0/0',
+      tagName: 'h1',
+      rect: { x: 8, y: 8, width: 240, height: 30 },
+      room: { above: null, below: 26 },
+    };
+    const body = {
+      elementId: 'el_body',
+      instancePath: '0/1',
+      tagName: 'p',
+      rect: { x: 8, y: 64, width: 240, height: 20 },
+      room: { above: 26, below: null },
+    };
+    // A label wedged between two rows, with no room for a tag above or below it.
+    const note = {
+      elementId: 'el_note',
+      instancePath: '0/2',
+      tagName: 'span',
+      rect: { x: 264, y: 40, width: 120, height: 16 },
+      room: { above: 4, below: 4 },
+    };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const x = typeof argument.x === 'number' ? argument.x : 0;
+      const y = typeof argument.y === 'number' ? argument.y : 0;
+      let element = y < 50 ? title : body;
+      if (x > 260) element = note;
+      return command === 'hover' ? element : { ...element, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const hover = page.locator('[data-element-hover]');
+  const hoverAt = async (x: number, y: number, tagName: string) => {
+    await page.mouse.move(drawn.x + (x * drawn.width) / 400, drawn.y + (y * drawn.width) / 400);
+    await page.clock.runFor(32);
+    await expect(hover).toHaveAttribute('data-element-hover', tagName);
+    return {
+      outline: await box(hover),
+      tag: await box(hover.locator('.canvas-element-tag > span')),
+    };
+  };
+
+  // With no room either side, the tag covers only the element it names.
+  const wedged = await hoverAt(300, 48, 'span');
+  expect(wedged.tag.y).toBeGreaterThanOrEqual(wedged.outline.y - 0.5);
+  expect(wedged.tag.y).toBeLessThan(wedged.outline.y + 1);
+  const clear = await hoverAt(20, 70, 'p');
+  expect(clear.tag.y + clear.tag.height).toBeLessThanOrEqual(clear.outline.y + 1);
+
+  // The full width of the paragraph would meet the picked heading's size
+  // chip; the tag at its left does not, so it stays above.
+  await page.mouse.click(drawn.x + (20 * drawn.width) / 400, drawn.y + (20 * drawn.width) / 400);
+  await page.clock.runFor(100);
+  const chip = await box(page.locator('.canvas-element-outline .canvas-frame-size > span'));
+  const besideChip = await hoverAt(20, 70, 'p');
+  expect(besideChip.tag.y + besideChip.tag.height).toBeLessThanOrEqual(besideChip.outline.y + 1);
+  expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
+});
+
+test('The Display row’s ⋯ menu sets a display its segments leave out, and a hidden element keeps its panel but no outline', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    // The guest keeps the display it was last shown, and draws nothing while it is none.
+    let display = 'inline';
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const previewed = (argument.target as { styles?: Record<string, string> } | undefined)?.styles
+        ?.display;
+      if (previewed) display = previewed;
+      const drawn = { x: 8, y: 8, width: 240, height: 30 };
+      return {
+        elementId: 'el_title',
+        instancePath: '0/0',
+        rect: display === 'none' ? { x: 0, y: 0, width: 0, height: 0 } : drawn,
+        styles: { display },
+      };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  await frame(page, 'A').locator('[data-frame-header]').focus();
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(100);
+  const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
+  const outline = page.locator('.canvas-element-outline');
+  await expect(panel).toBeVisible();
+  await expect(outline).toHaveCount(1);
+
+  // Inline lays out no layout the segments name, so ⋯ carries it.
+  const layouts = panel.getByRole('radiogroup', { name: 'Display' });
+  await expect(layouts.getByRole('radio', { checked: true })).toHaveCount(0);
+  await panel.getByRole('button', { name: 'More displays, now Inline' }).click();
+  const menu = page.getByRole('menu', { name: 'More displays' });
+  await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveText('Inline');
+  await menu.getByRole('menuitemradio', { name: 'Hidden' }).click();
+  await page.clock.runFor(200);
+  await expect(menu).toHaveCount(0);
+  const changes = () =>
+    page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit.change));
+  expect(await changes()).toEqual([
+    { kind: 'style', styles: [{ property: 'display', value: 'none' }] },
+  ]);
+
+  // Hidden, it measures nothing: no outline or size on the board, and the panel says so.
+  await page.clock.runFor(240);
+  await expect(outline).toHaveCount(0);
+  await expect(panel.locator('header')).toContainText('Hidden');
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
+  await page.clock.runFor(240);
+  await expect(panel.getByRole('status')).toHaveText(
+    'Enter saves your changes; Escape takes one back.',
+  );
+  await expect(outline).toHaveCount(0);
+
+  // With no segment checked, the arrow starts at the first, so Block shows it again.
+  await layouts.getByRole('radio', { name: 'Block' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.clock.runFor(200);
+  expect((await changes()).at(-1)).toEqual({
+    kind: 'style',
+    styles: [{ property: 'display', value: 'block' }],
+  });
+  await expect(outline).toHaveCount(1);
+  await expect(panel.locator('header')).toContainText('240 × 30');
 });
