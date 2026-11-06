@@ -1,7 +1,7 @@
 // Who is at work on which frame of a board, read from the board's chat: the
 // frames its running canvas creates and writes name, and the frames still
 // waiting for their first source while the agent that made them is live. An
-// agent is the chat itself or one of its child sessions, and each one of the
+// agent is the chat itself or one of its child sessions, and each one in the
 // turn gets a name and a colour of its own.
 
 import { chunkedSequenceChunks } from '../../lib/chunkedSequence';
@@ -47,6 +47,7 @@ const PRIMARY = 'primary';
 // work: a child can outlive the turn that started it, and a bound keeps a long
 // history from costing every store update.
 const CHILD_LOOKBACK = 2000;
+const NO_ARRIVALS: ReadonlyMap<string, number> = new Map();
 
 export interface PresenceSources {
   appSessionId: string;
@@ -62,18 +63,23 @@ export interface PresenceSources {
  * Reads the chat's current turn, from its latest prompt on, and a child still
  * at work from before it too. A canvas create or write without its result yet
  * is running; a frame it names is being worked on while its agent is live. A
- * frame with no source yet belongs to the agent whose create made it this turn,
- * or while a create runs, to that create's agent; otherwise it is no one's.
+ * frame with no source yet belongs to the agent whose create made it this turn.
+ * Until a create's result names its frames, a frame that reached the board
+ * after one live agent's create started is that agent's; any other is no one's.
+ *
+ * `arrivedAt` holds when each frame reached the board, in ms on the clock of
+ * the events' `ts`; a frame missing from it was there before any of them.
  */
 export function canvasPresence(
   sources: PresenceSources,
   frames: readonly Pick<CanvasFrame, 'designId' | 'revisionId'>[],
+  arrivedAt: ReadonlyMap<string, number> = NO_ARRIVALS,
 ): CanvasPresence {
   const { primaryLive, liveChildren } = sources;
   if (!primaryLive && liveChildren.size === 0) return NO_PRESENCE;
   const isLive = (source: string) => (source === PRIMARY ? primaryLive : liveChildren.has(source));
   const work = turnWork(currentTurn(sources.events, liveChildren));
-  const workers = frameWorkers(work, frames, isLive);
+  const workers = frameWorkers(work, frames, arrivedAt, isLive);
   if (workers.size === 0) return NO_PRESENCE;
 
   const agents = assignAgents(sources.appSessionId, work.arrivals);
@@ -99,6 +105,7 @@ interface RunningCall {
   source: string;
   action: 'create' | 'write';
   designIds: string[];
+  startedAt: number;
 }
 
 function turnWork(turn: readonly TranscriptEvent[]): TurnWork {
@@ -115,7 +122,12 @@ function turnWork(turn: readonly TranscriptEvent[]): TurnWork {
     if (event.kind === 'tool_call' && activity.state === 'running') {
       // A call event can land after its result, and must not open it again.
       if (!settled.has(call))
-        running.set(call, { source, action: activity.action, designIds: activity.designIds });
+        running.set(call, {
+          source,
+          action: activity.action,
+          designIds: activity.designIds,
+          startedAt: event.ts,
+        });
       continue;
     }
     settled.add(call);
@@ -163,6 +175,7 @@ function currentTurn(
 function frameWorkers(
   work: TurnWork,
   frames: readonly Pick<CanvasFrame, 'designId' | 'revisionId'>[],
+  arrivedAt: ReadonlyMap<string, number>,
   isLive: (source: string) => boolean,
 ): Map<string, { source: string; named: boolean }> {
   const onBoard = new Set(frames.map((frame) => frame.designId));
@@ -172,17 +185,34 @@ function frameWorkers(
     for (const designId of designIds)
       if (onBoard.has(designId)) workers.set(designId, { source, named: true });
   }
-  // A create names its frames only in its result, which comes after they reach the board.
-  const creating = work.running.findLast(
-    (call) => call.action === 'create' && isLive(call.source),
-  )?.source;
   for (const frame of frames) {
     if (frame.revisionId !== null || workers.has(frame.designId)) continue;
-    const source = work.createdBy.get(frame.designId) ?? creating;
+    const source =
+      work.createdBy.get(frame.designId) ??
+      creatingAgent(work.running, arrivedAt.get(frame.designId) ?? 0, isLive);
     if (source !== undefined && isLive(source))
       workers.set(frame.designId, { source, named: false });
   }
   return workers;
+}
+
+/**
+ * A create names its frames only in its result, which comes after they reach
+ * the board. Until then a frame that arrived after a create started is that
+ * create's agent's, unless another live agent's create started before it too.
+ */
+function creatingAgent(
+  running: readonly RunningCall[],
+  arrivedAt: number,
+  isLive: (source: string) => boolean,
+): string | undefined {
+  let creator: string | undefined;
+  for (const call of running) {
+    if (call.action !== 'create' || call.startedAt >= arrivedAt || !isLive(call.source)) continue;
+    if (creator !== undefined && creator !== call.source) return undefined;
+    creator = call.source;
+  }
+  return creator;
 }
 
 /** The chat's own prompt, unless it was a steer, which joins the turn it steers. */

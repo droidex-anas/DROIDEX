@@ -113,15 +113,21 @@ test('a frame with no source yet belongs to the live agent whose create made it 
   assert.deepEqual(frameAgents(workerDone), [['mine', 'chat']]);
   // A turn that never touches the canvas paints no frame.
   assert.equal(canvasPresence(sources([prompt()]), frames).size, 0);
-  // A create names its frames only in its result, so until then the empty
-  // frames no one made are its agent's.
-  const creating = [prompt(), call('t3', 'create', [], 'w1')];
-  const early = canvasPresence(sources(creating, { primary: true, children: ['w1'] }), frames);
-  assert.deepEqual(frameAgents(early), [
-    ['mine', 'chat/w1'],
-    ['theirs', 'chat/w1'],
-    ['left', 'chat/w1'],
-  ]);
+});
+
+test('a running create takes only the empty frames that reached the board after it started', () => {
+  const frames = [reserved('old'), reserved('new')];
+  const creating = [prompt(), call('t1', 'create', [], 'w1')];
+  const twoCreating = [...creating, call('t2', 'create', [], 'w2')];
+  // 'new' reached the board after both creates started; 'old' was there first.
+  const arrivedAt = new Map([['new', seq + 1]]);
+  const live = { primary: true, children: ['w1', 'w2'] };
+
+  const early = canvasPresence(sources(creating, live), frames, arrivedAt);
+  assert.deepEqual(frameAgents(early), [['new', 'chat/w1']]);
+  assert.equal(early.get('new')?.named, false);
+  // Either agent could have made it, so until a result names it it is no one's.
+  assert.equal(canvasPresence(sources(twoCreating, live), frames, arrivedAt).size, 0);
 });
 
 test('only the current turn counts, and a steer does not start a new one', () => {
