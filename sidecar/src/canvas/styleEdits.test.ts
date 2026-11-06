@@ -74,6 +74,29 @@ test('editTokens lists, per property, the kit tokens its rule accepts', () => {
       );
 });
 
+test('editTokens lists each scale smallest first, and names with numbers read as numbers', () => {
+  const kit = {
+    '--ds-space-2': '0.5rem',
+    '--ds-space-10': '2.5rem',
+    '--ds-space-0-5': '2px',
+    '--ds-radius-pill': '9999px',
+    '--ds-radius-md': '8px',
+    '--ds-radius-xs': '2px',
+    '--ds-radius-card': '8px',
+    '--ds-gray-10': '#111111',
+    '--ds-gray-2': '#eeeeee',
+  };
+  const names = (property: string) =>
+    (editTokens(kit, kit)[property] ?? []).map(({ name }) => name);
+  assert.deepEqual(names('padding'), ['--ds-space-0-5', '--ds-space-2', '--ds-space-10']);
+  assert.deepEqual(names('borderRadius'), [
+    '--ds-radius-xs',
+    '--ds-radius-card',
+    '--ds-radius-md',
+    '--ds-radius-pill',
+  ]);
+  assert.deepEqual(names('color'), ['--ds-gray-2', '--ds-gray-10']);
+});
 test('a raw value resolves to the same token whatever order the kit lists its tokens in', () => {
   const change: Change = { property: 'padding', value: '4px' };
   const tokens = { '--ds-space-b': '4px', '--ds-space-a': '4px' };
