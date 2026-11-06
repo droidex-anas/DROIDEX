@@ -28,6 +28,7 @@ import {
 } from './canvasGeometry';
 import { showsFrameTools, type BoardInteraction } from './canvasState';
 import type { CanvasPresence } from './canvasPresence';
+import { CanvasPresenceLayer } from './CanvasPresenceLayer';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
@@ -386,6 +387,12 @@ export function CanvasBoard({
               onFocusLabel={onFocusLabel}
             />
           ))}
+          <CanvasPresenceLayer
+            presence={presence}
+            drawn={drawn}
+            visible={visible}
+            motion={motion}
+          />
           <ElementOutlines
             drawn={drawn}
             scale={scale}
