@@ -115,7 +115,9 @@ test('the size menu sets a typed size or a screen, each in one arrange from the 
   await expect(page.getByRole('alert')).toHaveText('Width and height run from 120 to 8192.');
   expect(await arrangeCount(page)).toBe(0);
 
+  // The note goes once the values fit.
   await width.fill('320');
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await page.getByRole('textbox', { name: 'Height' }).fill('240');
   await width.press('Enter');
   await expect.poll(() => arrangeCount(page)).toBe(1);

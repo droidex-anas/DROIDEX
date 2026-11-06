@@ -117,7 +117,7 @@ function SizeFields({ rect, onResize }: { rect: FrameRect; onResize: (size: Fram
           }}
         />
       </div>
-      {refused && (
+      {refused && (dimension(width) === null || dimension(height) === null) && (
         <MenuNote role="alert">{`Width and height run from ${String(MIN_FRAME_PX)} to ${String(MAX_FRAME_PX)}.`}</MenuNote>
       )}
     </div>
