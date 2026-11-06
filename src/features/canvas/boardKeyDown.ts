@@ -96,7 +96,8 @@ function escape(header: string | null, mark: string | null, actions: BoardKeyAct
 function runShortcut(event: KeyboardEvent, actions: BoardKeyActions): boolean {
   const zoom = zoomShortcut(event);
   if (zoom) actions.zoom(zoom);
-  // ⌘1 also picks the first tab, app-wide; on the board it fits instead.
+  // The board's ⌘ zoom keys are its own: ⌘1 would also pick the first tab, and
+  // an app shortcut someone bound to ⌘0, ⌘+ or ⌘− would run as well.
   if (zoom && (event.metaKey || event.ctrlKey)) event.stopPropagation();
   const mode = zoom ? null : modeShortcut(event);
   if (mode) actions.setMode(mode);
