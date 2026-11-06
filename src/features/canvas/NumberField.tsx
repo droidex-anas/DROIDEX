@@ -125,14 +125,14 @@ export function NumberField({
     onPreview(`${amountText(next)}${drag.start.unit || (unit ?? '')}`);
   };
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    <div className="min-w-0">
       <Input
         ref={input}
         variant="compact"
         aria-label={label}
         value={face.text}
         placeholder={face.placeholder}
-        title={face.text || value}
+        title={face.text && face.text !== value ? `${face.text} · ${value}` : value}
         readOnly={disabled}
         spellCheck={false}
         inputMode="decimal"
@@ -142,7 +142,7 @@ export function NumberField({
         onBlur={() => {
           setEditing(false);
         }}
-        className={cn('tabular-nums', previewed && 'bg-active')}
+        className={cn('group tabular-nums', previewed && 'bg-active')}
         leading={
           <span
             aria-hidden
@@ -161,9 +161,11 @@ export function NumberField({
         }
         actions={
           (tokens?.length ?? 0) > 0 || trailing !== undefined ? (
-            <>
+            <span className="relative flex items-center">
               {trailing}
               {tokens?.length ? (
+                // Shown on hover over the value's end, as a design tool's token
+                // button is, so a token name at rest has the field's whole width.
                 <ValuePickerButton
                   label={`${label} tokens`}
                   icon={<Hash aria-hidden className="size-icon-sm" />}
@@ -171,9 +173,13 @@ export function NumberField({
                   value={value}
                   disabled={disabled}
                   onPick={onPick}
+                  className={cn(
+                    'absolute right-full top-1/2 -translate-y-1/2 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100',
+                    previewed ? 'bg-active' : 'bg-field group-hover:bg-active',
+                  )}
                 />
               ) : null}
-            </>
+            </span>
           ) : undefined
         }
         onChange={(event) => {

@@ -98,8 +98,9 @@ export function ValuePickerField({
 export function ValuePickerButton({
   label,
   icon,
+  className,
   ...props
-}: ValuePickerProps & { icon: ReactNode }) {
+}: ValuePickerProps & { icon: ReactNode; className?: string }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -114,7 +115,10 @@ export function ValuePickerButton({
         onClick={() => {
           if (!props.disabled) setOpen((was) => !was);
         }}
-        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default"
+        className={cn(
+          'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default',
+          className,
+        )}
       >
         {icon}
       </button>

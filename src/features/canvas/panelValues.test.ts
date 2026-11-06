@@ -7,9 +7,9 @@ const spacing = [
   { value: '--ds-space-2', label: 'space-2', hint: '0.5rem' },
 ];
 
-test('a length reads as the token it matches, in px, and zero or a keyword as a placeholder', () => {
-  assert.deepEqual(lengthFace('8px', spacing), { text: 'space-2 · 8px', placeholder: '' });
-  assert.deepEqual(lengthFace('4px', spacing), { text: 'space-1 · 4px', placeholder: '' });
+test('a length reads as the token it matches in px, and zero or a keyword as a placeholder', () => {
+  assert.deepEqual(lengthFace('8px', spacing), { text: 'space-2', placeholder: '' });
+  assert.deepEqual(lengthFace('4px', spacing), { text: 'space-1', placeholder: '' });
   assert.deepEqual(lengthFace('12px', spacing), { text: '12px', placeholder: '' });
   assert.deepEqual(lengthFace('0px', spacing), { text: '', placeholder: '0' });
   assert.deepEqual(lengthFace('auto'), { text: '', placeholder: 'Auto' });

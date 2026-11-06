@@ -22,9 +22,9 @@ export interface LengthFace {
 }
 
 /**
- * A length at rest: `space-2 · 8px` when it matches one of the property's
- * tokens, a muted `0`, `Auto`, `None` or `Normal` for zero and keywords,
- * else the value as it is.
+ * A length at rest: `space-2` when it matches one of the property's tokens,
+ * as a colour reads as its token, a muted `0`, `Auto`, `None` or `Normal`
+ * for zero and keywords, else the value as it is.
  */
 export function lengthFace(value: string, tokens: readonly ValueOption[] = []): LengthFace {
   const trimmed = value.trim();
@@ -34,7 +34,7 @@ export function lengthFace(value: string, tokens: readonly ValueOption[] = []): 
   if (px === 0) return { text: '', placeholder: '0' };
   const token =
     px === null ? undefined : tokens.find((option) => pixelsOf(option.hint ?? '') === px);
-  if (token) return { text: `${token.label} · ${String(px)}px`, placeholder: '' };
+  if (token) return { text: token.label, placeholder: '' };
   return { text: trimmed, placeholder: '' };
 }
 
