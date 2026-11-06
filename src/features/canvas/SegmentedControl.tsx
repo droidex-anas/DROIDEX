@@ -51,7 +51,9 @@ export function SegmentedControl<T extends string>({
     if (step === undefined) return;
     event.preventDefault();
     if (disabled) return;
-    const next = (Math.max(current, 0) + step + options.length) % options.length;
+    // With nothing chosen, an arrow chooses the first segment, or the last going back.
+    const from = current === -1 && step < 0 ? 0 : current;
+    const next = (from + step + options.length) % options.length;
     const option = options.at(next);
     if (option === undefined) return;
     onPick(option.value);
