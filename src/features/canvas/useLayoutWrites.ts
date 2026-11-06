@@ -18,6 +18,8 @@ export function useLayoutWrites(
   const [pending, setPending] = useState<Map<string, PendingLayout>>(() => new Map());
   const [refusal, setRefusal] = useState<LayoutRefusal | null>(null);
   const work = useRef(0);
+  // By mutation id, the frames a write not yet sent still carries.
+  const unsent = useRef(new Map<string, Set<string>>());
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -52,8 +54,13 @@ export function useLayoutWrites(
     setRefusal(null);
   }, []);
 
-  /** A cancelled re-drag restores acknowledged geometry, not its old hold. */
+  /**
+   * A cancelled re-drag restores acknowledged geometry, not its old hold, and
+   * withdraws those frames from any write still waiting to be sent.
+   */
   const dropHolds = useCallback((designIds: string[]) => {
+    for (const carried of unsent.current.values())
+      for (const designId of designIds) carried.delete(designId);
     setPending((held) => withoutHolds(held, designIds));
   }, []);
 
@@ -80,11 +87,16 @@ export function useLayoutWrites(
         ? { ...placement, expectedLayoutVersion: hold.afterLayoutVersion + 1 }
         : placement;
     });
+    const carried = new Set(frames.map(({ designId }) => designId));
+    unsent.current.set(mutationId, carried);
     const landing = Promise.all(waitsOn.map(lands)).then((landed) => {
+      unsent.current.delete(mutationId);
       if (!landed.every(Boolean)) {
         frames = frames.map((frame, index) => (landed[index] ? frame : placements[index]));
         setPending((held) => withSentVersions(held, mutationId, frames));
       }
+      frames = frames.filter(({ designId }) => carried.has(designId));
+      if (frames.length === 0) return;
       return onArrangeFrames({ mutationId, frames });
     });
     setPending((held) => {

@@ -246,6 +246,22 @@ test('Escape during a re-drag restores acknowledged geometry, not its earlier ho
   expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
 });
 
+test('Escape during a re-drag withdraws a move still waiting on an unanswered one', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await drag(page, 'A');
+  const sent = await renderedRect(page, 'A');
+  await drag(page, 'A', 30, 20);
+  await drag(page, 'A', 25, 20, false);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.evaluate(() => window.boardHarness.answer(0));
+  await page.clock.runFor(32);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  expect(await renderedRect(page, 'A')).toEqual(sent);
+});
+
 test('obsolete arrange rejections cannot replace newer work or report stale errors', async ({
   page,
 }) => {
