@@ -103,10 +103,13 @@ function setStyle(slots: ClassSlot[], style: InlineStyle, { property, resolution
 
   let first: ClassEntry | null = null;
   let lostLineHeight: string | undefined;
+  let important = false;
   for (const { entry, read } of live) {
     if (read.scope !== 'always' || !within(read.sets)) continue;
     first ??= entry;
     lostLineHeight = read.lineHeight ?? lostLineHeight;
+    // A class that applies always has no variant, so its ! leads.
+    important ||= entry.name?.startsWith('!') ?? false;
     entry.name = null;
   }
   for (const entry of style.entries)
@@ -116,7 +119,7 @@ function setStyle(slots: ClassSlot[], style: InlineStyle, { property, resolution
     setInline(style, property, inlineValue(property, styleValue(resolution)));
   } else {
     for (const entry of style.entries) if (entry.name === property) entry.removed = true;
-    if (first) first.name = name;
+    if (first) first.name = important ? `!${name}` : name;
     else addClass(slots, name);
   }
   keepLineHeight(slots, style, lostLineHeight);

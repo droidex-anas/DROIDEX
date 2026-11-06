@@ -121,6 +121,11 @@ test('a style edit writes the class that says it in place of the classes it make
       changed: '<h1 className="opacity-50">Hi</h1>',
     },
     {
+      markup: '<h1 className="!p-2">Hi</h1>',
+      styles: [{ property: 'padding', resolution: raw('16px') }],
+      changed: '<h1 className="!p-4">Hi</h1>',
+    },
+    {
       markup: '<div className="p-2 flex">Hi</div>',
       styles: [
         { property: 'padding', resolution: token('--ds-space-4') },
