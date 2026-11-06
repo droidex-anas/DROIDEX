@@ -197,7 +197,15 @@ const GENERATED_FRAME_REPORTER = `(() => {
         const hit = document.elementFromPoint(command.x, command.y);
         node = hit && hit.closest('[' + MARKER + ']');
       }
-      select(node || null, command.properties, {}, null, command.sequence);
+      if (selected && node === selected.node) {
+        // The board keeps its draft for the element it already holds, so the
+        // guest keeps showing what that draft previews and only answers.
+        commandSequence = command.sequence;
+        lastSelection = '';
+        reportSelection();
+      } else {
+        select(node || null, command.properties, {}, null, command.sequence);
+      }
     } else if (command.command === 'select') {
       const target = command.target;
       const node = target ? atPath(target.instancePath) : null;
