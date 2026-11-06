@@ -263,7 +263,7 @@ export function ElementPanel({
           {layout === 'grid' && (
             <Pair>
               {number('rowGap', 'Row gap', 'Row', { min: 0 })}
-              {number('columnGap', 'Column gap', 'Column', { min: 0 })}
+              {number('columnGap', 'Column gap', 'Col', { min: 0 })}
             </Pair>
           )}
           {placesItems(parent) && segmented('alignSelf', 'Align self', ALIGN_SELF)}

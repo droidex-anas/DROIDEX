@@ -20,10 +20,12 @@ const KEYWORD_PLACEHOLDERS: Record<string, string> = {
 export interface LengthFace {
   text: string;
   placeholder: string;
+  /** The whole name of the token whose step alone is the text. */
+  token?: string;
 }
 
 /**
- * A length at rest: `space-2` when it matches one of the property's tokens,
+ * A length at rest: `space-2` or `md` when it matches one of the property's tokens,
  * as a colour reads as its token, a muted `0`, `Auto`, `None` or `Normal`
  * for zero and keywords, else the value with its fraction rounded.
  */
@@ -35,8 +37,20 @@ export function lengthFace(value: string, tokens: readonly ValueOption[] = []): 
   if (px === 0) return { text: '', placeholder: '0' };
   const token =
     px === null ? undefined : tokens.find((option) => pixelsOf(option.hint ?? '') === px);
-  if (token) return { text: token.label, placeholder: '' };
+  if (token) return tokenFace(token.label);
   return { text: roundedPixels(trimmed), placeholder: '' };
+}
+
+/**
+ * A length field's token is named `<scale>-<step>` and the field already names
+ * the scale, so a step that is a word reads alone (`md` for `radius-md`) and
+ * fits a half-width field. A step such as `2`, `2-5` or `px` keeps its scale,
+ * as alone it would read as a length.
+ */
+function tokenFace(name: string): LengthFace {
+  const step = name.slice(name.indexOf('-') + 1);
+  if (step === name || /^(?:[\d-]+|px)$/.test(step)) return { text: name, placeholder: '' };
+  return { text: step, placeholder: '', token: name };
 }
 
 /**

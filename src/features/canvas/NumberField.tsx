@@ -10,7 +10,7 @@ import { Hash } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { cn } from '../../components/ui/cn';
 import { Tooltip } from '../../components/ui/Tooltip';
-import { lengthFace } from './panelValues';
+import { lengthFace, type LengthFace } from './panelValues';
 import { ValuePickerButton, type ValueOption } from './ValuePickerField';
 
 // The unit group wraps the choice so a bare number still yields a string.
@@ -78,7 +78,9 @@ export function NumberField({
   const scrub = useRef<{ startX: number; start: { amount: number; unit: string } } | null>(null);
   const [editing, setEditing] = useState(false);
   // What it reads as at rest; typing, and a preview, always show the value itself.
-  const face = editing || previewed ? { text: value, placeholder: '' } : lengthFace(value, tokens);
+  const face: LengthFace =
+    editing || previewed ? { text: value, placeholder: '' } : lengthFace(value, tokens);
+  const named = face.token ?? face.text;
   const clamp = (amount: number): number => {
     if (min !== undefined) amount = Math.max(min, amount);
     if (max !== undefined) amount = Math.min(max, amount);
@@ -150,7 +152,7 @@ export function NumberField({
         aria-label={label}
         value={face.text}
         placeholder={face.placeholder}
-        title={face.text && face.text !== value ? `${face.text} · ${value}` : value}
+        title={named && named !== value ? `${named} · ${value}` : value}
         readOnly={disabled}
         spellCheck={false}
         inputMode="decimal"
