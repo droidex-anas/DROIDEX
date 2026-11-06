@@ -26,6 +26,7 @@ import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
 import { placeToolbar, type ToolbarRoom } from './toolbarPlacement';
 import type { VariantChoice } from './variantRequests';
+import type { VariantWorkView } from './variantSets';
 import { UseVariantTool, VariantsTool } from './VariantsTool';
 
 /** What the toolbar does to the canvas, bound to the chat showing it. */
@@ -36,6 +37,8 @@ export interface FrameActions {
   rename: (frame: CanvasFrame, name: string) => Promise<unknown>;
   /** Settles once the request has gone or failed, which it reports itself. */
   makeVariants: (frame: CanvasFrame, choice: VariantChoice) => Promise<void>;
+  /** What each source frame's variant set is busy with; its variant tools hold meanwhile. */
+  variantWork: VariantWorkView;
   /** The frame `frame` was made as a variant of, while this chat can give it the variant's design. */
   sourceOf: (frame: CanvasFrame) => CanvasFrame | null;
   /** Settles once the variant's design is the source's or has failed, which it reports itself. */
@@ -237,7 +240,12 @@ function SelectToolbar({
       {actions.canEdit && frame.revisionId && (
         <>
           <ToolDivider />
-          <VariantsTool frame={frame} tool={tool} onMake={actions.makeVariants} />
+          <VariantsTool
+            frame={frame}
+            tool={tool}
+            work={actions.variantWork}
+            onMake={actions.makeVariants}
+          />
         </>
       )}
       {source && (
@@ -247,6 +255,7 @@ function SelectToolbar({
             variant={frame}
             source={source}
             tool={tool}
+            work={actions.variantWork}
             onUse={actions.applyVariant}
           />
         </>

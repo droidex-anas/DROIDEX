@@ -1,7 +1,10 @@
 // Variant sets (spec §4): a source frame and the frames made as its variants.
-// Using a variant writes its source over the source frame's, checked against
-// the head the user saw, as one step of the board's history. The toast saying
-// so offers to remove the set's variants, which is a deletion step of its own.
+// A source's set takes one piece of work at a time, making variants or using
+// one, so two requests cannot number their variants alike and the toolbar can
+// hold its buttons meanwhile. Using a variant writes its source over the source
+// frame's, checked against the head the user saw, as one step of the board's
+// history. The toast saying so offers to remove the set's variants, which is a
+// deletion step of its own.
 
 import { dismissToast, pushToast, toast } from '../../lib/toast';
 import { revisionEntry, type BoardHistory } from './boardHistory';
@@ -13,6 +16,15 @@ import type { SourceRequests } from './sourceRequests';
 
 /** How long the offer to remove the variants stays up, before hovering or focus pauses it. */
 const OFFER_MS = 8000;
+
+/** What a source frame's variant set is busy with. */
+export type VariantWork = 'making' | 'using';
+
+/** The variant work on one canvas's source frames, as the toolbar reads it. */
+export interface VariantWorkView {
+  subscribe: (listener: () => void) => () => void;
+  of: (designId: string) => VariantWork | null;
+}
 
 interface VariantClient {
   source: Pick<SourceRequests, 'read' | 'write'>;
@@ -42,14 +54,33 @@ function showsOwnWork({ revisionId, seededRevisionId, build }: CanvasFrame): boo
 }
 
 export class VariantSets {
-  /** `canvasId designId` for every source frame a variant is being written over. */
-  private readonly writing = new Set<string>();
+  /** By `canvasId designId`, the work under way on each source frame. */
+  private readonly work = new Map<string, VariantWork>();
+  private readonly listeners = new Set<() => void>();
 
   constructor(
     private readonly client: VariantClient,
     private readonly history: BoardHistory,
     private readonly removals: Pick<FrameRemovals, 'remove'>,
   ) {}
+
+  viewOf(canvasId: string): VariantWorkView {
+    return {
+      subscribe: this.subscribe,
+      of: (designId) => this.work.get(workKey(canvasId, designId)) ?? null,
+    };
+  }
+
+  /** Runs `request` for variants of `designId` unless its set is busy. */
+  async make(canvasId: string, designId: string, request: () => Promise<void>): Promise<void> {
+    const key = workKey(canvasId, designId);
+    if (!this.begin(key, 'making')) return;
+    try {
+      await request();
+    } finally {
+      this.end(key);
+    }
+  }
 
   /**
    * Writes `variant`'s source over `source`'s as one step of the board's
@@ -64,9 +95,8 @@ export class VariantSets {
   ): Promise<boolean> {
     const chosen = variant.revisionId;
     const before = source.revisionId;
-    const key = `${canvasId} ${source.designId}`;
-    if (chosen === null || before === null || this.writing.has(key)) return false;
-    this.writing.add(key);
+    const key = workKey(canvasId, source.designId);
+    if (chosen === null || before === null || !this.begin(key, 'using')) return false;
     try {
       await this.history.recording(canvasId, async () => {
         const [files, replaced] = await Promise.all([
@@ -104,8 +134,31 @@ export class VariantSets {
       toast.error(`Couldn’t use ${variant.name}. ${failure(error, source)}`);
       return false;
     } finally {
-      this.writing.delete(key);
+      this.end(key);
     }
+  }
+
+  private readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  private begin(key: string, work: VariantWork): boolean {
+    if (this.work.has(key)) return false;
+    this.work.set(key, work);
+    this.publish();
+    return true;
+  }
+
+  private end(key: string): void {
+    this.work.delete(key);
+    this.publish();
+  }
+
+  private publish(): void {
+    for (const listener of this.listeners) listener();
   }
 
   /** The variants go as they are on the board when the user asks, the used one too. */
@@ -124,6 +177,10 @@ export class VariantSets {
       },
     });
   }
+}
+
+function workKey(canvasId: string, designId: string): string {
+  return `${canvasId} ${designId}`;
 }
 
 function failure(error: unknown, source: CanvasFrame): string {

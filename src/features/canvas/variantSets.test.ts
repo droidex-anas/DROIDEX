@@ -135,10 +135,12 @@ test('using a variant writes its source over the head the user saw, as one step 
     ],
   );
   // A second press while it is written writes nothing more.
+  assert.equal(sets.viewOf('cv').of('a'), 'using');
   assert.equal(await sets.apply('chat', 'cv', chosen, source), false);
   assert.equal(history.undo('cv'), false);
   writes[0].resolve(receipt('a2'));
   assert.equal(await using, true);
+  assert.equal(sets.viewOf('cv').of('a'), null);
   assert.deepEqual(
     shown.map((item) => [item.message, item.action?.label]),
     [['Design a now uses Design b', 'Remove variants']],
@@ -184,4 +186,35 @@ test('a source that moved on since is said plainly, and nothing is recorded', as
     [['error', 'Couldn’t use Design b. Design a changed since. Try again.']],
   );
   assert.equal(history.undo('cv'), false);
+});
+test('a source takes one piece of variant work at a time, so two sets cannot share numbers', async () => {
+  const { sets, writes } = fakeSets();
+  const work = sets.viewOf('cv');
+  let told = 0;
+  const stop = work.subscribe(() => {
+    told += 1;
+  });
+  const requests: string[] = [];
+  const first = Promise.withResolvers<void>();
+  const making = sets.make('cv', 'a', () => {
+    requests.push('first');
+    return first.promise;
+  });
+  await sets.make('cv', 'a', () => {
+    requests.push('second');
+    return Promise.resolve();
+  });
+  assert.equal(await sets.apply('chat', 'cv', chosen, source), false);
+  assert.deepEqual(requests, ['first']);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(
+    [work.of('a'), work.of('b'), sets.viewOf('other').of('a')],
+    ['making', null, null],
+  );
+
+  first.resolve();
+  await making;
+  assert.equal(work.of('a'), null);
+  assert.equal(told, 2);
+  stop();
 });

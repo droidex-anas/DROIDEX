@@ -139,14 +139,20 @@ test('Variants asks for three in one click, and its options choose kind, count a
   await page.evaluate(() => window.boardHarness.select(['b']));
   const toolbar = page.getByRole('toolbar', { name: 'Design B actions' });
 
-  // A second click while the first set is being made makes no second set.
+  // While the first set is being made Variants holds, through reselecting the
+  // frame too, and a second click makes no second set.
   const variants = toolbar.getByRole('button', { name: 'Make 3 variants of Design B' });
   await variants.click();
-  await variants.click();
+  await expect(variants).toHaveAttribute('aria-busy', 'true');
+  await page.evaluate(() => window.boardHarness.select([]));
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  await expect(variants).toBeDisabled();
+  await variants.dispatchEvent('click');
   expect(await page.evaluate(() => window.boardHarness.variantCalls)).toEqual([
     { designId: 'b', kind: 'any', count: 3, direction: '' },
   ]);
   await page.evaluate(() => window.boardHarness.answerVariants(0));
+  await expect(variants).toBeEnabled();
 
   const chevron = toolbar.getByRole('button', { name: 'Variant options for Design B' });
   await chevron.click();
@@ -172,10 +178,10 @@ test('a variant gives its design to its source in one step, then offers to remov
   await expect(page.getByRole('button', { name: /^Use this variant/ })).toHaveCount(0);
 
   await page.evaluate(() => window.boardHarness.select(['b']));
-  await page
+  const use = page
     .getByRole('toolbar', { name: 'Design B actions' })
-    .getByRole('button', { name: 'Use this variant for Design A' })
-    .click();
+    .getByRole('button', { name: 'Use this variant for Design A' });
+  await use.click();
   await expect
     .poll(() => page.evaluate(() => window.boardHarness.writeCalls))
     .toEqual([
@@ -188,7 +194,10 @@ test('a variant gives its design to its source in one step, then offers to remov
         designSystem: { id: 'droidex', version: 1, mode: 'dark' },
       },
     ]);
+  // It holds until the write lands.
+  await expect(use).toHaveAttribute('aria-busy', 'true');
   await page.evaluate(() => window.boardHarness.answerWrite(0));
+  await expect(use).toBeEnabled();
   await page.getByText('Design A now uses Design B').hover();
   await page.getByRole('button', { name: 'Remove variants' }).click();
   expect(await page.evaluate(() => window.boardHarness.removeCalls)).toEqual([

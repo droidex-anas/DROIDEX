@@ -298,12 +298,21 @@
     color 120ms;
 }
 
-.canvas-frame-tool:hover,
+.canvas-frame-tool:hover:not([aria-disabled='true']),
 .canvas-frame-tool:focus-visible,
 .canvas-frame-tool[aria-expanded='true'] {
   outline: none;
   background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text);
+}
+
+/* A held tool stays focusable; the busy one shows a spinner instead of dimming. */
+.canvas-frame-tool[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+.canvas-frame-tool[aria-disabled='true']:not([aria-busy='true']) {
+  opacity: 0.4;
 }
 
 .canvas-frame-tool[aria-pressed='true'] {

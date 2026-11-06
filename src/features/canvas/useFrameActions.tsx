@@ -50,7 +50,9 @@ export function useFrameActions(
         name,
         expectedManifestVersion: frame.manifestVersion,
       }),
-    makeVariants,
+    makeVariants: (frame, choice) =>
+      variantSets.make(canvasId, frame.designId, () => makeVariants(frame, choice)),
+    variantWork: variantSets.viewOf(canvasId),
     // While the agent works, a variant may be partway to what it was asked to become.
     sourceOf: (frame) => (attached && !agentWorking ? variantSetSource(frames, frame) : null),
     applyVariant: (variant, source) => variantSets.apply(appSessionId, canvasId, variant, source),

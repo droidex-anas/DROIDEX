@@ -349,12 +349,14 @@ const frameActions: FrameActions = {
     renameReplies.push(reply);
     return reply.promise;
   },
-  makeVariants: (frame, choice) => {
-    variantCalls.push({ designId: frame.designId, ...choice });
-    const reply = Promise.withResolvers<void>();
-    variantReplies.push(reply);
-    return reply.promise;
-  },
+  makeVariants: (frame, choice) =>
+    variantSets.make('cv_board', frame.designId, () => {
+      variantCalls.push({ designId: frame.designId, ...choice });
+      const reply = Promise.withResolvers<void>();
+      variantReplies.push(reply);
+      return reply.promise;
+    }),
+  variantWork: variantSets.viewOf('cv_board'),
   sourceOf: (frame) => variantSetSource(shown.current.frames, frame),
   applyVariant: (variant, source) => variantSets.apply('chat_1', 'cv_board', variant, source),
   saveToLibrary: (frame) => dialogs.push(`save:${frame.designId}`),
