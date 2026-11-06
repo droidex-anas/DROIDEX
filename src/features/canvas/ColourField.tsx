@@ -11,7 +11,7 @@ import { Popover } from '../../components/ui/Popover';
 import { cn } from '../../components/ui/cn';
 import { OptionList, Swatch, type ValueOption } from './ValuePickerField';
 
-const HEX = /^#[0-9a-f]{6}$/i;
+const HEX = /^#(?:[0-9a-f]{3}){1,2}$/i;
 const RGB = /^rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/;
 
 /** The picker's start colour: the value as hex when it reads as one, else black. */
@@ -49,11 +49,15 @@ export function ColourField({
   onLeave: () => void;
   onPick: (value: string) => void;
 }) {
-  const anchor = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  /** The picker was dragged since the popover opened, so closing it commits the colour. */
+  const dragged = useRef(false);
   const close = () => {
     setOpen(false);
-    // A custom colour dragged in the picker commits as its popover closes.
+    if (!dragged.current) return;
+    dragged.current = false;
     onCommit();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -62,12 +66,13 @@ export function ColourField({
       onCommit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      if (previewed) onRevert();
+      // While saving, the preview is what is being written, so it stays.
+      if (previewed && !disabled) onRevert();
       else onLeave();
     }
   };
   return (
-    <div ref={anchor}>
+    <div ref={field}>
       <Input
         variant="compact"
         aria-label={label}
@@ -86,17 +91,19 @@ export function ColourField({
             </span>
           </span>
         }
-        trailing={
+        actions={
           <button
+            ref={trigger}
             type="button"
             aria-label={`Pick ${label}`}
             aria-haspopup="dialog"
             aria-expanded={open}
-            disabled={disabled}
+            aria-disabled={disabled || undefined}
             onClick={() => {
-              setOpen(true);
+              if (open) close();
+              else if (!disabled) setOpen(true);
             }}
-            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default"
+            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default"
           >
             <ChevronDown aria-hidden className="size-icon-sm" />
           </button>
@@ -106,7 +113,14 @@ export function ColourField({
         }}
         onKeyDown={onKeyDown}
       />
-      <Popover open={open} onClose={close} anchorRef={anchor} label={label} width={232}>
+      <Popover
+        open={open}
+        onClose={close}
+        anchorRef={trigger}
+        alignRef={field}
+        label={label}
+        width={232}
+      >
         <div className="flex flex-col gap-1 p-1.5">
           {tokens.length > 0 && (
             <OptionList
@@ -114,12 +128,18 @@ export function ColourField({
               options={tokens}
               value={value}
               onClose={close}
-              onPick={onPick}
+              onPick={(token) => {
+                // The token is the colour now; the drag before it goes with this commit.
+                dragged.current = false;
+                onPick(token);
+              }}
             />
           )}
           <ColorPicker
             value={hexOf(value)}
             onChange={(hex) => {
+              if (disabled) return;
+              dragged.current = true;
               onPreview(hex);
             }}
           />
