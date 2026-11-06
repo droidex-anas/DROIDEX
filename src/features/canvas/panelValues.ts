@@ -1,6 +1,7 @@
 // How the element panel reads a computed value back to a designer: the kit
 // token it matches, a colour as hex and opacity or none at all, a length's
-// zero or keyword as a muted placeholder, and a font stack by its first family.
+// zero or keyword as a muted placeholder and its fraction rounded, and a font
+// stack by its first family.
 // Computed values arrive in CSS pixels and rgb(); token values as the kit wrote
 // them, in px, rem, hex or rgb().
 
@@ -24,7 +25,7 @@ export interface LengthFace {
 /**
  * A length at rest: `space-2` when it matches one of the property's tokens,
  * as a colour reads as its token, a muted `0`, `Auto`, `None` or `Normal`
- * for zero and keywords, else the value as it is.
+ * for zero and keywords, else the value with its fraction rounded.
  */
 export function lengthFace(value: string, tokens: readonly ValueOption[] = []): LengthFace {
   const trimmed = value.trim();
@@ -35,7 +36,20 @@ export function lengthFace(value: string, tokens: readonly ValueOption[] = []): 
   const token =
     px === null ? undefined : tokens.find((option) => pixelsOf(option.hint ?? '') === px);
   if (token) return { text: token.label, placeholder: '' };
-  return { text: trimmed, placeholder: '' };
+  return { text: roundedPixels(trimmed), placeholder: '' };
+}
+
+/**
+ * A fractional pixel length to three significant figures, but never short of
+ * whole pixels, so it fits a half-width field: 213.578px reads as 214px, as
+ * the element's size does, while 22.5px and -0.08px keep their fractions.
+ */
+function roundedPixels(value: string): string {
+  const match = /^(-?\d*\.\d+)px$/i.exec(value);
+  if (!match) return value;
+  const amount = Number(match[1]);
+  const wholeDigits = Math.max(1, Math.floor(Math.log10(Math.abs(amount))) + 1);
+  return `${String(Number(amount.toFixed(Math.max(0, 3 - wholeDigits))))}px`;
 }
 
 /** A length in px or rem as CSS pixels, rounded to a hundredth; null for anything else. */

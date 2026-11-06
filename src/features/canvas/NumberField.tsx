@@ -2,7 +2,8 @@
 // field's unit), the arrow keys step it (Shift by the large step), dragging
 // its short name scrubs it, Enter commits and Escape takes it back. A button
 // lists the kit's tokens for the property when it has any. At rest it reads
-// as the token it matches, and zero or a keyword as a muted placeholder.
+// as the token it matches or with its fraction rounded, and zero or a keyword
+// as a muted placeholder; its tooltip keeps the exact value.
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { Hash } from '@droidex/icons';

@@ -20,6 +20,14 @@ test('a length reads as the token it matches in px, and zero or a keyword as a p
   assert.deepEqual(lengthFace('16px 24px', spacing), { text: '16px 24px', placeholder: '' });
 });
 
+test('a fractional length reads to three significant figures, never short of whole pixels', () => {
+  assert.deepEqual(lengthFace('213.578px'), { text: '214px', placeholder: '' });
+  assert.deepEqual(lengthFace('22.53px'), { text: '22.5px', placeholder: '' });
+  assert.deepEqual(lengthFace('1.5px'), { text: '1.5px', placeholder: '' });
+  assert.deepEqual(lengthFace('-0.08px'), { text: '-0.08px', placeholder: '' });
+  assert.deepEqual(lengthFace('1234.56px'), { text: '1235px', placeholder: '' });
+});
+
 test('a colour reads as its token, else hex with its opacity, and nothing painted as None', () => {
   const colours = [{ value: '--ds-ink', label: 'ink', hint: '#141414' }];
 
