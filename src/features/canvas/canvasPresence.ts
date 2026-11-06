@@ -103,6 +103,7 @@ interface RunningCall {
 
 function turnWork(events: readonly TranscriptEvent[]): TurnWork {
   const running = new Map<string, RunningCall>();
+  const settled = new Set<string>();
   const createdBy = new Map<string, string>();
   const arrivals = new Set<string>();
   for (const event of currentTurn(events)) {
@@ -112,9 +113,12 @@ function turnWork(events: readonly TranscriptEvent[]): TurnWork {
     const call = `${source}\0${activity.toolUseId}`;
     arrivals.add(source);
     if (event.kind === 'tool_call' && activity.state === 'running') {
-      running.set(call, { source, action: activity.action, designIds: activity.designIds });
+      // A call event can land after its result, and must not open it again.
+      if (!settled.has(call))
+        running.set(call, { source, action: activity.action, designIds: activity.designIds });
       continue;
     }
+    settled.add(call);
     running.delete(call);
     if (activity.action === 'create' && activity.state === 'completed')
       for (const designId of activity.designIds) createdBy.set(designId, source);

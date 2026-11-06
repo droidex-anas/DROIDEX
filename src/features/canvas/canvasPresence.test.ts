@@ -78,6 +78,9 @@ test('a running create or write puts its agent on the frames it names until its 
   assert.equal(presence.get('a')?.agent.key, 'chat');
   assert.equal(presence.get('a')?.named, true);
   assert.equal(canvasPresence(sources([...writing, result('t1', 'write', ['a'])]), frames).size, 0);
+  // A call event that lands after its result does not open it again.
+  const settledFirst = [prompt(), result('t1', 'write', ['a']), call('t1', 'write', ['a'])];
+  assert.equal(canvasPresence(sources(settledFirst), frames).size, 0);
   // A settled chat has no one at work, whatever its transcript left open.
   assert.equal(canvasPresence(sources(writing, { primary: false }), frames), NO_PRESENCE);
 });
