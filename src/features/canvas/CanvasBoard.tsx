@@ -36,6 +36,7 @@ import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
 import { SelectionBounds } from './SelectionBounds';
 import { SnapGuides } from './SnapGuides';
+import { toolbarRoom } from './toolbarPlacement';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
@@ -329,14 +330,17 @@ export function CanvasBoard({
               frame={frame}
               rect={drawn[index].rect}
               scale={scale}
-              roomRight={view.size.x - (view.viewport.x + drawn[index].rect.x * scale)}
               motion={motion}
               arriving={!openedWith.has(frame.designId)}
               visible={visible.includes(frame.designId)}
               mode={interaction.mode}
               selected={interaction.selectedFrameIds.includes(frame.designId)}
               multiSelect={interaction.selectedFrameIds.length > 1}
-              showTools={showsFrameTools(interaction, frame.designId)}
+              toolbarRoom={
+                showsFrameTools(interaction, frame.designId)
+                  ? toolbarRoom(view.viewport, drawn, frame.designId, view.size)
+                  : null
+              }
               interacted={interaction.interactedFrameId === frame.designId}
               held={gestures.heldDesignIds.includes(frame.designId)}
               agentWorking={agentWorking}

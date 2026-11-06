@@ -153,3 +153,29 @@ test('the toolbar steps aside while a drag holds the frame and offers only Done 
   await expect(toolbar.getByRole('button')).toHaveCount(1);
   await expect(toolbar.getByRole('button', { name: 'Return to Select' })).toBeVisible();
 });
+
+test('the toolbar drops below its frame rather than cover the frame above it', async ({ page }) => {
+  await openBoard(page);
+  // B goes under A, overlapping it across, with less than the bar's height between them.
+  const label = await box(frame(page, 'B').locator('[data-frame-header]'));
+  await page.mouse.move(label.x + 30, label.y + label.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(label.x - 285, label.y + label.height / 2 + 60, { steps: 4 });
+  await page.clock.runFor(32);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  await page.evaluate(() => window.boardHarness.answer(0));
+  // One step out leaves the board room under B.
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+-');
+  await page.clock.runFor(32);
+
+  const toolbar = page.getByRole('toolbar', { name: 'Design B actions' });
+  await expect(toolbar).toBeVisible();
+  const bar = await box(toolbar);
+  const above = await box(frame(page, 'A'));
+  const own = await box(frame(page, 'B'));
+  expect(bar.y).toBeGreaterThan(own.y + own.height);
+  expect(bar.x).toBeLessThan(above.x + above.width);
+  expect(bar.y).toBeGreaterThan(above.y + above.height);
+});

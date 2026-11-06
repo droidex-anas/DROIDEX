@@ -1,7 +1,7 @@
 // The selected frame's toolbar (spec §4): switch its version, run it, read its
 // source, add it to the chat, rename it, and the rest behind More. It floats
-// above the frame's label at screen size, so it follows the frame through pan
-// and zoom. It is one tab stop: the arrows move inside it and Escape hands the
+// at screen size over the frame's label, or under the frame where that has no
+// room (toolbarPlacement.ts), so it follows the frame through pan and zoom. It is one tab stop: the arrows move inside it and Escape hands the
 // keyboard back to the label. Its tools are icons; each says what it does on
 // hover and on keyboard focus.
 
@@ -16,11 +16,13 @@ import {
 import { Check, Ellipsis, MessageThread, Pencil, Play } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
+import type { Point } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
 import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
 import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
+import { placeToolbar, type ToolbarRoom } from './toolbarPlacement';
 /** What the toolbar does to the canvas, bound to the chat showing it. */
 export interface FrameActions {
   history: HistoryClient;
@@ -35,8 +37,8 @@ export interface FrameToolbarProps {
   frame: CanvasFrame;
   /** This is the frame Interact is driving, so the toolbar is only the way back. */
   interacted: boolean;
-  /** Screen pixels from the frame's left edge to the board's right edge. */
-  roomRight: number;
+  /** Where the bar has room on the board. */
+  room: ToolbarRoom;
   /** Spec §11's timings; the bar reveals on the popover token. */
   motion: CanvasMotion;
   inChat: boolean;
@@ -57,11 +59,7 @@ type ToolId = 'history' | 'interact' | 'source' | 'chat' | 'rename' | 'more';
 export function FrameToolbar(props: FrameToolbarProps) {
   if (!props.interacted) return <SelectToolbar {...props} />;
   return (
-    <ToolbarShell
-      roomRight={props.roomRight}
-      motion={props.motion}
-      label={`${props.frame.name} actions`}
-    >
+    <ToolbarShell room={props.room} motion={props.motion} label={`${props.frame.name} actions`}>
       <Tooltip label="Return to Select (Escape)">
         <button
           type="button"
@@ -78,7 +76,7 @@ export function FrameToolbar(props: FrameToolbarProps) {
 
 function SelectToolbar({
   frame,
-  roomRight,
+  room,
   motion,
   inChat,
   actions,
@@ -127,12 +125,7 @@ function SelectToolbar({
 
   const version = revisionNumber(list, frame.revisionId);
   return (
-    <ToolbarShell
-      roomRight={roomRight}
-      motion={motion}
-      label={`${frame.name} actions`}
-      onKeyDown={onKeyDown}
-    >
+    <ToolbarShell room={room} motion={motion} label={`${frame.name} actions`} onKeyDown={onKeyDown}>
       {frame.revisionId && (
         <>
           <Tooltip label="Versions">
@@ -283,40 +276,40 @@ function SelectToolbar({
   );
 }
 
-/**
- * The bar above the label, starting where the frame does, or ending where it
- * does when the board would cut it off.
- */
+/** The bar where `placeToolbar` finds it room, once it knows its own size. */
 function ToolbarShell({
-  roomRight,
+  room,
   motion,
   label,
   onKeyDown,
   children,
 }: {
-  roomRight: number;
+  room: ToolbarRoom;
   motion: CanvasMotion;
   label: string;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   const bar = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
+  const [size, setSize] = useState<Point>({ x: 0, y: 0 });
   useLayoutEffect(() => {
     const element = bar.current;
     if (!element) return undefined;
-    setWidth(element.offsetWidth);
-    const observer = new ResizeObserver(() => {
-      setWidth(element.offsetWidth);
-    });
+    const measure = () => {
+      setSize({ x: element.offsetWidth, y: element.offsetHeight });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => {
       observer.disconnect();
     };
   }, []);
+  const { side, align } = placeToolbar(room, size);
   return (
     <div
-      data-align={roomRight >= width ? undefined : 'end'}
+      data-side={side}
+      data-align={align}
       className="canvas-frame-tools canvas-chrome"
       onPointerDown={(event) => {
         event.stopPropagation();

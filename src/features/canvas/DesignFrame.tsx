@@ -36,6 +36,7 @@ import { FrameToolbar, type FrameActions } from './FrameToolbar';
 import { PendingBloom } from './PendingBloom';
 import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
+import type { ToolbarRoom } from './toolbarPlacement';
 
 /** Below this on screen a sheet shows its title alone, without the detail. */
 const COMPACT_SHEET_PX = { width: 220, height: 140 };
@@ -49,8 +50,6 @@ export interface DesignFrameProps {
   rect: FrameRect;
   /** The board's scale, so the frame's chrome can be laid out in screen pixels. */
   scale: number;
-  /** Screen pixels from the frame's left edge to the board's right edge. */
-  roomRight: number;
   /** Spec §11's timings, resolved against the reduced-motion preference. */
   motion: CanvasMotion;
   /** It joined the board after the board opened, so it arrives with motion. */
@@ -61,8 +60,11 @@ export interface DesignFrameProps {
   selected: boolean;
   /** Several frames are selected, so a selected one leaves its size and handles to their box. */
   multiSelect: boolean;
-  /** It is the only frame selected, or the one Interact drives: it shows its toolbar. */
-  showTools: boolean;
+  /**
+   * Where its toolbar has room on the board, while it shows one: it is the only
+   * frame selected, or the one Interact drives.
+   */
+  toolbarRoom: ToolbarRoom | null;
   /** This is the frame Interact is driving. */
   interacted: boolean;
   /** A hand gesture is holding this frame right now. */
@@ -106,7 +108,7 @@ export interface DesignFrameProps {
 }
 
 export function DesignFrame(props: DesignFrameProps) {
-  const { frame, rect, scale, motion, arriving, mode, selected, showTools, held } = props;
+  const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, held } = props;
   const { capturePointer, onHold, onPick, onInteract, onPickElement, onEditEnter } = props;
   const { elementBox } = props;
   const [renaming, setRenaming] = useState(false);
@@ -174,11 +176,11 @@ export function DesignFrame(props: DesignFrameProps) {
           onFocusLabel={props.onFocusLabel}
         />
       )}
-      {showTools && !held && (
+      {toolbarRoom && !held && (
         <FrameToolbar
           frame={frame}
           interacted={props.interacted}
-          roomRight={props.roomRight}
+          room={toolbarRoom}
           motion={motion}
           inChat={props.inChat}
           actions={props.actions}

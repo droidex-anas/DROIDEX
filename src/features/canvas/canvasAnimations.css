@@ -29,6 +29,18 @@
   }
 }
 
+/* The same reveal for a bar that hangs below what it belongs to. */
+@keyframes canvas-popover-drop {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--canvas-popover-travel, 4px))) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .canvas-frame-arrival,
 .canvas-popover-reveal {
   animation-fill-mode: both;
