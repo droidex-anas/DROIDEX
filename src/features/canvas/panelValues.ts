@@ -78,8 +78,8 @@ export function colourFace(value: string, tokens: readonly ValueOption[] = []): 
     return { text: 'None', none: true };
   const token = tokens.find((option) => sameColour(option.hint ?? '', trimmed));
   if (token) return { text: token.label, none: false };
-  if (!colour) return { text: trimmed, none: false };
-  const hex = `#${[colour.red, colour.green, colour.blue].map(channelHex).join('')}`;
+  if (colour?.space !== 'rgb') return { text: trimmed, none: false };
+  const hex = `#${colour.channels.map(channelHex).join('')}`;
   const opacity = colour.alpha < 1 ? ` ${String(Math.round(colour.alpha * 100))}%` : '';
   return { text: hex + opacity, none: false };
 }
@@ -89,43 +89,100 @@ function sameColour(a: string, b: string): boolean {
   const right = parseColour(b);
   if (!left || !right) return normalized(a) === normalized(b);
   return (
-    left.red === right.red &&
-    left.green === right.green &&
-    left.blue === right.blue &&
+    left.space === right.space &&
+    left.channels.every((channel, index) => Math.abs(channel - right.channels[index]) < 0.001) &&
     Math.abs(left.alpha - right.alpha) < 0.005
   );
 }
 
-interface Rgba {
-  red: number;
-  green: number;
-  blue: number;
+/**
+ * A colour the way Chromium computes it: hex, rgb(), hsl() and hwb() become
+ * whole sRGB channels in `rgb`, while lab(), lch(), oklab(), oklch() and
+ * color() keep their own space, with percentages and angles resolved to the
+ * numbers it writes.
+ */
+interface Colour {
+  space: string;
+  channels: number[];
   alpha: number;
 }
 
-/** Hex and rgb() in either syntax, the forms a kit writes and Chromium computes; null for any other. */
-function parseColour(value: string): Rgba | null {
+/** The forms a kit's colour token may take, as the style edits accept them; null for any other. */
+function parseColour(value: string): Colour | null {
   const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value);
   if (hex) {
     const full = hex[1].length <= 4 ? hex[1].replace(/./g, '$&$&') : hex[1];
-    const [red, green, blue, alpha = 'ff'] = pairs(full);
-    return {
-      red: parseInt(red, 16),
-      green: parseInt(green, 16),
-      blue: parseInt(blue, 16),
-      alpha: parseInt(alpha, 16) / 255,
-    };
+    const [red, green, blue, alpha = 255] = pairs(full).map((pair) => parseInt(pair, 16));
+    return { space: 'rgb', channels: [red, green, blue], alpha: alpha / 255 };
   }
-  const rgb =
-    /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/i.exec(value);
-  if (!rgb) return null;
-  const [, red, green, blue, alpha, percent] = rgb;
-  return {
-    red: Math.round(Number(red)),
-    green: Math.round(Number(green)),
-    blue: Math.round(Number(blue)),
-    alpha: alpha ? Number(alpha) / (percent ? 100 : 1) : 1,
-  };
+  const call = /^([a-z]+)\(([^()]*)\)$/i.exec(value);
+  if (!call) return null;
+  const [main, ...slashed] = call[2].split('/');
+  const parts = main.split(/[\s,]+/).filter((part) => part.length > 0);
+  const name = call[1].toLowerCase();
+  const space = name === 'color' ? (parts.shift() ?? '').toLowerCase() : name.replace(/a$/, '');
+  // The legacy comma syntax gives the alpha as a fourth argument.
+  const alphaText = slashed.at(0)?.trim() ?? parts.at(3);
+  const colour = channelsIn(space, parts);
+  const alpha = alphaText === undefined ? 1 : amount(alphaText, 0.01);
+  if (!colour || ![...colour.channels, alpha].every(Number.isFinite)) return null;
+  return { ...colour, alpha };
+}
+
+function channelsIn(space: string, parts: string[]): Omit<Colour, 'alpha'> | null {
+  const [a = '', b = '', c = ''] = parts;
+  const rgb = (channels: number[]) => ({ space: 'rgb', channels: channels.map(Math.round) });
+  switch (space) {
+    case 'rgb':
+      return rgb([a, b, c].map((channel) => amount(channel, 2.55)));
+    case 'hsl':
+      return rgb(hslChannels(degrees(a), amount(b, 1) / 100, amount(c, 1) / 100));
+    case 'hwb':
+      return rgb(hwbChannels(degrees(a), amount(b, 1) / 100, amount(c, 1) / 100));
+    case 'lab':
+      return { space, channels: [amount(a, 1), amount(b, 1.25), amount(c, 1.25)] };
+    case 'lch':
+      return { space, channels: [amount(a, 1), amount(b, 1.5), degrees(c)] };
+    case 'oklab':
+      return { space, channels: [amount(a, 0.01), amount(b, 0.004), amount(c, 0.004)] };
+    case 'oklch':
+      return { space, channels: [amount(a, 0.01), amount(b, 0.004), degrees(c)] };
+    default:
+      // color()'s predefined spaces, such as srgb and display-p3.
+      return parts.length === 3
+        ? { space, channels: [a, b, c].map((channel) => amount(channel, 0.01)) }
+        : null;
+  }
+}
+
+/** A channel's number, with a percentage scaled to the number it stands for and `none` as zero. */
+function amount(text: string, percentScale: number): number {
+  if (text.toLowerCase() === 'none') return 0;
+  return text.endsWith('%') ? Number(text.slice(0, -1)) * percentScale : Number(text);
+}
+
+const DEGREES_PER: Record<string, number> = { deg: 1, grad: 0.9, rad: 180 / Math.PI, turn: 360 };
+
+function degrees(text: string): number {
+  const unit = /(deg|grad|rad|turn)$/i.exec(text)?.[1];
+  if (unit === undefined) return amount(text, 1);
+  return Number(text.slice(0, -unit.length)) * DEGREES_PER[unit.toLowerCase()];
+}
+
+/** CSS Color 4's hsl() to sRGB, as channels from 0 to 255. */
+function hslChannels(hue: number, saturation: number, lightness: number): number[] {
+  const turned = ((hue % 360) + 360) % 360;
+  const chroma = saturation * Math.min(lightness, 1 - lightness);
+  return [0, 8, 4].map((offset) => {
+    const k = (offset + turned / 30) % 12;
+    return 255 * (lightness - chroma * Math.max(-1, Math.min(k - 3, 9 - k, 1)));
+  });
+}
+
+/** CSS Color 4's hwb() to sRGB: the pure hue, washed with white and black. */
+function hwbChannels(hue: number, white: number, black: number): number[] {
+  if (white + black >= 1) return [0, 0, 0].map(() => (255 * white) / (white + black));
+  return hslChannels(hue, 1, 0.5).map((channel) => channel * (1 - white - black) + 255 * white);
 }
 
 function pairs(digits: string): string[] {
@@ -135,7 +192,6 @@ function pairs(digits: string): string[] {
 function channelHex(channel: number): string {
   return Math.min(255, Math.max(0, channel)).toString(16).padStart(2, '0');
 }
-
 function normalized(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }

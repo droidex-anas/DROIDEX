@@ -47,6 +47,29 @@ test('a colour reads as its token, else hex with its opacity, and nothing painte
   });
 });
 
+test('a colour token in any form the style edits accept matches what Chromium computes for it', () => {
+  // A kit's value beside what Electron 39's getComputedStyle reports for it.
+  const computed = [
+    ['hsl(220 100% 60%)', 'rgb(51, 119, 255)'],
+    ['hsla(220, 100%, 60%, 0.5)', 'rgba(51, 119, 255, 0.5)'],
+    ['hwb(220 20% 0%)', 'rgb(51, 119, 255)'],
+    ['lab(50% 40 -20 / 0.5)', 'lab(50 40 -20 / 0.5)'],
+    ['lch(50% 40 270deg)', 'lch(50 40 270)'],
+    ['oklab(60% 25% -25%)', 'oklab(0.6 0.1 -0.1)'],
+    ['oklch(60% 50% 0.5turn / 50%)', 'oklch(0.6 0.2 180 / 0.5)'],
+    ['color(display-p3 20% 40% 100%)', 'color(display-p3 0.2 0.4 1)'],
+  ];
+  for (const [written, value] of computed) {
+    const brand = [{ value: '--ds-brand', label: 'brand', hint: written }];
+    assert.deepEqual(colourFace(value, brand), { text: 'brand', none: false }, written);
+  }
+  const accent = [{ value: '--ds-accent', label: 'accent', hint: 'oklch(60% 0.2 250deg)' }];
+  assert.deepEqual(colourFace('oklch(0.6 0.2 251)', accent), {
+    text: 'oklch(0.6 0.2 251)',
+    none: false,
+  });
+});
+
 test('a font stack is named by its first family and matched however it is quoted', () => {
   assert.equal(firstFamily('"Inter Variable", system-ui, sans-serif'), 'Inter Variable');
   assert.equal(
