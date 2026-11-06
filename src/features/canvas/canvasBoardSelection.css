@@ -7,9 +7,12 @@
    its screen size at any zoom. */
 
 /* The selected frame's size, under its bottom edge. The wrapper scales about
-   the frame's centre line, and the badge centres itself on it. */
+   the frame's centre line, and the badge centres itself on it. It paints over
+   neighbouring frames, as the toolbar does; the wrapper lets presses through,
+   so only the badge's own button in Select takes one. */
 .canvas-frame-size {
   position: absolute;
+  z-index: 2;
   top: 100%;
   left: 50%;
   transform-origin: 0 0;
@@ -95,7 +98,10 @@
   left: 0;
 }
 
+/* A corner paints over neighbouring frames, so a corner you can see always
+   takes the press; the edges draw nothing and leave a neighbour its presses. */
 .canvas-frame-corner {
+  z-index: 2;
   width: 8px;
   height: 8px;
   border: 1.5px solid var(--selection);
