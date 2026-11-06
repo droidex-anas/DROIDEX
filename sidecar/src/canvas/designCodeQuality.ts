@@ -18,6 +18,9 @@ import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './pro
 
 const MAX_FINDINGS = 12;
 const MAX_LISTED = 6;
+// The checker's time grows with the source: half a megabyte takes seconds of a
+// build's deadline, too much to spend on advice.
+const MAX_SOURCE_BYTES = 200_000;
 const MAX_FILE_LINES = 300;
 const MAX_FUNCTION_LINES = 150;
 /** Sibling blocks of one shape, each this many elements or more, read as copied markup. */
@@ -53,6 +56,11 @@ export function checkCodeQuality(
   rule: DesignSystemAdherence,
 ): CanvasDiagnostic[] {
   if (rule === 'off') return [];
+  const sourceBytes = Object.values(files).reduce(
+    (total, text) => total + Buffer.byteLength(text),
+    0,
+  );
+  if (sourceBytes > MAX_SOURCE_BYTES) return [];
   const scripts = scriptSources(files);
   const findings = unusedNames(scripts);
   for (const source of scripts)

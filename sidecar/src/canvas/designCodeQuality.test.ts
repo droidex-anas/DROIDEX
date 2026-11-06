@@ -70,6 +70,19 @@ export default function App() {
   assert.deepEqual(check(messy, AUTO_DESIGN_SYSTEM, 'off'), []);
 });
 
+test('a source too large to check in a build gets no findings', () => {
+  const rows = Array.from({ length: 8_000 }, (_, i) => `export const row${String(i)} = 'row';`);
+  const files = {
+    'main.tsx': `import { useMemo } from 'react';
+export default function App() {
+  return <p>Hey</p>;
+}
+`,
+    'data.ts': rows.join('\n'),
+  };
+  assert.deepEqual(check(files), []);
+});
+
 test('imports, variables and parameters that are never read are named once per file', () => {
   const [finding, ...rest] = check({
     'main.tsx': `import { useMemo, useState } from 'react';

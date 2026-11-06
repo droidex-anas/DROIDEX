@@ -87,7 +87,13 @@ export async function compileDesign(
   const stylesheet = await buildDesignStylesheet(input.files, system);
   stopIfCancelled(signal);
   if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
-  const codeQuality = checkCodeQuality(input.files, system, input.designSystemAdherence);
+  let codeQuality: CanvasDiagnostic[] = [];
+  try {
+    codeQuality = checkCodeQuality(input.files, system, input.designSystemAdherence);
+  } catch (error) {
+    // Its findings are advice, so a fault in the checker costs only them, never the build.
+    console.error('Canvas code-quality check failed:', error);
+  }
 
   const html = previewDocument(stylesheet.css, bundle.js, input.designSystem.mode);
   return {
