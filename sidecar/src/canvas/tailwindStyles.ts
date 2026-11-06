@@ -1,9 +1,10 @@
 // The Tailwind classes a direct style edit reads and writes. Designs compile
-// against stock Tailwind 3 (CANVAS_TAILWIND_OPTIONS), so a kit token is written
-// in the arbitrary-value form kits use (`p-[var(--ds-space-4)]`), and a raw
-// value as the stock class whose value equals it (`p-4` for 16px) or, without
-// one, not as a class at all. tailwindStyles.test.ts compiles every class this
-// module can write with Tailwind itself.
+// against stock Tailwind 3 plus the pinned kit's add-only theme
+// (canvasTailwindOptions), whose stock classes keep their values, so a kit token
+// is written in the arbitrary-value form kits use (`p-[var(--ds-space-4)]`), and
+// a raw value as the stock class whose value equals it (`p-4` for 16px) or,
+// without one, not as a class at all. tailwindStyles.test.ts compiles every
+// class this module can write with Tailwind itself.
 
 import { canonicalCss, type StyleResolution } from './styleEdits.js';
 
