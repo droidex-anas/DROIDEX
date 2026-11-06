@@ -387,15 +387,19 @@ export function useBoardGestures({
   };
 
   /**
-   * One layout write for frames the user has already finished placing. Frames
-   * the operation did not actually move are left out, so an align that moves
-   * one frame writes one frame.
+   * One layout write for frames the user has already finished placing: those
+   * `designIds` names, at the rects `nextRects` gives for where they are drawn.
+   * Frames it did not actually move are left out, so an align that moves one
+   * frame writes one frame.
    */
-  const place = (placements: FramePlacement[]) => {
+  const place = (designIds: readonly string[], nextRects: (rects: FrameRect[]) => FrameRect[]) => {
+    const placed = frames.filter((frame) => designIds.includes(frame.designId));
+    const rects = nextRects(placed.map((frame) => rectFor(frame)));
     commit(
-      placements.filter(({ designId, rect }) => {
-        const frame = frames.find((candidate) => candidate.designId === designId);
-        return frame !== undefined && !sameRect(rect, rectFor(frame));
+      placed.flatMap((frame, index) => {
+        const rect = rects[index];
+        if (sameRect(rect, rectFor(frame))) return [];
+        return [{ designId: frame.designId, expectedLayoutVersion: frame.layoutVersion, rect }];
       }),
     );
   };

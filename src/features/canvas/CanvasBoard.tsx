@@ -54,13 +54,7 @@ import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
-import type {
-  ArrangeFramesInput,
-  CanvasFrame,
-  CanvasSnapshot,
-  FrameRect,
-  WriteReceipt,
-} from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, WriteReceipt } from './protocol';
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -277,23 +271,6 @@ export function CanvasBoard({
     };
   }, [capturePointer, overlayCapture, view.scrolling]);
 
-  /**
-   * One layout write for the selection, computed from the rects it is drawn at.
-   */
-  const placeSelection = (nextRects: (rects: FrameRect[]) => FrameRect[]) => {
-    const selected = frames.filter((frame) =>
-      interaction.selectedFrameIds.includes(frame.designId),
-    );
-    const placed = nextRects(selected.map((frame) => gestures.rectFor(frame)));
-    gestures.place(
-      selected.map((frame, index) => ({
-        designId: frame.designId,
-        expectedLayoutVersion: frame.layoutVersion,
-        rect: placed[index],
-      })),
-    );
-  };
-
   const onMode = (next: BoardMode) => {
     annotation.pickTool(null);
     if (next === interaction.mode) return;
@@ -362,7 +339,7 @@ export function CanvasBoard({
               view.panByScreen(delta);
             },
             nudge: (step) => {
-              placeSelection((rects) =>
+              gestures.place(interaction.selectedFrameIds, (rects) =>
                 rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
               );
             },
@@ -469,10 +446,10 @@ export function CanvasBoard({
           onMode={onMode}
           onZoom={onZoom}
           onAlign={(edge: AlignEdge) => {
-            placeSelection((rects) => alignRects(rects, edge));
+            gestures.place(interaction.selectedFrameIds, (rects) => alignRects(rects, edge));
           }}
           onDistribute={(axis: DistributeAxis) => {
-            placeSelection((rects) => distributeRects(rects, axis));
+            gestures.place(interaction.selectedFrameIds, (rects) => distributeRects(rects, axis));
           }}
           annotationTools={<AnnotationTools {...annotation.rail} />}
         />
