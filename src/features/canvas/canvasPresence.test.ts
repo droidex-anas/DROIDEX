@@ -147,6 +147,8 @@ test('a child still at work when the user prompts again keeps its frames', () =>
     result('t1', 'create', ['made'], 'w1'),
     call('t2', 'write', ['a'], 'w1'),
     call('t3', 'write', ['a']),
+    // However long the chat talks on, its words do not push the child's calls out of reach.
+    ...Array.from({ length: 2500 }, () => ev({ text: 'word' })),
     prompt(),
   ];
 

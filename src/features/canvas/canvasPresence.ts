@@ -43,10 +43,10 @@ const AGENT_NAMES = [
 ] as const;
 const COLORS = Object.keys(PRESENCE_COLORS.light) as PresenceColor[];
 const PRIMARY = 'primary';
-// How many events before the chat's latest prompt are still read for a child at
-// work: a child can outlive the turn that started it, and a bound keeps a long
-// history from costing every store update.
-const CHILD_LOOKBACK = 2000;
+// How many of a live child's canvas events from before the chat's latest
+// prompt are read. A child waits on a running call, so the call is among its
+// latest, however long the chat or other agents went on meanwhile.
+const CHILD_LOOKBACK = 50;
 const NO_ARRIVALS: ReadonlyMap<string, number> = new Map();
 
 export interface PresenceSources {
@@ -78,7 +78,7 @@ export function canvasPresence(
   const { primaryLive, liveChildren } = sources;
   if (!primaryLive && liveChildren.size === 0) return NO_PRESENCE;
   const isLive = (source: string) => (source === PRIMARY ? primaryLive : liveChildren.has(source));
-  const work = turnWork(currentTurn(sources.events, liveChildren));
+  const work = turnWork(turnCanvasEvents(sources.events, liveChildren));
   const workers = frameWorkers(work, frames, arrivedAt, isLive);
   if (workers.size === 0) return NO_PRESENCE;
 
@@ -139,36 +139,82 @@ function turnWork(turn: readonly TranscriptEvent[]): TurnWork {
 }
 
 /**
- * The chat's events from its latest prompt on, or all of them while that
- * prompt is not loaded, with the live children's events from up to
- * `CHILD_LOOKBACK` events before it. Read from the transcript's chunks, which
- * are plain arrays: the sequence's own indexed reads are slow, and this runs on
- * every store update while an agent is live, so it costs the turn and never the
- * history before it.
+ * The canvas events of the chat's turn, from its latest prompt on, or of all
+ * its events while that prompt is not loaded, and a live child's from before
+ * that prompt too, since a child can outlive the turn that started it. Read
+ * from the transcript's chunks, which are plain arrays: the sequence's own
+ * indexed reads are slow, and this runs on every store update while an agent
+ * is live.
  */
-function currentTurn(
+function turnCanvasEvents(
   events: readonly TranscriptEvent[],
   liveChildren: ReadonlySet<string>,
 ): TranscriptEvent[] {
   const chunks = chunkedSequenceChunks(events);
+  // Collected newest first, then reversed.
   const turn: TranscriptEvent[] = [];
-  // How many more events to read before the prompt, once it is found.
-  let lookback: number | undefined;
   for (let chunkIndex = chunks.length - 1; chunkIndex >= 0; chunkIndex -= 1) {
     const chunk = chunks[chunkIndex];
     for (let index = chunk.length - 1; index >= 0; index -= 1) {
       const event = chunk[index];
-      if (lookback === undefined) {
-        if (startsTurn(event)) lookback = liveChildren.size > 0 ? CHILD_LOOKBACK : 0;
-        else turn.push(event);
-        continue;
+      if (startsTurn(event)) {
+        if (liveChildren.size > 0)
+          pushEarlierChildEvents(turn, chunks, chunkIndex, index, liveChildren);
+        return turn.reverse();
       }
-      if (lookback === 0) return turn.reverse();
-      lookback -= 1;
-      if (event.role !== 'primary' && liveChildren.has(event.sourceSessionId)) turn.push(event);
+      if (event.canvasActivity) turn.push(event);
     }
   }
   return turn.reverse();
+}
+
+/**
+ * Adds, newest first, up to `CHILD_LOOKBACK` of each live child's canvas
+ * events from before the prompt at `promptIndex`.
+ */
+function pushEarlierChildEvents(
+  turn: TranscriptEvent[],
+  chunks: readonly (readonly TranscriptEvent[])[],
+  chunkIndex: number,
+  promptIndex: number,
+  liveChildren: ReadonlySet<string>,
+): void {
+  const unread = new Map([...liveChildren].map((child) => [child, CHILD_LOOKBACK]));
+  // Whether any live child has events left to read.
+  const read = (event: TranscriptEvent): boolean => {
+    const left = unread.get(event.sourceSessionId);
+    if (left === undefined) return true;
+    turn.push(event);
+    if (left > 1) unread.set(event.sourceSessionId, left - 1);
+    else unread.delete(event.sourceSessionId);
+    return unread.size > 0;
+  };
+  const promptChunk = chunks[chunkIndex];
+  for (let index = promptIndex - 1; index >= 0; index -= 1) {
+    const event = promptChunk[index];
+    if (event.canvasActivity && !read(event)) return;
+  }
+  for (let earlier = chunkIndex - 1; earlier >= 0; earlier -= 1) {
+    const childEvents = childCanvasEvents(chunks[earlier]);
+    for (let index = childEvents.length - 1; index >= 0; index -= 1)
+      if (!read(childEvents[index])) return;
+  }
+}
+
+// A chunk keeps its identity while later events arrive, so each one is
+// filtered once rather than on every store update.
+const childCanvasEventsByChunk = new WeakMap<
+  readonly TranscriptEvent[],
+  readonly TranscriptEvent[]
+>();
+
+function childCanvasEvents(chunk: readonly TranscriptEvent[]): readonly TranscriptEvent[] {
+  let childEvents = childCanvasEventsByChunk.get(chunk);
+  if (!childEvents) {
+    childEvents = chunk.filter((event) => event.role !== 'primary' && event.canvasActivity);
+    childCanvasEventsByChunk.set(chunk, childEvents);
+  }
+  return childEvents;
 }
 
 /** The agent at work on each frame on the board, by design id. */
