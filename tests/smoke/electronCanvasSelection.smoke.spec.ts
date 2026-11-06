@@ -108,6 +108,8 @@ export default function Card() {
     assert.equal(hovered?.elementId, heading.elementId);
     assert.equal(hovered.tagName, 'h1');
     assert.equal(hovered.rect.y, 8);
+    // Only its section is above it, and the paragraph follows with no margin.
+    assert.deepEqual(hovered.room, { above: null, below: 0 });
     assert.equal(
       readPreviewHover(await askGuest(page, previewHoverScript({ x: 5000, y: 5000 }))),
       null,

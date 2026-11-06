@@ -299,10 +299,10 @@ test('Edit outlines the element under the pointer by its tag, through a zoom, un
   // Its tag would leave the sheet above it, so it sits under it instead, and
   // a box filling the sheet holds its tag in its corner.
   const tag = hover.locator('.canvas-element-tag > span');
-  expect((await box(tag)).y).toBeGreaterThan(titleBox.y + titleBox.height);
+  expect((await box(tag)).y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 0.5);
   await pointAt(300, 200);
   await expect(hover).toHaveAttribute('data-element-hover', 'section');
-  expect((await box(tag)).y).toBeGreaterThan(drawn.y);
+  expect((await box(tag)).y).toBeGreaterThanOrEqual(drawn.y - 0.5);
   expect((await box(tag)).y).toBeLessThan(drawn.y + 30);
 
   // The picked element has its own outline, so the pointer over it adds none.
@@ -345,9 +345,7 @@ test('Edit outlines the element under the pointer by its tag, through a zoom, un
   await expect(hover).toHaveCount(0);
 });
 
-test('the hover tag stays above an element whose left meets no part of the picked size chip', async ({
-  page,
-}) => {
+test('the hover tag keeps off other content and off the picked size chip', async ({ page }) => {
   await stubGuests(page);
   await page.addInitScript(() => {
     const title = {
@@ -355,17 +353,29 @@ test('the hover tag stays above an element whose left meets no part of the picke
       instancePath: '0/0',
       tagName: 'h1',
       rect: { x: 8, y: 8, width: 240, height: 30 },
+      room: { above: null, below: 26 },
     };
     const body = {
       elementId: 'el_body',
       instancePath: '0/1',
       tagName: 'p',
       rect: { x: 8, y: 64, width: 240, height: 20 },
+      room: { above: 26, below: null },
+    };
+    // A label wedged between two rows, with no room for a tag above or below it.
+    const note = {
+      elementId: 'el_note',
+      instancePath: '0/2',
+      tagName: 'span',
+      rect: { x: 264, y: 40, width: 120, height: 16 },
+      room: { above: 4, below: 4 },
     };
     window.guestAnswer = (command, argument) => {
       if (command === 'select' && !argument.target) return null;
+      const x = typeof argument.x === 'number' ? argument.x : 0;
       const y = typeof argument.y === 'number' ? argument.y : 0;
-      const element = y < 50 ? title : body;
+      let element = y < 50 ? title : body;
+      if (x > 260) element = note;
       return command === 'hover' ? element : { ...element, styles: {} };
     };
   });
@@ -378,20 +388,30 @@ test('the hover tag stays above an element whose left meets no part of the picke
   await board.focus();
   await page.keyboard.press('e');
   const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
-  const at = (x: number, y: number) => ({
-    x: drawn.x + (x * drawn.width) / 400,
-    y: drawn.y + (y * drawn.width) / 400,
-  });
+  const hover = page.locator('[data-element-hover]');
+  const hoverAt = async (x: number, y: number, tagName: string) => {
+    await page.mouse.move(drawn.x + (x * drawn.width) / 400, drawn.y + (y * drawn.width) / 400);
+    await page.clock.runFor(32);
+    await expect(hover).toHaveAttribute('data-element-hover', tagName);
+    return {
+      outline: await box(hover),
+      tag: await box(hover.locator('.canvas-element-tag > span')),
+    };
+  };
 
-  await page.mouse.click(at(20, 20).x, at(20, 20).y);
+  // With no room either side, the tag covers only the element it names.
+  const wedged = await hoverAt(300, 48, 'span');
+  expect(wedged.tag.y).toBeGreaterThanOrEqual(wedged.outline.y - 0.5);
+  expect(wedged.tag.y).toBeLessThan(wedged.outline.y + 1);
+  const clear = await hoverAt(20, 70, 'p');
+  expect(clear.tag.y + clear.tag.height).toBeLessThanOrEqual(clear.outline.y + 1);
+
+  // The full width of the paragraph would meet the picked heading's size
+  // chip; the tag at its left does not, so it stays above.
+  await page.mouse.click(drawn.x + (20 * drawn.width) / 400, drawn.y + (20 * drawn.width) / 400);
   await page.clock.runFor(100);
   const chip = await box(page.locator('.canvas-element-outline .canvas-frame-size > span'));
-  await page.mouse.move(at(20, 70).x, at(20, 70).y);
-  await page.clock.runFor(32);
-  const hover = page.locator('[data-element-hover]');
-  await expect(hover).toHaveAttribute('data-element-hover', 'p');
-  const tag = await box(hover.locator('.canvas-element-tag > span'));
-  // The full width of the paragraph would meet the chip; the tag at its left does not.
-  expect(tag.y + tag.height).toBeLessThanOrEqual((await box(hover)).y + 1);
-  expect(tag.x + tag.width).toBeLessThan(chip.x);
+  const besideChip = await hoverAt(20, 70, 'p');
+  expect(besideChip.tag.y + besideChip.tag.height).toBeLessThanOrEqual(besideChip.outline.y + 1);
+  expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
 });

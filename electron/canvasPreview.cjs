@@ -171,16 +171,21 @@ const INTERMEDIATE_SCRIPT = `(() => {
       },
     };
   };
+  // Space beside a box in the design's pixels, or null for none in the way.
+  const gap = (value) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
   const normalizeHover = (element) => {
     if (!element || typeof element !== 'object') return null;
     const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
     if (!rect || !elementId) return null;
+    const room = element.room && typeof element.room === 'object' ? element.room : {};
     return {
       elementId,
       instancePath: text(element.instancePath),
       rect,
       tagName: text(element.tagName),
+      room: { above: gap(room.above), below: gap(room.below) },
     };
   };
   // The one hover waiting for the frame's answer; a newer one answers it with nothing.

@@ -7,12 +7,13 @@
 
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
+import type { PreviewHover } from './previewDocument';
 import type { ElementRef, FrameRect } from './protocol';
 import type { HoveredElement } from './useElementHover';
 import type { ElementSelection } from './useElementEditor';
 
-/** On screen: the tag's line and its gap to the element, and the size chip's gap and line. */
-const TAG_ROOM_PX = 19;
+/** On screen: the tag's line, flush on the element, and the size chip's gap and line. */
+const TAG_HEIGHT_PX = 14;
 const SIZE_ROOM_PX = 26;
 
 interface Box {
@@ -63,7 +64,13 @@ export function ElementOutlines({
           >
             <div
               className="canvas-element-tag canvas-chrome"
-              data-side={tagSide(hover.box, tagWidth / scale, hover.frame.height, sizeChip, scale)}
+              data-side={tagSide(
+                hover.box,
+                hover.frame.height,
+                { width: tagWidth / scale, height: TAG_HEIGHT_PX / scale },
+                hovered.element.room,
+                sizeChip,
+              )}
             >
               <span ref={tag}>{hovered.element.tagName}</span>
             </div>
@@ -154,25 +161,26 @@ function sizeChipOf(box: Box, width: number, scale: number): Box {
 }
 
 /**
- * Where the hovered element's tag goes, off the element itself where it can:
- * above its box, as a layer's name sits; below when above would leave the
- * frame, onto its own chrome, or meet the picked element's size chip; in the
- * box's corner when neither side has room.
+ * Where the hovered element's tag goes, flush on its box and off the element
+ * where it can: above, as a layer's name sits; below when above would cover
+ * other content, leave the frame onto its own chrome, or meet the picked
+ * element's size chip; in the box's own corner when neither side has room,
+ * where it covers only the element it names.
  */
 function tagSide(
   box: Box,
-  width: number,
   frameHeight: number,
+  tag: { width: number; height: number },
+  room: PreviewHover['room'],
   sizeChip: Box | null,
-  scale: number,
 ): TagSide {
-  const room = TAG_ROOM_PX / scale;
-  const fits = (top: number) =>
+  const fits = (top: number, free: number | null) =>
+    (free === null || free >= tag.height) &&
     top >= 0 &&
-    top + room <= frameHeight &&
-    !(sizeChip && overlaps({ left: box.left, top, width, height: room }, sizeChip));
-  if (fits(box.top - room)) return 'above';
-  if (fits(box.top + box.height)) return 'below';
+    top + tag.height <= frameHeight &&
+    !(sizeChip && overlaps({ left: box.left, top, ...tag }, sizeChip));
+  if (fits(box.top - tag.height, room.above)) return 'above';
+  if (fits(box.top + box.height, room.below)) return 'below';
   return 'inside';
 }
 
