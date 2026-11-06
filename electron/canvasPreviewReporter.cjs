@@ -118,16 +118,16 @@ const GENERATED_FRAME_REPORTER = `(() => {
     const box = node.getBoundingClientRect();
     return { x: box.x, y: box.y, width: box.width, height: box.height };
   };
-  // What a node beside the hovered element's ancestry paints, if anything.
-  const paintedBox = (node) => {
+  // What a node beside the hovered element's ancestry paints, a box per line
+  // where it wraps, so the lines before and after an inline element count.
+  const paintedBoxes = (node) => {
+    let boxes = [];
     if (node.nodeType === Node.TEXT_NODE && node.data.trim() !== '') {
       const range = document.createRange();
       range.selectNodeContents(node);
-      return range.getBoundingClientRect();
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return null;
-    const box = node.getBoundingClientRect();
-    return box.width > 0 && box.height > 0 ? box : null;
+      boxes = range.getClientRects();
+    } else if (node.nodeType === Node.ELEMENT_NODE) boxes = node.getClientRects();
+    return Array.from(boxes).filter((box) => box.width > 0 && box.height > 0);
   };
   // How far a box can grow up and down, across its width, before it meets
   // anything but its own ancestors: a sibling, an ancestor's sibling or an
@@ -138,10 +138,12 @@ const GENERATED_FRAME_REPORTER = `(() => {
     let below = null;
     for (let child = node; child.parentElement; child = child.parentElement) {
       for (const other of child.parentElement.childNodes) {
-        const box = other === child ? null : paintedBox(other);
-        if (!box || box.right <= own.left || box.left >= own.right) continue;
-        if (box.bottom <= own.top) above = Math.min(above ?? Infinity, own.top - box.bottom);
-        if (box.top >= own.bottom) below = Math.min(below ?? Infinity, box.top - own.bottom);
+        if (other === child) continue;
+        for (const box of paintedBoxes(other)) {
+          if (box.right <= own.left || box.left >= own.right) continue;
+          if (box.bottom <= own.top) above = Math.min(above ?? Infinity, own.top - box.bottom);
+          if (box.top >= own.bottom) below = Math.min(below ?? Infinity, box.top - own.bottom);
+        }
       }
     }
     return { above: above, below: below };
