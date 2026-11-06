@@ -21,27 +21,24 @@ export function ElementOutlines({
   selection: ElementSelection | null;
   hovered: HoveredElement | null;
 }) {
-  const frameOf = (designId: string) => drawn.find((placed) => placed.designId === designId)?.rect;
   const picked = selection?.draft.element;
-  const selectedFrame = picked && frameOf(picked.designId);
-  const selectedBox = selection && selectedFrame && inFrame(selectedFrame, selection.shown.rect);
+  const selected = selection && picked && onBoard(drawn, picked.designId, selection.shown.rect);
   // The picked element's own outline already says where it is.
   const hoverIsPicked =
     picked?.designId === hovered?.designId &&
     picked?.elementId === hovered?.element.elementId &&
     picked?.instancePath === hovered?.element.instancePath;
-  const hoveredFrame = hovered && !hoverIsPicked ? frameOf(hovered.designId) : undefined;
-  const hoverBox = hovered && hoveredFrame && inFrame(hoveredFrame, hovered.element.rect);
+  const hover = hovered && !hoverIsPicked && onBoard(drawn, hovered.designId, hovered.element.rect);
   return (
     <>
-      {hovered && hoveredFrame && hoverBox && (
+      {hovered && hover && (
         // A new frame is a new outline, so it never glides across the board.
-        <AtFrame key={hovered.designId} frame={hoveredFrame}>
+        <AtFrame key={hovered.designId} frame={hover.frame}>
           <div
             aria-hidden
             data-element-hover={hovered.element.tagName}
             className="canvas-element-hover"
-            style={hoverBox}
+            style={hover.box}
           >
             <div className="canvas-element-tag canvas-chrome">
               <span>{hovered.element.tagName}</span>
@@ -49,9 +46,9 @@ export function ElementOutlines({
           </div>
         </AtFrame>
       )}
-      {selection && selectedFrame && selectedBox && (
-        <AtFrame frame={selectedFrame}>
-          <div aria-hidden className="canvas-element-outline" style={selectedBox}>
+      {selection && selected && (
+        <AtFrame frame={selected.frame}>
+          <div aria-hidden className="canvas-element-outline" style={selected.box}>
             <div className="canvas-frame-size canvas-chrome">
               <span>
                 {Math.round(selection.shown.rect.width)} × {Math.round(selection.shown.rect.height)}
@@ -71,6 +68,13 @@ function AtFrame({ frame, children }: { frame: FrameRect; children: ReactNode })
       {children}
     </div>
   );
+}
+
+/** The frame an element is drawn in and its visible box there, if any of it shows. */
+function onBoard(drawn: PlacedFrame[], designId: string, element: FrameRect) {
+  const frame = drawn.find((placed) => placed.designId === designId)?.rect;
+  const box = frame && inFrame(frame, element);
+  return frame && box ? { frame, box } : null;
 }
 
 /** An element's box inside its frame, trimmed to it; null when none of it is visible. */
