@@ -5,126 +5,28 @@
 // guest; picking a segment, option, token or swatch applies at once; Enter
 // commits every preview as one edit and Escape takes one back.
 
-import { useRef, useState, type ReactNode, type Ref } from 'react';
-import {
-  AlignCenter,
-  AlignItemsBaseline,
-  AlignItemsCenter,
-  AlignItemsEnd,
-  AlignItemsStart,
-  AlignItemsStretch,
-  AlignJustify,
-  AlignLeft,
-  AlignRight,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  BorderDashed,
-  BorderDotted,
-  BorderDouble,
-  BorderSolid,
-  ChevronDown,
-  JustifyAround,
-  JustifyBetween,
-  JustifyCenter,
-  JustifyEnd,
-  JustifyEvenly,
-  JustifyStart,
-  NoWrap,
-  WrapText,
-} from '@droidex/icons';
-import { Menu } from '../../components/ui/Menu';
+import type { ReactNode, Ref } from 'react';
 import { ColourField } from './ColourField';
+import {
+  ALIGN,
+  ALIGN_SELF,
+  BORDER_STYLE,
+  DIRECTION,
+  DISPLAY,
+  JUSTIFY,
+  OVERFLOW,
+  TEXT_ALIGN,
+  TEXT_TRANSFORM,
+  WEIGHTS,
+  WRAP,
+} from './elementPanelChoices';
 import { NumberField } from './NumberField';
 import { SegmentedControl, type Segment } from './SegmentedControl';
 import type { EditToken, SourceElement } from './protocol';
+import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
 import { ValuePickerField, type ValueOption } from './ValuePickerField';
-
-const DIRECTION: Segment<string>[] = [
-  { value: 'row', label: 'Direction: row', icon: ArrowRight },
-  { value: 'column', label: 'Direction: column', icon: ArrowDown },
-  { value: 'row-reverse', label: 'Direction: row, reversed', icon: ArrowLeft },
-  { value: 'column-reverse', label: 'Direction: column, reversed', icon: ArrowUp },
-];
-const WRAP: Segment<string>[] = [
-  { value: 'nowrap', label: 'Do not wrap', icon: NoWrap },
-  { value: 'wrap', label: 'Wrap', icon: WrapText },
-  { value: 'wrap-reverse', label: 'Wrap, reversed', icon: WrapText, iconClassName: '-scale-y-100' },
-];
-const JUSTIFY: Segment<string>[] = [
-  { value: 'flex-start', label: 'Justify to the start', icon: JustifyStart },
-  { value: 'center', label: 'Justify to the centre', icon: JustifyCenter },
-  { value: 'flex-end', label: 'Justify to the end', icon: JustifyEnd },
-  { value: 'space-between', label: 'Justify with space between', icon: JustifyBetween },
-  { value: 'space-around', label: 'Justify with space around', icon: JustifyAround },
-  { value: 'space-evenly', label: 'Justify with space evenly', icon: JustifyEvenly },
-];
-const ALIGN: Segment<string>[] = [
-  { value: 'flex-start', label: 'Align to the start', icon: AlignItemsStart },
-  { value: 'center', label: 'Align to the centre', icon: AlignItemsCenter },
-  { value: 'flex-end', label: 'Align to the end', icon: AlignItemsEnd },
-  { value: 'baseline', label: 'Align to the baseline', icon: AlignItemsBaseline },
-  { value: 'stretch', label: 'Align stretched', icon: AlignItemsStretch },
-];
-const ALIGN_SELF: Segment<string>[] = [
-  { value: 'auto', label: 'Align self: as its container', text: 'Auto' },
-  ...ALIGN.map((segment) => ({ ...segment, label: segment.label.replace('Align', 'Align self') })),
-];
-const TEXT_ALIGN: Segment<string>[] = [
-  { value: 'left', label: 'Align text left', icon: AlignLeft },
-  { value: 'center', label: 'Align text centred', icon: AlignCenter },
-  { value: 'right', label: 'Align text right', icon: AlignRight },
-  { value: 'justify', label: 'Justify text', icon: AlignJustify },
-];
-const BORDER_STYLE: Segment<string>[] = [
-  { value: 'solid', label: 'Border: solid', icon: BorderSolid },
-  { value: 'dashed', label: 'Border: dashed', icon: BorderDashed },
-  { value: 'dotted', label: 'Border: dotted', icon: BorderDotted },
-  { value: 'double', label: 'Border: double', icon: BorderDouble },
-  { value: 'none', label: 'Border: none' },
-];
-
-const DISPLAY: ValueOption[] = [
-  { value: 'block', label: 'Block' },
-  { value: 'inline-block', label: 'Inline block' },
-  { value: 'inline', label: 'Inline' },
-  { value: 'flex', label: 'Flex' },
-  { value: 'inline-flex', label: 'Inline flex' },
-  { value: 'grid', label: 'Grid' },
-  { value: 'none', label: 'Hidden' },
-];
-const OVERFLOW: ValueOption[] = [
-  { value: 'visible', label: 'Visible' },
-  { value: 'hidden', label: 'Hidden' },
-  { value: 'clip', label: 'Clip' },
-  { value: 'scroll', label: 'Scroll' },
-  { value: 'auto', label: 'Auto' },
-];
-const TEXT_TRANSFORM: ValueOption[] = [
-  { value: 'none', label: 'None' },
-  { value: 'uppercase', label: 'UPPERCASE' },
-  { value: 'lowercase', label: 'lowercase' },
-  { value: 'capitalize', label: 'Capitalize' },
-];
-const WEIGHT_NAMES: Record<string, string> = {
-  '100': 'Thin',
-  '200': 'Extra light',
-  '300': 'Light',
-  '400': 'Regular',
-  '500': 'Medium',
-  '600': 'Semi bold',
-  '700': 'Bold',
-  '800': 'Extra bold',
-  '900': 'Black',
-};
-const WEIGHTS: ValueOption[] = Object.entries(WEIGHT_NAMES).map(([value, name]) => ({
-  value,
-  label: `${value} ${name}`,
-  hint: value,
-}));
 
 export interface ElementPanelProps {
   ref: Ref<HTMLDivElement>;
@@ -463,134 +365,6 @@ function Row({ children }: { children: ReactNode }) {
 
 function Caption({ children }: { children: ReactNode }) {
   return <p className="text-caption text-quiet">{children}</p>;
-}
-
-function sizeMode(value: string): 'Fixed' | 'Hug' | 'Fill' {
-  if (value === 'fit-content') return 'Hug';
-  if (value === '100%') return 'Fill';
-  return 'Fixed';
-}
-
-/** A width or height's sizing mode: fixed at a length, hugging contents, or filling. */
-function SizeMode({
-  label,
-  extent,
-  value,
-  onPick,
-}: {
-  label: string;
-  /** The element's drawn size on this axis, which Fixed fixes to. */
-  extent: number;
-  value: string;
-  onPick: (value: string) => void;
-}) {
-  const mode = sizeMode(value);
-  return (
-    <ModeMenu
-      label={`${label} sizing`}
-      mode={mode}
-      choices={[
-        {
-          name: 'Fixed',
-          pick: () => {
-            onPick(`${String(Math.round(extent))}px`);
-          },
-        },
-        {
-          name: 'Hug contents',
-          pick: () => {
-            onPick('fit-content');
-          },
-        },
-        {
-          name: 'Fill container',
-          pick: () => {
-            onPick('100%');
-          },
-        },
-      ]}
-    />
-  );
-}
-
-/** A maximum's mode: fixed at a length, or none. */
-function NoneMode({
-  label,
-  value,
-  onPick,
-}: {
-  label: string;
-  value: string;
-  onPick: (value: string) => void;
-}) {
-  return (
-    <ModeMenu
-      label={label}
-      mode={value === 'none' ? 'None' : 'Fixed'}
-      choices={[
-        // Fixed needs a length, so the number field is the way back to it.
-        { name: 'Fixed' },
-        {
-          name: 'None',
-          pick: () => {
-            onPick('none');
-          },
-        },
-      ]}
-    />
-  );
-}
-
-function ModeMenu({
-  label,
-  mode,
-  choices,
-}: {
-  label: string;
-  mode: string;
-  choices: { name: string; pick?: () => void }[];
-}) {
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        ref={anchor}
-        type="button"
-        aria-label={`${label}, now ${mode}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => {
-          setOpen(true);
-        }}
-        className="flex h-6 shrink-0 cursor-pointer items-center rounded-sm px-0.5 text-label text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        {mode !== 'Fixed' && mode}
-        <ChevronDown aria-hidden className="size-icon-sm" />
-      </button>
-      <Menu
-        open={open}
-        onClose={() => {
-          setOpen(false);
-        }}
-        anchorRef={anchor}
-        label={label}
-        width={140}
-      >
-        {choices.map((choice) => (
-          <Menu.Item
-            key={choice.name}
-            onSelect={() => {
-              setOpen(false);
-              if (choice.name !== mode) choice.pick?.();
-            }}
-          >
-            {choice.name}
-          </Menu.Item>
-        ))}
-      </Menu>
-    </>
-  );
 }
 
 /** Shared and computed sites are the agent's: one edit here could change what is not selected. */
