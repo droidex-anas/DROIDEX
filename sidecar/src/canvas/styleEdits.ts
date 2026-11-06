@@ -200,24 +200,37 @@ export function canonicalCss(value: string): string {
 }
 
 const NAME_ORDER = new Intl.Collator('en', { numeric: true });
+// Units whose numbers a scale can compare, in the order their groups list.
+const SCALE_UNITS = new Map([
+  ['', 0],
+  ['px', 0],
+  ['em', 1],
+  ['%', 2],
+]);
+const UNSCALED = SCALE_UNITS.size;
 
 /**
- * A scale reads smallest first: tokens whose values are one number, with or
- * without a unit, list by that number, a rem in pixels, then the rest. Equal
- * numbers and the rest go by name, its numbers read as numbers, so space-2
- * comes before space-10. A kit's document order is no guide, as an import
- * appends the steps it adds.
+ * A scale reads smallest first: pixels and plain numbers, then em, then
+ * percentages, each by its number, then the rest. A rem counts as pixels at the
+ * 16px root; the kit's own html font-size is not read. Equal steps and the rest
+ * go by name, its numbers read as numbers, so space-2 comes before space-10. A
+ * kit's document order is no guide, as an import appends the steps it adds.
  */
 function scaleOrder(values: Readonly<Record<string, string>>) {
   return (a: string, b: string): number => {
-    const left = NUMBER_WITH_UNIT.exec(canonicalCss(values[a] ?? ''));
-    const right = NUMBER_WITH_UNIT.exec(canonicalCss(values[b] ?? ''));
-    if (left && right && Number(left[1]) !== Number(right[1]))
-      return Number(left[1]) - Number(right[1]);
-    if (!left && right) return 1;
-    if (left && !right) return -1;
+    const left = scaleStep(values[a] ?? '');
+    const right = scaleStep(values[b] ?? '');
+    if (left.group !== right.group) return left.group - right.group;
+    if (left.amount !== right.amount) return left.amount - right.amount;
     return NAME_ORDER.compare(a, b);
   };
+}
+
+function scaleStep(value: string): { group: number; amount: number } {
+  const parts = NUMBER_WITH_UNIT.exec(canonicalCss(value));
+  const group = parts ? SCALE_UNITS.get(parts[2]) : undefined;
+  if (!parts || group === undefined) return { group: UNSCALED, amount: 0 };
+  return { group, amount: Number(parts[1]) };
 }
 
 function isFamilyToken(rule: StyleRule, name: string, tokens: Readonly<Record<string, string>>) {

@@ -74,8 +74,11 @@ test('editTokens lists, per property, the kit tokens its rule accepts', () => {
       );
 });
 
-test('editTokens lists each scale smallest first, and names with numbers read as numbers', () => {
+test('editTokens lists each scale smallest first, pixels before em and percentages, and names with numbers read as numbers', () => {
   const kit = {
+    '--ds-space-fluid': 'clamp(1rem, 2vw, 2rem)',
+    '--ds-space-half': '50%',
+    '--ds-space-em': '0.5em',
     '--ds-space-2': '0.5rem',
     '--ds-space-10': '2.5rem',
     '--ds-space-0-5': '2px',
@@ -88,7 +91,14 @@ test('editTokens lists each scale smallest first, and names with numbers read as
   };
   const names = (property: string) =>
     (editTokens(kit, kit)[property] ?? []).map(({ name }) => name);
-  assert.deepEqual(names('padding'), ['--ds-space-0-5', '--ds-space-2', '--ds-space-10']);
+  assert.deepEqual(names('padding'), [
+    '--ds-space-0-5',
+    '--ds-space-2',
+    '--ds-space-10',
+    '--ds-space-em',
+    '--ds-space-half',
+    '--ds-space-fluid',
+  ]);
   assert.deepEqual(names('borderRadius'), [
     '--ds-radius-xs',
     '--ds-radius-card',
