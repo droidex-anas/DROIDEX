@@ -74,6 +74,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   leading?: ReactNode;
   /** Fixed content after the value, such as the unit of a number. */
   trailing?: ReactNode;
+  /** Controls at the field's end, such as a picker button; unlike the affixes, assistive tech reaches them. */
+  actions?: ReactNode;
 }
 
 function inputFill(invalid: boolean, variant: InputVariant) {
@@ -89,6 +91,7 @@ export function Input({
   invalid,
   leading,
   trailing,
+  actions,
   className,
   ...rest
 }: InputProps) {
@@ -96,7 +99,7 @@ export function Input({
   const isInvalid = field?.invalid ?? invalid ?? false;
   const fill = inputFill(isInvalid, variant);
   const hovers = fill === 'bg-field';
-  const hasAffix = leading !== undefined || trailing !== undefined;
+  const hasAffix = leading !== undefined || trailing !== undefined || actions !== undefined;
   const width = variant === 'inline' ? 'field-sizing-content' : 'w-full';
   const input = (
     <input
@@ -140,6 +143,9 @@ export function Input({
       <Affix>{leading}</Affix>
       {input}
       <Affix className={variant === 'inline' ? 'pl-0.5' : 'pl-1'}>{trailing}</Affix>
+      {actions !== undefined && (
+        <span className="flex shrink-0 items-center gap-0.5 pl-1">{actions}</span>
+      )}
     </label>
   );
 }

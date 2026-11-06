@@ -77,6 +77,7 @@ export function ElementPanel({
   const previewed = (property: string): boolean => Object.hasOwn(draft.values, property);
   /** A pick from a segment, option or token: previews the value and commits at once. */
   const pick = (property: string) => (next: string) => {
+    if (readOnly) return;
     onPreview(property, next);
     onCommit();
   };
@@ -169,8 +170,11 @@ export function ElementPanel({
       className="canvas-element-panel my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
       onKeyDown={(event) => {
         const step = historyStep(event);
-        // Typing not yet saved comes back through the field's own undo first.
-        if (!step || (isBoardEditor(event.target) && hasPreviews(draft))) return;
+        if (!step) return;
+        // Typing not yet saved comes back through the field's own undo first,
+        // and a field in a popover, such as a picker's search, keeps its own.
+        const inPopover = !(event.target instanceof Node && event.currentTarget.contains(event.target));
+        if (isBoardEditor(event.target) && (inPopover || hasPreviews(draft))) return;
         event.preventDefault();
         // A step now would move the head out from under the commit still saving.
         if (draft.pending === null) onHistory(step);
@@ -242,6 +246,7 @@ export function ElementPanel({
                   label="Width"
                   extent={shown.rect.width}
                   value={value('width')}
+                  disabled={readOnly}
                   onPick={pick('width')}
                 />
               ),
@@ -253,6 +258,7 @@ export function ElementPanel({
                   label="Height"
                   extent={shown.rect.height}
                   value={value('height')}
+                  disabled={readOnly}
                   onPick={pick('height')}
                 />
               ),
@@ -266,6 +272,7 @@ export function ElementPanel({
                 <NoneMode
                   label="Maximum width"
                   value={value('maxWidth')}
+                  disabled={readOnly}
                   onPick={pick('maxWidth')}
                 />
               ),
@@ -279,6 +286,7 @@ export function ElementPanel({
                 <NoneMode
                   label="Maximum height"
                   value={value('maxHeight')}
+                  disabled={readOnly}
                   onPick={pick('maxHeight')}
                 />
               ),
@@ -315,7 +323,7 @@ export function ElementPanel({
               onPick={pick('fontFamily')}
             />
           ) : (
-            <Caption>This kit defines no fonts.</Caption>
+            tokens !== null && <Caption>This kit defines no fonts.</Caption>
           )}
           <Row>
             {number('fontSize', 'Font size', 'Size', { min: 1 })}
@@ -367,7 +375,7 @@ export function ElementPanel({
               onPick={pick('boxShadow')}
             />
           ) : (
-            <Caption>This kit defines no shadows.</Caption>
+            tokens !== null && <Caption>This kit defines no shadows.</Caption>
           )}
           {number('opacity', 'Opacity', 'Opacity', {
             unit: null,

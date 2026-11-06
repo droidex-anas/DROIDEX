@@ -70,6 +70,8 @@ export function NumberField({
   onPick,
 }: NumberFieldProps) {
   const input = useRef<HTMLInputElement>(null);
+  /** The drag in progress, held by pointer capture so it ends with the pointer or the field. */
+  const scrub = useRef<{ startX: number; start: { amount: number; unit: string } } | null>(null);
   const clamp = (amount: number): number => {
     if (min !== undefined) amount = Math.max(min, amount);
     if (max !== undefined) amount = Math.min(max, amount);
@@ -90,33 +92,32 @@ export function NumberField({
       onCommit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      if (previewed) onRevert();
+      // While saving, the preview is what is being written, so it stays.
+      if (previewed && !disabled) onRevert();
       else onLeave();
     } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
+      if (disabled) return;
       const direction = event.key === 'ArrowUp' ? 1 : -1;
       stepBy(direction * (event.shiftKey ? shiftStep : step));
     }
   };
-  /** Scrubbing steps the value it started from, four pixels per step. */
-  const onScrub = (event: PointerEvent<HTMLSpanElement>) => {
+  const startScrub = (event: PointerEvent<HTMLSpanElement>) => {
     if (disabled || event.button !== 0) return;
     const start = parseNumber(value);
     if (!start) return;
     event.preventDefault();
     input.current?.focus();
-    const startX = event.clientX;
-    const onMove = (move: globalThis.PointerEvent) => {
-      const steps = Math.round((move.clientX - startX) / 4);
-      const next = clamp(start.amount + steps * step);
-      onPreview(`${amountText(next)}${start.unit || (unit ?? '')}`);
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrub.current = { startX: event.clientX, start };
+  };
+  /** Scrubbing steps the value it started from, four pixels per step. */
+  const moveScrub = (event: PointerEvent<HTMLSpanElement>) => {
+    const drag = scrub.current;
+    if (!drag || disabled) return;
+    const steps = Math.round((event.clientX - drag.startX) / 4);
+    const next = clamp(drag.start.amount + steps * step);
+    onPreview(`${amountText(next)}${drag.start.unit || (unit ?? '')}`);
   };
   return (
     <div className="flex min-w-0 items-center gap-1">
@@ -133,7 +134,11 @@ export function NumberField({
         leading={
           <span
             aria-hidden
-            onPointerDown={onScrub}
+            onPointerDown={startScrub}
+            onPointerMove={moveScrub}
+            onLostPointerCapture={() => {
+              scrub.current = null;
+            }}
             className={cn(
               'flex min-w-7 shrink-0 cursor-ew-resize touch-none select-none items-center pr-1 whitespace-nowrap text-label',
               previewed ? 'text-primary' : 'text-muted',
@@ -142,9 +147,9 @@ export function NumberField({
             {short}
           </span>
         }
-        trailing={
-          ((tokens?.length ?? 0) > 0 || trailing !== undefined) && (
-            <span className="flex items-center gap-0.5">
+        actions={
+          (tokens?.length ?? 0) > 0 || trailing !== undefined ? (
+            <>
               {trailing}
               {tokens?.length ? (
                 <ValuePickerButton
@@ -156,8 +161,8 @@ export function NumberField({
                   onPick={onPick}
                 />
               ) : null}
-            </span>
-          )
+            </>
+          ) : undefined
         }
         onChange={(event) => {
           onPreview(event.target.value);

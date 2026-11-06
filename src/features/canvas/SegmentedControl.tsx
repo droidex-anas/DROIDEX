@@ -9,9 +9,9 @@ import { Tooltip } from '../../components/ui/Tooltip';
 
 export interface Segment<T extends string> {
   value: T;
-  /** The accessible name; also the tooltip when the segment shows an icon. */
+  /** The icon's accessible name and tooltip, a text face's tooltip, or else the face itself. */
   label: string;
-  /** The face of an icon-less segment; defaults to the label. */
+  /** The face of an icon-less segment, which names it; defaults to the label. */
   text?: string;
   icon?: IconComponent;
   /** Extra classes for the icon, such as a flip for a reversed direction. */
@@ -42,6 +42,7 @@ export function SegmentedControl<T extends string>({
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (step === undefined) return;
     event.preventDefault();
+    if (disabled) return;
     const next = (Math.max(current, 0) + step + options.length) % options.length;
     const option = options.at(next);
     if (option === undefined) return;
@@ -68,14 +69,14 @@ export function SegmentedControl<T extends string>({
               type="button"
               role="radio"
               aria-checked={selected}
-              aria-label={option.label}
+              aria-label={option.icon ? option.label : undefined}
+              aria-disabled={disabled || undefined}
               tabIndex={selected || (current === -1 && index === 0) ? 0 : -1}
-              disabled={disabled}
               onClick={() => {
-                onPick(option.value);
+                if (!disabled) onPick(option.value);
               }}
               className={cn(
-                'flex h-full w-full min-w-0 flex-1 cursor-pointer items-center justify-center rounded-sm px-1 transition-colors duration-quick ease-smooth-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default',
+                'flex h-full w-full min-w-0 flex-1 cursor-pointer items-center justify-center rounded-sm px-1 transition-colors duration-quick ease-smooth-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default',
                 selected ? 'bg-active text-primary' : 'text-muted hover:text-primary',
               )}
             >
@@ -86,7 +87,7 @@ export function SegmentedControl<T extends string>({
               )}
             </button>
           );
-          return option.icon ? (
+          return option.icon || option.text !== undefined ? (
             <Tooltip key={option.value} label={option.label} className="min-w-0 flex-1">
               {button}
             </Tooltip>

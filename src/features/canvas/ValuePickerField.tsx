@@ -54,12 +54,12 @@ export function ValuePickerField({ label, options, value, disabled, onPick }: Va
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={disabled}
+        aria-disabled={disabled || undefined}
         title={current ? `${current.label} (${current.hint ?? current.value})` : value}
         onClick={() => {
-          setOpen(true);
+          if (!disabled) setOpen((was) => !was);
         }}
-        className="flex h-control-md w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md bg-field px-2.5 text-body text-primary transition-colors duration-quick ease-smooth-out hover:bg-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default disabled:text-muted"
+        className="flex h-control-md w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md bg-field px-2.5 text-body text-primary transition-colors duration-quick ease-smooth-out hover:bg-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default aria-disabled:text-muted"
       >
         {current?.swatch !== undefined && <Swatch colour={current.swatch} />}
         <span className="min-w-0 flex-1 truncate text-left">
@@ -99,11 +99,11 @@ export function ValuePickerButton({
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={props.disabled}
+        aria-disabled={props.disabled || undefined}
         onClick={() => {
-          setOpen(true);
+          if (!props.disabled) setOpen((was) => !was);
         }}
-        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default"
+        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default"
       >
         {icon}
       </button>
@@ -190,7 +190,7 @@ export function OptionList({
         role="combobox"
         aria-expanded
         aria-controls={listId}
-        aria-activedescendant={`${listId}-${String(clamped)}`}
+        aria-activedescendant={shown.length === 0 ? undefined : `${listId}-${String(clamped)}`}
         aria-label={`Search ${label}`}
         placeholder="Search"
         value={query}
@@ -218,6 +218,7 @@ export function OptionList({
               id={`${listId}-${String(index)}`}
               type="button"
               role="option"
+              tabIndex={-1}
               aria-selected={isCurrent}
               onMouseEnter={() => {
                 setActive(index);
@@ -254,9 +255,8 @@ export function Swatch({ colour }: { colour: string }) {
   return (
     <span
       aria-hidden
-      className="size-3 shrink-0 rounded-xs"
-      // The same neutral hairline as ColorPicker's swatch.
-      style={{ backgroundColor: colour, boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.3)' }}
+      className="size-3 shrink-0 rounded-xs ring-1 ring-inset ring-divider-strong"
+      style={{ backgroundColor: colour }}
     />
   );
 }
