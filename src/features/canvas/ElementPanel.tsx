@@ -232,7 +232,7 @@ export function ElementPanel({
         )}
         <Section title="Layout">
           <SegmentedControl
-            label="Layout"
+            label="Display"
             options={LAYOUT}
             value={layout}
             disabled={readOnly}

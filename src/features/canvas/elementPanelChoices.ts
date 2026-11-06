@@ -33,9 +33,9 @@ import type { Segment } from './SegmentedControl';
 import type { ValueOption } from './ValuePickerField';
 
 export const LAYOUT: Segment<string>[] = [
-  { value: 'block', label: 'Layout: block', text: 'Block' },
-  { value: 'flex', label: 'Layout: flex', text: 'Flex' },
-  { value: 'grid', label: 'Layout: grid', text: 'Grid' },
+  { value: 'block', label: 'Display: block', text: 'Block' },
+  { value: 'flex', label: 'Display: flex', text: 'Flex' },
+  { value: 'grid', label: 'Display: grid', text: 'Grid' },
 ];
 export const DIRECTION: Segment<string>[] = [
   { value: 'row', label: 'Direction: row', icon: ArrowRight },
