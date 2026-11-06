@@ -91,6 +91,8 @@ test('a token outside the property family and a value it cannot take are invalid
     { property: 'padding', value: 'calc(1px + 2px)' },
     { property: 'padding', value: 'fit-content' },
     { property: 'maxWidth', value: 'auto' },
+    { property: 'minWidth', value: 'auto' },
+    { property: 'borderWidth', value: '50%' },
     { property: 'padding', value: '-4px' },
     { property: 'color', value: 'red;background:url(x)' },
     { property: 'opacity', value: '1.5' },

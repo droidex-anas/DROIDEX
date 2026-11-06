@@ -13,8 +13,9 @@ export const SPACING: Scale = {
   px: '1px',
   ...Object.fromEntries(SPACING_STEPS.map((step) => [String(step), `${String(step / 4)}rem`])),
 };
-export const SIZE: Scale = { ...SPACING, full: '100%', auto: 'auto', fit: 'fit-content' };
-export const MAX_SIZE: Scale = { ...SIZE, none: 'none' };
+export const MIN_SIZE: Scale = { ...SPACING, full: '100%' };
+export const SIZE: Scale = { ...MIN_SIZE, auto: 'auto', fit: 'fit-content' };
+export const MAX_SIZE: Scale = { ...MIN_SIZE, none: 'none' };
 export const RADIUS: Scale = {
   none: '0px',
   sm: '0.125rem',

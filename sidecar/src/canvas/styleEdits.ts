@@ -24,6 +24,7 @@ type ValueForm =
   | 'line-height'
   | 'unitless'
   | 'fraction'
+  | 'border-width'
   | 'size'
   | 'max-size'
   | readonly string[];
@@ -36,6 +37,7 @@ interface StyleRule {
 const SPACING = { tokens: '--ds-space-', values: 'length' } as const;
 const MARGIN = { tokens: '--ds-space-', values: 'signed-length' } as const;
 const SIZE = { tokens: '--ds-size-', values: 'size' } as const;
+const MIN_SIZE = { tokens: '--ds-size-', values: 'length' } as const;
 const MAX_SIZE = { tokens: '--ds-size-', values: 'max-size' } as const;
 const COLOUR = { tokens: 'colour', values: 'colour' } as const;
 
@@ -55,8 +57,8 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   columnGap: SPACING,
   width: SIZE,
   height: SIZE,
-  minWidth: SIZE,
-  minHeight: SIZE,
+  minWidth: MIN_SIZE,
+  minHeight: MIN_SIZE,
   maxWidth: MAX_SIZE,
   maxHeight: MAX_SIZE,
   borderRadius: { tokens: '--ds-radius-', values: 'length' },
@@ -87,7 +89,7 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
     tokens: null,
     values: ['auto', 'flex-start', 'center', 'flex-end', 'stretch', 'baseline'],
   },
-  borderWidth: { tokens: null, values: 'length' },
+  borderWidth: { tokens: null, values: 'border-width' },
   borderStyle: { tokens: null, values: ['solid', 'dashed', 'dotted', 'double', 'none'] },
   textAlign: { tokens: null, values: ['left', 'center', 'right', 'justify', 'start', 'end'] },
   textTransform: { tokens: null, values: ['none', 'uppercase', 'lowercase', 'capitalize'] },
@@ -218,6 +220,8 @@ function acceptsValue(form: ValueForm, value: string): boolean {
       return UNITLESS.test(value) || LENGTH.test(value);
     case 'unitless':
       return UNITLESS.test(value);
+    case 'border-width':
+      return LENGTH.test(value) && !value.endsWith('%');
     case 'size':
       return LENGTH.test(value) || value === 'auto' || value === 'fit-content';
     case 'max-size':

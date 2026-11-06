@@ -44,6 +44,9 @@ const RAW_VALUES = [
   '600',
   '-0.025em',
   '0.05em',
+  'auto',
+  'fit-content',
+  'none',
 ];
 
 after(() => stopCanvasRuntime());
@@ -102,20 +105,6 @@ test('every class a style edit writes sets its property to the value the edit me
     const set = property === 'boxShadow' ? declarations.get('--tw-shadow') : declarations.get(css);
     assert.equal(canonicalCss(set ?? ''), canonicalCss(value), `${name} for ${property}: ${value}`);
     assert.deepEqual(classStyle(name), { sets: longhands(property), scope: 'always' }, name);
-  }
-});
-
-test('the size keywords write and read back as their stock classes', async () => {
-  const written = [
-    { property: 'width', name: 'w-fit', value: 'fit-content' },
-    { property: 'height', name: 'h-auto', value: 'auto' },
-    { property: 'maxWidth', name: 'max-w-none', value: 'none' },
-  ];
-  const rules = await compiled(written.map(({ name }) => name));
-  for (const { property, name, value } of written) {
-    const css = property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-    assert.equal(canonicalCss(rules.get(name)?.get(css) ?? ''), value, name);
-    assert.deepEqual(classStyle(name), { sets: [property], scope: 'always' }, name);
   }
 });
 
