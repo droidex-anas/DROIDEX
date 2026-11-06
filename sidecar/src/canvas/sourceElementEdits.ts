@@ -3,12 +3,12 @@
 
 import ts from 'typescript';
 import type { ElementEdit, ElementRef, SourceElement, SourceFiles } from './protocol.js';
+import { SourceElementError } from './sourceElementError.js';
 import {
   ambiguous,
   attribute,
   attributeValue,
   isLiteral,
-  SourceElementError,
   sourceSites,
   type ElementNode,
 } from './sourceElements.js';

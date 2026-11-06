@@ -4,7 +4,7 @@
 // src/features/canvas/styleProperties.ts; styleEdits.test.ts fails when they drift.
 
 import type { ElementEdit } from './protocol.js';
-import { SourceElementError } from './sourceElements.js';
+import { SourceElementError } from './sourceElementError.js';
 
 export type StyleEdit = Extract<ElementEdit['change'], { kind: 'style' }>['styles'][number];
 

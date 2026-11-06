@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { STYLE_PROPERTIES as RENDERER_STYLE_PROPERTIES } from '../../../src/features/canvas/styleProperties.js';
 import { STARTER_TOKENS } from './presets/starter.js';
-import { SourceElementError } from './sourceElements.js';
+import { SourceElementError } from './sourceElementError.js';
 import { editTokens, resolveStyleChange, STYLE_PROPERTIES, styleValue } from './styleEdits.js';
 
 const KIT = STARTER_TOKENS.light;

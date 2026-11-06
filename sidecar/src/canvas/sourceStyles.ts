@@ -5,13 +5,13 @@
 
 import ts from 'typescript';
 import type { SourceReplacement } from './sourceElementEdits.js';
+import { SourceElementError } from './sourceElementError.js';
 import {
   ambiguous,
   attribute,
   attributeValue,
   classLiterals,
   propertyName,
-  SourceElementError,
 } from './sourceElements.js';
 import { STYLE_PROPERTIES, styleValue, type StyleResolution } from './styleEdits.js';
 import { classStyle, longhands, styleClass } from './tailwindStyles.js';
