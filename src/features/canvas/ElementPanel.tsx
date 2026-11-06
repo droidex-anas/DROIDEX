@@ -31,6 +31,7 @@ import {
   WEIGHTS,
   WRAP,
 } from './elementPanelChoices';
+import { Labelled, Pair, Section } from './ElementPanelRows';
 import { ElementTextField } from './ElementTextField';
 import { NumberField } from './NumberField';
 import { firstFamily, sameFontStack } from './panelValues';
@@ -103,6 +104,9 @@ export function ElementPanel({
         ...(colour ? { swatch: hint } : {}),
       };
     });
+  /** Why a token-only picker is off once the kit's tokens have loaded without any. */
+  const noTokens = (options: ValueOption[], kind: string) =>
+    tokens !== null && options.length === 0 && `This kit defines no ${kind}.`;
   const segmentValue = (property: string, options: readonly Segment<string>[]): string =>
     options.some((option) => option.value === value(property)) ? value(property) : '';
 
@@ -345,7 +349,7 @@ export function ElementPanel({
           </Pair>
         </Section>
         <Section title="Typography">
-          <Labelled label="Font">
+          <Labelled label="Font" note={noTokens(fontTokens, 'fonts')}>
             <ValuePickerField
               label="Font"
               options={fontTokens}
@@ -398,7 +402,7 @@ export function ElementPanel({
           </Pair>
         </Section>
         <Section title="Effects">
-          <Labelled label="Shadow">
+          <Labelled label="Shadow" note={noTokens(shadowTokens, 'shadows')}>
             <ValuePickerField
               label="Shadow"
               options={shadowTokens}
@@ -446,32 +450,6 @@ export function EmptyElementPanel() {
 /** Flex and grid place their items, so they and their items take alignment. */
 function placesItems(layout: Layout | null): boolean {
   return layout === 'flex' || layout === 'grid';
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section aria-label={title} className="py-3 first:pt-1">
-      <h3 className="pb-2 text-label text-muted">{title}</h3>
-      <div className="flex flex-col gap-1.5">{children}</div>
-    </section>
-  );
-}
-
-/** Fields two to a row. */
-function Pair({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 items-start gap-1.5">{children}</div>;
-}
-
-/** A full-width control after its label, on the segmented controls' label column. */
-function Labelled({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span aria-hidden className="w-16 shrink-0 truncate text-label text-muted">
-        {label}
-      </span>
-      <div className="min-w-0 flex-1">{children}</div>
-    </div>
-  );
 }
 
 /** Shared and computed sites are the agent's: one edit here could change what is not selected. */
