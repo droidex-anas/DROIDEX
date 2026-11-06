@@ -87,6 +87,21 @@ async function readKit(
   return { ...reply.system, modes: kitModes(reply.system.sections) };
 }
 
+test('a kit answers the tokens each editable style property accepts', async (t) => {
+  const canvas = await harness(t);
+  await canvas.handle({
+    type: 'canvas.readEditTokens',
+    requestId: 'edit-tokens',
+    ref: { id: 'droidex', version: 1 },
+  });
+  const reply = okReply(canvas, 'edit-tokens');
+  assert.ok(reply.kind === 'editTokens');
+  // Keyword-only properties have no tokens, and each listed token is in its family.
+  assert.ok(!('flexDirection' in reply.tokens));
+  assert.ok((reply.tokens['padding'] ?? []).every(({ name }) => name.startsWith('--ds-space-')));
+  assert.ok((reply.tokens['color']?.length ?? 0) > 0);
+});
+
 test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared primitives', async (t) => {
   const canvas = await harness(t);
   const { ref, diagnostics } = await importKit(canvas, 'paper-and-ink', {

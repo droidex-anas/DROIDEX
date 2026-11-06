@@ -1,7 +1,8 @@
 /* The board's chrome: frames drawn as sheets with their labels, selection and
    states. It is imported by the lazy Canvas surface, so it loads with the board
-   rather than on every app start, in Chat as in Design; the tools that float
-   on the board have their own sheet, canvasBoardTools.css.
+   rather than on every app start, in Chat as in Design. The tools that float
+   on the board and what it draws around a selection have their own sheets,
+   canvasBoardTools.css and canvasBoardSelection.css.
 
    The world layer sets --board-scale. Chrome drawn inside it divides by that,
    so a frame's edge, label, handles and badges keep their screen size at any
@@ -102,95 +103,6 @@
   color: var(--selection-label);
 }
 
-/* The selected frame's toolbar, above its label row, starting where the label
-   does, or ending where the frame does when the board would cut it off. The
-   wrapper is what scales, so the gap under the bar is in screen pixels. */
-.canvas-frame-tools {
-  position: absolute;
-  bottom: calc(100% + 32px / var(--board-scale));
-  left: 0;
-  padding-bottom: 6px;
-  transform-origin: 0 100%;
-}
-
-.canvas-frame-tools[data-align='end'] {
-  right: 0;
-  left: auto;
-  transform-origin: 100% 100%;
-}
-
-.canvas-frame-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--raised);
-  box-shadow: var(--shadow-sm);
-  transform-origin: 0 100%;
-}
-
-.canvas-frame-tools[data-align='end'] .canvas-frame-toolbar {
-  transform-origin: 100% 100%;
-}
-
-.canvas-frame-tool {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--text-secondary);
-  transition:
-    background 120ms,
-    color 120ms;
-}
-
-.canvas-frame-tool:hover,
-.canvas-frame-tool:focus-visible,
-.canvas-frame-tool[aria-expanded='true'] {
-  outline: none;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text);
-}
-
-.canvas-frame-tool[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--selection) 14%, transparent);
-  color: var(--selection);
-}
-
-.canvas-frame-tool-text {
-  width: auto;
-  padding: 0 10px;
-}
-
-/* The version on show, as a tinted chip that opens the list of versions. */
-.canvas-frame-version {
-  width: auto;
-  min-width: 32px;
-  padding: 0 8px;
-  background: var(--success-soft);
-  color: var(--success);
-  font-variant-numeric: tabular-nums;
-}
-
-.canvas-frame-version:hover,
-.canvas-frame-version:focus-visible,
-.canvas-frame-version[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success);
-}
-
-.canvas-frame-divider {
-  flex-shrink: 0;
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
-}
 /* The name while it is renamed: a raised field where the plain name stood. */
 .canvas-frame-name-field {
   width: 100%;
@@ -200,65 +112,6 @@
   box-shadow:
     0 0 0 1.5px var(--selection),
     var(--shadow-sm);
-}
-
-/* The selected frame's size, under its bottom edge. The wrapper scales about
-   the frame's centre line, and the badge centres itself on it. */
-.canvas-frame-size {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform-origin: 0 0;
-  pointer-events: none;
-}
-
-.canvas-frame-size > span {
-  display: block;
-  margin-top: 8px;
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--selection);
-  color: var(--on-selection);
-  font: 500 11px / 16px var(--canvas-chrome-font);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transform: translateX(-50%);
-}
-
-/* Resize: a square at the corner, and the two edges as invisible strips. */
-.canvas-frame-handle {
-  position: absolute;
-  touch-action: none;
-}
-
-.canvas-frame-handle[data-handle='southeast'] {
-  left: 100%;
-  top: 100%;
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--selection);
-  border-radius: 2px;
-  background: var(--raised);
-  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
-  cursor: nwse-resize;
-}
-
-.canvas-frame-handle[data-handle='east'] {
-  top: 0;
-  left: 100%;
-  width: calc(10px / var(--board-scale));
-  height: 100%;
-  margin-left: calc(-5px / var(--board-scale));
-  cursor: ew-resize;
-}
-
-.canvas-frame-handle[data-handle='south'] {
-  left: 0;
-  top: 100%;
-  width: 100%;
-  height: calc(10px / var(--board-scale));
-  margin-top: calc(-5px / var(--board-scale));
-  cursor: ns-resize;
 }
 
 /* What a sheet says when it has no live preview: centred, at screen size. It
@@ -463,82 +316,6 @@
 
 .canvas-annotation-glyph {
   fill: var(--raised);
-}
-
-/* The rubber band, in screen space above the world layer. */
-.canvas-band {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 2px;
-  border: 1px solid var(--selection);
-  background: color-mix(in srgb, var(--selection) 8%, transparent);
-}
-
-/* What a snapped drag lined up on and the spaces it measured, in screen space
-   above the frames. They come and go with the snap, with no motion, so they
-   never trail the hand. */
-.canvas-snap {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.canvas-snap-line,
-.canvas-snap-gap,
-.canvas-snap-gap::before,
-.canvas-snap-gap::after {
-  position: absolute;
-  background: var(--selection);
-}
-
-.canvas-snap-gap::before,
-.canvas-snap-gap::after {
-  content: '';
-}
-
-/* The measured line's end ticks, across it at each frame's edge. */
-.canvas-snap-gap[data-axis='x']::before,
-.canvas-snap-gap[data-axis='x']::after {
-  top: -3px;
-  width: 1px;
-  height: 7px;
-}
-
-.canvas-snap-gap[data-axis='x']::after {
-  right: 0;
-}
-
-.canvas-snap-gap[data-axis='y']::before,
-.canvas-snap-gap[data-axis='y']::after {
-  left: -3px;
-  width: 7px;
-  height: 1px;
-}
-
-.canvas-snap-gap[data-axis='y']::after {
-  bottom: 0;
-}
-
-/* The distance, centred on its line, in the size pill's shape. */
-.canvas-snap-pill {
-  position: absolute;
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--selection);
-  color: var(--on-selection);
-  font: 500 11px / 16px var(--ui-font-family, system-ui, sans-serif);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transform: translate(-50%, -50%);
-}
-
-/* The element Edit has picked, outlined over the guest that draws it. */
-.canvas-element-outline {
-  position: absolute;
-  pointer-events: none;
-  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
-  background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
 
 /* ── Pane ───────────────────────────────────────────────────────────────── */

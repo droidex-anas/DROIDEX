@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MIN_FRAME_PX } from './canvasGeometry';
-import { snapFrameRect } from './frameSnap';
+import { snapFrameRect, snapGroupMove } from './frameSnap';
 import type { FrameRect } from './protocol';
 
 function rect(x: number, y: number, width: number, height: number): FrameRect {
@@ -40,6 +40,15 @@ test('a frame with nothing near it moves freely and draws no lines', () => {
   assert.deepEqual(free, { rect: rect(700, 900, 200, 100), guides: [], gaps: [] });
 });
 
+test('a moved selection snaps on its bounds, and each frame keeps its place in it', () => {
+  // The pair spans x 0 to 300; carried 103 right, its right edge is 3 past the anchor's.
+  const pair = [rect(0, 500, 100, 100), rect(150, 520, 150, 80)];
+  const moved = snapGroupMove(pair, { x: 103, y: 0 }, [ANCHOR], 1);
+
+  assert.deepEqual(moved.rects, [rect(100, 500, 100, 100), rect(250, 520, 150, 80)]);
+  assert.deepEqual(moved.guides, [{ axis: 'x', at: 400, from: 0, to: 600 }]);
+});
+
 test('a resize snaps only the edge in the hand', () => {
   const neighbour = rect(600, 0, 400, 300);
 
@@ -58,6 +67,11 @@ test('a resize snaps only the edge in the hand', () => {
     snapFrameRect(rect(0, 0, 596, 302), 'southeast', [neighbour], 1).rect,
     rect(0, 0, 600, 300),
   );
+
+  // The west edge pulls onto the anchor's right, and the right edge stays put.
+  const west = snapFrameRect(rect(404, 0, 296, 300), 'west', [ANCHOR], 1);
+  assert.deepEqual(west.rect, rect(400, 0, 300, 300));
+  assert.deepEqual(west.guides, [{ axis: 'x', at: 400, from: 0, to: 300 }]);
 
   // The left edge three pixels off the anchor's is not held, so it never moves.
   const below = rect(0, 400, 200, 100);

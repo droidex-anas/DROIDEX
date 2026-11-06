@@ -36,4 +36,13 @@ export const STYLE_PROPERTIES: readonly string[] = [
   'alignItems',
   'justifyContent',
   'opacity',
+  'display',
+  'flexWrap',
+  'flexGrow',
+  'alignSelf',
+  'borderWidth',
+  'borderStyle',
+  'textAlign',
+  'textTransform',
+  'overflow',
 ];

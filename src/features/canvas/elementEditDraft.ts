@@ -1,7 +1,7 @@
 // What a direct edit has previewed on one selected element but not yet
 // committed. A preview only means something against the revision it was drawn
 // on, so a refused commit drops the draft, and a newer revision of the design
-// takes the selection along without its previews.
+// takes the selection along without the previews it made stale.
 
 import type { EditElementInput } from './elementEditProtocol';
 import type { CanvasFrame, ElementRef, SourceElement } from './protocol';
@@ -18,8 +18,13 @@ export interface ElementEditDraft {
   site: SourceElement;
   /** Previewed values by style property, as the user entered them. */
   values: Readonly<Record<string, string>>;
-  /** The one commit awaiting its reply; each edit moves the revision on. */
-  pendingMutationId: string | null;
+  /** The previewed text, or null while the element shows its own. */
+  text: string | null;
+  /**
+   * The one commit awaiting its reply and what it carries; each edit moves the
+   * revision on, to the one its reply names.
+   */
+  pending: { mutationId: string; change: 'style' | 'text'; revisionId: string | null } | null;
 }
 
 export function editDraft(
@@ -27,7 +32,12 @@ export function editDraft(
   element: ElementRef,
   site: SourceElement,
 ): ElementEditDraft {
-  return { canvasId, element, site, values: {}, pendingMutationId: null };
+  return { canvasId, element, site, values: {}, text: null, pending: null };
+}
+
+/** Something typed or picked here is not saved yet. */
+export function hasPreviews(draft: ElementEditDraft): boolean {
+  return draft.text !== null || Object.keys(draft.values).length > 0;
 }
 
 /** A property outside the edit whitelist cannot be previewed, so it is ignored. */
@@ -49,6 +59,14 @@ export function revertStyle(draft: ElementEditDraft, property: string): ElementE
   return { ...draft, values };
 }
 
+export function previewText(draft: ElementEditDraft, text: string): ElementEditDraft {
+  return { ...draft, text };
+}
+
+export function revertText(draft: ElementEditDraft): ElementEditDraft {
+  return draft.text === null ? draft : { ...draft, text: null };
+}
+
 /**
  * The one edit that commits every previewed property, so they make one
  * revision; null while another commit is pending or nothing is previewed.
@@ -62,10 +80,28 @@ export function commitStyles(
     // The sidecar's grammar reads values lowercase and single-spaced.
     value: value.trim().toLowerCase().replace(/\s+/g, ' '),
   }));
-  if (draft.pendingMutationId !== null || styles.length === 0) return null;
+  if (draft.pending !== null || styles.length === 0) return null;
   return {
-    draft: { ...draft, pendingMutationId: mutationId },
+    draft: { ...draft, pending: { mutationId, change: 'style', revisionId: null } },
     input: { mutationId, edit: { element: draft.element, change: { kind: 'style', styles } } },
+  };
+}
+
+/**
+ * The edit that writes the previewed text as the element's own. Text is a
+ * separate edit from styles, so each commits apart from the other's previews.
+ */
+export function commitText(
+  draft: ElementEditDraft,
+  mutationId: string,
+): { draft: ElementEditDraft; input: EditElementInput } | null {
+  if (draft.pending !== null || draft.text === null) return null;
+  return {
+    draft: { ...draft, pending: { mutationId, change: 'text', revisionId: null } },
+    input: {
+      mutationId,
+      edit: { element: draft.element, change: { kind: 'text', value: draft.text } },
+    },
   };
 }
 
@@ -73,27 +109,29 @@ export type CommitOutcome = { status: 'edited'; revisionId: string } | { status:
 
 /**
  * Settles the pending commit; a reply for any other mutation changes nothing.
- * An edit that made a new revision stays pending until `followRevision` moves
- * the draft onto it, so nothing is committed against the revision it replaced.
+ * An edit that made a new revision stays pending, now naming it, until
+ * `followRevision` moves the draft onto it, so nothing is committed against
+ * the revision it replaced.
  */
 export function settleCommit(
   draft: ElementEditDraft | null,
   mutationId: string,
   outcome: CommitOutcome,
 ): ElementEditDraft | null {
-  if (draft?.pendingMutationId !== mutationId) return draft;
+  if (draft?.pending?.mutationId !== mutationId) return draft;
   if (outcome.status === 'refused') return null;
-  return outcome.revisionId === draft.element.revisionId
-    ? { ...draft, pendingMutationId: null }
-    : draft;
+  if (outcome.revisionId === draft.element.revisionId) return { ...draft, pending: null };
+  return { ...draft, pending: { ...draft.pending, revisionId: outcome.revisionId } };
 }
 
 /**
  * The draft once its frame has moved on. While the newer revision builds, the
  * older one is still on show and the draft stays on it. Once it has built, the
- * selection moves to the element written at the same place, with the previews
- * dropped because the source now says what they said; when nothing is written
- * there any more, or the revision did not build, the draft goes.
+ * selection moves to the element written at the same place. The previews its
+ * own commit carried are dropped because the source now says what they said;
+ * the other kind's stay only on the revision that commit made. When
+ * nothing is written there any more, or the revision did not build, the draft
+ * goes.
  */
 export function followRevision(
   draft: ElementEditDraft | null,
@@ -110,12 +148,15 @@ export function followRevision(
         element.tagName === draft.site.tagName,
     );
     if (!site) return null;
+    const committed =
+      draft.pending?.revisionId === build.revisionId ? draft.pending.change : undefined;
     return {
       ...draft,
       element: { ...draft.element, revisionId: build.revisionId, elementId: site.elementId },
       site,
-      values: {},
-      pendingMutationId: null,
+      values: committed === 'text' ? draft.values : {},
+      text: committed === 'style' ? draft.text : null,
+      pending: null,
     };
   }
   if (build.status === 'pending' || build.status === 'building') return draft;

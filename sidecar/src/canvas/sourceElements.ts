@@ -3,26 +3,8 @@ import { posix } from 'node:path';
 import ts from 'typescript';
 import type { SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
+import { SourceElementError } from './sourceElementError.js';
 import { inlineSourceMap } from './sourceInstrumentationMap.js';
-
-export class SourceElementError extends Error {
-  constructor(
-    readonly code:
-      | 'stale_reference'
-      | 'ambiguous_element'
-      | 'invalid_source'
-      | 'invalid_edit'
-      | 'unsupported_edit'
-      | 'selection_limit',
-    message: string,
-    readonly file?: string,
-    readonly line?: number,
-    readonly column?: number,
-  ) {
-    super(message);
-    this.name = 'SourceElementError';
-  }
-}
 
 export type ElementNode = ts.JsxElement | ts.JsxSelfClosingElement;
 export interface Site {

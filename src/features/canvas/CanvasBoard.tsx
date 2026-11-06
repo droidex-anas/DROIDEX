@@ -1,15 +1,11 @@
 // The board: one transformed world layer holding the frames, the keyboard
 // commands over it, the tool rail in its top-left corner and the zoom readout
 // in its bottom-left.
-//
-// The board owns when the frames' input overlay can flip: the hit-test change waits
-// for an active wheel gesture to finish.
 
 import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -18,27 +14,19 @@ import {
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import { AnnotationLayer, DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
-import { BoardControls, type ZoomCommand } from './BoardControls';
+import { boardCommands } from './boardCommands';
+import { BoardControls } from './BoardControls';
 import { useBoardAnnouncer } from './boardAnnouncer';
+import type { HistoryStep } from './boardHistory';
 import { onBoardKeyDown } from './boardKeyDown';
 import {
-  alignRects,
-  distributeRects,
   framesInBand,
   visibleDesignIds,
-  type AlignEdge,
-  type DistributeAxis,
   type PlacedFrame,
   type Point,
   type Viewport,
 } from './canvasGeometry';
-import {
-  reduceBoardInteraction,
-  showsFrameTools,
-  type BoardInteraction,
-  type BoardInteractionEvent,
-  type BoardMode,
-} from './canvasState';
+import { showsFrameTools, type BoardInteraction } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
@@ -46,6 +34,7 @@ import { ElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
+import { SelectionBounds } from './SelectionBounds';
 import { SnapGuides } from './SnapGuides';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
@@ -54,6 +43,8 @@ import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
+import { useInteractionDispatch } from './useInteractionDispatch';
+import { useOverlayCapture } from './useOverlayCapture';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, WriteReceipt } from './protocol';
 
 export interface CanvasBoardHandle {
@@ -68,8 +59,8 @@ export interface CanvasBoardProps {
   snapshot: CanvasSnapshot;
   /**
    * The one layout write the board makes, for a released gesture as much as for
-   * a nudge, an align or a distribute. `CanvasWorkspace` binds it to
-   * `CanvasClient.arrangeFrames` for this canvas.
+   * a nudge, an align or a distribute. `CanvasBoardMount` binds it to
+   * `CanvasClient.arrangeFrames` for this canvas, each write a step of its history.
    */
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
   /** The one annotation write, bound to `CanvasClient.annotate` for this canvas. */
@@ -78,8 +69,8 @@ export interface CanvasBoardProps {
   onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
   /** Deletes frames from this canvas (`FrameRemovals.remove`); true once they are gone. */
   onRemoveFrames: (frames: CanvasFrame[]) => Promise<boolean>;
-  /** Undoes this canvas's latest deletion; false when none is offered. */
-  onUndoRemoval: () => boolean;
+  /** ⌘Z and its kin on the board or the element panel; false when there is no step. */
+  onHistory: (step: HistoryStep) => boolean;
   /**
    * One frame's live preview of `revisionId`, mounted only while it holds a
    * slot, reporting to the board's element editor through `selections`.
@@ -105,6 +96,12 @@ export interface CanvasBoardProps {
   restoredViewport?: Viewport;
   /** Hands the viewport over as the board unmounts, so Back from a document can restore it. */
   onLeave?: (viewport: Viewport) => void;
+  /**
+   * Screen pixels along the board's right edge that a panel docked over it
+   * covers. Fit, zoom, focus and the frame toolbar keep to the rest; a panel
+   * laid out beside the board needs none, since the board measures without it.
+   */
+  rightInset?: number;
 }
 
 export function CanvasBoard({
@@ -114,7 +111,7 @@ export function CanvasBoard({
   onAnnotate,
   onEditElement,
   onRemoveFrames,
-  onUndoRemoval,
+  onHistory,
   renderPreview,
   interaction,
   onInteractionChange,
@@ -125,6 +122,7 @@ export function CanvasBoard({
   frameActions,
   restoredViewport,
   onLeave,
+  rightInset = 0,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -132,22 +130,13 @@ export function CanvasBoard({
   // The frames the board opened with are simply there; later ones arrive.
   const [openedWith] = useState(() => new Set(frames.map((frame) => frame.designId)));
 
-  const view = useBoardViewport(board, frames, motion, restoredViewport);
+  const view = useBoardViewport(board, frames, motion, restoredViewport, rightInset);
   const { fitTo } = view;
-  const [overlayCapture, setOverlayCapture] = useState(interaction.mode !== 'interact');
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
-  const latest = useRef<BoardReads>({ interaction, drawn: [], viewport: view.viewport });
-
-  const dispatch = useCallback(
-    (event: BoardInteractionEvent) => {
-      const current = latest.current.interaction;
-      const next = reduceBoardInteraction(current, event);
-      if (next !== current) onInteractionChange(next);
-    },
-    [onInteractionChange],
-  );
+  const latest = useRef<BoardReads>({ drawn: [], viewport: view.viewport });
+  const dispatch = useInteractionDispatch(interaction, onInteractionChange, frames);
 
   const pickBand = useCallback(
     (origin: Point, current: Point, additive: boolean) => {
@@ -183,6 +172,7 @@ export function CanvasBoard({
     frames,
     scale: view.viewport.scale,
     mode: interaction.mode,
+    selectedFrameIds: interaction.selectedFrameIds,
     onStart: () => {
       view.markNavigated();
       view.stopAnimating();
@@ -203,13 +193,7 @@ export function CanvasBoard({
     designId: frame.designId,
     rect: gestures.rectFor(frame),
   }));
-  latest.current = { interaction, drawn, viewport: view.viewport };
-
-  // Selection and Interact must never point at a design the canvas has lost.
-  const designIds = useMemo(() => frames.map((frame) => frame.designId), [frames]);
-  useEffect(() => {
-    dispatch({ type: 'frames', designIds });
-  }, [designIds, dispatch]);
+  latest.current = { drawn, viewport: view.viewport };
 
   const { focusedId, order, tabStopId, focusFrame, focusLabel, onFocusLabel } = useFrameFocus({
     board,
@@ -257,46 +241,23 @@ export function CanvasBoard({
     scale,
   });
 
-  // Spec §4: the overlay's hit-test flip waits for an arriving wheel gesture to
-  // go quiet and then for the frame that paints it, so it is committed before
-  // any later input is read against it.
-  const capturePointer = interaction.mode !== 'interact';
-  useEffect(() => {
-    if (overlayCapture === capturePointer || view.scrolling) return undefined;
-    const frame = requestAnimationFrame(() => {
-      setOverlayCapture(capturePointer);
-    });
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, [capturePointer, overlayCapture, view.scrolling]);
+  const overlayCapture = useOverlayCapture(interaction.mode !== 'interact', view.scrolling);
 
-  const onMode = (next: BoardMode) => {
-    annotation.pickTool(null);
-    if (next === interaction.mode) return;
-    if (next === 'select') {
-      dispatch({ type: 'escape' });
-      return;
-    }
-    if (next === 'edit') {
-      dispatch({ type: 'edit' });
-      return;
-    }
-    const target = interaction.selectedFrameIds.at(0) ?? frames.at(0)?.designId;
-    if (target !== undefined) dispatch({ type: 'interact', designId: target });
-  };
+  const commands = boardCommands({
+    interaction,
+    frames,
+    drawn,
+    dispatch,
+    dropTool: () => {
+      annotation.pickTool(null);
+    },
+    fitTo,
+    zoomTo: view.zoomTo,
+    stepZoom: view.stepZoom,
+    place: gestures.place,
+  });
 
-  const onZoom = (command: ZoomCommand) => {
-    if (command === 'fit') fitTo(drawn.map(({ rect }) => rect));
-    else if (command === 'selection')
-      fitTo(
-        drawn
-          .filter(({ designId }) => interaction.selectedFrameIds.includes(designId))
-          .map(({ rect }) => rect),
-      );
-    else if (command === 'actual') view.zoomTo(1);
-    else view.stepZoom(command === 'in' ? 1 : -1);
-  };
+  const focusBoard = () => board.current?.focus({ preventScroll: true });
 
   return (
     // The element panel is a column beside the board, not a layer over it, so
@@ -328,8 +289,8 @@ export function CanvasBoard({
             cancel: () => gestures.cancel() || annotation.escape() || editor.clear(),
             annotationKey: annotation.runKey,
             editKey: editor.runKey,
-            zoom: onZoom,
-            setMode: onMode,
+            zoom: commands.zoom,
+            setMode: commands.setMode,
             holdSpace: () => {
               gestures.holdSpace(true);
             },
@@ -338,14 +299,10 @@ export function CanvasBoard({
               view.stopAnimating();
               view.panByScreen(delta);
             },
-            nudge: (step) => {
-              gestures.place(interaction.selectedFrameIds, (rects) =>
-                rects.map((rect) => ({ ...rect, x: rect.x + step.x, y: rect.y + step.y })),
-              );
-            },
+            nudge: commands.nudge,
             removeSelection,
-            undoRemoval: onUndoRemoval,
-            focusBoard: () => board.current?.focus({ preventScroll: true }),
+            history: onHistory,
+            focusBoard,
             focusLabel,
           });
         }}
@@ -378,9 +335,10 @@ export function CanvasBoard({
               visible={visible.includes(frame.designId)}
               mode={interaction.mode}
               selected={interaction.selectedFrameIds.includes(frame.designId)}
+              multiSelect={interaction.selectedFrameIds.length > 1}
               showTools={showsFrameTools(interaction, frame.designId)}
               interacted={interaction.interactedFrameId === frame.designId}
-              held={gestures.heldDesignId === frame.designId}
+              held={gestures.heldDesignIds.includes(frame.designId)}
               agentWorking={agentWorking}
               capturePointer={overlayCapture}
               shownRevisionId={previews.shown.get(frame.designId) ?? null}
@@ -388,7 +346,7 @@ export function CanvasBoard({
               released={previews.released.includes(frame.designId)}
               onExitInteract={() => {
                 dispatch({ type: 'escape' });
-                board.current?.focus({ preventScroll: true });
+                focusBoard();
               }}
               onOpenSource={onOpenSource}
               inChat={pinnedIds?.has(frame.designId) ?? false}
@@ -396,6 +354,7 @@ export function CanvasBoard({
               actions={frameActions}
               onDelete={removeSelection}
               onHold={gestures.onFramePointerDown}
+              onResize={commands.resize}
               onPick={(picked, additive) => {
                 dispatch({ type: 'pick', designId: picked.designId, additive });
               }}
@@ -417,6 +376,7 @@ export function CanvasBoard({
               onFocusLabel={onFocusLabel}
             />
           ))}
+          <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
           <AnnotationLayer
             {...annotation.layer}
             frames={frames}
@@ -443,14 +403,12 @@ export function CanvasBoard({
           selectedCount={interaction.selectedFrameIds.length}
           hasFrames={frames.length > 0}
           error={gestures.layoutError || annotation.error || editor.error}
-          onMode={onMode}
-          onZoom={onZoom}
-          onAlign={(edge: AlignEdge) => {
-            gestures.place(interaction.selectedFrameIds, (rects) => alignRects(rects, edge));
-          }}
-          onDistribute={(axis: DistributeAxis) => {
-            gestures.place(interaction.selectedFrameIds, (rects) => distributeRects(rects, axis));
-          }}
+          onMode={commands.setMode}
+          onZoom={commands.zoom}
+          onZoomTo={view.zoomTo}
+          focusBoard={focusBoard}
+          onAlign={commands.align}
+          onDistribute={commands.distribute}
           annotationTools={<AnnotationTools {...annotation.rail} />}
         />
 
@@ -462,10 +420,16 @@ export function CanvasBoard({
         <ElementPanel
           ref={editor.panel}
           selection={editor.selection}
+          tokens={editor.tokens}
+          mode={editor.mode}
           onPreview={editor.preview}
           onRevert={editor.revert}
           onCommit={editor.commit}
-          onLeave={() => board.current?.focus({ preventScroll: true })}
+          onPreviewText={editor.previewText}
+          onRevertText={editor.revertText}
+          onCommitText={editor.commitText}
+          onHistory={onHistory}
+          onLeave={focusBoard}
         />
       )}
     </div>
@@ -473,7 +437,6 @@ export function CanvasBoard({
 }
 
 interface BoardReads {
-  interaction: BoardInteraction;
   drawn: PlacedFrame[];
   viewport: Viewport;
 }

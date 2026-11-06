@@ -1,19 +1,16 @@
 // The board's own tools, floating on it the way a design tool's do: Select,
-// Interact, the annotation tools and Fit in a raised rail at the top left, the zoom readout and its
-// menu at the bottom left, and align and distribute centred at the bottom while
-// a multiple selection gives them work (spec §4). Every control works on the
-// board behind it, and each names its keyboard shortcut.
+// Interact, the annotation tools and Fit in a raised rail at the top left, the
+// zoom bar at the bottom left, and align and distribute centred at the bottom
+// while a multiple selection gives them work (spec §4). Every control works on
+// the board behind it, and each names its keyboard shortcut.
 
-import { useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Maximize, MousePointer, Play, SlidersHorizontal } from '@droidex/icons';
-import { Popover } from '../../components/ui/Popover';
+import { Tool } from './BoardTool';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
-import { MenuRow } from './menuRows';
-
-/** What the zoom menu and its shortcuts can ask the board to do. */
-export type ZoomCommand = 'in' | 'out' | 'fit' | 'selection' | 'actual';
+import { ZoomControl, type ZoomCommand } from './ZoomControl';
 
 /** A guide line with two bars sitting against it: every align glyph in one shape. */
 function guided(guide: string, bars: ReactNode[]): ReactNode {
@@ -85,14 +82,6 @@ const DISTRIBUTE_ACTIONS: { axis: DistributeAxis; label: string; glyph: ReactNod
   },
 ];
 
-const ZOOM_ACTIONS: { command: ZoomCommand; label: string; hint: string }[] = [
-  { command: 'in', label: 'Zoom in', hint: '+' },
-  { command: 'out', label: 'Zoom out', hint: '−' },
-  { command: 'fit', label: 'Zoom to fit', hint: '⇧1' },
-  { command: 'selection', label: 'Zoom to selection', hint: '⇧2' },
-  { command: 'actual', label: 'Zoom to 100%', hint: '⇧0' },
-];
-
 export interface BoardControlsProps {
   scale: number;
   /** Spec §11's timings; the selection bar reveals on the popover token. */
@@ -105,6 +94,10 @@ export interface BoardControlsProps {
   error: string;
   onMode: (mode: BoardMode) => void;
   onZoom: (command: ZoomCommand) => void;
+  /** A zoom typed as a percentage, as a scale. */
+  onZoomTo: (scale: number) => void;
+  /** Hands the keyboard back to the board, as a typed zoom does once it is done. */
+  focusBoard: () => void;
   onAlign: (edge: AlignEdge) => void;
   onDistribute: (axis: DistributeAxis) => void;
   /** The rail's annotation group, which the board owns. */
@@ -120,6 +113,8 @@ export function BoardControls({
   error,
   onMode,
   onZoom,
+  onZoomTo,
+  focusBoard,
   onAlign,
   onDistribute,
   annotationTools,
@@ -181,11 +176,13 @@ export function BoardControls({
         </Tool>
       </div>
 
-      <ZoomReadout
+      <ZoomControl
         scale={scale}
         hasFrames={hasFrames}
         hasSelection={selectedCount > 0}
         onZoom={onZoom}
+        onZoomTo={onZoomTo}
+        focusBoard={focusBoard}
       />
 
       {selectedCount >= 2 && (
@@ -225,102 +222,6 @@ export function BoardControls({
         </p>
       )}
     </div>
-  );
-}
-
-/** The zoom readout, which opens the zoom menu. */
-function ZoomReadout({
-  scale,
-  hasFrames,
-  hasSelection,
-  onZoom,
-}: {
-  scale: number;
-  hasFrames: boolean;
-  hasSelection: boolean;
-  onZoom: (command: ZoomCommand) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const enabled: Record<ZoomCommand, boolean> = {
-    in: true,
-    out: true,
-    fit: hasFrames,
-    selection: hasSelection,
-    actual: true,
-  };
-  return (
-    <div className="canvas-zoom">
-      <button
-        ref={trigger}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Zoom ${String(Math.round(scale * 100))}%`}
-        className="canvas-zoom-value"
-        onClick={() => {
-          setOpen((current) => !current);
-        }}
-      >
-        {Math.round(scale * 100)}%
-      </button>
-      <Popover
-        open={open}
-        onClose={() => {
-          setOpen(false);
-        }}
-        anchorRef={trigger}
-        label="Zoom"
-        placement="bottom-start"
-        width={208}
-      >
-        <div role="menu" aria-label="Zoom" className="p-1">
-          {ZOOM_ACTIONS.map(({ command, label, hint }) => (
-            <MenuRow
-              key={command}
-              label={label}
-              hint={hint}
-              disabled={!enabled[command]}
-              onRun={() => {
-                setOpen(false);
-                onZoom(command);
-              }}
-            />
-          ))}
-        </div>
-      </Popover>
-    </div>
-  );
-}
-
-/** One rail tool: its accessible name is the plain label, its tip adds the key. */
-export function Tool({
-  label,
-  tip,
-  pressed,
-  disabled = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  tip: string;
-  pressed?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={pressed}
-      data-tip={tip}
-      disabled={disabled}
-      onClick={onClick}
-      className="canvas-tool"
-    >
-      {children}
-    </button>
   );
 }
 

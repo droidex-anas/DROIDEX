@@ -7,6 +7,23 @@
 // class this module can write with Tailwind itself.
 
 import { canonicalCss, type StyleResolution } from './styleEdits.js';
+import {
+  BORDER_WIDTH,
+  FONT_FAMILIES,
+  FONT_SIZE_LINE_HEIGHT,
+  FONT_WEIGHT,
+  KEYWORD_CLASSES,
+  LINE_HEIGHT,
+  MAX_SIZE,
+  MIN_SIZE,
+  OPACITY,
+  RADIUS,
+  SHADOWS,
+  SIZE,
+  SPACING,
+  TRACKING,
+  type Scale,
+} from './tailwindStock.js';
 
 /** What one class sets, as far as a style edit is concerned. */
 export interface ClassStyle {
@@ -20,8 +37,6 @@ export interface ClassStyle {
   /** A font-size class's own line height, which it takes along when it goes. */
   lineHeight?: string;
 }
-
-type Scale = Readonly<Record<string, string>>;
 
 interface Utility {
   prefix: string;
@@ -45,87 +60,10 @@ const LONGHANDS: Readonly<Record<string, readonly string[]>> = {
   margin: MARGIN,
   gap: GAP,
   borderRadius: RADII,
+  borderWidth: SIDES.map((side) => `border${side}Width`),
   borderColor: SIDES.map((side) => `border${side}Color`),
 };
 
-const SPACING_STEPS = [
-  0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48,
-  52, 56, 60, 64, 72, 80, 96,
-];
-const SPACING: Scale = {
-  '0': '0px',
-  px: '1px',
-  ...Object.fromEntries(SPACING_STEPS.map((step) => [String(step), `${String(step / 4)}rem`])),
-};
-const SIZE: Scale = { ...SPACING, full: '100%' };
-const RADIUS: Scale = {
-  none: '0px',
-  sm: '0.125rem',
-  '': '0.25rem',
-  md: '0.375rem',
-  lg: '0.5rem',
-  xl: '0.75rem',
-  '2xl': '1rem',
-  '3xl': '1.5rem',
-  full: '9999px',
-};
-const FONT_WEIGHT: Scale = {
-  thin: '100',
-  extralight: '200',
-  light: '300',
-  normal: '400',
-  medium: '500',
-  semibold: '600',
-  bold: '700',
-  extrabold: '800',
-  black: '900',
-};
-const LINE_HEIGHT: Scale = {
-  '3': '.75rem',
-  '4': '1rem',
-  '5': '1.25rem',
-  '6': '1.5rem',
-  '7': '1.75rem',
-  '8': '2rem',
-  '9': '2.25rem',
-  '10': '2.5rem',
-  none: '1',
-  tight: '1.25',
-  snug: '1.375',
-  normal: '1.5',
-  relaxed: '1.625',
-  loose: '2',
-};
-const TRACKING: Scale = {
-  tighter: '-0.05em',
-  tight: '-0.025em',
-  normal: '0em',
-  wide: '0.025em',
-  wider: '0.05em',
-  widest: '0.1em',
-};
-const OPACITY: Scale = Object.fromEntries(
-  Array.from({ length: 21 }, (_, index) => [String(index * 5), String(index / 20)]),
-);
-/** Each stock font size with the line height it sets alongside. */
-const FONT_SIZE_LINE_HEIGHT: Scale = {
-  xs: '1rem',
-  sm: '1.25rem',
-  base: '1.5rem',
-  lg: '1.75rem',
-  xl: '1.75rem',
-  '2xl': '2rem',
-  '3xl': '2.25rem',
-  '4xl': '2.5rem',
-  '5xl': '1',
-  '6xl': '1',
-  '7xl': '1',
-  '8xl': '1',
-  '9xl': '1',
-};
-const FONT_FAMILIES = new Set(['sans', 'serif', 'mono']);
-const SHADOWS = new Set(['', 'sm', 'md', 'lg', 'xl', '2xl', 'inner', 'none']);
-const BORDER_WIDTHS = new Set(['', '0', '2', '4', '8']);
 const COLOUR_KEY =
   /^(?:inherit|current|transparent|black|white|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950))$/;
 const COLOUR_LIKE =
@@ -152,10 +90,10 @@ const UTILITIES: Readonly<Record<string, Utility>> = {
   columnGap: { prefix: 'gap-x', scale: SPACING },
   width: { prefix: 'w', scale: SIZE },
   height: { prefix: 'h', scale: SIZE },
-  minWidth: { prefix: 'min-w', scale: SIZE },
-  minHeight: { prefix: 'min-h', scale: SIZE },
-  maxWidth: { prefix: 'max-w', scale: SIZE },
-  maxHeight: { prefix: 'max-h', scale: SIZE },
+  minWidth: { prefix: 'min-w', scale: MIN_SIZE },
+  minHeight: { prefix: 'min-h', scale: MIN_SIZE },
+  maxWidth: { prefix: 'max-w', scale: MAX_SIZE },
+  maxHeight: { prefix: 'max-h', scale: MAX_SIZE },
   borderRadius: { prefix: 'rounded', scale: RADIUS },
   color: { prefix: 'text', hint: 'color' },
   backgroundColor: { prefix: 'bg', hint: 'color' },
@@ -167,33 +105,7 @@ const UTILITIES: Readonly<Record<string, Utility>> = {
   lineHeight: { prefix: 'leading', scale: LINE_HEIGHT },
   letterSpacing: { prefix: 'tracking', scale: TRACKING, signed: true },
   opacity: { prefix: 'opacity', scale: OPACITY },
-};
-
-/** Keyword properties, by the CSS value each stock class sets. */
-const KEYWORD_CLASSES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  flexDirection: {
-    row: 'flex-row',
-    'row-reverse': 'flex-row-reverse',
-    column: 'flex-col',
-    'column-reverse': 'flex-col-reverse',
-  },
-  alignItems: {
-    'flex-start': 'items-start',
-    'flex-end': 'items-end',
-    center: 'items-center',
-    baseline: 'items-baseline',
-    stretch: 'items-stretch',
-  },
-  justifyContent: {
-    normal: 'justify-normal',
-    'flex-start': 'justify-start',
-    'flex-end': 'justify-end',
-    center: 'justify-center',
-    'space-between': 'justify-between',
-    'space-around': 'justify-around',
-    'space-evenly': 'justify-evenly',
-    stretch: 'justify-stretch',
-  },
+  borderWidth: { prefix: 'border', hint: 'length', scale: BORDER_WIDTH },
 };
 
 const KEYWORD_PROPERTIES = new Map(
@@ -340,6 +252,9 @@ function utilityStyle(utility: string): Omit<ClassStyle, 'scope'> | null {
       return isShadow(value) ? { sets: ['boxShadow'] } : null;
     case 'font':
       return fontStyle(value);
+    case 'grow':
+      // `grow` and `grow-0` are keywords above; this reads an arbitrary one.
+      return arbitrary(value) ? { sets: ['flexGrow'] } : null;
     default:
       return null;
   }
@@ -369,7 +284,7 @@ function borderStyle(value: string): Omit<ClassStyle, 'scope'> | null {
   const rest = side === '' ? value : value.slice(side.length + 1);
   const custom = arbitrary(rest);
   const isWidth =
-    BORDER_WIDTHS.has(rest) ||
+    Object.hasOwn(BORDER_WIDTH, rest) ||
     custom?.hint === 'length' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
   if (isWidth) return { sets: sides.map((each) => `border${each}Width`) };

@@ -6,6 +6,7 @@ import type {
   AnnotateCanvasInput,
 } from '../../../src/features/canvas/annotationProtocol';
 import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChange';
+import { BoardHistory, recordPlacements } from '../../../src/features/canvas/boardHistory';
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
 import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
@@ -34,6 +35,7 @@ import '../../../src/index.css';
 // The harness mounts the board without the pane that normally brings these in.
 import '../../../src/features/canvas/canvasAnimations.css';
 import '../../../src/features/canvas/canvasBoard.css';
+import '../../../src/features/canvas/canvasBoardSelection.css';
 import '../../../src/features/canvas/canvasBoardTools.css';
 
 interface BoardHarness {
@@ -45,6 +47,8 @@ interface BoardHarness {
   publish: (designId: string, rect: FrameRect, layoutVersion: number) => void;
   reject: (index: number) => void;
   resolve: (index: number) => void;
+  /** Places one arrange's frames the way the sidecar does, and answers. */
+  answer: (index: number) => void;
   focusFrame: (frameId: string) => void;
   select: (designIds: string[]) => void;
   interaction: () => BoardInteraction;
@@ -101,6 +105,9 @@ applyTheme({
   translucentSidebar: false,
   contrast: 100,
 });
+
+// `?inset=n` docks a stand-in panel n pixels wide over the board's right edge.
+const RIGHT_INSET = Number(params.get('inset') ?? 0);
 
 // Two frames by default, which is what the geometry cases are measured against.
 // `?frames=n` adds more in a row below them for the preview-slot budget.
@@ -240,20 +247,35 @@ const removeReplies: PromiseWithResolvers<string>[] = [];
 const undoCalls: UndoRemovalInput[] = [];
 const undoReplies: PromiseWithResolvers<CanvasChange>[] = [];
 const removedFrames = new Map<string, CanvasFrame[]>();
-const removals = new FrameRemovals({
-  removeFrames: (_appSessionId, _canvasId, input) => {
-    removeCalls.push(input);
-    const reply = Promise.withResolvers<string>();
-    removeReplies.push(reply);
-    return reply.promise;
+// What the board is showing, which the history reads the way it reads the client's projection.
+const shown = { current: initial };
+const history = new BoardHistory();
+const arrangeFrames = recordPlacements(
+  history,
+  initial.canvasId,
+  (input: ArrangeFramesInput) => {
+    calls.push(input);
+    return new Promise<void>((resolve, reject) => replies.push({ resolve, reject }));
   },
-  undoRemoval: (_appSessionId, _canvasId, input) => {
-    undoCalls.push(input);
-    const reply = Promise.withResolvers<CanvasChange>();
-    undoReplies.push(reply);
-    return reply.promise;
+  () => shown.current.frames,
+);
+const removals = new FrameRemovals(
+  {
+    removeFrames: (_appSessionId, _canvasId, input) => {
+      removeCalls.push(input);
+      const reply = Promise.withResolvers<string>();
+      removeReplies.push(reply);
+      return reply.promise;
+    },
+    undoRemoval: (_appSessionId, _canvasId, input) => {
+      undoCalls.push(input);
+      const reply = Promise.withResolvers<CanvasChange>();
+      undoReplies.push(reply);
+      return reply.promise;
+    },
   },
-});
+  history,
+);
 const historyReads: string[] = [];
 const historyReplies: PromiseWithResolvers<RevisionSummary[]>[] = [];
 const renameCalls: RenameFrameInput[] = [];
@@ -316,7 +338,6 @@ function Harness() {
   const board = useRef<CanvasBoardHandle>(null);
   const live = useRef(interaction);
   live.current = interaction;
-  const shown = useRef(snapshot);
   shown.current = snapshot;
   useEffect(() => {
     if (!params.has('navigator')) return undefined;
@@ -373,6 +394,17 @@ function Harness() {
     },
     reject: (index) => replies[index].reject(new Error('Arrange rejected')),
     resolve: (index) => replies[index].resolve(),
+    answer: (index) => {
+      const placed = shown.current.frames.flatMap((frame) => {
+        const placement = calls[index].frames.find((each) => each.designId === frame.designId);
+        if (!placement) return [];
+        return [
+          { ...frame, rect: placement.rect, layoutVersion: placement.expectedLayoutVersion + 1 },
+        ];
+      });
+      setSnapshot(applyCanvasChange(shown.current, change(placed, [])));
+      replies[index].resolve();
+    },
     focusFrame: (frameId) => {
       if (!board.current) throw new Error('Missing board focus handle');
       board.current.focusFrame(frameId);
@@ -481,9 +513,10 @@ function Harness() {
       <button type="button" id="outside" aria-pressed={interaction.selectedFrameIds.length > 0}>
         Outside board
       </button>
-      <div style={{ display: 'flex', width, height: 800, marginTop: 12 }}>
+      <div style={{ position: 'relative', display: 'flex', width, height: 800, marginTop: 12 }}>
         <CanvasBoard
           ref={board}
+          rightInset={RIGHT_INSET}
           snapshot={snapshot}
           interaction={interaction}
           agentWorking={false}
@@ -509,10 +542,7 @@ function Harness() {
               </button>
             )
           }
-          onArrangeFrames={(input) => {
-            calls.push(input);
-            return new Promise<void>((resolve, reject) => replies.push({ resolve, reject }));
-          }}
+          onArrangeFrames={arrangeFrames}
           onAnnotate={(input) => {
             annotateCalls.push(input);
             return new Promise<void>((resolve, reject) =>
@@ -527,13 +557,22 @@ function Harness() {
           }}
           onOpenSource={setSourceOpen}
           onRemoveFrames={(frames) => removals.remove('chat_1', snapshot.canvasId, frames)}
-          onUndoRemoval={() => removals.undoLatest(snapshot.canvasId)}
+          onHistory={(step) =>
+            step === 'undo' ? history.undo(snapshot.canvasId) : history.redo(snapshot.canvasId)
+          }
           frameActions={frameActions}
         />
         {sourceOpen && (
           <aside data-harness-source={sourceOpen} style={{ width: 280, flexShrink: 0 }}>
             Source of {sourceOpen}
           </aside>
+        )}
+        {RIGHT_INSET > 0 && (
+          <aside
+            data-harness-inset
+            className="bg-raised"
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: RIGHT_INSET }}
+          />
         )}
         {params.has('navigator') && (
           <aside

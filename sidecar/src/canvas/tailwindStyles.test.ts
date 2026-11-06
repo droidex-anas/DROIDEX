@@ -44,6 +44,9 @@ const RAW_VALUES = [
   '600',
   '-0.025em',
   '0.05em',
+  'auto',
+  'fit-content',
+  'none',
 ];
 
 after(() => stopCanvasRuntime());

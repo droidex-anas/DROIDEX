@@ -17,7 +17,7 @@ export const MAX_PREVIEW_SNAPSHOT_EVENTS = 64;
 const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_TEXT = 512;
 /** Style properties one selection command may name, as the intermediate caps them. */
-const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+const MAX_PREVIEW_STYLE_PROPERTIES = 64;
 /** Bytes one queued event may measure, as the intermediate accepts it. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
 /** The queue cap times the largest event the guest will keep, with headroom. */
@@ -46,6 +46,11 @@ export interface PreviewElement {
   instancePath: string;
   rect: FrameRect;
   styles: Record<string, string>;
+  /**
+   * Its text when that is all it holds and fits the cap, else null. Never cut,
+   * since what the board shows here it may write back as the whole text.
+   */
+  text: string | null;
 }
 
 /**
@@ -62,11 +67,12 @@ export type PreviewEvent =
 /** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
 export type PreviewPick = { x: number; y: number } | { step: 'first' | 'next' | 'previous' };
 
-/** An element to select by its marker and path, with the inline styles it previews. */
+/** An element to select by its marker and path, with the inline styles and text it previews. */
 export interface PreviewTarget {
   elementId: string;
   instancePath: string;
   styles: Record<string, string>;
+  text: string | null;
 }
 
 /** One drained queue, with how many messages the guest dropped under its cap. */
@@ -186,7 +192,9 @@ function readEvent(value: unknown): PreviewEvent | null {
     case 'selection':
       return readSelection(value);
     case 'interaction':
-      return present(value.kind) ? { event: 'interaction', kind: clamp(value.kind) } : null;
+      return present(value.kind)
+        ? { event: 'interaction', kind: clampPreviewText(value.kind) }
+        : null;
     default:
       return null;
   }
@@ -197,7 +205,10 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   const diagnostics: CanvasDiagnostic[] = [];
   for (const entry of value) {
     if (!record(entry) || !present(entry.code) || typeof entry.message !== 'string') return null;
-    diagnostics.push({ code: clamp(entry.code), message: clamp(entry.message) });
+    diagnostics.push({
+      code: clampPreviewText(entry.code),
+      message: clampPreviewText(entry.message),
+    });
   }
   return { event: 'diagnostics', diagnostics };
 }
@@ -214,16 +225,17 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
   if (entries.length > MAX_PREVIEW_STYLE_PROPERTIES) return null;
   for (const [name, style] of entries) {
     if (typeof style !== 'string') return null;
-    styles[name] = clamp(style);
+    styles[name] = clampPreviewText(style);
   }
   return {
     event: 'selection',
     sequence,
     element: {
-      elementId: clamp(element.elementId),
-      instancePath: clamp(element.instancePath),
+      elementId: clampPreviewText(element.elementId),
+      instancePath: clampPreviewText(element.instancePath),
       rect,
       styles,
+      text: whole(element.text),
     },
   };
 }
@@ -257,9 +269,10 @@ function present(value: unknown): value is string {
  * security consequence, so an over-long one is cut rather than used as a reason
  * to refuse the snapshot: refusing one would end a guest over a diagnostic, and
  * the intermediate already cuts to the same bound from the other side. The cut
- * lands on a code point boundary, so a character is never split in half.
+ * lands on a code point boundary, so a character is never split in half. The
+ * element panel cuts typed text the same way, so what it previews is what it saves.
  */
-function clamp(value: string): string {
+export function clampPreviewText(value: string): string {
   if (utf8Bytes(value) <= MAX_PREVIEW_TEXT) return value;
   let cut = '';
   for (const character of value) {
@@ -267,6 +280,11 @@ function clamp(value: string): string {
     cut += character;
   }
   return cut;
+}
+
+/** Text the board may write back whole: within the cap, or none at all. */
+function whole(value: unknown): string | null {
+  return typeof value === 'string' && utf8Bytes(value) <= MAX_PREVIEW_TEXT ? value : null;
 }
 
 const encoder = new TextEncoder();

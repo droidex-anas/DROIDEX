@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import type { DesignSystemDocumentView } from '../../../sidecar/src/canvas/designSystemCommands.js';
 import { documentSectionsSchema } from '../../../sidecar/src/canvas/designSystemDocument.js';
+import { STARTER_TOKENS } from '../../../sidecar/src/canvas/presets/starter.js';
 import type { CanvasEvent } from '../../../sidecar/src/canvas/protocol.js';
+import { editTokens } from '../../../sidecar/src/canvas/styleEdits.js';
 import { DROIDEX_DOCUMENT_SECTIONS } from '../../../sidecar/src/testing/droidexDocument.js';
 import type { DocumentSection } from './designSystemDocumentProtocol';
 import { isDocumentSections } from './designSystemDocumentValidation';
@@ -229,6 +231,12 @@ test('the renderer accepts every design system reply and event the sidecar sends
         diagnostics: [{ code: 'single_mode_token', message: 'Both modes use it.', line: 4 }],
       },
     },
+    {
+      type: 'canvas.result',
+      requestId: 'req_05',
+      ok: true,
+      reply: { kind: 'editTokens', tokens: editTokens(STARTER_TOKENS.light, STARTER_TOKENS.dark) },
+    },
   ];
   for (const event of events) {
     const serialized: unknown = JSON.parse(JSON.stringify(event));
@@ -237,4 +245,11 @@ test('the renderer accepts every design system reply and event the sidecar sends
       `rejected ${JSON.stringify(event).slice(0, 80)}`,
     );
   }
+  // A token has one value or one per mode, never both.
+  const mixed = { name: '--ds-accent', value: '#8a5a1f', light: '#8a5a1f', dark: '#e3a857' };
+  const reply = { kind: 'editTokens', tokens: { color: [mixed] } };
+  assert.equal(
+    isCanvasEvent({ type: 'canvas.result', requestId: 'req_05', ok: true, reply }),
+    false,
+  );
 });

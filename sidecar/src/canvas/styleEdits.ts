@@ -4,7 +4,7 @@
 // src/features/canvas/styleProperties.ts; styleEdits.test.ts fails when they drift.
 
 import type { ElementEdit } from './protocol.js';
-import { SourceElementError } from './sourceElements.js';
+import { SourceElementError } from './sourceElementError.js';
 
 export type StyleEdit = Extract<ElementEdit['change'], { kind: 'style' }>['styles'][number];
 
@@ -22,7 +22,11 @@ type ValueForm =
   | 'colour'
   | 'weight'
   | 'line-height'
+  | 'unitless'
   | 'fraction'
+  | 'border-width'
+  | 'size'
+  | 'max-size'
   | readonly string[];
 
 interface StyleRule {
@@ -32,7 +36,9 @@ interface StyleRule {
 
 const SPACING = { tokens: '--ds-space-', values: 'length' } as const;
 const MARGIN = { tokens: '--ds-space-', values: 'signed-length' } as const;
-const SIZE = { tokens: '--ds-size-', values: 'length' } as const;
+const SIZE = { tokens: '--ds-size-', values: 'size' } as const;
+const MIN_SIZE = { tokens: '--ds-size-', values: 'length' } as const;
+const MAX_SIZE = { tokens: '--ds-size-', values: 'max-size' } as const;
 const COLOUR = { tokens: 'colour', values: 'colour' } as const;
 
 export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
@@ -51,10 +57,10 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   columnGap: SPACING,
   width: SIZE,
   height: SIZE,
-  minWidth: SIZE,
-  minHeight: SIZE,
-  maxWidth: SIZE,
-  maxHeight: SIZE,
+  minWidth: MIN_SIZE,
+  minHeight: MIN_SIZE,
+  maxWidth: MAX_SIZE,
+  maxHeight: MAX_SIZE,
   borderRadius: { tokens: '--ds-radius-', values: 'length' },
   color: COLOUR,
   backgroundColor: COLOUR,
@@ -73,6 +79,21 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
     values: ['flex-start', 'center', 'flex-end', 'space-between', 'space-around', 'space-evenly'],
   },
   opacity: { tokens: '--ds-opacity-', values: 'fraction' },
+  display: {
+    tokens: null,
+    values: ['block', 'inline-block', 'inline', 'flex', 'inline-flex', 'grid', 'none'],
+  },
+  flexWrap: { tokens: null, values: ['nowrap', 'wrap', 'wrap-reverse'] },
+  flexGrow: { tokens: null, values: 'unitless' },
+  alignSelf: {
+    tokens: null,
+    values: ['auto', 'flex-start', 'center', 'flex-end', 'stretch', 'baseline'],
+  },
+  borderWidth: { tokens: null, values: 'border-width' },
+  borderStyle: { tokens: null, values: ['solid', 'dashed', 'dotted', 'double', 'none'] },
+  textAlign: { tokens: null, values: ['left', 'center', 'right', 'justify', 'start', 'end'] },
+  textTransform: { tokens: null, values: ['none', 'uppercase', 'lowercase', 'capitalize'] },
+  overflow: { tokens: null, values: ['visible', 'hidden', 'clip', 'scroll', 'auto'] },
 };
 
 const LENGTH = /^(?:0|(?:\d+|\d*\.\d+)(?:px|rem|em|%))$/;
@@ -127,6 +148,36 @@ export function resolveStyleChange(
   return token ? { kind: 'token', token } : { kind: 'raw', value: change.value };
 }
 
+/** One kit token a property's edit may name, with its value in each mode. */
+export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
+
+/**
+ * The pinned kit's tokens by the property that accepts them, for the
+ * inspector's pickers; a property with none to offer is absent. Names are
+ * sorted, the order a raw value's token match prefers.
+ */
+export function editTokens(
+  light: Readonly<Record<string, string>>,
+  dark: Readonly<Record<string, string>>,
+): Record<string, EditToken[]> {
+  const byProperty: Record<string, EditToken[]> = {};
+  for (const [property, rule] of Object.entries(STYLE_PROPERTIES)) {
+    if (rule.tokens === null) continue;
+    const names = Object.keys(light)
+      .filter((name) => isFamilyToken(rule, name, light))
+      .sort();
+    if (names.length === 0) continue;
+    byProperty[property] = names.map((name) => {
+      const lightValue = light[name] ?? '';
+      const darkValue = dark[name] ?? lightValue;
+      return lightValue === darkValue
+        ? { name, value: lightValue }
+        : { name, light: lightValue, dark: darkValue };
+    });
+  }
+  return byProperty;
+}
+
 /** The CSS a resolution writes into the element's style. */
 export function styleValue(resolution: StyleResolution): string {
   return resolution.kind === 'token' ? `var(${resolution.token})` : resolution.value;
@@ -167,6 +218,14 @@ function acceptsValue(form: ValueForm, value: string): boolean {
       return WEIGHT.test(value);
     case 'line-height':
       return UNITLESS.test(value) || LENGTH.test(value);
+    case 'unitless':
+      return UNITLESS.test(value);
+    case 'border-width':
+      return LENGTH.test(value) && !value.endsWith('%');
+    case 'size':
+      return LENGTH.test(value) || value === 'auto' || value === 'fit-content';
+    case 'max-size':
+      return LENGTH.test(value) || value === 'none';
     case 'fraction':
       return FRACTION.test(value);
   }

@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import type { SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { applyElementEdit, type SourceChange, type SourceEdit } from './sourceElementEdits.js';
-import { instrumentSource, SourceElementError } from './sourceElements.js';
+import { SourceElementError } from './sourceElementError.js';
+import { instrumentSource } from './sourceElements.js';
 import type { ResolvedStyle } from './sourceStyles.js';
 
 function reference(element: SourceElement, revisionId = 'r1') {

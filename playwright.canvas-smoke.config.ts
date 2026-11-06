@@ -12,6 +12,7 @@ export default defineConfig({
     'electronCanvasBoardEdit.smoke.spec.ts',
     'electronCanvasBoardDelete.smoke.spec.ts',
     'electronCanvasBoardToolbar.smoke.spec.ts',
+    'electronCanvasBoardLayout.smoke.spec.ts',
     'electronCanvasNavigator.smoke.spec.ts',
     'electronCanvasLibrary.smoke.spec.ts',
   ],

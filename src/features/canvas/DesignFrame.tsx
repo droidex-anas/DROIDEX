@@ -8,7 +8,14 @@
 // at screen size: the board stylesheet divides it by --board-scale, because
 // chrome that shrinks with the board is unusable on a 50-frame canvas.
 
-import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import { flushSync } from 'react-dom';
 import {
   AlertTriangle,
@@ -22,6 +29,8 @@ import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { BoardMode } from './canvasState';
 import { FrameLabel, FrameNameField } from './FrameLabel';
+import type { FrameSize } from './FrameSizeMenu';
+import { FrameSizing } from './FrameSizing';
 import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
 import { PendingBloom } from './PendingBloom';
@@ -50,6 +59,8 @@ export interface DesignFrameProps {
   visible: boolean;
   mode: BoardMode;
   selected: boolean;
+  /** Several frames are selected, so a selected one leaves its size and handles to their box. */
+  multiSelect: boolean;
   /** It is the only frame selected, or the one Interact drives: it shows its toolbar. */
   showTools: boolean;
   /** This is the frame Interact is driving. */
@@ -70,11 +81,13 @@ export interface DesignFrameProps {
   /** It held a live slot and lost it, so returning reloads the design. */
   released: boolean;
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
+  /** A size typed or picked for the frame, which keeps its top-left corner. */
+  onResize: (frame: CanvasFrame, size: FrameSize) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
   /** A press in Edit, at a point in the design's own pixels. */
   onPickElement: (frame: CanvasFrame, at: Point) => void;
-  /** Enter on the label in Edit. */
+  /** Enter on the label, or a double-click on the design, in Edit. */
   onEditEnter: (frame: CanvasFrame) => void;
   /** The box of the element Edit has picked in this frame, in the design's pixels. */
   elementBox: FrameRect | null;
@@ -101,6 +114,15 @@ export function DesignFrame(props: DesignFrameProps) {
   const animated = arriving && motion.frameArrivalMs > 0;
   const screenWidth = rect.width * scale;
   const focusLabel = () => label.current?.focus({ preventScroll: true });
+  // A press on a frame already selected keeps the selection, so all of it drags
+  // together; a click that never became a drag then picks the frame alone.
+  const press = (event: PointerEvent<HTMLElement>) => {
+    if (event.shiftKey || !selected) onPick(frame, event.shiftKey);
+    if (!event.shiftKey) onHold(frame, 'move', event);
+  };
+  const click = (event: MouseEvent<HTMLElement>) => {
+    if (!event.shiftKey) onPick(frame, false);
+  };
   return (
     <div
       data-design-frame={frame.designId}
@@ -136,7 +158,8 @@ export function DesignFrame(props: DesignFrameProps) {
           interacted={props.interacted}
           held={held}
           tabStop={props.tabStop}
-          onHold={onHold}
+          onPress={press}
+          onClick={click}
           onPick={onPick}
           onInteract={onInteract}
           onEnter={(picked) => {
@@ -199,12 +222,13 @@ export function DesignFrame(props: DesignFrameProps) {
                 });
                 return;
               }
-              onPick(frame, event.shiftKey);
-              if (!event.shiftKey) onHold(frame, 'move', event);
+              press(event);
             }}
+            onClick={click}
             onDoubleClick={(event) => {
               event.stopPropagation();
               if (mode === 'select') onInteract(frame);
+              else if (mode === 'edit') onEditEnter(frame);
             }}
           />
         )}
@@ -228,30 +252,17 @@ export function DesignFrame(props: DesignFrameProps) {
         )}
       </div>
 
-      {selected && !elementBox && (
-        <div className="canvas-frame-size canvas-chrome">
-          <span>
-            {Math.round(rect.width)} × {Math.round(rect.height)}
-          </span>
-        </div>
+      {selected && !props.multiSelect && (
+        <FrameSizing
+          frame={frame}
+          rect={rect}
+          mode={mode}
+          elementPicked={elementBox !== null}
+          onHold={onHold}
+          onResize={props.onResize}
+          onLeave={focusLabel}
+        />
       )}
-
-      {selected &&
-        mode === 'select' &&
-        (['east', 'south', 'southeast'] as const).map((handle) => (
-          <span
-            key={handle}
-            role="presentation"
-            aria-hidden
-            data-handle={handle}
-            className="canvas-frame-handle"
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              onHold(frame, handle, event);
-            }}
-          />
-        ))}
     </div>
   );
 }

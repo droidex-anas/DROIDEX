@@ -9,14 +9,16 @@ import {
   frameHeaderOf,
   isBoardControl,
   isBoardEditor,
+  historyStep,
   isDeleteKey,
-  isUndoKey,
+  isSelectAllKey,
   modeShortcut,
   zoomShortcut,
 } from './boardKeys';
-import type { ZoomCommand } from './BoardControls';
+import type { HistoryStep } from './boardHistory';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardInteraction, BoardInteractionEvent, BoardMode } from './canvasState';
+import type { ZoomCommand } from './ZoomControl';
 
 /** Board-local pixels one arrow key pans by when nothing is selected. */
 const ARROW_PAN_PX = 32;
@@ -40,8 +42,8 @@ export interface BoardKeyActions {
   nudge: (step: Point) => void;
   /** Deletes the selected frames; false when there is nothing Delete can take. */
   removeSelection: () => boolean;
-  /** Undoes this canvas's latest deletion; false when none is offered. */
-  undoRemoval: () => boolean;
+  /** Steps this canvas's history back or on; false when there is no step. */
+  history: (step: HistoryStep) => boolean;
   focusBoard: () => void;
   focusLabel: (designId: string) => void;
 }
@@ -94,6 +96,9 @@ function escape(header: string | null, mark: string | null, actions: BoardKeyAct
 function runShortcut(event: KeyboardEvent, actions: BoardKeyActions): boolean {
   const zoom = zoomShortcut(event);
   if (zoom) actions.zoom(zoom);
+  // The board's ⌘ zoom keys are its own: ⌘1 would also pick the first tab, and
+  // an app shortcut someone bound to ⌘0, ⌘+ or ⌘− would run as well.
+  if (zoom && (event.metaKey || event.ctrlKey)) event.stopPropagation();
   const mode = zoom ? null : modeShortcut(event);
   if (mode) actions.setMode(mode);
   return zoom !== null || mode !== null;
@@ -119,7 +124,12 @@ function runBoardKey(
     return true;
   }
   if (isDeleteKey(event)) return actions.removeSelection();
-  if (isUndoKey(event)) return actions.undoRemoval();
+  const step = historyStep(event);
+  if (step) return actions.history(step);
+  if (isSelectAllKey(event)) {
+    actions.dispatch({ type: 'pick-all', designIds: [...actions.order] });
+    return true;
+  }
   if (event.key === ' ') {
     actions.holdSpace();
     return true;

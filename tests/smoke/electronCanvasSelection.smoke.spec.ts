@@ -84,6 +84,16 @@ test('[C4 select] the production guest picks, previews and releases a design ele
     assert.equal(picked.styles.fontSize, '24px');
     assert.equal(picked.rect.x, 8);
     assert.equal(picked.rect.y, 8);
+    assert.equal(picked.text, 'Title');
+
+    // A text preview replaces what the heading shows, and leaving puts it back;
+    // the guest keeps reporting the text the heading holds.
+    const title = { elementId: heading.elementId, instancePath: picked.instancePath, styles: {} };
+    const typed = await select({ ...title, text: 'Welcome back '.repeat(30) });
+    assert.equal(typed?.text, 'Title');
+    assert.ok(typed.rect.height > picked.rect.height, 'the longer text wraps');
+    assert.equal(await select(null), null);
+    assert.equal((await select({ ...title, text: null }))?.rect.height, picked.rect.height);
 
     // The keyboard steps through the marked elements in document order.
     const next = await pick({ step: 'next' });
@@ -92,9 +102,12 @@ test('[C4 select] the production guest picks, previews and releases a design ele
     // A preview is an inline style the guest computes, and moving away puts it back.
     const parent = await pick({ x: 2, y: 2 });
     assert.equal(parent?.elementId, section.elementId);
-    const target = { elementId: section.elementId, instancePath: parent.instancePath };
+    assert.equal(parent.text, null, 'it holds elements, not one text');
+    const target = { elementId: section.elementId, instancePath: parent.instancePath, text: null };
     const previewed = await select({ ...target, styles: { paddingTop: '40px' } });
     assert.equal(previewed?.styles.paddingTop, '40px');
+    // Picking the element already selected keeps what it previews.
+    assert.equal((await pick({ x: 2, y: 2 }))?.styles.paddingTop, '40px');
     assert.equal(await select(null), null);
     const restored = await select({ ...target, styles: {} });
     assert.equal(restored?.styles.paddingTop, '8px');

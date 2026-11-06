@@ -4,16 +4,19 @@
 // panel from the selection this returns.
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { elementStep } from './boardKeys';
+import { elementStep, historyStep } from './boardKeys';
 import { canvasMessage } from './client';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import {
   commitStyles,
+  commitText,
   editDraft,
   followRevision,
   previewStyle,
+  previewText,
   revertStyle,
+  revertText,
   settleCommit,
   type CommitOutcome,
   type ElementEditDraft,
@@ -22,6 +25,7 @@ import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocume
 import type { PreviewRun } from './previewRuntime';
 import type { CanvasFrame, WriteReceipt } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
+import { useEditTokens } from './useEditTokens';
 
 export interface ElementSelection {
   draft: ElementEditDraft;
@@ -50,7 +54,15 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
    * replies, so a report under another sequence answers a select.
    */
   const picking = useRef<{ run: PreviewRun; sequence: number } | null>(null);
+  /** Enter arrived while a pick was in flight, so it goes into the panel of what that finds. */
+  const enterOnAnswer = useRef(false);
   const panel = useRef<HTMLDivElement>(null);
+
+  const { tokens, mode } = useEditTokens(
+    selection
+      ? frames.find((frame) => frame.designId === selection.draft.element.designId)?.designSystem
+      : undefined,
+  );
 
   if (!active && (selection !== null || error !== '')) {
     setSelection(null);
@@ -86,6 +98,12 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     if (draft && next) next.select(target(draft), STYLE_PROPERTIES);
     holder.current = next;
   }, [draft]);
+
+  useEffect(() => {
+    if (!enterOnAnswer.current || picking.current !== null) return;
+    enterOnAnswer.current = false;
+    focusFirstField(panel.current);
+  }, [selection]);
 
   const [selections] = useState<PreviewSelections>(() => {
     /** A pick's answer: the element it found becomes the selection, once its revision has built. */
@@ -146,6 +164,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
         // A select names the selected element, so its answer means something
         // only when the guest has lost that element.
         else if (element === null && selected) choose(null);
+        if (answersPick && latest.current.selection === null) enterOnAnswer.current = false;
       },
     };
   });
@@ -168,26 +187,23 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     return true;
   };
 
-  const preview = (property: string, value: string) => {
+  /** Changes what the selected element previews. */
+  const update = (change: (draft: ElementEditDraft) => ElementEditDraft) => {
     const current = latest.current.selection;
-    if (current) choose({ ...current, draft: previewStyle(current.draft, property, value) });
+    if (current) choose({ ...current, draft: change(current.draft) });
   };
 
-  const revert = (property: string) => {
-    const current = latest.current.selection;
-    if (current) choose({ ...current, draft: revertStyle(current.draft, property) });
-  };
-
-  const commit = () => {
+  /** Sends the commit `make` draws from the draft, if it has one to send. */
+  const send = (make: typeof commitStyles) => {
     const current = latest.current.selection;
     if (!current) return;
     const mutationId = crypto.randomUUID();
-    const committed = commitStyles(current.draft, mutationId);
+    const committed = make(current.draft, mutationId);
     if (!committed) return;
     choose({ ...current, draft: committed.draft });
     const settle = (outcome: CommitOutcome) => {
       const now = latest.current.selection;
-      if (now?.draft.pendingMutationId !== mutationId) return;
+      if (now?.draft.pending?.mutationId !== mutationId) return;
       const settled = settleCommit(now.draft, mutationId, outcome);
       choose(settled && { ...now, draft: settled });
     };
@@ -196,28 +212,36 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
         settle({ status: 'edited', revisionId: receipt.revisionId });
       },
       (refusal: unknown) => {
-        if (latest.current.selection?.draft.pendingMutationId === mutationId)
+        if (latest.current.selection?.draft.pending?.mutationId === mutationId)
           setError(canvasMessage(refusal));
         settle({ status: 'refused' });
       },
     );
   };
 
-  /** Enter in Edit: into the panel when `designId` holds the selected element, else its first element. */
+  /**
+   * Enter in Edit, or a double-click: into the panel when `designId` holds the
+   * selected element, else its first element. While a pick in it is in
+   * flight, into the panel of the element that pick finds.
+   */
   const enter = (designId: string) => {
-    if (latest.current.selection?.draft.element.designId === designId)
-      panel.current?.querySelector<HTMLElement>('input')?.focus();
+    const held = runs.current.get(designId);
+    if (held && picking.current?.run === held.run) enterOnAnswer.current = true;
+    else if (latest.current.selection?.draft.element.designId === designId)
+      focusFirstField(panel.current);
     else pick(designId, { step: 'first' });
   };
 
   /**
    * Edit's keys on the board, for the frame `designId` the keyboard is on:
    * Enter as `enter`, and once an element is picked the arrows step through
-   * its design's elements. Without one the arrows stay the board's.
+   * its design's elements. Without one the arrows stay the board's. The
+   * history's keys wait while a commit is saving, as they do in the panel.
    */
   const runKey = (event: KeyboardEvent, designId: string | null): boolean => {
-    const step = active ? elementStep(event) : null;
     const current = latest.current.selection;
+    if (historyStep(event)) return current !== null && current.draft.pending !== null;
+    const step = active ? elementStep(event) : null;
     if (step === 'first') {
       const on = designId ?? current?.draft.element.designId;
       if (on === undefined) return false;
@@ -234,11 +258,28 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     error,
     selections,
     panel,
+    tokens,
+    mode,
     pick,
     clear,
-    preview,
-    revert,
-    commit,
+    preview: (property: string, value: string) => {
+      update((draft) => previewStyle(draft, property, value));
+    },
+    revert: (property: string) => {
+      update((draft) => revertStyle(draft, property));
+    },
+    commit: () => {
+      send(commitStyles);
+    },
+    previewText: (text: string) => {
+      update((draft) => previewText(draft, text));
+    },
+    revertText: () => {
+      update(revertText);
+    },
+    commitText: () => {
+      send(commitText);
+    },
     enter,
     runKey,
   };
@@ -246,7 +287,15 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
 
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
-  return { elementId, instancePath, styles: { ...draft.values } };
+  return { elementId, instancePath, styles: { ...draft.values }, text: draft.text };
+}
+
+/** The panel's first field that takes typing, else its first working button. */
+function focusFirstField(panel: HTMLElement | null) {
+  const first =
+    panel?.querySelector<HTMLElement>('textarea:not([readonly]), input:not([readonly])') ??
+    panel?.querySelector<HTMLElement>('button:not([disabled])');
+  first?.focus();
 }
 
 /** The selection when it is in this revision of this design, else null. */

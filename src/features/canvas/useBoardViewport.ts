@@ -30,7 +30,7 @@ const IDENTITY: Viewport = { x: 0, y: 0, scale: 1 };
 
 export interface BoardViewport {
   viewport: Viewport;
-  /** The board element's own box in board-local pixels, as last measured. */
+  /** The part of the board's box no panel is docked over, in board-local pixels. */
   size: Point;
   panByScreen: (screenDelta: Point) => void;
   /** Fit and focus are the same operation; focus just passes one rect. */
@@ -57,10 +57,12 @@ export function useBoardViewport(
   motion: CanvasMotion,
   /** Where a board returning from a document was left; it opens there instead of fitting. */
   restored: Viewport | undefined,
+  /** Screen pixels along the board's right edge that a docked panel covers. */
+  rightInset: number,
 ): BoardViewport {
   const [viewport, setViewport] = useState<Viewport>(restored ?? IDENTITY);
   const [scrolling, setScrolling] = useState(false);
-  const [size, setSize] = useState<Point>({ x: 0, y: 0 });
+  const [box, setBox] = useState<Point>({ x: 0, y: 0 });
 
   const animation = useRef<number | null>(null);
   // Where a running animation is headed. A zoom command starts from there, so
@@ -72,8 +74,12 @@ export function useBoardViewport(
   // What the listeners below need from the current render. They are registered
   // once, or run from an animation frame, so they cannot close over it. The
   // frames are also how a resize finds something to fit.
-  const latest = useRef({ viewport, frames });
-  latest.current = { viewport, frames };
+  const latest = useRef({ viewport, frames, rightInset });
+  latest.current = { viewport, frames, rightInset };
+  const visibleBox = useCallback(
+    () => visiblePart(measured.current, latest.current.rightInset),
+    [],
+  );
 
   const stopAnimating = useCallback(() => {
     if (animation.current !== null) cancelAnimationFrame(animation.current);
@@ -121,23 +127,24 @@ export function useBoardViewport(
 
   const fitTo = useCallback(
     (rects: readonly FrameRect[]) => {
-      if (rects.length > 0) animateTo(fitFrames(rects, measured.current));
+      if (rects.length > 0) animateTo(fitFrames(rects, visibleBox()));
     },
-    [animateTo],
+    [animateTo, visibleBox],
   );
 
   const zoomTo = useCallback(
     (scale: number) => {
-      const centre = { x: measured.current.x / 2, y: measured.current.y / 2 };
+      const visible = visibleBox();
+      const centre = { x: visible.x / 2, y: visible.y / 2 };
       animateTo(zoomAtPoint(heading.current ?? latest.current.viewport, centre, scale));
     },
-    [animateTo],
+    [animateTo, visibleBox],
   );
 
   const reveal = useCallback(
     (rect: FrameRect) => {
       const current = heading.current ?? latest.current.viewport;
-      const size = measured.current;
+      const size = visibleBox();
       const left = current.x + rect.x * current.scale;
       const top = current.y + rect.y * current.scale;
       const right = left + rect.width * current.scale;
@@ -149,7 +156,7 @@ export function useBoardViewport(
         y: size.y / 2 - (rect.y + rect.height / 2) * current.scale,
       });
     },
-    [animateTo],
+    [animateTo, visibleBox],
   );
 
   const stepZoom = useCallback(
@@ -162,16 +169,17 @@ export function useBoardViewport(
   /** Spec §4: the board may fit once, before the user has navigated. */
   const fitOnce = useCallback(() => {
     const held = latest.current.frames;
+    const visible = visibleBox();
     if (opening.current.fitted || opening.current.navigated) return;
-    if (held.length === 0 || measured.current.x === 0) return;
+    if (held.length === 0 || visible.x === 0) return;
     opening.current.fitted = true;
     setViewport(
       fitFrames(
         held.map((frame) => frame.rect),
-        measured.current,
+        visible,
       ),
     );
-  }, []);
+  }, [visibleBox]);
 
   useEffect(() => {
     fitOnce();
@@ -182,7 +190,7 @@ export function useBoardViewport(
     if (!root) return undefined;
     const observer = new ResizeObserver(() => {
       measured.current = { x: root.clientWidth, y: root.clientHeight };
-      setSize(measured.current);
+      setBox(measured.current);
       fitOnce();
     });
     observer.observe(root);
@@ -252,7 +260,7 @@ export function useBoardViewport(
 
   return {
     viewport,
-    size,
+    size: visiblePart(box, rightInset),
     panByScreen,
     fitTo,
     zoomTo,
@@ -262,6 +270,11 @@ export function useBoardViewport(
     scrolling,
     markNavigated,
   };
+}
+
+/** A panel docked over the board's right edge hides that strip of it. */
+function visiblePart(box: Point, rightInset: number): Point {
+  return { x: Math.max(0, box.x - rightInset), y: box.y };
 }
 
 interface ScrollGesture {

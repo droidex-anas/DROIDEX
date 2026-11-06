@@ -5,13 +5,13 @@
 
 import ts from 'typescript';
 import type { SourceReplacement } from './sourceElementEdits.js';
+import { SourceElementError } from './sourceElementError.js';
 import {
   ambiguous,
   attribute,
   attributeValue,
   classLiterals,
   propertyName,
-  SourceElementError,
 } from './sourceElements.js';
 import { STYLE_PROPERTIES, styleValue, type StyleResolution } from './styleEdits.js';
 import { classStyle, longhands, styleClass } from './tailwindStyles.js';
@@ -53,7 +53,7 @@ interface InlineStyle {
 }
 
 // React writes a bare number in these as it is, and in any other property as pixels.
-const UNITLESS_PROPERTIES = new Set(['opacity', 'fontWeight', 'lineHeight']);
+const UNITLESS_PROPERTIES = new Set(['opacity', 'fontWeight', 'lineHeight', 'flexGrow']);
 const BARE_NUMBER = /^(-?(?:\d+|\d*\.\d+))$/;
 const PIXELS = /^(-?(?:\d+|\d*\.\d+))px$|^(0)$/;
 

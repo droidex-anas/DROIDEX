@@ -31,6 +31,7 @@ const selected = {
   instancePath: '0/2',
   rect: { x: -4, y: 2.5, width: 120, height: 0 },
   styles: { gap: '4px', color: 'rgb(0, 0, 0)' },
+  text: 'Welcome',
 };
 
 test('every bounded event shape is accepted', () => {
@@ -150,6 +151,19 @@ test('an over-long text field is cut on a code point boundary, not refused', () 
   )?.events[0];
   assert.ok(kind?.event === 'interaction');
   assert.equal(new TextEncoder().encode(kind.kind).length, 512);
+
+  // Except an element's text: the board may write it back whole, so past the
+  // cap it is not offered at all rather than cut.
+  const long = readPreviewSnapshot(
+    answer({
+      events: [
+        { event: 'selection', sequence: 1, element: { ...selected, text: '界'.repeat(200) } },
+      ],
+    }),
+    instance,
+  )?.events[0];
+  assert.ok(long?.event === 'selection');
+  assert.equal(long.element?.text, null);
 });
 
 test('a snapshot over its own byte bound is still refused whole', () => {
@@ -166,7 +180,7 @@ test('a snapshot over its own byte bound is still refused whole', () => {
 
 test('a selection command is a fixed call whose previewed styles are data, not code', () => {
   const script = previewSelectScript(
-    { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' } },
+    { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' }, text: '<b>' },
     ['color'],
     7,
   );
@@ -175,7 +189,12 @@ test('a selection command is a fixed call whose previewed styles are data, not c
   assert.ok(script.startsWith(call) && script.endsWith(')'));
   assert.equal(script.includes('<'), false);
   assert.deepEqual(JSON.parse(script.slice(call.length, -1)), {
-    target: { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' } },
+    target: {
+      elementId: 'el_1',
+      instancePath: '0/2',
+      styles: { color: '</script><b>' },
+      text: '<b>',
+    },
     properties: ['color'],
     sequence: 7,
   });

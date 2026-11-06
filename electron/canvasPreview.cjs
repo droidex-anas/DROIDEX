@@ -83,7 +83,7 @@ const MAX_PREVIEW_DIAGNOSTICS = 8;
  */
 const MAX_PREVIEW_TEXT_BYTES = 512;
 /** Style properties one selection command may read and preview. */
-const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+const MAX_PREVIEW_STYLE_PROPERTIES = 64;
 /** Draft token values one `setTokens` may carry, and how long each may be: a kit's caps. */
 const MAX_PREVIEW_TOKENS = 128;
 const MAX_PREVIEW_TOKEN_VALUE_LENGTH = 160;
@@ -119,6 +119,10 @@ const INTERMEDIATE_SCRIPT = `(() => {
     }
     return cut;
   };
+  // An element's own text is never cut: the board writes it back whole, so
+  // past the cap there is none to offer or preview.
+  const whole = (value) =>
+    typeof value === 'string' && bytes(value) <= ${String(MAX_PREVIEW_TEXT_BYTES)} ? value : null;
   const size = (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
 
@@ -146,7 +150,13 @@ const INTERMEDIATE_SCRIPT = `(() => {
     return {
       event: 'selection',
       sequence: data.sequence,
-      element: { elementId, instancePath: text(element.instancePath), rect, styles },
+      element: {
+        elementId,
+        instancePath: text(element.instancePath),
+        rect,
+        styles,
+        text: whole(element.text),
+      },
     };
   };
 
@@ -292,7 +302,12 @@ const INTERMEDIATE_SCRIPT = `(() => {
       return command({
         command: 'select',
         sequence,
-        target: { elementId: text(target.elementId), instancePath: target.instancePath, styles },
+        target: {
+          elementId: text(target.elementId),
+          instancePath: target.instancePath,
+          styles,
+          text: whole(target.text),
+        },
         properties,
       });
     },
