@@ -70,7 +70,7 @@ test('a commit sends every previewed property as one style edit', () => {
       },
     },
   });
-  assert.deepEqual(draft.pending, { mutationId: 'm-both', change: 'style' });
+  assert.deepEqual(draft.pending, { mutationId: 'm-both', change: 'style', revisionId: null });
 });
 
 test('a value is sent the way the grammar reads it: lowercase and single-spaced', () => {
@@ -92,7 +92,10 @@ test('every refusal drops the draft, and a reply for another mutation changes no
   assert.equal(settleCommit(draft, 'm-other', { status: 'refused' }), draft);
   assert.equal(settleCommit(draft, 'm-gap', { status: 'refused' }), null);
   // The edit's own revision has not built yet: nothing can be committed against the old one.
-  assert.equal(settleCommit(draft, 'm-gap', { status: 'edited', revisionId: 'r2' }), draft);
+  assert.deepEqual(settleCommit(draft, 'm-gap', { status: 'edited', revisionId: 'r2' }), {
+    ...draft,
+    pending: { mutationId: 'm-gap', change: 'style', revisionId: 'r2' },
+  });
   assert.deepEqual(settleCommit(draft, 'm-gap', { status: 'edited', revisionId: 'r1' }), {
     ...draft,
     pending: null,
@@ -144,18 +147,22 @@ test('text commits apart from styles, and each keeps the other’s previews into
   assert.equal(commitStyles(text.draft, 'm-gap'), null, 'one commit at a time');
 
   const built = frameAt('r2', ready('r2', [{ ...site, elementId: 'el_2' }]));
-  const afterText = followRevision(text.draft, built);
+  const edited = { status: 'edited', revisionId: 'r2' } as const;
+  const afterText = followRevision(settleCommit(text.draft, 'm-text', edited), built);
   assert.equal(afterText?.text, null);
   assert.deepEqual(afterText?.values, { gap: '4px' });
   const styles = commitStyles(typed, 'm-gap');
   assert.ok(styles);
-  const afterStyles = followRevision(styles.draft, built);
+  const afterStyles = followRevision(settleCommit(styles.draft, 'm-gap', edited), built);
   assert.equal(afterStyles?.text, 'Welcome & bye');
   assert.deepEqual(afterStyles?.values, {});
-  // A revision this draft did not commit, the agent's or an undo, leaves no preview standing.
-  const elsewhere = followRevision(typed, built);
-  assert.equal(elsewhere?.text, null);
-  assert.deepEqual(elsewhere?.values, {});
+  // A revision this draft did not commit, the agent's or an undo, leaves no preview standing,
+  // even while its own commit is still waiting for the reply that names its revision.
+  for (const draft of [typed, styles.draft]) {
+    const elsewhere = followRevision(draft, built);
+    assert.equal(elsewhere?.text, null);
+    assert.deepEqual(elsewhere?.values, {});
+  }
 });
 
 test('a newer revision without the site, or one that did not build, drops the selection', () => {

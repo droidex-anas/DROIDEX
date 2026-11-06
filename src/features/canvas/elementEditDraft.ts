@@ -22,9 +22,9 @@ export interface ElementEditDraft {
   text: string | null;
   /**
    * The one commit awaiting its reply and what it carries; each edit moves the
-   * revision on.
+   * revision on, to the one its reply names.
    */
-  pending: { mutationId: string; change: 'style' | 'text' } | null;
+  pending: { mutationId: string; change: 'style' | 'text'; revisionId: string | null } | null;
 }
 
 export function editDraft(
@@ -82,7 +82,7 @@ export function commitStyles(
   }));
   if (draft.pending !== null || styles.length === 0) return null;
   return {
-    draft: { ...draft, pending: { mutationId, change: 'style' } },
+    draft: { ...draft, pending: { mutationId, change: 'style', revisionId: null } },
     input: { mutationId, edit: { element: draft.element, change: { kind: 'style', styles } } },
   };
 }
@@ -97,7 +97,7 @@ export function commitText(
 ): { draft: ElementEditDraft; input: EditElementInput } | null {
   if (draft.pending !== null || draft.text === null) return null;
   return {
-    draft: { ...draft, pending: { mutationId, change: 'text' } },
+    draft: { ...draft, pending: { mutationId, change: 'text', revisionId: null } },
     input: {
       mutationId,
       edit: { element: draft.element, change: { kind: 'text', value: draft.text } },
@@ -109,8 +109,9 @@ export type CommitOutcome = { status: 'edited'; revisionId: string } | { status:
 
 /**
  * Settles the pending commit; a reply for any other mutation changes nothing.
- * An edit that made a new revision stays pending until `followRevision` moves
- * the draft onto it, so nothing is committed against the revision it replaced.
+ * An edit that made a new revision stays pending, now naming it, until
+ * `followRevision` moves the draft onto it, so nothing is committed against
+ * the revision it replaced.
  */
 export function settleCommit(
   draft: ElementEditDraft | null,
@@ -119,7 +120,8 @@ export function settleCommit(
 ): ElementEditDraft | null {
   if (draft?.pending?.mutationId !== mutationId) return draft;
   if (outcome.status === 'refused') return null;
-  return outcome.revisionId === draft.element.revisionId ? { ...draft, pending: null } : draft;
+  if (outcome.revisionId === draft.element.revisionId) return { ...draft, pending: null };
+  return { ...draft, pending: { ...draft.pending, revisionId: outcome.revisionId } };
 }
 
 /**
@@ -127,7 +129,7 @@ export function settleCommit(
  * older one is still on show and the draft stays on it. Once it has built, the
  * selection moves to the element written at the same place. The previews its
  * own commit carried are dropped because the source now says what they said;
- * the other kind's stay, unless a revision it did not make arrived. When
+ * the other kind's stay only on the revision that commit made. When
  * nothing is written there any more, or the revision did not build, the draft
  * goes.
  */
@@ -146,7 +148,8 @@ export function followRevision(
         element.tagName === draft.site.tagName,
     );
     if (!site) return null;
-    const committed = draft.pending?.change;
+    const committed =
+      draft.pending?.revisionId === build.revisionId ? draft.pending.change : undefined;
     return {
       ...draft,
       element: { ...draft.element, revisionId: build.revisionId, elementId: site.elementId },
