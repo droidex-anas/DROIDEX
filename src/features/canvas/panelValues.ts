@@ -98,6 +98,15 @@ export function colourFace(value: string, tokens: readonly ValueOption[] = []): 
   return { text: hex + opacity, none: false };
 }
 
+/**
+ * Whether a token's value, as the kit wrote it, is the value the preview
+ * computed: the same length in pixels, the same colour, or the same text.
+ */
+export function sameValue(written: string, computed: string): boolean {
+  const px = pixelsOf(written);
+  if (px !== null) return px === pixelsOf(computed);
+  return sameColour(written, computed);
+}
 function sameColour(a: string, b: string): boolean {
   const left = parseColour(a);
   const right = parseColour(b);

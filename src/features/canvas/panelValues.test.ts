@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { colourFace, firstFamily, lengthFace, sameFontStack } from './panelValues';
+import { colourFace, firstFamily, lengthFace, sameFontStack, sameValue } from './panelValues';
 
 const spacing = [
   { value: '--ds-space-1', label: 'space-1', hint: '4px' },
@@ -87,6 +87,14 @@ test('a colour token in any form the style edits accept matches what Chromium co
   });
 });
 
+test('a token as the kit wrote it is the computed value when it is the same colour, length or text', () => {
+  assert.ok(sameValue('#2d2a26', 'rgb(45, 42, 38)'));
+  assert.ok(sameValue('hsl(0 0% 100% / 50%)', 'rgba(255, 255, 255, 0.5)'));
+  assert.ok(sameValue('0.5rem', '8px'));
+  assert.ok(sameValue('600', '600'));
+  assert.ok(!sameValue('#2d2a26', 'rgb(45, 42, 39)'));
+  assert.ok(!sameValue('0.5rem', '9px'));
+});
 test('a font stack is named by its first family and matched however it is quoted', () => {
   assert.equal(firstFamily('"Inter Variable", system-ui, sans-serif'), 'Inter Variable');
   assert.equal(
