@@ -225,8 +225,8 @@ function built(revisionId: string): CanvasFrame['build'] {
 const working = params.has('presence');
 const PRESENCE: CanvasPresence = working
   ? new Map([
-      ['a', { key: 'chat_1', name: 'Kairo', color: 'crimson' }],
-      ['b', { key: 'chat_1/worker_1', name: 'Lyra', color: 'green' }],
+      ['a', { agent: { key: 'chat_1', name: 'Kairo', color: 'crimson' }, named: false }],
+      ['b', { agent: { key: 'chat_1/worker_1', name: 'Lyra', color: 'green' }, named: true }],
     ])
   : NO_PRESENCE;
 
