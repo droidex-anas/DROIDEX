@@ -344,3 +344,54 @@ test('Edit outlines the element under the pointer by its tag, through a zoom, un
   await expect(board).toHaveAttribute('data-board-mode', 'edit');
   await expect(hover).toHaveCount(0);
 });
+
+test('the hover tag stays above an element whose left meets no part of the picked size chip', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = {
+      elementId: 'el_title',
+      instancePath: '0/0',
+      tagName: 'h1',
+      rect: { x: 8, y: 8, width: 240, height: 30 },
+    };
+    const body = {
+      elementId: 'el_body',
+      instancePath: '0/1',
+      tagName: 'p',
+      rect: { x: 8, y: 64, width: 240, height: 20 },
+    };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const y = typeof argument.y === 'number' ? argument.y : 0;
+      const element = y < 50 ? title : body;
+      return command === 'hover' ? element : { ...element, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const at = (x: number, y: number) => ({
+    x: drawn.x + (x * drawn.width) / 400,
+    y: drawn.y + (y * drawn.width) / 400,
+  });
+
+  await page.mouse.click(at(20, 20).x, at(20, 20).y);
+  await page.clock.runFor(100);
+  const chip = await box(page.locator('.canvas-element-outline .canvas-frame-size > span'));
+  await page.mouse.move(at(20, 70).x, at(20, 70).y);
+  await page.clock.runFor(32);
+  const hover = page.locator('[data-element-hover]');
+  await expect(hover).toHaveAttribute('data-element-hover', 'p');
+  const tag = await box(hover.locator('.canvas-element-tag > span'));
+  // The full width of the paragraph would meet the chip; the tag at its left does not.
+  expect(tag.y + tag.height).toBeLessThanOrEqual((await box(hover)).y + 1);
+  expect(tag.x + tag.width).toBeLessThan(chip.x);
+});

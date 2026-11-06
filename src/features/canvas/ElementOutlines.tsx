@@ -5,7 +5,7 @@
 // is not cut off. Each box is trimmed to its frame, where the design is
 // visible, and glides when the element's own box changes.
 
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useState, type ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
 import type { ElementRef, FrameRect } from './protocol';
 import type { HoveredElement } from './useElementHover';
@@ -37,6 +37,8 @@ export function ElementOutlines({
   selection: ElementSelection | null;
   hovered: HoveredElement | null;
 }) {
+  const [tag, tagWidth] = useScreenWidth();
+  const [size, sizeWidth] = useScreenWidth();
   const picked = selection?.draft.element;
   const selected = selection && picked && onBoard(drawn, picked.designId, selection.shown.rect);
   // The picked element's own outline already says where it is.
@@ -45,7 +47,9 @@ export function ElementOutlines({
     !(picked && isPicked(picked, hovered)) &&
     onBoard(drawn, hovered.designId, hovered.element.rect);
   const sizeChip =
-    selected && picked.designId === hovered?.designId ? sizeChipOf(selected.box, scale) : null;
+    selected && picked.designId === hovered?.designId
+      ? sizeChipOf(selected.box, sizeWidth / scale, scale)
+      : null;
   return (
     <>
       {hovered && hover && (
@@ -59,9 +63,9 @@ export function ElementOutlines({
           >
             <div
               className="canvas-element-tag canvas-chrome"
-              data-side={tagSide(hover.box, hover.frame.height, sizeChip, scale)}
+              data-side={tagSide(hover.box, tagWidth / scale, hover.frame.height, sizeChip, scale)}
             >
-              <span>{hovered.element.tagName}</span>
+              <span ref={tag}>{hovered.element.tagName}</span>
             </div>
           </div>
         </AtFrame>
@@ -70,7 +74,7 @@ export function ElementOutlines({
         <AtFrame frame={selected.frame}>
           <div aria-hidden className="canvas-element-outline" style={selected.box}>
             <div className="canvas-frame-size canvas-chrome">
-              <span>
+              <span ref={size}>
                 {Math.round(selection.shown.rect.width)} × {Math.round(selection.shown.rect.height)}
               </span>
             </div>
@@ -120,12 +124,31 @@ function inFrame(frame: FrameRect, element: FrameRect): Box | null {
   return { left, top, width, height };
 }
 
-/** The band under a picked element's box that its size chip takes. */
-function sizeChipOf(box: Box, scale: number): Box {
+/** A chip's width on screen, which its text sets, so it is read once the chip is drawn. */
+function useScreenWidth() {
+  const [element, setElement] = useState<HTMLElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!element) return undefined;
+    const measure = () => {
+      setWidth(element.offsetWidth);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [element]);
+  return [setElement, width] as const;
+}
+
+/** What a picked element's size chip covers: centred under its box, with the gap above it. */
+function sizeChipOf(box: Box, width: number, scale: number): Box {
   return {
-    left: box.left,
+    left: box.left + (box.width - width) / 2,
     top: box.top + box.height,
-    width: box.width,
+    width,
     height: SIZE_ROOM_PX / scale,
   };
 }
@@ -136,12 +159,18 @@ function sizeChipOf(box: Box, scale: number): Box {
  * frame, onto its own chrome, or meet the picked element's size chip; in the
  * box's corner when neither side has room.
  */
-function tagSide(box: Box, frameHeight: number, sizeChip: Box | null, scale: number): TagSide {
+function tagSide(
+  box: Box,
+  width: number,
+  frameHeight: number,
+  sizeChip: Box | null,
+  scale: number,
+): TagSide {
   const room = TAG_ROOM_PX / scale;
   const fits = (top: number) =>
     top >= 0 &&
     top + room <= frameHeight &&
-    !(sizeChip && overlaps({ ...box, top, height: room }, sizeChip));
+    !(sizeChip && overlaps({ left: box.left, top, width, height: room }, sizeChip));
   if (fits(box.top - room)) return 'above';
   if (fits(box.top + box.height)) return 'below';
   return 'inside';
