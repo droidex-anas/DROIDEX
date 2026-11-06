@@ -29,7 +29,7 @@ const FIT_PADDING_PX = 72;
 
 /**
  * Screen height a selected frame's label and toolbar stand above its top edge
- * (`.canvas-frame-tools` in canvasBoard.css). Fit keeps its padding above them
+ * (`.canvas-frame-tools` in canvasBoardTools.css). Fit keeps its padding above them
  * too, so a focused frame's toolbar clears the pane's own controls.
  */
 const FRAME_CHROME_PX = 74;
