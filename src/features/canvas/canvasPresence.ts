@@ -91,8 +91,15 @@ function turnWork(events: readonly TranscriptEvent[]): TurnWork {
   const running = new Map<string, { source: string; designIds: string[] }>();
   const createdBy = new Map<string, string>();
   const arrivals = new Set<string>();
-  for (let index = turnStart(events); index < events.length; index += 1) {
-    const event = events[index];
+  // Walked forward rather than indexed back from the end: the store keeps a
+  // transcript as a chunked sequence, whose indexed reads are slow.
+  for (const event of events) {
+    if (startsTurn(event)) {
+      running.clear();
+      createdBy.clear();
+      arrivals.clear();
+      continue;
+    }
     const activity = event.canvasActivity;
     if (activity?.action !== 'create' && activity?.action !== 'write') continue;
     const source = event.role === 'primary' ? PRIMARY : event.sourceSessionId;
@@ -129,13 +136,9 @@ function frameWorkers(
   return workers;
 }
 
-/** Where the chat's latest turn starts: its own latest prompt that was not a steer. */
-function turnStart(events: readonly TranscriptEvent[]): number {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event.author === 'user' && event.role === 'primary' && !event.steered) return index;
-  }
-  return 0;
+/** The chat's own prompt, unless it was a steer, which joins the turn it steers. */
+function startsTurn(event: TranscriptEvent): boolean {
+  return event.author === 'user' && event.role === 'primary' && !event.steered;
 }
 
 /**
@@ -171,7 +174,7 @@ function pick<T>(options: readonly T[], hash: number, taken: ReadonlySet<T>): T 
   return options[hash % options.length];
 }
 
-function fnv1a(text: string): number {
+export function fnv1a(text: string): number {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);
