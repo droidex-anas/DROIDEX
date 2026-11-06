@@ -1,9 +1,10 @@
 // The selected frame's toolbar (spec §4): switch its version, run it, read its
 // source, add it to the chat, rename it, and the rest behind More. It floats
 // at screen size over the frame's label, or under the frame where that has no
-// room (toolbarPlacement.ts), so it follows the frame through pan and zoom. It is one tab stop: the arrows move inside it and Escape hands the
-// keyboard back to the label. Its tools are icons; each says what it does on
-// hover and on keyboard focus.
+// room (toolbarPlacement.ts), so it follows the frame through pan and zoom. It
+// is one tab stop: the arrows move inside it and Escape hands the keyboard
+// back to the label. Its tools are icons; each says what it does on hover and
+// on keyboard focus.
 
 import {
   useCallback,

@@ -144,9 +144,10 @@ function stopIfCancelled(signal: AbortSignal): void {
 /**
  * One document, with the stylesheet and the bundle inline. The preview host
  * loads it with no network, so an external reference would simply be missing;
- * kit images are the preview host's to serve. A frame is a fixed viewport, so a
- * kit's reserved scrollbar gutter would only show as an empty strip down its
- * right edge; exported apps keep the kit's rule.
+ * kit images are the preview host's to serve. Every design frame and kit
+ * preview is a fixed viewport, so a reserved scrollbar gutter, whether the kit
+ * or the design asks for it, would only show as an empty strip down its right
+ * edge. Exported apps keep the rule.
  */
 function previewDocument(css: string, js: string, mode: DesignSystemRef['mode']): string {
   return `<!doctype html>
