@@ -326,17 +326,17 @@ export function ElementPanel({
         <Section title="Spacing">
           {number('padding', 'Padding', 'Padding', { min: 0 })}
           <Pair>
-            {number('paddingTop', 'Padding top', 'Top', { min: 0 })}
-            {number('paddingRight', 'Padding right', 'Right', { min: 0 })}
-            {number('paddingBottom', 'Padding bottom', 'Bottom', { min: 0 })}
-            {number('paddingLeft', 'Padding left', 'Left', { min: 0 })}
+            {number('paddingTop', 'Padding top', 'T', { min: 0 })}
+            {number('paddingRight', 'Padding right', 'R', { min: 0 })}
+            {number('paddingBottom', 'Padding bottom', 'B', { min: 0 })}
+            {number('paddingLeft', 'Padding left', 'L', { min: 0 })}
           </Pair>
           {number('margin', 'Margin', 'Margin')}
           <Pair>
-            {number('marginTop', 'Margin top', 'Top')}
-            {number('marginRight', 'Margin right', 'Right')}
-            {number('marginBottom', 'Margin bottom', 'Bottom')}
-            {number('marginLeft', 'Margin left', 'Left')}
+            {number('marginTop', 'Margin top', 'T')}
+            {number('marginRight', 'Margin right', 'R')}
+            {number('marginBottom', 'Margin bottom', 'B')}
+            {number('marginLeft', 'Margin left', 'L')}
           </Pair>
         </Section>
         <Section title="Typography">

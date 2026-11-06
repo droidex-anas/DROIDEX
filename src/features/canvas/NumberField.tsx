@@ -9,6 +9,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode
 import { Hash } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { cn } from '../../components/ui/cn';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { lengthFace } from './panelValues';
 import { ValuePickerButton, type ValueOption } from './ValuePickerField';
 
@@ -18,7 +19,7 @@ const NUMBER = /^(-?\d*\.?\d+)((?:px|rem|em|%)?)$/;
 export interface NumberFieldProps {
   /** The field's accessible name: the property as a person reads it. */
   label: string;
-  /** The short name shown before the value; dragging it scrubs. */
+  /** The short name shown before the value, with the label as its tooltip when they differ; dragging it scrubs. */
   short: string;
   value: string;
   previewed: boolean;
@@ -125,6 +126,22 @@ export function NumberField({
     const next = clamp(drag.start.amount + steps * step);
     onPreview(`${amountText(next)}${drag.start.unit || (unit ?? '')}`);
   };
+  const shortName = (
+    <span
+      aria-hidden
+      onPointerDown={startScrub}
+      onPointerMove={moveScrub}
+      onLostPointerCapture={() => {
+        scrub.current = null;
+      }}
+      className={cn(
+        'flex min-w-7 shrink-0 cursor-ew-resize touch-none select-none items-center pr-1 whitespace-nowrap text-label',
+        previewed ? 'text-primary' : 'text-muted',
+      )}
+    >
+      {short}
+    </span>
+  );
   return (
     <div className="min-w-0">
       <Input
@@ -144,22 +161,7 @@ export function NumberField({
           setEditing(false);
         }}
         className={cn('group tabular-nums', previewed && 'bg-active')}
-        leading={
-          <span
-            aria-hidden
-            onPointerDown={startScrub}
-            onPointerMove={moveScrub}
-            onLostPointerCapture={() => {
-              scrub.current = null;
-            }}
-            className={cn(
-              'flex min-w-7 shrink-0 cursor-ew-resize touch-none select-none items-center pr-1 whitespace-nowrap text-label',
-              previewed ? 'text-primary' : 'text-muted',
-            )}
-          >
-            {short}
-          </span>
-        }
+        leading={short === label ? shortName : <Tooltip label={label}>{shortName}</Tooltip>}
         actions={
           (tokens?.length ?? 0) > 0 || trailing !== undefined ? (
             <span className="relative flex items-center">
