@@ -284,7 +284,13 @@ test('a hover asks a started guest directly and answers null once the run stops'
   const answer = session.preview.hover({ x: 10, y: 20 });
   const call = session.calls[2];
   assert.equal(call.code, 'globalThis.__droidexCanvasPreview.hover({"x":10,"y":20})');
-  const hovered = { elementId: 'el_1', instancePath: '0/1', rect: picked.rect, tagName: 'h1' };
+  const hovered = {
+    elementId: 'el_1',
+    instancePath: '0/1',
+    rect: picked.rect,
+    tagName: 'h1',
+    room: { above: null, below: 4 },
+  };
   call.settle(JSON.stringify(hovered));
   assert.deepEqual(await answer, hovered);
 
