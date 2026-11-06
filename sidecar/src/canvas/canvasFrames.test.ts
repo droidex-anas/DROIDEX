@@ -3,7 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { canvasRoot } from '../testing/canvasStorageSupport.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
-import { stageFrames } from './canvasFrames.js';
+import { placeFrames, stageFrames } from './canvasFrames.js';
 import type { CreateFramesInput } from './protocol.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
@@ -61,4 +61,24 @@ test('a seed is copied from this canvas only, and a missing library item is refu
     ),
     { code: 'not_found' },
   );
+});
+
+test('a variant is placed only while the frame it is a variant of is on the board', () => {
+  const staged = [
+    { designId: 'dsg_copy', revisionId: null, frame: { ...frame, variantOf: revision.designId } },
+  ];
+  assert.throws(() => placeFrames(staged, [], undefined), { code: 'not_found' });
+
+  const source = {
+    designId: revision.designId,
+    name: 'Hey',
+    rect: { x: 0, y: 0, width: 720, height: 720 },
+    layoutVersion: 0,
+    manifestVersion: 0,
+    revisionId: revision.revisionId,
+    lastWorkingRevisionId: null,
+    designSystem,
+  };
+  const [placed] = placeFrames(staged, [source], undefined);
+  assert.equal(placed?.variantOf, revision.designId);
 });

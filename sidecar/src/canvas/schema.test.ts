@@ -169,6 +169,7 @@ const wire: SidecarWire = {
         manifestVersion: 0,
         revisionId: null,
         designSystem,
+        variantOf: null,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -242,6 +243,7 @@ const wire: SidecarWire = {
         manifestVersion: 2,
         revisionId: 'rev_02',
         designSystem,
+        variantOf: null,
         build: {
           status: 'ready',
           revisionId: 'rev_02',
@@ -259,6 +261,7 @@ const wire: SidecarWire = {
         manifestVersion: 1,
         revisionId: null,
         designSystem,
+        variantOf: null,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -275,6 +278,7 @@ const wire: SidecarWire = {
         manifestVersion: 2,
         revisionId: 'rev_03',
         designSystem,
+        variantOf: null,
         build: {
           status: 'failed',
           generation: 2,

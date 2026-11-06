@@ -232,6 +232,7 @@ const initial: CanvasSnapshot = {
       manifestVersion: 1,
       revisionId: 'rev_01',
       designSystem: { id: 'droidex', version: 1, mode: scheme },
+      variantOf: null,
       build: params.has('building') ? { status: 'building', generation: 1 } : built('rev_01'),
     }),
   ),

@@ -41,6 +41,8 @@ export async function stageFrames(
   return staged;
 }
 
+const SOURCE_REMOVED = 'That source frame was removed. Undo it before creating a variant.';
+
 /** A seed can copy only a frame that still belongs to this board. */
 export function requireSeedFrames(manifest: CanvasManifest, input: CreateFramesInput): void {
   for (const frame of input.frames) {
@@ -50,10 +52,7 @@ export function requireSeedFrames(manifest: CanvasManifest, input: CreateFramesI
       seed.canvasId === manifest.canvasId &&
       !manifest.designs.some((design) => design.designId === seed.revision.designId)
     )
-      throw canvasError(
-        'not_found',
-        'That source frame was removed. Undo it before creating a variant.',
-      );
+      throw canvasError('not_found', SOURCE_REMOVED);
   }
 }
 
@@ -124,6 +123,8 @@ export function placeFrames(
   }
   const designs: PersistedDesign[] = [];
   for (const { designId, revisionId, frame } of staged) {
+    if (frame.variantOf && !placed.some((design) => design.designId === frame.variantOf))
+      throw canvasError('not_found', SOURCE_REMOVED);
     const position = positions ? positions[designs.length] : { x, y };
     designs.push({
       designId,
@@ -135,6 +136,7 @@ export function placeFrames(
       lastWorkingRevisionId: null,
       designSystem: frame.designSystem,
       ...(frame.seed ? { seed: structuredClone(frame.seed) } : {}),
+      ...(frame.variantOf ? { variantOf: frame.variantOf } : {}),
     });
     x += frame.width + FRAME_GAP_PX;
   }

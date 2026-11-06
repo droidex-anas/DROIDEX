@@ -24,6 +24,7 @@ function frame(
     manifestVersion: 1,
     revisionId,
     designSystem: { id: 'droidex', version: 2, mode: 'dark' },
+    variantOf: null,
     build: { status: 'pending', generation: 1 },
   };
 }

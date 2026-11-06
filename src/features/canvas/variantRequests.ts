@@ -81,6 +81,7 @@ export function variantFrames(
       height: source.height,
       designSystem: { ...source.designSystem },
       seed: { kind: 'revision', canvasId: source.canvasId, revision: { ...source.revision } },
+      variantOf: source.revision.designId,
     })),
   };
 }

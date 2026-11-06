@@ -300,6 +300,8 @@ export interface CanvasFrame {
   // null while the frame is reserved and has no source yet.
   revisionId: string | null;
   designSystem: DesignSystemRef;
+  /** The frame this one is a variant of; its set is every frame naming the same one. */
+  variantOf: string | null;
   build: CanvasBuildState;
 }
 
@@ -354,6 +356,7 @@ export interface CreateFramesInput {
     height: number;
     designSystem: DesignSystemRef;
     seed?: CanvasSeed;
+    variantOf?: string;
   }[];
 }
 

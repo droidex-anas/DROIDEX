@@ -13,6 +13,7 @@ function frame(diagnostics: CanvasDiagnostic[]): CanvasFrame {
     manifestVersion: 1,
     revisionId: 'revision-1',
     designSystem: AUTO_DESIGN_SYSTEM_REF,
+    variantOf: null,
     build: {
       status: 'ready',
       revisionId: 'revision-1',

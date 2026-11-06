@@ -12,7 +12,7 @@ const source: VariantSource = {
   designSystem: { id: 'droidex', version: 2, mode: 'dark' },
 };
 
-test('variants are copies of the pinned revision, placed beside the source', () => {
+test('variants are copies of the pinned revision, placed beside the source as its set', () => {
   const input = variantFrames(source, 2, 'm1', ['Hey']);
 
   assert.deepEqual(input.placeBeside, { designId: 'd1' });
@@ -27,6 +27,7 @@ test('variants are copies of the pinned revision, placed beside the source', () 
       canvasId: 'cv_1',
       revision: { designId: 'd1', revisionId: 'r3' },
     });
+    assert.equal(frame.variantOf, 'd1');
     assert.equal(frame.width, 720);
     assert.equal(frame.height, 520);
     assert.deepEqual(frame.designSystem, source.designSystem);

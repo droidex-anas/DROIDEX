@@ -240,6 +240,7 @@ export const createFramesInputSchema = z
             height: dimensionPxSchema,
             designSystem: designSystemRefSchema,
             seed: canvasSeedSchema.optional(),
+            variantOf: canvasIdentifierSchema.optional(),
           })
           .strict(),
       )

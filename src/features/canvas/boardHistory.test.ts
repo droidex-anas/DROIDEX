@@ -152,6 +152,7 @@ function frame(designId: string, name: string, y: number): CanvasFrame {
     manifestVersion: 1,
     revisionId: 'r1',
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+    variantOf: null,
     build: { status: 'building', generation: 1 },
   };
 }

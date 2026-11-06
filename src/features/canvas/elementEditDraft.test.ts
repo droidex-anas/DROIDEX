@@ -41,6 +41,7 @@ function frameAt(revisionId: string, build: CanvasBuildOutcome, designId = 'desi
     manifestVersion: 1,
     revisionId,
     designSystem: { id: 'droidex', version: 2, mode: 'dark' },
+    variantOf: null,
     build: { ...build, generation: 2 },
   };
 }

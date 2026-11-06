@@ -478,6 +478,7 @@ test('two seeded variants own independent source and placement, once per mutatio
       height: 720,
       designSystem,
       seed,
+      variantOf: designId,
     })),
   };
   const copied = await workspace.create(scope, seeded);
@@ -518,12 +519,18 @@ test('two seeded variants own independent source and placement, once per mutatio
   );
   assert.deepEqual(await readdir(revisions), stored);
 
-  assert.equal(workspace.snapshot(canvasId).frames.length, 3);
+  assert.deepEqual(
+    workspace.snapshot(canvasId).frames.map((frame) => frame.variantOf),
+    [null, designId, designId],
+  );
   const saved = await new CanvasFiles(root).loadManifest(canvasId);
   assert.ok(saved.state === 'loaded');
   assert.deepEqual(
-    saved.manifest.designs.slice(1).map((design) => design.seed),
-    [seed, seed],
+    saved.manifest.designs.slice(1).map(({ seed, variantOf }) => ({ seed, variantOf })),
+    [
+      { seed, variantOf: designId },
+      { seed, variantOf: designId },
+    ],
   );
 });
 
