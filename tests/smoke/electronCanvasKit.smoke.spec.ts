@@ -7,7 +7,7 @@ import {
   previewStartScript,
   type PreviewInstance,
 } from '../../src/features/canvas/previewDocument';
-import { askGuest, compileDesign, mountPreviewGuest } from './canvasPreviewHost';
+import { askGuest, compileDesign, drainGuest, mountPreviewGuest } from './canvasPreviewHost';
 import { focusHost, withCanvasHost } from './canvasSmoke';
 
 function newInstance(designId: string): PreviewInstance {
@@ -122,5 +122,50 @@ test('a kit dialog keeps keyboard focus in the real preview guest and returns it
     await expect
       .poll(() => active())
       .toEqual({ open: false, focused: 'Delete chat', inDialog: false, hasFocus: true });
+  });
+});
+
+test('a full-bleed Auto kit design paints its capture to the right edge', async () => {
+  const design = await compileDesign(
+    {
+      'main.tsx': `export default () => <main style={{ minHeight: '100vh', background: 'rgb(0 0 255)' }} />;`,
+    },
+    { id: 'auto', version: 1, mode: 'dark' },
+  );
+
+  await withCanvasHost(async (_app, page) => {
+    const guestId = await mountPreviewGuest(page);
+    const instance = newInstance('kit-bleed');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    await expect
+      .poll(
+        async () =>
+          (await drainGuest(page, instance)).events.some((event) => event.event === 'ready'),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+    const rightEdge = await page.evaluate(
+      async ({ guestId, designId, revisionId }) => {
+        const captured = await window.droidex?.canvasPreviewCapture({
+          requestId: 'smoke_bleed',
+          guestId,
+          canvasId: 'cv_smoke',
+          designId,
+          revisionId,
+          generation: 1,
+          width: 400,
+          height: 300,
+          scaleFactor: window.devicePixelRatio,
+        });
+        if (!captured?.ok) throw new Error(JSON.stringify(captured));
+        const bitmap = await createImageBitmap(new Blob([captured.bytes], { type: 'image/png' }));
+        const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d');
+        if (!context) throw new Error('Missing image decoder');
+        context.drawImage(bitmap, 0, 0);
+        return [...context.getImageData(bitmap.width - 1, bitmap.height / 2, 1, 1).data];
+      },
+      { guestId, designId: instance.designId, revisionId: instance.revisionId },
+    );
+    assert.deepEqual(rightEdge, [0, 0, 255, 255]);
   });
 });
