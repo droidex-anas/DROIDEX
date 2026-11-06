@@ -86,17 +86,19 @@ export const SELECTION_COLORS = {
 
 // The colours an agent at work on a design board is drawn in: its cursor, its
 // name pill, the halftone it paints and the frame's edge while it works. Each
-// keeps white pill text at AA and its edge at 3:1 on every built-in board.
-// Dark boards leave a narrow band of luminance between the two, so the dark
-// shades all sit in it, a step brighter than the light ones.
+// keeps its pill's text (PRESENCE_TEXT) at AA, and its edge at 3:1 on every
+// built-in board and on the raised sheet the edge is drawn over. On dark, a
+// colour bright enough for that edge cannot carry white text, so dark pills are
+// written in near-black, and the dark shades share one luminance so none
+// outweighs another.
 export const PRESENCE_COLORS = {
   dark: {
-    crimson: '#d7235f',
-    green: '#2b8135',
-    blue: '#286be0',
-    violet: '#8b53d4',
-    amber: '#af5a04',
-    teal: '#137d83',
+    crimson: '#ff5c93',
+    green: '#2bae3b',
+    blue: '#5996ff',
+    violet: '#b47bff',
+    amber: '#ec7700',
+    teal: '#14a8b0',
   },
   light: {
     crimson: '#a31a4b',
@@ -106,7 +108,11 @@ export const PRESENCE_COLORS = {
     amber: '#8f4c05',
     teal: '#0e6a70',
   },
-  text: '#ffffff',
+} as const;
+
+export const PRESENCE_TEXT = {
+  dark: '#111111',
+  light: '#ffffff',
 } as const;
 
 export type PresenceColor = keyof (typeof PRESENCE_COLORS)['light'];
@@ -272,7 +278,7 @@ function presenceTokens(scheme: Scheme): ThemeTokens {
     ...Object.fromEntries(
       Object.entries(PRESENCE_COLORS[scheme]).map(([name, color]) => [`--presence-${name}`, color]),
     ),
-    '--on-presence': PRESENCE_COLORS.text,
+    '--on-presence': PRESENCE_TEXT[scheme],
   };
 }
 
