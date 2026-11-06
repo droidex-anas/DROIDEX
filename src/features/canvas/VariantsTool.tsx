@@ -1,6 +1,7 @@
-// The frame toolbar's Variants control (spec §4). One click makes three
-// variants and asks the chat's agent for them at once; the chevron beside it
-// chooses what changes, how many, and a direction in the user's own words.
+// The frame toolbar's variant controls (spec §4). One click on Variants makes
+// three variants and asks the chat's agent for them at once; the chevron beside
+// it chooses what changes, how many, and a direction in the user's own words.
+// On a variant, Use this variant gives its design to the frame it was made from.
 
 import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
@@ -110,6 +111,41 @@ export function VariantsTool({
         />
       </Popover>
     </>
+  );
+}
+
+export function UseVariantTool({
+  variant,
+  source,
+  tool,
+  onUse,
+}: {
+  variant: CanvasFrame;
+  /** The frame the variant was made from, which takes its design. */
+  source: CanvasFrame;
+  tool: (id: ToolId) => ToolButtonProps;
+  onUse: (variant: CanvasFrame, source: CanvasFrame) => Promise<boolean>;
+}) {
+  const [applying, setApplying] = useState(false);
+  return (
+    <Tooltip label={`Replace ${source.name} with this design`}>
+      <button
+        type="button"
+        {...tool('use-variant')}
+        className="canvas-frame-tool canvas-frame-tool-text"
+        aria-label={`Use this variant for ${source.name}`}
+        aria-busy={applying || undefined}
+        onClick={() => {
+          if (applying) return;
+          setApplying(true);
+          void onUse(variant, source).finally(() => {
+            setApplying(false);
+          });
+        }}
+      >
+        Use this variant
+      </button>
+    </Tooltip>
   );
 }
 

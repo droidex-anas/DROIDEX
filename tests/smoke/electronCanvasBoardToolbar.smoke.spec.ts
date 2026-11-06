@@ -1,6 +1,6 @@
 // The selected frame's toolbar against the harness: rename, the version
-// menu and switching, Source, Variants and More, the keyboard's way through
-// it, and when it steps aside.
+// menu and switching, Source, Variants, Use this variant and More, the
+// keyboard's way through it, and when it steps aside.
 
 import { expect, test } from '@playwright/test';
 import { box, boardUrl, frame, openBoard, serveBoard } from './board/boardPage';
@@ -162,6 +162,56 @@ test('Variants asks for three in one click, and its options choose kind, count a
     { designId: 'b', kind: 'any', count: 3, direction: '' },
     { designId: 'b', kind: 'colour', count: 2, direction: 'warmer, rounder' },
   ]);
+});
+
+test('a variant gives its design to its source in one step, then offers to remove the set', async ({
+  page,
+}) => {
+  await openBoard(page, 14, 'reduce', '&variants=1');
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await expect(page.getByRole('button', { name: /^Use this variant/ })).toHaveCount(0);
+
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  await page
+    .getByRole('toolbar', { name: 'Design B actions' })
+    .getByRole('button', { name: 'Use this variant for Design A' })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.writeCalls))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        expectedRevisionId: 'rev_01',
+        files: { 'main.tsx': '// b' },
+        deletedPaths: [],
+        designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+      },
+    ]);
+  await page.evaluate(() => window.boardHarness.answerWrite(0));
+  await page.getByText('Design A now uses Design B').hover();
+  await page.getByRole('button', { name: 'Remove variants' }).click();
+  expect(await page.evaluate(() => window.boardHarness.removeCalls)).toEqual([
+    { mutationId: expect.any(String), designIds: ['b'] },
+  ]);
+  await page.evaluate(() => window.boardHarness.answerRemove(0));
+  await expect(page.getByText('Deleted Design B')).toBeVisible();
+
+  // Undo takes back the deletion first, then the variant's design on its source.
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.evaluate(() => window.boardHarness.answerUndo(0));
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.switchCalls))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        revisionId: 'rev_01',
+        expectedRevisionId: 'rev_w0',
+      },
+    ]);
 });
 
 test('the toolbar steps aside while a drag holds the frame and offers only Done in Interact', async ({

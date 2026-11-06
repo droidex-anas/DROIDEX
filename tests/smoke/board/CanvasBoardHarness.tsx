@@ -16,6 +16,7 @@ import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import type { VariantChoice } from '../../../src/features/canvas/variantRequests';
+import { variantSetSource, VariantSets } from '../../../src/features/canvas/variantSets';
 import type { EditElementInput } from '../../../src/features/canvas/elementEditProtocol';
 import type {
   ArrangeFramesInput,
@@ -29,6 +30,7 @@ import type {
   RevisionSummary,
   SourceElement,
   UndoRemovalInput,
+  WriteFilesInput,
   WriteReceipt,
 } from '../../../src/features/canvas/protocol';
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
@@ -90,6 +92,9 @@ interface BoardHarness {
   variantCalls: (VariantChoice & { designId: string })[];
   /** Settles one variants request, as its send does. */
   answerVariants: (index: number) => void;
+  writeCalls: WriteFilesInput[];
+  /** Writes one source the way the sidecar does, as revision `rev_w<index>`, and builds it. */
+  answerWrite: (index: number) => void;
 }
 
 declare global {
@@ -232,7 +237,8 @@ const initial: CanvasSnapshot = {
       manifestVersion: 1,
       revisionId: 'rev_01',
       designSystem: { id: 'droidex', version: 1, mode: scheme },
-      variantOf: null,
+      // `?variants=1` makes Design B a variant of Design A.
+      variantOf: params.has('variants') && frame.designId === 'b' ? 'a' : null,
       build: params.has('building') ? { status: 'building', generation: 1 } : built('rev_01'),
     }),
   ),
@@ -290,6 +296,30 @@ const switchReplies: PromiseWithResolvers<void>[] = [];
 const dialogs: string[] = [];
 const variantCalls: BoardHarness['variantCalls'] = [];
 const variantReplies: PromiseWithResolvers<void>[] = [];
+const writeCalls: WriteFilesInput[] = [];
+const writeReplies: PromiseWithResolvers<WriteReceipt>[] = [];
+const variantSets = new VariantSets(
+  {
+    source: {
+      read: (_canvasId, designId) => Promise.resolve({ 'main.tsx': `// ${designId}` }),
+      write: (_appSessionId, _canvasId, input) => {
+        writeCalls.push(input);
+        const reply = Promise.withResolvers<WriteReceipt>();
+        writeReplies.push(reply);
+        return reply.promise;
+      },
+    },
+    revisions: {
+      switchTo: (_appSessionId, _canvasId, input) => {
+        switchCalls.push(input);
+        return Promise.withResolvers<WriteReceipt>().promise;
+      },
+    },
+    snapshotOf: () => shown.current,
+  },
+  history,
+  removals,
+);
 const frameActions: FrameActions = {
   history: {
     listRevisions: (designId) => {
@@ -323,6 +353,8 @@ const frameActions: FrameActions = {
     variantReplies.push(reply);
     return reply.promise;
   },
+  sourceOf: (frame) => variantSetSource(shown.current.frames, frame),
+  applyVariant: (variant, source) => variantSets.apply('chat_1', 'cv_board', variant, source),
   saveToLibrary: (frame) => dialogs.push(`save:${frame.designId}`),
 };
 
@@ -517,6 +549,16 @@ function Harness() {
     variantCalls,
     answerVariants: (index) => {
       variantReplies[index].resolve();
+    },
+    writeCalls,
+    answerWrite: (index) => {
+      const { designId } = writeCalls[index];
+      const revisionId = `rev_w${String(index)}`;
+      const written = shown.current.frames
+        .filter((frame) => frame.designId === designId)
+        .map((frame) => ({ ...frame, revisionId, build: built(revisionId) }));
+      setSnapshot(applyCanvasChange(shown.current, change(written, [])));
+      writeReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
     },
   };
   return (

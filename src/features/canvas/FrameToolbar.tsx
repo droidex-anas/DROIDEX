@@ -1,10 +1,11 @@
 // The selected frame's toolbar (spec §4): switch its version, run it, read its
-// source, add it to the chat, rename it, make variants of it, and the rest
-// behind More. It floats at screen size over the frame's label, or under the
-// frame where that has no room (toolbarPlacement.ts), so it follows the frame
-// through pan and zoom. It is one tab stop: the arrows move inside it and
-// Escape hands the keyboard back to the label. Its tools are icons; each says
-// what it does on hover and on keyboard focus.
+// source, add it to the chat, rename it, make variants of it or give a
+// variant's design to the frame it was made from, and the rest behind More. It
+// floats at screen size over the frame's label, or under the frame where that
+// has no room (toolbarPlacement.ts), so it follows the frame through pan and
+// zoom. It is one tab stop: the arrows move inside it and Escape hands the
+// keyboard back to the label. Its tools are icons; each says what it does on
+// hover and on keyboard focus.
 
 import {
   useCallback,
@@ -25,7 +26,7 @@ import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
 import { placeToolbar, type ToolbarRoom } from './toolbarPlacement';
 import type { VariantChoice } from './variantRequests';
-import { VariantsTool } from './VariantsTool';
+import { UseVariantTool, VariantsTool } from './VariantsTool';
 
 /** What the toolbar does to the canvas, bound to the chat showing it. */
 export interface FrameActions {
@@ -35,6 +36,10 @@ export interface FrameActions {
   rename: (frame: CanvasFrame, name: string) => Promise<unknown>;
   /** Settles once the request has gone or failed, which it reports itself. */
   makeVariants: (frame: CanvasFrame, choice: VariantChoice) => Promise<void>;
+  /** The frame `frame` was made as a variant of, while this chat can give it the variant's design. */
+  sourceOf: (frame: CanvasFrame) => CanvasFrame | null;
+  /** Settles once the variant's design is the source's or has failed, which it reports itself. */
+  applyVariant: (variant: CanvasFrame, source: CanvasFrame) => Promise<boolean>;
   saveToLibrary: (frame: CanvasFrame) => void;
 }
 
@@ -67,6 +72,7 @@ export type ToolId =
   | 'rename'
   | 'variants'
   | 'variant-options'
+  | 'use-variant'
   | 'more';
 
 /** What makes a button one of the bar's tools: its place in the arrow order and the tab stop. */
@@ -117,7 +123,8 @@ function SelectToolbar({
     setOpen(null);
   }, []);
 
-  const tools = toolsShown({ frame, actions, onOpenSource, onToggleChat });
+  const source = actions.sourceOf(frame);
+  const tools = toolsShown({ frame, source, actions, onOpenSource, onToggleChat });
   const tabStop = focusedTool !== null && tools.includes(focusedTool) ? focusedTool : tools[0];
   const tool = (id: ToolId): ToolButtonProps => ({
     'data-tool': id,
@@ -231,6 +238,17 @@ function SelectToolbar({
         <>
           <ToolDivider />
           <VariantsTool frame={frame} tool={tool} onMake={actions.makeVariants} />
+        </>
+      )}
+      {source && (
+        <>
+          <ToolDivider />
+          <UseVariantTool
+            variant={frame}
+            source={source}
+            tool={tool}
+            onUse={actions.applyVariant}
+          />
         </>
       )}
       <ToolDivider />
@@ -351,10 +369,13 @@ function ToolbarShell({
 /** The bar's tools in order, which is the order the arrows walk. */
 function toolsShown({
   frame,
+  source,
   actions,
   onOpenSource,
   onToggleChat,
-}: Pick<FrameToolbarProps, 'frame' | 'actions' | 'onOpenSource' | 'onToggleChat'>): ToolId[] {
+}: Pick<FrameToolbarProps, 'frame' | 'actions' | 'onOpenSource' | 'onToggleChat'> & {
+  source: CanvasFrame | null;
+}): ToolId[] {
   const tools: ToolId[] = [];
   if (frame.revisionId) tools.push('history');
   tools.push('interact');
@@ -362,6 +383,7 @@ function toolsShown({
   if (onToggleChat) tools.push('chat');
   if (actions.canEdit) tools.push('rename');
   if (actions.canEdit && frame.revisionId) tools.push('variants', 'variant-options');
+  if (source) tools.push('use-variant');
   tools.push('more');
   return tools;
 }

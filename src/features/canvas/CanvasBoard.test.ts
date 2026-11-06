@@ -24,6 +24,8 @@ const FRAME_ACTIONS: FrameActions = {
   canEdit: false,
   rename: () => Promise.resolve(),
   makeVariants: () => Promise.resolve(),
+  sourceOf: () => null,
+  applyVariant: () => Promise.resolve(false),
   saveToLibrary: () => undefined,
 };
 
