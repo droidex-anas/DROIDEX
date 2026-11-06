@@ -270,12 +270,12 @@ export function Swatch({ colour }: { colour: string }) {
   return (
     <span
       aria-hidden
-      className={cn(
-        // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-        'size-3 shrink-0 rounded-xs ring-1 ring-inset ring-divider-strong',
-        none && 'canvas-swatch-none',
-      )}
-      style={{ backgroundColor: none ? undefined : colour }}
+      className={cn('size-3 shrink-0 rounded-xs', none && 'canvas-swatch-none')}
+      // The same neutral hairline as ColorPicker's swatch.
+      style={{
+        backgroundColor: none ? undefined : colour,
+        boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.3)',
+      }}
     />
   );
 }
