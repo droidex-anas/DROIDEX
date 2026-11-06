@@ -105,14 +105,19 @@ function onBoard(drawn: PlacedFrame[], designId: string, element: FrameRect) {
   return frame && box ? { frame, box } : null;
 }
 
-/** An element's box inside its frame, trimmed to it; null when none of it is visible. */
+/**
+ * An element's box inside its frame, trimmed to it; null when none of it is
+ * visible, as when it only touches the frame's edge from outside. An element
+ * with no width or height of its own still shows as a line.
+ */
 function inFrame(frame: FrameRect, element: FrameRect): Box | null {
   const left = Math.max(element.x, 0);
   const top = Math.max(element.y, 0);
-  const right = Math.min(element.x + element.width, frame.width);
-  const bottom = Math.min(element.y + element.height, frame.height);
-  if (right < left || bottom < top) return null;
-  return { left, top, width: right - left, height: bottom - top };
+  const width = Math.min(element.x + element.width, frame.width) - left;
+  const height = Math.min(element.y + element.height, frame.height) - top;
+  const trimmedAway = (shown: number, own: number) => shown < 0 || (shown === 0 && own > 0);
+  if (trimmedAway(width, element.width) || trimmedAway(height, element.height)) return null;
+  return { left, top, width, height };
 }
 
 /** The band under a picked element's box that its size chip takes. */
