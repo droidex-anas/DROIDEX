@@ -169,8 +169,13 @@ export function ElementPanel({
       className="canvas-element-panel my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
       onKeyDown={(event) => {
         const step = historyStep(event);
-        // Typing not yet saved comes back through the field's own undo first.
-        if (!step || (isBoardEditor(event.target) && hasPreviews(draft))) return;
+        if (!step) return;
+        // Typing not yet saved comes back through the field's own undo first,
+        // and a field in a popover, such as a picker's search, keeps its own.
+        const inPopover = !(
+          event.target instanceof Node && event.currentTarget.contains(event.target)
+        );
+        if (isBoardEditor(event.target) && (inPopover || hasPreviews(draft))) return;
         event.preventDefault();
         // A step now would move the head out from under the commit still saving.
         if (draft.pending === null) onHistory(step);
