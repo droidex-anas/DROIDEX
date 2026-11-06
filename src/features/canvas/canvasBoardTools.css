@@ -228,9 +228,12 @@
 
 /* The selected frame's toolbar, above its label row or below its size,
    starting or ending where the frame does (toolbarPlacement.ts chooses). The
-   wrapper is what scales, so the gap beside the bar is in screen pixels. */
+   wrapper is what scales, so the gap beside the bar is in screen pixels. When
+   no place is clear of the other frames it still paints over them, and over
+   the states a sheet raises to 1. */
 .canvas-frame-tools {
   position: absolute;
+  z-index: 2;
   bottom: calc(100% + 32px / var(--board-scale));
   left: 0;
   padding-bottom: 6px;

@@ -3,7 +3,7 @@
 // when it steps aside.
 
 import { expect, test } from '@playwright/test';
-import { box, frame, openBoard, serveBoard } from './board/boardPage';
+import { box, boardUrl, frame, openBoard, serveBoard } from './board/boardPage';
 
 serveBoard();
 
@@ -178,4 +178,32 @@ test('the toolbar drops below its frame rather than cover the frame above it', a
   expect(bar.y).toBeGreaterThan(own.y + own.height);
   expect(bar.x).toBeLessThan(above.x + above.width);
   expect(bar.y).toBeGreaterThan(above.y + above.height);
+});
+
+test('with no place clear of the other frames, the toolbar still paints over them', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&frames=3'));
+  await expect(page.getByTestId('canvas-board')).toBeVisible();
+  // B runs across the board above A and X0 across it below, so every place overlaps one.
+  await page.evaluate(() => {
+    window.boardHarness.publish('b', { x: -200, y: -500, width: 1400, height: 480 }, 9);
+    window.boardHarness.publish('x0', { x: -200, y: 380, width: 1400, height: 400 }, 9);
+    window.boardHarness.select(['a']);
+  });
+
+  const toolbar = page.getByRole('toolbar', { name: 'Design A actions' });
+  await expect(toolbar).toBeVisible();
+  const bar = await box(toolbar);
+  const centre = { x: bar.x + bar.width / 2, y: bar.y + bar.height / 2 };
+  const above = await box(frame(page, 'B'));
+  expect(centre.y).toBeLessThan(above.y + above.height);
+  expect(
+    await toolbar.evaluate(
+      (element, point) => element.contains(document.elementFromPoint(point.x, point.y)),
+      centre,
+    ),
+  ).toBe(true);
 });
