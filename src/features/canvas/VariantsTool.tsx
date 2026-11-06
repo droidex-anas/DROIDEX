@@ -2,7 +2,7 @@
 // variants and asks the chat's agent for them at once; the chevron beside it
 // chooses what changes, how many, and a direction in the user's own words.
 
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { Button } from '../../components/ui/Button';
 import { Field, Input } from '../../components/ui/Field';
@@ -10,6 +10,7 @@ import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
 import type { ToolButtonProps, ToolId } from './FrameToolbar';
 import type { CanvasFrame } from './protocol';
+import { SegmentedControl, type Segment } from './SegmentedControl';
 import {
   DEFAULT_VARIANT_CHOICE,
   type VariantChoice,
@@ -17,14 +18,14 @@ import {
   type VariantKind,
 } from './variantRequests';
 
-const KINDS: { value: VariantKind; label: string }[] = [
+const KINDS: Segment<VariantKind>[] = [
   { value: 'any', label: 'Any' },
   { value: 'layout', label: 'Layout' },
   { value: 'style', label: 'Style' },
   { value: 'colour', label: 'Colour' },
   { value: 'explore', label: 'Explore' },
 ];
-const COUNTS: { value: VariantCount; label: string }[] = [
+const COUNTS: Segment<VariantCount>[] = [
   { value: 2, label: '2' },
   { value: 3, label: '3' },
   { value: 4, label: '4' },
@@ -124,8 +125,20 @@ function VariantOptions({ onMake }: { onMake: (choice: VariantChoice) => void })
         onMake({ kind, count, direction });
       }}
     >
-      <Choices label="Change" options={KINDS} value={kind} onChange={setKind} />
-      <Choices label="How many" options={COUNTS} value={count} onChange={setCount} />
+      <SegmentedControl
+        label="Change"
+        options={KINDS}
+        value={kind}
+        disabled={false}
+        onPick={setKind}
+      />
+      <SegmentedControl
+        label="How many"
+        options={COUNTS}
+        value={count}
+        disabled={false}
+        onPick={setCount}
+      />
       <Field label="Direction (optional)">
         <Input
           variant="compact"
@@ -141,42 +154,5 @@ function VariantOptions({ onMake }: { onMake: (choice: VariantChoice) => void })
         Make {String(count)} variants
       </Button>
     </form>
-  );
-}
-
-/** Equal choices side by side; the pressed one is the choice. */
-function Choices<T extends string | number>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (next: T) => void;
-}) {
-  const labelId = useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span id={labelId} className="select-none text-label text-secondary">
-        {label}
-      </span>
-      <div role="group" aria-labelledby={labelId} className="flex gap-1">
-        {options.map((option) => (
-          <Button
-            key={option.value}
-            size="sm"
-            aria-pressed={option.value === value}
-            className="flex-1"
-            onClick={() => {
-              onChange(option.value);
-            }}
-          >
-            {option.label}
-          </Button>
-        ))}
-      </div>
-    </div>
   );
 }

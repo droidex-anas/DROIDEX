@@ -151,12 +151,9 @@ test('Variants asks for three in one click, and its options choose kind, count a
   const chevron = toolbar.getByRole('button', { name: 'Variant options for Design B' });
   await chevron.click();
   const options = page.getByRole('dialog', { name: 'Variants of Design B' });
-  await options.getByRole('button', { name: 'Colour' }).click();
-  await expect(options.getByRole('button', { name: 'Colour' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  await options.getByRole('button', { name: '2', exact: true }).click();
+  await options.getByRole('radio', { name: 'Colour' }).click();
+  await expect(options.getByRole('radio', { name: 'Colour' })).toBeChecked();
+  await options.getByRole('radio', { name: '2', exact: true }).click();
   await options.getByRole('textbox', { name: 'Direction (optional)' }).fill('warmer, rounder');
   await page.keyboard.press('Enter');
   await expect(options).toHaveCount(0);
