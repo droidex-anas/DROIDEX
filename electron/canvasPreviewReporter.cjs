@@ -227,7 +227,9 @@ const GENERATED_FRAME_REPORTER = `(() => {
       }
       if (selected && node === selected.node) {
         // The board keeps its draft for the element it already holds, so the
-        // guest keeps showing what that draft previews and only answers.
+        // guest keeps showing what that draft previews and only answers, with
+        // the properties the board asks for now.
+        selected.properties = command.properties;
         commandSequence = command.sequence;
         lastSelection = '';
         reportSelection();

@@ -151,8 +151,11 @@ export default function Card() {
     const target = { elementId: section.elementId, instancePath: parent.instancePath, text: null };
     const previewed = await select({ ...target, styles: { paddingTop: '40px' } });
     assert.equal(previewed?.styles.paddingTop, '40px');
-    // Picking the element already selected keeps what it previews.
-    assert.equal((await pick({ x: 2, y: 2 }))?.styles.paddingTop, '40px');
+    // Picking the element already selected keeps what it previews, and
+    // answers with the properties asked for now.
+    const again = await answer((n) => previewPickScript({ x: 2, y: 2 }, ['paddingTop', 'gap'], n));
+    assert.deepEqual(Object.keys(again?.styles ?? {}), ['paddingTop', 'gap']);
+    assert.equal(again?.styles.paddingTop, '40px');
     assert.equal(await select(null), null);
     const restored = await select({ ...target, styles: {} });
     assert.equal(restored?.styles.paddingTop, '8px');
