@@ -248,7 +248,9 @@ export function OptionList({
             >
               {option.swatch !== undefined && <Swatch colour={option.swatch} />}
               {/* The name keeps its width, and the value takes what is left. */}
-              <span className="min-w-0 truncate">{option.label}</span>
+              <span className={cn('min-w-0 truncate', option.hint === undefined && 'flex-1')}>
+                {option.label}
+              </span>
               {option.hint !== undefined && (
                 <span
                   className="min-w-0 flex-1 basis-0 truncate text-right text-caption text-muted"
