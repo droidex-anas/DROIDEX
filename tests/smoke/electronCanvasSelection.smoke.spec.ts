@@ -6,9 +6,11 @@ import assert from 'node:assert/strict';
 import { expect, test } from '@playwright/test';
 import {
   PREVIEW_STARTED,
+  previewHoverScript,
   previewPickScript,
   previewSelectScript,
   previewStartScript,
+  readPreviewHover,
   type PreviewElement,
   type PreviewPick,
   type PreviewTarget,
@@ -23,11 +25,25 @@ import {
 import { withCanvasHost } from './canvasSmoke';
 test('[C4 select] the production guest picks, previews and releases a design element', async () => {
   const design = await compileDesign({
-    'main.tsx': `export default function Card() {
+    'main.tsx': `const names = Array.from({ length: 80 }, (_, index) => 'name' + index).join(', ');
+const times = Array.from({ length: 150 }, () => '1s').join(', ');
+const LONG_STYLES = {
+  fontFamily: names,
+  transitionProperty: names,
+  transitionDuration: times,
+  transitionDelay: times,
+  animationName: names,
+  animationDuration: times,
+  animationDelay: times,
+  counterReset: names.replaceAll(',', ''),
+};
+
+export default function Card() {
   return (
     <section style={{ padding: '8px', display: 'flex', flexDirection: 'column' }}>
       <h1 style={{ margin: '0px', fontSize: '24px' }}>Title</h1>
       <p style={{ margin: '0px' }}>Body</p>
+      <footer style={LONG_STYLES}>{'é'.repeat(256)}</footer>
     </section>
   );
 }
@@ -85,6 +101,17 @@ test('[C4 select] the production guest picks, previews and releases a design ele
     assert.equal(picked.rect.x, 8);
     assert.equal(picked.rect.y, 8);
     assert.equal(picked.text, 'Title');
+    assert.equal(picked.parentDisplay, 'flex');
+
+    // A hover names the element under a point and selects nothing.
+    const hovered = readPreviewHover(await askGuest(page, previewHoverScript({ x: 20, y: 20 })));
+    assert.equal(hovered?.elementId, heading.elementId);
+    assert.equal(hovered.tagName, 'h1');
+    assert.equal(hovered.rect.y, 8);
+    assert.equal(
+      readPreviewHover(await askGuest(page, previewHoverScript({ x: 5000, y: 5000 }))),
+      null,
+    );
 
     // A text preview replaces what the heading shows, and leaving puts it back;
     // the guest keeps reporting the text the heading holds.
@@ -98,6 +125,24 @@ test('[C4 select] the production guest picks, previews and releases a design ele
     // The keyboard steps through the marked elements in document order.
     const next = await pick({ step: 'next' });
     assert.equal(next?.elementId, design.elements.find((e) => e.tagName === 'p')?.elementId);
+
+    // Long style values beside a 512-byte text make an answer past every other
+    // event's cap; the selection still arrives, each value cut and the text whole.
+    const long = [
+      'fontFamily',
+      'transitionProperty',
+      'transitionDuration',
+      'transitionDelay',
+      'animationName',
+      'animationDuration',
+      'animationDelay',
+      'counterReset',
+    ];
+    const footer = await answer((n) => previewPickScript({ step: 'next' }, long, n));
+    assert.equal(footer?.elementId, design.elements.find((e) => e.tagName === 'footer')?.elementId);
+    assert.equal(footer.text, 'é'.repeat(256));
+    assert.deepEqual(Object.keys(footer.styles), long);
+    for (const name of long) assert.equal(footer.styles[name]?.length, 512, name);
 
     // A preview is an inline style the guest computes, and moving away puts it back.
     const parent = await pick({ x: 2, y: 2 });

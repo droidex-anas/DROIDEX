@@ -51,6 +51,7 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   // A press over the title picks it at the design's own pixels, not the screen's.
   const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
   const scale = sheet.width / 400;
+  const before = await box(frame(page, 'A'));
   await page.mouse.click(sheet.x + 20 * scale, sheet.y + 20 * scale);
   await page.clock.runFor(100);
   const [picked] = await page.evaluate(() => window.guestCommands);
@@ -62,6 +63,8 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
   const fontSize = panel.getByLabel('Font size', { exact: true });
   await expect(fontSize).toHaveValue('24px');
+  // The panel opens beside the board and nothing on the board moves for it.
+  expect(await box(frame(page, 'A'))).toEqual(before);
 
   // The panel is a column beside the board: a wheel over it scrolls its fields
   // and leaves the board where it was.
@@ -248,4 +251,90 @@ test('A double-click in Edit goes to the picked element’s text, and Enter save
     .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
     .toMatchObject({ command: 'select', target: { styles: { fontSize: '30px' }, text: null } });
   await expect(panel.getByLabel('Font size', { exact: true })).toHaveValue('30px');
+});
+
+test('Edit outlines the element under the pointer by its tag, through a zoom, until the pointer or Edit leaves', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    const card = { elementId: 'el_card', instancePath: '0', tagName: 'section' };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const y = typeof argument.y === 'number' ? argument.y : 0;
+      const element = y < 38 ? title : card;
+      const rect =
+        element === title
+          ? { x: 8, y: 8, width: 240, height: 30 }
+          : { x: 0, y: 0, width: 400, height: 300 };
+      return command === 'hover' ? { ...element, rect } : { ...element, rect, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+
+  const sheet = frame(page, 'A').locator('.canvas-sheet');
+  const hover = page.locator('[data-element-hover]');
+  const pointAt = async (x: number, y: number) => {
+    const drawn = await box(sheet);
+    const scale = drawn.width / 400;
+    await page.mouse.move(drawn.x + x * scale, drawn.y + y * scale);
+    await page.clock.runFor(32);
+    return { drawn, scale };
+  };
+  const { drawn, scale } = await pointAt(20, 20);
+  await expect(hover).toHaveAttribute('data-element-hover', 'h1');
+  await expect(hover).toHaveText('h1');
+  const titleBox = await box(hover);
+  expect(titleBox.x).toBeCloseTo(drawn.x + 8 * scale, 0);
+  expect(titleBox.width).toBeCloseTo(240 * scale, 0);
+  await pointAt(300, 200);
+  await expect(hover).toHaveAttribute('data-element-hover', 'section');
+
+  // The picked element has its own outline, so the pointer over it adds none.
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.clock.runFor(100);
+  await pointAt(300, 200);
+  await expect(page.locator('.canvas-element-outline')).toBeVisible();
+  await expect(hover).toHaveCount(0);
+
+  // Both outlines stay on their elements through a zoom.
+  await pointAt(20, 20);
+  await expect(hover).toHaveAttribute('data-element-hover', 'h1');
+  await board.focus();
+  await page.keyboard.press('ControlOrMeta+0');
+  await page.clock.runFor(400);
+  const zoomed = await box(sheet);
+  const zoom = zoomed.width / 400;
+  expect(zoom).not.toBeCloseTo(scale, 2);
+  const zoomedTitle = await box(hover);
+  expect(zoomedTitle.x).toBeCloseTo(zoomed.x + 8 * zoom, 0);
+  expect(zoomedTitle.y).toBeCloseTo(zoomed.y + 8 * zoom, 0);
+  expect(zoomedTitle.width).toBeCloseTo(240 * zoom, 0);
+  const outline = await box(page.locator('.canvas-element-outline'));
+  expect(outline.x).toBeCloseTo(zoomed.x, 0);
+  expect(outline.width).toBeCloseTo(zoomed.width, 0);
+
+  // Leaving the design clears the hover, and so does leaving Edit, for good.
+  await page.mouse.move(zoomed.x - 40, zoomed.y + 20);
+  await expect(hover).toHaveCount(0);
+  await pointAt(20, 20);
+  await expect(hover).toHaveCount(1);
+  await board.focus();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  await expect(hover).toHaveCount(0);
+  await page.keyboard.press('e');
+  await expect(board).toHaveAttribute('data-board-mode', 'edit');
+  await expect(hover).toHaveCount(0);
 });
