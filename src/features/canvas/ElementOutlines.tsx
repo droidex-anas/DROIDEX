@@ -7,7 +7,7 @@
 
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
-import type { PreviewHover } from './previewDocument';
+import { isDrawn, type PreviewHover } from './previewDocument';
 import type { ElementRef, FrameRect } from './protocol';
 import type { HoveredElement } from './useElementHover';
 import type { ElementSelection } from './useElementEditor';
@@ -41,7 +41,12 @@ export function ElementOutlines({
   const [tag, tagWidth] = useScreenWidth();
   const [size, sizeWidth] = useScreenWidth();
   const picked = selection?.draft.element;
-  const selected = selection && picked && onBoard(drawn, picked.designId, selection.shown.rect);
+  // A hidden element has no box to outline; the panel says it is hidden.
+  const selected =
+    selection &&
+    picked &&
+    isDrawn(selection.shown.rect) &&
+    onBoard(drawn, picked.designId, selection.shown.rect);
   // The picked element's own outline already says where it is.
   const hover =
     hovered &&

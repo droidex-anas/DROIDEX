@@ -58,6 +58,11 @@ export interface PreviewElement {
   parentDisplay: string;
 }
 
+/** Whether the guest draws the element at all; one it does not, as under `display: none`, measures 0 × 0 at the origin. */
+export function isDrawn(rect: FrameRect): boolean {
+  return rect.x !== 0 || rect.y !== 0 || rect.width !== 0 || rect.height !== 0;
+}
+
 /** The element under the pointer, which the board outlines and names before it is picked. */
 export interface PreviewHover {
   elementId: string;

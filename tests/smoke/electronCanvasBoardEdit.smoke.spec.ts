@@ -416,18 +416,24 @@ test('the hover tag keeps off other content and off the picked size chip', async
   expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
 });
 
-test('The Display row’s ⋯ menu sets a display its layout segments leave out, with the current one checked', async ({
+test('The Display row’s ⋯ menu sets a display its segments leave out, and a hidden element keeps its panel but no outline', async ({
   page,
 }) => {
   await stubGuests(page);
   await page.addInitScript(() => {
+    // The guest keeps the display it was last shown, and draws nothing while it is none.
+    let display = 'inline';
     window.guestAnswer = (command, argument) => {
       if (command === 'select' && !argument.target) return null;
+      const previewed = (argument.target as { styles?: Record<string, string> } | undefined)?.styles
+        ?.display;
+      if (previewed) display = previewed;
+      const drawn = { x: 8, y: 8, width: 240, height: 30 };
       return {
         elementId: 'el_title',
         instancePath: '0/0',
-        rect: { x: 8, y: 8, width: 240, height: 30 },
-        styles: { display: 'inline' },
+        rect: display === 'none' ? { x: 0, y: 0, width: 0, height: 0 } : drawn,
+        styles: { display },
       };
     };
   });
@@ -442,7 +448,9 @@ test('The Display row’s ⋯ menu sets a display its layout segments leave out,
   await page.keyboard.press('Enter');
   await page.clock.runFor(100);
   const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
+  const outline = page.locator('.canvas-element-outline');
   await expect(panel).toBeVisible();
+  await expect(outline).toHaveCount(1);
 
   // Inline lays out no layout the segments name, so ⋯ carries it.
   const layouts = panel.getByRole('radiogroup', { name: 'Display' });
@@ -453,7 +461,31 @@ test('The Display row’s ⋯ menu sets a display its layout segments leave out,
   await menu.getByRole('menuitemradio', { name: 'Hidden' }).click();
   await page.clock.runFor(200);
   await expect(menu).toHaveCount(0);
-  expect(
-    await page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit.change)),
-  ).toEqual([{ kind: 'style', styles: [{ property: 'display', value: 'none' }] }]);
+  const changes = () =>
+    page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit.change));
+  expect(await changes()).toEqual([
+    { kind: 'style', styles: [{ property: 'display', value: 'none' }] },
+  ]);
+
+  // Hidden, it measures nothing: no outline or size on the board, and the panel says so.
+  await page.clock.runFor(240);
+  await expect(outline).toHaveCount(0);
+  await expect(panel.locator('header')).toContainText('Hidden');
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
+  await page.clock.runFor(240);
+  await expect(panel.getByRole('status')).toHaveText(
+    'Enter saves your changes; Escape takes one back.',
+  );
+  await expect(outline).toHaveCount(0);
+
+  // With no segment checked, the arrow starts at the first, so Block shows it again.
+  await layouts.getByRole('radio', { name: 'Block' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.clock.runFor(200);
+  expect((await changes()).at(-1)).toEqual({
+    kind: 'style',
+    styles: [{ property: 'display', value: 'block' }],
+  });
+  await expect(outline).toHaveCount(1);
+  await expect(panel.locator('header')).toContainText('240 × 30');
 });

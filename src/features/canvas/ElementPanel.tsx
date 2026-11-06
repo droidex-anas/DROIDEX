@@ -36,8 +36,9 @@ import { Labelled, Pair, Section } from './ElementPanelRows';
 import { ElementTextField } from './ElementTextField';
 import { NumberField } from './NumberField';
 import { firstFamily, sameFontStack } from './panelValues';
+import { isDrawn } from './previewDocument';
 import { MoreSegments, SegmentedControl, type Segment } from './SegmentedControl';
-import type { EditToken, SourceElement } from './protocol';
+import type { EditToken, FrameRect, SourceElement } from './protocol';
 import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
@@ -216,9 +217,7 @@ export function ElementPanel({
           <span className="truncate" title={draft.site.file}>
             {fileName(draft.site.file)}
           </span>
-          <span className="ml-auto shrink-0 tabular-nums">
-            {Math.round(shown.rect.width)} × {Math.round(shown.rect.height)}
-          </span>
+          <span className="ml-auto shrink-0 tabular-nums">{sizeText(shown.rect)}</span>
         </p>
         {!editable && (
           <p className="mt-1.5 text-caption text-secondary">{agentRoute(draft.site.editability)}</p>
@@ -473,6 +472,11 @@ function status(draft: ElementSelection['draft'], editable: boolean): string {
   if (!editable) return 'Read only.';
   if (draft.pending !== null) return 'Saving…';
   return 'Enter saves your changes; Escape takes one back.';
+}
+
+function sizeText(rect: FrameRect): string {
+  if (!isDrawn(rect)) return 'Hidden';
+  return `${String(Math.round(rect.width))} × ${String(Math.round(rect.height))}`;
 }
 
 function fileName(path: string): string {
