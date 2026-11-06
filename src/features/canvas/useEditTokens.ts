@@ -17,6 +17,9 @@ export function useEditTokens(
   system: { id: string; version: number; mode: 'light' | 'dark' } | undefined,
 ): EditTokens {
   const kitKey = system === undefined ? null : `${system.id}:${String(system.version)}`;
+  // The effect reads primitives: every canvas snapshot brings a new object for the same kit.
+  const id = system?.id;
+  const version = system?.version;
   const kits = useRef(new Map<string, Record<string, EditToken[]>>());
   const [loaded, setLoaded] = useState<{
     key: string;
@@ -32,9 +35,10 @@ export function useEditTokens(
     else if (loaded !== null) setLoaded(null);
   }
   useEffect(() => {
-    if (kitKey === null || system === undefined || kits.current.has(kitKey)) return;
+    if (kitKey === null || id === undefined || version === undefined || kits.current.has(kitKey))
+      return;
     let stale = false;
-    void canvasClient.designSystems.editTokens({ id: system.id, version: system.version }).then(
+    void canvasClient.designSystems.editTokens({ id, version }).then(
       (byProperty) => {
         kits.current.set(kitKey, byProperty);
         if (!stale) setLoaded({ key: kitKey, byProperty });
@@ -47,7 +51,7 @@ export function useEditTokens(
     return () => {
       stale = true;
     };
-  }, [kitKey, system]);
+  }, [kitKey, id, version]);
   return {
     tokens: kitKey !== null && loaded?.key === kitKey ? loaded.byProperty : null,
     mode: system?.mode ?? 'light',
