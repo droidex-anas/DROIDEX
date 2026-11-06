@@ -1,33 +1,40 @@
 // The pinned kit's tokens as Tailwind theme extensions, so a design writes
 // bg-surface, rounded-pill or text-display instead of a [color:var(--ds-*)]
 // spelling, and the class follows the selected mode the way the token does.
-// A name the default theme already owns (rounded-md, text-lg, font-sans) is
-// never overridden: the class keeps the stock value a model expects, and the
-// kit token of that name is reached as rounded-[var(--ds-radius-md)]. Colour
-// values wrap the token in a color-mix with Tailwind's <alpha-value>
+// A kit only adds classes: a key that would name a class stock Tailwind
+// already generates (rounded-md, text-lg, or text-base for a colour named
+// base) is skipped, so every stock class keeps the value a model expects, and
+// the kit token of that name is reached as rounded-[var(--ds-radius-md)].
+// Colour values wrap the token in a color-mix with Tailwind's <alpha-value>
 // placeholder so an opacity modifier (bg-surface/50) keeps working.
 
 import defaultTheme from 'tailwindcss/defaultTheme';
+import setupContextUtils from 'tailwindcss/lib/lib/setupContextUtils';
+import nameClass from 'tailwindcss/lib/util/nameClass';
+import resolveConfig from 'tailwindcss/resolveConfig';
 import {
   TOKEN_KINDS,
   type DocumentSection,
   type TokenSectionKind,
 } from './designSystemDocument.js';
 
+const THEME_NAMESPACES = [
+  'colors',
+  'fontSize',
+  'lineHeight',
+  'letterSpacing',
+  'fontWeight',
+  'fontFamily',
+  'spacing',
+  'borderRadius',
+  'boxShadow',
+  'zIndex',
+  'transitionDuration',
+  'transitionTimingFunction',
+] as const;
+
 /** A theme.extend namespace a kit's tokens can land in. */
-export type ThemeNamespace =
-  | 'colors'
-  | 'fontSize'
-  | 'lineHeight'
-  | 'letterSpacing'
-  | 'fontWeight'
-  | 'fontFamily'
-  | 'spacing'
-  | 'borderRadius'
-  | 'boxShadow'
-  | 'zIndex'
-  | 'transitionDuration'
-  | 'transitionTimingFunction';
+export type ThemeNamespace = (typeof THEME_NAMESPACES)[number];
 
 /** One token's place in the theme. A 'DEFAULT' key is the bare utility. */
 export interface ThemeEntry {
@@ -78,7 +85,10 @@ const FIXED: Partial<Record<TokenSectionKind, [string, ThemeNamespace]>> = {
 
 const TOKEN_SECTION_KINDS: ReadonlySet<string> = new Set(TOKEN_KINDS);
 
-/** The keys Tailwind's default theme already owns, which a kit never overrides. */
+/**
+ * The keys Tailwind's default theme already owns. A kit never overrides one,
+ * even where it names no class: transition reads transitionDuration.DEFAULT.
+ */
 const STOCK_KEYS: Readonly<Record<ThemeNamespace, ReadonlySet<string>>> = {
   colors: keysOf(defaultTheme.colors),
   fontSize: keysOf(defaultTheme.fontSize),
@@ -96,6 +106,55 @@ const STOCK_KEYS: Readonly<Record<ThemeNamespace, ReadonlySet<string>>> = {
 
 function keysOf(value: unknown): ReadonlySet<string> {
   return new Set(value !== null && typeof value === 'object' ? Object.keys(value) : []);
+}
+
+interface StockClasses {
+  /** Every class stock Tailwind generates, static utilities such as text-left included. */
+  names: ReadonlySet<string>;
+  /** The utilities a key in each namespace names a class of: text, border, bg... for colors. */
+  utilities: Readonly<Record<ThemeNamespace, readonly string[]>>;
+}
+
+let stockClasses: StockClasses | null = null;
+
+// Tailwind shares utilities across namespaces (text- takes a colour or a font
+// size, border- a colour or a width), so a key is also checked against
+// Tailwind's own class list, not only its namespace's keys. A context takes
+// about 100 ms to build, so it is built once.
+function readStockClasses(): StockClasses {
+  if (stockClasses !== null) return stockClasses;
+  const probe = (namespace: ThemeNamespace) => `kitprobe${namespace.toLowerCase()}`;
+  const extend = Object.fromEntries(
+    THEME_NAMESPACES.map((namespace) => [namespace, { [probe(namespace)]: 'var(--probe)' }]),
+  );
+  const classes = setupContextUtils
+    .createContext(
+      // Preflight adds no class and reads a file beside Tailwind's source that a bundle lacks.
+      resolveConfig({ content: [], corePlugins: { preflight: false }, theme: { extend } }),
+    )
+    .getClassList();
+  const names = new Set<string>();
+  const utilities = Object.fromEntries(
+    THEME_NAMESPACES.map((namespace) => [namespace, [] as string[]]),
+  ) as Record<ThemeNamespace, string[]>;
+  for (const name of classes) {
+    const namespace = THEME_NAMESPACES.find((each) => name.endsWith(`-${probe(each)}`));
+    if (namespace === undefined) names.add(name);
+    // A negated class exists only where its positive one does.
+    else if (!name.startsWith('-'))
+      utilities[namespace].push(name.slice(0, -`-${probe(namespace)}`.length));
+  }
+  stockClasses = { names, utilities };
+  return stockClasses;
+}
+
+/** Whether a key is the default theme's own or would name a class stock Tailwind generates. */
+function isStockKey(entry: ThemeEntry): boolean {
+  if (STOCK_KEYS[entry.namespace].has(entry.key)) return true;
+  const { names, utilities } = readStockClasses();
+  return utilities[entry.namespace].some((utility) =>
+    names.has(nameClass.formatClass(utility, entry.key)),
+  );
 }
 
 function keyOf(rest: string, prefix: string): string {
@@ -117,8 +176,8 @@ function entryFor(kind: TokenSectionKind, token: string): ThemeEntry | null {
 }
 
 /**
- * Every kit token's theme entry, skipping names the default theme owns and
- * tokens whose name maps to no namespace. The first section to claim a
+ * Every kit token's theme entry, skipping keys that would name a stock class
+ * and tokens whose name maps to no namespace. The first section to claim a
  * namespace key wins.
  */
 export function themeEntries(sections: DocumentSection[]): ThemeEntry[] {
@@ -130,7 +189,7 @@ export function themeEntries(sections: DocumentSection[]): ThemeEntry[] {
       if (item.kind !== 'group') continue;
       for (const { name } of item.tokens) {
         const entry = entryFor(section.kind as TokenSectionKind, name);
-        if (entry === null || STOCK_KEYS[entry.namespace].has(entry.key)) continue;
+        if (entry === null || isStockKey(entry)) continue;
         const id = `${entry.namespace}.${entry.key}`;
         if (seen.has(id)) continue;
         seen.add(id);

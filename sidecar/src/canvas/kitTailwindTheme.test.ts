@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
+import {
+  canvasRuntime,
+  ownedCanvasRuntimeDir,
+  startCanvasRuntime,
+  stopCanvasRuntime,
+} from './canvasRuntime.js';
 import { CompilerWorker } from './compiler.js';
+import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitTailwindTheme } from './kitTailwindTheme.js';
 import type { DocumentSection, TokenSectionKind } from './designSystemDocument.js';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
@@ -53,6 +60,7 @@ test('a kit token becomes a theme entry unless the default theme owns its name',
 
 const worker = new CompilerWorker();
 after(() => worker.terminate());
+after(() => stopCanvasRuntime());
 
 test('kit theme classes compile to their tokens while stock classes keep stock values', async () => {
   const files = {
@@ -101,4 +109,29 @@ export default function Panel() {
   css(/\.shadow-md\s*\{[^}]*0 4px 6px/, 'stock shadow-md');
   css(/\.font-sans\s*\{[^}]*font-family:\s*ui-sans-serif/, 'stock font-sans');
   css(/\.text-lg\s*\{[^}]*font-size:\s*1\.125rem/, 'stock text-lg');
+});
+
+test('a kit key that names a stock class of another namespace leaves that class stock', async () => {
+  assert.equal(startCanvasRuntime(ownedCanvasRuntimeDir), null);
+  const stock = ['text-base', 'text-lg', 'border-2', 'shadow-sm', 'outline-dashed', 'text-white'];
+  const files = { 'main.tsx': `export default () => <p className="${stock.join(' ')}" />;\n` };
+  const colliding = [
+    tokenSection('colors', ['--ds-base', '--ds-lg', '--ds-2', '--ds-sm', '--ds-dashed']),
+    tokenSection('typography', ['--ds-text-white']),
+  ];
+  const stockRules = async (sections: DocumentSection[]) => {
+    const built = await buildDesignStylesheet(files, { files: {}, sections });
+    assert.ok(built.ok);
+    const rules = new Map<string, string>();
+    canvasRuntime()
+      .postcss.parse(built.css)
+      .walkRules((rule) => {
+        const name = rule.selector.slice(1);
+        if (stock.includes(name)) rules.set(name, rule.toString());
+      });
+    return rules;
+  };
+  const withoutKit = await stockRules([]);
+  assert.deepEqual([...withoutKit.keys()].sort(), [...stock].sort());
+  assert.deepEqual(await stockRules(colliding), withoutKit);
 });
