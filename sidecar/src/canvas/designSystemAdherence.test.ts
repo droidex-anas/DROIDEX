@@ -187,7 +187,7 @@ test('a default-theme class where the kit defines that scale is named, with the 
     'main.tsx': `import { Card } from '@droidex/design-system';
 export default function Report() {
   return (
-    <Card className="rounded-md rounded-tr-lg text-lg shadow-sm shadow font-sans hover:rounded-full">
+    <Card className="rounded-md rounded-tr-lg text-lg shadow-sm shadow font-sans hover:rounded-full rounded-t-none shadow-none">
       Hey
     </Card>
   );
@@ -202,7 +202,6 @@ export default function Report() {
     'design_system_shadow main.tsx:4',
     'design_system_shadow main.tsx:4',
     'design_system_font main.tsx:4',
-    'design_system_radius main.tsx:4',
   ]);
   const [radius, , type, shadow, , font] = result.diagnostics;
   assert.match(

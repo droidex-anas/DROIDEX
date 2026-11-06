@@ -44,10 +44,11 @@ const PALETTE_CLASS =
   /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
 const TAILWIND_FONT_CLASS = /^font-(?:sans|serif|mono)$/;
 // The default theme's own scale classes; where the kit defines that scale,
-// they sidestep its tokens.
-const STOCK_RADIUS_CLASS = /^-?rounded(?:-[a-z]{1,2})?-(?:none|sm|md|lg|xl|2xl|3xl|full)$/;
+// they sidestep its tokens. rounded-none, rounded-full and shadow-none are
+// resets rather than scale steps, as 0 and none are for a literal.
+const STOCK_RADIUS_CLASS = /^-?rounded(?:-[a-z]{1,2})?-(?:sm|md|lg|xl|2xl|3xl)$/;
 const STOCK_TYPE_CLASS = /^-?text-(?:xs|sm|base|lg|[2-9]xl)$/;
-const STOCK_SHADOW_CLASS = /^-?shadow-(?:sm|md|lg|xl|2xl|inner|none)$/;
+const STOCK_SHADOW_CLASS = /^-?shadow-(?:sm|md|lg|xl|2xl|inner)$/;
 const SPACING_PROPERTY = /^(?:padding|margin)(?:-|$)|^(?:row-|column-)?gap$/;
 const SPACING_CLASS = /^(?:[pm][xytrblse]?|gap(?:-[xy])?|space-[xy])$/;
 const RADIUS_CLASS = /^rounded(?:-[a-z]{1,2})?$/;
