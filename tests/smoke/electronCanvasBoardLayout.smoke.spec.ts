@@ -94,10 +94,15 @@ test('a frame resizes from an edge or a corner, and the edges opposite stay put'
   await expect.poll(() => arrangeCount(page)).toBe(1);
   expect((await arranged(page, 0)).a).toEqual({ x: 150, y: 100, width: 350, height: 250 });
 
-  // The next drag starts from the unanswered write, where the frame is drawn.
+  // The next drag starts from the unanswered write, where the frame is drawn,
+  // and is written once that one lands, at the layout version it leaves.
   await dragHandle(page, 'west', -45, 0);
+  await page.evaluate(() => window.boardHarness.answer(0));
   await expect.poll(() => arrangeCount(page)).toBe(2);
   expect((await arranged(page, 1)).a).toEqual({ x: 100, y: 100, width: 400, height: 250 });
+  expect(
+    await page.evaluate(() => window.boardHarness.calls[1].frames[0].expectedLayoutVersion),
+  ).toBe(4);
 });
 
 test('the size menu sets a typed size or a screen, each in one arrange from the same corner', async ({
@@ -126,6 +131,7 @@ test('the size menu sets a typed size or a screen, each in one arrange from the 
 
   await page.getByRole('button', { name: 'Size 320 × 240' }).click();
   await page.getByRole('menuitem', { name: /^Desktop/ }).click();
+  await page.evaluate(() => window.boardHarness.answer(0));
   await expect.poll(() => arrangeCount(page)).toBe(2);
   expect((await arranged(page, 1)).a).toEqual({ x: 100, y: 50, width: 1440, height: 900 });
 });

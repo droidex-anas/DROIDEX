@@ -380,7 +380,8 @@ test('keyboard arrows pan only without a selection, with a visible soft board fo
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 
   // With a selection the arrows stop panning and nudge it instead: one world
-  // unit, ten with Shift, each written at the layout version it was read at.
+  // unit, ten with Shift. A nudge on one still saving waits for it to land and
+  // is written at the layout version that one leaves.
   await page.evaluate(() => window.boardHarness.select(['a']));
   await expect(page.locator('#outside')).toHaveAttribute('aria-pressed', 'true');
   await board.focus();
@@ -388,11 +389,14 @@ test('keyboard arrows pan only without a selection, with a visible soft board fo
   await page.keyboard.press('ArrowRight');
   await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
   await page.keyboard.press('Shift+ArrowRight');
+  await page.clock.runFor(32);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  await page.evaluate(() => window.boardHarness.answer(0));
   await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
   const nudged = await page.evaluate(() => window.boardHarness.calls.map((call) => call.frames));
   expect(nudged).toEqual([
     [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 101, y: 50, width: 400, height: 300 } }],
-    [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 111, y: 50, width: 400, height: 300 } }],
+    [{ designId: 'a', expectedLayoutVersion: 4, rect: { x: 111, y: 50, width: 400, height: 300 } }],
   ]);
   expect(await transform(page)).toBe(selectedView);
 
