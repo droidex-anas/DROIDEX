@@ -94,12 +94,9 @@ function ThemeColorRow({
           setOpen((o) => !o);
         }}
         title={`Pick ${label.toLowerCase()}`}
-        className="flex h-control-md min-w-32 shrink-0 items-center gap-2 rounded-md px-2.5 text-caption tabular-nums transition duration-150 ease-out hover:opacity-90 active:scale-97"
-        style={{
-          backgroundColor: value,
-          color: ink,
-          boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.3)',
-        }}
+        // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
+        className="flex h-control-md min-w-32 shrink-0 items-center gap-2 rounded-md px-2.5 text-caption tabular-nums ring-1 ring-inset ring-divider-strong transition duration-150 ease-out hover:opacity-90 active:scale-97"
+        style={{ backgroundColor: value, color: ink }}
       >
         <span
           className="size-icon-sm shrink-0 rounded-full"
