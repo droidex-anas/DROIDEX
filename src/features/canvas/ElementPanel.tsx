@@ -77,6 +77,7 @@ export function ElementPanel({
   const previewed = (property: string): boolean => Object.hasOwn(draft.values, property);
   /** A pick from a segment, option or token: previews the value and commits at once. */
   const pick = (property: string) => (next: string) => {
+    if (readOnly) return;
     onPreview(property, next);
     onCommit();
   };
@@ -247,6 +248,7 @@ export function ElementPanel({
                   label="Width"
                   extent={shown.rect.width}
                   value={value('width')}
+                  disabled={readOnly}
                   onPick={pick('width')}
                 />
               ),
@@ -258,6 +260,7 @@ export function ElementPanel({
                   label="Height"
                   extent={shown.rect.height}
                   value={value('height')}
+                  disabled={readOnly}
                   onPick={pick('height')}
                 />
               ),
@@ -271,6 +274,7 @@ export function ElementPanel({
                 <NoneMode
                   label="Maximum width"
                   value={value('maxWidth')}
+                  disabled={readOnly}
                   onPick={pick('maxWidth')}
                 />
               ),
@@ -284,6 +288,7 @@ export function ElementPanel({
                 <NoneMode
                   label="Maximum height"
                   value={value('maxHeight')}
+                  disabled={readOnly}
                   onPick={pick('maxHeight')}
                 />
               ),
@@ -320,7 +325,7 @@ export function ElementPanel({
               onPick={pick('fontFamily')}
             />
           ) : (
-            <Caption>This kit defines no fonts.</Caption>
+            tokens !== null && <Caption>This kit defines no fonts.</Caption>
           )}
           <Row>
             {number('fontSize', 'Font size', 'Size', { min: 1 })}
@@ -372,7 +377,7 @@ export function ElementPanel({
               onPick={pick('boxShadow')}
             />
           ) : (
-            <Caption>This kit defines no shadows.</Caption>
+            tokens !== null && <Caption>This kit defines no shadows.</Caption>
           )}
           {number('opacity', 'Opacity', 'Opacity', {
             unit: null,

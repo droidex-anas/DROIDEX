@@ -5,10 +5,11 @@ import { useRef, useState } from 'react';
 import { ChevronDown } from '@droidex/icons';
 import { Menu } from '../../components/ui/Menu';
 
-function sizeMode(value: string): 'Fixed' | 'Hug' | 'Fill' {
+/** The mode a size reads as; null for one none of them names, such as `auto` or `50%`. */
+function sizeMode(value: string): 'Fixed' | 'Hug' | 'Fill' | null {
   if (value === 'fit-content') return 'Hug';
   if (value === '100%') return 'Fill';
-  return 'Fixed';
+  return /^\d*\.?\d+px$/.test(value.trim()) ? 'Fixed' : null;
 }
 
 /** A width or height's sizing mode: fixed at a length, hugging contents, or filling. */
@@ -16,19 +17,21 @@ export function SizeMode({
   label,
   extent,
   value,
+  disabled,
   onPick,
 }: {
   label: string;
   /** The element's drawn size on this axis, which Fixed fixes to. */
   extent: number;
   value: string;
+  disabled: boolean;
   onPick: (value: string) => void;
 }) {
-  const mode = sizeMode(value);
   return (
     <ModeMenu
       label={`${label} sizing`}
-      mode={mode}
+      mode={sizeMode(value)}
+      disabled={disabled}
       choices={[
         {
           name: 'Fixed',
@@ -57,16 +60,19 @@ export function SizeMode({
 export function NoneMode({
   label,
   value,
+  disabled,
   onPick,
 }: {
   label: string;
   value: string;
+  disabled: boolean;
   onPick: (value: string) => void;
 }) {
   return (
     <ModeMenu
       label={label}
       mode={value === 'none' ? 'None' : 'Fixed'}
+      disabled={disabled}
       choices={[
         // Fixed needs a length, so the number field is the way back to it.
         { name: 'Fixed' },
@@ -84,10 +90,12 @@ export function NoneMode({
 function ModeMenu({
   label,
   mode,
+  disabled,
   choices,
 }: {
   label: string;
-  mode: string;
+  mode: string | null;
+  disabled: boolean;
   choices: { name: string; pick?: () => void }[];
 }) {
   const anchor = useRef<HTMLButtonElement>(null);
@@ -97,13 +105,14 @@ function ModeMenu({
       <button
         ref={anchor}
         type="button"
-        aria-label={`${label}, now ${mode}`}
+        aria-label={mode === null ? label : `${label}, now ${mode}`}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-disabled={disabled || undefined}
         onClick={() => {
-          setOpen(true);
+          if (!disabled) setOpen((was) => !was);
         }}
-        className="flex h-6 shrink-0 cursor-pointer items-center rounded-sm px-0.5 text-label text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className="flex h-6 shrink-0 cursor-pointer items-center rounded-sm px-0.5 text-label text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default"
       >
         {mode !== 'Fixed' && mode}
         <ChevronDown aria-hidden className="size-icon-sm" />
