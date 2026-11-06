@@ -190,7 +190,7 @@ export function ColorPicker({
       <div className="mt-3 flex items-center gap-1.5">
         <span
           // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-          className="size-control-sm shrink-0 rounded-sm ring-1 ring-inset ring-divider-strong"
+          className="size-control-sm shrink-0 rounded-sm ring-1 ring-inset ring-text/40"
           style={{ backgroundColor: value }}
         />
         <input
@@ -278,7 +278,7 @@ export function ColorField({
             setOpen((o) => !o);
           }}
           // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-          className="size-control-md rounded-md border border-divider transition-colors hover:border-divider-strong"
+          className="size-control-md rounded-md border border-text/40 transition-colors hover:border-text/60"
           style={{ backgroundColor: value }}
           title="Pick color"
         />

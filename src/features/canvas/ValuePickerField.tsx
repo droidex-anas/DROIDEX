@@ -279,7 +279,7 @@ export function Swatch({ colour }: { colour: string }) {
       aria-hidden
       className={cn(
         // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-        'size-3 shrink-0 rounded-xs ring-1 ring-inset ring-divider-strong',
+        'size-3 shrink-0 rounded-xs ring-1 ring-inset ring-text/40',
         none && 'canvas-swatch-none',
       )}
       style={{ backgroundColor: none ? undefined : colour }}
