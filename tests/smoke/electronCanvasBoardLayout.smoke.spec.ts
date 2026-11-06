@@ -139,6 +139,28 @@ test('the selected frame keeps its size and corners over a neighbour, and its ed
   expect(await selection(page)).toEqual(['b']);
   expect(await arrangeCount(page)).toBe(1);
 });
+
+test('a frame that joined the open board keeps its size and corners over a later neighbour', async ({
+  page,
+}) => {
+  // With motion on, both frames arrive with an animation; once it ends, the
+  // first must not be left a stacking context that traps its chrome under the second.
+  await openBoard(page, 14, 'no-preference');
+  await page.evaluate(() => {
+    window.boardHarness.arrive('first', { x: 100, y: 400, width: 300, height: 200 });
+    window.boardHarness.arrive('later', { x: 200, y: 500, width: 300, height: 200 });
+  });
+  for (const designId of ['first', 'later']) {
+    await page
+      .locator(`[data-design-frame="${designId}"]`)
+      .evaluate((node) => Promise.all(node.getAnimations().map((animation) => animation.finished)));
+  }
+  await page.evaluate(() => window.boardHarness.select(['first']));
+  await page.clock.runFor(32);
+  expect(await isOnTop(page.getByRole('button', { name: 'Size 300 × 200' }))).toBe(true);
+  expect(await isOnTop(page.locator('[data-handle="southeast"]'))).toBe(true);
+});
+
 test('the size menu sets a typed size or a screen, each in one arrange from the same corner', async ({
   page,
 }) => {

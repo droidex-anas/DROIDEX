@@ -41,17 +41,17 @@
   }
 }
 
-.canvas-frame-arrival,
-.canvas-popover-reveal {
-  animation-fill-mode: both;
-}
-
+/* An arrival fills backwards only: its `to` is the frame's own state, and a
+   fill that outlived it would keep the frame a stacking context, trapping its
+   toolbar, size and corners under any frame added after it. */
 .canvas-frame-arrival {
   animation-name: canvas-frame-arrival;
+  animation-fill-mode: backwards;
 }
 
 .canvas-popover-reveal {
   animation-name: canvas-popover-reveal;
+  animation-fill-mode: both;
 }
 
 @media (prefers-reduced-motion: reduce) {
