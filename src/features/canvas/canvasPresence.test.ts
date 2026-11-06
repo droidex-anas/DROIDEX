@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { asChunkedSequence } from '../../lib/chunkedSequence';
 import type { TranscriptEvent } from '../../types/bridge';
 import { canvasPresence, NO_PRESENCE, samePresence, type PresenceSources } from './canvasPresence';
 
@@ -98,6 +99,24 @@ test('only the current turn counts, and a steer does not start a new one', () =>
   assert.equal(canvasPresence(sources([...interrupted, prompt()]), frames).size, 0);
   const steered = canvasPresence(sources([...interrupted, prompt(true)]), frames);
   assert.deepEqual([...steered.keys()], ['a']);
+});
+
+test('a turn is read whole across the chunks the store keeps a transcript in', () => {
+  const frames = [designed('a'), designed('b'), designed('c')];
+  const talk = () => ev({ text: 'word' });
+  const events = [
+    call('t0', 'write', ['c']),
+    prompt(),
+    talk(),
+    call('t1', 'write', ['a']),
+    talk(),
+    talk(),
+    talk(),
+    call('t2', 'write', ['b']),
+    talk(),
+  ];
+  const presence = canvasPresence(sources(asChunkedSequence(events, 3)), frames);
+  assert.deepEqual([...presence.keys()].sort(), ['a', 'b']);
 });
 
 test('each agent keeps one look, distinct from every other agent on the board', () => {

@@ -4,6 +4,7 @@
 // agent is the chat itself or one of its child sessions, and each one present
 // gets a name and a colour of its own.
 
+import { chunkedSequenceChunks } from '../../lib/chunkedSequence';
 import { PRESENCE_COLORS, type PresenceColor } from '../../lib/themeTokens';
 import type { TranscriptEvent } from '../../types/bridge';
 import type { CanvasFrame } from './protocol';
@@ -91,8 +92,7 @@ function turnWork(events: readonly TranscriptEvent[]): TurnWork {
   const running = new Map<string, { source: string; designIds: string[] }>();
   const createdBy = new Map<string, string>();
   const arrivals = new Set<string>();
-  for (let index = turnStart(events); index < events.length; index += 1) {
-    const event = events[index];
+  for (const event of currentTurn(events)) {
     const activity = event.canvasActivity;
     if (activity?.action !== 'create' && activity?.action !== 'write') continue;
     const source = event.role === 'primary' ? PRIMARY : event.sourceSessionId;
@@ -107,6 +107,25 @@ function turnWork(events: readonly TranscriptEvent[]): TurnWork {
       for (const designId of activity.designIds) createdBy.set(designId, source);
   }
   return { running: [...running.values()], createdBy, arrivals };
+}
+
+/**
+ * The chat's events from its latest prompt on, or all of them while that
+ * prompt is not loaded. Read from the transcript's chunks, which are plain
+ * arrays: the sequence's own indexed reads are slow, and this runs on every
+ * store update while an agent is live, so it costs the turn and never the
+ * history before it.
+ */
+function currentTurn(events: readonly TranscriptEvent[]): TranscriptEvent[] {
+  const chunks = chunkedSequenceChunks(events);
+  const turn: (readonly TranscriptEvent[])[] = [];
+  for (let chunkIndex = chunks.length - 1; chunkIndex >= 0; chunkIndex -= 1) {
+    const chunk = chunks[chunkIndex];
+    const start = chunk.findLastIndex(startsTurn);
+    turn.push(start === -1 ? chunk : chunk.slice(start));
+    if (start !== -1) break;
+  }
+  return turn.reverse().flat();
 }
 
 /** The agent at work on each frame on the board, by design id. */
@@ -129,13 +148,9 @@ function frameWorkers(
   return workers;
 }
 
-/** Where the chat's latest turn starts: its own latest prompt that was not a steer. */
-function turnStart(events: readonly TranscriptEvent[]): number {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event.author === 'user' && event.role === 'primary' && !event.steered) return index;
-  }
-  return 0;
+/** The chat's own prompt, unless it was a steer, which joins the turn it steers. */
+function startsTurn(event: TranscriptEvent): boolean {
+  return event.author === 'user' && event.role === 'primary' && !event.steered;
 }
 
 /**
@@ -171,7 +186,7 @@ function pick<T>(options: readonly T[], hash: number, taken: ReadonlySet<T>): T 
   return options[hash % options.length];
 }
 
-function fnv1a(text: string): number {
+export function fnv1a(text: string): number {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);
