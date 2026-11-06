@@ -23,7 +23,7 @@ import {
 } from './schema.js';
 import { MAX_BUILD_DIAGNOSTICS, MAX_DIAGNOSTIC_MESSAGE_LENGTH } from './canvasDiagnostics.js';
 
-const BUILD_OUTCOME_VERSION = 4;
+const BUILD_OUTCOME_VERSION = 5;
 
 const diagnosticSchema = z
   .object({
