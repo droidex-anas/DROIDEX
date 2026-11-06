@@ -1,7 +1,7 @@
 // The board's direct element edits: which element of which live preview is
-// selected, what the user has previewed on it, and the one commit in flight.
-// Previews report through `selections`; the board draws the outline and the
-// panel from the selection this returns.
+// selected, what the user has previewed on it, the one commit in flight, and
+// the element under the pointer. Previews report through `selections`; the
+// board draws the outlines and the panel from what this returns.
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { elementStep, historyStep } from './boardKeys';
@@ -26,6 +26,7 @@ import type { PreviewRun } from './previewRuntime';
 import type { CanvasFrame, WriteReceipt } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
 import { useEditTokens } from './useEditTokens';
+import { useElementHover } from './useElementHover';
 
 export interface ElementSelection {
   draft: ElementEditDraft;
@@ -57,6 +58,11 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   /** Enter arrived while a pick was in flight, so it goes into the panel of what that finds. */
   const enterOnAnswer = useRef(false);
   const panel = useRef<HTMLDivElement>(null);
+  const hover = useElementHover(
+    active,
+    (designId, at) => runs.current.get(designId)?.run.hover(at) ?? Promise.resolve(null),
+  );
+  const { rerun } = hover;
 
   const { tokens, mode } = useEditTokens(
     selection
@@ -139,13 +145,17 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     return {
       attach(designId, revisionId, run) {
         runs.current.set(designId, { revisionId, run });
+        rerun(designId);
         const current = latest.current.selection?.draft;
         if (current?.element.designId === designId && current.element.revisionId === revisionId) {
           run.select(target(current), STYLE_PROPERTIES);
           holder.current = run;
         }
         return () => {
-          if (runs.current.get(designId)?.run === run) runs.current.delete(designId);
+          if (runs.current.get(designId)?.run === run) {
+            runs.current.delete(designId);
+            rerun(designId);
+          }
           if (holder.current === run) holder.current = null;
         };
       },
@@ -282,6 +292,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     },
     enter,
     runKey,
+    hover,
   };
 }
 

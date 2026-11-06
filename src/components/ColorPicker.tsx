@@ -189,13 +189,9 @@ export function ColorPicker({
 
       <div className="mt-3 flex items-center gap-1.5">
         <span
-          className="size-control-sm shrink-0 rounded-sm"
-          // The chips the picker edits are any colour, so the swatch carries
-          // its own hairline the way the theme editor's pills do.
-          style={{
-            backgroundColor: value,
-            boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.3)',
-          }}
+          // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
+          className="size-control-sm shrink-0 rounded-sm ring-1 ring-inset ring-divider-strong"
+          style={{ backgroundColor: value }}
         />
         <input
           value={hexDraft}

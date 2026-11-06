@@ -1,12 +1,16 @@
 // A number, usually with a unit: typing previews (a bare number gains the
 // field's unit), the arrow keys step it (Shift by the large step), dragging
 // its short name scrubs it, Enter commits and Escape takes it back. A button
-// lists the kit's tokens for the property when it has any.
+// lists the kit's tokens for the property when it has any. At rest it reads
+// as the token it matches or with its fraction rounded, and zero or a keyword
+// as a muted placeholder; its tooltip keeps the exact value.
 
-import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { Hash } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { cn } from '../../components/ui/cn';
+import { Tooltip } from '../../components/ui/Tooltip';
+import { lengthFace } from './panelValues';
 import { ValuePickerButton, type ValueOption } from './ValuePickerField';
 
 // The unit group wraps the choice so a bare number still yields a string.
@@ -15,7 +19,7 @@ const NUMBER = /^(-?\d*\.?\d+)((?:px|rem|em|%)?)$/;
 export interface NumberFieldProps {
   /** The field's accessible name: the property as a person reads it. */
   label: string;
-  /** The short name shown before the value; dragging it scrubs. */
+  /** The short name shown before the value, with the label as its tooltip when they differ; dragging it scrubs. */
   short: string;
   value: string;
   previewed: boolean;
@@ -72,6 +76,9 @@ export function NumberField({
   const input = useRef<HTMLInputElement>(null);
   /** The drag in progress, held by pointer capture so it ends with the pointer or the field. */
   const scrub = useRef<{ startX: number; start: { amount: number; unit: string } } | null>(null);
+  const [editing, setEditing] = useState(false);
+  // What it reads as at rest; typing, and a preview, always show the value itself.
+  const face = editing || previewed ? { text: value, placeholder: '' } : lengthFace(value, tokens);
   const clamp = (amount: number): number => {
     if (min !== undefined) amount = Math.max(min, amount);
     if (max !== undefined) amount = Math.min(max, amount);
@@ -119,39 +126,49 @@ export function NumberField({
     const next = clamp(drag.start.amount + steps * step);
     onPreview(`${amountText(next)}${drag.start.unit || (unit ?? '')}`);
   };
+  const shortName = (
+    <span
+      aria-hidden
+      onPointerDown={startScrub}
+      onPointerMove={moveScrub}
+      onLostPointerCapture={() => {
+        scrub.current = null;
+      }}
+      className={cn(
+        'flex min-w-7 shrink-0 cursor-ew-resize touch-none select-none items-center pr-1 whitespace-nowrap text-label',
+        previewed ? 'text-primary' : 'text-muted',
+      )}
+    >
+      {short}
+    </span>
+  );
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    <div className="min-w-0">
       <Input
         ref={input}
         variant="compact"
         aria-label={label}
-        value={value}
-        title={value}
+        value={face.text}
+        placeholder={face.placeholder}
+        title={face.text && face.text !== value ? `${face.text} · ${value}` : value}
         readOnly={disabled}
         spellCheck={false}
         inputMode="decimal"
-        className={cn('tabular-nums', previewed && 'bg-active')}
-        leading={
-          <span
-            aria-hidden
-            onPointerDown={startScrub}
-            onPointerMove={moveScrub}
-            onLostPointerCapture={() => {
-              scrub.current = null;
-            }}
-            className={cn(
-              'flex min-w-7 shrink-0 cursor-ew-resize touch-none select-none items-center pr-1 whitespace-nowrap text-label',
-              previewed ? 'text-primary' : 'text-muted',
-            )}
-          >
-            {short}
-          </span>
-        }
+        onFocus={() => {
+          setEditing(true);
+        }}
+        onBlur={() => {
+          setEditing(false);
+        }}
+        className={cn('group tabular-nums', previewed && 'bg-active')}
+        leading={short === label ? shortName : <Tooltip label={label}>{shortName}</Tooltip>}
         actions={
           (tokens?.length ?? 0) > 0 || trailing !== undefined ? (
-            <>
+            <span className="relative flex items-center">
               {trailing}
               {tokens?.length ? (
+                // Shown on hover over the value's end, as a design tool's token
+                // button is, so a token name at rest has the field's whole width.
                 <ValuePickerButton
                   label={`${label} tokens`}
                   icon={<Hash aria-hidden className="size-icon-sm" />}
@@ -159,9 +176,13 @@ export function NumberField({
                   value={value}
                   disabled={disabled}
                   onPick={onPick}
+                  className={cn(
+                    'absolute right-full top-1/2 -translate-y-1/2 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100',
+                    previewed ? 'bg-active' : 'bg-field group-hover:bg-active',
+                  )}
                 />
               ) : null}
-            </>
+            </span>
           ) : undefined
         }
         onChange={(event) => {

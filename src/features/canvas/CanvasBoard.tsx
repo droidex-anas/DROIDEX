@@ -30,15 +30,18 @@ import { showsFrameTools, type BoardInteraction } from './canvasState';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
-import { ElementPanel } from './ElementPanel';
+import { ElementOutlines } from './ElementOutlines';
+import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
 import { SelectionBounds } from './SelectionBounds';
 import { SnapGuides } from './SnapGuides';
+import { toolbarRoom } from './toolbarPlacement';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
+import { useBoardToastPlacement } from './useBoardToastPlacement';
 import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
@@ -132,6 +135,7 @@ export function CanvasBoard({
 
   const view = useBoardViewport(board, frames, motion, restoredViewport, rightInset);
   const { fitTo } = view;
+  useBoardToastPlacement(board, rightInset, interaction.selectedFrameIds.length >= 2);
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
@@ -166,6 +170,7 @@ export function CanvasBoard({
     active: interaction.mode === 'edit',
     onEditElement,
   });
+  const { hover } = editor;
 
   const gestures = useBoardGestures({
     board,
@@ -260,8 +265,9 @@ export function CanvasBoard({
   const focusBoard = () => board.current?.focus({ preventScroll: true });
 
   return (
-    // The element panel is a column beside the board, not a layer over it, so
-    // it takes its own wheel and the board only gives up width.
+    // Edit's element panel is a full-height column beside the board, not a
+    // layer over it, so it takes its own wheel and the board only gives up
+    // width; the board's view keeps its top-left, so no frame moves as it opens.
     <div className="flex h-full min-h-0 w-full bg-bg">
       <div
         ref={board}
@@ -329,14 +335,17 @@ export function CanvasBoard({
               frame={frame}
               rect={drawn[index].rect}
               scale={scale}
-              roomRight={view.size.x - (view.viewport.x + drawn[index].rect.x * scale)}
               motion={motion}
               arriving={!openedWith.has(frame.designId)}
               visible={visible.includes(frame.designId)}
               mode={interaction.mode}
               selected={interaction.selectedFrameIds.includes(frame.designId)}
               multiSelect={interaction.selectedFrameIds.length > 1}
-              showTools={showsFrameTools(interaction, frame.designId)}
+              toolbarRoom={
+                showsFrameTools(interaction, frame.designId)
+                  ? toolbarRoom(view.viewport, drawn, frame.designId, view.size)
+                  : null
+              }
               interacted={interaction.interactedFrameId === frame.designId}
               held={gestures.heldDesignIds.includes(frame.designId)}
               agentWorking={agentWorking}
@@ -364,18 +373,25 @@ export function CanvasBoard({
               onPickElement={(picked, at) => {
                 editor.pick(picked.designId, at);
               }}
+              onHoverElement={(hovered, at) => {
+                if (at) hover.move(hovered.designId, at);
+                else hover.clear();
+              }}
               onEditEnter={(picked) => {
                 editor.enter(picked.designId);
               }}
-              elementBox={
-                editor.selection?.draft.element.designId === frame.designId
-                  ? editor.selection.shown.rect
-                  : null
-              }
+              elementPicked={editor.selection?.draft.element.designId === frame.designId}
+              elementHovered={hover.hovered?.designId === frame.designId}
               tabStop={frame.designId === tabStopId}
               onFocusLabel={onFocusLabel}
             />
           ))}
+          <ElementOutlines
+            drawn={drawn}
+            scale={scale}
+            selection={editor.selection}
+            hovered={hover.hovered}
+          />
           <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
           <AnnotationLayer
             {...annotation.layer}
@@ -416,10 +432,15 @@ export function CanvasBoard({
           {announcement}
         </p>
       </div>
+      {interaction.mode === 'edit' && !editor.selection && <EmptyElementPanel />}
       {editor.selection && (
         <ElementPanel
           ref={editor.panel}
           selection={editor.selection}
+          frameName={
+            frames.find((frame) => frame.designId === editor.selection?.draft.element.designId)
+              ?.name ?? ''
+          }
           tokens={editor.tokens}
           mode={editor.mode}
           onPreview={editor.preview}

@@ -192,57 +192,64 @@ export const AlignItemsStretch = createIcon(
   </>,
 );
 
+/* Justify glyphs mark the container's edges, or its centre line, so where the
+   items sit along the row reads at a glance, and the three distributions stay
+   apart: two items at the edges, two inset, three evenly. */
 export const JustifyStart = createIcon(
   'justify-start',
   <>
-    {bar(4, 7, 3.5, 10)}
-    {bar(8.5, 7, 3.5, 10)}
-    {bar(13, 7, 3.5, 10)}
+    {guide('M4 5v14')}
+    {bar(6.5, 7.5, 3.5, 9)}
+    {bar(11.5, 7.5, 3.5, 9)}
   </>,
 );
 
 export const JustifyCenter = createIcon(
   'justify-center',
   <>
-    {bar(6, 7, 3.5, 10)}
-    {bar(10.5, 7, 3.5, 10)}
-    {bar(15, 7, 3.5, 10)}
+    {guide('M12 4v16')}
+    {bar(6.5, 7.5, 3.5, 9)}
+    {bar(14, 7.5, 3.5, 9)}
   </>,
 );
 
 export const JustifyEnd = createIcon(
   'justify-end',
   <>
-    {bar(8, 7, 3.5, 10)}
-    {bar(12.5, 7, 3.5, 10)}
-    {bar(17, 7, 3.5, 10)}
+    {guide('M20 5v14')}
+    {bar(9, 7.5, 3.5, 9)}
+    {bar(14, 7.5, 3.5, 9)}
   </>,
 );
 
 export const JustifyBetween = createIcon(
   'justify-between',
   <>
-    {bar(4, 7, 3.5, 10)}
-    {bar(10.25, 7, 3.5, 10)}
-    {bar(16.5, 7, 3.5, 10)}
+    {guide('M4 5v14')}
+    {guide('M20 5v14')}
+    {bar(6, 7.5, 3.5, 9)}
+    {bar(14.5, 7.5, 3.5, 9)}
   </>,
 );
 
 export const JustifyAround = createIcon(
   'justify-around',
   <>
-    {bar(5.5, 7, 3.5, 10)}
-    {bar(10.75, 7, 3.5, 10)}
-    {bar(16, 7, 3.5, 10)}
+    {guide('M4 5v14')}
+    {guide('M20 5v14')}
+    {bar(7.5, 7.5, 3, 9)}
+    {bar(13.5, 7.5, 3, 9)}
   </>,
 );
 
 export const JustifyEvenly = createIcon(
   'justify-evenly',
   <>
-    {bar(4.5, 7, 3.5, 10)}
-    {bar(10.5, 7, 3.5, 10)}
-    {bar(16.5, 7, 3.5, 10)}
+    {guide('M4 5v14')}
+    {guide('M20 5v14')}
+    {bar(6.5, 7.5, 2.5, 9)}
+    {bar(10.75, 7.5, 2.5, 9)}
+    {bar(15, 7.5, 2.5, 9)}
   </>,
 );
 

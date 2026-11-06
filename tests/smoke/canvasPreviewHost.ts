@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { CompilerWorker, type CompiledDesign } from '../../sidecar/src/canvas/compiler';
-import type { SourceFiles } from '../../sidecar/src/canvas/schema';
+import type { DesignSystemRef, SourceFiles } from '../../sidecar/src/canvas/schema';
 import {
   PREVIEW_POLL_SCRIPT,
   previewNonce,
@@ -27,7 +27,10 @@ export interface MountedGuest {
 }
 
 /** The production artifact for one design, compiled by the real compiler. */
-export async function compileDesign(files: SourceFiles): Promise<CompiledDesign> {
+export async function compileDesign(
+  files: SourceFiles,
+  designSystem: DesignSystemRef = { id: 'droidex', version: 1, mode: 'dark' },
+): Promise<CompiledDesign> {
   const compiler = new CompilerWorker();
   try {
     return await compiler.compile(
@@ -36,7 +39,7 @@ export async function compileDesign(files: SourceFiles): Promise<CompiledDesign>
         revisionId: 'rev_smoke',
         generation: 1,
         files,
-        designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+        designSystem,
       },
       new AbortController().signal,
     );

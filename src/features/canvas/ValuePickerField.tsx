@@ -15,6 +15,7 @@ import { Check, ChevronDown } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { Popover } from '../../components/ui/Popover';
 import { cn } from '../../components/ui/cn';
+import { colourFace } from './panelValues';
 
 export interface ValueOption {
   /** What picking writes: a token name or a CSS value. */
@@ -41,8 +42,18 @@ function currentOption(options: readonly ValueOption[], value: string): ValueOpt
   return options.find((option) => option.value === value || option.hint === value);
 }
 
-/** The whole field: a compact face with the current value, opening the option list. */
-export function ValuePickerField({ label, options, value, disabled, onPick }: ValuePickerProps) {
+/**
+ * The whole field: a compact face with the current option, or `face` (the
+ * value itself unless given) when none is current, opening the option list.
+ */
+export function ValuePickerField({
+  label,
+  options,
+  value,
+  face = value,
+  disabled,
+  onPick,
+}: ValuePickerProps & { face?: string }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const current = currentOption(options, value);
@@ -63,7 +74,7 @@ export function ValuePickerField({ label, options, value, disabled, onPick }: Va
       >
         {current?.swatch !== undefined && <Swatch colour={current.swatch} />}
         <span className="min-w-0 flex-1 truncate text-left">
-          {current ? current.label : value || '—'}
+          {current ? current.label : face || '—'}
         </span>
         <ChevronDown aria-hidden className="size-icon-sm shrink-0 text-muted" />
       </button>
@@ -87,8 +98,9 @@ export function ValuePickerField({ label, options, value, disabled, onPick }: Va
 export function ValuePickerButton({
   label,
   icon,
+  className,
   ...props
-}: ValuePickerProps & { icon: ReactNode }) {
+}: ValuePickerProps & { icon: ReactNode; className?: string }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -103,7 +115,10 @@ export function ValuePickerButton({
         onClick={() => {
           if (!props.disabled) setOpen((was) => !was);
         }}
-        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default"
+        className={cn(
+          'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default',
+          className,
+        )}
       >
         {icon}
       </button>
@@ -232,10 +247,13 @@ export function OptionList({
               )}
             >
               {option.swatch !== undefined && <Swatch colour={option.swatch} />}
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              {/* The name keeps its width, and the value takes what is left. */}
+              <span className={cn('min-w-0 truncate', option.hint === undefined && 'flex-1')}>
+                {option.label}
+              </span>
               {option.hint !== undefined && (
                 <span
-                  className="min-w-0 shrink truncate text-caption text-muted"
+                  className="min-w-0 flex-1 basis-0 truncate text-right text-caption text-muted"
                   title={option.hint}
                 >
                   {option.hint}
@@ -250,14 +268,21 @@ export function OptionList({
   );
 }
 
-/** The value's own colour, edged so any colour reads on any surface. */
+/**
+ * The value's own colour, edged so any colour reads on any surface; a colour
+ * that paints nothing shows the transparency checkerboard instead.
+ */
 export function Swatch({ colour }: { colour: string }) {
+  const none = colourFace(colour).none;
   return (
     <span
       aria-hidden
-      // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
-      className="size-3 shrink-0 rounded-xs ring-1 ring-inset ring-divider-strong"
-      style={{ backgroundColor: colour }}
+      className={cn(
+        // eslint-disable-next-line design-policy/design-tokens -- colour swatch edge: an arbitrary colour needs an edge to read on any surface
+        'size-3 shrink-0 rounded-xs ring-1 ring-inset ring-divider-strong',
+        none && 'canvas-swatch-none',
+      )}
+      style={{ backgroundColor: none ? undefined : colour }}
     />
   );
 }

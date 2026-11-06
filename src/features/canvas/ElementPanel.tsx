@@ -1,31 +1,40 @@
-// The selected element's text and styles while Edit has one, in a column at the
-// board's right: typed controls grouped the way a designer reads them — content,
-// layout, size, typography, fill, border, radius, effects — reading the values
-// the preview computes, with the kit's tokens one press away. Typing previews in
-// the guest; picking a segment, option, token or swatch applies at once; Enter
-// commits every style preview as one edit, or the text as its own, and Escape
-// takes one back.
+// The selected element's text and styles while Edit has one, in a full-height
+// column at the board's right: typed controls grouped the way a designer reads
+// them — content, layout, size, spacing, typography, fill, border, effects —
+// reading the values the preview computes, with the kit's tokens one press
+// away. A flex or grid container shows its alignment, and an item of one its
+// own. Typing previews in the guest; picking a segment, option, token or swatch
+// applies at once; Enter commits every style preview as one edit, or the text
+// as its own, and Escape takes one back.
 
 import type { ReactNode, Ref } from 'react';
+import { ChevronRight } from '@droidex/icons';
 import type { HistoryStep } from './boardHistory';
 import { historyStep, isBoardEditor } from './boardKeys';
 import { ColourField } from './ColourField';
 import { hasPreviews } from './elementEditDraft';
 import {
   ALIGN,
+  ALIGN_COLUMN,
   ALIGN_SELF,
   BORDER_STYLE,
   DIRECTION,
-  DISPLAY,
+  displayFor,
   JUSTIFY,
+  JUSTIFY_COLUMN,
+  LAYOUT,
+  layoutOf,
+  type Layout,
   OVERFLOW,
   TEXT_ALIGN,
   TEXT_TRANSFORM,
   WEIGHTS,
   WRAP,
 } from './elementPanelChoices';
+import { Labelled, Pair, Section } from './ElementPanelRows';
 import { ElementTextField } from './ElementTextField';
 import { NumberField } from './NumberField';
+import { firstFamily, sameFontStack } from './panelValues';
 import { SegmentedControl, type Segment } from './SegmentedControl';
 import type { EditToken, SourceElement } from './protocol';
 import { NoneMode, SizeMode } from './SizeModeMenu';
@@ -36,6 +45,8 @@ import { ValuePickerField, type ValueOption } from './ValuePickerField';
 export interface ElementPanelProps {
   ref: Ref<HTMLDivElement>;
   selection: ElementSelection;
+  /** The name of the frame the element is in, which leads its breadcrumb. */
+  frameName: string;
   /** The selected design's kit tokens by property; null until they load. */
   tokens: Record<string, EditToken[]> | null;
   /** The mode the selected design previews its kit in. */
@@ -55,6 +66,7 @@ export interface ElementPanelProps {
 export function ElementPanel({
   ref,
   selection,
+  frameName,
   tokens,
   mode,
   onPreview,
@@ -92,6 +104,9 @@ export function ElementPanel({
         ...(colour ? { swatch: hint } : {}),
       };
     });
+  /** Why a token-only picker is off once the kit's tokens have loaded without any. */
+  const noTokens = (options: ValueOption[], kind: string) =>
+    tokens !== null && options.length === 0 && `This kit defines no ${kind}.`;
   const segmentValue = (property: string, options: readonly Segment<string>[]): string =>
     options.some((option) => option.value === value(property)) ? value(property) : '';
 
@@ -160,14 +175,20 @@ export function ElementPanel({
     />
   );
 
+  const display = value('display');
+  const layout = layoutOf(display);
+  const column = value('flexDirection').startsWith('column');
+  const parent = layoutOf(shown.parentDisplay);
   const shadowTokens = tokenOptions('boxShadow') ?? [];
   const fontTokens = tokenOptions('fontFamily') ?? [];
+  const fontFamily = value('fontFamily');
+  const fontToken = fontTokens.find((option) => sameFontStack(option.hint ?? '', fontFamily));
   return (
     <div
       ref={ref}
       role="region"
       aria-label={`Styles of the selected ${draft.site.tagName}`}
-      className="canvas-element-panel my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
+      className={SIDEBAR}
       onKeyDown={(event) => {
         const step = historyStep(event);
         if (!step) return;
@@ -183,20 +204,26 @@ export function ElementPanel({
       }}
     >
       <header className="shrink-0 px-3 pb-2 pt-3">
-        <h2 className="flex min-w-0 items-baseline gap-2">
+        <h2 className="flex min-w-0 items-center gap-1 text-body">
+          <span className="min-w-0 truncate text-muted" title={frameName}>
+            {frameName}
+          </span>
+          <ChevronRight aria-hidden className="size-icon-sm shrink-0 text-muted" />
           <span className="shrink-0 text-body-strong text-primary">{draft.site.tagName}</span>
-          <span className="truncate text-caption text-muted" title={draft.site.file}>
+        </h2>
+        <p className="mt-0.5 flex min-w-0 items-baseline gap-2 text-caption text-muted">
+          <span className="truncate" title={draft.site.file}>
             {fileName(draft.site.file)}
           </span>
-          <span className="ml-auto shrink-0 text-caption tabular-nums text-muted">
+          <span className="ml-auto shrink-0 tabular-nums">
             {Math.round(shown.rect.width)} × {Math.round(shown.rect.height)}
           </span>
-        </h2>
+        </p>
         {!editable && (
           <p className="mt-1.5 text-caption text-secondary">{agentRoute(draft.site.editability)}</p>
         )}
       </header>
-      <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3 pb-2">
+      <div className="scroll-fade-y scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3">
         {text !== null && (
           <Section title="Content">
             <ElementTextField
@@ -211,36 +238,50 @@ export function ElementPanel({
           </Section>
         )}
         <Section title="Layout">
-          <ValuePickerField
+          <SegmentedControl
             label="Display"
-            options={DISPLAY}
-            value={value('display')}
+            options={LAYOUT}
+            value={layout ?? ''}
             disabled={readOnly}
-            onPick={pick('display')}
+            onPick={(next) => {
+              pick('display')(displayFor(display, next));
+            }}
           />
-          {segmented('flexDirection', 'Direction', DIRECTION)}
-          {segmented('flexWrap', 'Wrap', WRAP)}
-          {segmented('justifyContent', 'Justify', JUSTIFY)}
-          {segmented('alignItems', 'Align', ALIGN)}
-          {segmented('alignSelf', 'Align self', ALIGN_SELF)}
-          <Row>
-            {number('gap', 'Gap', 'Gap', { min: 0 })}
-            {number('flexGrow', 'Flex grow', 'Grow', { unit: null, min: 0 })}
-          </Row>
-          <Row>
-            {number('rowGap', 'Row gap', 'Row', { min: 0 })}
-            {number('columnGap', 'Column gap', 'Column', { min: 0 })}
-          </Row>
-          <ValuePickerField
-            label="Overflow"
-            options={OVERFLOW}
-            value={value('overflow')}
-            disabled={readOnly}
-            onPick={pick('overflow')}
-          />
+          {layout === 'flex' && (
+            <>
+              {segmented('flexDirection', 'Direction', DIRECTION)}
+              {segmented('flexWrap', 'Wrap', WRAP)}
+            </>
+          )}
+          {placesItems(layout) && (
+            <>
+              {segmented('justifyContent', 'Justify', column ? JUSTIFY_COLUMN : JUSTIFY)}
+              {segmented('alignItems', 'Align', column ? ALIGN_COLUMN : ALIGN)}
+            </>
+          )}
+          {layout === 'flex' && number('gap', 'Gap', 'Gap', { min: 0 })}
+          {layout === 'grid' && (
+            <Pair>
+              {number('rowGap', 'Row gap', 'Row', { min: 0 })}
+              {number('columnGap', 'Column gap', 'Column', { min: 0 })}
+            </Pair>
+          )}
+          {placesItems(parent) && segmented('alignSelf', 'Align self', ALIGN_SELF)}
+          {parent === 'flex' && (
+            <Pair>{number('flexGrow', 'Flex grow', 'Grow', { unit: null, min: 0 })}</Pair>
+          )}
+          <Labelled label="Overflow">
+            <ValuePickerField
+              label="Overflow"
+              options={OVERFLOW}
+              value={value('overflow')}
+              disabled={readOnly}
+              onPick={pick('overflow')}
+            />
+          </Labelled>
         </Section>
         <Section title="Size">
-          <Row>
+          <Pair>
             {number('width', 'Width', 'W', {
               min: 0,
               trailing: (
@@ -265,8 +306,6 @@ export function ElementPanel({
                 />
               ),
             })}
-          </Row>
-          <Row>
             {number('minWidth', 'Minimum width', 'Min W', { min: 0 })}
             {number('maxWidth', 'Maximum width', 'Max W', {
               min: 0,
@@ -279,8 +318,6 @@ export function ElementPanel({
                 />
               ),
             })}
-          </Row>
-          <Row>
             {number('minHeight', 'Minimum height', 'Min H', { min: 0 })}
             {number('maxHeight', 'Maximum height', 'Max H', {
               min: 0,
@@ -293,42 +330,36 @@ export function ElementPanel({
                 />
               ),
             })}
-          </Row>
+          </Pair>
         </Section>
         <Section title="Spacing">
           {number('padding', 'Padding', 'Padding', { min: 0 })}
-          <Row>
-            {number('paddingTop', 'Padding top', 'Top', { min: 0 })}
-            {number('paddingRight', 'Padding right', 'Right', { min: 0 })}
-          </Row>
-          <Row>
-            {number('paddingBottom', 'Padding bottom', 'Bottom', { min: 0 })}
-            {number('paddingLeft', 'Padding left', 'Left', { min: 0 })}
-          </Row>
+          <Pair>
+            {number('paddingTop', 'Padding top', 'T', { min: 0 })}
+            {number('paddingRight', 'Padding right', 'R', { min: 0 })}
+            {number('paddingBottom', 'Padding bottom', 'B', { min: 0 })}
+            {number('paddingLeft', 'Padding left', 'L', { min: 0 })}
+          </Pair>
           {number('margin', 'Margin', 'Margin')}
-          <Row>
-            {number('marginTop', 'Margin top', 'Top')}
-            {number('marginRight', 'Margin right', 'Right')}
-          </Row>
-          <Row>
-            {number('marginBottom', 'Margin bottom', 'Bottom')}
-            {number('marginLeft', 'Margin left', 'Left')}
-          </Row>
+          <Pair>
+            {number('marginTop', 'Margin top', 'T')}
+            {number('marginRight', 'Margin right', 'R')}
+            {number('marginBottom', 'Margin bottom', 'B')}
+            {number('marginLeft', 'Margin left', 'L')}
+          </Pair>
         </Section>
         <Section title="Typography">
-          {fontTokens.length > 0 ? (
+          <Labelled label="Font" note={noTokens(fontTokens, 'fonts')}>
             <ValuePickerField
               label="Font"
               options={fontTokens}
-              value={value('fontFamily')}
-              disabled={readOnly}
+              value={fontToken?.value ?? fontFamily}
+              face={firstFamily(fontFamily)}
+              disabled={readOnly || fontTokens.length === 0}
               onPick={pick('fontFamily')}
             />
-          ) : (
-            tokens !== null && <Caption>This kit defines no fonts.</Caption>
-          )}
-          <Row>
-            {number('fontSize', 'Font size', 'Size', { min: 1 })}
+          </Labelled>
+          <Labelled label="Weight">
             <ValuePickerField
               label="Font weight"
               options={[...(tokenOptions('fontWeight') ?? []), ...WEIGHTS]}
@@ -336,8 +367,9 @@ export function ElementPanel({
               disabled={readOnly}
               onPick={pick('fontWeight')}
             />
-          </Row>
-          <Row>
+          </Labelled>
+          <Pair>
+            {number('fontSize', 'Font size', 'Size', { min: 1 })}
             {number('lineHeight', 'Line height', 'Line', {
               unit: null,
               step: 0.1,
@@ -345,72 +377,79 @@ export function ElementPanel({
               min: 0,
             })}
             {number('letterSpacing', 'Letter spacing', 'Letter', { step: 0.1, shiftStep: 1 })}
-          </Row>
+          </Pair>
           {segmented('textAlign', 'Text align', TEXT_ALIGN)}
-          <ValuePickerField
-            label="Text transform"
-            options={TEXT_TRANSFORM}
-            value={value('textTransform')}
-            disabled={readOnly}
-            onPick={pick('textTransform')}
-          />
-          {colour('color', 'Text colour')}
+          <Labelled label="Case">
+            <ValuePickerField
+              label="Text transform"
+              options={TEXT_TRANSFORM}
+              value={value('textTransform')}
+              disabled={readOnly}
+              onPick={pick('textTransform')}
+            />
+          </Labelled>
+          <Labelled label="Colour">{colour('color', 'Text colour')}</Labelled>
         </Section>
-        <Section title="Fill">{colour('backgroundColor', 'Fill')}</Section>
+        <Section title="Fill">
+          <Labelled label="Fill">{colour('backgroundColor', 'Fill')}</Labelled>
+        </Section>
         <Section title="Border">
-          {colour('borderColor', 'Border colour')}
-          <Row>
+          <Labelled label="Colour">{colour('borderColor', 'Border colour')}</Labelled>
+          {segmented('borderStyle', 'Style', BORDER_STYLE)}
+          <Pair>
             {number('borderWidth', 'Border width', 'Width', { min: 0 })}
-            {segmented('borderStyle', 'Border style', BORDER_STYLE)}
-          </Row>
-        </Section>
-        <Section title="Radius">
-          {number('borderRadius', 'Corner radius', 'Radius', { min: 0 })}
+            {number('borderRadius', 'Corner radius', 'Radius', { min: 0 })}
+          </Pair>
         </Section>
         <Section title="Effects">
-          {shadowTokens.length > 0 ? (
+          <Labelled label="Shadow" note={noTokens(shadowTokens, 'shadows')}>
             <ValuePickerField
               label="Shadow"
               options={shadowTokens}
               value={value('boxShadow')}
-              disabled={readOnly}
+              face={value('boxShadow') === 'none' ? 'None' : value('boxShadow')}
+              disabled={readOnly || shadowTokens.length === 0}
               onPick={pick('boxShadow')}
             />
-          ) : (
-            tokens !== null && <Caption>This kit defines no shadows.</Caption>
-          )}
-          {number('opacity', 'Opacity', 'Opacity', {
-            unit: null,
-            step: 0.01,
-            shiftStep: 0.1,
-            min: 0,
-            max: 1,
-          })}
+          </Labelled>
+          <Pair>
+            {number('opacity', 'Opacity', 'Opacity', {
+              unit: null,
+              step: 0.01,
+              shiftStep: 0.1,
+              min: 0,
+              max: 1,
+            })}
+          </Pair>
         </Section>
       </div>
-      <p role="status" className="shrink-0 px-3 pb-3 pt-2 text-caption text-muted">
+      <p role="status" className="shrink-0 px-3 pb-3 pt-2 text-caption text-secondary">
         {status(draft, editable)}
       </p>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** The column at the board's right, full height, scrolling its own fields. */
+const SIDEBAR = 'canvas-element-panel flex h-full w-sidebar shrink-0 flex-col bg-surface';
+
+/** Edit with nothing picked yet: the column holds its place and says how to start. */
+export function EmptyElementPanel() {
   return (
-    <section aria-label={title} className="pt-2">
-      <h3 className="pb-1.5 text-label text-muted">{title}</h3>
-      <div className="flex flex-col gap-1">{children}</div>
-    </section>
+    <div role="region" aria-label="Element styles" className={SIDEBAR}>
+      <div className="px-3 pt-3">
+        <h2 className="text-body-strong text-primary">Edit</h2>
+        <p className="mt-1 text-caption text-secondary">
+          Pick an element in a design to edit its styles. Enter picks the first one.
+        </p>
+      </div>
+    </div>
   );
 }
 
-/** Two fields side by side. */
-function Row({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 items-start gap-1">{children}</div>;
-}
-
-function Caption({ children }: { children: ReactNode }) {
-  return <p className="text-caption text-quiet">{children}</p>;
+/** Flex and grid place their items, so they and their items take alignment. */
+function placesItems(layout: Layout | null): boolean {
+  return layout === 'flex' || layout === 'grid';
 }
 
 /** Shared and computed sites are the agent's: one edit here could change what is not selected. */

@@ -27,10 +27,12 @@ export function SizeMode({
   disabled: boolean;
   onPick: (value: string) => void;
 }) {
+  const mode = sizeMode(value);
   return (
     <ModeMenu
       label={`${label} sizing`}
-      mode={sizeMode(value)}
+      mode={mode}
+      face={mode === 'Hug' || mode === 'Fill' ? mode : undefined}
       disabled={disabled}
       choices={[
         {
@@ -71,6 +73,7 @@ export function NoneMode({
   return (
     <ModeMenu
       label={label}
+      // The field itself reads None, so the button shows only its chevron.
       mode={value === 'none' ? 'None' : 'Fixed'}
       disabled={disabled}
       choices={[
@@ -90,11 +93,14 @@ export function NoneMode({
 function ModeMenu({
   label,
   mode,
+  face,
   disabled,
   choices,
 }: {
   label: string;
   mode: string | null;
+  /** Text beside the chevron, for a mode the field's own value does not show. */
+  face?: string;
   disabled: boolean;
   choices: { name: string; pick?: () => void }[];
 }) {
@@ -114,7 +120,7 @@ function ModeMenu({
         }}
         className="flex h-6 shrink-0 cursor-pointer items-center rounded-sm px-0.5 text-label text-muted transition-colors duration-quick ease-smooth-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default"
       >
-        {mode !== 'Fixed' && mode}
+        {face}
         <ChevronDown aria-hidden className="size-icon-sm" />
       </button>
       <Menu

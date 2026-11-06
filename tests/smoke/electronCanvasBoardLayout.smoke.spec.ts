@@ -2,7 +2,7 @@
 // picking every frame, the box a multiple selection is measured by, resizing
 // from any edge or to a typed size, the zoom bar and keys, and undoing a placement.
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
 import { box, boardUrl, frame, openBoard, serveBoard, zoomField } from './board/boardPage';
 
@@ -37,6 +37,15 @@ async function dragHandle(page: Page, handle: string, x: number, y: number) {
 }
 
 const arrangeCount = (page: Page) => page.evaluate(() => window.boardHarness.calls.length);
+
+/** Whether a press at the middle of what the locator draws would reach it. */
+async function isOnTop(locator: Locator) {
+  const { x, y, width, height } = await box(locator);
+  return locator.evaluate(
+    (element, point) => element.contains(document.elementFromPoint(point.x, point.y)),
+    { x: x + width / 2, y: y + height / 2 },
+  );
+}
 
 test('dragging one frame of a selection moves all of it in one arrange, and a click picks it alone', async ({
   page,
@@ -103,6 +112,53 @@ test('a frame resizes from an edge or a corner, and the edges opposite stay put'
   expect(
     await page.evaluate(() => window.boardHarness.calls[1].frames[0].expectedLayoutVersion),
   ).toBe(4);
+});
+
+test('the selected frame keeps its size and corners over a neighbour, and its edges leave the neighbour its presses', async ({
+  page,
+}) => {
+  await openBoard(page);
+  // B over A's lower right, across its southeast corner and the size under its bottom edge.
+  await page.evaluate(() => {
+    window.boardHarness.publish('b', { x: 250, y: 200, width: 400, height: 300 }, 4);
+    window.boardHarness.select(['a']);
+  });
+  await page.clock.runFor(32);
+  expect(await isOnTop(page.getByRole('button', { name: 'Size 400 × 300' }))).toBe(true);
+  expect(await isOnTop(page.locator('[data-handle="southeast"]'))).toBe(true);
+
+  // The corner resizes A, not B; 45 screen pixels at about 90% are 50 board pixels.
+  await dragHandle(page, 'southeast', 45, 45);
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  expect((await arranged(page, 0)).a).toEqual({ x: 100, y: 50, width: 450, height: 350 });
+  expect(await selection(page)).toEqual(['a']);
+
+  // Along A's bottom edge, clear of the corner and the size, a press picks B.
+  const resized = await box(frame(page, 'A'));
+  await page.mouse.click(resized.x + resized.width * 0.85, resized.y + resized.height);
+  expect(await selection(page)).toEqual(['b']);
+  expect(await arrangeCount(page)).toBe(1);
+});
+
+test('a frame that joined the open board keeps its size and corners over a later neighbour', async ({
+  page,
+}) => {
+  // With motion on, both frames arrive with an animation; once it ends, the
+  // first must not be left a stacking context that traps its chrome under the second.
+  await openBoard(page, 14, 'no-preference');
+  await page.evaluate(() => {
+    window.boardHarness.arrive('first', { x: 100, y: 400, width: 300, height: 200 });
+    window.boardHarness.arrive('later', { x: 200, y: 500, width: 300, height: 200 });
+  });
+  for (const designId of ['first', 'later']) {
+    await page
+      .locator(`[data-design-frame="${designId}"]`)
+      .evaluate((node) => Promise.all(node.getAnimations().map((animation) => animation.finished)));
+  }
+  await page.evaluate(() => window.boardHarness.select(['first']));
+  await page.clock.runFor(32);
+  expect(await isOnTop(page.getByRole('button', { name: 'Size 300 × 200' }))).toBe(true);
+  expect(await isOnTop(page.locator('[data-handle="southeast"]'))).toBe(true);
 });
 
 test('the size menu sets a typed size or a screen, each in one arrange from the same corner', async ({

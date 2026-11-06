@@ -13,14 +13,17 @@ import { isDocumentVisible, subscribeVisibilityChange } from '../../hooks/useDoc
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
+  previewHoverScript,
   previewNonce,
   previewPickScript,
   previewSelectScript,
   previewSetTokensScript,
   previewStartScript,
+  readPreviewHover,
   readPreviewSnapshot,
   type PreviewElement,
   type PreviewEvent,
+  type PreviewHover,
   type PreviewInstance,
   type PreviewPick,
   type PreviewTarget,
@@ -110,12 +113,14 @@ export interface PreviewRunOptions {
  * One running preview. `stop` is idempotent and releases every timer. The two
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
- * `setTokens` reaches the same guests and is not answered.
+ * `setTokens` reaches the same guests and is not answered. `hover` answers
+ * itself, with null when nothing is there or this run can no longer ask.
  */
 export interface PreviewRun {
   stop(): void;
   pick(pick: PreviewPick, properties: readonly string[]): number;
   select(target: PreviewTarget | null, properties: readonly string[]): number;
+  hover(at: { x: number; y: number }): Promise<PreviewHover | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -225,6 +230,12 @@ class GuestRun implements PreviewRun {
 
   setTokens(tokens: Readonly<Record<string, string>>): void {
     if (!this.stopped && this.started) void this.ask(previewSetTokensScript(tokens));
+  }
+
+  async hover(at: { x: number; y: number }): Promise<PreviewHover | null> {
+    if (this.stopped || !this.started) return null;
+    // Stopping abandons the call, so a stopped run answers null.
+    return readPreviewHover(await this.ask(previewHoverScript(at)));
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */

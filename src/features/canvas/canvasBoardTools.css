@@ -226,11 +226,14 @@
   font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
 }
 
-/* The selected frame's toolbar, above its label row, starting where the label
-   does, or ending where the frame does when the board would cut it off. The
-   wrapper is what scales, so the gap under the bar is in screen pixels. */
+/* The selected frame's toolbar, above its label row or below its size,
+   starting or ending where the frame does (toolbarPlacement.ts chooses). The
+   wrapper is what scales, so the gap beside the bar is in screen pixels. When
+   no place is clear of the other frames it still paints over them, and over
+   the states a sheet raises to 1. */
 .canvas-frame-tools {
   position: absolute;
+  z-index: 2;
   bottom: calc(100% + 32px / var(--board-scale));
   left: 0;
   padding-bottom: 6px;
@@ -256,6 +259,28 @@
 
 .canvas-frame-tools[data-align='end'] .canvas-frame-toolbar {
   transform-origin: 100% 100%;
+}
+
+/* Below, it hangs from the size and comes down from the frame as it reveals. */
+.canvas-frame-tools[data-side='below'] {
+  top: calc(100% + 32px / var(--board-scale));
+  bottom: auto;
+  padding-top: 6px;
+  padding-bottom: 0;
+  transform-origin: 0 0;
+}
+
+.canvas-frame-tools[data-side='below'] .canvas-frame-toolbar {
+  transform-origin: 0 0;
+}
+
+.canvas-frame-tools[data-side='below'][data-align='end'],
+.canvas-frame-tools[data-side='below'][data-align='end'] .canvas-frame-toolbar {
+  transform-origin: 100% 0;
+}
+
+.canvas-frame-tools[data-side='below'] .canvas-popover-reveal {
+  animation-name: canvas-popover-drop;
 }
 
 .canvas-frame-tool {

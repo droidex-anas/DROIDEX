@@ -55,7 +55,7 @@ interface BoardHarness {
   previewClicks: string[];
   buildReady: () => void;
   /** A frame joins the open board, the way an agent's create lands. */
-  arrive: () => void;
+  arrive: (designId?: string, rect?: FrameRect) => void;
   /** The pane narrows or widens around the board. */
   resize: (width: number) => void;
   /** Closes the source drawer the way the workspace does, focus included. */
@@ -420,18 +420,13 @@ function Harness() {
       setSourceOpen(null);
       if (opener) requestAnimationFrame(() => board.current?.focusLabel(opener));
     },
-    arrive: () => {
+    arrive: (designId = 'arrived', rect = { x: 100, y: 650, width: 400, height: 300 }) => {
       setSnapshot((current) => ({
         ...current,
         sequence: current.sequence + 1,
         frames: [
           ...current.frames,
-          {
-            ...current.frames[0],
-            designId: 'arrived',
-            name: 'Design Arrived',
-            rect: { x: 100, y: 650, width: 400, height: 300 },
-          },
+          { ...current.frames[0], designId, name: `Design ${designId}`, rect },
         ],
       }));
     },

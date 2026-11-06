@@ -27,9 +27,9 @@ export function ElementTextField({
   onLeave,
 }: ElementTextFieldProps) {
   const hintId = useId();
-  /** The text a cut left, so the hint stays only while that text is the one shown. */
+  /** The text a cut left, so the hint stays only while that text is the one previewed. */
   const [cutTo, setCutTo] = useState<string | null>(null);
-  const cut = cutTo === value;
+  const cut = previewed && cutTo === value;
   return (
     <div className="flex flex-col gap-1">
       <textarea

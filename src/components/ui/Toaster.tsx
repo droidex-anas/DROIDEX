@@ -12,7 +12,7 @@ import {
 import { cn } from './cn';
 import { pushEscapeLayer } from './escapeStack';
 
-const TOAST_WIDTH_PX = 356;
+export const TOAST_WIDTH_PX = 356;
 const STACK_SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const;
 
 // The filled circle-alert the icon set does not have yet: CircleCheckFilled's
@@ -44,11 +44,12 @@ function resumeAll(toasts: ToastItem[]) {
   for (const t of toasts) resumeToast(t.id);
 }
 
-// Bottom-right, above the status bar or a pending Remote approval (.toast-stack),
-// newest closest to the corner. Hovering or focusing the stack, or leaving the
-// window, pauses every countdown. Each
-// toast is its own live region: role="status" on the container would imply
-// aria-atomic and re-announce the whole stack whenever one arrives.
+// Bottom-right, above the status bar or a pending Remote approval, or in a
+// design board's own corner while one is on screen (.toast-stack), newest
+// closest to the corner. Hovering or focusing the stack, or leaving the
+// window, pauses every countdown. Each toast is its own live region:
+// role="status" on the container would imply aria-atomic and re-announce the
+// whole stack whenever one arrives.
 export default function Toaster() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [focusedId, setFocusedId] = useState<number | null>(null);
@@ -104,7 +105,7 @@ export default function Toaster() {
     <section
       ref={regionRef}
       aria-label="Notifications"
-      className="toast-stack pointer-events-none fixed right-4 z-toast flex flex-col items-end gap-2"
+      className="toast-stack pointer-events-none fixed z-toast flex flex-col items-end gap-2"
       onMouseEnter={() => {
         pauseAll(toasts);
       }}
