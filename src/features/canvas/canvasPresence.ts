@@ -52,7 +52,8 @@ export interface PresenceSources {
  * Reads the chat's current turn, from its latest prompt on. A canvas create or
  * write without its result yet is running; a frame it names is being worked on
  * while its agent is live. A frame with no source yet belongs to the agent
- * whose create made it this turn, otherwise to the chat while its turn runs.
+ * whose create made it this turn, or while a create runs, to that create's
+ * agent; otherwise it is no one's.
  */
 export function canvasPresence(
   sources: PresenceSources,
@@ -80,16 +81,22 @@ export function canvasPresence(
 
 /** What the turn's canvas calls say, by agent: `PRIMARY` or a child session id. */
 interface TurnWork {
-  /** Each create or write still running: its agent and the frames it names. */
-  running: { source: string; designIds: string[] }[];
+  /** Each create or write still running, in the order they started, with the frames it names. */
+  running: RunningCall[];
   /** The agent whose create this turn made each frame. */
   createdBy: ReadonlyMap<string, string>;
   /** Agents in the order they first touched the canvas, so one keeps its look when another joins. */
   arrivals: ReadonlySet<string>;
 }
 
+interface RunningCall {
+  source: string;
+  action: 'create' | 'write';
+  designIds: string[];
+}
+
 function turnWork(events: readonly TranscriptEvent[]): TurnWork {
-  const running = new Map<string, { source: string; designIds: string[] }>();
+  const running = new Map<string, RunningCall>();
   const createdBy = new Map<string, string>();
   const arrivals = new Set<string>();
   for (const event of currentTurn(events)) {
@@ -99,7 +106,7 @@ function turnWork(events: readonly TranscriptEvent[]): TurnWork {
     const call = `${source}\0${activity.toolUseId}`;
     arrivals.add(source);
     if (event.kind === 'tool_call' && activity.state === 'running') {
-      running.set(call, { source, designIds: activity.designIds });
+      running.set(call, { source, action: activity.action, designIds: activity.designIds });
       continue;
     }
     running.delete(call);
@@ -140,10 +147,14 @@ function frameWorkers(
     if (!isLive(source)) continue;
     for (const designId of designIds) if (onBoard.has(designId)) workers.set(designId, source);
   }
+  // A create names its frames only in its result, which comes after they reach the board.
+  const creating = work.running.findLast(
+    (call) => call.action === 'create' && isLive(call.source),
+  )?.source;
   for (const frame of frames) {
     if (frame.revisionId !== null || workers.has(frame.designId)) continue;
-    const source = work.createdBy.get(frame.designId) ?? PRIMARY;
-    if (isLive(source)) workers.set(frame.designId, source);
+    const source = work.createdBy.get(frame.designId) ?? creating;
+    if (source !== undefined && isLive(source)) workers.set(frame.designId, source);
   }
   return workers;
 }

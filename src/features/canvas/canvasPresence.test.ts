@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { asChunkedSequence } from '../../lib/chunkedSequence';
 import type { TranscriptEvent } from '../../types/bridge';
-import { canvasPresence, NO_PRESENCE, samePresence, type PresenceSources } from './canvasPresence';
+import {
+  canvasPresence,
+  NO_PRESENCE,
+  samePresence,
+  type CanvasPresence,
+  type PresenceSources,
+} from './canvasPresence';
 
 let seq = 0;
 
@@ -75,21 +81,39 @@ test('a running create or write puts its agent on the frames it names until its 
   assert.equal(canvasPresence(sources(writing, { primary: false }), frames), NO_PRESENCE);
 });
 
-test('a frame with no source yet belongs to the live agent that made it', () => {
-  const frames = [reserved('mine'), reserved('theirs')];
+test('a frame with no source yet belongs to the live agent whose create made it this turn', () => {
+  const frames = [reserved('mine'), reserved('theirs'), reserved('left')];
   const events = [
     prompt(),
-    call('t1', 'create', [], 'w1'),
-    result('t1', 'create', ['theirs'], 'w1'),
+    call('t1', 'create', []),
+    result('t1', 'create', ['mine']),
+    call('t2', 'create', [], 'w1'),
+    result('t2', 'create', ['theirs'], 'w1'),
   ];
+  const keys = (presence: CanvasPresence) =>
+    [...presence].map(([designId, agent]) => [designId, agent.key]);
 
   const both = canvasPresence(sources(events, { primary: true, children: ['w1'] }), frames);
-  assert.equal(both.get('mine')?.key, 'chat');
-  assert.equal(both.get('theirs')?.key, 'chat/w1');
+  // The frame an earlier turn left empty is no one's.
+  assert.deepEqual(keys(both), [
+    ['mine', 'chat'],
+    ['theirs', 'chat/w1'],
+  ]);
   // The worker that made it is done, so its frame is not being written, even
   // while the chat's own turn runs on.
   const workerDone = canvasPresence(sources(events, { primary: true }), frames);
-  assert.deepEqual([...workerDone.keys()], ['mine']);
+  assert.deepEqual(keys(workerDone), [['mine', 'chat']]);
+  // A turn that never touches the canvas paints no frame.
+  assert.equal(canvasPresence(sources([prompt()]), frames).size, 0);
+  // A create names its frames only in its result, so until then the empty
+  // frames no one made are its agent's.
+  const creating = [prompt(), call('t3', 'create', [], 'w1')];
+  const early = canvasPresence(sources(creating, { primary: true, children: ['w1'] }), frames);
+  assert.deepEqual(keys(early), [
+    ['mine', 'chat/w1'],
+    ['theirs', 'chat/w1'],
+    ['left', 'chat/w1'],
+  ]);
 });
 
 test('only the current turn counts, and a steer does not start a new one', () => {
