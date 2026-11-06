@@ -1,6 +1,6 @@
 // The fixed choices the element panel offers: the segments for layout, flex
 // alignment, text alignment and border style, and the options for keyword
-// properties. A layout segment keeps whether its element sits inline; the
+// properties. Flex and grid keep whether their element sits inline; the
 // displays that are no layout wait in the Display row's ⋯ menu.
 
 import {
@@ -42,17 +42,19 @@ export const LAYOUT: Segment<Layout>[] = [
 ];
 
 /**
- * How a `display` lays its children out, whether or not the element itself
- * sits inline; null for one the segments do not name, such as `inline` or `none`.
+ * The layout segment a `display` reads as, flex and grid whether or not the
+ * element sits inline; null for one the ⋯ menu holds, such as `inline-block`
+ * or `none`, or that no choice names.
  */
 export function layoutOf(display: string): Layout | null {
+  if (display === 'block') return 'block';
   const inner = display.replace(/^inline-/, '');
-  return inner === 'block' || inner === 'flex' || inner === 'grid' ? inner : null;
+  return inner === 'flex' || inner === 'grid' ? inner : null;
 }
 
-/** The `display` a picked layout writes: an element that sits inline stays inline. */
+/** The `display` a picked layout writes: flex and grid on an inline element stay inline. */
 export function displayFor(current: string, layout: Layout): string {
-  return current.startsWith('inline') ? `inline-${layout}` : layout;
+  return layout !== 'block' && current.startsWith('inline') ? `inline-${layout}` : layout;
 }
 
 export const MORE_DISPLAYS: Segment<string>[] = [
