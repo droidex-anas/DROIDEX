@@ -192,7 +192,9 @@ function readEvent(value: unknown): PreviewEvent | null {
     case 'selection':
       return readSelection(value);
     case 'interaction':
-      return present(value.kind) ? { event: 'interaction', kind: clamp(value.kind) } : null;
+      return present(value.kind)
+        ? { event: 'interaction', kind: clampPreviewText(value.kind) }
+        : null;
     default:
       return null;
   }
@@ -203,7 +205,10 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   const diagnostics: CanvasDiagnostic[] = [];
   for (const entry of value) {
     if (!record(entry) || !present(entry.code) || typeof entry.message !== 'string') return null;
-    diagnostics.push({ code: clamp(entry.code), message: clamp(entry.message) });
+    diagnostics.push({
+      code: clampPreviewText(entry.code),
+      message: clampPreviewText(entry.message),
+    });
   }
   return { event: 'diagnostics', diagnostics };
 }
@@ -220,14 +225,14 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
   if (entries.length > MAX_PREVIEW_STYLE_PROPERTIES) return null;
   for (const [name, style] of entries) {
     if (typeof style !== 'string') return null;
-    styles[name] = clamp(style);
+    styles[name] = clampPreviewText(style);
   }
   return {
     event: 'selection',
     sequence,
     element: {
-      elementId: clamp(element.elementId),
-      instancePath: clamp(element.instancePath),
+      elementId: clampPreviewText(element.elementId),
+      instancePath: clampPreviewText(element.instancePath),
       rect,
       styles,
       text: whole(element.text),
@@ -264,9 +269,10 @@ function present(value: unknown): value is string {
  * security consequence, so an over-long one is cut rather than used as a reason
  * to refuse the snapshot: refusing one would end a guest over a diagnostic, and
  * the intermediate already cuts to the same bound from the other side. The cut
- * lands on a code point boundary, so a character is never split in half.
+ * lands on a code point boundary, so a character is never split in half. The
+ * element panel cuts typed text the same way, so what it previews is what it saves.
  */
-function clamp(value: string): string {
+export function clampPreviewText(value: string): string {
   if (utf8Bytes(value) <= MAX_PREVIEW_TEXT) return value;
   let cut = '';
   for (const character of value) {

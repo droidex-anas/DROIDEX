@@ -119,6 +119,10 @@ const INTERMEDIATE_SCRIPT = `(() => {
     }
     return cut;
   };
+  // An element's own text is never cut: the board writes it back whole, so
+  // past the cap there is none to offer or preview.
+  const whole = (value) =>
+    typeof value === 'string' && bytes(value) <= ${String(MAX_PREVIEW_TEXT_BYTES)} ? value : null;
   const size = (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
 
@@ -143,15 +147,16 @@ const INTERMEDIATE_SCRIPT = `(() => {
     const given = element.styles && typeof element.styles === 'object' ? element.styles : {};
     const styles = {};
     for (const name of asked) if (typeof given[name] === 'string') styles[name] = text(given[name]);
-    // Never cut: the board may write this back as the element's whole text.
-    const whole =
-      typeof element.text === 'string' && bytes(element.text) <= ${String(MAX_PREVIEW_TEXT_BYTES)}
-        ? element.text
-        : null;
     return {
       event: 'selection',
       sequence: data.sequence,
-      element: { elementId, instancePath: text(element.instancePath), rect, styles, text: whole },
+      element: {
+        elementId,
+        instancePath: text(element.instancePath),
+        rect,
+        styles,
+        text: whole(element.text),
+      },
     };
   };
 
@@ -301,7 +306,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
           elementId: text(target.elementId),
           instancePath: target.instancePath,
           styles,
-          text: typeof target.text === 'string' ? text(target.text) : null,
+          text: whole(target.text),
         },
         properties,
       });
