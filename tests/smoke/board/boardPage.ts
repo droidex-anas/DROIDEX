@@ -50,7 +50,7 @@ export async function openBoard(
   await page.goto(boardUrl(`font=${font}${query}`));
   await expect(page.getByTestId('canvas-board')).toBeVisible();
   // The opening Fit: 72 px of padding each side in a 1000 px board, about 90%.
-  await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
+  await expect(zoomField(page)).toHaveValue('90%');
   await page.clock.runFor(32);
 }
 
@@ -113,6 +113,11 @@ export async function stubGuests(page: Page) {
       },
     });
   });
+}
+
+/** The zoom bar's percentage, which reads the board's zoom and takes a typed one. */
+export function zoomField(page: Page): Locator {
+  return page.getByRole('textbox', { name: 'Zoom percentage' });
 }
 
 export function frame(page: Page, name: string): Locator {

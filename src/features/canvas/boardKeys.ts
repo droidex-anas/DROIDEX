@@ -6,20 +6,40 @@ import type { KeyboardEvent } from 'react';
 import { draftBounds, isTextDraft, type AnnotationTool } from './annotationGeometry';
 import type { ShownMark } from './annotationWrites';
 import type { HistoryStep } from './boardHistory';
-import type { ZoomCommand } from './BoardControls';
+import type { ZoomCommand } from './ZoomControl';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
 import type { FrameRect } from './protocol';
 
-/** The zoom keys a design tool uses: + and −, and ⇧1, ⇧2 and ⇧0. */
+const COMMAND_DIGITS = new Map<string, ZoomCommand>([
+  ['Digit1', 'fit'],
+  ['Digit0', 'actual'],
+]);
+
+const SHIFT_DIGITS = new Map<string, ZoomCommand>([
+  ['Digit1', 'fit'],
+  ['Digit2', 'selection'],
+  ['Digit0', 'actual'],
+]);
+
+/**
+ * The zoom keys a design tool uses: + and −, alone or with ⌘ (Ctrl off the
+ * Mac); ⇧1, ⇧2 and ⇧0; and ⌘1 to fit and ⌘0 for 100%.
+ */
 export function zoomShortcut(event: KeyboardEvent): ZoomCommand | null {
-  if (event.metaKey || event.ctrlKey || event.altKey) return null;
-  // The shifted digits go by key position first: on some layouts ⇧1 types +.
-  if (event.shiftKey && event.code === 'Digit1') return 'fit';
-  if (event.shiftKey && event.code === 'Digit2') return 'selection';
-  if (event.shiftKey && event.code === 'Digit0') return 'actual';
+  if (event.altKey) return null;
+  const digit = digitZoom(event);
+  if (digit) return digit;
   if (event.key === '+' || event.key === '=') return 'in';
   if (event.key === '-' || event.key === '_') return 'out';
+  return null;
+}
+
+/** The digits go by key position, not by what they type: on some layouts ⇧1 types +. */
+function digitZoom(event: KeyboardEvent): ZoomCommand | null {
+  const primary = event.metaKey || event.ctrlKey;
+  if (primary && !event.shiftKey) return COMMAND_DIGITS.get(event.code) ?? null;
+  if (!primary && event.shiftKey) return SHIFT_DIGITS.get(event.code) ?? null;
   return null;
 }
 

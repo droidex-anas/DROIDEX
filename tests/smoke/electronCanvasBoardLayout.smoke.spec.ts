@@ -1,9 +1,10 @@
 // The board's layout tools against the harness: a selection dragged as one,
-// picking every frame, and the box a multiple selection is measured by.
+// picking every frame, the box a multiple selection is measured by, and the
+// zoom bar and keys.
 
 import { expect, test, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
-import { box, frame, openBoard, serveBoard } from './board/boardPage';
+import { box, frame, openBoard, serveBoard, zoomField } from './board/boardPage';
 
 serveBoard();
 
@@ -71,4 +72,46 @@ test('⌘A selects every frame, and a multiple selection is measured by its own 
 
   await page.keyboard.press('Escape');
   await expect(bounds).toHaveCount(0);
+});
+
+test('the zoom bar and the ⌘ zoom keys zoom the board, and a typed percentage goes there', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const field = zoomField(page);
+  const board = page.getByTestId('canvas-board');
+  const zoomed = async (shown: string) => {
+    await page.clock.runFor(400);
+    await expect(field).toHaveValue(shown);
+  };
+
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await zoomed('100%');
+  await page.getByRole('button', { name: 'Zoom out' }).click();
+  await zoomed('75%');
+
+  await field.fill('150');
+  await field.press('Enter');
+  await zoomed('150%');
+  await expect(board).toBeFocused();
+  // Escape leaves the zoom as it was.
+  await field.fill('300');
+  await field.press('Escape');
+  await zoomed('150%');
+  await expect(board).toBeFocused();
+
+  for (const [key, shown] of [
+    ['ControlOrMeta+0', '100%'],
+    ['ControlOrMeta+1', '90%'],
+    ['ControlOrMeta+=', '100%'],
+    ['ControlOrMeta+-', '75%'],
+  ]) {
+    await page.keyboard.press(key);
+    await zoomed(shown);
+  }
+
+  // Off the board the keys are the app's.
+  await page.locator('#outside').focus();
+  await page.keyboard.press('ControlOrMeta+0');
+  await zoomed('75%');
 });

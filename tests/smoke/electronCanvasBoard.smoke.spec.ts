@@ -1,6 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
-import { box, boardUrl, frame, openBoard, serveBoard, stubGuests } from './board/boardPage';
+import {
+  box,
+  boardUrl,
+  frame,
+  openBoard,
+  serveBoard,
+  stubGuests,
+  zoomField,
+} from './board/boardPage';
 
 serveBoard();
 
@@ -647,7 +655,7 @@ test('arrowing onto a frame partly off the board brings it wholly into view at t
   expect(shown.y).toBeGreaterThanOrEqual(board.y);
   expect(shown.x + shown.width).toBeLessThanOrEqual(board.x + board.width);
   expect(shown.y + shown.height).toBeLessThanOrEqual(board.y + board.height);
-  await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
+  await expect(zoomField(page)).toHaveValue('90%');
 });
 
 test('a live guest keeps its element through selection, zoom, arrange, a resized pane and the source drawer', async ({

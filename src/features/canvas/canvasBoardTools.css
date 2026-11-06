@@ -1,4 +1,4 @@
-/* The tools that float on the board: the rail, the zoom readout and the
+/* The tools that float on the board: the rail, the zoom bar and the
    selection bar. Imported by the lazy Canvas surface, so they load with the
    board rather than on every app start. */
 
@@ -148,29 +148,38 @@
   left: 12px;
   bottom: 12px;
   align-items: center;
-  padding: 3px;
-  border-radius: 10px;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  /* Its field sits on a raised bar, as one in a floating layer does. */
+  --field: var(--field-raised);
 }
 
-.canvas-zoom-value {
-  min-width: 56px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 7px;
-  font: 500 12px / 18px var(--ui-font-family, system-ui, sans-serif);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  transition:
-    background 120ms,
-    color 120ms;
+/* Wide enough for 400% in tabular figures. */
+.canvas-zoom-field {
+  width: 64px;
 }
 
-.canvas-zoom-value:hover,
-.canvas-zoom-value:focus-visible,
-.canvas-zoom-value[aria-expanded='true'] {
-  outline: none;
+.canvas-zoom-menu {
+  width: 24px;
+}
+
+.canvas-zoom-menu[aria-expanded='true'] {
   background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text);
+}
+
+/* The zoom bar is a row along the board's bottom, so its tips stand above it. */
+.canvas-zoom .canvas-tool[data-tip]::after {
+  top: auto;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translate(-50%, 4px);
+}
+
+.canvas-zoom .canvas-tool[data-tip]:hover::after,
+.canvas-zoom .canvas-tool[data-tip]:focus-visible::after {
+  transform: translate(-50%, 0);
 }
 
 .canvas-selection-bar {

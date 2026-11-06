@@ -15,10 +15,10 @@ import {
   modeShortcut,
   zoomShortcut,
 } from './boardKeys';
-import type { ZoomCommand } from './BoardControls';
 import type { HistoryStep } from './boardHistory';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardInteraction, BoardInteractionEvent, BoardMode } from './canvasState';
+import type { ZoomCommand } from './ZoomControl';
 
 /** Board-local pixels one arrow key pans by when nothing is selected. */
 const ARROW_PAN_PX = 32;
@@ -96,6 +96,8 @@ function escape(header: string | null, mark: string | null, actions: BoardKeyAct
 function runShortcut(event: KeyboardEvent, actions: BoardKeyActions): boolean {
   const zoom = zoomShortcut(event);
   if (zoom) actions.zoom(zoom);
+  // ⌘1 also picks the first tab, app-wide; on the board it fits instead.
+  if (zoom && (event.metaKey || event.ctrlKey)) event.stopPropagation();
   const mode = zoom ? null : modeShortcut(event);
   if (mode) actions.setMode(mode);
   return zoom !== null || mode !== null;

@@ -18,7 +18,7 @@ import {
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import { AnnotationLayer, DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
-import { BoardControls, type ZoomCommand } from './BoardControls';
+import { BoardControls } from './BoardControls';
 import { useBoardAnnouncer } from './boardAnnouncer';
 import type { HistoryStep } from './boardHistory';
 import { onBoardKeyDown } from './boardKeyDown';
@@ -56,6 +56,7 @@ import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
+import type { ZoomCommand } from './ZoomControl';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, WriteReceipt } from './protocol';
 
 export interface CanvasBoardHandle {
@@ -289,6 +290,8 @@ export function CanvasBoard({
     if (target !== undefined) dispatch({ type: 'interact', designId: target });
   };
 
+  const focusBoard = () => board.current?.focus({ preventScroll: true });
+
   const onZoom = (command: ZoomCommand) => {
     if (command === 'fit') fitTo(drawn.map(({ rect }) => rect));
     else if (command === 'selection')
@@ -348,7 +351,7 @@ export function CanvasBoard({
             },
             removeSelection,
             history: onHistory,
-            focusBoard: () => board.current?.focus({ preventScroll: true }),
+            focusBoard,
             focusLabel,
           });
         }}
@@ -392,7 +395,7 @@ export function CanvasBoard({
               released={previews.released.includes(frame.designId)}
               onExitInteract={() => {
                 dispatch({ type: 'escape' });
-                board.current?.focus({ preventScroll: true });
+                focusBoard();
               }}
               onOpenSource={onOpenSource}
               inChat={pinnedIds?.has(frame.designId) ?? false}
@@ -450,6 +453,8 @@ export function CanvasBoard({
           error={gestures.layoutError || annotation.error || editor.error}
           onMode={onMode}
           onZoom={onZoom}
+          onZoomTo={view.zoomTo}
+          focusBoard={focusBoard}
           onAlign={(edge: AlignEdge) => {
             gestures.place(interaction.selectedFrameIds, (rects) => alignRects(rects, edge));
           }}
@@ -476,7 +481,7 @@ export function CanvasBoard({
           onRevertText={editor.revertText}
           onCommitText={editor.commitText}
           onHistory={onHistory}
-          onLeave={() => board.current?.focus({ preventScroll: true })}
+          onLeave={focusBoard}
         />
       )}
     </div>
