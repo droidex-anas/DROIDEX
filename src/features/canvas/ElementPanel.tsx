@@ -19,9 +19,12 @@ import {
   ALIGN_SELF,
   BORDER_STYLE,
   DIRECTION,
+  displayFor,
   JUSTIFY,
   JUSTIFY_COLUMN,
   LAYOUT,
+  layoutOf,
+  type Layout,
   OVERFLOW,
   TEXT_ALIGN,
   TEXT_TRANSFORM,
@@ -234,9 +237,11 @@ export function ElementPanel({
           <SegmentedControl
             label="Display"
             options={LAYOUT}
-            value={layout}
+            value={layout ?? ''}
             disabled={readOnly}
-            onPick={pick('display')}
+            onPick={(next) => {
+              pick('display')(displayFor(display, next));
+            }}
           />
           {layout === 'flex' && (
             <>
@@ -244,7 +249,7 @@ export function ElementPanel({
               {segmented('flexWrap', 'Wrap', WRAP)}
             </>
           )}
-          {layout !== 'block' && (
+          {placesItems(layout) && (
             <>
               {segmented('justifyContent', 'Justify', column ? JUSTIFY_COLUMN : JUSTIFY)}
               {segmented('alignItems', 'Align', column ? ALIGN_COLUMN : ALIGN)}
@@ -257,7 +262,7 @@ export function ElementPanel({
               {number('columnGap', 'Column gap', 'Column', { min: 0 })}
             </Pair>
           )}
-          {parent !== 'block' && segmented('alignSelf', 'Align self', ALIGN_SELF)}
+          {placesItems(parent) && segmented('alignSelf', 'Align self', ALIGN_SELF)}
           {parent === 'flex' && (
             <Pair>{number('flexGrow', 'Flex grow', 'Grow', { unit: null, min: 0 })}</Pair>
           )}
@@ -438,11 +443,9 @@ export function EmptyElementPanel() {
   );
 }
 
-/** Block, flex or grid: what a `display` lays its children out as. */
-function layoutOf(display: string): 'block' | 'flex' | 'grid' {
-  if (display === 'flex' || display === 'inline-flex') return 'flex';
-  if (display === 'grid' || display === 'inline-grid') return 'grid';
-  return 'block';
+/** Flex and grid place their items, so they and their items take alignment. */
+function placesItems(layout: Layout | null): boolean {
+  return layout === 'flex' || layout === 'grid';
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

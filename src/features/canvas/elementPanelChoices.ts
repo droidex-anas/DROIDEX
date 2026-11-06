@@ -1,6 +1,6 @@
 // The fixed choices the element panel offers: the segments for layout, flex
 // alignment, text alignment and border style, and the options for keyword
-// properties.
+// properties. A layout segment keeps whether its element sits inline.
 
 import {
   AlignCenter,
@@ -32,11 +32,27 @@ import {
 import type { Segment } from './SegmentedControl';
 import type { ValueOption } from './ValuePickerField';
 
-export const LAYOUT: Segment<string>[] = [
+export type Layout = 'block' | 'flex' | 'grid';
+
+export const LAYOUT: Segment<Layout>[] = [
   { value: 'block', label: 'Display: block', text: 'Block' },
   { value: 'flex', label: 'Display: flex', text: 'Flex' },
   { value: 'grid', label: 'Display: grid', text: 'Grid' },
 ];
+
+/**
+ * How a `display` lays its children out, whether or not the element itself
+ * sits inline; null for one the segments do not name, such as `inline` or `none`.
+ */
+export function layoutOf(display: string): Layout | null {
+  const inner = display.replace(/^inline-/, '');
+  return inner === 'block' || inner === 'flex' || inner === 'grid' ? inner : null;
+}
+
+/** The `display` a picked layout writes: an element that sits inline stays inline. */
+export function displayFor(current: string, layout: Layout): string {
+  return current.startsWith('inline') ? `inline-${layout}` : layout;
+}
 export const DIRECTION: Segment<string>[] = [
   { value: 'row', label: 'Direction: row', icon: ArrowRight },
   { value: 'column', label: 'Direction: column', icon: ArrowDown },
