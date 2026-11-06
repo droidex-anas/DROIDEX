@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type R
 import { toast } from '../../lib/toast';
 import { canvasMessage } from './client';
 import type { CanvasFrame } from './protocol';
+import { splitVariantName } from './variantRequests';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 export function FrameLabel({
@@ -44,6 +45,7 @@ export function FrameLabel({
   onEnter: (frame: CanvasFrame) => void;
   onFocusLabel: (frame: CanvasFrame) => void;
 }) {
+  const { base, suffix } = splitVariantName(frame.name);
   return (
     <div
       ref={ref}
@@ -52,7 +54,7 @@ export function FrameLabel({
       tabIndex={tabStop ? 0 : -1}
       aria-pressed={selected}
       aria-keyshortcuts="ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
-      title="Arrows move between frames; ⌥ and an arrow nudge it, ⇧ for ten"
+      title={`${frame.name}\nArrows move between frames; ⌥ and an arrow nudge it, ⇧ for ten`}
       className="canvas-frame-label canvas-chrome"
       style={{ cursor: held ? 'grabbing' : 'grab', width: Math.max(0, width) }}
       onFocus={() => {
@@ -78,7 +80,14 @@ export function FrameLabel({
         else onEnter(frame);
       }}
     >
-      <span className="canvas-frame-name">{frame.name}</span>
+      {suffix ? (
+        <span className="canvas-frame-name canvas-frame-name-split">
+          <span className="canvas-frame-name-base">{base}</span>
+          <span className="canvas-frame-name-suffix">{suffix}</span>
+        </span>
+      ) : (
+        <span className="canvas-frame-name">{frame.name}</span>
+      )}
       {interacted && <span className="canvas-frame-note">Interacting</span>}
     </div>
   );

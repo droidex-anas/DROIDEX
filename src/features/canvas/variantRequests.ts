@@ -86,15 +86,24 @@ export function variantFrames(
   };
 }
 
+const VARIANT_SUFFIX = / \(Variant (\d+)\)$/;
+
 function variantName(sourceName: string, number: number): string {
   const suffix = ` (Variant ${String(number)})`;
   return sourceName.slice(0, MAX_FRAME_NAME_LENGTH - suffix.length).trimEnd() + suffix;
 }
 
+/** A frame name and its " (Variant N)" suffix, which a shortened label keeps whole. */
+export function splitVariantName(name: string): { base: string; suffix: string } {
+  const match = VARIANT_SUFFIX.exec(name);
+  if (!match) return { base: name, suffix: '' };
+  return { base: name.slice(0, match.index), suffix: match[0] };
+}
+
 function nextVariantNumber(sourceName: string, boardNames: readonly string[]): number {
   let highest = 0;
   for (const name of boardNames) {
-    const number = Number(/ \(Variant (\d+)\)$/.exec(name)?.[1]);
+    const number = Number(VARIANT_SUFFIX.exec(name)?.[1]);
     if (number > highest && variantName(sourceName, number) === name) highest = number;
   }
   return highest + 1;

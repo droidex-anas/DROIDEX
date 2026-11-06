@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { variantFrames, variantPrompt, type VariantSource } from './variantRequests';
+import {
+  splitVariantName,
+  variantFrames,
+  variantPrompt,
+  type VariantSource,
+} from './variantRequests';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 const source: VariantSource = {
@@ -57,6 +62,16 @@ test('a long source name is shortened so the variant name stays within the limit
   assert.ok(first.name.endsWith(' (Variant 1)'));
   const [next] = variantFrames(long, 2, 'm4', [first.name]).frames;
   assert.ok(next.name.endsWith(' (Variant 2)'));
+});
+
+test('a label shortens a variant name before its suffix, and keeps the suffix whole', () => {
+  assert.deepEqual(splitVariantName('Pro · Monthly plan (Variant 12)'), {
+    base: 'Pro · Monthly plan',
+    suffix: ' (Variant 12)',
+  });
+  // Only a trailing variant suffix is kept; any other name shortens at its end.
+  for (const name of ['Pro · Monthly plan', 'Hey (Variant 9) old', 'Hey (Variant two)'])
+    assert.deepEqual(splitVariantName(name), { base: name, suffix: '' });
 });
 
 test('the request says what to change in the user words, and that the source stays', () => {
