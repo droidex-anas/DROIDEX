@@ -4,7 +4,7 @@
 
 import { useCallback } from 'react';
 import { useStoreSelector, type AppState } from '../../hooks/useStore';
-import { childSessionIsLive } from '../../lib/childSessions';
+import { isWorkingAgent } from '../../lib/childSessions';
 import { sessionIsLive } from '../../lib/sessions';
 import type { TranscriptEvent } from '../../types/bridge';
 import { canvasPresence, samePresence, type CanvasPresence } from './canvasPresence';
@@ -18,18 +18,20 @@ export function useCanvasPresence(appSessionId: string, frames: CanvasFrame[]): 
       const session = Object.hasOwn(state.sessions, appSessionId)
         ? state.sessions[appSessionId]
         : undefined;
+      const primaryLive = session ? sessionIsLive(session) : false;
       const children = state.childSessions[appSessionId] ?? {};
-      const runtime = state.childRuntime[appSessionId] ?? {};
+      // A subagent running inside the chat's own process has no runtime of its
+      // own, so whether it is at work is its status alone.
       const liveChildren = new Set(
         Object.keys(children).filter((childSessionId) =>
-          childSessionIsLive(children[childSessionId], runtime[childSessionId]),
+          isWorkingAgent(children[childSessionId], primaryLive),
         ),
       );
       return canvasPresence(
         {
           appSessionId,
           events: state.transcripts[appSessionId] ?? NO_EVENTS,
-          primaryLive: session ? sessionIsLive(session) : false,
+          primaryLive,
           liveChildren,
         },
         frames,

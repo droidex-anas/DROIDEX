@@ -44,7 +44,7 @@ export interface PresenceSources {
   events: readonly TranscriptEvent[];
   /** The chat's own turn is running. */
   primaryLive: boolean;
-  /** The child sessions with a turn running. */
+  /** The child sessions at work. */
   liveChildren: ReadonlySet<string>;
 }
 
