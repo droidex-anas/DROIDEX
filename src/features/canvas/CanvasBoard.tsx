@@ -44,7 +44,6 @@ import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardToastPlacement } from './useBoardToastPlacement';
 import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
-import { useElementHover } from './useElementHover';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
 import { useInteractionDispatch } from './useInteractionDispatch';
@@ -171,7 +170,7 @@ export function CanvasBoard({
     active: interaction.mode === 'edit',
     onEditElement,
   });
-  const hover = useElementHover(interaction.mode === 'edit', editor.hover);
+  const { hover } = editor;
 
   const gestures = useBoardGestures({
     board,
