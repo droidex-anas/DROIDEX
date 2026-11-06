@@ -88,8 +88,7 @@ export interface ColourFace {
 export function colourFace(value: string, tokens: readonly ValueOption[] = []): ColourFace {
   const trimmed = value.trim();
   const colour = parseColour(trimmed);
-  if (trimmed.toLowerCase() === 'transparent' || colour?.alpha === 0)
-    return { text: 'None', none: true };
+  if (colour?.alpha === 0) return { text: 'None', none: true };
   const token = tokens.find((option) => sameColour(option.hint ?? '', trimmed));
   if (token) return { text: token.label, none: false };
   if (colour?.space !== 'rgb') return { text: trimmed, none: false };
@@ -119,10 +118,10 @@ function sameColour(a: string, b: string): boolean {
 }
 
 /**
- * A colour the way Chromium computes it: hex, rgb(), hsl() and hwb() become
- * whole sRGB channels in `rgb`, while lab(), lch(), oklab(), oklch() and
- * color() keep their own space, with percentages and angles resolved to the
- * numbers it writes.
+ * A colour the way Chromium computes it: hex, transparent, rgb(), hsl() and
+ * hwb() become whole sRGB channels in `rgb`, while lab(), lch(), oklab(),
+ * oklch() and color() keep their own space, with percentages and angles
+ * resolved to the numbers it writes.
  */
 interface Colour {
   space: string;
@@ -132,6 +131,7 @@ interface Colour {
 
 /** The forms a kit's colour token may take, as the style edits accept them; null for any other. */
 function parseColour(value: string): Colour | null {
+  if (value.toLowerCase() === 'transparent') return { space: 'rgb', channels: [0, 0, 0], alpha: 0 };
   const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value);
   if (hex) {
     const full = hex[1].length <= 4 ? hex[1].replace(/./g, '$&$&') : hex[1];

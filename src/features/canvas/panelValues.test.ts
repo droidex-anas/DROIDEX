@@ -92,6 +92,7 @@ test('a token as the kit wrote it is the computed value when it is the same colo
   assert.ok(sameValue('hsl(0 0% 100% / 50%)', 'rgba(255, 255, 255, 0.5)'));
   assert.ok(sameValue('0.5rem', '8px'));
   assert.ok(sameValue('600', '600'));
+  assert.ok(sameValue('transparent', 'rgba(0, 0, 0, 0)'));
   assert.ok(!sameValue('#2d2a26', 'rgb(45, 42, 39)'));
   assert.ok(!sameValue('0.5rem', '9px'));
 });
