@@ -247,9 +247,9 @@ export const JustifyEvenly = createIcon(
   <>
     {guide('M4 5v14')}
     {guide('M20 5v14')}
-    {bar(6.75, 7.5, 2.5, 9)}
+    {bar(6.5, 7.5, 2.5, 9)}
     {bar(10.75, 7.5, 2.5, 9)}
-    {bar(14.75, 7.5, 2.5, 9)}
+    {bar(15, 7.5, 2.5, 9)}
   </>,
 );
 
