@@ -181,3 +181,71 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toHaveCount(0);
 });
+
+test('A double-click in Edit goes to the picked element’s text, and Enter saves the text on its own', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      return {
+        elementId: 'el_title',
+        instancePath: '0/0',
+        rect: { x: 8, y: 8, width: 240, height: 30 },
+        styles: { fontSize: '24px' },
+        text: 'Title',
+      };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('e');
+
+  // The double-click's own pick is still in flight; the Text field waits for its answer.
+  const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const scale = sheet.width / 400;
+  await page.mouse.dblclick(sheet.x + 20 * scale, sheet.y + 20 * scale);
+  await page.clock.runFor(100);
+  const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
+  const text = panel.getByRole('textbox', { name: 'Text', exact: true });
+  await expect(text).toBeFocused();
+  await expect(text).toHaveValue('Title');
+
+  // Text previews in the guest beside a style, and Enter in it sends only the text.
+  await panel.getByLabel('Font size', { exact: true }).fill('30px');
+  await text.fill('Welcome back');
+  await page.clock.runFor(100);
+  expect(await page.evaluate(() => window.guestCommands.at(-1))).toMatchObject({
+    command: 'select',
+    target: { elementId: 'el_title', styles: { fontSize: '30px' }, text: 'Welcome back' },
+  });
+  await text.press('Enter');
+  expect(await page.evaluate(() => window.boardHarness.editCalls)).toEqual([
+    {
+      mutationId: expect.any(String),
+      edit: {
+        element: {
+          designId: 'a',
+          revisionId: 'rev_01',
+          elementId: 'el_title',
+          instancePath: '0/0',
+        },
+        change: { kind: 'text', value: 'Welcome back' },
+      },
+    },
+  ]);
+
+  // Once the text's revision builds, the style typed beside it is still there to save.
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
+  await page.clock.runFor(240);
+  await expect
+    .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
+    .toMatchObject({ command: 'select', target: { styles: { fontSize: '30px' }, text: null } });
+  await expect(panel.getByLabel('Font size', { exact: true })).toHaveValue('30px');
+});

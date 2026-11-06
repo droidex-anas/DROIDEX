@@ -74,7 +74,7 @@ export interface DesignFrameProps {
   onInteract: (frame: CanvasFrame) => void;
   /** A press in Edit, at a point in the design's own pixels. */
   onPickElement: (frame: CanvasFrame, at: Point) => void;
-  /** Enter on the label in Edit. */
+  /** Enter on the label, or a double-click on the design, in Edit. */
   onEditEnter: (frame: CanvasFrame) => void;
   /** The box of the element Edit has picked in this frame, in the design's pixels. */
   elementBox: FrameRect | null;
@@ -205,6 +205,7 @@ export function DesignFrame(props: DesignFrameProps) {
             onDoubleClick={(event) => {
               event.stopPropagation();
               if (mode === 'select') onInteract(frame);
+              else if (mode === 'edit') onEditEnter(frame);
             }}
           />
         )}

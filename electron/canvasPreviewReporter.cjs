@@ -66,10 +66,11 @@ const GENERATED_FRAME_REPORTER = `(() => {
   renderState();
 
   // The element the board selected: its source marker, where it sits under
-  // the body, its box and the computed values of the properties the board
-  // asked for. The board's previews are inline styles on it, put back as soon
-  // as the selection moves. Commands come only from the intermediate, which is
-  // \`top\` here and, unlike \`parent\`, cannot be replaced by the design.
+  // the body, its box, the computed values of the properties the board asked
+  // for and its text. The board's previews are inline styles on it and the
+  // text it holds, put back as soon as the selection moves. Commands come only
+  // from the intermediate, which is \`top\` here and, unlike \`parent\`, cannot
+  // be replaced by the design.
   const MARKER = 'data-droidex-element';
   const kebab = (name) => name.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase());
   const pathOf = (node) => {
@@ -90,8 +91,20 @@ const GENERATED_FRAME_REPORTER = `(() => {
   // this so the board can tell its latest command's answer from a late one.
   let commandSequence = 0;
   let previewed = [];
+  let previewedText = null;
   let lastSelection = '';
   let selectionQueued = false;
+  // Text a direct edit can write is an element's one text node. It is offered
+  // whole or not at all, within the intermediate's 512-byte text cap.
+  const soleText = (node) => {
+    const only = node.childNodes.length === 1 ? node.firstChild : null;
+    return only && only.nodeType === Node.TEXT_NODE ? only : null;
+  };
+  const encoder = new TextEncoder();
+  const textOf = (node) => {
+    const value = previewedText ? previewedText.value : soleText(node)?.data;
+    return typeof value === 'string' && encoder.encode(value).length <= 512 ? value : null;
+  };
   const describe = () => {
     if (!selected || !selected.node.isConnected) return null;
     const box = selected.node.getBoundingClientRect();
@@ -104,6 +117,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
       instancePath: selected.instancePath,
       rect: { x: box.x, y: box.y, width: box.width, height: box.height },
       styles: styles,
+      text: textOf(selected.node),
     };
   };
   const reportSelection = () => {
@@ -119,11 +133,13 @@ const GENERATED_FRAME_REPORTER = `(() => {
     });
   };
   const watchSelected = new ResizeObserver(reportSelection);
-  const select = (node, properties, styles, sequence) => {
+  const select = (node, properties, styles, text, sequence) => {
     commandSequence = sequence;
     for (const entry of previewed.reverse())
       entry.node.style.setProperty(entry.property, entry.value, entry.priority);
     previewed = [];
+    if (previewedText) previewedText.node.data = previewedText.value;
+    previewedText = null;
     if (selected) watchSelected.unobserve(selected.node);
     const elementId = node ? node.getAttribute(MARKER) : null;
     const instancePath = node ? pathOf(node) : null;
@@ -138,6 +154,11 @@ const GENERATED_FRAME_REPORTER = `(() => {
           priority: node.style.getPropertyPriority(property),
         });
         node.style.setProperty(property, value);
+      }
+      const shown = soleText(node);
+      if (shown && typeof text === 'string') {
+        previewedText = { node: shown, value: shown.data };
+        shown.data = text;
       }
       watchSelected.observe(node);
     }
@@ -176,12 +197,18 @@ const GENERATED_FRAME_REPORTER = `(() => {
         const hit = document.elementFromPoint(command.x, command.y);
         node = hit && hit.closest('[' + MARKER + ']');
       }
-      select(node || null, command.properties, {}, command.sequence);
+      select(node || null, command.properties, {}, null, command.sequence);
     } else if (command.command === 'select') {
       const target = command.target;
       const node = target ? atPath(target.instancePath) : null;
       const found = node && node.getAttribute(MARKER) === target.elementId ? node : null;
-      select(found, command.properties, target ? target.styles : {}, command.sequence);
+      select(
+        found,
+        command.properties,
+        target ? target.styles : {},
+        target ? target.text : null,
+        command.sequence,
+      );
     }
   });
 })();`;

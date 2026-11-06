@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   commitStyles,
+  commitText,
   editDraft,
   followRevision,
   previewStyle,
+  previewText,
   revertStyle,
+  revertText,
   settleCommit,
   type ElementEditDraft,
 } from './elementEditDraft';
@@ -67,7 +70,7 @@ test('a commit sends every previewed property as one style edit', () => {
       },
     },
   });
-  assert.equal(draft.pendingMutationId, 'm-both');
+  assert.deepEqual(draft.pending, { mutationId: 'm-both', change: 'style' });
 });
 
 test('a value is sent the way the grammar reads it: lowercase and single-spaced', () => {
@@ -92,7 +95,7 @@ test('every refusal drops the draft, and a reply for another mutation changes no
   assert.equal(settleCommit(draft, 'm-gap', { status: 'edited', revisionId: 'r2' }), draft);
   assert.deepEqual(settleCommit(draft, 'm-gap', { status: 'edited', revisionId: 'r1' }), {
     ...draft,
-    pendingMutationId: null,
+    pending: null,
   });
 });
 
@@ -123,8 +126,36 @@ test('the selection follows its source site into the revision that built after i
     element: { ...element, revisionId: 'r2', elementId: 'el_9' },
     site: moved,
     values: {},
-    pendingMutationId: null,
+    pending: null,
   });
+});
+
+test('text commits apart from styles, and each keeps the other’s previews into its revision', () => {
+  const idle = editDraft('canvas', element, site);
+  assert.equal(commitText(idle, 'm-none'), null);
+  assert.equal(revertText(previewText(idle, 'Hi')).text, null);
+  const typed = previewStyle(previewText(idle, 'Welcome & bye'), 'gap', '4px');
+  const text = commitText(typed, 'm-text');
+  assert.ok(text);
+  assert.deepEqual(text.input, {
+    mutationId: 'm-text',
+    edit: { element, change: { kind: 'text', value: 'Welcome & bye' } },
+  });
+  assert.equal(commitStyles(text.draft, 'm-gap'), null, 'one commit at a time');
+
+  const built = frameAt('r2', ready('r2', [{ ...site, elementId: 'el_2' }]));
+  const afterText = followRevision(text.draft, built);
+  assert.equal(afterText?.text, null);
+  assert.deepEqual(afterText?.values, { gap: '4px' });
+  const styles = commitStyles(typed, 'm-gap');
+  assert.ok(styles);
+  const afterStyles = followRevision(styles.draft, built);
+  assert.equal(afterStyles?.text, 'Welcome & bye');
+  assert.deepEqual(afterStyles?.values, {});
+  // A revision this draft did not commit, the agent's or an undo, leaves no preview standing.
+  const elsewhere = followRevision(typed, built);
+  assert.equal(elsewhere?.text, null);
+  assert.deepEqual(elsewhere?.values, {});
 });
 
 test('a newer revision without the site, or one that did not build, drops the selection', () => {

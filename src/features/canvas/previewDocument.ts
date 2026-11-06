@@ -46,6 +46,11 @@ export interface PreviewElement {
   instancePath: string;
   rect: FrameRect;
   styles: Record<string, string>;
+  /**
+   * Its text when that is all it holds and fits the cap, else null. Never cut,
+   * since what the board shows here it may write back as the whole text.
+   */
+  text: string | null;
 }
 
 /**
@@ -62,11 +67,12 @@ export type PreviewEvent =
 /** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
 export type PreviewPick = { x: number; y: number } | { step: 'first' | 'next' | 'previous' };
 
-/** An element to select by its marker and path, with the inline styles it previews. */
+/** An element to select by its marker and path, with the inline styles and text it previews. */
 export interface PreviewTarget {
   elementId: string;
   instancePath: string;
   styles: Record<string, string>;
+  text: string | null;
 }
 
 /** One drained queue, with how many messages the guest dropped under its cap. */
@@ -224,6 +230,7 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
       instancePath: clamp(element.instancePath),
       rect,
       styles,
+      text: whole(element.text),
     },
   };
 }
@@ -267,6 +274,11 @@ function clamp(value: string): string {
     cut += character;
   }
   return cut;
+}
+
+/** Text the board may write back whole: within the cap, or none at all. */
+function whole(value: unknown): string | null {
+  return typeof value === 'string' && utf8Bytes(value) <= MAX_PREVIEW_TEXT ? value : null;
 }
 
 const encoder = new TextEncoder();

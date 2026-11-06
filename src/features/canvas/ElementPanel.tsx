@@ -1,14 +1,16 @@
-// The selected element's styles while Edit has one, in a column at the board's
-// right: typed controls grouped the way a designer reads them — layout, size,
-// typography, fill, border, radius, effects — reading the values the preview
-// computes, with the kit's tokens one press away. Typing previews in the
-// guest; picking a segment, option, token or swatch applies at once; Enter
-// commits every preview as one edit and Escape takes one back.
+// The selected element's text and styles while Edit has one, in a column at the
+// board's right: typed controls grouped the way a designer reads them — content,
+// layout, size, typography, fill, border, radius, effects — reading the values
+// the preview computes, with the kit's tokens one press away. Typing previews in
+// the guest; picking a segment, option, token or swatch applies at once; Enter
+// commits every style preview as one edit, or the text as its own, and Escape
+// takes one back.
 
 import type { ReactNode, Ref } from 'react';
 import type { HistoryStep } from './boardHistory';
 import { historyStep, isBoardEditor } from './boardKeys';
 import { ColourField } from './ColourField';
+import { hasPreviews } from './elementEditDraft';
 import {
   ALIGN,
   ALIGN_SELF,
@@ -22,6 +24,7 @@ import {
   WEIGHTS,
   WRAP,
 } from './elementPanelChoices';
+import { ElementTextField } from './ElementTextField';
 import { NumberField } from './NumberField';
 import { SegmentedControl, type Segment } from './SegmentedControl';
 import type { EditToken, SourceElement } from './protocol';
@@ -40,6 +43,9 @@ export interface ElementPanelProps {
   onPreview: (property: string, value: string) => void;
   onRevert: (property: string) => void;
   onCommit: () => void;
+  onPreviewText: (text: string) => void;
+  onRevertText: () => void;
+  onCommitText: () => void;
   /** ⌘Z and its kin once nothing typed here is waiting to be saved. */
   onHistory: (step: HistoryStep) => boolean;
   /** Escape on a field with nothing to take back hands the keyboard to the board. */
@@ -54,12 +60,16 @@ export function ElementPanel({
   onPreview,
   onRevert,
   onCommit,
+  onPreviewText,
+  onRevertText,
+  onCommitText,
   onHistory,
   onLeave,
 }: ElementPanelProps) {
   const { draft, shown } = selection;
   const editable = draft.site.editability === 'literal';
-  const readOnly = !editable || draft.pendingMutationId !== null;
+  const readOnly = !editable || draft.pending !== null;
+  const text = draft.text ?? shown.text;
   const value = (property: string): string =>
     Object.hasOwn(draft.values, property)
       ? (draft.values[property] ?? '')
@@ -160,10 +170,10 @@ export function ElementPanel({
       onKeyDown={(event) => {
         const step = historyStep(event);
         // Typing not yet saved comes back through the field's own undo first.
-        if (!step || (isBoardEditor(event.target) && Object.keys(draft.values).length > 0)) return;
+        if (!step || (isBoardEditor(event.target) && hasPreviews(draft))) return;
         event.preventDefault();
         // A step now would move the head out from under the commit still saving.
-        if (draft.pendingMutationId === null) onHistory(step);
+        if (draft.pending === null) onHistory(step);
       }}
     >
       <header className="shrink-0 px-3 pb-2 pt-3">
@@ -181,6 +191,19 @@ export function ElementPanel({
         )}
       </header>
       <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3 pb-2">
+        {text !== null && (
+          <Section title="Content">
+            <ElementTextField
+              value={text}
+              previewed={draft.text !== null}
+              disabled={readOnly}
+              onPreview={onPreviewText}
+              onRevert={onRevertText}
+              onCommit={onCommitText}
+              onLeave={onLeave}
+            />
+          </Section>
+        )}
         <Section title="Layout">
           <ValuePickerField
             label="Display"
@@ -389,7 +412,7 @@ function agentRoute(editability: SourceElement['editability']): string {
 
 function status(draft: ElementSelection['draft'], editable: boolean): string {
   if (!editable) return 'Read only.';
-  if (draft.pendingMutationId !== null) return 'Saving…';
+  if (draft.pending !== null) return 'Saving…';
   return 'Enter saves your changes; Escape takes one back.';
 }
 

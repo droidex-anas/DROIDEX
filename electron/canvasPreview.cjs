@@ -143,10 +143,15 @@ const INTERMEDIATE_SCRIPT = `(() => {
     const given = element.styles && typeof element.styles === 'object' ? element.styles : {};
     const styles = {};
     for (const name of asked) if (typeof given[name] === 'string') styles[name] = text(given[name]);
+    // Never cut: the board may write this back as the element's whole text.
+    const whole =
+      typeof element.text === 'string' && bytes(element.text) <= ${String(MAX_PREVIEW_TEXT_BYTES)}
+        ? element.text
+        : null;
     return {
       event: 'selection',
       sequence: data.sequence,
-      element: { elementId, instancePath: text(element.instancePath), rect, styles },
+      element: { elementId, instancePath: text(element.instancePath), rect, styles, text: whole },
     };
   };
 
@@ -292,7 +297,12 @@ const INTERMEDIATE_SCRIPT = `(() => {
       return command({
         command: 'select',
         sequence,
-        target: { elementId: text(target.elementId), instancePath: target.instancePath, styles },
+        target: {
+          elementId: text(target.elementId),
+          instancePath: target.instancePath,
+          styles,
+          text: typeof target.text === 'string' ? text(target.text) : null,
+        },
         properties,
       });
     },

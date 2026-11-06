@@ -249,6 +249,7 @@ const picked: PreviewElement = {
   instancePath: '0/1',
   rect: { x: 8, y: 12, width: 120, height: 32 },
   styles: { gap: '4px' },
+  text: null,
 };
 
 test('selection commands reach only a guest this run started and has not stopped', async () => {
@@ -258,13 +259,13 @@ test('selection commands reach only a guest this run started and has not stopped
 
   await started(session);
   assert.equal(session.preview.pick({ step: 'next' }, ['gap']), 2);
-  const target = { elementId: 'el_1', instancePath: '0/1', styles: { gap: '8px' } };
+  const target = { elementId: 'el_1', instancePath: '0/1', styles: { gap: '8px' }, text: null };
   assert.equal(session.preview.select(target, ['gap']), 3);
   assert.deepEqual(
     session.calls.slice(2).map((call) => call.code),
     [
       'globalThis.__droidexCanvasPreview.pick({"step":"next","properties":["gap"],"sequence":2})',
-      'globalThis.__droidexCanvasPreview.select({"target":{"elementId":"el_1","instancePath":"0/1","styles":{"gap":"8px"}},"properties":["gap"],"sequence":3})',
+      'globalThis.__droidexCanvasPreview.select({"target":{"elementId":"el_1","instancePath":"0/1","styles":{"gap":"8px"},"text":null},"properties":["gap"],"sequence":3})',
     ],
   );
 

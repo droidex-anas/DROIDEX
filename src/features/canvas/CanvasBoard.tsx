@@ -468,6 +468,9 @@ export function CanvasBoard({
           onPreview={editor.preview}
           onRevert={editor.revert}
           onCommit={editor.commit}
+          onPreviewText={editor.previewText}
+          onRevertText={editor.revertText}
+          onCommitText={editor.commitText}
           onHistory={onHistory}
           onLeave={() => board.current?.focus({ preventScroll: true })}
         />
