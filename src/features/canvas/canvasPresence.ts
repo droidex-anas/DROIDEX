@@ -1,8 +1,8 @@
 // Who is at work on which frame of a board, read from the board's chat: the
 // frames its running canvas creates and writes name, and the frames still
 // waiting for their first source while the agent that made them is live. An
-// agent is the chat itself or one of its child sessions, and each one present
-// gets a name and a colour of its own.
+// agent is the chat itself or one of its child sessions, and each one of the
+// turn gets a name and a colour of its own.
 
 import { chunkedSequenceChunks } from '../../lib/chunkedSequence';
 import { PRESENCE_COLORS, type PresenceColor } from '../../lib/themeTokens';
@@ -76,11 +76,7 @@ export function canvasPresence(
   const workers = frameWorkers(work, frames, isLive);
   if (workers.size === 0) return NO_PRESENCE;
 
-  const present = new Set([...workers.values()].map((worker) => worker.source));
-  const agents = assignAgents(
-    sources.appSessionId,
-    new Set([...work.arrivals, PRIMARY].filter((source) => present.has(source))),
-  );
+  const agents = assignAgents(sources.appSessionId, work.arrivals);
   const presence = new Map<string, FrameWorker>();
   for (const [designId, { source, named }] of workers) {
     const agent = agents.get(source);
@@ -95,7 +91,7 @@ interface TurnWork {
   running: RunningCall[];
   /** The agent whose create this turn made each frame. */
   createdBy: ReadonlyMap<string, string>;
-  /** Agents in the order they first touched the canvas, so one keeps its look when another joins. */
+  /** The chat, then each child in the order it first touched the canvas. */
   arrivals: ReadonlySet<string>;
 }
 
@@ -109,7 +105,7 @@ function turnWork(turn: readonly TranscriptEvent[]): TurnWork {
   const running = new Map<string, RunningCall>();
   const settled = new Set<string>();
   const createdBy = new Map<string, string>();
-  const arrivals = new Set<string>();
+  const arrivals = new Set<string>([PRIMARY]);
   for (const event of turn) {
     const activity = event.canvasActivity;
     if (activity?.action !== 'create' && activity?.action !== 'write') continue;
@@ -195,10 +191,11 @@ function startsTurn(event: TranscriptEvent): boolean {
 }
 
 /**
- * Each agent's name and colour, from a hash of its stable identity. An agent
- * whose pick another present agent already holds takes the next free one, in
- * order of arrival, so two agents on one board never look alike while there
- * are enough colours.
+ * Each agent's name and colour, from a hash of its stable identity. Agents of
+ * the turn take theirs in order of arrival, and one whose pick an earlier agent
+ * holds takes the next free one. So no two look alike while there are enough,
+ * and none changes while others join or leave: it depends only on who came
+ * before.
  */
 function assignAgents(
   appSessionId: string,
@@ -210,21 +207,21 @@ function assignAgents(
   for (const source of sources) {
     const key = source === PRIMARY ? appSessionId : `${appSessionId}/${source}`;
     const hash = fnv1a(key);
-    const name = pick(AGENT_NAMES, hash, names);
-    const color = pick(COLORS, Math.floor(hash / AGENT_NAMES.length), colors);
-    names.add(name);
-    colors.add(color);
+    const name = take(AGENT_NAMES, hash, names);
+    const color = take(COLORS, Math.floor(hash / AGENT_NAMES.length), colors);
     agents.set(source, { key, name, color });
   }
   return agents;
 }
 
-function pick<T>(options: readonly T[], hash: number, taken: ReadonlySet<T>): T {
-  for (let step = 0; step < options.length; step += 1) {
-    const option = options[(hash + step) % options.length];
-    if (!taken.has(option)) return option;
-  }
-  return options[hash % options.length];
+/** The first option from the hashed one on that is not taken, which it then takes. */
+function take<T>(options: readonly T[], hash: number, taken: Set<T>): T {
+  // Once all are taken a new round starts, so agents that arrive close together still differ.
+  if (taken.size === options.length) taken.clear();
+  let index = hash % options.length;
+  while (taken.has(options[index])) index = (index + 1) % options.length;
+  taken.add(options[index]);
+  return options[index];
 }
 
 export function fnv1a(text: string): number {

@@ -185,3 +185,27 @@ test('each agent keeps one look, distinct from every other agent on the board', 
   assert.equal(new Set(agents.map((agent) => agent.color)).size, 3);
   assert.ok(samePresence(all, canvasPresence(sources(joined, live), frames)));
 });
+
+test('an agent keeps its look while others join and leave', () => {
+  const frames = [designed('a'), designed('b'), designed('c')];
+  const live = { primary: true, children: ['w4', 'w10', 'w29'] };
+  const lookOn = (events: TranscriptEvent[], designId: string) =>
+    canvasPresence(sources(events, live), frames).get(designId)?.agent;
+  // w4 hashes to the chat's name, and w29 to w10's name and colour.
+
+  // The chat keeps its own look, though a child came to the canvas first.
+  const chatAlone = [prompt(), call('t1', 'write', ['a'])];
+  const childFirst = [prompt(), call('t0', 'write', ['b'], 'w4'), call('t1', 'write', ['a'])];
+  assert.deepEqual(lookOn(childFirst, 'a'), lookOn(chatAlone, 'a'));
+  assert.notEqual(lookOn(childFirst, 'b')?.name, lookOn(childFirst, 'a')?.name);
+
+  // w29 keeps its look while w10, which came before it, leaves and comes back.
+  const both = [prompt(), call('t2', 'write', ['a'], 'w10'), call('t3', 'write', ['b'], 'w29')];
+  const w10Left = [...both, result('t2', 'write', ['a'], 'w10')];
+  const w10Back = [...w10Left, call('t4', 'write', ['c'], 'w10')];
+  const w29 = lookOn(both, 'b');
+  assert.deepEqual(lookOn(w10Left, 'b'), w29);
+  assert.deepEqual(lookOn(w10Back, 'b'), w29);
+  assert.notEqual(lookOn(w10Back, 'c')?.name, w29?.name);
+  assert.notEqual(lookOn(w10Back, 'c')?.color, w29?.color);
+});
