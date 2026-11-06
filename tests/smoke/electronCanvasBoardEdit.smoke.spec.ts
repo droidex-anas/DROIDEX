@@ -296,8 +296,14 @@ test('Edit outlines the element under the pointer by its tag, through a zoom, un
   const titleBox = await box(hover);
   expect(titleBox.x).toBeCloseTo(drawn.x + 8 * scale, 0);
   expect(titleBox.width).toBeCloseTo(240 * scale, 0);
+  // Its tag would leave the sheet above it, so it sits under it instead, and
+  // a box filling the sheet holds its tag in its corner.
+  const tag = hover.locator('.canvas-element-tag > span');
+  expect((await box(tag)).y).toBeGreaterThan(titleBox.y + titleBox.height);
   await pointAt(300, 200);
   await expect(hover).toHaveAttribute('data-element-hover', 'section');
+  expect((await box(tag)).y).toBeGreaterThan(drawn.y);
+  expect((await box(tag)).y).toBeLessThan(drawn.y + 30);
 
   // The picked element has its own outline, so the pointer over it adds none.
   await page.mouse.down();

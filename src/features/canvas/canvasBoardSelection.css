@@ -235,21 +235,39 @@
   background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
 
-/* The hovered element's tag, sitting on its top-left corner. */
+/* The hovered element's tag at its left edge: above the box, below it or in
+   its corner, wherever ElementOutlines finds it room. */
 .canvas-element-tag {
   position: absolute;
-  bottom: 100%;
   left: 0;
+}
+
+.canvas-element-tag[data-side='above'] {
+  bottom: 100%;
   transform-origin: 0 100%;
+}
+
+.canvas-element-tag[data-side='below'] {
+  top: 100%;
+  transform-origin: 0 0;
+}
+
+.canvas-element-tag[data-side='inside'] {
+  top: 0;
+  transform-origin: 0 0;
 }
 
 .canvas-element-tag > span {
   display: block;
-  margin-bottom: 3px;
+  margin: 3px 0;
   padding: 0 5px;
   border-radius: 4px;
   background: var(--selection);
   color: var(--on-selection);
   font: 500 11px / 16px var(--canvas-chrome-font);
   white-space: nowrap;
+}
+
+.canvas-element-tag[data-side='inside'] > span {
+  margin-left: 3px;
 }

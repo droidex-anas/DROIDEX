@@ -387,7 +387,12 @@ export function CanvasBoard({
               onFocusLabel={onFocusLabel}
             />
           ))}
-          <ElementOutlines drawn={drawn} selection={editor.selection} hovered={hover.hovered} />
+          <ElementOutlines
+            drawn={drawn}
+            scale={scale}
+            selection={editor.selection}
+            hovered={hover.hovered}
+          />
           <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
           <AnnotationLayer
             {...annotation.layer}
