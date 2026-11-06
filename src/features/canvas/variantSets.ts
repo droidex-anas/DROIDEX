@@ -22,16 +22,23 @@ interface VariantClient {
 
 /**
  * The frame `variant` was made from, when using the variant can replace its
- * design: the variant shows a working build of its head, and the source is on
- * the board with a revision that Undo can go back to.
+ * design: the variant's head is its own work rather than the copy it started
+ * as, a working build shows that head, and the source is on the board with a
+ * revision that Undo can go back to.
  */
 export function variantSetSource(
   frames: readonly CanvasFrame[],
   variant: CanvasFrame,
 ): CanvasFrame | null {
-  if (variant.variantOf === null || variant.build.status !== 'ready') return null;
+  if (variant.variantOf === null || !showsOwnWork(variant)) return null;
   const source = frames.find((frame) => frame.designId === variant.variantOf);
   return source?.revisionId ? source : null;
+}
+
+function showsOwnWork({ revisionId, seededRevisionId, build }: CanvasFrame): boolean {
+  return (
+    revisionId !== seededRevisionId && build.status === 'ready' && build.revisionId === revisionId
+  );
 }
 
 export class VariantSets {

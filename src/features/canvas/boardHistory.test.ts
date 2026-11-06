@@ -153,6 +153,7 @@ function frame(designId: string, name: string, y: number): CanvasFrame {
     revisionId: 'r1',
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     variantOf: null,
+    seededRevisionId: null,
     build: { status: 'building', generation: 1 },
   };
 }

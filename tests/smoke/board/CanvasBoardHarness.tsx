@@ -230,18 +230,20 @@ const initial: CanvasSnapshot = {
   sequence: 1,
   annotationsVersion: seeded.length,
   annotations: seeded,
-  frames: PLACED.map(
-    (frame): CanvasFrame => ({
+  frames: PLACED.map((frame): CanvasFrame => {
+    // `?variants=1` makes Design B a variant of Design A that its agent has since changed.
+    const isVariant = params.has('variants') && frame.designId === 'b';
+    return {
       ...frame,
       layoutVersion: 3,
       manifestVersion: 1,
       revisionId: 'rev_01',
       designSystem: { id: 'droidex', version: 1, mode: scheme },
-      // `?variants=1` makes Design B a variant of Design A.
-      variantOf: params.has('variants') && frame.designId === 'b' ? 'a' : null,
+      variantOf: isVariant ? 'a' : null,
+      seededRevisionId: isVariant ? 'rev_00' : null,
       build: params.has('building') ? { status: 'building', generation: 1 } : built('rev_01'),
-    }),
-  ),
+    };
+  }),
 };
 const replies: { resolve: () => void; reject: (error: Error) => void }[] = [];
 const calls: ArrangeFramesInput[] = [];

@@ -14,6 +14,7 @@ function frame(diagnostics: CanvasDiagnostic[]): CanvasFrame {
     revisionId: 'revision-1',
     designSystem: AUTO_DESIGN_SYSTEM_REF,
     variantOf: null,
+    seededRevisionId: null,
     build: {
       status: 'ready',
       revisionId: 'revision-1',

@@ -16,6 +16,7 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
     revisionId,
     designSystem,
     variantOf: null,
+    seededRevisionId: null,
     build: { status: 'pending' },
   };
 }

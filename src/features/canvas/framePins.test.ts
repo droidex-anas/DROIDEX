@@ -25,6 +25,7 @@ function frame(
     revisionId,
     designSystem: { id: 'droidex', version: 2, mode: 'dark' },
     variantOf: null,
+    seededRevisionId: null,
     build: { status: 'pending', generation: 1 },
   };
 }

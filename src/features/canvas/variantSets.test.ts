@@ -23,6 +23,7 @@ function frame(designId: string, variantOf: string | null = null): CanvasFrame {
     revisionId: `${designId}1`,
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     variantOf,
+    seededRevisionId: variantOf === null ? null : `${designId}0`,
     build: {
       status: 'ready',
       generation: 1,
@@ -99,12 +100,15 @@ afterEach(() => {
 });
 process.on('exit', stopWatching);
 
-test('a variant offers itself to its source while it shows a working build and the source is on the board', () => {
+test('a variant offers itself to its source once a working build shows its own work and the source is on the board', () => {
   assert.equal(variantSetSource(board, chosen), source);
   assert.equal(variantSetSource(board, source), null);
   assert.equal(variantSetSource(board, frame('d', 'x')), null);
   const building = { ...chosen, build: { status: 'building', revisionId: 'b2', generation: 2 } };
   assert.equal(variantSetSource(board, building as CanvasFrame), null);
+  // Still the copy it was made as, or a head whose build has not caught up.
+  assert.equal(variantSetSource(board, { ...chosen, seededRevisionId: 'b1' }), null);
+  assert.equal(variantSetSource(board, { ...chosen, revisionId: 'b2' }), null);
 });
 
 test('using a variant writes its source over the head the user saw, as one step Undo takes back', async () => {

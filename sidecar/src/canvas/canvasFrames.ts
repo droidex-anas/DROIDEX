@@ -136,6 +136,7 @@ export function placeFrames(
       lastWorkingRevisionId: null,
       designSystem: frame.designSystem,
       ...(frame.seed ? { seed: structuredClone(frame.seed) } : {}),
+      ...(frame.seed && revisionId ? { seededRevisionId: revisionId } : {}),
       ...(frame.variantOf ? { variantOf: frame.variantOf } : {}),
     });
     x += frame.width + FRAME_GAP_PX;
