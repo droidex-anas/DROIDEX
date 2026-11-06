@@ -120,14 +120,15 @@ const GENERATED_FRAME_REPORTER = `(() => {
   };
   // Over the intermediate's cap the answer would be dropped and the board
   // would lose the selection, so every style value is cut to the same length,
-  // shorter each round, until it fits. The text stays whole or goes last.
+  // shorter each round, until it fits. Cuts count code points, so none leaves
+  // half a surrogate pair. The text stays whole or goes last.
   const SELECTION_BUDGET = ${String(MAX_PREVIEW_SELECTION_BYTES - 512)};
   const fitted = (element) => {
     if (bytes(JSON.stringify(element)) <= SELECTION_BUDGET) return element;
     for (const longest of [256, 64, 16, 0]) {
       const styles = {};
       for (const name of Object.keys(element.styles))
-        styles[name] = element.styles[name].slice(0, longest);
+        styles[name] = Array.from(element.styles[name]).slice(0, longest).join('');
       const candidate = Object.assign({}, element, { styles: styles });
       if (bytes(JSON.stringify(candidate)) <= SELECTION_BUDGET) return candidate;
     }
