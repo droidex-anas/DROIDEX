@@ -11,6 +11,7 @@ import { PresenceContext } from 'framer-motion';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CanvasBoard } from './CanvasBoard';
+import { NO_PRESENCE, type CanvasPresence } from './canvasPresence';
 import { DesignPreview } from './DesignPreview';
 import type { FrameActions } from './FrameToolbar';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
@@ -55,14 +56,14 @@ function annotated(snapshot: CanvasSnapshot, annotations: Annotation[]): CanvasS
 function board(
   snapshot: CanvasSnapshot,
   interaction: BoardInteraction = SELECT_MODE,
-  agentWorking = false,
+  presence: CanvasPresence = NO_PRESENCE,
   pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onToggleChat'> = {},
 ) {
   return createElement(CanvasBoard, {
     ...pins,
     snapshot,
     interaction,
-    agentWorking,
+    presence,
     frameActions: FRAME_ACTIONS,
     onInteractionChange: () => undefined,
     onArrangeFrames: () => Promise.resolve(),
@@ -168,7 +169,8 @@ test('a frame with no live preview says only what is true of it', () => {
   const base = frame('dsg_hey', ACKNOWLEDGED);
   const reserved = { ...base, revisionId: null };
   const empty = render(snapshotOf(reserved));
-  const writing = render(snapshotOf(reserved), SELECT_MODE, true);
+  const kairo = { key: 'ses_1', name: 'Kairo', color: 'crimson' } as const;
+  const writing = render(snapshotOf(reserved), SELECT_MODE, new Map([['dsg_hey', kairo]]));
   const building = render(snapshotOf(withBuild(base, { status: 'building', generation: 2 })));
   const cancelled = render(snapshotOf(withBuild(base, { status: 'cancelled', generation: 2 })));
   const failed = render(
@@ -184,11 +186,15 @@ test('a frame with no live preview says only what is true of it', () => {
     ),
   );
 
-  // A reserved frame shimmers as written only while its chat's agent works.
+  // A reserved frame shimmers as written only while an agent works on it, and
+  // takes that agent's colour.
   assert.match(empty, /Empty frame/);
   assert.equal(empty.includes('canvas-bloom-label'), false);
+  assert.equal(empty.includes('canvas-working'), false);
   assert.match(writing, /Writing/);
   assert.match(writing, /canvas-bloom-label/);
+  assert.match(writing, /--worker:var\(--presence-crimson\)/);
+  assert.match(writing, /Kairo is working on this frame/);
   assert.match(building, /canvas-bloom-label/);
   assert.match(building, /Building/);
   assert.match(cancelled, /Build cancelled/);
@@ -242,11 +248,11 @@ test('a selected frame offers Add to chat only on its chat’s own canvas, and s
 
   assert.equal(render(snapshot, picked).includes('Add to chat'), false);
   assert.match(
-    render(snapshot, picked, false, { onToggleChat }),
+    render(snapshot, picked, NO_PRESENCE, { onToggleChat }),
     /aria-pressed="false" aria-label="Add Design a to the chat"/,
   );
   assert.match(
-    render(snapshot, picked, false, { onToggleChat, pinnedIds: new Set(['a']) }),
+    render(snapshot, picked, NO_PRESENCE, { onToggleChat, pinnedIds: new Set(['a']) }),
     /aria-pressed="true" aria-label="Take Design a out of the chat"/,
   );
 });

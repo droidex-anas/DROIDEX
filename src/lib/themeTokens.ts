@@ -84,6 +84,33 @@ export const SELECTION_COLORS = {
   light: { line: '#1a64dc', label: '#1a64dc', text: '#ffffff' },
 } as const;
 
+// The colours an agent at work on a design board is drawn in: its cursor, its
+// name pill, the halftone it paints and the frame's edge while it works. Each
+// keeps white pill text at AA and its edge at 3:1 on every built-in board.
+// Dark boards leave a narrow band of luminance between the two, so the dark
+// shades all sit in it, a step brighter than the light ones.
+export const PRESENCE_COLORS = {
+  dark: {
+    crimson: '#d7235f',
+    green: '#2b8135',
+    blue: '#286be0',
+    violet: '#8b53d4',
+    amber: '#af5a04',
+    teal: '#137d83',
+  },
+  light: {
+    crimson: '#a31a4b',
+    green: '#2a7a33',
+    blue: '#1f5fc9',
+    violet: '#7438c4',
+    amber: '#8f4c05',
+    teal: '#0e6a70',
+  },
+  text: '#ffffff',
+} as const;
+
+export type PresenceColor = keyof (typeof PRESENCE_COLORS)['light'];
+
 // The seven colours a board annotation can be drawn in, by the token names the
 // canvas stores. Muted, so a sketch never shouts over the designs it marks up,
 // yet each keeps AA for text on the board and its raised chrome in every
@@ -234,8 +261,18 @@ export function deriveThemeTokens(theme: ThemeTokenSource): ThemeTokens {
     '--selection': SELECTION_COLORS[scheme].line,
     '--selection-label': SELECTION_COLORS[scheme].label,
     '--on-selection': SELECTION_COLORS[scheme].text,
+    ...presenceTokens(scheme),
     ...codeTokens(theme),
     ...annotationTokens(theme),
+  };
+}
+
+function presenceTokens(scheme: Scheme): ThemeTokens {
+  return {
+    ...Object.fromEntries(
+      Object.entries(PRESENCE_COLORS[scheme]).map(([name, color]) => [`--presence-${name}`, color]),
+    ),
+    '--on-presence': PRESENCE_COLORS.text,
   };
 }
 
