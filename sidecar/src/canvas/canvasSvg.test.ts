@@ -19,9 +19,11 @@ test('a hostile SVG keeps its drawing and loses everything that can run or load'
   <script>alert(1)</script>
   <style>@import url(https://evil.example/x.css);
 .a{fill:url(#g)} .b{background:url(https://evil.example/b.png)} .c{fill:\\75rl(https://evil.example)}
+.d{--x:{url(https://evil.example/d)}} .e{fill:u/**/rl(https://evil.example/e)} .f{fill:ATTR(data-x url)}
+.g{background:Image-Set("https://evil.example/g.png" 1x)}
 @font-face{font-family:x;src:url(https://evil.example/f.woff2)}</style>
   <defs><linearGradient id="g" xlink:href="https://evil.example/g.svg#g"><stop offset="0" stop-color="#fff"/></linearGradient></defs>
-  <path class="a" d="M0 0h24v24H0z" onclick="alert(1)" style="fill:red;background-image:url(//evil.example/x)"/>
+  <path class="a" d="M0 0h24v24H0z" onclick="alert(1)" style="fill:red;background-image:url(//evil.example/x);--y:{url(//evil.example/y)}"/>
   <a href="javascript:alert(1)"><circle r="4" fill="url(#g)"/></a>
   <rect width="1" height="1" fill="url(https://evil.example/p.svg#p)" filter="&#x75;rl(https://evil.example/f)"/>
   <animate attributeName="href" values="javascript:alert(1)"/>
@@ -39,7 +41,9 @@ test('a hostile SVG keeps its drawing and loses everything that can run or load'
     sanitised(hostile),
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
   
-  <style>.a{fill:url(#g)} .b{} .c{}</style>
+  <style>.a{fill:url(#g)} .b{} .c{}
+.d{} .e{} .f{}
+.g{}</style>
   <defs><linearGradient id="g"><stop offset="0" stop-color="#fff"/></linearGradient></defs>
   <path class="a" d="M0 0h24v24H0z" style="fill:red"/>
   <g><circle r="4" fill="url(#g)"/></g>

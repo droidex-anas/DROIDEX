@@ -7,8 +7,10 @@ import valueParser from 'postcss-value-parser';
 /** A reference to another element of the same document. */
 export const FRAGMENT = /^#[^\s#]+$/;
 
-// Functions that load a resource from a plain string, which `url()` checks cannot see.
+// Functions that load a resource from a plain string, which `url()` checks cannot
+// see; attr() can turn an attribute into a url.
 const LOADING_FUNCTIONS = new Set([
+  'attr',
   'image',
   'image-set',
   '-webkit-image-set',
@@ -25,9 +27,13 @@ const KEPT_AT_RULES = new Set(['media', 'keyframes', '-webkit-keyframes']);
 export function isSafeValue(value: string): boolean {
   // CSS escapes can spell `url(` without the letters (`\75 rl(`).
   if (value.includes('\\')) return false;
-  if (!value.includes('(')) return true;
+  // The value parser does not look inside a block (`--x:{url(...)}`).
+  if (value.includes('{') || value.includes('}')) return false;
+  // A comment inside a function name (`u/**/rl(`) would hide it from the parser.
+  const uncommented = value.replace(/\/\*[\s\S]*?\*\//g, '');
+  if (!uncommented.includes('(')) return true;
   let safe = true;
-  valueParser(value).walk((node) => {
+  valueParser(uncommented).walk((node) => {
     if (node.type !== 'function') return;
     const name = node.value.toLowerCase();
     if (LOADING_FUNCTIONS.has(name)) safe = false;
