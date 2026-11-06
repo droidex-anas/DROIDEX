@@ -235,6 +235,14 @@
   background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .canvas-element-hover,
+  .canvas-element-outline {
+    transition: none;
+    animation: none;
+  }
+}
+
 /* The hovered element's tag at its left edge: above the box, below it or in
    its corner, wherever ElementOutlines finds it room. */
 .canvas-element-tag {
