@@ -1,6 +1,6 @@
 // The board's layout tools against the harness: a selection dragged as one,
 // picking every frame, the box a multiple selection is measured by, resizing
-// from any edge or to a typed size, and the zoom bar and keys.
+// from any edge or to a typed size, the zoom bar and keys, and undoing a placement.
 
 import { expect, test, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
@@ -168,4 +168,61 @@ test('the zoom bar and the ⌘ zoom keys zoom the board, and a typed percentage 
   await page.locator('#outside').focus();
   await page.keyboard.press('ControlOrMeta+0');
   await zoomed('75%');
+});
+
+/** Where the board draws a frame, in board pixels. */
+function drawnAt(page: Page, name: string) {
+  return frame(page, name).evaluate((element) => {
+    if (!(element instanceof HTMLElement)) throw new Error('Missing frame');
+    return { x: parseFloat(element.style.left), y: parseFloat(element.style.top) };
+  });
+}
+
+test('a released move is one step: ⌘Z puts the frame back and ⇧⌘Z moves it again', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await dragLabel(page, 'A', 45, 45);
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  const moved = (await arranged(page, 0)).a;
+  await page.evaluate(() => window.boardHarness.answer(0));
+
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => arrangeCount(page)).toBe(2);
+  // Each write expects the layout the one before it left.
+  expect(await page.evaluate(() => window.boardHarness.calls[1].frames)).toEqual([
+    { designId: 'a', expectedLayoutVersion: 4, rect: { x: 100, y: 50, width: 400, height: 300 } },
+  ]);
+  await page.evaluate(() => window.boardHarness.answer(1));
+  await expect.poll(() => drawnAt(page, 'A')).toEqual({ x: 100, y: 50 });
+
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect.poll(() => arrangeCount(page)).toBe(3);
+  expect(await page.evaluate(() => window.boardHarness.calls[2].frames)).toEqual([
+    { designId: 'a', expectedLayoutVersion: 5, rect: moved },
+  ]);
+  await page.evaluate(() => window.boardHarness.answer(2));
+  await expect.poll(() => drawnAt(page, 'A')).toEqual({ x: moved.x, y: moved.y });
+});
+
+test('a selection dragged together undoes as one step', async ({ page }) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a', 'b']));
+  await dragLabel(page, 'B', 60, 40);
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  await page.evaluate(() => window.boardHarness.answer(0));
+
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => arrangeCount(page)).toBe(2);
+  expect(await arranged(page, 1)).toEqual({
+    a: { x: 100, y: 50, width: 400, height: 300 },
+    b: { x: 650, y: 300, width: 400, height: 300 },
+  });
+  await page.evaluate(() => window.boardHarness.answer(1));
+  await expect.poll(() => drawnAt(page, 'B')).toEqual({ x: 650, y: 300 });
+  // That was the only step.
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.clock.runFor(32);
+  expect(await arrangeCount(page)).toBe(2);
 });

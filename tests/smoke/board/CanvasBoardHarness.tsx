@@ -6,6 +6,7 @@ import type {
   AnnotateCanvasInput,
 } from '../../../src/features/canvas/annotationProtocol';
 import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChange';
+import { BoardHistory, recordPlacements } from '../../../src/features/canvas/boardHistory';
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
 import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
@@ -45,6 +46,8 @@ interface BoardHarness {
   publish: (designId: string, rect: FrameRect, layoutVersion: number) => void;
   reject: (index: number) => void;
   resolve: (index: number) => void;
+  /** Places one arrange's frames the way the sidecar does, and answers. */
+  answer: (index: number) => void;
   focusFrame: (frameId: string) => void;
   select: (designIds: string[]) => void;
   interaction: () => BoardInteraction;
@@ -240,20 +243,35 @@ const removeReplies: PromiseWithResolvers<string>[] = [];
 const undoCalls: UndoRemovalInput[] = [];
 const undoReplies: PromiseWithResolvers<CanvasChange>[] = [];
 const removedFrames = new Map<string, CanvasFrame[]>();
-const removals = new FrameRemovals({
-  removeFrames: (_appSessionId, _canvasId, input) => {
-    removeCalls.push(input);
-    const reply = Promise.withResolvers<string>();
-    removeReplies.push(reply);
-    return reply.promise;
+// What the board is showing, which the history reads the way it reads the client's projection.
+const shown = { current: initial };
+const history = new BoardHistory();
+const arrangeFrames = recordPlacements(
+  history,
+  initial.canvasId,
+  (input: ArrangeFramesInput) => {
+    calls.push(input);
+    return new Promise<void>((resolve, reject) => replies.push({ resolve, reject }));
   },
-  undoRemoval: (_appSessionId, _canvasId, input) => {
-    undoCalls.push(input);
-    const reply = Promise.withResolvers<CanvasChange>();
-    undoReplies.push(reply);
-    return reply.promise;
+  () => shown.current.frames,
+);
+const removals = new FrameRemovals(
+  {
+    removeFrames: (_appSessionId, _canvasId, input) => {
+      removeCalls.push(input);
+      const reply = Promise.withResolvers<string>();
+      removeReplies.push(reply);
+      return reply.promise;
+    },
+    undoRemoval: (_appSessionId, _canvasId, input) => {
+      undoCalls.push(input);
+      const reply = Promise.withResolvers<CanvasChange>();
+      undoReplies.push(reply);
+      return reply.promise;
+    },
   },
-});
+  history,
+);
 const historyReads: string[] = [];
 const historyReplies: PromiseWithResolvers<RevisionSummary[]>[] = [];
 const renameCalls: RenameFrameInput[] = [];
@@ -316,7 +334,6 @@ function Harness() {
   const board = useRef<CanvasBoardHandle>(null);
   const live = useRef(interaction);
   live.current = interaction;
-  const shown = useRef(snapshot);
   shown.current = snapshot;
   useEffect(() => {
     if (!params.has('navigator')) return undefined;
@@ -373,6 +390,17 @@ function Harness() {
     },
     reject: (index) => replies[index].reject(new Error('Arrange rejected')),
     resolve: (index) => replies[index].resolve(),
+    answer: (index) => {
+      const placed = shown.current.frames.flatMap((frame) => {
+        const placement = calls[index].frames.find((each) => each.designId === frame.designId);
+        if (!placement) return [];
+        return [
+          { ...frame, rect: placement.rect, layoutVersion: placement.expectedLayoutVersion + 1 },
+        ];
+      });
+      setSnapshot(applyCanvasChange(shown.current, change(placed, [])));
+      replies[index].resolve();
+    },
     focusFrame: (frameId) => {
       if (!board.current) throw new Error('Missing board focus handle');
       board.current.focusFrame(frameId);
@@ -509,10 +537,7 @@ function Harness() {
               </button>
             )
           }
-          onArrangeFrames={(input) => {
-            calls.push(input);
-            return new Promise<void>((resolve, reject) => replies.push({ resolve, reject }));
-          }}
+          onArrangeFrames={arrangeFrames}
           onAnnotate={(input) => {
             annotateCalls.push(input);
             return new Promise<void>((resolve, reject) =>
@@ -527,7 +552,9 @@ function Harness() {
           }}
           onOpenSource={setSourceOpen}
           onRemoveFrames={(frames) => removals.remove('chat_1', snapshot.canvasId, frames)}
-          onHistory={(step) => step === 'undo' && removals.undoLatest(snapshot.canvasId)}
+          onHistory={(step) =>
+            step === 'undo' ? history.undo(snapshot.canvasId) : history.redo(snapshot.canvasId)
+          }
           frameActions={frameActions}
         />
         {sourceOpen && (

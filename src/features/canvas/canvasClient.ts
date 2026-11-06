@@ -10,8 +10,8 @@ import { FrameRemovals } from './frameRemovals';
 import type { PreviewReport } from './protocol';
 
 export const canvasClient = new CanvasClient(bridge);
-export const frameRemovals = new FrameRemovals(canvasClient);
 export const boardHistory = new BoardHistory();
+export const frameRemovals = new FrameRemovals(canvasClient, boardHistory);
 
 // Every page answers an agent's screenshot request; the sidecar counts only the
 // pages watching that canvas, and a lost answer costs the agent only that capture.

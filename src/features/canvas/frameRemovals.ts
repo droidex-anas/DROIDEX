@@ -1,9 +1,10 @@
-// Deleting frames from a board and the Undo offered for it. The sidecar keeps
-// each removal's tombstone across reopening; this owner only holds the undoId
-// while its "Deleted" toast is showing, per canvas, so the offer outlives a
-// tab switch but not the app.
+// Deleting frames from a board. Each deletion is a step in the board's history,
+// so Undo takes it back in turn and Redo deletes the frames again; its
+// "Deleted" toast offers that Undo while the deletion is the newest step. The
+// sidecar keeps each removal's tombstone across reopening.
 
-import { dismissToast, pushToast, subscribeToasts, toast } from '../../lib/toast';
+import { dismissToast, pushToast, toast } from '../../lib/toast';
+import { designsLabel, landed, type BoardHistory, type HistoryEntry } from './boardHistory';
 import { CanvasRequestError, canvasMessage, type CanvasClient } from './client';
 import type { CanvasFrame } from './protocol';
 
@@ -12,28 +13,23 @@ const UNDO_WINDOW_MS = 8000;
 
 type RemovalClient = Pick<CanvasClient, 'removeFrames' | 'undoRemoval'>;
 
-interface Removal {
-  appSessionId: string;
-  canvasId: string;
-  undoId: string;
-  frames: CanvasFrame[];
-  toastId: number;
-}
-
 export class FrameRemovals {
   /** `canvasId designId` for every frame a removal is still being sent for. */
   private readonly sending = new Set<string>();
-  /** Per canvas, the removals whose Undo is still offered, newest last. */
-  private readonly offered = new Map<string, Removal[]>();
+  /** Per canvas, the toast offering Undo while its newest step is a deletion. */
+  private readonly offers = new Map<string, number>();
   /** Bumped when a canvas goes away, so answers that arrive after it are dropped. */
   private readonly generations = new Map<string, number>();
-  private stopWatchingToasts: (() => void) | null = null;
 
-  constructor(private readonly client: RemovalClient) {}
+  constructor(
+    private readonly client: RemovalClient,
+    private readonly history: BoardHistory,
+  ) {}
 
   /**
-   * Deletes `frames` and offers their Undo. Frames already being deleted are
-   * not sent again. Resolves true once the sidecar has removed them.
+   * Deletes `frames` as a step in the board's history and offers its Undo.
+   * Frames already being deleted are not sent again. Resolves true once the
+   * sidecar has removed them.
    */
   async remove(appSessionId: string, canvasId: string, frames: CanvasFrame[]): Promise<boolean> {
     const removing = frames.filter((frame) => !this.sending.has(sendingKey(canvasId, frame)));
@@ -47,97 +43,94 @@ export class FrameRemovals {
         designIds: removing.map((frame) => frame.designId),
       });
       if (this.generationOf(canvasId) !== generation) return false;
-      this.offer({ appSessionId, canvasId, undoId, frames: removing });
+      this.history.record(canvasId, this.deletion(appSessionId, canvasId, removing, undoId));
+      this.offerUndo(canvasId, removing);
       return true;
     } catch (error) {
       if (this.generationOf(canvasId) === generation)
-        toast.error(`Couldn’t delete ${framesLabel(removing)}. ${canvasMessage(error)}`);
+        toast.error(`Couldn’t delete ${designsLabel(removing)}. ${canvasMessage(error)}`);
       return false;
     } finally {
       for (const key of keys) this.sending.delete(key);
     }
   }
 
-  /** Undoes the newest removal still offered on `canvasId`; false when there is none. */
-  undoLatest(canvasId: string): boolean {
-    const latest = this.offered.get(canvasId)?.at(-1);
-    if (!latest) return false;
-    void this.undo(latest);
-    return true;
-  }
-
-  /** The canvas was deleted: its offers end and answers still on their way are ignored. */
+  /** The canvas was deleted: its Undo offer ends and answers still on their way are ignored. */
   forget(canvasId: string): void {
     this.generations.set(canvasId, this.generationOf(canvasId) + 1);
-    for (const removal of this.offered.get(canvasId) ?? []) this.take(removal);
+    this.endOffer(canvasId);
   }
 
-  private offer(removed: Omit<Removal, 'toastId'>): void {
-    const removal: Removal = {
-      ...removed,
-      toastId: pushToast(`Deleted ${framesLabel(removed.frames)}`, 'info', UNDO_WINDOW_MS, {
+  /** One deletion as a step. Each Redo removes the frames again and keeps that removal's undoId. */
+  private deletion(
+    appSessionId: string,
+    canvasId: string,
+    frames: CanvasFrame[],
+    removedAs: string,
+  ): HistoryEntry {
+    let undoId = removedAs;
+    const designIds = frames.map((frame) => frame.designId);
+    return {
+      label: `deleting ${designsLabel(frames)}`,
+      designs: frames,
+      covered: () => {
+        this.endOffer(canvasId);
+      },
+      undo: async () => {
+        this.endOffer(canvasId);
+        try {
+          await this.client.undoRemoval(appSessionId, canvasId, {
+            mutationId: crypto.randomUUID(),
+            undoId,
+          });
+          return true;
+        } catch (error) {
+          if (!(error instanceof CanvasRequestError)) throw error;
+          // Frames are never moved aside to make room; the user decides what goes
+          // there, and the step stays so the next Undo can try again.
+          if (error.code === 'layout_conflict')
+            throw new Error(`Something now sits where ${formerPlace(frames)}.`);
+          // The frames are back already, or the canvas no longer keeps this removal.
+          if (
+            error.code === 'revision_conflict' ||
+            error.code === 'invalid_input' ||
+            error.code === 'not_found'
+          )
+            return false;
+          throw error;
+        }
+      },
+      redo: () => {
+        const removal = this.client.removeFrames(appSessionId, canvasId, {
+          mutationId: crypto.randomUUID(),
+          designIds,
+        });
+        return landed(
+          removal.then((removedAs) => {
+            undoId = removedAs;
+          }),
+        );
+      },
+    };
+  }
+
+  private offerUndo(canvasId: string, frames: CanvasFrame[]): void {
+    this.offers.set(
+      canvasId,
+      pushToast(`Deleted ${designsLabel(frames)}`, 'info', UNDO_WINDOW_MS, {
         label: 'Undo',
         run: () => {
-          void this.undo(removal);
+          this.history.undo(canvasId);
         },
       }),
-    };
-    this.offered.set(removal.canvasId, [...(this.offered.get(removal.canvasId) ?? []), removal]);
-    this.watchToasts();
-  }
-
-  /** Each Undo is tried once: it stops being offered before the request goes out. */
-  private async undo(removal: Removal): Promise<void> {
-    if (!this.take(removal)) return;
-    const generation = this.generationOf(removal.canvasId);
-    try {
-      await this.client.undoRemoval(removal.appSessionId, removal.canvasId, {
-        mutationId: crypto.randomUUID(),
-        undoId: removal.undoId,
-      });
-    } catch (error) {
-      if (this.generationOf(removal.canvasId) !== generation) return;
-      // Frames are never moved aside to make room; the user decides what goes there.
-      if (error instanceof CanvasRequestError && error.code === 'layout_conflict')
-        toast.error(`Something now sits where ${formerPlace(removal.frames)}.`);
-      else
-        toast.error(
-          `Couldn’t undo deleting ${framesLabel(removal.frames)}. ${canvasMessage(error)}`,
-        );
-    }
-  }
-
-  /** Ends one offer and its toast; false when it had already ended. */
-  private take(removal: Removal): boolean {
-    const offers = this.offered.get(removal.canvasId) ?? [];
-    if (!offers.includes(removal)) return false;
-    this.keepOffers(
-      removal.canvasId,
-      offers.filter((offer) => offer !== removal),
     );
-    dismissToast(removal.toastId);
-    return true;
   }
 
-  /** An offer lasts exactly as long as its toast, however long hovering keeps it up. */
-  private watchToasts(): void {
-    if (this.stopWatchingToasts) return;
-    this.stopWatchingToasts = subscribeToasts((shown) => {
-      const showing = new Set(shown.map((item) => item.id));
-      for (const [canvasId, offers] of this.offered)
-        this.keepOffers(
-          canvasId,
-          offers.filter((offer) => showing.has(offer.toastId)),
-        );
-      if (this.offered.size > 0) return;
-      this.stopWatchingToasts?.();
-      this.stopWatchingToasts = null;
-    });
-  }
-
-  private keepOffers(canvasId: string, offers: Removal[]): void {
-    if (offers.length > 0) this.offered.set(canvasId, offers);
-    else this.offered.delete(canvasId);
+  private endOffer(canvasId: string): void {
+    const toastId = this.offers.get(canvasId);
+    if (toastId === undefined) return;
+    this.offers.delete(canvasId);
+    dismissToast(toastId);
   }
 
   private generationOf(canvasId: string): number {
@@ -149,10 +142,6 @@ function sendingKey(canvasId: string, frame: CanvasFrame): string {
   return `${canvasId} ${frame.designId}`;
 }
 
-function framesLabel(frames: CanvasFrame[]): string {
-  return frames.length === 1 ? frames[0].name : `${String(frames.length)} frames`;
-}
-
 function formerPlace(frames: CanvasFrame[]): string {
-  return frames.length === 1 ? `${frames[0].name} was` : `those ${framesLabel(frames)} were`;
+  return frames.length === 1 ? `${frames[0].name} was` : `those ${designsLabel(frames)} were`;
 }

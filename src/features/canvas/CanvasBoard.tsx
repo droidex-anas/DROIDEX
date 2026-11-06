@@ -71,8 +71,8 @@ export interface CanvasBoardProps {
   snapshot: CanvasSnapshot;
   /**
    * The one layout write the board makes, for a released gesture as much as for
-   * a nudge, an align or a distribute. `CanvasWorkspace` binds it to
-   * `CanvasClient.arrangeFrames` for this canvas.
+   * a nudge, an align or a distribute. `CanvasBoardMount` binds it to
+   * `CanvasClient.arrangeFrames` for this canvas, each write a step of its history.
    */
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
   /** The one annotation write, bound to `CanvasClient.annotate` for this canvas. */

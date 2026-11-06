@@ -4,8 +4,9 @@
 // which one a key press runs and drops the steps that no longer apply.
 
 import { toast } from '../../lib/toast';
+import { sameRect } from './canvasGeometry';
 import { CanvasRequestError, canvasMessage } from './client';
-import type { SwitchRevisionInput } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, FrameRect, SwitchRevisionInput } from './protocol';
 
 /** How many steps a canvas keeps; the oldest go first. */
 const MAX_STEPS = 100;
@@ -29,6 +30,8 @@ export interface HistoryEntry {
   undo: () => Promise<boolean>;
   /** Takes the step again, on the same terms as `undo`. */
   redo: () => Promise<boolean>;
+  /** Told when a newer step is recorded on top of this one, which ends any offer to undo it by itself. */
+  covered?: () => void;
 }
 
 interface Line {
@@ -50,6 +53,7 @@ export class BoardHistory {
   /** A new step on `canvasId`: it can be undone, and nothing undone before it can be redone. */
   record(canvasId: string, entry: HistoryEntry): void {
     const line = this.lineOf(canvasId);
+    line.done.at(-1)?.covered?.();
     line.done = [...line.done, entry].slice(-MAX_STEPS);
     line.undone = [];
     line.pressed = [];
@@ -149,6 +153,26 @@ function designNames(entry: HistoryEntry): string {
   return new Intl.ListFormat('en').format(entry.designs.map((design) => design.name));
 }
 
+/** A step's designs as its label names them: "Hero", or "3 frames". */
+export function designsLabel(designs: readonly HistoryDesign[]): string {
+  return designs.length === 1 ? designs[0].name : `${String(designs.length)} frames`;
+}
+
+/**
+ * Whether a write that expected a design's current state landed. False when
+ * the design moved on or is gone, so the step it belongs to no longer applies.
+ */
+export async function landed(write: Promise<unknown>): Promise<boolean> {
+  try {
+    await write;
+    return true;
+  } catch (error) {
+    if (!(error instanceof CanvasRequestError)) throw error;
+    if (error.code === 'revision_conflict' || error.code === 'not_found') return false;
+    throw error;
+  }
+}
+
 /**
  * An edit that moved one design's head from `before` to `after`. Undo and
  * redo switch the head between the two, each only while the head is still
@@ -160,26 +184,80 @@ export function revisionEntry(
   before: string,
   after: string,
 ): HistoryEntry {
-  const move = async (revisionId: string, expectedRevisionId: string): Promise<boolean> => {
-    try {
-      await switchRevision({
+  const move = (revisionId: string, expectedRevisionId: string) =>
+    landed(
+      switchRevision({
         mutationId: crypto.randomUUID(),
         designId: design.designId,
         revisionId,
         expectedRevisionId,
-      });
-      return true;
-    } catch (error) {
-      if (!(error instanceof CanvasRequestError)) throw error;
-      // The head moved on, or the design is gone: this step has nothing left to switch.
-      if (error.code === 'revision_conflict' || error.code === 'not_found') return false;
-      throw error;
-    }
-  };
+      }),
+    );
   return {
     label: 'your edit',
     designs: [design],
     undo: () => move(before, after),
     redo: () => move(after, before),
+  };
+}
+
+/**
+ * `arrange`, recording each placement that lands as one step of `canvasId`'s
+ * history: a released drag or resize, a nudge, an align, a distribute or a
+ * typed size. `frames` reads the canvas as the renderer holds it now.
+ */
+export function recordPlacements<Answer>(
+  history: BoardHistory,
+  canvasId: string,
+  arrange: (input: ArrangeFramesInput) => Promise<Answer>,
+  frames: () => readonly CanvasFrame[],
+): (input: ArrangeFramesInput) => Promise<Answer> {
+  return async (input) => {
+    const moves = input.frames.flatMap(({ designId, rect }): FrameMove[] => {
+      const frame = frames().find((each) => each.designId === designId);
+      return frame ? [{ designId, name: frame.name, before: frame.rect, after: rect }] : [];
+    });
+    const answer = await arrange(input);
+    history.record(canvasId, placementEntry(arrange, frames, moves));
+    return answer;
+  };
+}
+
+/** One frame a placement moved, from where it was to where it went. */
+interface FrameMove extends HistoryDesign {
+  before: FrameRect;
+  after: FrameRect;
+}
+
+/**
+ * A placement as a step. Undo and redo put its frames where the other found
+ * them, each only while every frame still sits where the other left it.
+ */
+function placementEntry(
+  arrange: (input: ArrangeFramesInput) => Promise<unknown>,
+  frames: () => readonly CanvasFrame[],
+  moves: FrameMove[],
+): HistoryEntry {
+  const put = async (from: 'before' | 'after', to: 'before' | 'after'): Promise<boolean> => {
+    const placements: ArrangeFramesInput['frames'] = [];
+    for (const move of moves) {
+      const frame = frames().find((each) => each.designId === move.designId);
+      if (!frame || !sameRect(frame.rect, move[from])) return false;
+      placements.push({
+        designId: move.designId,
+        rect: move[to],
+        expectedLayoutVersion: frame.layoutVersion,
+      });
+    }
+    return landed(arrange({ mutationId: crypto.randomUUID(), frames: placements }));
+  };
+  const resized = moves.some(
+    ({ before, after }) => before.width !== after.width || before.height !== after.height,
+  );
+  return {
+    label: `${resized ? 'resizing' : 'moving'} ${designsLabel(moves)}`,
+    designs: moves,
+    undo: () => put('after', 'before'),
+    redo: () => put('before', 'after'),
   };
 }

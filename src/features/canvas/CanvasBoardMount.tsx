@@ -9,7 +9,7 @@ import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { showBoard } from './boardOnScreen';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
-import { revisionEntry, type HistoryStep } from './boardHistory';
+import { recordPlacements, revisionEntry, type HistoryStep } from './boardHistory';
 import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
@@ -73,8 +73,14 @@ export function CanvasBoardMount({
   const toolsMissing = useStoreSelector((current) =>
     lacksCanvasTools(current.sessions[appSessionId]),
   );
-  const arrangeFrames = useCallback(
-    (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
+  const arrangeFrames = useMemo(
+    () =>
+      recordPlacements(
+        boardHistory,
+        canvasId,
+        (input: ArrangeFramesInput) => canvas.arrangeFrames(appSessionId, canvasId, input),
+        () => canvas.snapshotOf(canvasId)?.frames ?? [],
+      ),
     [appSessionId, canvasId],
   );
   const annotate = useCallback(
@@ -109,12 +115,9 @@ export function CanvasBoardMount({
     (removing: CanvasFrame[]) => frameRemovals.remove(appSessionId, canvasId, removing),
     [appSessionId, canvasId],
   );
-  // A deletion keeps its own Undo, which goes first while its toast offers it.
   const stepHistory = useCallback(
     (step: HistoryStep) =>
-      step === 'undo'
-        ? frameRemovals.undoLatest(canvasId) || boardHistory.undo(canvasId)
-        : boardHistory.redo(canvasId),
+      step === 'undo' ? boardHistory.undo(canvasId) : boardHistory.redo(canvasId),
     [canvasId],
   );
   const frameActions = useFrameActions(appSessionId, canvasId, pinnable);
