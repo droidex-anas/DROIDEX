@@ -1,7 +1,8 @@
 /* The board's chrome: frames drawn as sheets with their labels, selection and
    states. It is imported by the lazy Canvas surface, so it loads with the board
-   rather than on every app start, in Chat as in Design; the tools that float
-   on the board have their own sheet, canvasBoardTools.css.
+   rather than on every app start, in Chat as in Design. The tools that float
+   on the board and what it draws around a selection have their own sheets,
+   canvasBoardTools.css and canvasBoardSelection.css.
 
    The world layer sets --board-scale. Chrome drawn inside it divides by that,
    so a frame's edge, label, handles and badges keep their screen size at any
@@ -111,128 +112,6 @@
   box-shadow:
     0 0 0 1.5px var(--selection),
     var(--shadow-sm);
-}
-
-/* The selected frame's size, under its bottom edge. The wrapper scales about
-   the frame's centre line, and the badge centres itself on it. */
-.canvas-frame-size {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform-origin: 0 0;
-  pointer-events: none;
-}
-
-.canvas-frame-size > span,
-.canvas-frame-size > button {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-top: 8px;
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--selection);
-  color: var(--on-selection);
-  font: 500 11px / 16px var(--canvas-chrome-font);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transform: translateX(-50%);
-}
-
-/* In Select the size opens the size menu. */
-.canvas-frame-size > button {
-  padding-right: 4px;
-  pointer-events: auto;
-  transition: background 120ms;
-}
-
-.canvas-frame-size > button:hover,
-.canvas-frame-size > button:focus-visible,
-.canvas-frame-size > button[aria-expanded='true'] {
-  outline: none;
-  background: color-mix(in srgb, var(--selection) 82%, var(--text));
-}
-
-/* A multiple selection's own box, a hairline at any zoom, with its size under it. */
-.canvas-selection-bounds {
-  position: absolute;
-  pointer-events: none;
-  box-shadow: 0 0 0 calc(1px / var(--board-scale)) var(--selection);
-}
-
-/* Resize: a square at each corner, and the four edges as invisible strips. */
-/* A press that selects text would make the next press on it a native drag. */
-.canvas-frame-handle {
-  position: absolute;
-  touch-action: none;
-  user-select: none;
-}
-
-.canvas-frame-handle[data-handle='north'],
-.canvas-frame-handle[data-handle='south'] {
-  left: 0;
-  width: 100%;
-  height: calc(10px / var(--board-scale));
-  margin-top: calc(-5px / var(--board-scale));
-  cursor: ns-resize;
-}
-
-.canvas-frame-handle[data-handle='north'] {
-  top: 0;
-}
-
-.canvas-frame-handle[data-handle='south'] {
-  top: 100%;
-}
-
-.canvas-frame-handle[data-handle='east'],
-.canvas-frame-handle[data-handle='west'] {
-  top: 0;
-  width: calc(10px / var(--board-scale));
-  height: 100%;
-  margin-left: calc(-5px / var(--board-scale));
-  cursor: ew-resize;
-}
-
-.canvas-frame-handle[data-handle='east'] {
-  left: 100%;
-}
-
-.canvas-frame-handle[data-handle='west'] {
-  left: 0;
-}
-
-.canvas-frame-corner {
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--selection);
-  border-radius: 2px;
-  background: var(--raised);
-  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
-}
-
-.canvas-frame-handle[data-handle='northwest'] {
-  left: 0;
-  top: 0;
-  cursor: nwse-resize;
-}
-
-.canvas-frame-handle[data-handle='northeast'] {
-  left: 100%;
-  top: 0;
-  cursor: nesw-resize;
-}
-
-.canvas-frame-handle[data-handle='southwest'] {
-  left: 0;
-  top: 100%;
-  cursor: nesw-resize;
-}
-
-.canvas-frame-handle[data-handle='southeast'] {
-  left: 100%;
-  top: 100%;
-  cursor: nwse-resize;
 }
 
 /* What a sheet says when it has no live preview: centred, at screen size. It
@@ -437,82 +316,6 @@
 
 .canvas-annotation-glyph {
   fill: var(--raised);
-}
-
-/* The rubber band, in screen space above the world layer. */
-.canvas-band {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 2px;
-  border: 1px solid var(--selection);
-  background: color-mix(in srgb, var(--selection) 8%, transparent);
-}
-
-/* What a snapped drag lined up on and the spaces it measured, in screen space
-   above the frames. They come and go with the snap, with no motion, so they
-   never trail the hand. */
-.canvas-snap {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.canvas-snap-line,
-.canvas-snap-gap,
-.canvas-snap-gap::before,
-.canvas-snap-gap::after {
-  position: absolute;
-  background: var(--selection);
-}
-
-.canvas-snap-gap::before,
-.canvas-snap-gap::after {
-  content: '';
-}
-
-/* The measured line's end ticks, across it at each frame's edge. */
-.canvas-snap-gap[data-axis='x']::before,
-.canvas-snap-gap[data-axis='x']::after {
-  top: -3px;
-  width: 1px;
-  height: 7px;
-}
-
-.canvas-snap-gap[data-axis='x']::after {
-  right: 0;
-}
-
-.canvas-snap-gap[data-axis='y']::before,
-.canvas-snap-gap[data-axis='y']::after {
-  left: -3px;
-  width: 7px;
-  height: 1px;
-}
-
-.canvas-snap-gap[data-axis='y']::after {
-  bottom: 0;
-}
-
-/* The distance, centred on its line, in the size pill's shape. */
-.canvas-snap-pill {
-  position: absolute;
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--selection);
-  color: var(--on-selection);
-  font: 500 11px / 16px var(--ui-font-family, system-ui, sans-serif);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transform: translate(-50%, -50%);
-}
-
-/* The element Edit has picked, outlined over the guest that draws it. */
-.canvas-element-outline {
-  position: absolute;
-  pointer-events: none;
-  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
-  background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
 
 /* ── Pane ───────────────────────────────────────────────────────────────── */

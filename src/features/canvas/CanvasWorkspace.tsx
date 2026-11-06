@@ -11,6 +11,7 @@ import {
 import './canvasAnimations.css';
 import './canvasBloom.css';
 import './canvasBoard.css';
+import './canvasBoardSelection.css';
 import './canvasBoardTools.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useStoreSelector } from '../../hooks/useStore';

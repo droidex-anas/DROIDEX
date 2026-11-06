@@ -35,6 +35,7 @@ import '../../../src/index.css';
 // The harness mounts the board without the pane that normally brings these in.
 import '../../../src/features/canvas/canvasAnimations.css';
 import '../../../src/features/canvas/canvasBoard.css';
+import '../../../src/features/canvas/canvasBoardSelection.css';
 import '../../../src/features/canvas/canvasBoardTools.css';
 
 interface BoardHarness {
