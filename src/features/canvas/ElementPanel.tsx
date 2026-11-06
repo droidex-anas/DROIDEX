@@ -25,6 +25,7 @@ import {
   LAYOUT,
   layoutOf,
   type Layout,
+  MORE_DISPLAYS,
   OVERFLOW,
   TEXT_ALIGN,
   TEXT_TRANSFORM,
@@ -35,7 +36,7 @@ import { Labelled, Pair, Section } from './ElementPanelRows';
 import { ElementTextField } from './ElementTextField';
 import { NumberField } from './NumberField';
 import { firstFamily, sameFontStack } from './panelValues';
-import { SegmentedControl, type Segment } from './SegmentedControl';
+import { MoreSegments, SegmentedControl, type Segment } from './SegmentedControl';
 import type { EditToken, SourceElement } from './protocol';
 import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
@@ -246,6 +247,15 @@ export function ElementPanel({
             onPick={(next) => {
               pick('display')(displayFor(display, next));
             }}
+            more={
+              <MoreSegments
+                label="More displays"
+                options={MORE_DISPLAYS}
+                value={display}
+                disabled={readOnly}
+                onPick={pick('display')}
+              />
+            }
           />
           {layout === 'flex' && (
             <>

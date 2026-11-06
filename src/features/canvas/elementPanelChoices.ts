@@ -1,6 +1,7 @@
 // The fixed choices the element panel offers: the segments for layout, flex
 // alignment, text alignment and border style, and the options for keyword
-// properties. A layout segment keeps whether its element sits inline.
+// properties. A layout segment keeps whether its element sits inline; the
+// displays that are no layout wait in the Display row's ⋯ menu.
 
 import {
   AlignCenter,
@@ -53,6 +54,13 @@ export function layoutOf(display: string): Layout | null {
 export function displayFor(current: string, layout: Layout): string {
   return current.startsWith('inline') ? `inline-${layout}` : layout;
 }
+
+export const MORE_DISPLAYS: Segment<string>[] = [
+  { value: 'inline', label: 'Display: inline', text: 'Inline' },
+  { value: 'inline-block', label: 'Display: inline-block', text: 'Inline block' },
+  { value: 'none', label: 'Display: none', text: 'Hidden' },
+];
+
 export const DIRECTION: Segment<string>[] = [
   { value: 'row', label: 'Direction: row', icon: ArrowRight },
   { value: 'column', label: 'Direction: column', icon: ArrowDown },

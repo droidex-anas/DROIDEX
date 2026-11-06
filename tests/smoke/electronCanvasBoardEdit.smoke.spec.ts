@@ -415,3 +415,45 @@ test('the hover tag keeps off other content and off the picked size chip', async
   expect(besideChip.tag.y + besideChip.tag.height).toBeLessThanOrEqual(besideChip.outline.y + 1);
   expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
 });
+
+test('The Display row’s ⋯ menu sets a display its layout segments leave out, with the current one checked', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      return {
+        elementId: 'el_title',
+        instancePath: '0/0',
+        rect: { x: 8, y: 8, width: 240, height: 30 },
+        styles: { display: 'inline' },
+      };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  await frame(page, 'A').locator('[data-frame-header]').focus();
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(100);
+  const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
+  await expect(panel).toBeVisible();
+
+  // Inline lays out no layout the segments name, so ⋯ carries it.
+  const layouts = panel.getByRole('radiogroup', { name: 'Display' });
+  await expect(layouts.getByRole('radio', { checked: true })).toHaveCount(0);
+  await panel.getByRole('button', { name: 'More displays, now Inline' }).click();
+  const menu = page.getByRole('menu', { name: 'More displays' });
+  await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveText('Inline');
+  await menu.getByRole('menuitemradio', { name: 'Hidden' }).click();
+  await page.clock.runFor(200);
+  await expect(menu).toHaveCount(0);
+  expect(
+    await page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit.change)),
+  ).toEqual([{ kind: 'style', styles: [{ property: 'display', value: 'none' }] }]);
+});
