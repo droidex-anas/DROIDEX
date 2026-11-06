@@ -101,15 +101,13 @@ function setStyle(slots: ClassSlot[], style: InlineStyle, { property, resolution
   });
   const name = frameScoped || inlineShorthand ? null : styleClass(property, resolution);
 
-  let first: ClassEntry | null = null;
+  const dead = live.filter(({ read }) => read.scope === 'always' && within(read.sets));
+  const first = dead.at(0)?.entry;
+  // A class that applies always has no variant, so its ! leads.
+  const important = dead.some(({ entry }) => entry.name?.startsWith('!') === true);
   let lostLineHeight: string | undefined;
-  let important = false;
-  for (const { entry, read } of live) {
-    if (read.scope !== 'always' || !within(read.sets)) continue;
-    first ??= entry;
+  for (const { entry, read } of dead) {
     lostLineHeight = read.lineHeight ?? lostLineHeight;
-    // A class that applies always has no variant, so its ! leads.
-    important ||= entry.name?.startsWith('!') ?? false;
     entry.name = null;
   }
   for (const entry of style.entries)
