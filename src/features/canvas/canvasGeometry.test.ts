@@ -328,6 +328,10 @@ test('a resize stays inside the dimensions the sidecar will accept', () => {
     applyFrameHandle(start, 'southeast', { x: 99_999, y: 99_999 }, 1),
     rect(0, 0, MAX_FRAME_PX, MAX_FRAME_PX),
   );
+  // A frame already smaller than a resize may leave follows the hand from its own size.
+  const small = rect(0, 0, 80, 60);
+  assert.deepEqual(applyFrameHandle(small, 'southeast', { x: 5, y: 5 }, 1), rect(0, 0, 85, 65));
+  assert.deepEqual(applyFrameHandle(small, 'northwest', { x: 5, y: 5 }, 1), small);
 });
 
 test('a resize commits once on release and a cancelled one commits nothing', () => {

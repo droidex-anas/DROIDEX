@@ -54,10 +54,6 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
-function clampDimension(px: number): number {
-  return Math.min(MAX_FRAME_PX, Math.max(MIN_FRAME_PX, px));
-}
-
 export function canvasToScreen(viewport: Viewport, point: Point): Point {
   return { x: point.x * viewport.scale + viewport.x, y: point.y * viewport.scale + viewport.y };
 }
@@ -169,7 +165,10 @@ export function moveEdge(
 ): FrameRect {
   const start = axis === 'x' ? rect.x : rect.y;
   const size = axis === 'x' ? rect.width : rect.height;
-  const resized = clampDimension(Math.round(edge === 'end' ? size + by : size - by));
+  // An agent may make a frame smaller than a resize can; it keeps that size rather than jumping.
+  const smallest = Math.min(MIN_FRAME_PX, size);
+  const wanted = Math.round(edge === 'end' ? size + by : size - by);
+  const resized = Math.min(MAX_FRAME_PX, Math.max(smallest, wanted));
   const moved = edge === 'end' ? start : start + size - resized;
   return axis === 'x'
     ? { ...rect, x: moved, width: resized }
