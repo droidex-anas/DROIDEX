@@ -105,6 +105,9 @@ applyTheme({
   contrast: 100,
 });
 
+// `?inset=n` docks a stand-in panel n pixels wide over the board's right edge.
+const RIGHT_INSET = Number(params.get('inset') ?? 0);
+
 // Two frames by default, which is what the geometry cases are measured against.
 // `?frames=n` adds more in a row below them for the preview-slot budget.
 // `?navigator=1` puts the chat column's Components tab beside the board.
@@ -509,9 +512,10 @@ function Harness() {
       <button type="button" id="outside" aria-pressed={interaction.selectedFrameIds.length > 0}>
         Outside board
       </button>
-      <div style={{ display: 'flex', width, height: 800, marginTop: 12 }}>
+      <div style={{ position: 'relative', display: 'flex', width, height: 800, marginTop: 12 }}>
         <CanvasBoard
           ref={board}
+          rightInset={RIGHT_INSET}
           snapshot={snapshot}
           interaction={interaction}
           agentWorking={false}
@@ -561,6 +565,13 @@ function Harness() {
           <aside data-harness-source={sourceOpen} style={{ width: 280, flexShrink: 0 }}>
             Source of {sourceOpen}
           </aside>
+        )}
+        {RIGHT_INSET > 0 && (
+          <aside
+            data-harness-inset
+            className="bg-raised"
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: RIGHT_INSET }}
+          />
         )}
         {params.has('navigator') && (
           <aside

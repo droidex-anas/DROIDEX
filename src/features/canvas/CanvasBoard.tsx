@@ -96,6 +96,12 @@ export interface CanvasBoardProps {
   restoredViewport?: Viewport;
   /** Hands the viewport over as the board unmounts, so Back from a document can restore it. */
   onLeave?: (viewport: Viewport) => void;
+  /**
+   * Screen pixels along the board's right edge that a panel docked over it
+   * covers. Fit, zoom, focus and the frame toolbar keep to the rest; a panel
+   * laid out beside the board needs none, since the board measures without it.
+   */
+  rightInset?: number;
 }
 
 export function CanvasBoard({
@@ -116,6 +122,7 @@ export function CanvasBoard({
   frameActions,
   restoredViewport,
   onLeave,
+  rightInset = 0,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -123,7 +130,7 @@ export function CanvasBoard({
   // The frames the board opened with are simply there; later ones arrive.
   const [openedWith] = useState(() => new Set(frames.map((frame) => frame.designId)));
 
-  const view = useBoardViewport(board, frames, motion, restoredViewport);
+  const view = useBoardViewport(board, frames, motion, restoredViewport, rightInset);
   const { fitTo } = view;
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the

@@ -4,7 +4,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
-import { box, frame, openBoard, serveBoard, zoomField } from './board/boardPage';
+import { box, boardUrl, frame, openBoard, serveBoard, zoomField } from './board/boardPage';
 
 serveBoard();
 
@@ -225,4 +225,33 @@ test('a selection dragged together undoes as one step', async ({ page }) => {
   await page.keyboard.press('ControlOrMeta+z');
   await page.clock.runFor(32);
   expect(await arrangeCount(page)).toBe(2);
+});
+
+test('a panel docked over the board keeps fit, ⌘0 and ⌘1 to the part it leaves visible', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&inset=300'));
+  const board = await box(page.getByTestId('canvas-board'));
+  const panel = await box(page.locator('[data-harness-inset]'));
+  // Both frames together sit centred between the board's left edge and the panel.
+  const offCentre = async () => {
+    const a = await box(page.locator('[data-design-frame="a"]'));
+    const b = await box(page.locator('[data-design-frame="b"]'));
+    const left = Math.min(a.x, b.x);
+    const right = Math.max(a.x + a.width, b.x + b.width);
+    return Math.round((left + right) / 2 - (board.x + panel.x) / 2);
+  };
+  await expect.poll(offCentre).toBe(0);
+  // 950 px of frames in the 700 px left visible, less the fit's padding.
+  await expect(zoomField(page)).toHaveValue('59%');
+
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+0');
+  await expect(zoomField(page)).toHaveValue('100%');
+  expect(await offCentre()).toBe(0);
+  await page.keyboard.press('ControlOrMeta+1');
+  await expect(zoomField(page)).toHaveValue('59%');
+  expect(await offCentre()).toBe(0);
 });
