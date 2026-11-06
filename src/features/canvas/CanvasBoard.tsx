@@ -40,6 +40,7 @@ import { toolbarRoom } from './toolbarPlacement';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
+import { useBoardToastPlacement } from './useBoardToastPlacement';
 import { useBoardViewport } from './useBoardViewport';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
@@ -133,6 +134,7 @@ export function CanvasBoard({
 
   const view = useBoardViewport(board, frames, motion, restoredViewport, rightInset);
   const { fitTo } = view;
+  useBoardToastPlacement(board, rightInset, interaction.selectedFrameIds.length >= 2);
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
