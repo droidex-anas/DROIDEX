@@ -69,6 +69,11 @@ function sources(
   };
 }
 
+/** Each frame worked on, with its agent's key. */
+function frameAgents(presence: CanvasPresence): string[][] {
+  return [...presence].map(([designId, worker]) => [designId, worker.agent.key]);
+}
+
 test('a running create or write puts its agent on the frames it names until its result', () => {
   const frames = [designed('a'), designed('b')];
   const writing = [prompt(), call('t1', 'write', ['a']), call('t2', 'write', ['gone'])];
@@ -94,12 +99,10 @@ test('a frame with no source yet belongs to the live agent whose create made it 
     call('t2', 'create', [], 'w1'),
     result('t2', 'create', ['theirs'], 'w1'),
   ];
-  const keys = (presence: CanvasPresence) =>
-    [...presence].map(([designId, worker]) => [designId, worker.agent.key]);
 
   const both = canvasPresence(sources(events, { primary: true, children: ['w1'] }), frames);
   // The frame an earlier turn left empty is no one's.
-  assert.deepEqual(keys(both), [
+  assert.deepEqual(frameAgents(both), [
     ['mine', 'chat'],
     ['theirs', 'chat/w1'],
   ]);
@@ -107,14 +110,14 @@ test('a frame with no source yet belongs to the live agent whose create made it 
   // The worker that made it is done, so its frame is not being written, even
   // while the chat's own turn runs on.
   const workerDone = canvasPresence(sources(events, { primary: true }), frames);
-  assert.deepEqual(keys(workerDone), [['mine', 'chat']]);
+  assert.deepEqual(frameAgents(workerDone), [['mine', 'chat']]);
   // A turn that never touches the canvas paints no frame.
   assert.equal(canvasPresence(sources([prompt()]), frames).size, 0);
   // A create names its frames only in its result, so until then the empty
   // frames no one made are its agent's.
   const creating = [prompt(), call('t3', 'create', [], 'w1')];
   const early = canvasPresence(sources(creating, { primary: true, children: ['w1'] }), frames);
-  assert.deepEqual(keys(early), [
+  assert.deepEqual(frameAgents(early), [
     ['mine', 'chat/w1'],
     ['theirs', 'chat/w1'],
     ['left', 'chat/w1'],
@@ -128,6 +131,25 @@ test('only the current turn counts, and a steer does not start a new one', () =>
   assert.equal(canvasPresence(sources([...interrupted, prompt()]), frames).size, 0);
   const steered = canvasPresence(sources([...interrupted, prompt(true)]), frames);
   assert.deepEqual([...steered.keys()], ['a']);
+});
+
+test('a child still at work when the user prompts again keeps its frames', () => {
+  const frames = [designed('a'), reserved('made')];
+  const events = [
+    prompt(),
+    call('t1', 'create', [], 'w1'),
+    result('t1', 'create', ['made'], 'w1'),
+    call('t2', 'write', ['a'], 'w1'),
+    call('t3', 'write', ['a']),
+    prompt(),
+  ];
+
+  // The prompt cut off the chat's own write, not the child's.
+  const presence = canvasPresence(sources(events, { primary: true, children: ['w1'] }), frames);
+  assert.deepEqual(frameAgents(presence), [
+    ['a', 'chat/w1'],
+    ['made', 'chat/w1'],
+  ]);
 });
 
 test('a turn is read whole across the chunks the store keeps a transcript in', () => {

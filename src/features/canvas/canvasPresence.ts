@@ -43,6 +43,10 @@ const AGENT_NAMES = [
 ] as const;
 const COLORS = Object.keys(PRESENCE_COLORS.light) as PresenceColor[];
 const PRIMARY = 'primary';
+// How many events before the chat's latest prompt are still read for a child at
+// work: a child can outlive the turn that started it, and a bound keeps a long
+// history from costing every store update.
+const CHILD_LOOKBACK = 2000;
 
 export interface PresenceSources {
   appSessionId: string;
@@ -55,11 +59,11 @@ export interface PresenceSources {
 }
 
 /**
- * Reads the chat's current turn, from its latest prompt on. A canvas create or
- * write without its result yet is running; a frame it names is being worked on
- * while its agent is live. A frame with no source yet belongs to the agent
- * whose create made it this turn, or while a create runs, to that create's
- * agent; otherwise it is no one's.
+ * Reads the chat's current turn, from its latest prompt on, and a child still
+ * at work from before it too. A canvas create or write without its result yet
+ * is running; a frame it names is being worked on while its agent is live. A
+ * frame with no source yet belongs to the agent whose create made it this turn,
+ * or while a create runs, to that create's agent; otherwise it is no one's.
  */
 export function canvasPresence(
   sources: PresenceSources,
@@ -68,7 +72,7 @@ export function canvasPresence(
   const { primaryLive, liveChildren } = sources;
   if (!primaryLive && liveChildren.size === 0) return NO_PRESENCE;
   const isLive = (source: string) => (source === PRIMARY ? primaryLive : liveChildren.has(source));
-  const work = turnWork(sources.events);
+  const work = turnWork(currentTurn(sources.events, liveChildren));
   const workers = frameWorkers(work, frames, isLive);
   if (workers.size === 0) return NO_PRESENCE;
 
@@ -101,12 +105,12 @@ interface RunningCall {
   designIds: string[];
 }
 
-function turnWork(events: readonly TranscriptEvent[]): TurnWork {
+function turnWork(turn: readonly TranscriptEvent[]): TurnWork {
   const running = new Map<string, RunningCall>();
   const settled = new Set<string>();
   const createdBy = new Map<string, string>();
   const arrivals = new Set<string>();
-  for (const event of currentTurn(events)) {
+  for (const event of turn) {
     const activity = event.canvasActivity;
     if (activity?.action !== 'create' && activity?.action !== 'write') continue;
     const source = event.role === 'primary' ? PRIMARY : event.sourceSessionId;
@@ -128,21 +132,35 @@ function turnWork(events: readonly TranscriptEvent[]): TurnWork {
 
 /**
  * The chat's events from its latest prompt on, or all of them while that
- * prompt is not loaded. Read from the transcript's chunks, which are plain
- * arrays: the sequence's own indexed reads are slow, and this runs on every
- * store update while an agent is live, so it costs the turn and never the
+ * prompt is not loaded, with the live children's events from up to
+ * `CHILD_LOOKBACK` events before it. Read from the transcript's chunks, which
+ * are plain arrays: the sequence's own indexed reads are slow, and this runs on
+ * every store update while an agent is live, so it costs the turn and never the
  * history before it.
  */
-function currentTurn(events: readonly TranscriptEvent[]): TranscriptEvent[] {
+function currentTurn(
+  events: readonly TranscriptEvent[],
+  liveChildren: ReadonlySet<string>,
+): TranscriptEvent[] {
   const chunks = chunkedSequenceChunks(events);
-  const turn: (readonly TranscriptEvent[])[] = [];
+  const turn: TranscriptEvent[] = [];
+  // How many more events to read before the prompt, once it is found.
+  let lookback: number | undefined;
   for (let chunkIndex = chunks.length - 1; chunkIndex >= 0; chunkIndex -= 1) {
     const chunk = chunks[chunkIndex];
-    const start = chunk.findLastIndex(startsTurn);
-    turn.push(start === -1 ? chunk : chunk.slice(start));
-    if (start !== -1) break;
+    for (let index = chunk.length - 1; index >= 0; index -= 1) {
+      const event = chunk[index];
+      if (lookback === undefined) {
+        if (startsTurn(event)) lookback = liveChildren.size > 0 ? CHILD_LOOKBACK : 0;
+        else turn.push(event);
+        continue;
+      }
+      if (lookback === 0) return turn.reverse();
+      lookback -= 1;
+      if (event.role !== 'primary' && liveChildren.has(event.sourceSessionId)) turn.push(event);
+    }
   }
-  return turn.reverse().flat();
+  return turn.reverse();
 }
 
 /** The agent at work on each frame on the board, by design id. */
