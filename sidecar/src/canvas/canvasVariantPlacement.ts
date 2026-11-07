@@ -39,7 +39,7 @@ export function placeVariants(
     const blocking = occupied.filter((rect) => row.some((slot) => collides(slot, rect)));
     if (blocking.length === 0) return row;
     // Each blocker ends below this row's top, so the row always moves down.
-    y = Math.max(...blocking.map(bottomWithGap));
+    y = blocking.reduce((lowest, rect) => Math.max(lowest, bottomWithGap(rect)), y);
   }
 }
 
