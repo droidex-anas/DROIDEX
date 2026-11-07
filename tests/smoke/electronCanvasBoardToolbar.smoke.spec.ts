@@ -109,11 +109,22 @@ test('frames tag in the chat from the toolbar, the label and the tag key, never 
   await expect(tags('A')).toHaveAttribute('data-tagged', 'true');
 
   // The key tags the whole selection, and once all are tagged, untags them.
+  // It is the board's alone, and a held key's repeats do not toggle back.
+  await page.evaluate(() => {
+    window.addEventListener('keydown', (event) => {
+      if (event.code === 'KeyL') document.body.dataset.tagKeyEscaped = 'true';
+    });
+  });
   await page.evaluate(() => window.boardHarness.select(['a', 'b']));
   await page.getByTestId('canvas-board').focus();
   await page.keyboard.press('ControlOrMeta+l');
   await expect(tags('B')).toHaveAttribute('data-tagged', 'true');
+  const primary = process.platform === 'darwin' ? { metaKey: true } : { ctrlKey: true };
+  await page
+    .getByTestId('canvas-board')
+    .dispatchEvent('keydown', { key: 'l', code: 'KeyL', repeat: true, ...primary });
   await page.keyboard.press('ControlOrMeta+l');
+  expect(await page.evaluate(() => document.body.dataset.tagKeyEscaped ?? null)).toBeNull();
   await expect(tags('A')).not.toHaveAttribute('data-tagged');
   await expect(tags('B')).not.toHaveAttribute('data-tagged');
 

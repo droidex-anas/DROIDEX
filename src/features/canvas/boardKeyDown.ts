@@ -57,7 +57,7 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
   const header = frameHeaderOf(event.target);
   const mark = annotationMarkOf(event.target);
   if (isTagKey(event)) {
-    if (runTagKey(header, actions)) event.preventDefault();
+    runTagKey(event, header, actions);
     return;
   }
   // Board commands belong to the board and its frame labels. Its own tools take
@@ -84,13 +84,20 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
  * The tag key, wherever on the board it is pressed: the selected frames, or a
  * focused label's own frame when it is not among them.
  */
-function runTagKey(header: string | null, { interaction, tagFrames }: BoardKeyActions): boolean {
+function runTagKey(
+  event: KeyboardEvent,
+  header: string | null,
+  { interaction, tagFrames }: BoardKeyActions,
+) {
   const { selectedFrameIds } = interaction;
   const designIds =
     header !== null && !selectedFrameIds.includes(header) ? [header] : selectedFrameIds;
-  if (!tagFrames || designIds.length === 0) return false;
-  tagFrames(designIds);
-  return true;
+  if (!tagFrames || designIds.length === 0) return;
+  // The key is the board's here, so an app shortcut bound to it does not run as
+  // well; a held key auto-repeats and would toggle straight back.
+  event.preventDefault();
+  event.stopPropagation();
+  if (!event.repeat) tagFrames(designIds);
 }
 
 function soleSelection({ selectedFrameIds }: BoardInteraction): string | null {
