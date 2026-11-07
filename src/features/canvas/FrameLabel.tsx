@@ -57,7 +57,7 @@ export function FrameLabel({
   onFocusLabel: (frame: CanvasFrame) => void;
 }) {
   const { base, suffix } = splitVariantName(frame.name);
-  const keysHint = onTagFrames ? `${KEYS_HINT}; ${TAG_KEY_LABEL} tags it in chat` : KEYS_HINT;
+  const keysHint = onTagFrames ? `${KEYS_HINT}; ${TAG_KEY_LABEL} toggles its chat tag` : KEYS_HINT;
   return (
     <div
       ref={ref}

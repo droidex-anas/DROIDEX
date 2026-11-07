@@ -1,6 +1,6 @@
-// The frames `@` offers a chat on a canvas: those of its attached canvas, which
-// running a row tags in the next prompt. The canvas is watched only while the
-// mention menu is open, so a chat whose pane is closed holds no watch on it.
+// The `@` menu offers the frames from this chat's attached canvas, and choosing
+// a row tags it in the next prompt. The canvas is watched only while the mention
+// menu is open, so a chat whose pane is closed holds no watch on it.
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { canvasClient } from '../../features/canvas/canvasClient';
@@ -33,7 +33,10 @@ export function useFrameMentions(
     frames: snapshot?.frames ?? NO_FRAMES,
     /** The rows of frames the draft already carries, so they read as staged. */
     taggedRowKeys,
-    /** Tags the frame beside the ones the draft carries; a tagged frame stays tagged. */
+    /**
+     * Tags the frame beside the ones the draft carries. A tagged frame stays, as
+     * a staged file or skill does; its chip takes it off.
+     */
     tag: (frame: CanvasFrame) => {
       if (appSessionId === null || watched === null || untagsFrames(pins, watched, [frame])) return;
       toggleFramePins(appSessionId, watched, [frame]);
