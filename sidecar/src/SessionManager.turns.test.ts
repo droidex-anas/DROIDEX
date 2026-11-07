@@ -260,6 +260,26 @@ test('a Task agent registers as running when Droid announces its session', async
   }
 });
 
+test('the title Droid names a chat with after its turn renames it without lifting it', async () => {
+  const h = createSessionManagerTestContext();
+  try {
+    const provider = await createSession(h);
+    const settled = latestSummary(h);
+    assert.ok(settled);
+
+    provider.emitNotification({
+      jsonrpc: '2.0',
+      method: 'droid.session_notification',
+      params: { notification: { type: 'session_title_updated', title: 'Fix the login redirect' } },
+    });
+
+    assert.equal(latestSummary(h)?.title, 'Fix the login redirect');
+    assert.equal(latestSummary(h)?.updatedAt, settled.updatedAt);
+  } finally {
+    await h.dispose();
+  }
+});
+
 test('design turns synchronize TodoWrite and unexpected AbortErrors fail the turn', async () => {
   const h = createSessionManagerTestContext();
   try {

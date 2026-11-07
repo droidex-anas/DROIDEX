@@ -1,4 +1,13 @@
-import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
+import {
+  lazy,
+  memo,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { Ellipsis, GitFork, Sketch, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
 import { formatRelativeTime } from '../lib/time';
@@ -11,6 +20,7 @@ import type { SessionSummary } from '../types/bridge';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
 import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
+import { TitleSweep } from './ui/TitleSweep';
 import { PrStateIcon } from './environment/GithubIcons';
 import { ModelIcon, type Provider } from './ModelIcon';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
@@ -67,6 +77,8 @@ export interface SessionRowProps {
   pr?: { kind: PrKind; checks?: PrChecksRollup | null };
   // A chat a design send created, which opens as a design.
   design: boolean;
+  // A fork still carrying its source's name: its place among that chat's forks.
+  forkNumber?: number;
   renaming: boolean;
   now: number;
   onSelect: (appSessionId: string) => void;
@@ -97,6 +109,7 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.pr?.kind === next.pr?.kind &&
     prev.pr?.checks === next.pr?.checks &&
     prev.design === next.design &&
+    prev.forkNumber === next.forkNumber &&
     prev.renaming === next.renaming &&
     prev.now === next.now &&
     prev.onSelect === next.onSelect &&
@@ -106,6 +119,14 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.onRenameCancel === next.onRenameCancel &&
     prev.onToggleSettled === next.onToggleSettled
   );
+}
+
+// How far a hovered title slides to show its end: none when it fits, or when
+// the user asked for less motion.
+function marqueeTravelPx(title: HTMLElement): number {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
+  const px = title.scrollWidth - title.clientWidth;
+  return px > 4 ? px : 0;
 }
 
 // `running` is derived by the parent so this row can skip unrelated store updates.
@@ -121,6 +142,7 @@ export const SessionRow = memo(function SessionRow({
   detail,
   pr,
   design,
+  forkNumber,
   renaming,
   now,
   onSelect,
@@ -134,6 +156,7 @@ export const SessionRow = memo(function SessionRow({
   // input's unmount does not commit (or commit twice). Reset on every focus.
   const renameHandled = useRef(false);
   const titleRef = useRef<HTMLSpanElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   const rowButtonRef = useRef<HTMLButtonElement>(null);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
   const wasRenaming = useRef(false);
@@ -174,24 +197,16 @@ export const SessionRow = memo(function SessionRow({
   }, [renaming]);
 
   // A title longer than the sidebar rests truncated ("name…"); hovering the
-  // row sweeps it left to reveal the full name, then slides back. The travel
-  // distance and duration are per-row CSS vars measured on hover (fonts and
-  // sidebar width can change between renders, so measure fresh every time).
+  // row sweeps it left to reveal the full name, then slides back. The overflow
+  // is measured on every hover, since fonts and sidebar width can change, and
+  // again when a new name arrives under the pointer.
   const handleMarqueeEnter = () => {
-    const el = titleRef.current;
-    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const px = el.scrollWidth - el.clientWidth;
-    if (px <= 4) return;
-    el.style.setProperty('--title-marquee-x', `${String(-px)}px`);
-    el.style.setProperty('--title-marquee-duration', `${String(Math.min(10, 2.5 + px / 50))}s`);
-    setMarqueePx(px);
+    if (titleRef.current) setMarqueePx(marqueeTravelPx(titleRef.current));
   };
-  const handleMarqueeLeave = () => {
-    setMarqueePx(0);
+  useLayoutEffect(() => {
     const el = titleRef.current;
-    el?.style.removeProperty('--title-marquee-x');
-    el?.style.removeProperty('--title-marquee-duration');
-  };
+    if (el && rowRef.current?.matches(':hover')) setMarqueePx(marqueeTravelPx(el));
+  }, [title]);
   const marquee = marqueePx > 0;
   // Scale the right-edge fade with the overflow so a barely-overflowing title
   // is not revealed entirely inside the faded zone.
@@ -283,35 +298,47 @@ export const SessionRow = memo(function SessionRow({
   };
 
   const titleLine = (
-    <span
-      className="block min-w-0 flex-1 overflow-hidden"
-      style={
-        marquee
-          ? // Fade the right edge so the sliding title never collides with
-            // the hover "..." button.
-            {
-              maskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
-              WebkitMaskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
-            }
-          : undefined
-      }
-    >
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
       <span
-        ref={titleRef}
-        className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
-          active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
-        } ${unread && !active ? 'font-semibold' : ''}`}
+        className="block min-w-0 overflow-hidden"
+        style={
+          marquee
+            ? // The travel is set here rather than on the title, which a new
+              // name remounts mid-hover. The right edge fades so the sliding
+              // title never collides with the hover "..." button.
+              ({
+                '--title-marquee-x': `${String(-marqueePx)}px`,
+                '--title-marquee-duration': `${String(Math.min(10, 2.5 + marqueePx / 50))}s`,
+                maskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
+                WebkitMaskImage: `linear-gradient(to right, black calc(100% - ${String(marqueeFade)}px), transparent)`,
+              } as CSSProperties)
+            : undefined
+        }
       >
-        {title}
+        {/* Follows the chat header's sweep a beat later. */}
+        <TitleSweep
+          ref={titleRef}
+          title={title}
+          delayMs={80}
+          className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
+            active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
+          } ${unread && !active ? 'font-semibold' : ''}`}
+        />
       </span>
+      {forkNumber !== undefined && (
+        <span className="shrink-0 text-caption tabular-nums text-muted">fork {forkNumber}</span>
+      )}
     </span>
   );
 
   return (
     <div
+      ref={rowRef}
       className="group relative"
       onMouseEnter={handleMarqueeEnter}
-      onMouseLeave={handleMarqueeLeave}
+      onMouseLeave={() => {
+        setMarqueePx(0);
+      }}
     >
       <button
         ref={rowButtonRef}

@@ -306,11 +306,13 @@ function hasSideEffects(sideEffects: NormalizedSideEffects): boolean {
     sideEffects.missionState ??
     sideEffects.missionChild ??
     sideEffects.childSession ??
-    sideEffects.harnessModelSwitch,
+    sideEffects.harnessModelSwitch ??
+    sideEffects.sessionTitle,
   );
 }
 
-// A model switch belongs to the chat itself, never to an agent working in it.
+// A model switch and a title belong to the chat itself, never to an agent
+// working in it.
 function normalizedSideEffects(
   normalized: NormalizedEvent,
   primaryScope: boolean,
@@ -331,5 +333,6 @@ function normalizedSideEffects(
     ...(normalized.harnessModelSwitch && primaryScope
       ? { harnessModelSwitch: normalized.harnessModelSwitch }
       : {}),
+    ...(normalized.sessionTitle && primaryScope ? { sessionTitle: normalized.sessionTitle } : {}),
   };
 }

@@ -23,6 +23,7 @@ import { compareSidebarSessions, matchesActivityFilter } from '../lib/sidebarAct
 import { SidebarWorkspaceList } from './SidebarWorkspaceList';
 import {
   chatDisplayTitle,
+  forkNumbers,
   isChatHidden,
   isChatPinned,
   isDesignChat,
@@ -265,6 +266,10 @@ export default function Sidebar({
     if (current.statusFor(m) === 'settled') current.reopen(m);
     else current.settle(m);
   }, []);
+  const forkNumberById = useMemo(
+    () => forkNumbers(state.sessions, chatMetadata),
+    [state.sessions, chatMetadata],
+  );
   const rowPr = (link: ChatPullRequest | undefined) =>
     link ? { kind: prKind(link), checks: link.checks ?? null } : undefined;
   const renderRow = (m: SessionSummary) => {
@@ -284,6 +289,7 @@ export default function Sidebar({
         // The PR view already names the PR in its group header.
         pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}
         design={isDesignChat(chatMetadata[m.appSessionId])}
+        forkNumber={forkNumberById.get(m.appSessionId)}
         attention={sessionAttention(
           m.appSessionId,
           state.pendingPermissions,

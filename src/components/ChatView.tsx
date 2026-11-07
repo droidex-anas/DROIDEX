@@ -2,6 +2,7 @@ import { useRef, useEffect, useMemo, useState, useCallback, Suspense, type React
 import { ChevronRight } from 'lucide-react';
 import { Square } from '@droidex/icons';
 import { Button } from './ui/Button';
+import { TitleSweep } from './ui/TitleSweep';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
 import {
@@ -195,9 +196,10 @@ interface ChatHeaderSub {
 
 function ChatTitleText({ title, live }: { title: string; live: boolean }) {
   return (
-    <span className={`truncate text-body-strong ${live ? 'shimmer-text' : 'text-primary'}`}>
-      {title}
-    </span>
+    <TitleSweep
+      title={title}
+      className={`block truncate text-body-strong ${live ? 'shimmer-text' : 'text-primary'}`}
+    />
   );
 }
 
@@ -913,6 +915,8 @@ export default function ChatView({
   } else if (activeSession && (!namedByTab || chatHeaderSub || boardCanvasId !== null)) {
     header = (
       <ChatHeader
+        // Keyed by chat, so switching chats swaps the title instead of sweeping it.
+        key={activeSession.appSessionId}
         title={
           // A thread's crumb names the chat that started it; a child session's
           // crumb walks back to this chat instead, so it keeps its own title.
