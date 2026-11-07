@@ -4,6 +4,7 @@
 // sends and clears them. Neither owns the other, so they live here, by chat.
 
 import { useSyncExternalStore } from 'react';
+import { toast } from '../../lib/toast';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
 import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
 
@@ -88,36 +89,48 @@ function isTagged(pins: readonly FramePin[], canvasId: string, frame: CanvasFram
   return pins.some((pin) => pin.canvasId === canvasId && pin.designId === frame.designId);
 }
 
-/** Every one of these frames is tagged already, so tagging them again untags them. */
-export function allTagged(
+/**
+ * Tagging these frames again untags them: every one is tagged already, or the
+ * prompt is full, so those that are not could never be added.
+ */
+export function untagsFrames(
   pins: readonly FramePin[],
   canvasId: string,
   frames: readonly CanvasFrame[],
 ): boolean {
-  return frames.length > 0 && frames.every((frame) => isTagged(pins, canvasId, frame));
+  const held = pins.filter((pin) => pin.canvasId === canvasId);
+  const tagged = frames.filter((frame) => isTagged(held, canvasId, frame));
+  return tagged.length > 0 && (tagged.length === frames.length || held.length >= MAX_PINNED);
 }
 
 /**
- * Tags these frames in the chat's next prompt, or untags them when every one is
- * tagged already. A request pins frames of one canvas, so a frame from another
- * starts over.
+ * Tags these frames in the chat's next prompt, as many as it has room for, or
+ * untags them by `untagsFrames`. A request pins frames of one canvas, so a frame
+ * from another starts over.
  */
 export function toggleFramePins(
   appSessionId: string,
   canvasId: string,
   frames: readonly CanvasFrame[],
 ): void {
-  const held = framePins(appSessionId).filter((pin) => pin.canvasId === canvasId);
-  const untagged = frames.filter((frame) => !isTagged(held, canvasId, frame));
-  if (untagged.length > 0) {
-    const added = untagged.map((frame) => pinOf(canvasId, frame));
-    publish(appSessionId, [...held, ...added].slice(0, MAX_PINNED));
-  } else if (frames.length > 0) {
+  const pins = framePins(appSessionId);
+  const held = pins.filter((pin) => pin.canvasId === canvasId);
+  if (untagsFrames(pins, canvasId, frames)) {
     publish(
       appSessionId,
       held.filter((pin) => !frames.some((frame) => frame.designId === pin.designId)),
     );
+    return;
   }
+  const untagged = frames.filter((frame) => !isTagged(held, canvasId, frame));
+  const added = untagged.slice(0, MAX_PINNED - held.length);
+  const left = untagged.length - added.length;
+  if (left > 0)
+    toast.error(
+      `A prompt carries at most ${String(MAX_PINNED)} frames, so ${String(left)} ${left === 1 ? 'wasn’t' : 'weren’t'} tagged.`,
+    );
+  if (added.length > 0)
+    publish(appSessionId, [...held, ...added.map((frame) => pinOf(canvasId, frame))]);
 }
 
 /** Takes these frames off the chat's next prompt, or all of them. */

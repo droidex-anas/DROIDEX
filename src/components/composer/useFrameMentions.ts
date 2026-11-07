@@ -4,7 +4,7 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { canvasClient } from '../../features/canvas/canvasClient';
-import { allTagged, toggleFramePins, useFramePins } from '../../features/canvas/framePins';
+import { toggleFramePins, untagsFrames, useFramePins } from '../../features/canvas/framePins';
 import type { CanvasFrame } from '../../features/canvas/protocol';
 import { frameRowKey } from './menuItems';
 
@@ -35,7 +35,7 @@ export function useFrameMentions(
     taggedRowKeys,
     /** Tags the frame beside the ones the draft carries; a tagged frame stays tagged. */
     tag: (frame: CanvasFrame) => {
-      if (appSessionId === null || watched === null || allTagged(pins, watched, [frame])) return;
+      if (appSessionId === null || watched === null || untagsFrames(pins, watched, [frame])) return;
       toggleFramePins(appSessionId, watched, [frame]);
     },
   };

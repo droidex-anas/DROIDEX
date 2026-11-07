@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
 import {
   canvasContextOf,
   framePins,
@@ -8,6 +9,7 @@ import {
   syncFramePins,
   toggleFramePins,
   unpinFrames,
+  untagsFrames,
 } from './framePins';
 import type { CanvasFrame } from './protocol';
 
@@ -60,6 +62,27 @@ test('a frame is tagged once, by the chat that tagged it, and a second press unt
     framePins('chat-a').map((pin) => pin.designId),
     ['d9'],
   );
+});
+
+test('a selection past what a prompt carries says so, and the next press untags it', () => {
+  let shown: ToastItem[] = [];
+  const stopWatching = subscribeToasts((toasts) => {
+    shown = toasts;
+  });
+  const frames = Array.from({ length: 40 }, (_, index) => frame(`d${String(index)}`, 'r1'));
+
+  toggleFramePins('chat-f', 'cv_1', frames);
+  assert.equal(framePins('chat-f').length, 32);
+  assert.deepEqual(
+    shown.map((item) => item.message),
+    ['A prompt carries at most 32 frames, so 8 weren’t tagged.'],
+  );
+  for (const item of shown) dismissToast(item.id);
+  stopWatching();
+
+  assert.equal(untagsFrames(framePins('chat-f'), 'cv_1', frames), true);
+  toggleFramePins('chat-f', 'cv_1', frames);
+  assert.equal(framePins('chat-f').length, 0);
 });
 
 test('a queued request keeps the revisions it was sent with when the pins move on', () => {
