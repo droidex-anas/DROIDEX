@@ -1,5 +1,6 @@
 import type { Provider } from '../../components/ModelIcon';
 import type {
+  DroidProfile,
   ModelInfo,
   ProviderKind,
   ProviderReadiness,
@@ -10,6 +11,12 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',
   claude: 'Claude Code',
   codex: 'Codex',
+};
+
+// Each Alt profile is signed in through its own wrapper command.
+export const DROID_PROFILE_LOGINS: Record<DroidProfile, { label: string; command: string }> = {
+  alt: { label: 'Alt', command: 'droid-alt' },
+  alt2: { label: 'Alt 2', command: 'droid-alt2' },
 };
 
 // Where each harness's account usage is managed: the page its own limit

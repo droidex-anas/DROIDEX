@@ -1,4 +1,4 @@
-import { PROVIDER_KINDS, PROVIDER_READINESS } from '../../types/bridge';
+import { DROID_PROFILES, PROVIDER_KINDS, PROVIDER_READINESS } from '../../types/bridge';
 
 // Wire validation for the provider surface, kept beside the feature the way
 // features/automations/wireValidation.ts is. Models live here too: a catalog is
@@ -7,6 +7,10 @@ import { PROVIDER_KINDS, PROVIDER_READINESS } from '../../types/bridge';
 
 export function isProviderKind(value: unknown): boolean {
   return isOneOf(PROVIDER_KINDS, value);
+}
+
+export function isDroidProfile(value: unknown): boolean {
+  return isOneOf(DROID_PROFILES, value);
 }
 
 export function isProviderStatus(value: unknown): boolean {

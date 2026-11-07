@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -83,3 +83,65 @@ test('a queued Alt thread persists its profile and nested threads inherit it', a
   const main = h.state.saved[0]?.threads.find((thread) => thread.title === 'Main task');
   assert.equal(main?.queuedSpawn?.input.droidProfile, undefined);
 });
+
+test('Alt 2 is offered only once signed in, and its threads keep it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'droidex-alt2-thread-'));
+  const [alt, alt2] = [join(root, 'alt'), join(root, 'alt2')];
+  for (const home of [alt, alt2]) {
+    await mkdir(join(home, '.factory'), { recursive: true });
+    await writeFile(join(home, '.factory', 'auth.v2.key'), 'test-login-marker');
+  }
+  process.env.DROIDEX_ALT_HOME = alt;
+  t.after(async () => {
+    delete process.env.DROIDEX_ALT_HOME;
+    delete process.env.DROIDEX_ALT2_HOME;
+    await rm(root, { recursive: true, force: true });
+  });
+  const h = await harness(t);
+  h.sessions.set('lead', summary('lead'));
+  registerProjectService(Promise.resolve(h.projects));
+  assert.deepEqual(await advertisedProfiles(t), ['main', 'alt']);
+  process.env.DROIDEX_ALT2_HOME = alt2;
+  assert.deepEqual(await advertisedProfiles(t), ['main', 'alt', 'alt2']);
+
+  h.state.capacity = 'busy';
+  const spawned = await h.projects.spawn('lead', {
+    title: 'Alt 2 task',
+    prompt: 'Read files',
+    profile: 'alt2',
+  });
+  assert.equal(h.projects.read('lead', spawned.appSessionId).droidProfile, 'alt2');
+  h.sessions.set(spawned.appSessionId, { ...summary(spawned.appSessionId), droidProfile: 'alt2' });
+  await h.projects.spawn(spawned.appSessionId, { title: 'Nested', prompt: 'Read files' });
+  await h.projects.spawn(spawned.appSessionId, {
+    title: 'Alt task',
+    prompt: 'Read files',
+    profile: 'alt',
+  });
+  const queued = (title: string) =>
+    h.state.saved[0]?.threads.find((thread) => thread.title === title)?.queuedSpawn?.input
+      .droidProfile;
+  assert.equal(queued('Nested'), 'alt2');
+  assert.equal(queued('Alt task'), 'alt');
+});
+
+async function advertisedProfiles(t: TestContext): Promise<unknown> {
+  const tool = threadTools(() => 'lead').find((entry) => entry.name === 'thread_spawn');
+  assert.ok(tool);
+  const server = createSdkMcpServer({ name: 'alt-test', version: '1', tools: [tool] });
+  const config = await server.start();
+  t.after(() => server.close());
+  assert.ok('url' in config);
+  const response = await fetch(config.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+  });
+  const body = await response.text();
+  const json =
+    body
+      .split('\n')
+      .find((line) => line.startsWith('data: '))
+      ?.slice(6) ?? body;
+  return JSON.parse(json).result.tools[0].inputSchema.properties.profile.enum;
+}

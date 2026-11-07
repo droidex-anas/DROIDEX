@@ -1,6 +1,6 @@
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import { altDroidHome } from '../droidProfiles.js';
+import { DROID_PROFILES, enabledDroidProfiles } from '../droidProfiles.js';
 import { autonomySchema, jsonResult, reasoningSchema, safeTool } from '../mcpToolUtils.js';
 import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import { requireProjectService } from './service.js';
@@ -25,12 +25,7 @@ const spawnInput = z.object({
       'true: reports to this chat. false: a sidebar chat with no reports. Threads must use true.',
     ),
   provider: z.enum(PROVIDER_KINDS).optional().describe("Harness. Omit for this chat's."),
-  profile: z
-    .enum(['main', 'alt'])
-    .optional()
-    .describe(
-      'Local Factory login for this Droid thread. Omit to inherit. Alt uses the isolated second subscription.',
-    ),
+  profile: z.enum(['main', ...DROID_PROFILES]).optional(),
   modelId: z
     .string()
     .min(1)
@@ -76,19 +71,24 @@ const spawnInput = z.object({
 });
 
 export function threadSpawnTool(appSessionId: () => string) {
-  const enabled = altDroidHome() !== undefined;
-  // A disabled Alt choice must be rejected, not discarded by MCP validation.
+  const profiles = enabledDroidProfiles();
+  // A disabled profile must be rejected, not discarded by MCP validation.
   return tool(
     'thread_spawn',
     'Create a separate chat for a decided task; include all task context in prompt. reportBack true creates a thread that reports here; false creates a sidebar chat read with session_read. Settings inherit unless specified. Threads queue at full capacity and return a position; held projects refuse. A matching title returns a reuse hint but still creates the thread.',
     {
       ...spawnInput.shape,
-      profile: enabled
-        ? spawnInput.shape.profile
+      profile: profiles.length
+        ? z
+            .enum(['main', ...profiles])
+            .optional()
+            .describe(
+              `Local Factory login for this Droid thread. Omit to inherit. ${profiles.join(', ')}: the user's isolated extra subscriptions, each with its own quota. Use the one the user names, or pick one to spread work across subscriptions.`,
+            )
         : z.literal('main').optional().describe('Droid login profile. Omit for the current login.'),
-      modelId: enabled
+      modelId: profiles.length
         ? spawnInput.shape.modelId.describe(
-            'Model id or display name for Main. Alt requires an exact model id available to its own Factory account; omit to inherit the owner model id.',
+            'Model id or display name for Main. An Alt profile requires an exact model id available to its own Factory account; omit to inherit the owner model id.',
           )
         : spawnInput.shape.modelId,
     },
@@ -108,15 +108,14 @@ export function threadSpawnTool(appSessionId: () => string) {
         });
       }
       const started = await projects.spawn(appSessionId(), input);
+      const { droidProfile } = projects.read(appSessionId(), started.appSessionId);
       return jsonResult({
         ok: true,
         reportBack: true,
         threadId: started.appSessionId,
         title: started.title,
         state: started.state,
-        ...(projects.read(appSessionId(), started.appSessionId).droidProfile
-          ? { droidProfile: 'alt' }
-          : {}),
+        ...(droidProfile ? { droidProfile } : {}),
         delivery: started.delivery,
         runtimeLoad: started.runtimeLoad,
         ...(started.position ? { position: started.position } : {}),
