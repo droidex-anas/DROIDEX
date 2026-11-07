@@ -120,7 +120,8 @@
 }
 
 /* The frame's tag in the chat: the selection tint while tagged, revealed by
-   hovering the frame while not. The inset gives the small glyph a 28px target. */
+   hovering the frame while not, and never clicked while hidden. The inset gives
+   the small glyph a 28px target. */
 .canvas-frame-tag {
   position: relative;
   display: flex;
@@ -133,6 +134,7 @@
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
+  pointer-events: none;
   transition:
     opacity var(--duration-quick) var(--ease-smooth-out),
     background var(--duration-quick) var(--ease-smooth-out),
@@ -148,6 +150,7 @@
 @media (hover: hover) {
   .canvas-frame:hover .canvas-frame-tag {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .canvas-frame-tag:hover {
@@ -159,6 +162,7 @@
 .canvas-frame-tag[data-tagged],
 .canvas-frame-tag[data-tagged]:hover {
   opacity: 1;
+  pointer-events: auto;
   background: color-mix(in srgb, var(--selection) 14%, transparent);
   color: var(--selection-label);
 }
