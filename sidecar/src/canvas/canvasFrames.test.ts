@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { canvasRoot } from '../testing/canvasStorageSupport.js';
 import { CanvasFiles } from './canvasFiles.js';
+import { emptyCanvasManifest } from './canvasManifest.js';
 import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
 import { placeFrames, stageFrames, stageRevision } from './canvasFrames.js';
 import type { CreateFramesInput, SourceFiles } from './protocol.js';
@@ -77,13 +78,30 @@ test('a variant is placed only while the frame it is a variant of is on the boar
   const staged = [
     { designId: 'dsg_copy', revisionId: null, frame: { ...frame, variantOf: revision.designId } },
   ];
-  assert.throws(() => placeFrames(staged, [], undefined), { code: 'not_found' });
+  const empty = emptyCanvasManifest('cv_01', 'Board', 1_767_225_600_000);
+  assert.throws(() => placeFrames(staged, empty, undefined), {
+    code: 'not_found',
+    message: /No frame on this board/,
+  });
+  const removal = {
+    undoId: 'undo_01',
+    removedAt: 1_767_225_600_000,
+    expectedLayoutSequence: 0,
+    occupants: [],
+    consumed: false,
+    designs: [source],
+  };
+  assert.throws(() => placeFrames(staged, { ...empty, tombstones: [removal] }, undefined), {
+    code: 'not_found',
+    message: /Undo it/,
+  });
 
-  const [placed] = placeFrames(staged, [source], undefined);
+  const [placed] = placeFrames(staged, { ...empty, designs: [source] }, undefined);
   assert.equal(placed?.variantOf, revision.designId);
   // Placed beside another frame, it would sit in a set it does not belong to.
   const other = { ...source, designId: 'dsg_other', rect: { ...source.rect, x: 800 } };
-  assert.throws(() => placeFrames(staged, [source, other], { designId: other.designId }), {
+  const board = { ...empty, designs: [source, other] };
+  assert.throws(() => placeFrames(staged, board, { designId: other.designId }), {
     code: 'invalid_input',
   });
 });
