@@ -31,6 +31,7 @@ const IMMEDIATE_EVENT_TYPES = new Set<ServerEvent['type']>([
   'mcp.authRequested',
   'mcp.error',
   'cli.install.done',
+  'harness.cli.install.done',
   'harness.cli.update.done',
   'automations.snapshot',
   'automations.result',
