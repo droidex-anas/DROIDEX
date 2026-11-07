@@ -1,17 +1,23 @@
 // A frame's name above its sheet, and the handle that drags it in either mode
 // (spec §4). It sits outside the Select overlay, so a drag is always available
-// even while the preview owns the pointer.
+// even while the preview owns the pointer. Its tag says when the frame is tagged
+// in the chat's next prompt, and tags it from the label.
 //
 // It is also the keyboard's way onto the board. The labels share one tab stop,
 // the frame focus last rested on, and the board moves focus between them with
 // the arrows, Home and End in reading order.
 
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type Ref } from 'react';
+import { MessageThread } from '@droidex/icons';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { toast } from '../../lib/toast';
+import { TAG_KEY_LABEL } from './boardKeys';
 import { canvasMessage } from './client';
 import type { CanvasFrame } from './protocol';
 import { splitVariantName } from './variantRequests';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
+
+const KEYS_HINT = 'Arrows move between frames; ⌥ and an arrow nudge it, ⇧ for ten';
 
 export function FrameLabel({
   ref,
@@ -20,11 +26,13 @@ export function FrameLabel({
   selected,
   interacted,
   held,
+  tagged,
   tabStop,
   onPress,
   onClick,
   onPick,
   onInteract,
+  onTagFrames,
   onEnter,
   onFocusLabel,
 }: {
@@ -35,6 +43,7 @@ export function FrameLabel({
   selected: boolean;
   interacted: boolean;
   held: boolean;
+  tagged: boolean;
   /** This label holds the frames' one tab stop. */
   tabStop: boolean;
   /** A press on the label, which picks or drags the frame. */
@@ -42,10 +51,13 @@ export function FrameLabel({
   onClick: (event: MouseEvent<HTMLElement>) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
+  /** Undefined where frames cannot be tagged; the label then shows no tag. */
+  onTagFrames: ((designIds: readonly string[]) => void) | undefined;
   onEnter: (frame: CanvasFrame) => void;
   onFocusLabel: (frame: CanvasFrame) => void;
 }) {
   const { base, suffix } = splitVariantName(frame.name);
+  const keysHint = onTagFrames ? `${KEYS_HINT}; ${TAG_KEY_LABEL} toggles its chat tag` : KEYS_HINT;
   return (
     <div
       ref={ref}
@@ -54,7 +66,7 @@ export function FrameLabel({
       tabIndex={tabStop ? 0 : -1}
       aria-pressed={selected}
       aria-keyshortcuts="ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
-      title={`${frame.name}\nArrows move between frames; ⌥ and an arrow nudge it, ⇧ for ten`}
+      title={`${frame.name}\n${keysHint}`}
       className="canvas-frame-label canvas-chrome"
       style={{ cursor: held ? 'grabbing' : 'grab', width: Math.max(0, width) }}
       onFocus={() => {
@@ -89,7 +101,54 @@ export function FrameLabel({
         <span className="canvas-frame-name">{frame.name}</span>
       )}
       {interacted && <span className="canvas-frame-note">Interacting</span>}
+      {onTagFrames && (
+        <FrameTag
+          tagged={tagged}
+          onTag={() => {
+            onTagFrames([frame.designId]);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Always on a tagged frame, so the board shows what the next prompt carries;
+ * on hover otherwise. The keyboard tags with the shortcut, so it is no tab stop.
+ */
+function FrameTag({ tagged, onTag }: { tagged: boolean; onTag: () => void }) {
+  return (
+    <>
+      <Tooltip
+        label={
+          tagged ? `Tagged in chat. Untag (${TAG_KEY_LABEL})` : `Tag in chat (${TAG_KEY_LABEL})`
+        }
+      >
+        <span
+          aria-hidden
+          data-tagged={tagged || undefined}
+          className="canvas-frame-tag"
+          // Neither picks nor drags the frame, and leaves focus where it was.
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            onTag();
+          }}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          <MessageThread className="size-icon-sm" aria-hidden />
+        </span>
+      </Tooltip>
+      {tagged && <span className="sr-only">, tagged in chat</span>}
+    </>
   );
 }
 

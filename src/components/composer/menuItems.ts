@@ -1,3 +1,4 @@
+import type { CanvasFrame } from '../../features/canvas/protocol';
 import { menuMatchRank, rankMenuCandidates } from '../../lib/composerMenuRanking';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import { catalogRowKey } from './composerCatalog';
@@ -32,11 +33,12 @@ export function composerTrigger(text: string, caret: number): ComposerTrigger | 
   };
 }
 
-/** A row the menu offers: an app command, a harness catalog entry, or a file. */
+/** A row the menu offers: an app command, a harness catalog entry, a file, or a canvas frame. */
 export type MenuItem =
   | { type: 'command'; command: SlashCommand }
   | { type: 'catalog'; item: SkillInfo }
-  | { type: 'file'; path: string };
+  | { type: 'file'; path: string }
+  | { type: 'frame'; frame: CanvasFrame };
 
 /**
  * What the open menu paints, in order. Section and group headings are text (a
@@ -61,7 +63,12 @@ export interface ComposerMenu {
 export function menuRowKey(item: MenuItem): string {
   if (item.type === 'command') return `command:${item.command.cmd}`;
   if (item.type === 'file') return `file:${item.path}`;
+  if (item.type === 'frame') return frameRowKey(item.frame.designId);
   return `catalog:${catalogRowKey(item.item)}`;
+}
+
+export function frameRowKey(designId: string): string {
+  return `frame:${designId}`;
 }
 
 const LOCATION_SCOPE = { project: 'repo', personal: 'user', builtin: 'system' } as const;
@@ -157,6 +164,7 @@ function bestRank(query: string, rows: MenuItem[]): number {
   const first = rows.at(0);
   if (!first) return Number.POSITIVE_INFINITY;
   if (first.type === 'file') return fileRank(query, first.path);
+  if (first.type === 'frame') return menuMatchRank(query, { name: first.frame.name });
   if (first.type === 'command') return menuMatchRank(query, { name: first.command.cmd.slice(1) });
   return menuMatchRank(query, { name: first.item.name, description: first.item.description });
 }
@@ -247,6 +255,8 @@ export interface ComposerMenuSources {
   /** The bound harness's catalog, as far as it has landed. */
   catalog: SkillInfo[];
   files: string[];
+  /** The frames of the chat's canvas, which `@` tags in the next prompt. */
+  frames: readonly CanvasFrame[];
 }
 
 /**
@@ -255,10 +265,10 @@ export interface ComposerMenuSources {
  */
 export function composerMenu(
   trigger: ComposerTrigger,
-  { commands, catalog, files }: ComposerMenuSources,
+  { commands, catalog, files, frames }: ComposerMenuSources,
 ): ComposerMenu {
   const { query } = trigger;
-  if (trigger.kind === 'file') return flatten(mentionSections(query, catalog, files));
+  if (trigger.kind === 'file') return flatten(mentionSections(query, catalog, files, frames));
   const named = exactlyNamed(query, commands, catalog);
   return flatten(slashSections(query, named.commands, named.catalog));
 }
@@ -318,14 +328,27 @@ function slashSections(query: string, commands: SlashCommand[], catalog: SkillIn
   ]);
 }
 
-function mentionSections(query: string, catalog: SkillInfo[], files: string[]): Section[] {
+// A chat on a canvas reads its frames first: there, `@` most often means one.
+function mentionSections(
+  query: string,
+  catalog: SkillInfo[],
+  files: string[],
+  frames: readonly CanvasFrame[],
+): Section[] {
   const byKind = (kind: SkillInfo['kind']) =>
     group(catalogRows(rankCatalog(query, offerable(catalog, kind))), query);
   return orderByRank(query, [
+    ...section('Frames', [group(frameRows(query, frames), query)], query),
     ...section('Files', [group(fileRows(query, files), query)], query),
     ...section('Apps', [byKind('app')], query),
     ...section('Plugins', [byKind('plugin')], query),
   ]);
+}
+
+function frameRows(query: string, frames: readonly CanvasFrame[]): MenuItem[] {
+  return rankMenuCandidates(query, frames, (frame) => ({ name: frame.name }))
+    .items.slice(0, CATALOG_LIMIT)
+    .map((frame) => ({ type: 'frame', frame }));
 }
 
 function fileRows(query: string, files: string[]): MenuItem[] {

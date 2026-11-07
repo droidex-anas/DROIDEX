@@ -14,6 +14,11 @@ import { NO_PRESENCE, type CanvasPresence } from '../../../src/features/canvas/c
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
+import {
+  syncFramePins,
+  toggleFramePins,
+  useFramePins,
+} from '../../../src/features/canvas/framePins';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import type { VariantChoice } from '../../../src/features/canvas/variantRequests';
@@ -406,10 +411,12 @@ function Harness() {
   const [interaction, setInteraction] = useState(SELECT_MODE);
   const [width, setWidth] = useState(1000);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
+  const tagged = useFramePins('chat_1');
   const board = useRef<CanvasBoardHandle>(null);
   const live = useRef(interaction);
   live.current = interaction;
   shown.current = snapshot;
+  useEffect(() => syncFramePins('chat_1', snapshot), [snapshot]);
   useEffect(() => {
     if (!params.has('navigator')) return undefined;
     return showBoard({
@@ -664,6 +671,11 @@ function Harness() {
           onHistory={(step) =>
             step === 'undo' ? history.undo(snapshot.canvasId) : history.redo(snapshot.canvasId)
           }
+          pinnedIds={new Set(tagged.map((pin) => pin.designId))}
+          onTagFrames={(designIds) => {
+            const frames = snapshot.frames.filter((frame) => designIds.includes(frame.designId));
+            toggleFramePins('chat_1', snapshot.canvasId, frames);
+          }}
           frameActions={frameActions}
         />
         {sourceOpen && (
