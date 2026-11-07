@@ -88,11 +88,12 @@ test('a queued Alt thread persists its profile and nested threads inherit it', a
 test('Alt 2 is offered only once signed in, and its threads keep it', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'droidex-alt2-thread-'));
   const [alt, alt2] = [join(root, 'alt'), join(root, 'alt2')];
-  for (const home of [alt, alt2]) {
-    await mkdir(join(home, '.factory'), { recursive: true });
-    await writeFile(join(home, '.factory', 'auth.v2.key'), 'test-login-marker');
-  }
+  for (const home of [alt, alt2]) await mkdir(join(home, '.factory'), { recursive: true });
+  const signIn = (home: string) =>
+    writeFile(join(home, '.factory', 'auth.v2.key'), 'test-login-marker');
+  await signIn(alt);
   process.env.DROIDEX_ALT_HOME = alt;
+  process.env.DROIDEX_ALT2_HOME = alt2;
   t.after(async () => {
     delete process.env.DROIDEX_ALT_HOME;
     delete process.env.DROIDEX_ALT2_HOME;
@@ -102,7 +103,7 @@ test('Alt 2 is offered only once signed in, and its threads keep it', async (t) 
   h.sessions.set('lead', summary('lead'));
   registerProjectService(Promise.resolve(h.projects));
   assert.deepEqual(await advertisedProfiles(t), ['main', 'alt']);
-  process.env.DROIDEX_ALT2_HOME = alt2;
+  await signIn(alt2);
   assert.deepEqual(await advertisedProfiles(t), ['main', 'alt', 'alt2']);
 
   h.state.capacity = 'busy';

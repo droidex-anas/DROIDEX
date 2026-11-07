@@ -44,8 +44,12 @@ function altDroidHome(profile: DroidProfile): string | undefined {
   return hasCliLogin(join(detected, '.factory')) ? detected : undefined;
 }
 
+/** The profiles a lead can start threads on: those whose home holds a login. */
 export function enabledDroidProfiles(): DroidProfile[] {
-  return DROID_PROFILES.filter((profile) => altDroidHome(profile) !== undefined);
+  return DROID_PROFILES.filter((profile) => {
+    const home = altDroidHome(profile);
+    return home !== undefined && hasCliLogin(join(home, '.factory'));
+  });
 }
 
 /** Each enabled Alt profile's Droid sessions directory, in profile order. */

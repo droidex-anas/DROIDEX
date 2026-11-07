@@ -26,7 +26,7 @@ const AFTER_STANDARD: Record<AfterStandard, string> = {
 };
 
 const STRATEGY =
-  "Every model spends an account's Standard usage first. Once Standard runs out, the account runs only Droid Core models (Factory's open-weight pool, such as GLM, Kimi, DeepSeek, MiniMax and Qwen), which spend its separate Droid Core limits. Give demanding work to accounts with Standard room, and routine work to accounts already on Droid Core. A thread stays on its account: to move work, spawn a thread on another profile and tell it what the first one did.";
+  "Droid Core models (Factory's open-weight pool, such as GLM, Kimi, DeepSeek, MiniMax and Qwen) spend an account's Droid Core limits; every other model spends its Standard usage. whenStandardRunsOut says what each account does once Standard is spent. Give demanding work to accounts with Standard room, and routine work to Droid Core models. A thread stays on its account: to move work, spawn a thread on another profile and tell it what the first one did.";
 
 type AccountProfile = 'main' | DroidProfile;
 
