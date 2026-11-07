@@ -221,6 +221,25 @@ test('a variant gives its design to its source in one step, then offers to remov
         expectedRevisionId: 'rev_w0',
       },
     ]);
+  await page.evaluate(() => window.boardHarness.answerSwitch(0));
+  // Taken back, the choice no longer offers to clear its set.
+  const toasts = () => page.evaluate(() => window.boardHarness.toasts());
+  await expect.poll(toasts).not.toContain('Design A now uses Design B');
+
+  // Redo uses it again, and offers again to remove the set.
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.switchCalls.slice(1)))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        revisionId: 'rev_w0',
+        expectedRevisionId: 'rev_01',
+      },
+    ]);
+  await page.evaluate(() => window.boardHarness.answerSwitch(1));
+  await expect.poll(toasts).toContain('Design A now uses Design B');
 });
 
 test('the toolbar steps aside while a drag holds the frame and offers only Done in Interact', async ({

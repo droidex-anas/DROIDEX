@@ -34,6 +34,7 @@ import type {
   WriteReceipt,
 } from '../../../src/features/canvas/protocol';
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
+import { subscribeToasts, type ToastItem } from '../../../src/lib/toast';
 import '../../../src/index.css';
 // The harness mounts the board without the pane that normally brings these in.
 import '../../../src/features/canvas/canvasAnimations.css';
@@ -85,6 +86,8 @@ interface BoardHarness {
   /** A manifest commit lands on the frame: a build's, or with `name`, a rename from elsewhere. */
   commitManifest: (designId: string, name?: string) => void;
   switchCalls: SwitchRevisionInput[];
+  /** Moves the frame's head to the revision one switch names, built, and answers. */
+  answerSwitch: (index: number) => void;
   /** Refuses one switch because the frame's head moved. */
   refuseSwitch: (index: number) => void;
   /** The toolbar's dialogs asked for, as `<kind>:<designId>`. */
@@ -95,6 +98,8 @@ interface BoardHarness {
   writeCalls: WriteFilesInput[];
   /** Writes one source the way the sidecar does, as revision `rev_w<index>`, and builds it. */
   answerWrite: (index: number) => void;
+  /** The messages of the toasts up now; one that ended is gone even while it fades. */
+  toasts: () => string[];
 }
 
 declare global {
@@ -294,7 +299,18 @@ const historyReplies: PromiseWithResolvers<RevisionSummary[]>[] = [];
 const renameCalls: RenameFrameInput[] = [];
 const renameReplies: PromiseWithResolvers<void>[] = [];
 const switchCalls: SwitchRevisionInput[] = [];
-const switchReplies: PromiseWithResolvers<void>[] = [];
+const switchReplies: PromiseWithResolvers<WriteReceipt>[] = [];
+let toasts: ToastItem[] = [];
+subscribeToasts((shown) => {
+  toasts = shown;
+});
+/** Every switch, from the toolbar's versions or the board's history, one reply per call. */
+function askSwitch(input: SwitchRevisionInput): Promise<WriteReceipt> {
+  switchCalls.push(input);
+  const reply = Promise.withResolvers<WriteReceipt>();
+  switchReplies.push(reply);
+  return reply.promise;
+}
 const dialogs: string[] = [];
 const variantCalls: BoardHarness['variantCalls'] = [];
 const variantReplies: PromiseWithResolvers<void>[] = [];
@@ -311,12 +327,7 @@ const variantSets = new VariantSets(
         return reply.promise;
       },
     },
-    revisions: {
-      switchTo: (_appSessionId, _canvasId, input) => {
-        switchCalls.push(input);
-        return Promise.withResolvers<WriteReceipt>().promise;
-      },
-    },
+    revisions: { switchTo: (_appSessionId, _canvasId, input) => askSwitch(input) },
     snapshotOf: () => shown.current,
   },
   history,
@@ -330,12 +341,7 @@ const frameActions: FrameActions = {
       historyReplies.push(reply);
       return reply.promise;
     },
-    switchRevision: (input) => {
-      switchCalls.push(input);
-      const reply = Promise.withResolvers<void>();
-      switchReplies.push(reply);
-      return reply.promise;
-    },
+    switchRevision: askSwitch,
   },
   canEdit: true,
   rename: (frame, name) => {
@@ -547,6 +553,17 @@ function Harness() {
       setSnapshot(applyCanvasChange(shown.current, change(committed, [])));
     },
     switchCalls,
+    answerSwitch: (index) => {
+      const { designId, revisionId } = switchCalls[index];
+      const switched = change(
+        shown.current.frames
+          .filter((frame) => frame.designId === designId)
+          .map((frame) => ({ ...frame, revisionId, build: built(revisionId) })),
+        [],
+      );
+      setSnapshot(applyCanvasChange(shown.current, switched));
+      switchReplies[index].resolve({ designId, revisionId, sequence: switched.sequence });
+    },
     refuseSwitch: (index) =>
       switchReplies[index].reject(new CanvasRequestError('revision_conflict', 'The head moved.')),
     dialogs,
@@ -564,6 +581,7 @@ function Harness() {
       setSnapshot(applyCanvasChange(shown.current, change(written, [])));
       writeReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
     },
+    toasts: () => toasts.map((shown) => shown.message),
   };
   return (
     <div style={{ padding: 24 }}>
