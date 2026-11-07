@@ -83,6 +83,15 @@ function isTagged(pins: readonly FramePin[], canvasId: string, frame: CanvasFram
   return pins.some((pin) => pin.canvasId === canvasId && pin.designId === frame.designId);
 }
 
+/** Every one of these frames is tagged already, so tagging them again untags them. */
+export function allTagged(
+  pins: readonly FramePin[],
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): boolean {
+  return frames.length > 0 && frames.every((frame) => isTagged(pins, canvasId, frame));
+}
+
 /**
  * Tags these frames in the chat's next prompt, or untags them when every one is
  * tagged already. A request pins frames of one canvas, so a frame from another
