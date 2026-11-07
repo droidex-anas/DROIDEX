@@ -14,6 +14,7 @@ const originalAltHome = process.env.DROIDEX_ALT_HOME;
 const originalUserDataDir = process.env.DROIDEX_USER_DATA_DIR;
 const home = mkdtempSync(join(tmpdir(), 'droid-history-alt-'));
 const altHome = join(home, 'alt');
+const alt2Home = join(home, 'alt2');
 process.env.HOME = home;
 delete process.env.DROIDEX_ALT_HOME;
 delete process.env.DROIDEX_USER_DATA_DIR;
@@ -280,4 +281,23 @@ test('Alt files never clear a cached chat, and search follows whether its file e
   assert.equal(cache.pathIndex().get('chat'), mainPath);
   assert.ok(isSearchable());
   assert.ok(isSearchable('alt-only'));
+});
+
+test('Alt 2 transcripts restore on their own profile and never replace an Alt chat', () => {
+  writeSession(altHome, 'shared-alt-transcript', 'Alt copy');
+  writeSession(alt2Home, 'shared-alt-transcript', 'Alt 2 copy');
+  writeSession(alt2Home, 'alt2-transcript', 'Alt 2 conversation');
+  process.env.DROIDEX_ALT_HOME = altHome;
+  process.env.DROIDEX_ALT2_HOME = alt2Home;
+  try {
+    const rows = reconciledHistorySessions();
+    const restored = (id: string) =>
+      rows.find(({ summary }) => summary.appSessionId === id)?.summary;
+    assert.equal(restored('alt2-transcript')?.droidProfile, 'alt2');
+    assert.equal(restored('shared-alt-transcript')?.title, 'Alt copy');
+    assert.equal(restored('shared-alt-transcript')?.droidProfile, 'alt');
+  } finally {
+    delete process.env.DROIDEX_ALT_HOME;
+    delete process.env.DROIDEX_ALT2_HOME;
+  }
 });

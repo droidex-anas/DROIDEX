@@ -1,17 +1,19 @@
-// Factory's account limits, read with the API key DROIDEX was given: the same
-// windows Droid's own /limits shows, for the standard pool and Droid Core. A
-// Droid session never reports them, and DROIDEX never reads the CLI's login.
+// Factory's account limits: the same windows Droid's own /limits shows, for
+// the standard pool and Droid Core. A Droid session never reports them. The
+// usage panel reads Main's with the API key DROIDEX was given; a project lead
+// with Alt profiles reads every account's, each with its own credential.
 import type { UsageLimit, UsageWindow } from '../../protocol.js';
 import { numberValue, objectValue } from '../../values.js';
 import { UsageReadError } from '../accountUsage.js';
 import { windowUsage } from '../usageLimit.js';
 import type { ReportedMeter, UsageReading } from '../session.js';
+import type { DroidLogin } from './droidLogin.js';
 
 const LIMITS_URL = 'https://api.factory.ai/api/billing/limits';
 const HOUR_MS = 60 * 60_000;
 const DEFAULT_RETRY_AFTER_MS = 5 * 60_000;
 // Factory's name for the pool every model outside Droid Core draws on.
-const STANDARD_POOL = 'Standard';
+export const STANDARD_POOL = 'Standard';
 
 // Droid's three rolling windows, by the names Factory gives them.
 const WINDOWS: [key: string, window: UsageWindow, durationMs: number][] = [
@@ -20,13 +22,41 @@ const WINDOWS: [key: string, window: UsageWindow, durationMs: number][] = [
   ['monthly', 'monthly', 30 * 24 * HOUR_MS],
 ];
 
+// The API key from Settings, or a Droid login's token for its organization.
+export type FactoryCredential = { apiKey: string } | DroidLogin;
+
+// Where Droid takes an account's work once its Standard usage runs out.
+export type AfterStandard = 'droid_core' | 'extra_usage' | 'refused';
+
 export async function readFactoryUsage(
   apiKey: string | undefined,
   signal: AbortSignal,
 ): Promise<UsageReading> {
   if (!apiKey) return { meters: [], unavailable: 'no_api_key' };
+  return factoryReading(await readLimits({ apiKey }, signal));
+}
+
+export async function readFactoryAccount(
+  credential: FactoryCredential,
+  signal: AbortSignal,
+): Promise<UsageReading & { afterStandard: AfterStandard }> {
+  const body = await readLimits(credential, signal);
+  return { ...factoryReading(body), afterStandard: afterStandard(body) };
+}
+
+async function readLimits(
+  credential: FactoryCredential,
+  signal: AbortSignal,
+): Promise<Record<string, unknown> | undefined> {
+  const authorization: Record<string, string> =
+    'apiKey' in credential
+      ? { Authorization: `Bearer ${credential.apiKey}` }
+      : {
+          Authorization: `Bearer ${credential.accessToken}`,
+          'X-Factory-Org-Id': credential.organizationId,
+        };
   const response = await fetch(LIMITS_URL, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+    headers: { ...authorization, Accept: 'application/json' },
     signal,
   });
   if (response.status === 429 || response.status === 503)
@@ -35,7 +65,7 @@ export async function readFactoryUsage(
       retryAfterMs(response.headers.get('retry-after')),
     );
   if (!response.ok) throw new Error(`Factory answered HTTP ${String(response.status)}.`);
-  return factoryReading(await response.json());
+  return objectValue(await response.json());
 }
 
 // What Factory's windows say about a refused Droid turn. A pool runs again once
@@ -72,8 +102,7 @@ export function factoryRefusalLimit(meters: readonly ReportedMeter[], now: numbe
 
 // An account on Factory's older billing has no windows to report; any other
 // answer without them is not one this build can read.
-function factoryReading(value: unknown): UsageReading {
-  const body = objectValue(value);
+function factoryReading(body: Record<string, unknown> | undefined): UsageReading {
   if (body?.usesTokenRateLimitsBilling === false)
     return { meters: [], unavailable: 'no_plan_limits' };
   const limits = objectValue(body?.limits);
@@ -84,6 +113,16 @@ function factoryReading(value: unknown): UsageReading {
   if (meters.length === 0) throw new Error('Factory answered without any usage window.');
   const cents = Math.round(numberValue(body?.extraUsageBalanceCents) ?? 0);
   return { meters, ...(cents > 0 ? { extra: { kind: 'extra_balance', cents } } : {}) };
+}
+
+// Droid's own rule once Standard is spent: Droid Core when the account prefers
+// it, extra usage while an allowed balance lasts, and otherwise a refusal.
+function afterStandard(body: Record<string, unknown> | undefined): AfterStandard {
+  if (body?.overagePreference === 'droidCore') return 'droid_core';
+  const cents = numberValue(body?.extraUsageBalanceCents) ?? 0;
+  if (body?.overagePreference === 'extraUsage' && body.extraUsageAllowed === true && cents > 0)
+    return 'extra_usage';
+  return 'refused';
 }
 
 function poolMeters(pool: string, value: unknown, model: string | undefined): ReportedMeter[] {

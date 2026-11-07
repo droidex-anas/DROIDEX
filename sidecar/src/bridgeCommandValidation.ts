@@ -1,3 +1,4 @@
+import { DROID_PROFILES } from './droidProfiles.js';
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';
@@ -43,7 +44,12 @@ function assertValidChatPreferences(command: object): void {
     'type' in command &&
     (command.type === 'session.create' || command.type === 'session.updateSettings');
   if ('droidProfile' in command) {
-    if (!('type' in command) || command.type !== 'session.create' || command.droidProfile !== 'alt')
+    const profile = command.droidProfile;
+    if (
+      !('type' in command) ||
+      command.type !== 'session.create' ||
+      !DROID_PROFILES.some((known) => known === profile)
+    )
       throw new Error('A Droid profile can only be selected when creating a session.');
   }
   if ('fastMode' in command) {

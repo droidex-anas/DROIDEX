@@ -1,3 +1,4 @@
+import type { DroidProfile } from '../droidProfiles.js';
 import { hasUndeliveredReport } from './projectInbox.js';
 import type { ProjectPort } from './sessions.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
@@ -21,7 +22,7 @@ import { LEDGER_LIMITS } from './store.js';
 
 /** What a chat reads back about a thread it owns. */
 export interface ThreadReadout {
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   threadId: string;
   title: string;
   state: ThreadState;

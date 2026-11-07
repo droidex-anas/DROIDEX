@@ -17,6 +17,7 @@ const scratchHome = mkdtempSync(join(tmpdir(), 'droidex-sidecar-test-'));
 delete process.env.DROIDEX_USER_DATA_DIR;
 delete process.env.DROIDEX_HISTORY_DIR;
 delete process.env.DROIDEX_ALT_HOME;
+delete process.env.DROIDEX_ALT2_HOME;
 process.env.HOME = scratchHome;
 
 process.on('exit', () => {

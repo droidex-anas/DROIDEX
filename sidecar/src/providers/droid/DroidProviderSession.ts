@@ -22,6 +22,7 @@ import { UsageLimitError } from '../usageLimit.js';
 import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
 import { factoryRefusalLimit, readFactoryUsage } from './factoryUsage.js';
 import { requireAltDroidModel } from './droidModels.js';
+import type { DroidProfile } from '../../droidProfiles.js';
 
 type DroidProcessRuntime = Pick<
   FactoryRuntime,
@@ -72,7 +73,7 @@ export class DroidProviderSession implements ProviderSession {
     readonly droid: FactorySession,
     private readonly runtime: DroidProcessRuntime,
     autonomy: Autonomy = 'off',
-    private readonly droidProfile?: 'alt',
+    private readonly droidProfile?: DroidProfile,
   ) {
     this.nativeAutonomy = droid.initResult.settings.autonomyLevel;
     this.permissions = new SessionAutonomy(autonomy, {
@@ -233,7 +234,7 @@ export class DroidProviderSession implements ProviderSession {
   }
 
   async setModel({ modelId, reasoningEffort }: ProviderModelSettings): Promise<void> {
-    if (this.droidProfile === 'alt' && modelId) requireAltDroidModel(this.droid, modelId);
+    if (this.droidProfile && modelId) requireAltDroidModel(this.droid, modelId, this.droidProfile);
     // Spec-mode turns run on specModeModelId, so it stays in lockstep with the
     // chat's single visible model.
     // Every Droid model publishes its levels, so a cleared effort never

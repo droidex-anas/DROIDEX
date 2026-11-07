@@ -8,6 +8,7 @@ import type { AutomationBridgeCommand, AutomationBridgeEvent } from './automatio
 import type { McpClientCommand, McpServerEvent } from './mcpProtocol.js';
 import type { ProviderMention, SkillInfo } from './providers/catalog.js';
 import type { ProviderKind } from './providers/providerKind.js';
+import type { DroidProfile } from './droidProfiles.js';
 import type { SidebarRequest, SidebarResult } from './sidebar/protocol.js';
 export type { ProviderMention, SkillInfo } from './providers/catalog.js';
 export type {
@@ -189,7 +190,7 @@ export interface ModelSwitch {
 }
 
 export interface SessionSummary {
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   appSessionId: string;
   providerSessionId?: string;
   compactedFromProviderSessionIds?: string[];
@@ -882,7 +883,7 @@ export type ClientCommand =
   | { type: 'settings.defaults' }
   | {
       type: 'session.create';
-      droidProfile?: 'alt';
+      droidProfile?: DroidProfile;
       clientRef: string;
       // Establishes Design purpose; commit attachment before publication and the first turn.
       canvas?: { canvasId: string | null; name?: string; mutationId: string };

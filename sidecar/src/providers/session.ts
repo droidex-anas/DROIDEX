@@ -18,11 +18,12 @@ import type {
 import type { ProviderMention, SkillInfo } from './catalog.js';
 import type { DroidLaunchSettings } from './droid/droidLaunch.js';
 import type { ProviderInteractions } from './interactions.js';
+import type { DroidProfile } from '../droidProfiles.js';
 import type { ProviderKind } from './providerKind.js';
 import type { ProviderProbe } from './providerProbes.js';
 
 export interface ProviderOpenInput {
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   // A queued thread already owns its application identity before the provider opens.
   appSessionId?: string;
   cwd: string;
@@ -43,7 +44,7 @@ export interface ProviderOpenInput {
 }
 
 export interface ProviderResumeInput {
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   // DROIDEX's own identity for the session, which a resumed provider session
   // does not carry and which stamps everything the session streams.
   appSessionId: string;
@@ -67,7 +68,7 @@ export interface ProviderResumeInput {
 }
 
 export interface ProviderForkSource {
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   providerSessionId: string;
   resumeId?: string;
   // The provider sessions the conversation compacted from, oldest first.
