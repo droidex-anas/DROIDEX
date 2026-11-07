@@ -1,4 +1,8 @@
-import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
+import {
+  PROVIDER_LABELS,
+  PROVIDER_MARKS,
+  PROVIDER_SIGN_IN_COMMANDS,
+} from '../features/providers/providerIdentity';
 import { useHarnessClis } from '../hooks/useHarnessClis';
 import { useStoreSelector } from '../hooks/useStore';
 import { updateHarnessCli } from '../lib/commands';
@@ -114,11 +118,6 @@ function HarnessCliRow({ cli, status }: { cli: HarnessCliState; status?: Provide
   );
 }
 
-const SIGN_IN_COMMANDS: Record<HarnessCliProvider, string> = {
-  claude: 'claude',
-  codex: 'codex login',
-};
-
 // Sign-in is informational: a CLI without one can still run through a gateway
 // or key its own config names, so chats on it stay available either way.
 function SignInBadge({
@@ -136,7 +135,7 @@ function SignInBadge({
     );
   }
   return (
-    <Badge title={`Run \`${SIGN_IN_COMMANDS[provider]}\` in a terminal to sign in.`}>
+    <Badge title={`Run \`${PROVIDER_SIGN_IN_COMMANDS[provider]}\` in a terminal to sign in.`}>
       Not signed in
     </Badge>
   );
