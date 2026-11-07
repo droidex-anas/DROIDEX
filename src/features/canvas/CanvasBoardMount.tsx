@@ -25,6 +25,7 @@ import type {
   CanvasSnapshot,
   SwitchRevisionInput,
 } from './protocol';
+import { useCanvasPresence } from './useCanvasPresence';
 import { useFrameActions } from './useFrameActions';
 
 const LazyDesignSystemDocument = lazy(async () => ({
@@ -131,6 +132,7 @@ export function CanvasBoardMount({
     [appSessionId, pinnable, snapshot],
   );
   useCoverCapture(canvasId, frames);
+  const presence = useCanvasPresence(appSessionId, frames);
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
   useEffect(() => {
@@ -188,7 +190,7 @@ export function CanvasBoardMount({
           onHistory={stepHistory}
           interaction={interaction}
           onInteractionChange={onInteractionChange}
-          agentWorking={agentWorking}
+          presence={presence}
           pinnedIds={pinnedIds}
           frameActions={frameActions.actions}
           onToggleChat={

@@ -99,8 +99,9 @@ export type SheetState =
 
 /**
  * `shown` is the revision the frame shows (see `shownRevisions`).
- * `agentWorking` is whether this chat's agent has a turn running. A frame with
- * no source is being written only while it does; otherwise it is empty.
+ * `agentWorking` is whether an agent is at work on the frame (see
+ * `canvasPresence`). A frame with no source is being written only while one
+ * is; otherwise it is empty.
  * `released` means the frame held a live slot and lost it, so returning to it
  * restarts the design from its own beginning. A failed frame says so even when
  * an older revision works: that design shows only in a live slot, under the

@@ -16,6 +16,8 @@ import {
   type ThemePreset,
 } from './theme';
 import {
+  PRESENCE_COLORS,
+  PRESENCE_TEXT,
   SELECTION_COLORS,
   SKILL_COLORS,
   ULTRA_COLORS,
@@ -329,6 +331,22 @@ describe('fixed label colors', () => {
         // An outline is not text: WCAG asks 3:1 of it against the board.
         assert.ok(contrastRatio(line, board) >= 3, `${preset.id} ${scheme} selection outline`);
         assert.ok(contrastRatio(text, line) >= 4.5, `${scheme} size badge text`);
+      }
+    }
+  });
+
+  it('keeps every presence colour under its name pill and visible on every built-in board', () => {
+    for (const preset of BUILT_IN_THEMES) {
+      for (const scheme of ['light', 'dark'] as const) {
+        const variant = preset[scheme];
+        for (const [name, color] of Object.entries(PRESENCE_COLORS[scheme])) {
+          const label = `${preset.id} ${scheme} ${name}`;
+          assert.ok(contrastRatio(PRESENCE_TEXT[scheme], color) >= 4.5, `${label} pill text`);
+          // The edge, halftone and cursor are not text: 3:1 against the board
+          // and the raised sheet of a frame being written.
+          for (const ground of [variant.bg, raisedSurfaceColor(variant)])
+            assert.ok(contrastRatio(color, ground) >= 3, `${label} on ${ground}`);
+        }
       }
     }
   });

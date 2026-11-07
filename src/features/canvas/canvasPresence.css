@@ -1,0 +1,102 @@
+/* A frame an agent is at work on (FrameWorkingState). Chrome-sized like the
+   board's own: lengths divide by --board-scale so the edge and the lattice keep
+   their screen size at any zoom. Only opacity moves. */
+
+.canvas-working {
+  position: absolute;
+  inset: 0;
+  /* Above the sheet's own message, which it stands in for while the sheet is
+     blank; the Select overlay below still takes every press. */
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.canvas-working-sheet {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: var(--raised);
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--text) 13%, transparent) calc(0.6px / var(--board-scale)),
+    transparent calc(1px / var(--board-scale))
+  );
+  background-size: calc(8px / var(--board-scale)) calc(8px / var(--board-scale));
+}
+
+/* The agent's edge, inside the sheet's clip and over what the agent draws. */
+.canvas-working::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 calc(2px / var(--board-scale)) var(--worker);
+}
+
+/* Selection's edge is the one that answers the user. */
+.canvas-frame[data-selected] .canvas-working::after {
+  content: none;
+}
+
+@keyframes canvas-working-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes canvas-working-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* The agents at work (CanvasPresenceLayer), each over a frame it works on:
+   above the sheets and everything they show, under the toolbar, size badge and
+   corners, which stand higher. Each agent's box is its frame's; its tracks
+   move by shares of that box, so the motion needs no measuring. */
+.canvas-presence {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.canvas-presence-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: calc(4px / var(--board-scale));
+}
+
+.canvas-presence-track {
+  position: absolute;
+  inset: 0;
+}
+
+/* A soft, tilted ellipse around the cursor that shows the lattice it holds. */
+.canvas-presence-cloud {
+  position: absolute;
+  overflow: hidden;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100' preserveAspectRatio='none'%3E%3CradialGradient id='g'%3E%3Cstop offset='0' stop-opacity='0.9'/%3E%3Cstop offset='0.45' stop-opacity='0.55'/%3E%3Cstop offset='1' stop-opacity='0'/%3E%3C/radialGradient%3E%3Cellipse cx='100' cy='50' rx='96' ry='36' transform='rotate(-14 100 50)' fill='url(%23g)'/%3E%3C/svg%3E")
+    0 0 / 100% 100% no-repeat;
+}
+
+/* The frame's dot lattice (.canvas-working-sheet) in the agent's colour, a
+   little heavier so each dot covers the grey one under it. */
+.canvas-presence-lattice {
+  position: absolute;
+  background-image: radial-gradient(
+    circle,
+    var(--worker) calc(0.9px / var(--board-scale)),
+    transparent calc(1.4px / var(--board-scale))
+  );
+  background-size: calc(8px / var(--board-scale)) calc(8px / var(--board-scale));
+}
+
+.canvas-presence-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: scale(calc(1 / var(--board-scale)));
+  transform-origin: 0 0;
+}

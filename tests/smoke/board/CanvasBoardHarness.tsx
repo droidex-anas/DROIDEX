@@ -10,6 +10,7 @@ import { BoardHistory, recordPlacements } from '../../../src/features/canvas/boa
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
 import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
+import { NO_PRESENCE, type CanvasPresence } from '../../../src/features/canvas/canvasPresence';
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
@@ -41,6 +42,7 @@ import '../../../src/features/canvas/canvasAnimations.css';
 import '../../../src/features/canvas/canvasBoard.css';
 import '../../../src/features/canvas/canvasBoardSelection.css';
 import '../../../src/features/canvas/canvasBoardTools.css';
+import '../../../src/features/canvas/canvasPresence.css';
 
 interface BoardHarness {
   calls: ArrangeFramesInput[];
@@ -58,6 +60,8 @@ interface BoardHarness {
   interaction: () => BoardInteraction;
   previewClicks: string[];
   buildReady: () => void;
+  /** The agents at work finish: their frames' designs land and they leave. */
+  finishWork: () => void;
   /** A frame joins the open board, the way an agent's create lands. */
   arrive: (designId?: string, rect?: FrameRect) => void;
   /** The pane narrows or widens around the board. */
@@ -230,6 +234,16 @@ function built(revisionId: string): CanvasFrame['build'] {
   };
 }
 
+// `?presence=1` opens with two agents at work: Kairo on Design A, which has no
+// design yet, and Lyra rewriting Design B.
+const working = params.has('presence');
+const PRESENCE: CanvasPresence = working
+  ? new Map([
+      ['a', { agent: { key: 'chat_1', name: 'Kairo', color: 'crimson' }, named: false }],
+      ['b', { agent: { key: 'chat_1/worker_1', name: 'Lyra', color: 'green' }, named: true }],
+    ])
+  : NO_PRESENCE;
+
 const initial: CanvasSnapshot = {
   canvasId: 'cv_board',
   sequence: 1,
@@ -238,7 +252,7 @@ const initial: CanvasSnapshot = {
   frames: PLACED.map((frame): CanvasFrame => {
     // `?variants=1` makes Design B a variant of Design A that its agent has since changed.
     const isVariant = params.has('variants') && frame.designId === 'b';
-    return {
+    const placed: CanvasFrame = {
       ...frame,
       layoutVersion: 3,
       manifestVersion: 1,
@@ -248,6 +262,8 @@ const initial: CanvasSnapshot = {
       seededRevisionId: isVariant ? 'rev_00' : null,
       build: params.has('building') ? { status: 'building', generation: 1 } : built('rev_01'),
     };
+    if (!working || frame.designId !== 'a') return placed;
+    return { ...placed, revisionId: null, build: { status: 'pending', generation: 0 } };
   }),
 };
 const replies: { resolve: () => void; reject: (error: Error) => void }[] = [];
@@ -386,6 +402,7 @@ const readArtifact = () => Promise.resolve({ artifactId: 'a'.repeat(64), html: '
 
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
+  const [presence, setPresence] = useState(PRESENCE);
   const [interaction, setInteraction] = useState(SELECT_MODE);
   const [width, setWidth] = useState(1000);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
@@ -489,6 +506,18 @@ function Harness() {
         ...current,
         frames: current.frames.map((frame) => ({ ...frame, build: built('rev_01') })),
       })),
+    finishWork: () => {
+      setSnapshot((current) => ({
+        ...current,
+        sequence: current.sequence + 1,
+        frames: current.frames.map((frame) => ({
+          ...frame,
+          revisionId: 'rev_01',
+          build: built('rev_01'),
+        })),
+      }));
+      setPresence(NO_PRESENCE);
+    },
     editCalls,
     answerEdit: (index) => {
       const { designId } = editCalls[index].edit.element;
@@ -594,7 +623,7 @@ function Harness() {
           rightInset={RIGHT_INSET}
           snapshot={snapshot}
           interaction={interaction}
-          agentWorking={false}
+          presence={presence}
           onInteractionChange={setInteraction}
           renderPreview={(frame, revisionId, selections) =>
             params.get('preview') === 'guest' ? (
