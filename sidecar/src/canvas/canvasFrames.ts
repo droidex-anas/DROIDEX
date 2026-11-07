@@ -123,6 +123,8 @@ export function placeFrames(
   }
   const designs: PersistedDesign[] = [];
   for (const { designId, revisionId, frame } of staged) {
+    if (frame.variantOf && placeBeside && frame.variantOf !== placeBeside.designId)
+      throw canvasError('invalid_input', 'Place a variant beside the frame it is a variant of.');
     if (frame.variantOf && !placed.some((design) => design.designId === frame.variantOf))
       throw canvasError('not_found', SOURCE_REMOVED);
     const position = positions ? positions[designs.length] : { x, y };

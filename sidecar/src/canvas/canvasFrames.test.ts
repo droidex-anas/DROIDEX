@@ -81,4 +81,9 @@ test('a variant is placed only while the frame it is a variant of is on the boar
   };
   const [placed] = placeFrames(staged, [source], undefined);
   assert.equal(placed?.variantOf, revision.designId);
+  // Placed beside another frame, it would sit in a set it does not belong to.
+  const other = { ...source, designId: 'dsg_other', rect: { ...source.rect, x: 800 } };
+  assert.throws(() => placeFrames(staged, [source, other], { designId: other.designId }), {
+    code: 'invalid_input',
+  });
 });
