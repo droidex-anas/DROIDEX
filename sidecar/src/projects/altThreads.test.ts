@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSdkMcpServer } from '@factory/droid-sdk';
-import { harness, summary } from '../testing/projectServiceHarness.js';
+import type { ModelSwitch } from '../protocol.js';
+import { drain, harness, projectWithThread, summary } from '../testing/projectServiceHarness.js';
 import { registerProjectService } from './service.js';
 import { threadTools } from './threadMcpTools.js';
 
@@ -123,6 +124,40 @@ test('Alt 2 is offered only once signed in, and its threads keep it', async (t) 
       .droidProfile;
   assert.equal(queued('Nested'), 'alt2');
   assert.equal(queued('Alt task'), 'alt');
+});
+
+test("a report leads with a model the thread's harness moved it to, not one its owner chose", async (t) => {
+  const { h, main, child } = await projectWithThread(t);
+  const id = child.appSessionId;
+  const switched = (modelSwitch: ModelSwitch) =>
+    h.projects.observe({
+      type: 'event.appended',
+      event: {
+        id: `switch-${modelSwitch.to}`,
+        appSessionId: id,
+        sourceSessionId: id,
+        role: 'primary',
+        ts: 1,
+        kind: 'status',
+        text: `Model switched: ${modelSwitch.from} → ${modelSwitch.to}`,
+        modelSwitch,
+      },
+    });
+  await switched({ from: 'claude-opus-4-7', to: 'glm-5.3-flash', cause: 'usage_limit' });
+  await h.finish(id, 'Implemented the parser.');
+  await drain();
+  assert.match(
+    h.sent.at(-1)?.prompt ?? '',
+    /usage ran out on claude-opus-4-7, so its harness moved it to glm-5\.3-flash\.\n.*Implemented the parser/s,
+  );
+
+  await h.finish(main);
+  await h.streaming(id, true);
+  await switched({ from: 'glm-5.3-flash', to: 'claude-opus-4-7' });
+  await h.finish(id, 'Reviewed the parser.');
+  await drain();
+  assert.match(h.sent.at(-1)?.prompt ?? '', /Reviewed the parser/);
+  assert.doesNotMatch(h.sent.at(-1)?.prompt ?? '', /moved it/);
 });
 
 async function advertisedProfiles(t: TestContext): Promise<unknown> {

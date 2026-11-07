@@ -24,6 +24,7 @@ const FREE = [
   'thread_stop',
   'plan_set',
   'project_done',
+  'factory_usage',
   'session_list',
   'session_read',
 ];

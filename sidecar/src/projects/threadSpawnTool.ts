@@ -83,7 +83,7 @@ export function threadSpawnTool(appSessionId: () => string) {
             .enum(['main', ...profiles])
             .optional()
             .describe(
-              `Local Factory login for this Droid thread. Omit to inherit. ${profiles.join(', ')}: the user's isolated extra subscriptions, each with its own quota. Use the one the user names, or pick one to spread work across subscriptions.`,
+              `Local Factory login for this Droid thread. Omit to inherit. ${profiles.join(', ')}: the user's isolated extra subscriptions, each with its own quota. Use the one the user names, or check factory_usage and pick one with room to spread work across subscriptions.`,
             )
         : z.literal('main').optional().describe('Droid login profile. Omit for the current login.'),
       modelId: profiles.length

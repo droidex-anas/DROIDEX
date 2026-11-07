@@ -116,3 +116,23 @@ execution is disabled. Saved Alt bindings remain in canonical history; reopening
 one fails with local activation instructions rather than opening it under Main.
 There is no quota rotation, cross-account provider-session migration or silent
 Main fallback.
+
+## Usage across accounts
+
+While an Alt profile is signed in, the lead also gets a `factory_usage` tool. It
+lists Main and each signed-in Alt profile with its Standard and Droid Core
+windows (percent used and reset time), and what Droid does once that account's
+Standard usage runs out: move its threads to a Droid Core model, spend its extra
+usage balance, or refuse them until Standard resets. Every model spends Standard
+first, so an account's Droid Core limits only come into play after that.
+
+Each account is read with the credential its threads run on: Main with the
+Factory API key from Settings when one is set, otherwise Main's Droid login, and
+each Alt profile with its own login. DROIDEX decrypts a login the way Droid does,
+with the key file beside it or the macOS Keychain entry Droid reads through
+`security`, and never refreshes or writes it. An expired token is reported as
+such until Droid next runs on that account.
+
+When a harness moves a thread to another model by itself, such as Droid moving
+it to Droid Core after Standard runs out, or back once Standard resets, the
+report of that turn to the thread's owner starts with the switch.
