@@ -3,6 +3,7 @@ import { Spinner } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { ModelIcon } from '../../components/ModelIcon';
 import { Button } from '../../components/ui/Button';
+import { AccountMark } from '../providers/AccountMark';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../providers/providerIdentity';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
 import { formatRelativeTime } from '../../lib/time';
@@ -156,11 +157,7 @@ function ThreadIdentity({ row }: { row: ThreadRowModel }) {
   const harness = row.provider && row.provider !== 'droid' ? row.provider : undefined;
   return (
     <>
-      {row.droidProfile === 'alt' && (
-        <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
-          <span className="sr-only">Factory account: </span>Alt
-        </span>
-      )}
+      <AccountMark profile={row.droidProfile} />
       <span className="flex w-4 shrink-0 justify-center">
         {harness && (
           <span role="img" aria-label={`${PROVIDER_LABELS[harness]} thread`}>

@@ -6,7 +6,7 @@ import {
   sessionActivityStatus,
   type SessionActivityStatus,
 } from '../../lib/sidebarActivity';
-import type { ProviderKind, SessionSummary } from '../../types/bridge';
+import type { DroidProfile, ProviderKind, SessionSummary } from '../../types/bridge';
 import type { ProjectStep, ProjectThread, ProjectView } from './types';
 
 /* What the Threads surfaces show. A thread is an ordinary DROIDEX conversation,
@@ -25,7 +25,7 @@ export interface ThreadRow {
   /** 0 for a thread of the main chat, 1 for a thread that thread started. */
   depth: number;
   provider?: ProviderKind;
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   modelId?: string;
 }
 
@@ -150,6 +150,7 @@ function threadRow(
   else if (thread.state === 'waiting' && status !== 'approval' && status !== 'input')
     status = 'waiting';
   const live = Boolean(session?.streaming) && !BLOCKED.includes(status);
+  const droidProfile = session?.droidProfile ?? thread.droidProfile;
   return {
     appSessionId: thread.appSessionId,
     title: thread.title,
@@ -165,7 +166,7 @@ function threadRow(
     updatedAt: session?.updatedAt ?? 0,
     depth,
     ...(session?.provider ? { provider: session.provider } : {}),
-    ...((session?.droidProfile ?? thread.droidProfile) === 'alt' ? { droidProfile: 'alt' } : {}),
+    ...(droidProfile ? { droidProfile } : {}),
     ...(session?.modelId ? { modelId: session.modelId } : {}),
   };
 }

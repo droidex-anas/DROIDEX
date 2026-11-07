@@ -23,6 +23,7 @@ import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph'
 import { TitleSweep } from './ui/TitleSweep';
 import { PrStateIcon } from './environment/GithubIcons';
 import { ModelIcon, type Provider } from './ModelIcon';
+import { AccountMark } from '../features/providers/AccountMark';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import type { PrKind } from '../lib/github';
 import type { PrChecksRollup } from '../types/vcs';
@@ -180,11 +181,7 @@ export const SessionRow = memo(function SessionRow({
       label={`${PROVIDER_LABELS[session.provider]} chat`}
     />
   );
-  const accountMark = session.droidProfile === 'alt' && (
-    <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
-      <span className="sr-only">Factory account: </span>Alt
-    </span>
-  );
+  const accountMark = <AccountMark profile={session.droidProfile} />;
   const timeTone = unread ? 'text-primary font-medium' : 'text-muted';
 
   // Return focus to the row when the inline editor closes, unless the user

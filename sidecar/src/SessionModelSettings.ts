@@ -282,7 +282,8 @@ export class SessionModelSettings {
     );
     try {
       if (!isCurrent()) return;
-      if (summary.droidProfile && settings.modelId) requireAltDroidModel(session, settings.modelId);
+      if (summary.droidProfile && settings.modelId)
+        requireAltDroidModel(session, settings.modelId, summary.droidProfile);
       await session.updateSettings(createSessionSettingsForAgent(agent, settings));
     } finally {
       await session.close();

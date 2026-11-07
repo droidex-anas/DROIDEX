@@ -1,5 +1,6 @@
 import type { BridgeFeature, SessionSummary } from './protocol.js';
 import type { ReasoningEffort } from './protocol.js';
+import { DROID_PROFILES } from './droidProfiles.js';
 import { PROVIDER_KINDS } from './providers/providerKind.js';
 import { objectValue, stringValue } from './values.js';
 
@@ -104,7 +105,7 @@ function hasOptionalSummaryFields(summary: Record<string, unknown>): boolean {
     optionalRecordOneOf(summary, 'contextAccuracy', ['exact', 'estimated']) &&
     optionalRecordOneOf(summary, 'workspaceKind', ['folder', 'none']) &&
     optionalRecordOneOf(summary, 'canvasTools', ['at_start', 'none']) &&
-    optionalRecordOneOf(summary, 'droidProfile', ['alt']) &&
+    optionalRecordOneOf(summary, 'droidProfile', DROID_PROFILES) &&
     optionalFiniteNumber(summary, [
       'queuedSends',
       'contextRemainingTokens',

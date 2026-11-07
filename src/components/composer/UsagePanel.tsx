@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Gauge, X } from '@droidex/icons';
 
-import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
+import { DROID_PROFILE_LOGINS, PROVIDER_LABELS } from '../../features/providers/providerIdentity';
 import {
   extraLabel,
   formatDuration,
@@ -13,7 +13,7 @@ import {
 import { usagePace } from '../../features/usage/usagePace';
 import { refreshUsage } from '../../features/usage/useProviderUsage';
 import { formatResetTime } from '../../lib/usageLimit';
-import type { ProviderKind, ProviderUsage, UsageMeter } from '../../types/bridge';
+import type { DroidProfile, ProviderKind, ProviderUsage, UsageMeter } from '../../types/bridge';
 import { ComposerTab } from './ComposerTab';
 import { ACTION_CLASS, ManageUsageButton } from './UsageLimitTab';
 
@@ -28,7 +28,7 @@ export function UsagePanel({
   onClose,
 }: {
   provider: ProviderKind;
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   usage: ProviderUsage | undefined;
   // Whether the agent runtime can be asked; without it /usage shows only what
   // the app already knows.
@@ -41,9 +41,9 @@ export function UsagePanel({
     provider: ProviderKind;
     usage: ProviderUsage | undefined;
   }>();
-  const isAlt = droidProfile === 'alt';
-  const name = isAlt ? 'Alt account' : PROVIDER_LABELS[provider];
-  const usage = isAlt ? undefined : providerUsage;
+  const altLogin = droidProfile && DROID_PROFILE_LOGINS[droidProfile];
+  const name = altLogin ? `${altLogin.label} account` : PROVIDER_LABELS[provider];
+  const usage = altLogin ? undefined : providerUsage;
   const refreshing = refreshedFrom?.provider === provider && refreshedFrom.usage === usage;
   const extra = usage?.extra && extraLabel(usage.extra);
   // The oldest window's time, so the line never claims one a read did not refresh.
@@ -75,7 +75,7 @@ export function UsagePanel({
                 <span className="pl-1 text-muted">·</span>
               </>
             )}
-            {!isAlt && (
+            {!altLogin && (
               <button
                 type="button"
                 disabled={refreshing}
@@ -97,8 +97,8 @@ export function UsagePanel({
             </button>
           </div>
         </div>
-        {isAlt ? (
-          <Note>Alt account usage is not available here. Run /limits in droid-alt.</Note>
+        {altLogin ? (
+          <Note>{`${name} usage is not available here. Run /limits in ${altLogin.command}.`}</Note>
         ) : (
           <UsageBody provider={provider} usage={usage} reachable={reachable} now={now} />
         )}
