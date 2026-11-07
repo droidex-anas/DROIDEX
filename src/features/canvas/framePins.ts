@@ -49,14 +49,19 @@ export function useFramePins(appSessionId: string | null): readonly FramePin[] {
   return useSyncExternalStore(subscribe, () => (appSessionId ? framePins(appSessionId) : NONE));
 }
 
-export function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
+/** A frame's size on the board, as its chip and the size badge show it. */
+export function frameSize(frame: CanvasFrame): string {
   const { width, height } = frame.rect;
+  return `${String(Math.round(width))} × ${String(Math.round(height))}`;
+}
+
+export function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
   return {
     canvasId,
     designId: frame.designId,
     revisionId: frame.revisionId,
     name: frame.name,
-    size: `${String(Math.round(width))} × ${String(Math.round(height))}`,
+    size: frameSize(frame),
     designSystem: frame.designSystem,
   };
 }
