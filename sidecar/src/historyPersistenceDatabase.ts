@@ -6,7 +6,7 @@ import type {
   HistoryWriterLease,
 } from './historyPersistenceProtocol.js';
 import { HistoryWriteStatements } from './historyWriteStatements.js';
-import { isProcessAlive } from './processes/isProcessAlive.js';
+import { isRecordedProcessAlive } from './processes/isProcessAlive.js';
 
 export class HistoryPersistenceDatabase {
   private readonly db: DatabaseSync;
@@ -28,7 +28,7 @@ export class HistoryPersistenceDatabase {
     `);
     this.writer = new HistoryWriteStatements(this.db);
     this.readWriterLease = this.db.prepare(`
-      SELECT value_json
+      SELECT value_json, updated_at
       FROM settings
       WHERE scope = 'history.persistence_writer_lease'
     `);
@@ -102,13 +102,18 @@ export class HistoryPersistenceDatabase {
   }
 
   private claimWriterLease(lease: HistoryWriterLease): void {
-    const current = this.readWriterLease.get() as { value_json: unknown } | undefined;
+    const current = this.readWriterLease.get() as
+      | { value_json: unknown; updated_at: number }
+      | undefined;
     const currentLease = parseWriterLease(current?.value_json);
     if (current && !currentLease) {
       throw new Error('History persistence writer lease is invalid; rebuild the history database.');
     }
-    if (currentLease) {
-      if (currentLease.owner !== lease.owner && isProcessAlive(currentLease.processId)) {
+    if (current && currentLease) {
+      if (
+        currentLease.owner !== lease.owner &&
+        isRecordedProcessAlive(currentLease.processId, current.updated_at)
+      ) {
         throw new Error('History persistence writer lease is owned by another live worker.');
       }
       if (currentLease.owner === lease.owner && currentLease.generation > lease.generation) {

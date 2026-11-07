@@ -90,6 +90,7 @@ const server = startBridgeServer({
     await manager.handle(command);
   },
   getSnapshot: () => manager.runtimeSnapshot(),
+  workingSessionCount: () => manager.workingSessionCount(),
   getProfileUsage: async () => {
     await queueUsageSessions([]);
     return await usage.snapshot();

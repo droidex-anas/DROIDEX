@@ -860,6 +860,42 @@ test('a child restored as running reports idle until work is observed again', as
   assert.equal(h.owner.list(h.parentId)[0]?.status, 'running');
 });
 
+test('a child counts as working only while it has work in flight', async () => {
+  const restoredPending = {
+    ...childRecord('pending', 'provider-pending'),
+    status: 'pending' as const,
+  };
+  const busy = childRecord('busy', 'provider-busy');
+  const h = createHarness([restoredPending, busy]);
+  assert.equal(h.owner.list(h.parentId)[0]?.status, 'paused');
+  assert.equal(h.owner.counts().working, 0);
+
+  const release = await keepChildBusy(h, busy);
+  assert.equal(h.owner.counts().working, 1);
+  await release();
+  assert.equal(h.owner.counts().working, 0);
+
+  observe(h, {
+    providerSessionId: restoredPending.providerSessionId,
+    role: 'worker',
+    transcriptAvailable: false,
+    status: 'pending',
+  });
+  assert.equal(h.owner.counts().working, 1);
+
+  observe(h, {
+    providerSessionId: 'provider-new',
+    role: 'worker',
+    spawnLink: { kind: 'tool-use', id: 'tool-new' },
+    transcriptAvailable: false,
+    modelId: 'model-default',
+  });
+  const children = h.owner.list(h.parentId);
+  assert.equal(children.length, 3);
+  assert.equal(children.at(-1)?.status, 'pending');
+  assert.equal(h.owner.counts().working, 2);
+});
+
 test('completed child under a live parent opens only as history', async () => {
   const record = { ...childRecord('child', 'provider'), status: 'completed' as const };
   const h = createHarness([record]);

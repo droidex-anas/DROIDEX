@@ -61,6 +61,8 @@ export function startBridgeServer(options: {
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
   getSnapshot?: () => Promise<BridgeRuntimeSnapshot> | BridgeRuntimeSnapshot;
+  // Electron reads it from /health to warn before a quit stops working agents.
+  workingSessionCount?: () => number;
   getProfileUsage?: () => unknown;
   onChildHistoryWatch?: (
     owner: object,
@@ -403,6 +405,7 @@ export function startBridgeServer(options: {
         generation: queue.generation,
         lastSeq: queue.lastSeq,
         eventLoopDelayMs: hotPathMetrics.snapshot().eventLoop?.meanMs ?? 0,
+        workingSessions: options.workingSessionCount?.() ?? 0,
       }),
     );
     return true;

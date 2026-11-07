@@ -3,6 +3,7 @@ import { lstatSync } from 'node:fs';
 import { mkdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { isRecordedProcessAlive } from '../processes/isProcessAlive.js';
 import { canvasError, storageFailure } from './canvasError.js';
 
 const OWNER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,13 +29,16 @@ export class CanvasWriterLease {
       db = new DatabaseSync(dbPath);
       db.exec('BEGIN IMMEDIATE');
       db.exec(`
-        CREATE TABLE IF NOT EXISTS writer_lease (
+        CREATE TABLE IF NOT EXISTS writer_claim (
           id INTEGER PRIMARY KEY CHECK (id = 1),
           owner TEXT NOT NULL,
-          process_id INTEGER NOT NULL
+          process_id INTEGER NOT NULL,
+          claimed_at_ms INTEGER NOT NULL
         ) STRICT
       `);
-      const rows = db.prepare('SELECT id, owner, process_id FROM writer_lease').all();
+      const rows = db
+        .prepare('SELECT id, owner, process_id, claimed_at_ms FROM writer_claim')
+        .all();
       const current = rows.at(0);
       if (current) {
         if (
@@ -44,11 +48,13 @@ export class CanvasWriterLease {
           !OWNER_UUID.test(current.owner) ||
           typeof current.process_id !== 'number' ||
           !Number.isSafeInteger(current.process_id) ||
-          current.process_id <= 0
+          current.process_id <= 0 ||
+          typeof current.claimed_at_ms !== 'number' ||
+          !Number.isSafeInteger(current.claimed_at_ms)
         ) {
           throw canvasError('storage_failed', 'The saved Canvas writer lease is invalid.');
         }
-        if (isProcessAlive(current.process_id)) {
+        if (isRecordedProcessAlive(current.process_id, current.claimed_at_ms)) {
           throw canvasError(
             'storage_failed',
             'The Canvas storage directory is already open in another workspace.',
@@ -59,12 +65,13 @@ export class CanvasWriterLease {
       const owner = randomUUID();
       db.prepare(
         `
-        INSERT INTO writer_lease (id, owner, process_id) VALUES (1, ?, ?)
+        INSERT INTO writer_claim (id, owner, process_id, claimed_at_ms) VALUES (1, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           owner = excluded.owner,
-          process_id = excluded.process_id
+          process_id = excluded.process_id,
+          claimed_at_ms = excluded.claimed_at_ms
       `,
-      ).run(owner, process.pid);
+      ).run(owner, process.pid, Date.now());
       db.exec('COMMIT');
       return new CanvasWriterLease(root, db, owner);
     } catch (error) {
@@ -80,25 +87,11 @@ export class CanvasWriterLease {
     this.db = null;
     try {
       if (lstatSync(join(this.directory, '.writer-lease.sqlite'), { throwIfNoEntry: false }))
-        db.prepare('DELETE FROM writer_lease WHERE id = 1 AND owner = ?').run(this.owner);
+        db.prepare('DELETE FROM writer_claim WHERE id = 1 AND owner = ?').run(this.owner);
     } catch (error) {
       throw storageFailure('Canvas storage could not release its writer lease.', error);
     } finally {
       db.close();
     }
-  }
-}
-
-function isProcessAlive(processId: number): boolean {
-  try {
-    process.kill(processId, 0);
-    return true;
-  } catch (error) {
-    return !(
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'ESRCH'
-    );
   }
 }

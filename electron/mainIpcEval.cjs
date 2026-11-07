@@ -186,6 +186,8 @@ async function bootMain(options = {}) {
   electron.BrowserWindow = BrowserWindow;
   electron.Menu = { buildFromTemplate: () => ({ popup() {} }), setApplicationMenu() {} };
   electron.session.defaultSession.getUserAgent = () => 'DROIDEX';
+  // A quit while the stub sidecar starts asks whether to stop its agents.
+  electron.dialog = { showMessageBox: async () => ({ response: 1 }) };
   const observed = observeMain(electron);
   // Owned here rather than in `observeMain`: a startup check holds its `setProxy`.
   const guest = options.guestSession ?? createGuestSessionStub();
@@ -309,13 +311,21 @@ async function checkMainWindow({ electron, channels, mainWindow, root, calls, bo
   const teardowns = {
     'renderer navigation': () => contents.emit('will-frame-navigate', {}, 'x', false, true),
     'renderer crash': () => contents.emit('render-process-gone', {}, { reason: 'crashed' }),
-    'app quit': () => electron.app.emit('before-quit'),
+    // The stub sidecar is still starting, so the app quits again once it has exited.
+    'app quit': () =>
+      new Promise((resolve) => {
+        electron.app.quit = () => {
+          electron.app.emit('before-quit', { preventDefault() {} });
+          resolve();
+        };
+        electron.app.emit('before-quit', { preventDefault() {} });
+      }),
     'window close': () => mainWindow.emit('closed'),
   };
   for (const [name, tearDown] of Object.entries(teardowns)) {
     contents.emit('did-finish-load');
     calls.length = 0;
-    tearDown();
+    await tearDown();
     assert.deepEqual(calls, ['cancel GitHub setup', 'close terminals'], name);
   }
 }

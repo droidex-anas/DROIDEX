@@ -1021,6 +1021,23 @@ export class SessionManager {
     }
   }
 
+  // What quitting now would cut off: turns and compactions in progress, closed
+  // chats being compacted, and children still at work.
+  workingSessionCount(): number {
+    const sessions = this.registry
+      .liveSessionsSnapshot()
+      .filter(
+        (live) =>
+          live.streaming ||
+          live.summary.streaming === true ||
+          live.compacting === true ||
+          live.autoCompacting,
+      ).length;
+    return (
+      sessions + this.compaction.historicalCompactionCount() + this.childSessions.counts().working
+    );
+  }
+
   async runtimeSnapshot(): Promise<BridgeRuntimeSnapshot> {
     let persistence = this.history.persistenceRecovery?.() ?? {
       durable: true,

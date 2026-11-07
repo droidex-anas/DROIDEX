@@ -61,6 +61,8 @@ interface SessionCompactionExecutionEffects {
 }
 
 export class SessionCompactionExecution {
+  private historicalCompactions = 0;
+
   constructor(
     private readonly dependencies: SessionCompactionExecutionDependencies,
     private readonly effects: SessionCompactionExecutionEffects,
@@ -74,8 +76,18 @@ export class SessionCompactionExecution {
     if (!isAdmitted()) return { kind: 'ready-to-settle' };
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (liveSession) return this.compactLiveSession(liveSession, customInstructions);
-    await this.compactHistoricalSession(appSessionId, customInstructions, isAdmitted);
+    this.historicalCompactions += 1;
+    try {
+      await this.compactHistoricalSession(appSessionId, customInstructions, isAdmitted);
+    } finally {
+      this.historicalCompactions -= 1;
+    }
     return { kind: 'ready-to-settle' };
+  }
+
+  // A closed chat compacts outside the live registry, so its work is counted here.
+  historicalCompactionCount(): number {
+    return this.historicalCompactions;
   }
 
   private async compactLiveSession(

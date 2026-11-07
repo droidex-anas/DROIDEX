@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import type { PersistenceRecovery } from './protocol.js';
-import { isProcessAlive } from './processes/isProcessAlive.js';
+import { isRecordedProcessAlive } from './processes/isProcessAlive.js';
 
 const MARKER_NAME = 'history-unflushed.marker';
 
@@ -17,7 +17,10 @@ export class PersistenceDirtyMarker {
   constructor(
     private readonly filePath: string,
     private readonly processId = process.pid,
-    private readonly isAlive: (processId: number) => boolean = isProcessAlive,
+    private readonly isAlive: (
+      processId: number,
+      recordedAtMs: number,
+    ) => boolean = isRecordedProcessAlive,
   ) {
     this.previous = readPreviousUnflushedWork(filePath, processId, isAlive);
   }
@@ -42,14 +45,14 @@ export class PersistenceDirtyMarker {
 function readPreviousUnflushedWork(
   filePath: string,
   currentProcessId: number,
-  isAlive: (processId: number) => boolean,
+  isAlive: (processId: number, recordedAtMs: number) => boolean,
 ): PersistenceRecovery {
   const parsed = readMarker(filePath);
   if (!parsed) return { durable: true, hadUnflushedWork: false };
   if (parsed.processId === currentProcessId) {
     return { durable: false, hadUnflushedWork: true };
   }
-  if (isAlive(parsed.processId)) {
+  if (isAlive(parsed.processId, parsed.writtenAtMs)) {
     return {
       durable: false,
       hadUnflushedWork: true,
@@ -64,7 +67,7 @@ function readPreviousUnflushedWork(
   };
 }
 
-function readMarker(filePath: string): { processId: number } | null {
+function readMarker(filePath: string): { processId: number; writtenAtMs: number } | null {
   if (!existsSync(filePath)) return null;
   try {
     const parsed: unknown = JSON.parse(readFileSync(filePath, 'utf8'));
@@ -73,11 +76,9 @@ function readMarker(filePath: string): { processId: number } | null {
     if (typeof processId !== 'number' || !Number.isSafeInteger(processId) || processId <= 0) {
       return null;
     }
-    return { processId };
+    return { processId, writtenAtMs: statSync(filePath).mtimeMs };
   } catch {
-    return {
-      processId: 0,
-    };
+    return { processId: 0, writtenAtMs: 0 };
   }
 }
 
