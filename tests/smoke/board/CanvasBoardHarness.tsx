@@ -14,7 +14,11 @@ import { NO_PRESENCE, type CanvasPresence } from '../../../src/features/canvas/c
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
-import { toggleFramePins, useFramePins } from '../../../src/features/canvas/framePins';
+import {
+  syncFramePins,
+  toggleFramePins,
+  useFramePins,
+} from '../../../src/features/canvas/framePins';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import type { VariantChoice } from '../../../src/features/canvas/variantRequests';
@@ -412,6 +416,7 @@ function Harness() {
   const live = useRef(interaction);
   live.current = interaction;
   shown.current = snapshot;
+  useEffect(() => syncFramePins('chat_1', snapshot), [snapshot]);
   useEffect(() => {
     if (!params.has('navigator')) return undefined;
     return showBoard({
