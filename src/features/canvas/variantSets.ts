@@ -57,6 +57,10 @@ export class VariantSets {
   /** By `canvasId designId`, the work under way on each source frame. */
   private readonly work = new Map<string, VariantWork>();
   private readonly listeners = new Set<() => void>();
+  /** By `canvasId designId`, the toast offering to remove a source's variants. */
+  private readonly offers = new Map<string, number>();
+  /** Bumped when a canvas goes away, so answers that arrive after it are dropped. */
+  private readonly generations = new Map<string, number>();
 
   constructor(
     private readonly client: VariantClient,
@@ -97,8 +101,9 @@ export class VariantSets {
     const before = source.revisionId;
     const key = workKey(canvasId, source.designId);
     if (chosen === null || before === null || !this.begin(key, 'using')) return false;
+    const generation = this.generationOf(canvasId);
     try {
-      await this.history.recording(canvasId, async () => {
+      return await this.history.recording(canvasId, async () => {
         const [files, replaced] = await Promise.all([
           this.client.source.read(canvasId, variant.designId, chosen),
           this.client.source.read(canvasId, source.designId, before),
@@ -111,7 +116,8 @@ export class VariantSets {
           deletedPaths: Object.keys(replaced).filter((path) => !Object.hasOwn(files, path)),
           designSystem: variant.designSystem,
         });
-        const offer = this.offerRemoval(appSessionId, canvasId, source, variant);
+        if (this.generationOf(canvasId) !== generation) return false;
+        this.offerRemoval(appSessionId, canvasId, source, variant);
         const entry = revisionEntry(
           (input) => this.client.revisions.switchTo(appSessionId, canvasId, input),
           source,
@@ -121,21 +127,33 @@ export class VariantSets {
         this.history.record(canvasId, {
           ...entry,
           label: `using ${variant.name}`,
-          // Once the choice is taken back, clearing the set it came from is no longer the next step.
+          // Clearing the set is the next step only while the choice stands.
           undo: async () => {
             const undone = await entry.undo();
-            if (undone) dismissToast(offer);
+            if (undone) this.endOffer(key);
             return undone;
           },
+          redo: async () => {
+            const redone = await entry.redo();
+            if (redone) this.offerRemoval(appSessionId, canvasId, source, variant);
+            return redone;
+          },
         });
+        return true;
       });
-      return true;
     } catch (error) {
-      toast.error(`Couldn’t use ${variant.name}. ${failure(error, source)}`);
+      if (this.generationOf(canvasId) === generation)
+        toast.error(`Couldn’t use ${variant.name}. ${failure(error, source)}`);
       return false;
     } finally {
       this.end(key);
     }
+  }
+
+  /** The canvas was deleted: its offers end and answers still on their way are ignored. */
+  forget(canvasId: string): void {
+    this.generations.set(canvasId, this.generationOf(canvasId) + 1);
+    for (const key of this.offers.keys()) if (key.startsWith(`${canvasId} `)) this.endOffer(key);
   }
 
   private readonly subscribe = (listener: () => void): (() => void) => {
@@ -167,8 +185,10 @@ export class VariantSets {
     canvasId: string,
     source: CanvasFrame,
     variant: CanvasFrame,
-  ): number {
-    return pushToast(`${source.name} now uses ${variant.name}`, 'info', OFFER_MS, {
+  ): void {
+    const key = workKey(canvasId, source.designId);
+    this.endOffer(key);
+    const toastId = pushToast(`${source.name} now uses ${variant.name}`, 'info', OFFER_MS, {
       label: 'Remove variants',
       run: () => {
         const frames = this.client.snapshotOf(canvasId)?.frames ?? [];
@@ -176,6 +196,18 @@ export class VariantSets {
         if (variants.length > 0) void this.removals.remove(appSessionId, canvasId, variants);
       },
     });
+    this.offers.set(key, toastId);
+  }
+
+  private endOffer(key: string): void {
+    const toastId = this.offers.get(key);
+    if (toastId === undefined) return;
+    this.offers.delete(key);
+    dismissToast(toastId);
+  }
+
+  private generationOf(canvasId: string): number {
+    return this.generations.get(canvasId) ?? 0;
   }
 }
 

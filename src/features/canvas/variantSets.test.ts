@@ -163,6 +163,12 @@ test('using a variant writes its source over the head the user saw, as one step 
       ['a2', 'a1'],
     ],
   );
+  switches[1].resolve(receipt('a2'));
+  await settle();
+  assert.deepEqual(
+    shown.map((item) => item.action?.label),
+    ['Remove variants'],
+  );
 });
 
 test('Remove variants deletes the set as the board holds it, the variant used too', async () => {
@@ -187,6 +193,19 @@ test('a source that moved on since is said plainly, and nothing is recorded', as
   );
   assert.equal(history.undo('cv'), false);
 });
+
+test('a write answered after its canvas was deleted records nothing and offers nothing', async () => {
+  const { sets, history, writes } = fakeSets();
+  const using = sets.apply('chat', 'cv', chosen, source);
+  await settle();
+  sets.forget('cv');
+  history.forget('cv');
+  writes[0].resolve(receipt('a2'));
+  assert.equal(await using, false);
+  assert.deepEqual(shown, []);
+  assert.equal(history.undo('cv'), false);
+});
+
 test('a source takes one piece of variant work at a time, so two sets cannot share numbers', async () => {
   const { sets, writes } = fakeSets();
   const work = sets.viewOf('cv');
