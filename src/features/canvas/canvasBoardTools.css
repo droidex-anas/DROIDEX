@@ -325,9 +325,9 @@
   padding: 0 10px;
 }
 
-/* Opens the options of the text tool before it, as one split button. */
+/* Opens the Variants options: narrower than a tool, so it reads as one split button with Variants. */
 .canvas-frame-tool-chevron {
-  width: 18px;
+  width: 24px;
 }
 
 /* The version on show, as a tinted chip that opens the list of versions. */
