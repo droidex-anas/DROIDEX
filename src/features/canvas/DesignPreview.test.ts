@@ -23,6 +23,8 @@ function frameWith(build: CanvasBuildState): CanvasFrame {
     manifestVersion: 1,
     revisionId: 'rev_02',
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+    variantOf: null,
+    seededRevisionId: null,
     build,
   };
 }

@@ -10,7 +10,7 @@ import { cn } from '../../components/ui/cn';
 import { Menu } from '../../components/ui/Menu';
 import { Tooltip } from '../../components/ui/Tooltip';
 
-export interface Segment<T extends string> {
+export interface Segment<T extends string | number> {
   value: T;
   /** The icon's accessible name and tooltip, a text face's tooltip, or else the face itself. */
   label: string;
@@ -21,7 +21,7 @@ export interface Segment<T extends string> {
   iconClassName?: string;
 }
 
-export function SegmentedControl<T extends string>({
+export function SegmentedControl<T extends string | number>({
   label,
   options,
   value,
@@ -190,6 +190,9 @@ function segmentClass(selected: boolean, padding: string): string {
   return cn(
     'flex h-full w-full min-w-0 cursor-pointer items-center justify-center rounded-sm transition-colors duration-quick ease-smooth-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:cursor-default',
     padding,
-    selected ? 'bg-active text-primary' : 'text-muted hover:text-primary',
+    // Light rungs are too close in tone to mark the choice, so it lifts as a raised pill.
+    selected
+      ? 'bg-raised text-primary shadow-sm dark:bg-active dark:shadow-none'
+      : 'text-muted hover:text-primary',
   );
 }

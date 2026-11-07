@@ -240,6 +240,7 @@ export const createFramesInputSchema = z
             height: dimensionPxSchema,
             designSystem: designSystemRefSchema,
             seed: canvasSeedSchema.optional(),
+            variantOf: canvasIdentifierSchema.optional(),
           })
           .strict(),
       )
@@ -258,10 +259,11 @@ export const writeFilesInputSchema = z
     designSystem: designSystemRefSchema.optional(),
   })
   .strict()
+  // A rename by case or Unicode form alone deletes one spelling and writes the
+  // other; the merged revision is checked for colliding paths after that.
   .superRefine((input, ctx) => {
-    const written = new Set(Object.keys(input.files).map(collisionKey));
     input.deletedPaths.forEach((path, index) => {
-      if (!written.has(collisionKey(path))) return;
+      if (!Object.hasOwn(input.files, path)) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['deletedPaths', index],

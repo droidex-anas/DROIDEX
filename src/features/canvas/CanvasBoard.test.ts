@@ -24,7 +24,10 @@ const FRAME_ACTIONS: FrameActions = {
   history: { listRevisions: () => Promise.resolve([]), switchRevision: () => Promise.resolve() },
   canEdit: false,
   rename: () => Promise.resolve(),
-  makeVariants: () => undefined,
+  makeVariants: () => Promise.resolve(),
+  variantWork: { subscribe: () => () => undefined, of: () => null },
+  sourceOf: () => null,
+  applyVariant: () => Promise.resolve(false),
   saveToLibrary: () => undefined,
 };
 
@@ -37,6 +40,8 @@ function frame(designId: string, rect: FrameRect): CanvasFrame {
     manifestVersion: 1,
     revisionId: 'rev_01',
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+    variantOf: null,
+    seededRevisionId: null,
     build: { status: 'pending', generation: 1 },
   };
 }

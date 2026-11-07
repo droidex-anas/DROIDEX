@@ -169,6 +169,8 @@ const wire: SidecarWire = {
         manifestVersion: 0,
         revisionId: null,
         designSystem,
+        variantOf: null,
+        seededRevisionId: null,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -242,6 +244,8 @@ const wire: SidecarWire = {
         manifestVersion: 2,
         revisionId: 'rev_02',
         designSystem,
+        variantOf: null,
+        seededRevisionId: null,
         build: {
           status: 'ready',
           revisionId: 'rev_02',
@@ -259,6 +263,8 @@ const wire: SidecarWire = {
         manifestVersion: 1,
         revisionId: null,
         designSystem,
+        variantOf: null,
+        seededRevisionId: null,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -275,6 +281,8 @@ const wire: SidecarWire = {
         manifestVersion: 2,
         revisionId: 'rev_03',
         designSystem,
+        variantOf: null,
+        seededRevisionId: null,
         build: {
           status: 'failed',
           generation: 2,
@@ -733,6 +741,9 @@ test('write rejects escaping, absolute, backslash and case-colliding paths', () 
     ),
     /cannot also be written/,
   );
+  // A rename by case and Unicode form alone deletes one spelling and writes the other.
+  const rename = writeWith({ files: { 'café.tsx': 'x' }, deletedPaths: ['Café.tsx'] });
+  assert.equal(writeFilesInputSchema.safeParse(rename).success, true);
 });
 
 test('write rejects a path an object-keyed source tree would lose', () => {
@@ -749,13 +760,6 @@ test('write rejects paths the filesystem would merge by Unicode form or surrogat
   assert.match(
     rejection(writeFilesInputSchema, writeWith({ files: { 'café.tsx': 'x', 'café.tsx': 'y' } })),
     /Unicode normalization/,
-  );
-  assert.match(
-    rejection(
-      writeFilesInputSchema,
-      writeWith({ files: { 'café.tsx': 'x' }, deletedPaths: ['Café.tsx'] }),
-    ),
-    /cannot also be written/,
   );
   // Both lone surrogates encode to the same UTF-8 bytes, so both are refused.
   assert.match(

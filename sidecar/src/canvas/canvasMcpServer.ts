@@ -269,7 +269,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_create',
-      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read, then write each one with canvas_write: its entry is main.tsx, which default-exports a React component. Use placeBeside to place variants below an existing frame, and seed to copy a revision from this canvas or a library item the user named by its itemId. Create a small working composition first; retry with the same mutationId and scopeId after a lost response. A design system is a kit saved with canvas_theme, not frames.',
+      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read, then write each one with canvas_write: its entry is main.tsx, which default-exports a React component. Use placeBeside to place variants in one row below an existing frame, with variantOf naming that frame on each so the user can pick one, and seed to copy a revision from this canvas or a library item the user named by its itemId. Create a small working composition first; retry with the same mutationId and scopeId after a lost response. A design system is a kit saved with canvas_theme, not frames.',
       createSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {

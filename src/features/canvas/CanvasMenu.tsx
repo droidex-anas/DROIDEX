@@ -1,5 +1,5 @@
 // The Canvas wordmark, and the picker it opens: the canvas on screen with what
-// can be done to it (variants, the library and deletion, spec §4 and §7), New
+// can be done to it (the library and deletion, spec §4 and §7), New
 // canvas and the saved ones (spec §4). The wordmark stays the label so the row
 // reads the same before and after the list is read; the canvas's own name heads
 // the popover. Which chats work on that canvas is the chat column header's menu
@@ -21,14 +21,11 @@ import { SaveToLibraryDialog } from './SaveToLibraryDialog';
 import { useCanvases } from './useCanvases';
 import { searchCanvases } from './canvasChats';
 import { useOpenCanvas } from './useOpenCanvas';
-import { CanvasVariants } from './CanvasVariants';
-import { variantSource, type VariantSource } from './variantRequests';
 
 /** What a dialog acts on, fixed when it opens so a selection change cannot retarget it. */
 type MenuDialog =
   | { kind: 'save'; canvasId: string; revision: RevisionRef; frameName: string }
   | { kind: 'insert'; board: BoardOnScreen }
-  | { kind: 'variants'; appSessionId: string; source: VariantSource }
   | { kind: 'delete'; appSessionId: string; canvasId: string };
 
 export function CanvasMenu({
@@ -160,14 +157,13 @@ function CanvasActions({
   onDeleteFrames: (board: BoardOnScreen) => void;
 }) {
   const selectedCount = board?.selected.length ?? 0;
-  // Only a built frame has a revision to save or vary, and each names one frame.
+  // Only a built frame has a revision to save, and each names one frame.
   const frame = board?.selected.length === 1 ? board.selected[0] : null;
   const revision = frame?.revisionId
     ? { designId: frame.designId, revisionId: frame.revisionId }
     : null;
   // Frames land through the chat's attachment, so another chat's canvas takes none.
   const attached = board?.attached ? board : null;
-  const variants = attached && frame ? variantSource(canvasId, frame) : null;
   return (
     <>
       <MenuHeading>{name}</MenuHeading>
@@ -183,14 +179,6 @@ function CanvasActions({
         disabled={!attached}
         onRun={() => {
           if (attached) onRun({ kind: 'insert', board: attached });
-        }}
-      />
-      <MenuRow
-        label="Make variants…"
-        disabled={!variants}
-        onRun={() => {
-          if (attached && variants)
-            onRun({ kind: 'variants', appSessionId: attached.appSessionId, source: variants });
         }}
       />
       <MenuRow
@@ -257,14 +245,6 @@ function OpenDialog({
       );
     case 'insert':
       return <BoardLibraryPicker board={dialog.board} onClose={onClose} />;
-    case 'variants':
-      return (
-        <CanvasVariants
-          appSessionId={dialog.appSessionId}
-          source={dialog.source}
-          onClose={onClose}
-        />
-      );
     case 'delete':
       return (
         <DeleteCanvasDialog

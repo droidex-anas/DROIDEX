@@ -415,6 +415,8 @@ function isFrame(value: unknown): boolean {
     count(value.manifestVersion) &&
     (value.revisionId === null || id(value.revisionId)) &&
     isDesignSystem(value.designSystem) &&
+    (value.variantOf === null || id(value.variantOf)) &&
+    (value.seededRevisionId === null || id(value.seededRevisionId)) &&
     isBuild(value.build)
   );
 }

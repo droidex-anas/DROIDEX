@@ -16,6 +16,8 @@ import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
+import type { VariantChoice } from '../../../src/features/canvas/variantRequests';
+import { variantSetSource, VariantSets } from '../../../src/features/canvas/variantSets';
 import type { EditElementInput } from '../../../src/features/canvas/elementEditProtocol';
 import type {
   ArrangeFramesInput,
@@ -29,9 +31,11 @@ import type {
   RevisionSummary,
   SourceElement,
   UndoRemovalInput,
+  WriteFilesInput,
   WriteReceipt,
 } from '../../../src/features/canvas/protocol';
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
+import { subscribeToasts, type ToastItem } from '../../../src/lib/toast';
 import '../../../src/index.css';
 // The harness mounts the board without the pane that normally brings these in.
 import '../../../src/features/canvas/canvasAnimations.css';
@@ -86,10 +90,20 @@ interface BoardHarness {
   /** A manifest commit lands on the frame: a build's, or with `name`, a rename from elsewhere. */
   commitManifest: (designId: string, name?: string) => void;
   switchCalls: SwitchRevisionInput[];
+  /** Moves the frame's head to the revision one switch names, built, and answers. */
+  answerSwitch: (index: number) => void;
   /** Refuses one switch because the frame's head moved. */
   refuseSwitch: (index: number) => void;
   /** The toolbar's dialogs asked for, as `<kind>:<designId>`. */
   dialogs: string[];
+  variantCalls: (VariantChoice & { designId: string })[];
+  /** Settles one variants request, as its send does. */
+  answerVariants: (index: number) => void;
+  writeCalls: WriteFilesInput[];
+  /** Writes one source the way the sidecar does, as revision `rev_w<index>`, and builds it. */
+  answerWrite: (index: number) => void;
+  /** The messages of the toasts up now; one that ended is gone even while it fades. */
+  toasts: () => string[];
 }
 
 declare global {
@@ -236,12 +250,16 @@ const initial: CanvasSnapshot = {
   annotationsVersion: seeded.length,
   annotations: seeded,
   frames: PLACED.map((frame): CanvasFrame => {
+    // `?variants=1` makes Design B a variant of Design A that its agent has since changed.
+    const isVariant = params.has('variants') && frame.designId === 'b';
     const placed: CanvasFrame = {
       ...frame,
       layoutVersion: 3,
       manifestVersion: 1,
       revisionId: 'rev_01',
       designSystem: { id: 'droidex', version: 1, mode: scheme },
+      variantOf: isVariant ? 'a' : null,
+      seededRevisionId: isVariant ? 'rev_00' : null,
       build: params.has('building') ? { status: 'building', generation: 1 } : built('rev_01'),
     };
     if (!working || frame.designId !== 'a') return placed;
@@ -297,8 +315,40 @@ const historyReplies: PromiseWithResolvers<RevisionSummary[]>[] = [];
 const renameCalls: RenameFrameInput[] = [];
 const renameReplies: PromiseWithResolvers<void>[] = [];
 const switchCalls: SwitchRevisionInput[] = [];
-const switchReplies: PromiseWithResolvers<void>[] = [];
+const switchReplies: PromiseWithResolvers<WriteReceipt>[] = [];
+let toasts: ToastItem[] = [];
+subscribeToasts((shown) => {
+  toasts = shown;
+});
+/** Every switch, from the toolbar's versions or the board's history, one reply per call. */
+function askSwitch(input: SwitchRevisionInput): Promise<WriteReceipt> {
+  switchCalls.push(input);
+  const reply = Promise.withResolvers<WriteReceipt>();
+  switchReplies.push(reply);
+  return reply.promise;
+}
 const dialogs: string[] = [];
+const variantCalls: BoardHarness['variantCalls'] = [];
+const variantReplies: PromiseWithResolvers<void>[] = [];
+const writeCalls: WriteFilesInput[] = [];
+const writeReplies: PromiseWithResolvers<WriteReceipt>[] = [];
+const variantSets = new VariantSets(
+  {
+    source: {
+      read: (_canvasId, designId) => Promise.resolve({ 'main.tsx': `// ${designId}` }),
+      write: (_appSessionId, _canvasId, input) => {
+        writeCalls.push(input);
+        const reply = Promise.withResolvers<WriteReceipt>();
+        writeReplies.push(reply);
+        return reply.promise;
+      },
+    },
+    revisions: { switchTo: (_appSessionId, _canvasId, input) => askSwitch(input) },
+    snapshotOf: () => shown.current,
+  },
+  history,
+  removals,
+);
 const frameActions: FrameActions = {
   history: {
     listRevisions: (designId) => {
@@ -307,12 +357,7 @@ const frameActions: FrameActions = {
       historyReplies.push(reply);
       return reply.promise;
     },
-    switchRevision: (input) => {
-      switchCalls.push(input);
-      const reply = Promise.withResolvers<void>();
-      switchReplies.push(reply);
-      return reply.promise;
-    },
+    switchRevision: askSwitch,
   },
   canEdit: true,
   rename: (frame, name) => {
@@ -326,7 +371,16 @@ const frameActions: FrameActions = {
     renameReplies.push(reply);
     return reply.promise;
   },
-  makeVariants: (frame) => dialogs.push(`variants:${frame.designId}`),
+  makeVariants: (frame, choice) =>
+    variantSets.make('cv_board', frame.designId, () => {
+      variantCalls.push({ designId: frame.designId, ...choice });
+      const reply = Promise.withResolvers<void>();
+      variantReplies.push(reply);
+      return reply.promise;
+    }),
+  variantWork: variantSets.viewOf('cv_board'),
+  sourceOf: (frame) => variantSetSource(shown.current.frames, frame),
+  applyVariant: (variant, source) => variantSets.apply('chat_1', 'cv_board', variant, source),
   saveToLibrary: (frame) => dialogs.push(`save:${frame.designId}`),
 };
 
@@ -528,9 +582,35 @@ function Harness() {
       setSnapshot(applyCanvasChange(shown.current, change(committed, [])));
     },
     switchCalls,
+    answerSwitch: (index) => {
+      const { designId, revisionId } = switchCalls[index];
+      const switched = change(
+        shown.current.frames
+          .filter((frame) => frame.designId === designId)
+          .map((frame) => ({ ...frame, revisionId, build: built(revisionId) })),
+        [],
+      );
+      setSnapshot(applyCanvasChange(shown.current, switched));
+      switchReplies[index].resolve({ designId, revisionId, sequence: switched.sequence });
+    },
     refuseSwitch: (index) =>
       switchReplies[index].reject(new CanvasRequestError('revision_conflict', 'The head moved.')),
     dialogs,
+    variantCalls,
+    answerVariants: (index) => {
+      variantReplies[index].resolve();
+    },
+    writeCalls,
+    answerWrite: (index) => {
+      const { designId } = writeCalls[index];
+      const revisionId = `rev_w${String(index)}`;
+      const written = shown.current.frames
+        .filter((frame) => frame.designId === designId)
+        .map((frame) => ({ ...frame, revisionId, build: built(revisionId) }));
+      setSnapshot(applyCanvasChange(shown.current, change(written, [])));
+      writeReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
+    },
+    toasts: () => toasts.map((shown) => shown.message),
   };
   return (
     <div style={{ padding: 24 }}>

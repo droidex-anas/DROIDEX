@@ -121,7 +121,7 @@ export function CanvasBoardMount({
       step === 'undo' ? boardHistory.undo(canvasId) : boardHistory.redo(canvasId),
     [canvasId],
   );
-  const frameActions = useFrameActions(appSessionId, canvasId, pinnable);
+  const frameActions = useFrameActions(appSessionId, canvasId, pinnable, frames);
   const pins = useFramePins(appSessionId);
   const pinnedIds = useMemo(
     () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),

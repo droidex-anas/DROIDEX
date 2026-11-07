@@ -1,6 +1,6 @@
 // The selected frame's toolbar against the harness: rename, the version
-// menu and switching, Source and More, the keyboard's way through it, and
-// when it steps aside.
+// menu and switching, Source, Variants, Use this variant and More, the
+// keyboard's way through it, and when it steps aside.
 
 import { expect, test } from '@playwright/test';
 import { box, boardUrl, frame, openBoard, serveBoard } from './board/boardPage';
@@ -113,9 +113,9 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
 
   await page.keyboard.press('Enter');
   const menu = page.getByRole('menu', { name: 'More for Design B' });
-  await expect(menu.getByRole('menuitem', { name: 'Make variants…' })).toBeFocused();
+  await expect(menu.getByRole('menuitem', { name: 'Save to library…' })).toBeFocused();
   await page.keyboard.press('Enter');
-  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['variants:b']);
+  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['save:b']);
   await expect(menu).toHaveCount(0);
   await expect(more).toBeFocused();
 
@@ -130,6 +130,116 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   await page.keyboard.press('ArrowRight');
   await expect(versions).toBeFocused();
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('Variants asks for three in one click, and its options choose kind, count and direction', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  const toolbar = page.getByRole('toolbar', { name: 'Design B actions' });
+
+  // While the first set is being made Variants holds, through reselecting the
+  // frame too, and a second click makes no second set.
+  const variants = toolbar.getByRole('button', { name: 'Make 3 variants of Design B' });
+  await variants.click();
+  await expect(variants).toHaveAttribute('aria-busy', 'true');
+  await page.evaluate(() => window.boardHarness.select([]));
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  await expect(variants).toBeDisabled();
+  await variants.dispatchEvent('click');
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toEqual([
+    { designId: 'b', kind: 'any', count: 3, direction: '' },
+  ]);
+  await page.evaluate(() => window.boardHarness.answerVariants(0));
+  await expect(variants).toBeEnabled();
+
+  const chevron = toolbar.getByRole('button', { name: 'Variant options for Design B' });
+  await chevron.click();
+  const options = page.getByRole('dialog', { name: 'Variants of Design B' });
+  await options.getByRole('radio', { name: 'Colour' }).click();
+  await expect(options.getByRole('radio', { name: 'Colour' })).toBeChecked();
+  await options.getByRole('radio', { name: '2', exact: true }).click();
+  await options.getByRole('textbox', { name: 'Direction (optional)' }).fill('warmer, rounder');
+  await page.keyboard.press('Enter');
+  await expect(options).toHaveCount(0);
+  await expect(chevron).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toEqual([
+    { designId: 'b', kind: 'any', count: 3, direction: '' },
+    { designId: 'b', kind: 'colour', count: 2, direction: 'warmer, rounder' },
+  ]);
+});
+
+test('a variant gives its design to its source in one step, then offers to remove the set', async ({
+  page,
+}) => {
+  await openBoard(page, 14, 'reduce', '&variants=1');
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await expect(page.getByRole('button', { name: /^Use this variant/ })).toHaveCount(0);
+
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  const use = page
+    .getByRole('toolbar', { name: 'Design B actions' })
+    .getByRole('button', { name: 'Use this variant for Design A' });
+  await use.click();
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.writeCalls))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        expectedRevisionId: 'rev_01',
+        files: { 'main.tsx': '// b' },
+        deletedPaths: [],
+        designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+      },
+    ]);
+  // It holds until the write lands.
+  await expect(use).toHaveAttribute('aria-busy', 'true');
+  await page.evaluate(() => window.boardHarness.answerWrite(0));
+  await expect(use).toBeEnabled();
+  await page.getByText('Design A now uses Design B').hover();
+  await page.getByRole('button', { name: 'Remove variants' }).click();
+  expect(await page.evaluate(() => window.boardHarness.removeCalls)).toEqual([
+    { mutationId: expect.any(String), designIds: ['b'] },
+  ]);
+  await page.evaluate(() => window.boardHarness.answerRemove(0));
+  await expect(page.getByText('Deleted Design B')).toBeVisible();
+
+  // Undo takes back the deletion first, then the variant's design on its source.
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.evaluate(() => window.boardHarness.answerUndo(0));
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.switchCalls))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        revisionId: 'rev_01',
+        expectedRevisionId: 'rev_w0',
+      },
+    ]);
+  await page.evaluate(() => window.boardHarness.answerSwitch(0));
+  // Taken back, the choice no longer offers to clear its set.
+  const toasts = () => page.evaluate(() => window.boardHarness.toasts());
+  await expect.poll(toasts).not.toContain('Design A now uses Design B');
+
+  // Redo uses it again, and offers again to remove the set.
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.switchCalls.slice(1)))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        revisionId: 'rev_w0',
+        expectedRevisionId: 'rev_01',
+      },
+    ]);
+  await page.evaluate(() => window.boardHarness.answerSwitch(1));
+  await expect.poll(toasts).toContain('Design A now uses Design B');
 });
 
 test('the toolbar steps aside while a drag holds the frame and offers only Done in Interact', async ({

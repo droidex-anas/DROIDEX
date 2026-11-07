@@ -85,6 +85,23 @@
     box-shadow var(--duration-quick) var(--ease-smooth-out);
 }
 
+/* A long variant name shortens before its suffix, so the variants of one frame
+   still read apart. */
+.canvas-frame-name-split {
+  display: flex;
+}
+
+.canvas-frame-name-base {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-frame-name-suffix {
+  flex-shrink: 0;
+  white-space: pre;
+}
+
 .canvas-frame:hover .canvas-frame-name,
 .canvas-frame[data-selected] .canvas-frame-name {
   color: var(--selection-label);

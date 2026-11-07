@@ -209,6 +209,8 @@ function standIn(builds: CanvasBuilds) {
         manifestVersion: 0,
         revisionId,
         designSystem,
+        variantOf: null,
+        seededRevisionId: null,
         build: builds.stateOf(canvasId, designId),
       },
       lastWorkingRevisionId: null,

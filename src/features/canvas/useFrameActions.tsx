@@ -1,31 +1,36 @@
 // The frame toolbar's actions bound to the chat whose pane shows the canvas,
-// and the dialogs its Make variants… and Save to library… open.
+// and the dialog its Save to library… opens.
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { canvasClient as canvas } from './canvasClient';
-import { CanvasVariants } from './CanvasVariants';
+import { useSessionLive } from '../../hooks/useSessionLive';
+import { canvasClient as canvas, variantSets } from './canvasClient';
 import type { HistoryClient } from './frameHistory';
 import type { FrameActions } from './FrameToolbar';
-import type { RevisionRef } from './protocol';
+import type { CanvasFrame, RevisionRef } from './protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
-import { variantSource, type VariantSource } from './variantRequests';
+import { useVariantRequests } from './useVariantRequests';
+import { variantSetSource } from './variantSets';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
-/** What a dialog acts on, fixed when it opens so a later build cannot retarget it. */
-type FrameDialog =
-  | { kind: 'save'; revision: RevisionRef; frameName: string }
-  | { kind: 'variants'; source: VariantSource };
+/** What Save to library… saves, fixed when it opens so a later build cannot retarget it. */
+interface Saving {
+  revision: RevisionRef;
+  frameName: string;
+}
 
 export function useFrameActions(
   appSessionId: string,
   canvasId: string,
   /** This chat is attached to the canvas, so the sidecar takes its writes. */
   attached: boolean,
+  frames: readonly CanvasFrame[],
 ): { actions: FrameActions; dialog: ReactNode } {
-  const [dialog, setDialog] = useState<FrameDialog | null>(null);
+  const [saving, setSaving] = useState<Saving | null>(null);
   const close = useCallback(() => {
-    setDialog(null);
+    setSaving(null);
   }, []);
+  const makeVariants = useVariantRequests(appSessionId, canvasId);
+  const agentWorking = useSessionLive(appSessionId);
   // Its identity is the toolbar's history owner, so it changes only with the chat or canvas.
   const history = useMemo(
     (): HistoryClient => ({
@@ -45,36 +50,30 @@ export function useFrameActions(
         name,
         expectedManifestVersion: frame.manifestVersion,
       }),
-    makeVariants: (frame) => {
-      const source = variantSource(canvasId, frame);
-      if (source) setDialog({ kind: 'variants', source });
-    },
+    makeVariants: (frame, choice) =>
+      variantSets.make(canvasId, frame.designId, () => makeVariants(frame, choice)),
+    variantWork: variantSets.viewOf(canvasId),
+    // While the agent works, a variant may be partway to what it was asked to become.
+    sourceOf: (frame) => (attached && !agentWorking ? variantSetSource(frames, frame) : null),
+    applyVariant: (variant, source) => variantSets.apply(appSessionId, canvasId, variant, source),
     saveToLibrary: (frame) => {
       if (frame.revisionId)
-        setDialog({
-          kind: 'save',
+        setSaving({
           revision: { designId: frame.designId, revisionId: frame.revisionId },
           frameName: frame.name,
         });
     },
   };
 
-  if (dialog?.kind === 'save')
-    return {
-      actions,
-      dialog: (
-        <SaveToLibraryDialog
-          canvasId={canvasId}
-          revision={dialog.revision}
-          frameName={dialog.frameName}
-          onClose={close}
-        />
-      ),
-    };
-  if (dialog?.kind === 'variants')
-    return {
-      actions,
-      dialog: <CanvasVariants appSessionId={appSessionId} source={dialog.source} onClose={close} />,
-    };
-  return { actions, dialog: null };
+  return {
+    actions,
+    dialog: saving && (
+      <SaveToLibraryDialog
+        canvasId={canvasId}
+        revision={saving.revision}
+        frameName={saving.frameName}
+        onClose={close}
+      />
+    ),
+  };
 }

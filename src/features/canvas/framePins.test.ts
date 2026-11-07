@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  addFramePins,
   canvasContextOf,
   framePins,
   promptWithFramePins,
@@ -25,6 +24,8 @@ function frame(
     manifestVersion: 1,
     revisionId,
     designSystem: { id: 'droidex', version: 2, mode: 'dark' },
+    variantOf: null,
+    seededRevisionId: null,
     build: { status: 'pending', generation: 1 },
   };
 }
@@ -158,24 +159,4 @@ test('an edited queued prompt brings back only frames still on the attached boar
     framePins('chat-e').map((pin) => pin.designId),
     ['d1', 'd2'],
   );
-});
-
-test('variants join the pins the draft already holds, once each', () => {
-  toggleFramePin('chat-v', 'cv_1', frame('d1', 'r1'));
-  addFramePins('chat-v', 'cv_1', [frame('v1', 'r1', 'Hey · layout 1'), frame('d1', 'r2')]);
-
-  assert.deepEqual(
-    framePins('chat-v').map(({ designId, revisionId }) => ({ designId, revisionId })),
-    [
-      { designId: 'v1', revisionId: 'r1' },
-      { designId: 'd1', revisionId: 'r2' },
-    ],
-  );
-  // A frame from another canvas starts over, as a toggle does.
-  addFramePins('chat-v', 'cv_2', [frame('w1', 'r1')]);
-  assert.deepEqual(
-    framePins('chat-v').map((pin) => pin.designId),
-    ['w1'],
-  );
-  unpinFrames('chat-v');
 });

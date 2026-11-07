@@ -55,6 +55,10 @@ const persistedDesignSchema = z
     designSystem: designSystemRefSchema,
     // Provenance only: this design owns its source copy independently.
     seed: canvasSeedSchema.optional(),
+    // The frame this one was made as a variant of, which may since have been removed.
+    variantOf: canvasIdentifierSchema.optional(),
+    // The revision the seed made, so a reader can tell that copy from later work.
+    seededRevisionId: canvasIdentifierSchema.optional(),
   })
   .strict();
 
@@ -308,6 +312,8 @@ export function toFrame(
     manifestVersion: design.manifestVersion,
     revisionId: design.revisionId,
     designSystem: { ...design.designSystem },
+    variantOf: design.variantOf ?? null,
+    seededRevisionId: design.seededRevisionId ?? null,
     build: builds.stateOf(canvasId, design.designId),
   };
 }

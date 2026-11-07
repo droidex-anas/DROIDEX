@@ -103,7 +103,7 @@ export class CanvasFrameCreation {
             this.leases.requireCanvas(scope, canvasId);
           };
         }
-        const designs = placeFrames(staged, next.designs, input.placeBeside);
+        const designs = placeFrames(staged, next, input.placeBeside);
         next.designs.push(...designs);
         next.layoutSequence += 1;
         next.sequence += 1;
