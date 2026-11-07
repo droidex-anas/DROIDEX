@@ -27,6 +27,8 @@ import {
   type Viewport,
 } from './canvasGeometry';
 import { showsFrameTools, type BoardInteraction } from './canvasState';
+import type { CanvasPresence } from './canvasPresence';
+import { CanvasPresenceLayer } from './CanvasPresenceLayer';
 import { DesignFrame } from './DesignFrame';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
@@ -86,8 +88,7 @@ export interface CanvasBoardProps {
   /** Mode and selection, so the toolbar and navigator read the same values. */
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
-  /** This chat's agent has a turn running, so frames with no source are being written. */
-  agentWorking: boolean;
+  presence: CanvasPresence;
   onOpenSource?: (designId: string) => void;
   /** The frames pinned to the chat's next prompt. */
   pinnedIds?: ReadonlySet<string>;
@@ -118,7 +119,7 @@ export function CanvasBoard({
   renderPreview,
   interaction,
   onInteractionChange,
-  agentWorking,
+  presence,
   onOpenSource,
   pinnedIds,
   onToggleChat,
@@ -348,7 +349,7 @@ export function CanvasBoard({
               }
               interacted={interaction.interactedFrameId === frame.designId}
               held={gestures.heldDesignIds.includes(frame.designId)}
-              agentWorking={agentWorking}
+              worker={presence.get(frame.designId)?.agent}
               capturePointer={overlayCapture}
               shownRevisionId={previews.shown.get(frame.designId) ?? null}
               preview={previews.preview(frame)}
@@ -386,6 +387,12 @@ export function CanvasBoard({
               onFocusLabel={onFocusLabel}
             />
           ))}
+          <CanvasPresenceLayer
+            presence={presence}
+            drawn={drawn}
+            visible={visible}
+            motion={motion}
+          />
           <ElementOutlines
             drawn={drawn}
             scale={scale}
