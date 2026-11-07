@@ -47,6 +47,9 @@ const PRIMARY = 'primary';
 // prompt are read. A child waits on a running call, so the call is among its
 // latest, however long the chat or other agents went on meanwhile.
 const CHILD_LOOKBACK = 50;
+// An event reaches the transcript a little after its `ts`: a streamed run is
+// stamped when it starts and lands when its batch closes.
+const DELIVERY_SLACK_MS = 1000;
 const NO_ARRIVALS: ReadonlyMap<string, number> = new Map();
 
 export interface PresenceSources {
@@ -55,8 +58,8 @@ export interface PresenceSources {
   events: readonly TranscriptEvent[];
   /** The chat's own turn is running. */
   primaryLive: boolean;
-  /** The child sessions at work. */
-  liveChildren: ReadonlySet<string>;
+  /** The child sessions at work, each with when it started, if known, on the clock of `ts`. */
+  liveChildren: ReadonlyMap<string, number | undefined>;
 }
 
 /**
@@ -148,7 +151,7 @@ function turnWork(turn: readonly TranscriptEvent[]): TurnWork {
  */
 function turnCanvasEvents(
   events: readonly TranscriptEvent[],
-  liveChildren: ReadonlySet<string>,
+  liveChildren: PresenceSources['liveChildren'],
 ): TranscriptEvent[] {
   const chunks = chunkedSequenceChunks(events);
   // Collected newest first, then reversed.
@@ -170,16 +173,17 @@ function turnCanvasEvents(
 
 /**
  * Adds, newest first, up to `CHILD_LOOKBACK` of each live child's canvas
- * events from before the prompt at `promptIndex`.
+ * events from before the prompt at `promptIndex`. A child is read back no
+ * further than the chunk that was open when it started.
  */
 function pushEarlierChildEvents(
   turn: TranscriptEvent[],
   chunks: readonly (readonly TranscriptEvent[])[],
   chunkIndex: number,
   promptIndex: number,
-  liveChildren: ReadonlySet<string>,
+  liveChildren: PresenceSources['liveChildren'],
 ): void {
-  const unread = new Map([...liveChildren].map((child) => [child, CHILD_LOOKBACK]));
+  const unread = new Map([...liveChildren.keys()].map((child) => [child, CHILD_LOOKBACK]));
   // Whether any live child has events left to read.
   const read = (event: TranscriptEvent): boolean => {
     const left = unread.get(event.sourceSessionId);
@@ -194,7 +198,21 @@ function pushEarlierChildEvents(
     const event = promptChunk[index];
     if (event.canvasActivity && !read(event)) return;
   }
+  const latestStartFirst = [...liveChildren]
+    .flatMap(([child, startedAt]) => (startedAt === undefined ? [] : [{ child, startedAt }]))
+    .sort((left, right) => right.startedAt - left.startedAt);
+  let started = 0;
   for (let earlier = chunkIndex - 1; earlier >= 0; earlier -= 1) {
+    // Every chunk before one that opened ahead of a child's start predates it.
+    const openedAt = chunks[earlier + 1][0].ts;
+    while (
+      started < latestStartFirst.length &&
+      openedAt + DELIVERY_SLACK_MS < latestStartFirst[started].startedAt
+    ) {
+      unread.delete(latestStartFirst[started].child);
+      started += 1;
+    }
+    if (unread.size === 0) return;
     const childEvents = childCanvasEvents(chunks[earlier]);
     for (let index = childEvents.length - 1; index >= 0; index -= 1)
       if (!read(childEvents[index])) return;

@@ -59,13 +59,15 @@ const reserved = (designId: string) => ({ designId, revisionId: null });
 
 function sources(
   events: TranscriptEvent[],
-  live: { primary?: boolean; children?: string[] } = { primary: true },
+  live: { primary?: boolean; children?: string[]; startedAt?: Record<string, number> } = {
+    primary: true,
+  },
 ): PresenceSources {
   return {
     appSessionId: 'chat',
     events,
     primaryLive: live.primary ?? false,
-    liveChildren: new Set(live.children),
+    liveChildren: new Map((live.children ?? []).map((child) => [child, live.startedAt?.[child]])),
   };
 }
 
@@ -158,6 +160,44 @@ test('a child still at work when the user prompts again keeps its frames', () =>
     ['a', 'chat/w1'],
     ['made', 'chat/w1'],
   ]);
+});
+
+test('a live child is read back no further than the chunk open when it started', () => {
+  const frames = [designed('a'), designed('b')];
+  // A long chat from before any live child, each event counted when it is read.
+  let olderReads = 0;
+  const older = Array.from({ length: 400 }, (_, ts) => {
+    const event = ev({ ts, text: 'word' });
+    const { role } = event;
+    return Object.defineProperty(event, 'role', {
+      enumerable: true,
+      get: () => {
+        olderReads += 1;
+        return role;
+      },
+    });
+  });
+  const events = [
+    ...older,
+    ev({ ts: 100_000, ...from('w1'), text: 'Reading the brief' }),
+    { ...call('t1', 'write', ['a'], 'w1'), ts: 100_100 },
+    { ...prompt(), ts: 100_200 },
+    { ...call('t2', 'write', ['b'], 'w3'), ts: 200_100 },
+  ];
+  // w2 has no canvas calls at all, and w3 started after the prompt.
+  const live = {
+    primary: true,
+    children: ['w1', 'w2', 'w3'],
+    startedAt: { w1: 100_000, w2: 100_000, w3: 200_000 },
+  };
+
+  const presence = canvasPresence(sources(asChunkedSequence(events, 4), live), frames);
+  assert.deepEqual(frameAgents(presence), [
+    ['a', 'chat/w1'],
+    ['b', 'chat/w3'],
+  ]);
+  // At most the one older chunk that was open when they started.
+  assert.ok(olderReads <= 4, `read ${String(olderReads)} older events`);
 });
 
 test('a turn is read whole across the chunks the store keeps a transcript in', () => {

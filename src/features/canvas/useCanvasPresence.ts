@@ -23,11 +23,9 @@ export function useCanvasPresence(appSessionId: string, frames: CanvasFrame[]): 
       const children = state.childSessions[appSessionId] ?? {};
       // A subagent running inside the chat's own process has no runtime of its
       // own, so whether it is at work is its status alone.
-      const liveChildren = new Set(
-        Object.keys(children).filter((childSessionId) =>
-          isWorkingAgent(children[childSessionId], primaryLive),
-        ),
-      );
+      const liveChildren = new Map<string, number | undefined>();
+      for (const [childSessionId, child] of Object.entries(children))
+        if (isWorkingAgent(child, primaryLive)) liveChildren.set(childSessionId, child.startedAt);
       return canvasPresence(
         {
           appSessionId,
