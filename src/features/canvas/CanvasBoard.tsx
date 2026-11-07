@@ -90,10 +90,10 @@ export interface CanvasBoardProps {
   onInteractionChange: (next: BoardInteraction) => void;
   presence: CanvasPresence;
   onOpenSource?: (designId: string) => void;
-  /** The frames pinned to the chat's next prompt. */
+  /** The frames tagged in the chat's next prompt. */
   pinnedIds?: ReadonlySet<string>;
-  /** Pins a frame to the chat's next prompt or takes it off; absent where frames cannot be pinned. */
-  onToggleChat?: (frame: CanvasFrame) => void;
+  /** Tags frames in the chat's next prompt, or untags them; absent where frames cannot be tagged. */
+  onTagFrames?: (designIds: readonly string[]) => void;
   /** What the selected frame's toolbar does to the canvas. */
   frameActions: FrameActions;
   /** Where the board was left for a document; it reopens there instead of fitting. */
@@ -122,7 +122,7 @@ export function CanvasBoard({
   presence,
   onOpenSource,
   pinnedIds,
-  onToggleChat,
+  onTagFrames,
   frameActions,
   restoredViewport,
   onLeave,
@@ -311,6 +311,7 @@ export function CanvasBoard({
             history: onHistory,
             focusBoard,
             focusLabel,
+            tagFrames: onTagFrames,
           });
         }}
         onKeyUp={(event) => {
@@ -359,8 +360,8 @@ export function CanvasBoard({
                 focusBoard();
               }}
               onOpenSource={onOpenSource}
-              inChat={pinnedIds?.has(frame.designId) ?? false}
-              onToggleChat={onToggleChat}
+              tagged={pinnedIds?.has(frame.designId) ?? false}
+              onTagFrames={onTagFrames}
               actions={frameActions}
               onDelete={removeSelection}
               onHold={gestures.onFramePointerDown}

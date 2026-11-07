@@ -62,7 +62,7 @@ function board(
   snapshot: CanvasSnapshot,
   interaction: BoardInteraction = SELECT_MODE,
   presence: CanvasPresence = NO_PRESENCE,
-  pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onToggleChat'> = {},
+  pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onTagFrames'> = {},
 ) {
   return createElement(CanvasBoard, {
     ...pins,
@@ -246,24 +246,26 @@ test('a board leaving with its pane mounts no live preview', () => {
   assert.equal(inPane(false).includes('Loading this preview'), false);
 });
 
-test('a selected frame offers Add to chat only on its chat’s own canvas, and says when it is in', () => {
+test('a selected frame offers Tag in chat only on its chat’s own canvas, and says when it is tagged', () => {
   const picked: BoardInteraction = {
     mode: 'select',
     selectedFrameIds: ['a'],
     interactedFrameId: null,
   };
   const snapshot = snapshotOf(frame('a', ACKNOWLEDGED));
-  const onToggleChat = () => undefined;
+  const onTagFrames = () => undefined;
 
-  assert.equal(render(snapshot, picked).includes('Add to chat'), false);
+  const elsewhere = render(snapshot, picked);
+  assert.equal(elsewhere.includes('Tag Design a in the chat'), false);
+  assert.equal(elsewhere.includes('canvas-frame-tag'), false);
   assert.match(
-    render(snapshot, picked, NO_PRESENCE, { onToggleChat }),
-    /aria-pressed="false" aria-label="Add Design a to the chat"/,
+    render(snapshot, picked, NO_PRESENCE, { onTagFrames }),
+    /aria-pressed="false" aria-label="Tag Design a in the chat"/,
   );
-  assert.match(
-    render(snapshot, picked, NO_PRESENCE, { onToggleChat, pinnedIds: new Set(['a']) }),
-    /aria-pressed="true" aria-label="Take Design a out of the chat"/,
-  );
+  const tagged = render(snapshot, picked, NO_PRESENCE, { onTagFrames, pinnedIds: new Set(['a']) });
+  assert.match(tagged, /aria-pressed="true" aria-label="Untag Design a from the chat"/);
+  // The label keeps saying so once the frame is no longer selected.
+  assert.match(tagged, /data-tagged="true" class="canvas-frame-tag"/);
 });
 
 test('saved marks draw in their theme colour, and an agent’s carry its glyph', () => {

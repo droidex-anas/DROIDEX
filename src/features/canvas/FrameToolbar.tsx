@@ -1,5 +1,5 @@
 // The selected frame's toolbar (spec §4): switch its version, run it, read its
-// source, add it to the chat, rename it, make variants of it or give a
+// source, tag it in the chat, rename it, make variants of it or give a
 // variant's design to the frame it was made from, and the rest behind More. It
 // floats at screen size over the frame's label, or under the frame where that
 // has no room (toolbarPlacement.ts), so it follows the frame through pan and
@@ -18,6 +18,7 @@ import {
 import { Check, Ellipsis, MessageThread, Pencil, Play } from '@droidex/icons';
 import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
+import { TAG_KEY_LABEL } from './boardKeys';
 import type { Point } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
 import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
@@ -54,12 +55,12 @@ export interface FrameToolbarProps {
   room: ToolbarRoom;
   /** Spec §11's timings; the bar reveals on the popover token. */
   motion: CanvasMotion;
-  inChat: boolean;
+  tagged: boolean;
   actions: FrameActions;
   onInteract: (frame: CanvasFrame) => void;
   onExitInteract: () => void;
   onOpenSource?: (designId: string) => void;
-  onToggleChat?: (frame: CanvasFrame) => void;
+  onTagFrames?: (designIds: readonly string[]) => void;
   /** Turns the frame's label into its name field. */
   onRename: () => void;
   onDelete: () => void;
@@ -71,7 +72,7 @@ export type ToolId =
   | 'history'
   | 'interact'
   | 'source'
-  | 'chat'
+  | 'tag'
   | 'rename'
   | 'variants'
   | 'variant-options'
@@ -108,11 +109,11 @@ function SelectToolbar({
   frame,
   room,
   motion,
-  inChat,
+  tagged,
   actions,
   onInteract,
   onOpenSource,
-  onToggleChat,
+  onTagFrames,
   onRename,
   onDelete,
   onLeave,
@@ -127,7 +128,7 @@ function SelectToolbar({
   }, []);
 
   const source = actions.sourceOf(frame);
-  const tools = toolsShown({ frame, source, actions, onOpenSource, onToggleChat });
+  const tools = toolsShown({ frame, source, actions, onOpenSource, onTagFrames });
   const tabStop = focusedTool !== null && tools.includes(focusedTool) ? focusedTool : tools[0];
   const tool = (id: ToolId): ToolButtonProps => ({
     'data-tool': id,
@@ -204,20 +205,24 @@ function SelectToolbar({
           </button>
         </Tooltip>
       )}
-      {onToggleChat && (
-        <Tooltip label={inChat ? 'In chat. Take it out' : 'Add to chat'}>
+      {onTagFrames && (
+        <Tooltip
+          label={
+            tagged ? `Tagged in chat. Untag (${TAG_KEY_LABEL})` : `Tag in chat (${TAG_KEY_LABEL})`
+          }
+        >
           <button
             type="button"
-            {...tool('chat')}
-            aria-pressed={inChat}
+            {...tool('tag')}
+            aria-pressed={tagged}
             aria-label={
-              inChat ? `Take ${frame.name} out of the chat` : `Add ${frame.name} to the chat`
+              tagged ? `Untag ${frame.name} from the chat` : `Tag ${frame.name} in the chat`
             }
             onClick={() => {
-              onToggleChat(frame);
+              onTagFrames([frame.designId]);
             }}
           >
-            {inChat ? (
+            {tagged ? (
               <Check className="h-4 w-4" aria-hidden />
             ) : (
               <MessageThread className="h-4 w-4" aria-hidden />
@@ -381,15 +386,15 @@ function toolsShown({
   source,
   actions,
   onOpenSource,
-  onToggleChat,
-}: Pick<FrameToolbarProps, 'frame' | 'actions' | 'onOpenSource' | 'onToggleChat'> & {
+  onTagFrames,
+}: Pick<FrameToolbarProps, 'frame' | 'actions' | 'onOpenSource' | 'onTagFrames'> & {
   source: CanvasFrame | null;
 }): ToolId[] {
   const tools: ToolId[] = [];
   if (frame.revisionId) tools.push('history');
   tools.push('interact');
   if (onOpenSource) tools.push('source');
-  if (onToggleChat) tools.push('chat');
+  if (onTagFrames) tools.push('tag');
   if (actions.canEdit) tools.push('rename');
   if (actions.canEdit && frame.revisionId) tools.push('variants', 'variant-options');
   if (source) tools.push('use-variant');

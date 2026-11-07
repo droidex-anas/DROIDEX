@@ -104,10 +104,10 @@ export interface DesignFrameProps {
   onFocusLabel: (frame: CanvasFrame) => void;
   onExitInteract: () => void;
   onOpenSource?: (designId: string) => void;
-  /** The frame is pinned to the chat's next prompt. */
-  inChat: boolean;
-  /** Pins it to the chat's next prompt or takes it off; absent where it cannot be pinned. */
-  onToggleChat?: (frame: CanvasFrame) => void;
+  /** The frame is tagged in the chat's next prompt. */
+  tagged: boolean;
+  /** Tags frames in the chat's next prompt, or untags them; absent where frames cannot be tagged. */
+  onTagFrames?: (designIds: readonly string[]) => void;
   actions: FrameActions;
   /** Deletes the selection, which is this frame while it shows its toolbar. */
   onDelete: () => void;
@@ -173,11 +173,13 @@ export function DesignFrame(props: DesignFrameProps) {
           selected={selected}
           interacted={props.interacted}
           held={held}
+          tagged={props.tagged}
           tabStop={props.tabStop}
           onPress={press}
           onClick={click}
           onPick={onPick}
           onInteract={onInteract}
+          onTagFrames={props.onTagFrames}
           onEnter={(picked) => {
             // Edit goes into the frame's elements; otherwise Enter picks the
             // frame, and on one already picked starts interacting with it.
@@ -196,12 +198,12 @@ export function DesignFrame(props: DesignFrameProps) {
           interacted={props.interacted}
           room={toolbarRoom}
           motion={motion}
-          inChat={props.inChat}
+          tagged={props.tagged}
           actions={props.actions}
           onInteract={onInteract}
           onExitInteract={props.onExitInteract}
           onOpenSource={props.onOpenSource}
-          onToggleChat={props.onToggleChat}
+          onTagFrames={props.onTagFrames}
           onRename={() => {
             setRenaming(true);
           }}

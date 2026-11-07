@@ -79,18 +79,31 @@ function samePin(a: FramePin, b: FramePin): boolean {
   );
 }
 
+function isTagged(pins: readonly FramePin[], canvasId: string, frame: CanvasFrame): boolean {
+  return pins.some((pin) => pin.canvasId === canvasId && pin.designId === frame.designId);
+}
+
 /**
- * Adds a frame to the chat's next prompt, or takes it off if it is there. A
- * request pins frames of one canvas, so a frame from another starts over.
+ * Tags these frames in the chat's next prompt, or untags them when every one is
+ * tagged already. A request pins frames of one canvas, so a frame from another
+ * starts over.
  */
-export function toggleFramePin(appSessionId: string, canvasId: string, frame: CanvasFrame): void {
+export function toggleFramePins(
+  appSessionId: string,
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): void {
   const held = framePins(appSessionId).filter((pin) => pin.canvasId === canvasId);
-  if (held.some((pin) => pin.designId === frame.designId))
+  const untagged = frames.filter((frame) => !isTagged(held, canvasId, frame));
+  if (untagged.length > 0) {
+    const added = untagged.map((frame) => pinOf(canvasId, frame));
+    publish(appSessionId, [...held, ...added].slice(0, MAX_PINNED));
+  } else if (frames.length > 0) {
     publish(
       appSessionId,
-      held.filter((pin) => pin.designId !== frame.designId),
+      held.filter((pin) => !frames.some((frame) => frame.designId === pin.designId)),
     );
-  else if (held.length < MAX_PINNED) publish(appSessionId, [...held, pinOf(canvasId, frame)]);
+  }
 }
 
 /** Takes these frames off the chat's next prompt, or all of them. */

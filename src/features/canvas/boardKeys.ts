@@ -1,8 +1,9 @@
-// What a key means on the board: the zoom, mode and annotation tool shortcuts, Edit's element keys, which elements
+// What a key means on the board: the zoom, mode, tag and annotation tool shortcuts, Edit's element keys, which elements
 // keep their own keys, and how focus moves between frames and between marks.
 // The board reads these; nothing here touches React state.
 
 import type { KeyboardEvent } from 'react';
+import { formatChord, matchesChord } from '../../lib/shortcuts';
 import { draftBounds, isTextDraft, type AnnotationTool } from './annotationGeometry';
 import type { ShownMark } from './annotationWrites';
 import type { HistoryStep } from './boardHistory';
@@ -81,6 +82,14 @@ export function historyStep(event: KeyboardEvent): HistoryStep | null {
   if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
   if (key === 'y' && !event.shiftKey) return 'redo';
   return null;
+}
+
+/** ⌘L tags the selected frames in the chat, or untags them; Ctrl+L off the Mac. */
+const TAG_CHORD = 'Meta+L';
+export const TAG_KEY_LABEL = formatChord(TAG_CHORD);
+
+export function isTagKey(event: KeyboardEvent): boolean {
+  return matchesChord(event, TAG_CHORD);
 }
 
 /** ⌘A, or Ctrl+A off the Mac. */

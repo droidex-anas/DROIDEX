@@ -1,6 +1,6 @@
 // The selected frame's toolbar against the harness: rename, the version
-// menu and switching, Source, Variants, Use this variant and More, the
-// keyboard's way through it, and when it steps aside.
+// menu and switching, Source, tagging in the chat, Variants, Use this variant
+// and More, the keyboard's way through it, and when it steps aside.
 
 import { expect, test } from '@playwright/test';
 import { box, boardUrl, frame, openBoard, serveBoard } from './board/boardPage';
@@ -91,6 +91,53 @@ test('a rename saves over a build that landed meanwhile, but not over another re
   await expect(page.getByText('This frame was renamed to “Landing” meanwhile.')).toBeVisible();
   await expect(page.getByText('Landing', { exact: true }).locator('..')).toBeFocused();
   expect(await page.evaluate(() => window.boardHarness.renameCalls)).toHaveLength(1);
+});
+
+test('frames tag in the chat from the toolbar, the label and the tag key, never from a field', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const tags = (name: string) => frame(page, name).locator('.canvas-frame-tag');
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await page
+    .getByRole('toolbar', { name: 'Design A actions' })
+    .getByRole('button', { name: 'Tag Design A in the chat' })
+    .click();
+  await expect(
+    page.getByRole('button', { name: 'Untag Design A from the chat', pressed: true }),
+  ).toBeVisible();
+  await expect(tags('A')).toHaveAttribute('data-tagged', 'true');
+
+  // The key tags the whole selection, and once all are tagged, untags them.
+  await page.evaluate(() => window.boardHarness.select(['a', 'b']));
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+l');
+  await expect(tags('B')).toHaveAttribute('data-tagged', 'true');
+  await page.keyboard.press('ControlOrMeta+l');
+  await expect(tags('A')).not.toHaveAttribute('data-tagged');
+  await expect(tags('B')).not.toHaveAttribute('data-tagged');
+
+  // The label's tag acts on its own frame and leaves the selection alone.
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await frame(page, 'B').hover();
+  await tags('B').click();
+  await expect(tags('B')).toHaveAttribute('data-tagged', 'true');
+  expect(await page.evaluate(() => window.boardHarness.interaction().selectedFrameIds)).toEqual([
+    'a',
+  ]);
+
+  // A field on the board and anything off it keep the key.
+  await page
+    .getByRole('toolbar', { name: 'Design A actions' })
+    .getByRole('button', { name: 'Rename Design A' })
+    .click();
+  await expect(page.getByRole('textbox', { name: 'Name of Design A' })).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+l');
+  await page.keyboard.press('Escape');
+  await expect(tags('A')).not.toHaveAttribute('data-tagged');
+  await page.locator('#outside').focus();
+  await page.keyboard.press('ControlOrMeta+l');
+  await expect(tags('A')).not.toHaveAttribute('data-tagged');
 });
 
 test('the toolbar is one tab stop the arrows walk, and Escape returns to the label', async ({
