@@ -65,6 +65,8 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   // Bumped as Design opens or closes, as the board's chat changes and as its
   // picks clear, so a press or an answer from before then is dropped.
   const generation = useRef(0);
+  // Counts presses, so a pick that lands leaves a newer press's drag outlined.
+  const presses = useRef(0);
   const anchor = active ? design?.pins.at(-1) : undefined;
   const textDrag = useTextDrag(runs, active);
 
@@ -135,8 +137,14 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
     setPrompt((draft) => draft ?? { chatId, seed: pins.seed, text: '' });
   };
 
-  /** A press released over `frame` for `chatId`, as what it asks the frame's preview. */
-  const pick = (frame: CanvasFrame, probe: PreviewProbe, additive: boolean, chatId: string) => {
+  /** Press `pressNo` released over `frame` for `chatId`, as what it asks the frame's preview. */
+  const pick = (
+    frame: CanvasFrame,
+    probe: PreviewProbe,
+    additive: boolean,
+    chatId: string,
+    pressNo: number,
+  ) => {
     const held = runs.get(frame.designId);
     if (!held) {
       textDrag.clear();
@@ -159,7 +167,9 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
       .catch((failure: unknown) => {
         console.error('A Design pick could not be answered:', failure);
       })
-      .finally(textDrag.clear);
+      .finally(() => {
+        if (pressNo === presses.current) textDrag.clear();
+      });
   };
 
   /**
@@ -169,6 +179,7 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   const press = (frame: CanvasFrame): DesignPress => {
     const chatId = design?.chatId;
     const pressedIn = generation.current;
+    const pressNo = (presses.current += 1);
     const current = () =>
       pressedIn === generation.current && latest.current.design?.chatId === chatId;
     return {
@@ -177,7 +188,7 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
         else textDrag.clear();
       },
       release: (probe, additive) => {
-        if (chatId !== undefined && current()) pick(frame, probe, additive, chatId);
+        if (chatId !== undefined && current()) pick(frame, probe, additive, chatId, pressNo);
         else textDrag.clear();
       },
     };
