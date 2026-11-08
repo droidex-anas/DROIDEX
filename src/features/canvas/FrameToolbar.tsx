@@ -1,6 +1,6 @@
 // The selected frame's toolbar (spec §4): switch its version, run it, read its
-// source, tag it in the chat, rename it, make variants of it or give a
-// variant's design to the frame it was made from, and the rest behind More. It
+// source, tag it in the chat, rename it, make variants of it or of the
+// elements picked in it, or give a variant's design to the frame it was made from, and the rest behind More. It
 // floats at screen size over the frame's label, or under the frame where that
 // has no room (toolbarPlacement.ts), so it follows the frame through pan and
 // zoom. It is one tab stop: the arrows move inside it and Escape hands the
@@ -23,6 +23,7 @@ import type { Point } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
 import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
+import type { ElementPin } from './elementPins';
 import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
 import { placeToolbar, type ToolbarRoom } from './toolbarPlacement';
@@ -36,8 +37,17 @@ export interface FrameActions {
   /** False on a canvas this chat only views: the sidecar refuses its writes. */
   canEdit: boolean;
   rename: (frame: CanvasFrame, name: string) => Promise<unknown>;
-  /** Settles once the request has gone or failed, which it reports itself. */
-  makeVariants: (frame: CanvasFrame, choice: VariantChoice) => Promise<void>;
+  /** The elements this chat picked in `frame` as it is now on show. */
+  picksIn: (frame: CanvasFrame) => readonly ElementPin[];
+  /**
+   * Makes variants of `frame`, or of the elements `picks` names in it. Settles
+   * once the request has gone or failed, which it reports itself.
+   */
+  makeVariants: (
+    frame: CanvasFrame,
+    choice: VariantChoice,
+    picks: readonly ElementPin[],
+  ) => Promise<void>;
   /** What each source frame's variant set is busy with; its variant tools hold meanwhile. */
   variantWork: VariantWorkView;
   /** The frame `frame` was made as a variant of, while this chat can give it the variant's design. */
@@ -247,6 +257,7 @@ function SelectToolbar({
           <ToolDivider />
           <VariantsTool
             frame={frame}
+            picks={actions.picksIn(frame)}
             tool={tool}
             work={actions.variantWork}
             onMake={actions.makeVariants}

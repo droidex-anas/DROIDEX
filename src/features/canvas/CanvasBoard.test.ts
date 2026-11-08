@@ -24,6 +24,7 @@ const FRAME_ACTIONS: FrameActions = {
   history: { listRevisions: () => Promise.resolve([]), switchRevision: () => Promise.resolve() },
   canEdit: false,
   rename: () => Promise.resolve(),
+  picksIn: () => [],
   makeVariants: () => Promise.resolve(),
   variantWork: { subscribe: () => () => undefined, of: () => null },
   sourceOf: () => null,

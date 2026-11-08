@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { PickedElement } from './pickedElement';
 import {
+  elementVariantPrompt,
   splitVariantName,
   variantFrames,
   variantPrompt,
@@ -87,6 +89,45 @@ test('the request says what to change in the user words, and that the source sta
       'Each pinned frame starts as a copy of Hey; give each a different take on it within the ' +
       'current design system (layout, visual style or colour), distinct from the others, ' +
       'and leave Hey as it is.',
+  );
+});
+
+test('a request for variants of picked elements names them and where every copy writes them', () => {
+  const heading: PickedElement = {
+    designId: 'd1',
+    revisionId: 'r3',
+    elementId: 'el_1',
+    instancePath: '0/1',
+    source: { file: 'main.tsx', start: 120, end: 160, line: 7 },
+    tagName: 'h1',
+    component: null,
+    box: { x: 0, y: 0, width: 200, height: 40 },
+    text: { excerpt: ' Ship\n faster ', box: { x: 0, y: 0, width: 120, height: 40 } },
+  };
+  assert.equal(
+    elementVariantPrompt('Pricing', [heading], { kind: 'colour', count: 3, direction: '' }),
+    'Make 3 colour variants of <h1> “Ship faster” in Pricing.\n' +
+      'Each pinned frame starts as a copy of Pricing. In each, change only that element ' +
+      '(main.tsx line 7 of Pricing’s source, the same lines in every copy) to a different ' +
+      'colour palette, distinct from the others, and leave everything else and Pricing itself ' +
+      'as they are.',
+  );
+
+  // Two picks of the same element, by the words they span, each keep their own words.
+  const card = { ...heading, component: 'Card', text: null };
+  const words = { ...heading, text: { excerpt: 'faster', box: heading.box } };
+  const sidebar = { ...card, source: { ...card.source, file: 'Sidebar.tsx', line: 3 } };
+  assert.equal(
+    elementVariantPrompt('Pricing', [heading, words, sidebar], {
+      kind: 'any',
+      count: 2,
+      direction: 'calmer',
+    }),
+    'Make 2 variants of <h1> “Ship faster” (main.tsx line 7), <h1> “faster” (main.tsx line 7), ' +
+      'and Card (Sidebar.tsx line 3) in Pricing: calmer\n' +
+      'Each pinned frame starts as a copy of Pricing. In each, change only those elements ' +
+      '(at those lines of Pricing’s source, the same lines in every copy) to a different take on it within the current design system (layout, visual style or ' +
+      'colour), distinct from the others, and leave everything else and Pricing itself as they are.',
   );
 });
 

@@ -91,9 +91,7 @@ export function SegmentedControl<T extends string | number>({
                 {option.icon ? (
                   <option.icon aria-hidden className={cn('size-icon-sm', option.iconClassName)} />
                 ) : (
-                  <span className="whitespace-nowrap text-label">
-                    {option.text ?? option.label}
-                  </span>
+                  <span className="truncate text-label">{option.text ?? option.label}</span>
                 )}
               </button>
             );

@@ -1,6 +1,9 @@
 // One click on Variants (spec §4): copies of the frame's revision on show,
 // placed beside it, and a request that goes straight to the chat's agent with
-// only those copies pinned. The composer, and the pins it holds, stay as they are.
+// only those copies pinned. Variants of elements picked in the frame name the
+// picks in words and by the source lines every copy shares, never by their
+// element IDs, which belong to the unpinned source. The composer, and the pins
+// and picks it holds, stay as they are.
 
 import { useCallback, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
@@ -11,15 +14,25 @@ import { sessionIsLive } from '../../lib/sessions';
 import { toast } from '../../lib/toast';
 import { canvasClient } from './canvasClient';
 import { canvasMessage, CanvasRequestError } from './client';
+import type { ElementPin } from './elementPins';
 import { canvasContextOf, pinOf, promptWithCanvasPins } from './framePins';
 import type { CanvasFrame, CreateFramesInput } from './protocol';
-import { variantFrames, variantPrompt, variantSource, type VariantChoice } from './variantRequests';
+import {
+  elementVariantPrompt,
+  variantFrames,
+  variantPrompt,
+  variantSource,
+  type VariantChoice,
+} from './variantRequests';
 
-/** Makes variants of a frame and asks the chat's agent for them; failures show as toasts. */
+/**
+ * Makes variants of a frame, or of the elements `picks` names in it, and asks
+ * the chat's agent for them; failures show as toasts.
+ */
 export function useVariantRequests(
   appSessionId: string,
   canvasId: string,
-): (frame: CanvasFrame, choice: VariantChoice) => Promise<void> {
+): (frame: CanvasFrame, choice: VariantChoice, picks: readonly ElementPin[]) => Promise<void> {
   const store = useStoreApi();
   const dispatch = useStoreDispatch();
   // One set of frames per choice until the sidecar answers, so asking again
@@ -27,7 +40,7 @@ export function useVariantRequests(
   const attempts = useRef(new Map<string, CreateFramesInput>());
 
   return useCallback(
-    async (frame, choice) => {
+    async (frame, choice, picks) => {
       const source = variantSource(canvasId, frame);
       if (!source) return;
       if (isAppUpdateInstalling()) {
@@ -61,7 +74,15 @@ export function useVariantRequests(
         return;
       }
       const pins = made.map((variant) => pinOf(canvasId, variant));
-      const prompt = variantPrompt(source.name, choice);
+      const prompt =
+        picks.length > 0
+          ? elementVariantPrompt(
+              source.name,
+              picks.map((pin) => pin.element),
+              choice,
+            )
+          : variantPrompt(source.name, choice);
+      // The picks stay out of the lease, which would otherwise let the agent write the source.
       const canvasContext = canvasContextOf(pins);
       const steerId = sessionIsLive(session) ? crypto.randomUUID() : undefined;
       try {

@@ -4,6 +4,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { canvasClient as canvas, variantSets } from './canvasClient';
+import { useElementPins } from './elementPins';
 import type { HistoryClient } from './frameHistory';
 import type { FrameActions } from './FrameToolbar';
 import type { CanvasFrame, RevisionRef } from './protocol';
@@ -30,6 +31,7 @@ export function useFrameActions(
     setSaving(null);
   }, []);
   const makeVariants = useVariantRequests(appSessionId, canvasId);
+  const picks = useElementPins(appSessionId);
   const agentWorking = useSessionLive(appSessionId);
   // Its identity is the toolbar's history owner, so it changes only with the chat or canvas.
   const history = useMemo(
@@ -50,8 +52,15 @@ export function useFrameActions(
         name,
         expectedManifestVersion: frame.manifestVersion,
       }),
-    makeVariants: (frame, choice) =>
-      variantSets.make(canvasId, frame.designId, () => makeVariants(frame, choice)),
+    picksIn: (frame) =>
+      picks.filter(
+        ({ canvasId: pickedOn, element }) =>
+          pickedOn === canvasId &&
+          element.designId === frame.designId &&
+          element.revisionId === frame.revisionId,
+      ),
+    makeVariants: (frame, choice, picked) =>
+      variantSets.make(canvasId, frame.designId, () => makeVariants(frame, choice, picked)),
     variantWork: variantSets.viewOf(canvasId),
     // While the agent works, a variant may be partway to what it was asked to become.
     sourceOf: (frame) => (attached && !agentWorking ? variantSetSource(frames, frame) : null),

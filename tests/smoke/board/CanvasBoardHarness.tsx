@@ -21,10 +21,14 @@ import {
 } from '../../../src/features/canvas/framePins';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
-import type { VariantChoice } from '../../../src/features/canvas/variantRequests';
+import {
+  elementVariantPrompt,
+  type VariantChoice,
+} from '../../../src/features/canvas/variantRequests';
 import { variantSetSource, VariantSets } from '../../../src/features/canvas/variantSets';
 import type { EditElementInput } from '../../../src/features/canvas/elementEditProtocol';
 import {
+  elementPins,
   pickElement,
   syncElementPins,
   unpinElements,
@@ -110,6 +114,8 @@ interface BoardHarness {
   /** The toolbar's dialogs asked for, as `<kind>:<designId>`. */
   dialogs: string[];
   variantCalls: (VariantChoice & { designId: string })[];
+  /** The words of each request for variants of picked elements. */
+  elementVariantRequests: string[];
   /** Settles one variants request, as its send does. */
   answerVariants: (index: number) => void;
   writeCalls: WriteFilesInput[];
@@ -347,6 +353,7 @@ function askSwitch(input: SwitchRevisionInput): Promise<WriteReceipt> {
 }
 const dialogs: string[] = [];
 const variantCalls: BoardHarness['variantCalls'] = [];
+const elementVariantRequests: string[] = [];
 const variantReplies: PromiseWithResolvers<void>[] = [];
 const writeCalls: WriteFilesInput[] = [];
 const writeReplies: PromiseWithResolvers<WriteReceipt>[] = [];
@@ -389,9 +396,24 @@ const frameActions: FrameActions = {
     renameReplies.push(reply);
     return reply.promise;
   },
-  makeVariants: (frame, choice) =>
+  picksIn: (frame) =>
+    elementPins('chat_1').filter(
+      ({ canvasId, element }) =>
+        canvasId === 'cv_board' &&
+        element.designId === frame.designId &&
+        element.revisionId === frame.revisionId,
+    ),
+  makeVariants: (frame, choice, picks) =>
     variantSets.make('cv_board', frame.designId, () => {
       variantCalls.push({ designId: frame.designId, ...choice });
+      if (picks.length > 0)
+        elementVariantRequests.push(
+          elementVariantPrompt(
+            frame.name,
+            picks.map((pin) => pin.element),
+            choice,
+          ),
+        );
       const reply = Promise.withResolvers<void>();
       variantReplies.push(reply);
       return reply.promise;
@@ -622,6 +644,7 @@ function Harness() {
       switchReplies[index].reject(new CanvasRequestError('revision_conflict', 'The head moved.')),
     dialogs,
     variantCalls,
+    elementVariantRequests,
     answerVariants: (index) => {
       variantReplies[index].resolve();
     },
