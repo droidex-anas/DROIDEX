@@ -2,6 +2,8 @@
 // source frame, and the plain request that asks the chat's agent to rework
 // them. The frames are reserved first so the request can pin them.
 
+import { elementName } from './elementPins';
+import type { PickedElement } from './pickedElement';
 import type { CanvasFrame, CreateFramesInput, DesignSystemRef, RevisionRef } from './protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
@@ -111,14 +113,47 @@ function nextVariantNumber(sourceName: string, boardNames: readonly string[]): n
 
 /** What the user asks for, in their words; the pinned variants say which frames. */
 export function variantPrompt(sourceName: string, choice: VariantChoice): string {
-  const { label, change } = ASK[choice.kind];
-  const direction = choice.direction.trim();
-  const ask = `Make ${String(choice.count)} ${label}variants of ${sourceName}`;
-  const lines = [
-    direction ? `${ask}: ${direction}` : `${ask}.`,
-    `Each pinned frame starts as a copy of ${sourceName}; give each ${change}, ` +
+  return request(
+    sourceName,
+    choice,
+    `Each pinned frame starts as a copy of ${sourceName}; give each ${ASK[choice.kind].change}, ` +
       `distinct from the others, and leave ${sourceName} as it is.`,
-  ];
+  );
+}
+
+/**
+ * The same request for elements picked in the source: each variant changes
+ * only them. Their element IDs belong to the source's revision, so the request
+ * finds them by where they are written, which every copy shares.
+ */
+export function elementVariantPrompt(
+  sourceName: string,
+  picks: readonly PickedElement[],
+  choice: VariantChoice,
+): string {
+  const one = picks.length === 1;
+  const subject = one ? pickName(picks[0]) : `${String(picks.length)} picked elements`;
+  const places = new Set(picks.map(({ source }) => `${source.file} line ${String(source.line)}`));
+  return request(
+    `${subject} in ${sourceName}`,
+    choice,
+    `Each pinned frame starts as a copy of ${sourceName}. In each, change only ` +
+      `${one ? 'that element' : 'those elements'} (${[...places].join(', ')} of ${sourceName}’s source, ` +
+      `the same lines in every copy) to ${ASK[choice.kind].change}, distinct from the others, ` +
+      `and leave everything else and ${sourceName} itself as they are.`,
+  );
+}
+
+function request(subject: string, choice: VariantChoice, instruction: string): string {
+  const direction = choice.direction.trim();
+  const ask = `Make ${String(choice.count)} ${ASK[choice.kind].label}variants of ${subject}`;
+  const lines = [direction ? `${ask}: ${direction}` : `${ask}.`, instruction];
   if (choice.kind === 'explore') lines.push(EXPLORE_FREELY);
   return lines.join('\n');
+}
+
+/** A pick as the request names it: its component or tag, and any words it spans. */
+function pickName(element: PickedElement): string {
+  const words = element.text?.excerpt.replace(/\s+/g, ' ').trim();
+  return words ? `${elementName(element)} “${words}”` : elementName(element);
 }
