@@ -1,9 +1,10 @@
 // A Canvas create or write that produced frames is what the turn made, not a
 // step along the way, so it becomes its own card in the transcript (spec §4).
 // A design gets one card per turn: the create and the writes that fill it are
-// one artifact, and a call that failed or made nothing gets no card. A design
-// system the agent saved, proposed or applied is one too, shown as its chip
-// once per turn for each kit and outcome (design system documents spec §9).
+// one artifact, pinned to the last revision the turn committed, and a call that
+// failed or made nothing gets no card. A design system the agent saved,
+// proposed or applied is one too, shown as its chip once per turn for each kit
+// and outcome (design system documents spec §9).
 
 import type { TranscriptEvent } from '../types/bridge';
 
@@ -37,10 +38,12 @@ export function canvasArtifactRows(events: TranscriptEvent[]): CanvasArtifactRow
   const resultOf = new Map<TranscriptEvent, ArtifactResult>();
   // Tool-use IDs can repeat across turns, so a result pairs with the latest call before it.
   const calls = new Map<string, TranscriptEvent>();
-  let shown = new Set<string>();
+  // This turn's card for each design or kit, and the revision each card shows.
+  let turnCards = new Map<string, ArtifactResult>();
+  const revisionOf = new Map<ArtifactResult, string>();
   for (const event of events) {
     if (event.author === 'user') {
-      shown = new Set();
+      turnCards = new Map();
       continue;
     }
     if (!event.toolUseId) continue;
@@ -50,11 +53,18 @@ export function canvasArtifactRows(events: TranscriptEvent[]): CanvasArtifactRow
     }
     if (!isArtifact(event)) continue;
     const keys = shownKeys(event.canvasActivity);
-    if (keys.every((key) => shown.has(key))) continue;
-    for (const key of keys) shown.add(key);
-    resultOf.set(event, event);
-    const call = calls.get(event.toolUseId);
-    if (call) resultOf.set(call, event);
+    if (!keys.every((key) => turnCards.has(key))) {
+      for (const key of keys) if (!turnCards.has(key)) turnCards.set(key, event);
+      resultOf.set(event, event);
+      const call = calls.get(event.toolUseId);
+      if (call) resultOf.set(call, event);
+    }
+    const { designIds, revisionId } = event.canvasActivity;
+    const designId = designIds.at(0);
+    const card = designId === undefined ? undefined : turnCards.get(designId);
+    // A card stands for the first frame it names, so only that frame's writes move it.
+    if (revisionId && card && card.canvasActivity.designIds[0] === designId)
+      revisionOf.set(card, revisionId);
   }
   if (resultOf.size === 0) return { events, cards: new Map() };
 
@@ -65,11 +75,15 @@ export function canvasArtifactRows(events: TranscriptEvent[]): CanvasArtifactRow
     if (!result) return true;
     if (carded.has(result)) return false;
     carded.add(result);
+    const revisionId = revisionOf.get(result);
     cards.set(event, {
       type: 'canvas_artifact',
       key: `canvas-artifact-${result.id}`,
       event: result,
-      activity: result.canvasActivity,
+      activity:
+        revisionId === undefined || revisionId === result.canvasActivity.revisionId
+          ? result.canvasActivity
+          : { ...result.canvasActivity, revisionId },
     });
     return true;
   });

@@ -299,6 +299,8 @@ export interface TranscriptEvent {
     // The canvas a create or write changed, as its reply named it.
     canvasId?: string;
     title?: string;
+    // The revision a write committed, which the turn's card shows.
+    revisionId?: string;
     // This create gave an unattached chat its canvas: the chat's first artifact.
     firstArtifact?: true;
     // The kit a theme call saved, proposed or applied; its reference only.

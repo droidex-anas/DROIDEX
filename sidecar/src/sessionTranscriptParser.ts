@@ -211,7 +211,7 @@ function nonAssistantBlockEvent(
     });
   }
   if (messageRole === 'user' && type === 'text') {
-    const shown = userPromptDisplay(nonEmpty(stringValue(block.text)));
+    const shown = userPromptDisplay(withoutSkillBody(nonEmpty(stringValue(block.text))));
     if ((!shown.text && !shown.sideChatReplies) || isSystemText(shown.text)) return null;
     const sourceProviderSessionId = base.role === 'primary' ? 'user' : base.sourceProviderSessionId;
     return event({ ...base, sourceProviderSessionId }, index, 'text', { ...shown, author: 'user' });
@@ -337,13 +337,17 @@ export function parseSessionLineEvents(
       ? skillActivationFromContent(content)
       : undefined;
   if (activation) {
+    const acknowledgement = event(base, 1, 'text', { text: activation.message });
+    // Droid now stores the invocation as its own prompt row, so an activation
+    // without a prompt is only the acknowledgement the live stream shows.
+    if (!activation.prompt) return [acknowledgement];
     return [
       event({ ...base, sourceProviderSessionId: 'user', role: 'primary' }, 0, 'text', {
-        text: activation.prompt,
+        ...userPromptDisplay(activation.prompt),
         author: 'user',
         skills: [activation.skillName],
       }),
-      event(base, 1, 'text', { text: activation.message }),
+      acknowledgement,
     ];
   }
 
@@ -423,6 +427,17 @@ function trimText(text: string, max: number): string {
 // larger bound. Thinking, user text, and tool output keep the shared cap.
 function trimAnswerText(text: string): string {
   return trimText(text, hasAppFence(text) ? MAX_APP_ANSWER_CHARS : MAX_TEXT_CHARS);
+}
+
+// Droid expands a slash skill into the prompt row: the user's words, then the
+// skill's body as a closing system notification that opens with this preamble.
+// Any other mention of the tag is the user's own text.
+const SKILL_BODY_START = '\n\n<system-notification>\nSkills provide specialized capabilities';
+
+function withoutSkillBody(text: string): string {
+  const start = text.indexOf(SKILL_BODY_START);
+  if (start < 0 || !text.trimEnd().endsWith('</system-notification>')) return text;
+  return text.slice(0, start).trimEnd();
 }
 
 function isSystemText(text: string): boolean {
