@@ -75,14 +75,15 @@ test('picks follow the attached canvas and go out as the turn’s element refere
     { designId: 'd2', revisionId: 'r1', elementId: 'e2', instancePath: '0' },
   ]);
 
-  // d1 was renamed and d2 deleted.
-  syncElementPins('chat-s', { canvasId: 'cv_1', sequence: 2, frames: [frame('d1', 'Pricing')] });
+  // d1 was renamed and widened, which its crop scales against, and d2 deleted.
+  const pricing = { ...frame('d1', 'Pricing'), rect: { x: 0, y: 0, width: 1024, height: 520 } };
+  syncElementPins('chat-s', { canvasId: 'cv_1', sequence: 2, frames: [pricing] });
   assert.deepEqual(
-    elementPins('chat-s').map((pin) => [pin.element.elementId, pin.frameName]),
-    [['e1', 'Pricing']],
+    elementPins('chat-s').map((pin) => [pin.element.elementId, pin.frameName, pin.frameWidth]),
+    [['e1', 'Pricing', 1024]],
   );
   const synced = elementPins('chat-s');
-  syncElementPins('chat-s', { canvasId: 'cv_1', sequence: 3, frames: [frame('d1', 'Pricing')] });
+  syncElementPins('chat-s', { canvasId: 'cv_1', sequence: 3, frames: [pricing] });
   assert.equal(elementPins('chat-s'), synced);
 
   // An edited queued prompt brings its picks back once, as the shown board has them.

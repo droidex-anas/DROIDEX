@@ -18,7 +18,7 @@ const MIN_DETAIL_CHARS = 12;
 export interface ElementPin {
   canvasId: string;
   frameName: string;
-  /** The frame's width when it was picked, which its capture is scaled against for a crop. */
+  /** The frame's width, which its capture is scaled against for a crop. */
   frameWidth: number;
   element: PickedElement;
 }
@@ -171,15 +171,17 @@ export function syncElementPins(appSessionId: string, attached: CanvasSnapshot):
 
 /**
  * The picks whose frame is on the attached board at the revision they were
- * picked in, named as that frame now is. A rebuilt frame may no longer hold the
- * element, so its picks go.
+ * picked in, named and sized as that frame now is. A rebuilt frame may no
+ * longer hold the element, so its picks go.
  */
 function onBoard(pins: readonly ElementPin[], attached: CanvasSnapshot): ElementPin[] {
   const frames = new Map(attached.frames.map((frame) => [frame.designId, frame]));
   return pins.flatMap((pin) => {
     const frame = pin.canvasId === attached.canvasId ? frames.get(pin.element.designId) : undefined;
     if (frame?.revisionId !== pin.element.revisionId) return [];
-    return [frame.name === pin.frameName ? pin : { ...pin, frameName: frame.name }];
+    const { name, rect } = frame;
+    if (name === pin.frameName && rect.width === pin.frameWidth) return [pin];
+    return [{ ...pin, frameName: name, frameWidth: rect.width }];
   });
 }
 
