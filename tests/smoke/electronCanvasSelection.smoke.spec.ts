@@ -1,6 +1,6 @@
 // The board's element selection channel in the production preview host: the
-// intermediate's pick and select commands, the reporter inside the generated
-// frame that answers them, and the reader that bounds the answer.
+// intermediate's pick, select, hover and probe commands, the reporter inside
+// the generated frame that answers them, and the readers that bound the answer.
 
 import assert from 'node:assert/strict';
 import { expect, test } from '@playwright/test';
@@ -8,13 +8,18 @@ import {
   PREVIEW_STARTED,
   previewHoverScript,
   previewPickScript,
+  previewProbeScript,
   previewSelectScript,
   previewStartScript,
+  readPreviewFinding,
   readPreviewHover,
   type PreviewElement,
   type PreviewPick,
+  type PreviewProbe,
   type PreviewTarget,
 } from '../../src/features/canvas/previewDocument';
+import { pickedElement } from '../../src/features/canvas/pickedElement';
+import type { CanvasFrame } from '../../src/features/canvas/protocol';
 import {
   askGuest,
   compileDesign,
@@ -117,6 +122,59 @@ export default function Card() {
       readPreviewHover(await askGuest(page, previewHoverScript({ x: 5000, y: 5000 }))),
       null,
     );
+
+    // A probe names the element at a point, or the text between two points and
+    // the element holding it, and selects nothing: the steps below still start
+    // from the heading. A pick of what it found names the source it is written in.
+    const probe = async (asked: PreviewProbe) =>
+      readPreviewFinding(await askGuest(page, previewProbeScript(asked)));
+    const atHeading = await probe({ at: { x: 20, y: 20 } });
+    assert.deepEqual(atHeading, {
+      elementId: heading.elementId,
+      instancePath: picked.instancePath,
+      rect: picked.rect,
+      text: null,
+    });
+    const frame: Pick<CanvasFrame, 'designId' | 'build'> = {
+      designId: instance.designId,
+      build: {
+        status: 'ready',
+        generation: 1,
+        revisionId: instance.revisionId,
+        artifactId: design.artifactId,
+        elements: design.elements,
+        diagnostics: [],
+      },
+    };
+    const headingPick = pickedElement(frame, instance.revisionId, atHeading);
+    assert.deepEqual(headingPick?.source, {
+      file: 'main.tsx',
+      start: heading.start,
+      end: heading.end,
+      line: 17,
+    });
+    assert.equal(headingPick.component, 'Card');
+    assert.equal(headingPick.tagName, 'h1');
+    assert.equal(await probe({ at: { x: 5000, y: 5000 } }), null);
+
+    const { x, y, width, height } = picked.rect;
+    const middle = y + height / 2;
+    // Dragged right to left, the text still reads forwards.
+    const words = await probe({
+      from: { x: x + width - 1, y: middle },
+      to: { x: x + 1, y: middle },
+    });
+    assert.equal(words?.elementId, heading.elementId);
+    assert.equal(words.text?.excerpt, 'Title');
+    assert.ok(words.text.rect.width < width, 'the box is the text, not its element');
+    const body = await probe({ at: { x: 20, y: y + height + 4 } });
+    assert.equal(body?.elementId, design.elements.find((e) => e.tagName === 'p')?.elementId);
+    const across = await probe({
+      from: { x: x + 1, y: middle },
+      to: { x: body.rect.x + body.rect.width - 1, y: body.rect.y + body.rect.height / 2 },
+    });
+    assert.equal(across?.elementId, section.elementId);
+    assert.equal(across.text?.excerpt, 'TitleBody');
 
     // A text preview replaces what the heading shows, and leaving puts it back;
     // the guest keeps reporting the text the heading holds.

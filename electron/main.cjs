@@ -39,6 +39,7 @@ const imageSave = require('./imageSave.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
+const canvasPreviewSession = require('./canvasPreviewSession.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 const {
   mayRequestPreviewAsset,
@@ -509,7 +510,7 @@ function installWebviewAttachment(contents) {
 function hardenCanvasPreviewGuest(event, preferences, params) {
   // Before the guest session is configured it routes DIRECT, so a guest that
   // attached then would have a live network however correct its partition is.
-  if (!canvasPreview.canvasPreviewSessionReady(previewGuestSession())) {
+  if (!canvasPreviewSession.canvasPreviewSessionReady(previewGuestSession())) {
     console.warn('[canvas-preview] Refused a guest before its session was configured');
     event.preventDefault();
     return false;
@@ -519,8 +520,8 @@ function hardenCanvasPreviewGuest(event, preferences, params) {
   // The guest's own in-memory session: no storage, every TCP connection to a
   // dead proxy, no permissions. A `<webview>` may name any partition, so this
   // is forced here rather than trusted from the element.
-  params.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
-  preferences.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+  params.partition = canvasPreviewSession.CANVAS_PREVIEW_PARTITION;
+  preferences.partition = canvasPreviewSession.CANVAS_PREVIEW_PARTITION;
   preferences.nodeIntegration = false;
   preferences.nodeIntegrationInSubFrames = false;
   preferences.contextIsolation = true;
@@ -640,9 +641,9 @@ function registerFaviconProtocol() {
 // Serves the one trusted intermediate a Canvas preview guest loads (see
 // canvasPreview.cjs). The policy travels as a header, so no document surgery can
 // drop it, and the generated frame inherits it through `srcdoc`.
-/** The one session every preview guest attaches into (see canvasPreview.cjs). */
+/** The one session every preview guest attaches into (see canvasPreviewSession.cjs). */
 function previewGuestSession() {
-  return session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION);
+  return session.fromPartition(canvasPreviewSession.CANVAS_PREVIEW_PARTITION);
 }
 
 function kitStoreRoot() {
@@ -705,7 +706,7 @@ function registerCanvasPreviewProtocol() {
       callback({ redirectURL: 'droidex-canvas-preview://preview/not-found' });
     },
   );
-  return canvasPreview.configureCanvasPreviewSession(guestSession, serve);
+  return canvasPreviewSession.configureCanvasPreviewSession(guestSession, serve);
 }
 
 function registerIpc() {

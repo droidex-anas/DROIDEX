@@ -567,7 +567,8 @@ A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
 crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
 the privileged `droidex-canvas-preview` scheme, the one guest document, its
 restrictive CSP, the trusted intermediate and the registry of guests main
-attached. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
+attached; `electron/canvasPreviewSession.cjs` shuts the guests' session off from
+the network. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
 and content-addressed kit images and fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
 app window alone and installs `will-attach-webview` before that window loads
 anything, so renderer content can only ever attach the owned source, with any

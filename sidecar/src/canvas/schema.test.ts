@@ -330,7 +330,9 @@ const wire: SidecarWire = {
     file: 'main.tsx',
     start: 48,
     end: 64,
+    line: 3,
     tagName: 'h1',
+    component: 'Hero',
     editability: 'literal',
   },
   edit: {

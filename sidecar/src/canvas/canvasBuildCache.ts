@@ -23,7 +23,7 @@ import {
 } from './schema.js';
 import { MAX_BUILD_DIAGNOSTICS, MAX_DIAGNOSTIC_MESSAGE_LENGTH } from './canvasDiagnostics.js';
 
-const BUILD_OUTCOME_VERSION = 5;
+const BUILD_OUTCOME_VERSION = 6;
 
 const diagnosticSchema = z
   .object({
@@ -247,14 +247,18 @@ function sourceMapDigest(
     if (left === right) return 0;
     return left < right ? -1 : 1;
   });
-  const sites = elements.map(({ elementId, file, start, end, tagName, editability }) => [
-    elementId,
-    file,
-    start,
-    end,
-    tagName,
-    editability,
-  ]);
+  const sites = elements.map(
+    ({ elementId, file, start, end, line, tagName, component, editability }) => [
+      elementId,
+      file,
+      start,
+      end,
+      line,
+      tagName,
+      component,
+      editability,
+    ],
+  );
   return createHash('sha256')
     .update(JSON.stringify([sources, sites]))
     .digest('hex');

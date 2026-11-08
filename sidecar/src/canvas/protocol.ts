@@ -102,7 +102,11 @@ export interface SourceElement {
   file: string;
   start: number;
   end: number;
+  /** The 1-based line `start` is on, for display; the offsets are what locate the element. */
+  line: number;
   tagName: string;
+  /** The capitalised function it is written in, as React names a component; null outside one. */
+  component: string | null;
   editability: 'literal' | 'computed' | 'shared';
 }
 

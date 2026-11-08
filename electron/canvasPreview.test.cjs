@@ -3,12 +3,14 @@ const assert = require('node:assert/strict');
 
 const {
   CANVAS_PREVIEW_CSP,
-  CANVAS_PREVIEW_PARTITION,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
+} = require('./canvasPreview.cjs');
+const {
+  CANVAS_PREVIEW_PARTITION,
   canvasPreviewSessionReady,
   configureCanvasPreviewSession,
-} = require('./canvasPreview.cjs');
+} = require('./canvasPreviewSession.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 
 /** The design's frame, whose every probe is a promise the test settles. */
@@ -259,7 +261,7 @@ test('the guest loses every network path at its own session', async () => {
   assert.equal(CANVAS_PREVIEW_CSP.includes('webrtc'), false);
   assert.equal(guest.webRtcPolicy, 'disable_non_proxied_udp');
 
-  const configured = { handled: [], proxy: null, requested: [], checked: null };
+  const configured = { handled: [], proxy: null, requested: [], checked: null, device: null };
   await configureCanvasPreviewSession(
     {
       protocol: {
@@ -278,6 +280,12 @@ test('the guest loses every network path at its own session', async () => {
       setPermissionCheckHandler(handler) {
         configured.checked = handler({}, 'media', 'droidex-canvas-preview://preview', {});
       },
+      setDevicePermissionHandler(handler) {
+        configured.device = handler({
+          deviceType: 'usb',
+          origin: 'droidex-canvas-preview://preview',
+        });
+      },
     },
     'serve',
   );
@@ -293,6 +301,7 @@ test('the guest loses every network path at its own session', async () => {
   });
   assert.deepEqual(configured.requested, [false, false]);
   assert.equal(configured.checked, false);
+  assert.equal(configured.device, false);
   // In memory only: a `persist:` partition would keep storage for generated code.
   assert.equal(CANVAS_PREVIEW_PARTITION.startsWith('persist:'), false);
 });
@@ -382,6 +391,7 @@ test('a guest is not attachable until the preview session is configured', async 
     setProxy: () => held.promise,
     setPermissionRequestHandler() {},
     setPermissionCheckHandler() {},
+    setDevicePermissionHandler() {},
   };
 
   const configuring = configureCanvasPreviewSession(guestSession, () => undefined);

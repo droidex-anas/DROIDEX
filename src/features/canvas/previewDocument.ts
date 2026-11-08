@@ -1,7 +1,7 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the six audited literals below.
+// element's `executeJavaScript`, with exactly the seven audited literals below.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -74,6 +74,23 @@ export interface PreviewHover {
    * other content, in the design's pixels; null where nothing is in the way.
    */
   room: { above: number | null; below: number | null };
+}
+
+/** What a probe asks about: the element at a point, or the text between two points. */
+export type PreviewProbe =
+  | { at: { x: number; y: number } }
+  | { from: { x: number; y: number }; to: { x: number; y: number } };
+
+/**
+ * What a probe found, in the design's own pixels: the marked element and its
+ * box, and for two points the text between them, cut to the text cap, with the
+ * box it is drawn in. A probe selects nothing.
+ */
+export interface PreviewFinding {
+  elementId: string;
+  instancePath: string;
+  rect: FrameRect;
+  text: { excerpt: string; rect: FrameRect } | null;
 }
 
 /**
@@ -149,6 +166,11 @@ export function previewSelectScript(
 /** Asks which element is under a point in the design's pixels; the call itself answers. */
 export function previewHoverScript(at: { x: number; y: number }): string {
   return `globalThis.__droidexCanvasPreview.hover(${jsonArgument({ x: at.x, y: at.y })})`;
+}
+
+/** Asks what is at a point or between two points in the design's pixels; the call itself answers. */
+export function previewProbeScript(probe: PreviewProbe): string {
+  return `globalThis.__droidexCanvasPreview.probe(${jsonArgument(probe)})`;
 }
 
 /**
@@ -243,13 +265,7 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
 
 /** A hover's answer, or null when nothing marked is under the point or the answer is not one. */
 export function readPreviewHover(value: unknown): PreviewHover | null {
-  if (typeof value !== 'string' || utf8Bytes(value) > MAX_PREVIEW_EVENT_BYTES) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    return null;
-  }
+  const parsed = readAnswer(value);
   if (!record(parsed) || !present(parsed.elementId) || !present(parsed.tagName)) return null;
   const rect = readRect(parsed.rect);
   if (!rect || typeof parsed.instancePath !== 'string' || !record(parsed.room)) return null;
@@ -262,6 +278,38 @@ export function readPreviewHover(value: unknown): PreviewHover | null {
     tagName: clampPreviewText(parsed.tagName),
     room: { above, below },
   };
+}
+
+/** A probe's answer, or null when nothing marked is there or the answer is not one. */
+export function readPreviewFinding(value: unknown): PreviewFinding | null {
+  const parsed = readAnswer(value);
+  if (!record(parsed) || !present(parsed.elementId) || typeof parsed.instancePath !== 'string')
+    return null;
+  const rect = readRect(parsed.rect);
+  if (!rect) return null;
+  let text: PreviewFinding['text'] = null;
+  if (parsed.text !== null) {
+    if (!record(parsed.text) || typeof parsed.text.excerpt !== 'string') return null;
+    const textRect = readRect(parsed.text.rect);
+    if (!textRect) return null;
+    text = { excerpt: clampPreviewText(parsed.text.excerpt), rect: textRect };
+  }
+  return {
+    elementId: clampPreviewText(parsed.elementId),
+    instancePath: clampPreviewText(parsed.instancePath),
+    rect,
+    text,
+  };
+}
+
+/** A direct answer's JSON, within one event's cap, or undefined. */
+function readAnswer(value: unknown): unknown {
+  if (typeof value !== 'string' || utf8Bytes(value) > MAX_PREVIEW_EVENT_BYTES) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function isRoom(value: unknown): value is number | null {

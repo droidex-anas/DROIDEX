@@ -28,26 +28,6 @@ const CANVAS_PREVIEW_SCHEME = 'droidex-canvas-preview';
 /** The only URL the handler serves, and the only `src` an attachment allows. */
 const CANVAS_PREVIEW_URL = `${CANVAS_PREVIEW_SCHEME}://preview/guest`;
 /**
- * The guest's own in-memory partition. Not `persist:`, so it keeps no storage,
- * and separate from the default session so the preview's network stack can be
- * shut off at the socket without touching the app's.
- */
-const CANVAS_PREVIEW_PARTITION = 'droidex-canvas-preview';
-
-/**
- * A proxy that cannot be reached, with loopback explicitly not bypassed.
- * Chromium resolves every TCP connection the guest makes through this, including
- * the P2P sockets WebRTC uses for TURN over TCP, so they go nowhere. Without
- * `<-loopback>` Chromium would bypass the proxy for loopback, which is exactly
- * where a probe's listener lives.
- */
-const CANVAS_PREVIEW_PROXY = {
-  mode: 'fixed_servers',
-  proxyRules: 'http://127.0.0.1:1',
-  proxyBypassRules: '<-loopback>',
-};
-
-/**
  * No network source anywhere, and `about:` frames only. Inline script and style
  * are allowed because the generated artifact is one inline-everything document
  * and an `about:srcdoc` frame inherits this policy. There is no `unsafe-eval`:
@@ -56,8 +36,9 @@ const CANVAS_PREVIEW_PROXY = {
  *
  * This policy does not bound WebRTC at all: `connect-src` does not govern ICE,
  * and Chromium never shipped the CSP3 `webrtc` directive — it logs it as
- * unrecognised. The guest's own session is what closes that path, by sending
- * every TCP connection through a dead proxy and refusing non-proxied UDP.
+ * unrecognised. The guest's own session (canvasPreviewSession.cjs) closes that
+ * path, by sending every TCP connection through a dead proxy and refusing
+ * non-proxied UDP.
  */
 const CANVAS_PREVIEW_CSP = [
   "default-src 'none'",
@@ -92,6 +73,8 @@ const MAX_PREVIEW_TOKENS = 128;
 const MAX_PREVIEW_TOKEN_VALUE_LENGTH = 160;
 /** How long a hover waits for the design to answer before it answers nothing. */
 const PREVIEW_HOVER_DEADLINE_MS = 250;
+/** How long a probe waits for the design to answer before it answers nothing. */
+const PREVIEW_PROBE_DEADLINE_MS = 250;
 /** The nonce charset the intermediate will embed; the renderer mints hex. */
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 
@@ -105,6 +88,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * draft custom properties, which the reporter sets on the design's root.
  * `hover` asks which element is under a point and answers with it directly,
  * outside the queue, so the board's outline keeps up with the pointer.
+ * `probe` answers directly too, with the element at a point or the text
+ * between two points, and every probe waits for its own answer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -192,6 +177,28 @@ const INTERMEDIATE_SCRIPT = `(() => {
   let hovering = null;
   let hoverSequence = 0;
 
+  const normalizeProbe = (element) => {
+    if (!element || typeof element !== 'object') return null;
+    const rect = rectOf(element.rect);
+    const elementId = text(element.elementId);
+    if (!rect || !elementId) return null;
+    const spanned = element.text && typeof element.text === 'object' ? element.text : null;
+    const spannedRect = spanned && rectOf(spanned.rect);
+    return {
+      elementId,
+      instancePath: text(element.instancePath),
+      rect,
+      text: spannedRect ? { excerpt: text(spanned.excerpt), rect: spannedRect } : null,
+    };
+  };
+  // Each probe waiting for the frame's answer, by the sequence number it echoes.
+  const probes = new Map();
+  let probeSequence = 0;
+  const pointOf = (value) =>
+    value && typeof value === 'object' && Number.isFinite(value.x) && Number.isFinite(value.y)
+      ? { x: value.x, y: value.y }
+      : null;
+
   // Only these shapes leave the intermediate, rebuilt field by field so no
   // getter, prototype or extra property from generated code ever travels.
   const normalize = (data) => {
@@ -259,6 +266,10 @@ const INTERMEDIATE_SCRIPT = `(() => {
     }
     if (data.event === 'hover') {
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
+      return;
+    }
+    if (data.event === 'probe') {
+      probes.get(data.sequence)?.(normalizeProbe(data.element));
       return;
     }
     const event = normalize(data);
@@ -374,6 +385,30 @@ const INTERMEDIATE_SCRIPT = `(() => {
         );
       });
     },
+    probe(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      if (!request || typeof request !== 'object') return 'invalid_request';
+      const at = pointOf(request.at);
+      const from = pointOf(request.from);
+      const to = pointOf(request.to);
+      if (!at && !(from && to)) return 'invalid_request';
+      const asked = at ? { at } : { from, to };
+      probeSequence += 1;
+      const sequence = probeSequence;
+      return new Promise((resolve) => {
+        const settle = (found) => {
+          clearTimeout(deadline);
+          probes.delete(sequence);
+          resolve(JSON.stringify(found));
+        };
+        const deadline = setTimeout(() => settle(null), ${String(PREVIEW_PROBE_DEADLINE_MS)});
+        probes.set(sequence, settle);
+        frame.contentWindow.postMessage(
+          Object.assign({ canvasPreviewCommand: instance.nonce, command: 'probe', sequence }, asked),
+          '*',
+        );
+      });
+    },
     setTokens(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
       const given = request && typeof request === 'object' ? request.tokens : null;
@@ -434,41 +469,9 @@ ${script}
 `;
 }
 
-/**
- * The sessions whose network has actually been shut off. An unconfigured session
- * routes `DIRECT`, which is the one state this whole boundary rests on not
- * existing, so the module that does the configuring is what answers whether a
- * given session is safe to attach a guest into.
- */
-const configuredSessions = new WeakSet();
-
-function canvasPreviewSessionReady(guestSession) {
-  return configuredSessions.has(guestSession);
-}
-
-/**
- * Shuts the guest session's network off and takes every capability away from it.
- * The owned scheme is served here as well as on the default session, because a
- * guest in its own partition cannot see the default session's handlers. Only
- * once the proxy is in place does a guest become attachable.
- */
-async function configureCanvasPreviewSession(guestSession, serve) {
-  guestSession.protocol.handle(CANVAS_PREVIEW_SCHEME, serve);
-  guestSession.setPermissionRequestHandler((_contents, _permission, callback) => {
-    callback(false);
-  });
-  guestSession.setPermissionCheckHandler(() => false);
-  await guestSession.setProxy(CANVAS_PREVIEW_PROXY);
-  configuredSessions.add(guestSession);
-}
-
 module.exports = {
   CANVAS_PREVIEW_CSP,
-  CANVAS_PREVIEW_PARTITION,
-  CANVAS_PREVIEW_PROXY,
   CANVAS_PREVIEW_SCHEME,
-  canvasPreviewSessionReady,
-  configureCanvasPreviewSession,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
 };

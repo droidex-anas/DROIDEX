@@ -258,6 +258,39 @@ test('shared and computed sites report their scope and refuse direct edits', () 
   }
 });
 
+test('each element names its line and the component it is written in', () => {
+  const files = {
+    'main.tsx': `function Badge() {
+  return <span>New</span>;
+}
+const Card = memo(() => (
+  <section>
+    {[1, 2].map((n) => <p>{n}</p>)}
+  </section>
+));
+const Field = memo(forwardRef((props, ref) => <input ref={ref} />));
+function App({ items }) {
+  const Options = items.map((i) => <option>{i}</option>);
+  return <main><Badge /><Card /><Field /><select>{Options}</select></main>;
+}
+`,
+  };
+  const located = instrumentSource(files, 'r1').elements.map(({ tagName, line, component }) => [
+    tagName,
+    line,
+    component,
+  ]);
+  assert.deepEqual(located, [
+    ['span', 2, 'Badge'],
+    ['section', 5, 'Card'],
+    ['p', 6, 'Card'],
+    ['input', 9, 'Field'],
+    ['option', 11, 'App'],
+    ['main', 12, 'App'],
+    ['select', 12, 'App'],
+  ]);
+});
+
 test('JSX props passed to self-closing components refuse instance-local edits', () => {
   const source = `function List({item}) { return <>{item}{item}</>; }
 export default () => <List item={<span>Row</span>} />;`;

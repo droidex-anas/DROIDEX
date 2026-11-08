@@ -214,7 +214,9 @@ const ELEMENTS: SourceElement[] = params.has('edit')
         file: 'main.tsx',
         start: 40,
         end: 90,
+        line: 3,
         tagName: 'h1',
+        component: 'Card',
         editability: 'literal',
       },
       {
@@ -222,7 +224,9 @@ const ELEMENTS: SourceElement[] = params.has('edit')
         file: 'main.tsx',
         start: 10,
         end: 200,
+        line: 2,
         tagName: 'section',
+        component: 'Card',
         editability: 'shared',
       },
     ]

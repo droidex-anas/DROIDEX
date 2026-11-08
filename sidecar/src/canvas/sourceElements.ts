@@ -104,7 +104,9 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
           file,
           start,
           end: node.end,
+          line: source.getLineAndCharacterOfPosition(start).line + 1,
           tagName: opening.tagName.text,
+          component: componentOf(node),
           editability,
         },
       });
@@ -200,6 +202,45 @@ function isShared(node: ElementNode, root: ts.Node | undefined): boolean {
     }
   }
   return true;
+}
+
+function componentOf(node: ElementNode): string | null {
+  for (let parent = node.parent; !ts.isSourceFile(parent); parent = parent.parent) {
+    if (!ts.isFunctionLike(parent)) continue;
+    const name = functionName(parent);
+    if (name && /^[A-Z]/.test(name)) return name;
+  }
+  return null;
+}
+
+/**
+ * A function's name, or the variable holding it, directly or through wrappers
+ * such as `memo(forwardRef(...))`.
+ */
+function functionName(fn: ts.SignatureDeclaration): string | undefined {
+  if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text;
+  let held: ts.Node = fn;
+  while (isWrapping(held.parent, held)) held = held.parent;
+  const holder = held.parent;
+  return ts.isVariableDeclaration(holder) && ts.isIdentifier(holder.name)
+    ? holder.name.text
+    : undefined;
+}
+
+const COMPONENT_WRAPPERS = new Set(['memo', 'forwardRef']);
+
+function isWrapping(parent: ts.Node, child: ts.Node): boolean {
+  if (ts.isParenthesizedExpression(parent)) return true;
+  if (!ts.isCallExpression(parent) || !parent.arguments.includes(child as ts.Expression))
+    return false;
+  const callee = parent.expression;
+  if (ts.isIdentifier(callee)) return COMPONENT_WRAPPERS.has(callee.text);
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'React' &&
+    COMPONENT_WRAPPERS.has(callee.name.text)
+  );
 }
 
 function canReuseJsx(node: ts.Node): boolean {

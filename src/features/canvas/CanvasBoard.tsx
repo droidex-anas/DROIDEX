@@ -35,6 +35,7 @@ import type { EditElementInput } from './elementEditProtocol';
 import { ElementOutlines } from './ElementOutlines';
 import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
+import { PreviewRuns } from './previewRuns';
 import { useCanvasMotion } from './useCanvasMotion';
 import { RubberBand } from './RubberBand';
 import { SelectionBounds } from './SelectionBounds';
@@ -165,9 +166,11 @@ export function CanvasBoard({
     reveal: view.reveal,
   });
 
+  const [previewRuns] = useState(() => new PreviewRuns());
   const editor = useElementEditor({
     canvasId: snapshot.canvasId,
     frames,
+    runs: previewRuns,
     active: interaction.mode === 'edit',
     onEditElement,
   });

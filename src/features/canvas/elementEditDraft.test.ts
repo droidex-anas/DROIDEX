@@ -20,7 +20,9 @@ const site: SourceElement = {
   file: 'main.tsx',
   start: 40,
   end: 90,
+  line: 2,
   tagName: 'section',
+  component: 'Card',
   editability: 'literal',
 };
 

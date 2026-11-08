@@ -15,7 +15,9 @@
  * It also answers the board's selection commands with a `selection` event for
  * the element picked or named, and again whenever that element's box moves,
  * each echoing the sequence number of the command it answers, and its hover
- * command with a `hover` event naming the element under a point. A kit preview's
+ * command with a `hover` event naming the element under a point. Its probe
+ * command selects nothing either: a `probe` event names the element at a point,
+ * or the text between two points and the element that holds it. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
@@ -231,6 +233,38 @@ const GENERATED_FRAME_REPORTER = `(() => {
   addEventListener('scroll', () => {
     if (selected) reportSelection();
   }, true);
+  // A probe's text is cut so its answer stays inside the intermediate's event
+  // cap; the intermediate cuts it again, to its text cap.
+  const probe = (command) => {
+    let node = null;
+    let spanned = null;
+    if (command.at) {
+      const hit = document.elementFromPoint(command.at.x, command.at.y);
+      node = hit && hit.closest('[' + MARKER + ']');
+    } else {
+      const from = document.caretRangeFromPoint(command.from.x, command.from.y);
+      const to = document.caretRangeFromPoint(command.to.x, command.to.y);
+      if (!from || !to) return null;
+      const range = from.cloneRange();
+      if (from.compareBoundaryPoints(Range.START_TO_START, to) <= 0)
+        range.setEnd(to.startContainer, to.startOffset);
+      else range.setStart(to.startContainer, to.startOffset);
+      const holder = range.commonAncestorContainer;
+      const host = holder.nodeType === Node.ELEMENT_NODE ? holder : holder.parentElement;
+      node = host && host.closest('[' + MARKER + ']');
+      spanned = range.collapsed
+        ? null
+        : { excerpt: Array.from(range.toString()).slice(0, 512).join(''), rect: rectOf(range) };
+    }
+    const instancePath = node ? pathOf(node) : null;
+    if (!node || instancePath === null) return null;
+    return {
+      elementId: node.getAttribute(MARKER),
+      instancePath: instancePath,
+      rect: rectOf(node),
+      text: spanned,
+    };
+  };
   let draftTokens = [];
   const setTokens = (tokens) => {
     const style = document.documentElement.style;
@@ -284,6 +318,8 @@ const GENERATED_FRAME_REPORTER = `(() => {
               }
             : null,
       });
+    } else if (command.command === 'probe') {
+      post('probe', { sequence: command.sequence, element: probe(command) });
     } else if (command.command === 'select') {
       const target = command.target;
       const node = target ? atPath(target.instancePath) : null;

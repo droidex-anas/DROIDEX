@@ -4,6 +4,12 @@
 
 import { isAnnotation, isAnnotationChange, MAX_ANNOTATIONS } from './annotationValidation';
 import {
+  isBuild,
+  isDiagnostic,
+  MAX_BUILD_DIAGNOSTICS,
+  MAX_SOURCE_FILE_BYTES,
+} from './buildValidation';
+import {
   isKitDocument,
   isKitSummary,
   isKitVersion,
@@ -82,9 +88,6 @@ const ADHERENCE_RULES = new Set<unknown>(['off', 'guide', 'strict']);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
-const MAX_SOURCE_ELEMENTS = 8192;
-const MAX_BUILD_DIAGNOSTICS = 64;
-const MAX_SOURCE_FILE_BYTES = 256 * 1024;
 // What one revision's tree may hold, matching `CANVAS_LIMITS` in the sidecar's
 // schema: 64 files, each path at most 256 characters.
 const MAX_SOURCE_PATHS = 64;
@@ -427,61 +430,6 @@ function isDesignSystem(value: unknown): boolean {
     id(value.id) &&
     count(value.version) &&
     (value.mode === 'light' || value.mode === 'dark')
-  );
-}
-
-function isBuild(value: unknown): boolean {
-  // Every state names the attempt it belongs to, whatever the attempt produced.
-  if (!record(value) || !count(value.generation)) return false;
-  switch (value.status) {
-    case 'pending':
-      return true;
-    case 'building':
-      return id(value.revisionId);
-    case 'ready':
-      return (
-        id(value.revisionId) &&
-        id(value.artifactId) &&
-        boundedList(value.elements, MAX_SOURCE_ELEMENTS, isSourceElement) &&
-        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
-      );
-    case 'failed':
-      return (
-        id(value.revisionId) &&
-        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic) &&
-        (value.lastWorkingRevisionId === null || id(value.lastWorkingRevisionId))
-      );
-    case 'cancelled':
-      return value.revisionId === null || id(value.revisionId);
-    default:
-      return false;
-  }
-}
-
-function isSourceElement(value: unknown): boolean {
-  return (
-    record(value) &&
-    id(value.elementId) &&
-    boundedText(value.file, 256) &&
-    count(value.start) &&
-    count(value.end) &&
-    value.end > value.start &&
-    value.end <= MAX_SOURCE_FILE_BYTES &&
-    boundedText(value.tagName, MAX_SOURCE_FILE_BYTES) &&
-    (value.editability === 'literal' ||
-      value.editability === 'computed' ||
-      value.editability === 'shared')
-  );
-}
-
-function isDiagnostic(value: unknown): boolean {
-  return (
-    record(value) &&
-    boundedText(value.code, 64) &&
-    boundedText(value.message, 2048) &&
-    (value.file === undefined || (typeof value.file === 'string' && value.file.length <= 320)) &&
-    (value.line === undefined || count(value.line)) &&
-    (value.column === undefined || count(value.column))
   );
 }
 
