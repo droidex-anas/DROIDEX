@@ -113,7 +113,7 @@ test('a request for variants of picked elements names them and where every copy 
       'as they are.',
   );
 
-  // Two picks of the same element, by the words they span, are one place in the source.
+  // Two picks of the same element, by the words they span, each keep their own words.
   const card = { ...heading, component: 'Card', text: null };
   const words = { ...heading, text: { excerpt: 'faster', box: heading.box } };
   const sidebar = { ...card, source: { ...card.source, file: 'Sidebar.tsx', line: 3 } };
@@ -123,10 +123,10 @@ test('a request for variants of picked elements names them and where every copy 
       count: 2,
       direction: 'calmer',
     }),
-    'Make 2 variants of 3 picked elements in Pricing: calmer\n' +
+    'Make 2 variants of <h1> “Ship faster” (main.tsx line 7), <h1> “faster” (main.tsx line 7), ' +
+      'and Card (Sidebar.tsx line 3) in Pricing: calmer\n' +
       'Each pinned frame starts as a copy of Pricing. In each, change only those elements ' +
-      '(main.tsx line 7, Sidebar.tsx line 3 of Pricing’s source, the same lines in every copy) ' +
-      'to a different take on it within the current design system (layout, visual style or ' +
+      '(at those lines of Pricing’s source, the same lines in every copy) to a different take on it within the current design system (layout, visual style or ' +
       'colour), distinct from the others, and leave everything else and Pricing itself as they are.',
   );
 });

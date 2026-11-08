@@ -131,17 +131,26 @@ export function elementVariantPrompt(
   picks: readonly PickedElement[],
   choice: VariantChoice,
 ): string {
+  const source = `${sourceName}’s source`;
+  const [first] = picks;
   const one = picks.length === 1;
-  const subject = one ? pickName(picks[0]) : `${String(picks.length)} picked elements`;
-  const places = new Set(picks.map(({ source }) => `${source.file} line ${String(source.line)}`));
+  const subject = one
+    ? pickName(first)
+    : PICK_LIST.format(picks.map((pick) => `${pickName(pick)} (${pickPlace(pick)})`));
   return request(
     `${subject} in ${sourceName}`,
     choice,
     `Each pinned frame starts as a copy of ${sourceName}. In each, change only ` +
-      `${one ? 'that element' : 'those elements'} (${[...places].join(', ')} of ${sourceName}’s source, ` +
+      `${one ? `that element (${pickPlace(first)} of ${source}` : `those elements (at those lines of ${source}`}, ` +
       `the same lines in every copy) to ${ASK[choice.kind].change}, distinct from the others, ` +
       `and leave everything else and ${sourceName} itself as they are.`,
   );
+}
+
+const PICK_LIST = new Intl.ListFormat('en', { type: 'conjunction' });
+
+function pickPlace({ source }: PickedElement): string {
+  return `${source.file} line ${String(source.line)}`;
 }
 
 function request(subject: string, choice: VariantChoice, instruction: string): string {
