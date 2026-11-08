@@ -150,7 +150,8 @@ export function CanvasBoard({
     drawn: [],
     viewport: view.viewport,
   });
-  const dispatch = useInteractionDispatch(interaction, onInteractionChange, frames);
+  const canDesign = design !== undefined;
+  const dispatch = useInteractionDispatch(interaction, onInteractionChange, frames, canDesign);
 
   const pickBand = useCallback(
     (origin: Point, current: Point, additive: boolean) => {
@@ -271,7 +272,7 @@ export function CanvasBoard({
     frames,
     drawn,
     dispatch,
-    canDesign: design !== undefined,
+    canDesign,
     dropTool: () => {
       annotation.pickTool(null);
     },
@@ -457,7 +458,7 @@ export function CanvasBoard({
           mode={interaction.mode}
           selectedCount={interaction.selectedFrameIds.length}
           hasFrames={frames.length > 0}
-          canDesign={design !== undefined}
+          canDesign={canDesign}
           errors={[gestures.layoutError, annotation.error, editor.error, picker.error]}
           onMode={commands.setMode}
           onZoom={commands.zoom}

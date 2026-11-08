@@ -52,8 +52,9 @@ export function boardCommands({
   const selected = interaction.selectedFrameIds;
   return {
     setMode: (next: BoardMode) => {
+      if (next === 'design' && !canDesign) return;
       dropTool();
-      if (next === interaction.mode || (next === 'design' && !canDesign)) return;
+      if (next === interaction.mode) return;
       if (next === 'select') {
         dispatch({ type: 'escape' });
         return;
