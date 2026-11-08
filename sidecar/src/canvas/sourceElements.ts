@@ -227,9 +227,20 @@ function functionName(fn: ts.SignatureDeclaration): string | undefined {
     : undefined;
 }
 
+const COMPONENT_WRAPPERS = new Set(['memo', 'forwardRef']);
+
 function isWrapping(parent: ts.Node, child: ts.Node): boolean {
   if (ts.isParenthesizedExpression(parent)) return true;
-  return ts.isCallExpression(parent) && parent.arguments.some((argument) => argument === child);
+  if (!ts.isCallExpression(parent) || !parent.arguments.includes(child as ts.Expression))
+    return false;
+  const callee = parent.expression;
+  if (ts.isIdentifier(callee)) return COMPONENT_WRAPPERS.has(callee.text);
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'React' &&
+    COMPONENT_WRAPPERS.has(callee.name.text)
+  );
 }
 
 function canReuseJsx(node: ts.Node): boolean {
