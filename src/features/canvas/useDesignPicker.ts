@@ -113,9 +113,11 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
     const frame = latest.current.frames.find((each) => each.designId === designId);
     const pins = latest.current.design;
     if (!frame || pins?.chatId !== chatId) return;
-    // A press on nothing picked clears the picks, as a click on empty board does a selection.
+    // A press on nothing picked clears the picks, as a click on empty board does a
+    // selection; but not one on a revision the frame has moved past, which the
+    // board keeps showing while the next one builds.
     if (finding === null) {
-      if (!additive) pins.clear();
+      if (!additive && frame.revisionId === revisionId) pins.clear();
       return;
     }
     const spansText = finding.text !== null && finding.text.excerpt.trim() !== '';
