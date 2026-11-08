@@ -397,7 +397,12 @@ const frameActions: FrameActions = {
     return reply.promise;
   },
   picksIn: (frame) =>
-    elementPins('chat_1').filter(({ element }) => element.designId === frame.designId),
+    elementPins('chat_1').filter(
+      ({ canvasId, element }) =>
+        canvasId === 'cv_board' &&
+        element.designId === frame.designId &&
+        element.revisionId === frame.revisionId,
+    ),
   makeVariants: (frame, choice, picks) =>
     variantSets.make('cv_board', frame.designId, () => {
       variantCalls.push({ designId: frame.designId, ...choice });

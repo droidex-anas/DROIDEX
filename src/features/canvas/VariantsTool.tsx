@@ -213,7 +213,7 @@ function VariantOptions({
         <SegmentedControl
           label="Of"
           options={[
-            { value: 'frame', label: frameName, text: 'Whole frame' },
+            { value: 'frame', label: `Whole frame: ${frameName}`, text: 'Whole frame' },
             {
               value: 'picked',
               label: picksName(picks),
