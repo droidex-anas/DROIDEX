@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGroupedFeed } from './chatFeedTurns';
-import type { FeedItem } from './chatFeed';
+import { sameFeedEvents, type FeedItem } from './chatFeed';
 import type { TranscriptEvent } from '../types/bridge';
 
 let seq = 0;
@@ -143,6 +143,21 @@ test("each turn's card keeps the last revision that turn wrote as later turns re
       pinned(turns.slice(0, count).flat()),
       ['rev-1', 'rev-2', 'rev-3', 'rev-4'].slice(0, count),
     );
+
+  // Mid-turn, a later write moves the card's pin, and its row sees the change.
+  const running = [
+    ...turns[0],
+    user('Try a darker header'),
+    ...write('w3a', 'rev-3a'),
+    answer('Trying a darker header.'),
+  ];
+  const lastCard = (events: TranscriptEvent[]) =>
+    buildGroupedFeed(events, true).findLast((item) => item.type === 'canvas_artifact');
+  const before = lastCard(running);
+  const after = lastCard([...running, ...write('w3', 'rev-3')]);
+  assert.ok(before?.type === 'canvas_artifact' && after?.type === 'canvas_artifact');
+  assert.deepEqual([before.activity.revisionId, after.activity.revisionId], ['rev-3a', 'rev-3']);
+  assert.equal(sameFeedEvents(before, after), false);
 });
 
 function themeTool(toolUseId: string, designSystem?: Activity['designSystem']): TranscriptEvent[] {

@@ -192,7 +192,11 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'error' && b.type === 'error') {
     return a.event === b.event && a.attempts === b.attempts;
   }
-  // message | status | child session | canvas artifact each carry one event.
+  // A later write in the turn moves a card's pin while its event stays the first result.
+  if (a.type === 'canvas_artifact' && b.type === 'canvas_artifact') {
+    return a.event === b.event && a.activity.revisionId === b.activity.revisionId;
+  }
+  // message | status | child session each carry one event.
   return (a as { event: TranscriptEvent }).event === (b as { event: TranscriptEvent }).event;
 }
 
