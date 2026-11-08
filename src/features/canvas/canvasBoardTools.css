@@ -45,7 +45,9 @@
 }
 
 .canvas-tool:hover:not(:disabled),
-.canvas-tool:focus-visible {
+.canvas-tool:focus-visible,
+.canvas-zoom-value:focus-within,
+.canvas-zoom-value:has([aria-expanded='true']) {
   outline: none;
   background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text);
@@ -153,30 +155,17 @@
   border-radius: 12px;
 }
 
-/* The zoom typed over and the chevron to its presets: a quiet label until the
-   pointer, the keyboard or the open menu is on it, then tinted as a tool is. */
+/* The zoom typed over and the chevron to its presets: one tool of the rail's
+   height and tint, quiet until the pointer, the keyboard or the open menu is on
+   it. Both parts fill it top to bottom, so each is at least a control-sm target. */
 .canvas-zoom-value {
-  display: flex;
-  align-items: center;
-  height: 32px;
-  border-radius: 8px;
-  color: var(--text-secondary);
-  transition:
-    background 120ms,
-    color 120ms;
+  width: auto;
 }
 
-.canvas-zoom-value:hover,
-.canvas-zoom-value:focus-within,
-.canvas-zoom-value:has([aria-expanded='true']) {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text);
-}
-
-/* Wide enough for 400% in tabular figures; its colour is the segment's. */
+/* Wide enough for 400% in tabular figures; its colour is the tool's. */
 .canvas-zoom-value input {
-  width: 44px;
-  padding-left: 6px;
+  width: 6ch;
+  height: 100%;
   color: inherit;
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -186,10 +175,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: 28px;
   height: 100%;
-  padding-right: 4px;
-  border-radius: 8px;
   outline: none;
 }
 

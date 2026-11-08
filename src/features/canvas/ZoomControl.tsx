@@ -55,7 +55,7 @@ export function ZoomControl({
       >
         <Minus className="h-4 w-4" aria-hidden />
       </Tool>
-      <div className="canvas-zoom-value">
+      <div className="canvas-tool canvas-zoom-value">
         <ZoomField scale={scale} onZoomTo={onZoomTo} focusBoard={focusBoard} />
         <button
           ref={trigger}
