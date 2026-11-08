@@ -433,6 +433,11 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
   // Internal skill bodies arrive as ordinary user text, after leading whitespace.
   const notification =
     ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
+  // Droid now stores a slash invocation as the composed prompt with the skill
+  // body appended, then a bare activation.
+  const pinned =
+    '<canvas_frames>\nThe user pinned these canvas frames to this request; "this" and "it" mean them.\n<frame id="design-1">Card</frame>\n</canvas_frames>';
+  const invocation = `/stageshow Design a card\n\n${pinned}\n\n${notification.trim()}`;
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
@@ -442,6 +447,8 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
     userMessage(notification),
     userMessage(RESTART_CONTINUE_PROMPT),
     assistant('Review started'),
+    userMessage(invocation),
+    userMessage('Skill "stageshow" activated', 'user_only'),
   ]);
 
   for (const events of [
@@ -464,8 +471,11 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
         ['PR #100', 'user', ['review'], 'user'],
         ['Skill "review" activated: PR #100', undefined, undefined, 'primary'],
         ['Review started', undefined, undefined, 'primary'],
+        ['/stageshow Design a card', 'user', undefined, 'user'],
+        ['Skill "stageshow" activated', undefined, undefined, 'primary'],
       ],
     );
+    assert.deepEqual(events.at(-2)?.canvasFrames, ['Card']);
   }
 });
 

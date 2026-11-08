@@ -211,7 +211,7 @@ function nonAssistantBlockEvent(
     });
   }
   if (messageRole === 'user' && type === 'text') {
-    const shown = userPromptDisplay(nonEmpty(stringValue(block.text)));
+    const shown = userPromptDisplay(withoutSkillBody(nonEmpty(stringValue(block.text))));
     if ((!shown.text && !shown.sideChatReplies) || isSystemText(shown.text)) return null;
     const sourceProviderSessionId = base.role === 'primary' ? 'user' : base.sourceProviderSessionId;
     return event({ ...base, sourceProviderSessionId }, index, 'text', { ...shown, author: 'user' });
@@ -337,13 +337,17 @@ export function parseSessionLineEvents(
       ? skillActivationFromContent(content)
       : undefined;
   if (activation) {
+    const acknowledgement = event(base, 1, 'text', { text: activation.message });
+    // Droid now stores the invocation as its own prompt row, so an activation
+    // without a prompt is only the acknowledgement the live stream shows.
+    if (!activation.prompt) return [acknowledgement];
     return [
       event({ ...base, sourceProviderSessionId: 'user', role: 'primary' }, 0, 'text', {
-        text: activation.prompt,
+        ...userPromptDisplay(activation.prompt),
         author: 'user',
         skills: [activation.skillName],
       }),
-      event(base, 1, 'text', { text: activation.message }),
+      acknowledgement,
     ];
   }
 
@@ -423,6 +427,16 @@ function trimText(text: string, max: number): string {
 // larger bound. Thinking, user text, and tool output keep the shared cap.
 function trimAnswerText(text: string): string {
   return trimText(text, hasAppFence(text) ? MAX_APP_ANSWER_CHARS : MAX_TEXT_CHARS);
+}
+
+// Droid expands a slash skill into the prompt row: the user's words, then the
+// skill's body as a system notification. A row that opens with one is all
+// harness text and stays whole for isSystemText to hide.
+function withoutSkillBody(text: string): string {
+  const start = text.indexOf('<system-notification>');
+  if (start < 0) return text;
+  const words = text.slice(0, start).trimEnd();
+  return words.trim() ? words : text;
 }
 
 function isSystemText(text: string): boolean {
