@@ -16,6 +16,8 @@ export interface CanvasActivity {
   canvasId?: string;
   /** The name of the first frame a create reserved. */
   title?: string;
+  /** The revision a write committed. */
+  revisionId?: string;
   /** This create gave an unattached chat its canvas, so it is the chat's first artifact. */
   firstArtifact?: true;
   /** The kit a theme call saved, proposed or applied; its reference only, never its content. */
@@ -274,10 +276,11 @@ function kitMessage({ id, version, status }: KitReference): string {
 /** What names the artifact a create or write made, for the transcript's card. */
 function artifactNames(
   binding: CanvasToolBinding,
-): Pick<CanvasActivity, 'canvasId' | 'title' | 'firstArtifact'> {
+): Pick<CanvasActivity, 'canvasId' | 'title' | 'revisionId' | 'firstArtifact'> {
   return {
     ...(binding.canvasId ? { canvasId: binding.canvasId } : {}),
     ...(binding.frameNames?.length ? { title: binding.frameNames[0] } : {}),
+    ...(binding.revisionId ? { revisionId: binding.revisionId } : {}),
     ...(binding.firstArtifact ? { firstArtifact: true } : {}),
   };
 }
