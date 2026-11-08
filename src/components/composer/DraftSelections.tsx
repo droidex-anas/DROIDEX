@@ -113,11 +113,11 @@ export function DraftSelections({
             title={item.removeLabel}
             aria-label={item.removeLabel}
           >
-            <span className="relative h-4 w-4 shrink-0">
-              <span className="block h-4 w-4 transition-opacity group-hover:opacity-0">
+            <span className="relative flex shrink-0 items-center justify-center">
+              <span className="flex transition-opacity group-hover:opacity-0">
                 {item.thumbnail ?? <Icon className="h-4 w-4" />}
               </span>
-              <X className="absolute inset-0 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
+              <X className="absolute h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
             </span>
             <span className="max-w-64 truncate">{item.label}</span>
           </button>
