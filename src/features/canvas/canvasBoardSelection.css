@@ -235,6 +235,11 @@
   background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
 
+/* Design's quick prompt opens from the pick it sits below. */
+[data-design-pick-prompt][data-side='below'].canvas-popover-reveal {
+  animation-name: canvas-popover-drop;
+}
+
 /* Text being dragged across follows the pointer, so it never glides behind it. */
 .canvas-element-outline[data-dragging] {
   transition: none;
