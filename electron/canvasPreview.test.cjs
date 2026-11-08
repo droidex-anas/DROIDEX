@@ -3,12 +3,14 @@ const assert = require('node:assert/strict');
 
 const {
   CANVAS_PREVIEW_CSP,
-  CANVAS_PREVIEW_PARTITION,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
+} = require('./canvasPreview.cjs');
+const {
+  CANVAS_PREVIEW_PARTITION,
   canvasPreviewSessionReady,
   configureCanvasPreviewSession,
-} = require('./canvasPreview.cjs');
+} = require('./canvasPreviewSession.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 
 /** The design's frame, whose every probe is a promise the test settles. */
