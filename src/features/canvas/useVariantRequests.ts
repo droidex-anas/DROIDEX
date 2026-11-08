@@ -1,8 +1,9 @@
 // One click on Variants (spec §4): copies of the frame's revision on show,
 // placed beside it, and a request that goes straight to the chat's agent with
 // only those copies pinned. Variants of elements picked in the frame name the
-// picks too, though the source frame stays unpinned so the agent cannot change
-// it. The composer, and the pins and picks it holds, stay as they are.
+// picks in words and by the source lines every copy shares, never by their
+// element IDs, which belong to the unpinned source. The composer, and the pins
+// and picks it holds, stay as they are.
 
 import { useCallback, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
@@ -81,14 +82,11 @@ export function useVariantRequests(
               choice,
             )
           : variantPrompt(source.name, choice);
-      // The picks stay out of the lease: they would make the source writable.
+      // The picks stay out of the lease, which would otherwise let the agent write the source.
       const canvasContext = canvasContextOf(pins);
       const steerId = sessionIsLive(session) ? crypto.randomUUID() : undefined;
       try {
-        sendToSession(appSessionId, promptWithCanvasPins(prompt, pins, picks), {
-          steerId,
-          canvasContext,
-        });
+        sendToSession(appSessionId, promptWithCanvasPins(prompt, pins), { steerId, canvasContext });
       } catch (failure) {
         toast.error(`The variants were made but not requested. ${canvasMessage(failure)}`);
         return;
@@ -100,15 +98,7 @@ export function useVariantRequests(
         addLocalSteer(
           appSessionId,
           { id: steerId, text: prompt, sentAt: Date.now() },
-          {
-            id: steerId,
-            text: prompt,
-            skills: [],
-            files: [],
-            framePins: pins,
-            elementPins: picks,
-            canvasContext,
-          },
+          { id: steerId, text: prompt, skills: [], files: [], framePins: pins, canvasContext },
         );
       else
         dispatch({

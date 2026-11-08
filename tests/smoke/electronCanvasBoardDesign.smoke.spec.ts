@@ -195,12 +195,10 @@ test('Variants of a frame with a picked element rework that element, unless the 
   await options.getByRole('button', { name: 'Make 3 variants' }).click();
   await expect(options).toHaveCount(0);
 
-  // The request names the element and carries it to the agent as a picked element.
+  // The request names the element, and where every copy writes it.
   const [request] = await page.evaluate(() => window.boardHarness.elementVariantRequests);
   expect(request).toMatch(/^Make 3 variants of Card in Design A\.\n/);
   expect(request).toContain('(main.tsx line 3 of Design A’s source, the same lines in every copy)');
-  expect(request).toContain('<canvas_elements>');
-  expect(request).toContain('<element id="el_title" design="a" revision="rev_01"');
 
   // Choosing the frame makes variants of the whole of it, the pick still held.
   await page.evaluate(() => window.boardHarness.answerVariants(0));

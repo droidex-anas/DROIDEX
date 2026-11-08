@@ -15,7 +15,6 @@ import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import {
-  promptWithCanvasPins,
   syncFramePins,
   toggleFramePins,
   useFramePins,
@@ -115,7 +114,7 @@ interface BoardHarness {
   /** The toolbar's dialogs asked for, as `<kind>:<designId>`. */
   dialogs: string[];
   variantCalls: (VariantChoice & { designId: string })[];
-  /** The requests for variants of picked elements, as the agent would read them. */
+  /** The words of each request for variants of picked elements. */
   elementVariantRequests: string[];
   /** Settles one variants request, as its send does. */
   answerVariants: (index: number) => void;
@@ -404,14 +403,10 @@ const frameActions: FrameActions = {
       variantCalls.push({ designId: frame.designId, ...choice });
       if (picks.length > 0)
         elementVariantRequests.push(
-          promptWithCanvasPins(
-            elementVariantPrompt(
-              frame.name,
-              picks.map((pin) => pin.element),
-              choice,
-            ),
-            [],
-            picks,
+          elementVariantPrompt(
+            frame.name,
+            picks.map((pin) => pin.element),
+            choice,
           ),
         );
       const reply = Promise.withResolvers<void>();
