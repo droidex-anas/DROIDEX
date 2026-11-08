@@ -29,6 +29,7 @@ import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
 import type { PresenceAgent } from './canvasPresence';
 import type { BoardMode } from './canvasState';
+import { FrameInputOverlay } from './FrameInputOverlay';
 import { FrameLabel, FrameNameField } from './FrameLabel';
 import type { FrameSize } from './FrameSizeMenu';
 import { FrameSizing } from './FrameSizing';
@@ -36,6 +37,7 @@ import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
 import { FrameWorkingState } from './FrameWorkingState';
 import { PendingBloom } from './PendingBloom';
+import type { PreviewProbe } from './previewDocument';
 import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
 import type { ToolbarRoom } from './toolbarPlacement';
@@ -74,8 +76,9 @@ export interface DesignFrameProps {
   /** The agent at work on this frame, if any. */
   worker: PresenceAgent | undefined;
   /**
-   * Spec §4: Select and Edit install a transparent overlay over the guest and
-   * Interact removes it. The board owns when flipping it is safe; this only paints it.
+   * Spec §4: Select, Edit and Design install a transparent overlay over the
+   * guest and Interact removes it. The board owns when flipping it is safe;
+   * this only paints it.
    */
   capturePointer: boolean;
   /** The revision on show: its working one, or the one it showed before a newer build. */
@@ -91,13 +94,15 @@ export interface DesignFrameProps {
   onInteract: (frame: CanvasFrame) => void;
   /** A press in Edit, at a point in the design's own pixels. */
   onPickElement: (frame: CanvasFrame, at: Point) => void;
-  /** The pointer moving over the design in Edit, at a point in its pixels, or leaving it. */
+  /** A press released in Design, as what it asks the preview; `additive` is shift-click. */
+  onDesignPick: (frame: CanvasFrame, probe: PreviewProbe, additive: boolean) => void;
+  /** The pointer moving over the design in Edit or Design, at a point in its pixels, or leaving it. */
   onHoverElement: (frame: CanvasFrame, at: Point | null) => void;
   /** Enter on the label, or a double-click on the design, in Edit. */
   onEditEnter: (frame: CanvasFrame) => void;
   /** Edit has picked an element in this frame, so its size is the element's to show. */
   elementPicked: boolean;
-  /** The pointer is over an element Edit can pick in this frame. */
+  /** The pointer is over an element Edit or Design can pick in this frame. */
   elementHovered: boolean;
   /** This frame's label holds the frames' one tab stop. */
   tabStop: boolean;
@@ -115,8 +120,7 @@ export interface DesignFrameProps {
 
 export function DesignFrame(props: DesignFrameProps) {
   const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, held } = props;
-  const { capturePointer, onHold, onPick, onInteract, onPickElement, onEditEnter } = props;
-  const { onHoverElement } = props;
+  const { capturePointer, onHold, onPick, onInteract, onEditEnter } = props;
   const [renaming, setRenaming] = useState(false);
   const label = useRef<HTMLDivElement>(null);
   const animated = arriving && motion.frameArrivalMs > 0;
@@ -131,14 +135,6 @@ export function DesignFrame(props: DesignFrameProps) {
   const click = (event: MouseEvent<HTMLElement>) => {
     if (!event.shiftKey) onPick(frame, false);
   };
-  /** Where the pointer is in the design's own pixels. */
-  const designPoint = (event: PointerEvent<HTMLElement>): Point => {
-    const box = event.currentTarget.getBoundingClientRect();
-    return { x: (event.clientX - box.left) / scale, y: (event.clientY - box.top) / scale };
-  };
-  let cursor = 'default';
-  if (held) cursor = 'grabbing';
-  else if (mode === 'edit' && props.elementHovered) cursor = 'pointer';
   return (
     <div
       data-design-frame={frame.designId}
@@ -214,7 +210,7 @@ export function DesignFrame(props: DesignFrameProps) {
 
       <div
         // The sheet is the design's, never the board's background: in Interact
-        // the pointer belongs to the preview, and in Select the overlay above
+        // the pointer belongs to the preview, and otherwise the overlay above
         // has already decided what the press meant.
         onPointerDown={(event) => {
           event.stopPropagation();
@@ -224,35 +220,7 @@ export function DesignFrame(props: DesignFrameProps) {
         <FrameBody {...props} />
         <FrameWorkingState {...props} />
         <RebuildBadge {...props} />
-        {capturePointer && (
-          <div
-            data-canvas-input-overlay
-            className="absolute inset-0"
-            style={{ cursor, touchAction: 'none' }}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              if (mode === 'edit') {
-                onPick(frame, false);
-                onPickElement(frame, designPoint(event));
-                return;
-              }
-              press(event);
-            }}
-            onPointerMove={(event) => {
-              if (mode === 'edit') onHoverElement(frame, designPoint(event));
-            }}
-            onPointerLeave={() => {
-              if (mode === 'edit') onHoverElement(frame, null);
-            }}
-            onClick={click}
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              if (mode === 'select') onInteract(frame);
-              else if (mode === 'edit') onEditEnter(frame);
-            }}
-          />
-        )}
+        {capturePointer && <FrameInputOverlay {...props} press={press} click={click} />}
       </div>
 
       {selected && !props.multiSelect && (

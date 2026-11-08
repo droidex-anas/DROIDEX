@@ -1,6 +1,6 @@
 /* What the board draws around a selection and while frames are moved: the
    selected frame's size, a multiple selection's box, the resize handles, the
-   rubber band, the snap guides and the elements Edit hovers and picks. It loads with
+   rubber band, the snap guides and the elements Edit and Design hover and pick. It loads with
    canvasBoard.css, whose --board-scale and chrome font it uses.
 
    Chrome drawn inside the world layer divides by --board-scale, so it keeps
@@ -275,6 +275,13 @@
   color: var(--on-selection);
   font: 500 11px / 14px var(--canvas-chrome-font);
   white-space: nowrap;
+}
+
+/* In Design the tag names the component first, and the tag after it, quieter. */
+.canvas-element-tag-detail {
+  margin-left: 4px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--on-selection) 72%, transparent);
 }
 
 .canvas-element-tag[data-side='below'] > span,

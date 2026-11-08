@@ -1,0 +1,112 @@
+// The quick prompt beside Design's latest pick: a small composer at the
+// element, so the change can be asked for right there. It sends through the
+// chat's own composer, with every pick on its chips; closed unsent, its words
+// go on in that composer's draft. It is drawn in the board's screen space, so
+// it keeps its size at any zoom.
+
+import { useEffect, useRef } from 'react';
+import { CompactComposer } from '../../components/composer/CompactComposer';
+import { useElementSize } from '../../components/browser/useElementSize';
+import type { PlacedFrame, Point, Viewport } from './canvasGeometry';
+import { revealStyle, type CanvasMotion } from './canvasMotion';
+import { elementName, elementPinKey, type ElementPin } from './elementPins';
+
+const WIDTH_PX = 300;
+const EDGE_PX = 8;
+const GAP_PX = 8;
+
+export function DesignPickPrompt({
+  anchor,
+  drawn,
+  viewport,
+  size,
+  motion,
+  text,
+  onChange,
+  onSend,
+  onClose,
+  focusBoard,
+}: {
+  anchor: ElementPin;
+  /** Where the board draws each frame. */
+  drawn: PlacedFrame[];
+  viewport: Viewport;
+  /** The part of the board that is visible. */
+  size: Point;
+  motion: CanvasMotion;
+  text: string;
+  onChange: (text: string) => void;
+  onSend: () => void;
+  onClose: () => void;
+  focusBoard: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const { height } = useElementSize(box);
+  const anchorKey = elementPinKey(anchor);
+
+  // Each pick puts the caret in the box, ready to type.
+  useEffect(() => {
+    input.current?.focus({ preventScroll: true });
+  }, [anchorKey]);
+
+  // A press anywhere else closes it; a press on a design picks, which moves it instead.
+  useEffect(() => {
+    const onPress = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || box.current?.contains(target)) return;
+      if (target instanceof Element && target.closest('[data-canvas-input-overlay]')) return;
+      onClose();
+    };
+    document.addEventListener('pointerdown', onPress, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPress, true);
+    };
+  }, [onClose]);
+
+  const frame = drawn.find(({ designId }) => designId === anchor.element.designId)?.rect;
+  if (!frame) return null;
+  const picked = anchor.element.text?.box ?? anchor.element.box;
+  const { scale } = viewport;
+  const left = viewport.x + (frame.x + picked.x) * scale;
+  const top = viewport.y + (frame.y + picked.y) * scale;
+  const bottom = top + picked.height * scale;
+  const width = Math.min(WIDTH_PX, size.x - EDGE_PX * 2);
+  const lowest = size.y - EDGE_PX - height;
+  const below = bottom + GAP_PX;
+  const placed = {
+    left: Math.max(EDGE_PX, Math.min(left, size.x - EDGE_PX - width)),
+    top: Math.max(EDGE_PX, Math.min(below <= lowest ? below : top - GAP_PX - height, lowest)),
+  };
+
+  return (
+    <div
+      ref={box}
+      data-design-pick-prompt
+      className={`absolute z-20 ${motion.popoverMs > 0 ? 'canvas-popover-reveal' : ''}`}
+      style={{ ...placed, width, ...revealStyle(motion) }}
+      // The board's background pans on a press; this box is not background.
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <CompactComposer
+        textareaRef={input}
+        value={text}
+        onChange={onChange}
+        onSend={onSend}
+        onEscape={() => {
+          onClose();
+          focusBoard();
+        }}
+        canSend={text.trim().length > 0}
+        placeholder={`Describe the change to ${elementName(anchor.element)}`}
+        label="Prompt for the picked elements"
+        sendLabel="Send prompt"
+        maxHeight={96}
+        // Over the board it floats, so it takes a deeper shadow.
+        className="shadow-lg"
+      />
+    </div>
+  );
+}

@@ -1,7 +1,7 @@
-// The element under the pointer while Edit is on. The preview under the
-// pointer is asked once per animation frame with one question in flight, so
+// The element under the pointer while Edit or Design is on. The preview under
+// the pointer is asked once per animation frame with one question in flight, so
 // the outline keeps up with the pointer without queueing behind it; leaving
-// the frame, or Edit, clears it, and a late answer from before then is dropped.
+// the frame, or the mode, clears it, and a late answer from before then is dropped.
 // A design whose preview run changes is asked again where the pointer was, so
 // no outline outlives the run that drew it.
 
@@ -71,7 +71,7 @@ export function useElementHover(active: boolean, ask: HoverQuestion) {
   });
   hover.setQuestion(ask);
 
-  // Turning Edit on or off, or leaving the board, drops the hover and any question for it.
+  // Turning hovering on or off, or leaving the board, drops the hover and any question for it.
   useEffect(() => hover.clear, [active, hover]);
 
   return {

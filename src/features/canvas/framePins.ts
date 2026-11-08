@@ -2,10 +2,12 @@
 // design shows as a composer chip, and sending pins its revision to that
 // request. The board adds frames and keeps them current; the composer shows,
 // sends and clears them. Neither owns the other, so they live here, by chat.
+// The elements Design picks live beside them, in elementPins.ts.
 
 import { useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
+import type { ElementPin } from './elementPins';
 import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
 
 /** The sidecar's limit on the designs one request may pin. */
@@ -161,6 +163,11 @@ export function restoreFramePins(appSessionId: string, pins: readonly FramePin[]
   publishChanged(appSessionId, held, next.slice(0, MAX_PINNED));
 }
 
+/** The attached board the chat's pane is showing, while it shows one. */
+export function attachedBoard(appSessionId: string): CanvasSnapshot | undefined {
+  return boards.get(appSessionId);
+}
+
 /**
  * Keeps the chat's pins as its attached canvas now has them: a frame renamed,
  * resized or rebuilt is pinned as it is now, and a deleted frame, or one from a
@@ -209,20 +216,27 @@ export function requestDesignSystem(
 }
 
 /**
- * The turn context a send carries: the frames' revisions and the kit as they
- * are now, in fresh objects, so nothing that changes afterwards can retarget
- * the request. A chat on no canvas, with nothing pinned, carries none.
+ * The turn context a send carries: the frames' revisions, the elements picked
+ * and the kit as they are now, in fresh objects, so nothing that changes
+ * afterwards can retarget the request. A chat on no canvas, with nothing
+ * pinned, carries none.
  */
 export function canvasContextOf(
   pins: readonly FramePin[] = NONE,
   onCanvas: CanvasRequestPins | null = null,
+  elements: readonly ElementPin[] = [],
 ): CanvasTurnContext | undefined {
-  if (pins.length === 0 && !onCanvas) return undefined;
+  if (pins.length === 0 && elements.length === 0 && !onCanvas) return undefined;
   const designSystem = requestDesignSystem(pins, onCanvas?.designSystem ?? null);
   const images = onCanvas?.imageAssetIds ?? [];
   return {
     designs: pins.map(({ designId, revisionId }) => ({ designId, revisionId })),
-    elements: [],
+    elements: elements.map(({ element }) => ({
+      designId: element.designId,
+      revisionId: element.revisionId,
+      elementId: element.elementId,
+      instancePath: element.instancePath,
+    })),
     designSystem: { ...designSystem },
     ...(images.length > 0 ? { images: images.map((assetId) => ({ assetId })) } : {}),
   };

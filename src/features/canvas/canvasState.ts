@@ -212,9 +212,10 @@ export function reduceCanvasRemoval(
  * Spec §4: Select gives the board pointer ownership through a transparent
  * overlay over the guests; Interact removes it so the preview receives real
  * pointer and keyboard events. Edit keeps the overlay, and a press on a frame
- * picks the element under it instead of the frame.
+ * picks the element under it instead of the frame. Design keeps it too, and a
+ * press points the chat's next prompt at the element or text under it.
  */
-export type BoardMode = 'select' | 'interact' | 'edit';
+export type BoardMode = 'select' | 'interact' | 'edit' | 'design';
 
 export interface BoardInteraction {
   mode: BoardMode;
@@ -246,13 +247,14 @@ export type BoardInteractionEvent =
   /** Double-click, or Enter on a single selected frame. */
   | { type: 'interact'; designId: string }
   | { type: 'edit' }
+  | { type: 'design' }
   | { type: 'escape' }
   /** Frames the canvas no longer has, so nothing points at a deleted design. */
   | { type: 'frames'; designIds: string[] };
 
 /**
  * Spec §4: Escape returns to selection and Escape again clears it, so the two
- * steps out of Interact or Edit are never one. Picking while interacting moves Interact
+ * steps out of Interact, Edit or Design are never one. Picking while interacting moves Interact
  * to the frame picked, which keeps the live slot under the hand; picking
  * several leaves Interact, because it drives one frame.
  */
@@ -287,7 +289,8 @@ export function reduceBoardInteraction(
         interactedFrameId: event.designId,
       };
     case 'edit':
-      return { ...state, mode: 'edit', interactedFrameId: null };
+    case 'design':
+      return { ...state, mode: event.type, interactedFrameId: null };
     case 'escape':
       if (state.mode !== 'select') return { ...state, mode: 'select', interactedFrameId: null };
       return state.selectedFrameIds.length === 0 ? state : settle(state, []);
@@ -306,6 +309,11 @@ function keepFrames(state: BoardInteraction, designIds: string[]): BoardInteract
   )
     return state;
   return settle(state, selected);
+}
+
+/** Edit and Design point at the elements inside a frame rather than at the frame. */
+export function picksElements(mode: BoardMode): mode is 'edit' | 'design' {
+  return mode === 'edit' || mode === 'design';
 }
 
 /** A frame shows its actions while it is the one selection, or Interact drives it. */

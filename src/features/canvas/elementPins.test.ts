@@ -1,0 +1,95 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { canvasContextOf } from './framePins';
+import {
+  elementPins,
+  pickElement,
+  restoreElementPins,
+  syncElementPins,
+  unpinElements,
+} from './elementPins';
+import type { PickedElement } from './pickedElement';
+import type { CanvasFrame } from './protocol';
+
+function frame(designId: string, name = `Design ${designId}`): CanvasFrame {
+  return {
+    designId,
+    name,
+    rect: { x: 0, y: 0, width: 720, height: 520 },
+    layoutVersion: 1,
+    manifestVersion: 1,
+    revisionId: 'r1',
+    designSystem: { id: 'droidex', version: 2, mode: 'dark' },
+    variantOf: null,
+    seededRevisionId: null,
+    build: { status: 'pending', generation: 1 },
+  };
+}
+
+function element(designId: string, elementId: string, excerpt?: string): PickedElement {
+  return {
+    designId,
+    revisionId: 'r1',
+    elementId,
+    instancePath: '0',
+    source: { file: 'src/App.tsx', start: 10, end: 40, line: 3 },
+    tagName: 'button',
+    component: 'PlanCard',
+    box: { x: 8, y: 8, width: 120, height: 32 },
+    text: excerpt ? { excerpt, box: { x: 10, y: 10, width: 40, height: 14 } } : null,
+  };
+}
+
+const picked = (appSessionId: string) =>
+  elementPins(appSessionId).map((pin) => pin.element.elementId + (pin.element.text ? '+text' : ''));
+
+test('a click picks in place of the picks, and a shift-click adds or takes one off', () => {
+  pickElement('chat-p', 'cv_1', frame('d1'), element('d1', 'e1'), false);
+  pickElement('chat-p', 'cv_1', frame('d1'), element('d1', 'e2'), false);
+  assert.deepEqual(picked('chat-p'), ['e2']);
+
+  pickElement('chat-p', 'cv_1', frame('d2'), element('d2', 'e3'), true);
+  // The same element's text is a pick of its own.
+  pickElement('chat-p', 'cv_1', frame('d1'), element('d1', 'e2', 'Start free'), true);
+  assert.deepEqual(picked('chat-p'), ['e2', 'e3', 'e2+text']);
+
+  pickElement('chat-p', 'cv_1', frame('d2'), element('d2', 'e3'), true);
+  assert.deepEqual(picked('chat-p'), ['e2', 'e2+text']);
+  // One request points at one canvas, so a pick on another starts over.
+  pickElement('chat-p', 'cv_2', frame('d9'), element('d9', 'e9'), true);
+  assert.deepEqual(picked('chat-p'), ['e9']);
+  assert.equal(elementPins('chat-other').length, 0);
+  unpinElements('chat-p');
+  assert.equal(elementPins('chat-p').length, 0);
+});
+
+test('picks follow the attached canvas and go out as the turn’s element references', () => {
+  pickElement('chat-s', 'cv_1', frame('d1'), element('d1', 'e1'), false);
+  pickElement('chat-s', 'cv_1', frame('d2'), element('d2', 'e2'), true);
+  const sending = elementPins('chat-s');
+
+  assert.deepEqual(canvasContextOf([], null, sending)?.elements, [
+    { designId: 'd1', revisionId: 'r1', elementId: 'e1', instancePath: '0' },
+    { designId: 'd2', revisionId: 'r1', elementId: 'e2', instancePath: '0' },
+  ]);
+
+  // d1 was renamed and d2 deleted.
+  syncElementPins('chat-s', { canvasId: 'cv_1', sequence: 2, frames: [frame('d1', 'Pricing')] });
+  assert.deepEqual(
+    elementPins('chat-s').map((pin) => [pin.element.elementId, pin.frameName]),
+    [['e1', 'Pricing']],
+  );
+  const synced = elementPins('chat-s');
+  syncElementPins('chat-s', { canvasId: 'cv_1', sequence: 3, frames: [frame('d1', 'Pricing')] });
+  assert.equal(elementPins('chat-s'), synced);
+
+  // An edited queued prompt brings its picks back once, as the board has them.
+  unpinElements('chat-s', synced);
+  restoreElementPins('chat-s', sending);
+  restoreElementPins('chat-s', sending);
+  assert.deepEqual(picked('chat-s'), ['e1', 'e2']);
+
+  // A chat that moved to another canvas drops the old canvas's picks.
+  syncElementPins('chat-s', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1')] });
+  assert.equal(elementPins('chat-s').length, 0);
+});
