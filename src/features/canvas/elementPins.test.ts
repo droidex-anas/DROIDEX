@@ -54,7 +54,8 @@ test('a click picks in place of the picks, and a shift-click adds or takes one o
   pickElement('chat-p', 'cv_1', frame('d1'), element('d1', 'e2', 'Start free'), true);
   assert.deepEqual(picked('chat-p'), ['e2', 'e3', 'e2+text']);
 
-  pickElement('chat-p', 'cv_1', frame('d2'), element('d2', 'e3'), true);
+  // Taking a pick off leaves nothing new on the prompt to describe.
+  assert.equal(pickElement('chat-p', 'cv_1', frame('d2'), element('d2', 'e3'), true), false);
   assert.deepEqual(picked('chat-p'), ['e2', 'e2+text']);
   // One request points at one canvas, so a pick on another starts over.
   pickElement('chat-p', 'cv_2', frame('d9'), element('d9', 'e9'), true);

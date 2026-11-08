@@ -93,7 +93,8 @@ function middleCut(text: string, room: number): string {
 /**
  * Points the chat's next prompt at `element` in `frame`: in place of the
  * elements it pointed at, or beside them when `additive`, where picking one
- * already there takes it off. A request pins elements of one canvas.
+ * already there takes it off. A request pins elements of one canvas. True
+ * when `element` is on the prompt after it.
  */
 export function pickElement(
   appSessionId: string,
@@ -101,7 +102,7 @@ export function pickElement(
   frame: CanvasFrame,
   element: PickedElement,
   additive: boolean,
-): void {
+): boolean {
   const pin: ElementPin = {
     canvasId,
     frameName: frame.name,
@@ -110,7 +111,7 @@ export function pickElement(
   };
   if (!additive) {
     publish(appSessionId, [pin]);
-    return;
+    return true;
   }
   const key = elementPinKey(pin);
   const held = elementPins(appSessionId).filter((each) => each.canvasId === canvasId);
@@ -119,15 +120,16 @@ export function pickElement(
       appSessionId,
       held.filter((each) => elementPinKey(each) !== key),
     );
-    return;
+    return false;
   }
   if (held.length >= MAX_PINNED_ELEMENTS) {
     toast.error(
       `A prompt points at most ${String(MAX_PINNED_ELEMENTS)} elements, so this one wasn’t added.`,
     );
-    return;
+    return false;
   }
   publish(appSessionId, [...held, pin]);
+  return true;
 }
 
 /** Takes these elements off the chat's next prompt, or all of them. */

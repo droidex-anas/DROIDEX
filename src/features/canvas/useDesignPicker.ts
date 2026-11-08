@@ -26,7 +26,8 @@ export interface DesignPins {
   chatId: string;
   /** The elements the chat's next prompt points at on this canvas, in the order picked. */
   pins: readonly ElementPin[];
-  pick: (frame: CanvasFrame, element: PickedElement, additive: boolean) => void;
+  /** True when `element` is on the prompt after it. */
+  pick: (frame: CanvasFrame, element: PickedElement, additive: boolean) => boolean;
   clear: () => void;
   /** Hands words to the chat's composer, and sends its prompt with them when `send`. */
   seed: (text: string, send: boolean) => void;
@@ -133,8 +134,8 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
       setError(STILL_BUILDING);
       return;
     }
-    pins.pick(frame, picked, additive);
-    setPrompt((draft) => draft ?? { chatId, seed: pins.seed, text: '' });
+    if (pins.pick(frame, picked, additive))
+      setPrompt((draft) => draft ?? { chatId, seed: pins.seed, text: '' });
   };
 
   /** Press `pressNo` released over `frame` for `chatId`, as what it asks the frame's preview. */

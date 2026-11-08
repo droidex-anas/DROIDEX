@@ -136,9 +136,8 @@ export function CanvasBoardMount({
     return {
       chatId: appSessionId,
       pins,
-      pick: (frame, element, additive) => {
-        pickElement(appSessionId, canvasId, frame, element, additive);
-      },
+      pick: (frame, element, additive) =>
+        pickElement(appSessionId, canvasId, frame, element, additive),
       clear: () => {
         unpinElements(appSessionId, pins);
       },

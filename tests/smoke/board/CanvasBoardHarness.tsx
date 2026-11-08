@@ -700,9 +700,8 @@ function Harness() {
               ? {
                   chatId: 'chat_1',
                   pins: picks,
-                  pick: (frame, element, additive) => {
-                    pickElement('chat_1', snapshot.canvasId, frame, element, additive);
-                  },
+                  pick: (frame, element, additive) =>
+                    pickElement('chat_1', snapshot.canvasId, frame, element, additive),
                   clear: () => {
                     unpinElements('chat_1');
                   },
