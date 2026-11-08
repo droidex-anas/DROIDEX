@@ -191,7 +191,7 @@ test('Variants of a frame with a picked element rework that element, unless the 
   const options = page.getByRole('dialog', { name: 'Variants of Design A' });
   const of = options.getByRole('radiogroup', { name: 'Of' });
   await expect(of.getByRole('radio', { name: 'Card' })).toBeChecked();
-  await expect(of.getByRole('radio', { name: 'Design A' })).not.toBeChecked();
+  await expect(of.getByRole('radio', { name: 'Whole frame' })).not.toBeChecked();
   await options.getByRole('button', { name: 'Make 3 variants' }).click();
   await expect(options).toHaveCount(0);
 
@@ -202,13 +202,29 @@ test('Variants of a frame with a picked element rework that element, unless the 
 
   // Choosing the frame makes variants of the whole of it, the pick still held.
   await page.evaluate(() => window.boardHarness.answerVariants(0));
-  await toolbar.getByRole('button', { name: 'Variant options for Design A' }).click();
-  await of.getByRole('radio', { name: 'Design A' }).click();
+  const chevron = toolbar.getByRole('button', { name: 'Variant options for Design A' });
+  await chevron.click();
+  await of.getByRole('radio', { name: 'Whole frame' }).click();
   await options.getByRole('button', { name: 'Make 3 variants' }).click();
   expect(await page.evaluate(() => window.boardHarness.variantCalls)).toHaveLength(2);
   expect(await page.evaluate(() => window.boardHarness.elementVariantRequests)).toHaveLength(1);
   await page.evaluate(() => window.boardHarness.answerVariants(1));
   await expect(ofPick).toBeEnabled();
+
+  // Options open on the pick close when a new version of the frame lets go of it.
+  await page.evaluate(() => window.boardHarness.answerHistory(0));
+  await toolbar.getByRole('button', { name: /^Versions of Design A/ }).click();
+  await page
+    .getByRole('menu', { name: 'Versions of Design A' })
+    .getByRole('menuitemradio', { name: /^v1/ })
+    .click();
+  await page.clock.runFor(200);
+  await chevron.click();
+  await expect(of).toBeVisible();
+  await page.evaluate(() => window.boardHarness.answerSwitch(0));
+  await expect(options).toHaveCount(0);
+  await expect(chevron).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toHaveLength(2);
 });
 
 test('Design and Edit find the element under the pointer at any UI zoom', async ({ page }) => {

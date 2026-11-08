@@ -65,18 +65,25 @@ export function VariantsTool({
     picks: readonly ElementPin[],
   ) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
+  /** Whether the options are open, and whether they opened on the frame's picks. */
+  const [open, setOpen] = useState<'closed' | 'frame' | 'picks'>('closed');
   const busy = useSyncExternalStore(work.subscribe, () => work.of(frame.designId));
   const anchor = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => {
-    setOpen(false);
+    setOpen('closed');
   }, []);
   // Work that starts on the set elsewhere, such as using one of its variants, closes the options.
-  if (busy !== null && open) setOpen(false);
+  if (busy !== null && open !== 'closed') setOpen('closed');
+  // Options opened on picks that have since gone would otherwise send the whole frame instead.
+  if (open === 'picks' && picks.length === 0) setOpen('closed');
 
   const make = (choice: VariantChoice, of: readonly ElementPin[]) => {
-    setOpen(false);
+    setOpen('closed');
     void onMake(frame, choice, of);
+  };
+  const toggleOptions = () => {
+    if (open !== 'closed') setOpen('closed');
+    else setOpen(picks.length > 0 ? 'picks' : 'frame');
   };
 
   const ask = `Make ${String(DEFAULT_VARIANT_CHOICE.count)} variants`;
@@ -105,18 +112,18 @@ export function VariantsTool({
           {...tool('variant-options')}
           className="canvas-frame-tool canvas-frame-tool-chevron"
           aria-haspopup="dialog"
-          aria-expanded={open}
+          aria-expanded={open !== 'closed'}
           aria-label={`Variant options for ${frame.name}`}
           aria-disabled={busy !== null || undefined}
           onClick={() => {
-            if (!busy) setOpen(!open);
+            if (!busy) toggleOptions();
           }}
         >
           <ChevronDown className="size-3.5" aria-hidden />
         </button>
       </Tooltip>
       <Popover
-        open={open}
+        open={open !== 'closed'}
         onClose={close}
         anchorRef={anchor}
         placement="bottom-start"
@@ -206,7 +213,7 @@ function VariantOptions({
         <SegmentedControl
           label="Of"
           options={[
-            { value: 'frame', label: frameName },
+            { value: 'frame', label: frameName, text: 'Whole frame' },
             {
               value: 'picked',
               label: picksName(picks),
