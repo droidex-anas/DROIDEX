@@ -3,8 +3,9 @@
 // the answer points the chat's next prompt at it and opens the quick prompt
 // beside it. Picks are asked one at a time in the order they were made, so a
 // shift-click never lands before the click it follows, and leaving Design
-// drops any answer still on its way. The quick prompt hands what it holds to
-// the chat's composer.
+// drops any answer still on its way. A pick and the quick prompt belong to the
+// chat they started in: when the board's chat changes, an answer still on its
+// way is dropped and the prompt's words go to its own chat's draft.
 
 import { useEffect, useRef, useState } from 'react';
 import type { PickOutline } from './ElementOutlines';
@@ -21,12 +22,21 @@ const STILL_BUILDING = 'This design is still building. Pick the element again on
 
 /** What Design asks of the chat its board belongs to. */
 export interface DesignPins {
+  /** The chat these are for. */
+  chatId: string;
   /** The elements the chat's next prompt points at on this canvas, in the order picked. */
   pins: readonly ElementPin[];
   pick: (frame: CanvasFrame, element: PickedElement, additive: boolean) => void;
   clear: () => void;
   /** Hands words to the chat's composer, and sends its prompt with them when `send`. */
   seed: (text: string, send: boolean) => void;
+}
+
+/** The quick prompt's words, and the chat they go to. */
+interface QuickPromptDraft {
+  chatId: string;
+  seed: DesignPins['seed'];
+  text: string;
 }
 
 interface DesignPickerInputs {
@@ -39,8 +49,8 @@ interface DesignPickerInputs {
 
 export function useDesignPicker({ frames, runs, active, design }: DesignPickerInputs) {
   const [error, setError] = useState('');
-  /** The quick prompt's words while it is open beside the latest pick. */
-  const [prompt, setPrompt] = useState<string | null>(null);
+  /** The quick prompt while it is open beside the latest pick. */
+  const [prompt, setPrompt] = useState<QuickPromptDraft | null>(null);
   const latest = useRef({ frames, design, prompt });
   latest.current = { frames, design, prompt };
   const asking = useRef<Promise<void>>(Promise.resolve());
@@ -52,20 +62,24 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
 
   const [quick] = useState(() => {
     const take = () => {
-      const text = latest.current.prompt?.trim() ?? '';
+      const draft = latest.current.prompt;
       latest.current.prompt = null;
       setPrompt(null);
-      return text;
+      return draft && { ...draft, text: draft.text.trim() };
     };
     return {
-      /** Closed unsent, its words go on in the composer's draft. */
+      /** Closed unsent, its words go on in its chat's draft. */
       close: () => {
-        const text = take();
-        if (text) latest.current.design?.seed(text, false);
+        const draft = take();
+        if (draft?.text) draft.seed(draft.text, false);
       },
       send: () => {
-        if (!latest.current.prompt?.trim()) return;
-        latest.current.design?.seed(take(), true);
+        if (!latest.current.prompt?.text.trim()) return;
+        const draft = take();
+        draft?.seed(draft.text, true);
+      },
+      edit: (text: string) => {
+        setPrompt((draft) => draft && { ...draft, text });
       },
     };
   });
@@ -74,14 +88,15 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   useEffect(() => {
     generation.current += 1;
   }, [active]);
-  // Leaving Design, or the board, or losing the pick it sat beside closes it.
-  const stale = prompt !== null && anchor === undefined;
+  // Leaving Design, the board or its chat, or losing the pick it sat beside, closes it.
+  const stale = prompt !== null && (anchor === undefined || prompt.chatId !== design?.chatId);
   useEffect(() => {
     if (stale) quick.close();
   }, [quick, stale]);
   useEffect(() => quick.close, [quick]);
 
   const answer = (
+    chatId: string,
     designId: string,
     revisionId: string,
     finding: PreviewFinding | null,
@@ -89,7 +104,7 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   ) => {
     const frame = latest.current.frames.find((each) => each.designId === designId);
     const pins = latest.current.design;
-    if (!frame || !pins) return;
+    if (!frame || pins?.chatId !== chatId) return;
     // A press on nothing picked clears the picks, as a click on empty board does a selection.
     if (finding === null) {
       if (!additive) pins.clear();
@@ -106,12 +121,14 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
       return;
     }
     pins.pick(frame, picked, additive);
-    setPrompt((text) => text ?? '');
+    setPrompt((draft) => draft ?? { chatId, seed: pins.seed, text: '' });
   };
 
   /** A press released over `frame`, as what it asks the frame's preview. */
   const pick = (frame: CanvasFrame, probe: PreviewProbe, additive: boolean) => {
     const held = runs.get(frame.designId);
+    const chatId = design?.chatId;
+    if (chatId === undefined) return;
     if (!held) {
       textDrag.clear();
       setError(NOT_RUNNING);
@@ -128,7 +145,7 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
         const current = runs.get(frame.designId);
         const sameRun = current?.run === held.run && current.revisionId === held.revisionId;
         if (asked === generation.current && sameRun)
-          answer(frame.designId, held.revisionId, finding, additive);
+          answer(chatId, frame.designId, held.revisionId, finding, additive);
       })
       .catch((failure: unknown) => {
         console.error('A Design pick could not be answered:', failure);
@@ -173,8 +190,8 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
       prompt !== null && anchor
         ? {
             anchor,
-            text: prompt,
-            onChange: setPrompt,
+            text: prompt.text,
+            onChange: quick.edit,
             onSend: quick.send,
             onClose: quick.close,
           }

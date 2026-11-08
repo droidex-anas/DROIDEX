@@ -134,6 +134,7 @@ export function CanvasBoardMount({
     if (!pinnable) return undefined;
     const pins = allElementPins.filter((pin) => pin.canvasId === canvasId);
     return {
+      chatId: appSessionId,
       pins,
       pick: (frame, element, additive) => {
         pickElement(appSessionId, canvasId, frame, element, additive);
