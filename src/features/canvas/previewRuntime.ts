@@ -16,16 +16,20 @@ import {
   previewHoverScript,
   previewNonce,
   previewPickScript,
+  previewProbeScript,
   previewSelectScript,
   previewSetTokensScript,
   previewStartScript,
+  readPreviewFinding,
   readPreviewHover,
   readPreviewSnapshot,
   type PreviewElement,
   type PreviewEvent,
+  type PreviewFinding,
   type PreviewHover,
   type PreviewInstance,
   type PreviewPick,
+  type PreviewProbe,
   type PreviewTarget,
 } from './previewDocument';
 import type { CanvasDiagnostic } from './protocol';
@@ -113,14 +117,16 @@ export interface PreviewRunOptions {
  * One running preview. `stop` is idempotent and releases every timer. The two
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
- * `setTokens` reaches the same guests and is not answered. `hover` answers
- * itself, with null when nothing is there or this run can no longer ask.
+ * `setTokens` reaches the same guests and is not answered. `hover` and
+ * `probe` answer themselves, with null when nothing is there or this run can
+ * no longer ask, and leave the selection alone.
  */
 export interface PreviewRun {
   stop(): void;
   pick(pick: PreviewPick, properties: readonly string[]): number;
   select(target: PreviewTarget | null, properties: readonly string[]): number;
   hover(at: { x: number; y: number }): Promise<PreviewHover | null>;
+  probe(probe: PreviewProbe): Promise<PreviewFinding | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -236,6 +242,11 @@ class GuestRun implements PreviewRun {
     if (this.stopped || !this.started) return null;
     // Stopping abandons the call, so a stopped run answers null.
     return readPreviewHover(await this.ask(previewHoverScript(at)));
+  }
+
+  async probe(probe: PreviewProbe): Promise<PreviewFinding | null> {
+    if (this.stopped || !this.started) return null;
+    return readPreviewFinding(await this.ask(previewProbeScript(probe)));
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */
