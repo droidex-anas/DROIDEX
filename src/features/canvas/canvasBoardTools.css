@@ -151,22 +151,46 @@
   gap: 2px;
   padding: 4px;
   border-radius: 12px;
-  /* Its field sits on a raised bar, as one in a floating layer does. */
-  --field: var(--field-raised);
 }
 
-/* Wide enough for 400% in tabular figures. */
-.canvas-zoom-field {
-  width: 64px;
+/* The zoom typed over and the chevron to its presets: a quiet label until the
+   pointer, the keyboard or the open menu is on it, then tinted as a tool is. */
+.canvas-zoom-value {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.canvas-zoom-value:hover,
+.canvas-zoom-value:focus-within,
+.canvas-zoom-value:has([aria-expanded='true']) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+/* Wide enough for 400% in tabular figures; its colour is the segment's. */
+.canvas-zoom-value input {
+  width: 44px;
+  padding-left: 6px;
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .canvas-zoom-menu {
-  width: 24px;
-}
-
-.canvas-zoom-menu[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 100%;
+  padding-right: 4px;
+  border-radius: 8px;
+  outline: none;
 }
 
 /* The zoom bar is a row along the board's bottom, so its tips stand above it. */

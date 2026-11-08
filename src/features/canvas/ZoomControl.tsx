@@ -55,7 +55,22 @@ export function ZoomControl({
       >
         <Minus className="h-4 w-4" aria-hidden />
       </Tool>
-      <ZoomField scale={scale} onZoomTo={onZoomTo} focusBoard={focusBoard} />
+      <div className="canvas-zoom-value">
+        <ZoomField scale={scale} onZoomTo={onZoomTo} focusBoard={focusBoard} />
+        <button
+          ref={trigger}
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Zoom options"
+          className="canvas-zoom-menu"
+          onClick={() => {
+            setOpen((current) => !current);
+          }}
+        >
+          <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
       <Tool
         label="Zoom in"
         tip="Zoom in  +"
@@ -66,19 +81,6 @@ export function ZoomControl({
       >
         <Plus className="h-4 w-4" aria-hidden />
       </Tool>
-      <button
-        ref={trigger}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Zoom options"
-        className="canvas-tool canvas-zoom-menu"
-        onClick={() => {
-          setOpen((current) => !current);
-        }}
-      >
-        <ChevronUp className="h-3.5 w-3.5" aria-hidden />
-      </button>
       <Menu
         open={open}
         onClose={() => {
@@ -122,32 +124,29 @@ function ZoomField({
   const [draft, setDraft] = useState<string | null>(null);
   const shown = `${String(Math.round(scale * 100))}%`;
   return (
-    <div className="canvas-zoom-field">
-      <Input
-        variant="compact"
-        aria-label="Zoom percentage"
-        inputMode="numeric"
-        spellCheck={false}
-        value={draft ?? shown}
-        className="tabular-nums"
-        onFocus={(event) => {
-          event.currentTarget.select();
-        }}
-        onChange={(event) => {
-          setDraft(event.target.value);
-        }}
-        onBlur={() => {
-          setDraft(null);
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter' && event.key !== 'Escape') return;
-          event.preventDefault();
-          const percent = draft === null ? NaN : Number.parseFloat(draft);
-          if (event.key === 'Enter' && percent > 0) onZoomTo(percent / 100);
-          setDraft(null);
-          focusBoard();
-        }}
-      />
-    </div>
+    <Input
+      variant="embedded"
+      aria-label="Zoom percentage"
+      inputMode="numeric"
+      spellCheck={false}
+      value={draft ?? shown}
+      onFocus={(event) => {
+        event.currentTarget.select();
+      }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+      }}
+      onBlur={() => {
+        setDraft(null);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== 'Escape') return;
+        event.preventDefault();
+        const percent = draft === null ? NaN : Number.parseFloat(draft);
+        if (event.key === 'Enter' && percent > 0) onZoomTo(percent / 100);
+        setDraft(null);
+        focusBoard();
+      }}
+    />
   );
 }
