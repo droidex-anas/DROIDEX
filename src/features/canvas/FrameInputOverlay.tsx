@@ -4,7 +4,8 @@
 // points the chat's next prompt at the element a click lands on or the text a
 // drag spans. Interact has no overlay, so the guest takes the pointer itself.
 
-import { useRef, type MouseEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react';
+import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import type { Point } from './canvasGeometry';
 import { picksElements } from './canvasState';
 import type { DesignFrameProps } from './DesignFrame';
@@ -50,8 +51,23 @@ export function FrameInputOverlay({
   press,
   click,
 }: OverlayProps) {
-  /** Where a press in Design went down, and whether it has become a drag, until it is released. */
-  const designPress = useRef<{ from: Point; dragging: boolean } | null>(null);
+  /**
+   * Where a press in Design went down, and whether it has become a drag, until
+   * it is released. Escape while it is held lets go of it before anything else.
+   */
+  const designPress = useRef<{ from: Point; dragging: boolean; popEscape: () => void } | null>(
+    null,
+  );
+  const endDesignPress = () => {
+    const pressed = designPress.current;
+    designPress.current = null;
+    pressed?.popEscape();
+    return pressed;
+  };
+  const cancelDesignPress = () => {
+    if (endDesignPress()?.dragging) onDesignDrag(frame, null);
+  };
+  useEffect(() => () => designPress.current?.popEscape(), []);
   const onElements = picksElements(mode);
   /** Where the pointer is in the design's own pixels. */
   const designPoint = (event: PointerEvent<HTMLElement>): Point => {
@@ -72,7 +88,12 @@ export function FrameInputOverlay({
         if (mode === 'design') {
           // Held, so a drag across text keeps reporting past the frame's edge.
           event.currentTarget.setPointerCapture(event.pointerId);
-          designPress.current = { from: designPoint(event), dragging: false };
+          designPress.current?.popEscape();
+          designPress.current = {
+            from: designPoint(event),
+            dragging: false,
+            popEscape: pushEscapeLayer(cancelDesignPress),
+          };
           return;
         }
         if (mode === 'edit') {
@@ -83,18 +104,14 @@ export function FrameInputOverlay({
         press(event);
       }}
       onPointerUp={(event) => {
-        const pressed = designPress.current;
-        designPress.current = null;
+        const pressed = endDesignPress();
         if (mode !== 'design' || !pressed) return;
         const probe = pressed.dragging
           ? textRange(frame, pressed.from, designPoint(event))
           : { at: pressed.from };
         onDesignPick(frame, probe, event.shiftKey);
       }}
-      onPointerCancel={() => {
-        if (designPress.current?.dragging) onDesignDrag(frame, null);
-        designPress.current = null;
-      }}
+      onPointerCancel={cancelDesignPress}
       onPointerMove={(event) => {
         const pressed = designPress.current;
         if (mode === 'design' && pressed) {

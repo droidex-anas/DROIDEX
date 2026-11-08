@@ -119,6 +119,20 @@ test('Design names what it hovers, picks by click, shift-click and text drag, an
   });
   await expect(board).toBeFocused();
 
+  // Escape during a drag lets go of it alone: its release picks nothing.
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(point(50, 22).x, to.y, { steps: 4 });
+  await settle();
+  await expect(dragging).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(dragging).toHaveCount(0);
+  await page.mouse.up();
+  await settle();
+  await expect(picks).toHaveCount(1);
+  expect((await box(picks)).width).toBeCloseTo(90 * scale, 0);
+  await expect(prompt).toHaveCount(0);
+
   // Escape takes the picks off, then leaves Design.
   await page.keyboard.press('Escape');
   await expect(picks).toHaveCount(0);
