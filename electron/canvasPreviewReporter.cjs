@@ -252,7 +252,9 @@ const GENERATED_FRAME_REPORTER = `(() => {
       const holder = range.commonAncestorContainer;
       const host = holder.nodeType === Node.ELEMENT_NODE ? holder : holder.parentElement;
       node = host && host.closest('[' + MARKER + ']');
-      spanned = { excerpt: Array.from(range.toString()).slice(0, 512).join(''), rect: rectOf(range) };
+      spanned = range.collapsed
+        ? null
+        : { excerpt: Array.from(range.toString()).slice(0, 512).join(''), rect: rectOf(range) };
     }
     const instancePath = node ? pathOf(node) : null;
     if (!node || instancePath === null) return null;
