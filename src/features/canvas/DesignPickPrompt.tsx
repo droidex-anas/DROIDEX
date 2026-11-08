@@ -6,9 +6,8 @@
 // visible board has no room below. It covers the pick only when the pick fills
 // the view, and never leaves the view, since the caret is in it.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CompactComposer } from '../../components/composer/CompactComposer';
-import { useElementSize } from '../../components/browser/useElementSize';
 import type { PlacedFrame, Point, Viewport } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
 import { elementName, elementPinKey, type ElementPin } from './elementPins';
@@ -55,7 +54,21 @@ export function DesignPickPrompt({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
-  const { height } = useElementSize(box);
+  // In layout pixels, as the placement is: the UI zoom scales a bounding rect.
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element) return undefined;
+    const measure = () => {
+      setHeight(element.offsetHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
   const anchorKey = elementPinKey(anchor);
 
   // Each pick puts the caret in the box, ready to type.
@@ -95,7 +108,7 @@ export function DesignPickPrompt({
   const width = Math.min(WIDTH_PX, size.x - EDGE_PX * 2);
   const { side, ...placed } = placePrompt(
     pick,
-    { x: width, y: height > 1 ? height : ONE_LINE_PX },
+    { x: width, y: height > 0 ? height : ONE_LINE_PX },
     size,
   );
 
