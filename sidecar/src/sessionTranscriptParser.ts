@@ -430,13 +430,14 @@ function trimAnswerText(text: string): string {
 }
 
 // Droid expands a slash skill into the prompt row: the user's words, then the
-// skill's body as a system notification. A row that opens with one is all
-// harness text and stays whole for isSystemText to hide.
+// skill's body as a closing system notification that opens with this preamble.
+// Any other mention of the tag is the user's own text.
+const SKILL_BODY_START = '\n\n<system-notification>\nSkills provide specialized capabilities';
+
 function withoutSkillBody(text: string): string {
-  const start = text.indexOf('<system-notification>');
-  if (start < 0) return text;
-  const words = text.slice(0, start).trimEnd();
-  return words.trim() ? words : text;
+  const start = text.indexOf(SKILL_BODY_START);
+  if (start < 0 || !text.trimEnd().endsWith('</system-notification>')) return text;
+  return text.slice(0, start).trimEnd();
 }
 
 function isSystemText(text: string): boolean {
