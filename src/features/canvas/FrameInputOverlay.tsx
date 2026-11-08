@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react';
 import { pushEscapeLayer } from '../../components/ui/escapeStack';
+import { boardPoint } from './boardCoordinates';
 import type { Point } from './canvasGeometry';
 import { picksElements } from './canvasState';
 import type { DesignFrameProps } from './DesignFrame';
@@ -73,11 +74,9 @@ export function FrameInputOverlay({
   };
   useEffect(() => () => designPress.current?.popEscape(), []);
   const onElements = picksElements(mode);
-  /** Where the pointer is in the design's own pixels. */
-  const designPoint = (event: PointerEvent<HTMLElement>): Point => {
-    const box = event.currentTarget.getBoundingClientRect();
-    return { x: (event.clientX - box.left) / scale, y: (event.clientY - box.top) / scale };
-  };
+  /** Where the pointer is in the design's own pixels, which the sheet's layout is in. */
+  const designPoint = (event: PointerEvent<HTMLElement>): Point =>
+    boardPoint(event.currentTarget, { x: event.clientX, y: event.clientY });
   let cursor = 'default';
   if (held) cursor = 'grabbing';
   else if (onElements && elementHovered) cursor = 'pointer';
