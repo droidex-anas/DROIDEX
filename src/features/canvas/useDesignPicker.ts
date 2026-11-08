@@ -32,6 +32,14 @@ export interface DesignPins {
   seed: (text: string, send: boolean) => void;
 }
 
+/** One press in Design, from the frame it went down on. */
+export interface DesignPress {
+  /** Dragged across text, as the range it spans so far; null when it was cancelled. */
+  drag: (range: PreviewTextRange | null) => void;
+  /** Released, as what it asks the preview; `additive` is shift-click. */
+  release: (probe: PreviewProbe, additive: boolean) => void;
+}
+
 /** The quick prompt's words, and the chat they go to. */
 interface QuickPromptDraft {
   chatId: string;
@@ -54,8 +62,8 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   const latest = useRef({ frames, design, prompt });
   latest.current = { frames, design, prompt };
   const asking = useRef<Promise<void>>(Promise.resolve());
-  // Bumped as Design opens or closes and as its picks clear, so an answer
-  // asked before then is dropped.
+  // Bumped as Design opens or closes, as the board's chat changes and as its
+  // picks clear, so a press or an answer from before then is dropped.
   const generation = useRef(0);
   const anchor = active ? design?.pins.at(-1) : undefined;
   const textDrag = useTextDrag(runs, active);
@@ -87,7 +95,7 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   if (!active && error !== '') setError('');
   useEffect(() => {
     generation.current += 1;
-  }, [active]);
+  }, [active, design?.chatId]);
   // Leaving Design, the board or its chat, or losing the pick it sat beside, closes it.
   const stale = prompt !== null && (anchor === undefined || prompt.chatId !== design?.chatId);
   useEffect(() => {
@@ -124,11 +132,9 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
     setPrompt((draft) => draft ?? { chatId, seed: pins.seed, text: '' });
   };
 
-  /** A press released over `frame`, as what it asks the frame's preview. */
-  const pick = (frame: CanvasFrame, probe: PreviewProbe, additive: boolean) => {
+  /** A press released over `frame` for `chatId`, as what it asks the frame's preview. */
+  const pick = (frame: CanvasFrame, probe: PreviewProbe, additive: boolean, chatId: string) => {
     const held = runs.get(frame.designId);
-    const chatId = design?.chatId;
-    if (chatId === undefined) return;
     if (!held) {
       textDrag.clear();
       setError(NOT_RUNNING);
@@ -153,10 +159,25 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
       .finally(textDrag.clear);
   };
 
-  /** A press dragged across `frame`, as the text it spans so far; null when it was cancelled. */
-  const drag = (frame: CanvasFrame, range: PreviewTextRange | null) => {
-    if (range) textDrag.move(frame.designId, range);
-    else textDrag.clear();
+  /**
+   * A press going down on `frame`. It belongs to the chat it went down in, so
+   * once Design closes or the board's chat changes, it outlines and picks nothing.
+   */
+  const press = (frame: CanvasFrame): DesignPress => {
+    const chatId = design?.chatId;
+    const pressedIn = generation.current;
+    const current = () =>
+      pressedIn === generation.current && latest.current.design?.chatId === chatId;
+    return {
+      drag: (range) => {
+        if (range && current()) textDrag.move(frame.designId, range);
+        else textDrag.clear();
+      },
+      release: (probe, additive) => {
+        if (chatId !== undefined && current()) pick(frame, probe, additive, chatId);
+        else textDrag.clear();
+      },
+    };
   };
 
   /** Escape in Design: the picks come off the prompt; false when there were none. */
@@ -181,8 +202,7 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
     error: active ? error : '',
     /** What Design outlines while it is on: its picks, then the text being dragged across. */
     outlines: active && design ? outlinesOf(design.pins, textDrag.dragged) : [],
-    pick,
-    drag,
+    press,
     clear,
     componentOf,
     /** The quick prompt, while it is open beside the latest pick. */

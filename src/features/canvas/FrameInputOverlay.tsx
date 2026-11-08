@@ -11,6 +11,7 @@ import { picksElements } from './canvasState';
 import type { DesignFrameProps } from './DesignFrame';
 import type { PreviewTextRange } from './previewDocument';
 import type { CanvasFrame } from './protocol';
+import type { DesignPress } from './useDesignPicker';
 
 type OverlayProps = Pick<
   DesignFrameProps,
@@ -22,8 +23,7 @@ type OverlayProps = Pick<
   | 'onPick'
   | 'onInteract'
   | 'onPickElement'
-  | 'onDesignPick'
-  | 'onDesignDrag'
+  | 'onDesignPress'
   | 'onHoverElement'
   | 'onEditEnter'
 > & {
@@ -44,8 +44,7 @@ export function FrameInputOverlay({
   onPick,
   onInteract,
   onPickElement,
-  onDesignPick,
-  onDesignDrag,
+  onDesignPress,
   onHoverElement,
   onEditEnter,
   press,
@@ -55,9 +54,12 @@ export function FrameInputOverlay({
    * Where a press in Design went down, and whether it has become a drag, until
    * it is released. Escape while it is held lets go of it before anything else.
    */
-  const designPress = useRef<{ from: Point; dragging: boolean; popEscape: () => void } | null>(
-    null,
-  );
+  const designPress = useRef<{
+    from: Point;
+    dragging: boolean;
+    pick: DesignPress;
+    popEscape: () => void;
+  } | null>(null);
   const endDesignPress = () => {
     const pressed = designPress.current;
     designPress.current = null;
@@ -65,7 +67,8 @@ export function FrameInputOverlay({
     return pressed;
   };
   const cancelDesignPress = () => {
-    if (endDesignPress()?.dragging) onDesignDrag(frame, null);
+    const pressed = endDesignPress();
+    if (pressed?.dragging) pressed.pick.drag(null);
   };
   useEffect(() => () => designPress.current?.popEscape(), []);
   const onElements = picksElements(mode);
@@ -92,6 +95,7 @@ export function FrameInputOverlay({
           designPress.current = {
             from: designPoint(event),
             dragging: false,
+            pick: onDesignPress(frame),
             popEscape: pushEscapeLayer(cancelDesignPress),
           };
           return;
@@ -109,7 +113,7 @@ export function FrameInputOverlay({
         const probe = pressed.dragging
           ? textRange(frame, pressed.from, designPoint(event))
           : { at: pressed.from };
-        onDesignPick(frame, probe, event.shiftKey);
+        pressed.pick.release(probe, event.shiftKey);
       }}
       onPointerCancel={cancelDesignPress}
       onPointerMove={(event) => {
@@ -121,7 +125,7 @@ export function FrameInputOverlay({
           // A drag across text names no element under the pointer.
           if (!pressed.dragging) onHoverElement(frame, null);
           pressed.dragging = true;
-          onDesignDrag(frame, textRange(frame, pressed.from, to));
+          pressed.pick.drag(textRange(frame, pressed.from, to));
           return;
         }
         if (onElements) onHoverElement(frame, designPoint(event));

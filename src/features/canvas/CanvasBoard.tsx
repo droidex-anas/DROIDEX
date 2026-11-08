@@ -393,8 +393,7 @@ export function CanvasBoard({
               onPickElement={(picked, at) => {
                 editor.pick(picked.designId, at);
               }}
-              onDesignPick={picker.pick}
-              onDesignDrag={picker.drag}
+              onDesignPress={picker.press}
               onHoverElement={(hovered, at) => {
                 if (at) editor.hover.move(hovered.designId, at);
                 else editor.hover.clear();
