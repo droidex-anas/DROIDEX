@@ -29,7 +29,10 @@ export function useTextDrag(runs: PreviewRuns, active: boolean) {
       if (next === null || asking) return;
       wanted = null;
       const held = runs.get(next.designId);
-      if (!held) return;
+      if (!held) {
+        setDragged(null);
+        return;
+      }
       asking = true;
       const askedIn = generation;
       held.run
@@ -38,7 +41,8 @@ export function useTextDrag(runs: PreviewRuns, active: boolean) {
           const current = runs.get(next.designId);
           const sameRun = current?.run === held.run && current.revisionId === held.revisionId;
           if (askedIn !== generation || !sameRun) return;
-          setDragged(finding?.text ? { designId: next.designId, box: finding.text.rect } : null);
+          const text = finding?.text;
+          setDragged(text?.excerpt.trim() ? { designId: next.designId, box: text.rect } : null);
         })
         .catch((failure: unknown) => {
           console.error('A Design drag could not be answered:', failure);
