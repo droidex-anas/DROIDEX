@@ -87,18 +87,26 @@ test('Design names what it hovers, picks by click, shift-click and text drag, an
   ]);
   await expect(prompt).toHaveCount(0);
 
-  // A drag across text picks the words it spans, in place of the picks.
+  // A drag across text outlines the words it spans as it goes, naming no element under it.
   const from = point(12, 20);
   const to = point(100, 22);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 4 });
-  await page.mouse.up();
   await settle();
-  await expect(picks).toHaveCount(1);
-  expect((await box(picks)).width).toBeCloseTo(90 * scale, 0);
+  const dragging = page.locator('[data-design-pick][data-dragging]');
+  await expect(dragging).toHaveCount(1);
+  expect((await box(dragging)).width).toBeCloseTo(90 * scale, 0);
+  await expect(hover).toHaveCount(0);
   const probe = await page.evaluate(() => window.guestCommands.at(-1));
   expect(probe).toMatchObject({ command: 'probe', from: { x: expect.any(Number) } });
+
+  // Released, it picks those words in place of the picks.
+  await page.mouse.up();
+  await settle();
+  await expect(dragging).toHaveCount(0);
+  await expect(picks).toHaveCount(1);
+  expect((await box(picks)).width).toBeCloseTo(90 * scale, 0);
 
   // Closed unsent, the prompt's words go on in the composer's draft.
   await expect(prompt).toBeFocused();

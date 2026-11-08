@@ -235,6 +235,11 @@
   background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
 
+/* Text being dragged across follows the pointer, so it never glides behind it. */
+.canvas-element-outline[data-dragging] {
+  transition: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .canvas-element-hover,
   .canvas-element-outline {

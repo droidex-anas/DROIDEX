@@ -1,6 +1,7 @@
 // Edit's and Design's outlines on the board: the element under the pointer,
 // named by its tag (and in Design its component), Edit's picked one with its
-// size, and the elements and text Design picked. They are drawn in the world layer
+// size, and the elements and text Design picked or is being dragged across.
+// They are drawn in the world layer
 // after the frames rather than inside a design or its sheet, so pan, zoom and
 // a frame's move or resize carry them at once, and a chip at the sheet's edge
 // is not cut off. Each box is trimmed to its frame, where the design is
@@ -8,7 +9,6 @@
 
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
-import { elementPinKey, type ElementPin } from './elementPins';
 import { isDrawn, type PreviewHover } from './previewDocument';
 import type { ElementRef, FrameRect } from './protocol';
 import type { HoveredElement } from './useElementHover';
@@ -27,6 +27,14 @@ interface Box {
 
 type TagSide = 'above' | 'below' | 'inside';
 
+/** A box Design outlines in a frame: a pick, or the text a press is dragging across. */
+export interface PickOutline {
+  key: string;
+  designId: string;
+  box: FrameRect;
+  dragging: boolean;
+}
+
 export function ElementOutlines({
   drawn,
   scale,
@@ -43,8 +51,8 @@ export function ElementOutlines({
   hovered: HoveredElement | null;
   /** The component the hovered element is written in, which Design names before its tag. */
   hoveredComponent: string | null;
-  /** Design's picks, outlined where each was picked. */
-  picks: readonly ElementPin[];
+  /** Design's picks, outlined where each was picked, and the text being dragged across. */
+  picks: readonly PickOutline[];
 }) {
   const [tag, tagWidth] = useScreenWidth();
   const [size, sizeWidth] = useScreenWidth();
@@ -103,15 +111,15 @@ export function ElementOutlines({
           </div>
         </AtFrame>
       )}
-      {picks.map((pin) => {
-        const { element } = pin;
-        const shown = onBoard(drawn, element.designId, element.text?.box ?? element.box);
+      {picks.map((pick) => {
+        const shown = onBoard(drawn, pick.designId, pick.box);
         return (
           shown && (
-            <AtFrame key={elementPinKey(pin)} frame={shown.frame}>
+            <AtFrame key={pick.key} frame={shown.frame}>
               <div
                 aria-hidden
                 data-design-pick
+                data-dragging={pick.dragging || undefined}
                 className="canvas-element-outline"
                 style={shown.box}
               />

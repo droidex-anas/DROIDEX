@@ -37,7 +37,7 @@ import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
 import { FrameWorkingState } from './FrameWorkingState';
 import { PendingBloom } from './PendingBloom';
-import type { PreviewProbe } from './previewDocument';
+import type { PreviewProbe, PreviewTextRange } from './previewDocument';
 import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
 import type { ToolbarRoom } from './toolbarPlacement';
@@ -96,6 +96,8 @@ export interface DesignFrameProps {
   onPickElement: (frame: CanvasFrame, at: Point) => void;
   /** A press released in Design, as what it asks the preview; `additive` is shift-click. */
   onDesignPick: (frame: CanvasFrame, probe: PreviewProbe, additive: boolean) => void;
+  /** A press in Design dragged across text, as the range it spans so far; null when cancelled. */
+  onDesignDrag: (frame: CanvasFrame, range: PreviewTextRange | null) => void;
   /** The pointer moving over the design in Edit or Design, at a point in its pixels, or leaving it. */
   onHoverElement: (frame: CanvasFrame, at: Point | null) => void;
   /** Enter on the label, or a double-click on the design, in Edit. */

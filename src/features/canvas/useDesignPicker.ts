@@ -1,21 +1,23 @@
 // Design's picks on the board. A click asks the live preview under it which
-// element is there and a drag which text it spans; the answer points the
-// chat's next prompt at it and opens the quick prompt beside it. Picks are
-// asked one at a time in the order they were made, so a shift-click never
-// lands before the click it follows, and leaving Design drops any answer still
-// on its way. The quick prompt hands what it holds to the chat's composer.
+// element is there and a drag which text it spans, outlined as it is dragged;
+// the answer points the chat's next prompt at it and opens the quick prompt
+// beside it. Picks are asked one at a time in the order they were made, so a
+// shift-click never lands before the click it follows, and leaving Design
+// drops any answer still on its way. The quick prompt hands what it holds to
+// the chat's composer.
 
 import { useEffect, useRef, useState } from 'react';
-import type { ElementPin } from './elementPins';
+import type { PickOutline } from './ElementOutlines';
+import { elementPinKey, type ElementPin } from './elementPins';
 import { elementSite, pickedElement, type PickedElement } from './pickedElement';
-import type { PreviewFinding, PreviewProbe } from './previewDocument';
+import type { PreviewFinding, PreviewProbe, PreviewTextRange } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { CanvasFrame } from './protocol';
 import type { HoveredElement } from './useElementHover';
+import { useTextDrag, type DraggedText } from './useTextDrag';
 
 const NOT_RUNNING = 'This design’s preview isn’t running, so nothing in it can be picked.';
 const STILL_BUILDING = 'This design is still building. Pick the element again once it has.';
-const NO_PICKS: readonly ElementPin[] = [];
 
 /** What Design asks of the chat its board belongs to. */
 export interface DesignPins {
@@ -46,6 +48,7 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   // asked before then is dropped.
   const generation = useRef(0);
   const anchor = active ? design?.pins.at(-1) : undefined;
+  const textDrag = useTextDrag(runs, active);
 
   const [quick] = useState(() => {
     const take = () => {
@@ -110,10 +113,13 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   const pick = (frame: CanvasFrame, probe: PreviewProbe, additive: boolean) => {
     const held = runs.get(frame.designId);
     if (!held) {
+      textDrag.clear();
       setError(NOT_RUNNING);
       return;
     }
     setError('');
+    // The drag's outline stays until the pick it ends in lands in its place.
+    textDrag.release();
     const asked = generation.current;
     asking.current = asking.current
       .then(async () => {
@@ -123,13 +129,21 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
       })
       .catch((failure: unknown) => {
         console.error('A Design pick could not be answered:', failure);
-      });
+      })
+      .finally(textDrag.clear);
+  };
+
+  /** A press dragged across `frame`, as the text it spans so far; null when it was cancelled. */
+  const drag = (frame: CanvasFrame, range: PreviewTextRange | null) => {
+    if (range) textDrag.move(frame.designId, range);
+    else textDrag.clear();
   };
 
   /** Escape in Design: the picks come off the prompt; false when there were none. */
   const clear = (): boolean => {
     if (!active || !design || design.pins.length === 0) return false;
     generation.current += 1;
+    textDrag.clear();
     design.clear();
     return true;
   };
@@ -145,9 +159,10 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
 
   return {
     error: active ? error : '',
-    /** What Design outlines: its picks, while it is on. */
-    picks: active && design ? design.pins : NO_PICKS,
+    /** What Design outlines while it is on: its picks, then the text being dragged across. */
+    outlines: active && design ? outlinesOf(design.pins, textDrag.dragged) : [],
     pick,
+    drag,
     clear,
     componentOf,
     /** The quick prompt, while it is open beside the latest pick. */
@@ -162,4 +177,15 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
           }
         : null,
   };
+}
+
+function outlinesOf(pins: readonly ElementPin[], dragged: DraggedText | null): PickOutline[] {
+  const outlines = pins.map((pin) => ({
+    key: elementPinKey(pin),
+    designId: pin.element.designId,
+    box: pin.element.text?.box ?? pin.element.box,
+    dragging: false,
+  }));
+  if (dragged) outlines.push({ key: 'dragging', ...dragged, dragging: true });
+  return outlines;
 }

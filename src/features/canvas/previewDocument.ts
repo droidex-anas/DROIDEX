@@ -76,10 +76,14 @@ export interface PreviewHover {
   room: { above: number | null; below: number | null };
 }
 
+/** The text between two points in the design's pixels, from where a press went down. */
+export interface PreviewTextRange {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+}
+
 /** What a probe asks about: the element at a point, or the text between two points. */
-export type PreviewProbe =
-  | { at: { x: number; y: number } }
-  | { from: { x: number; y: number }; to: { x: number; y: number } };
+export type PreviewProbe = { at: { x: number; y: number } } | PreviewTextRange;
 
 /**
  * What a probe found, in the design's own pixels: the marked element and its

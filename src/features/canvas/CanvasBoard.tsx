@@ -146,7 +146,10 @@ export function CanvasBoard({
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
-  const latest = useRef<BoardReads>({ drawn: [], viewport: view.viewport });
+  const latest = useRef<{ drawn: PlacedFrame[]; viewport: Viewport }>({
+    drawn: [],
+    viewport: view.viewport,
+  });
   const dispatch = useInteractionDispatch(interaction, onInteractionChange, frames);
 
   const pickBand = useCallback(
@@ -391,6 +394,7 @@ export function CanvasBoard({
                 editor.pick(picked.designId, at);
               }}
               onDesignPick={picker.pick}
+              onDesignDrag={picker.drag}
               onHoverElement={(hovered, at) => {
                 if (at) editor.hover.move(hovered.designId, at);
                 else editor.hover.clear();
@@ -416,7 +420,7 @@ export function CanvasBoard({
             selection={editor.selection}
             hovered={editor.hover.hovered}
             hoveredComponent={picker.componentOf(editor.hover.hovered)}
-            picks={picker.picks}
+            picks={picker.outlines}
           />
           <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
           <AnnotationLayer
@@ -492,9 +496,4 @@ export function CanvasBoard({
       )}
     </div>
   );
-}
-
-interface BoardReads {
-  drawn: PlacedFrame[];
-  viewport: Viewport;
 }
