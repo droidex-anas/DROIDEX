@@ -21,6 +21,7 @@ import {
 import { checkDesignSystemAdherence } from '../canvas/designSystemAdherence.js';
 import { readDesignSystem } from '../canvas/designSystems.js';
 import { KitPreviews } from '../canvas/kitPreviews.js';
+import { instrumentSource } from '../canvas/sourceElements.js';
 import { storage } from './canvasBuildSupport.js';
 
 /** No renderer page answers a screenshot here, so capture is always refused. */
@@ -37,6 +38,7 @@ export interface Reply {
   chatAttached?: true;
   created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
   receipt?: { revisionId: string };
+  element?: { elementId: string; line: number; endLine: number; source: string };
   frames?: { designId: string }[];
   systems?: { id: string; version: number; proposal: boolean }[];
   status?: string;
@@ -144,7 +146,8 @@ function answeringBuilds(): CanvasBuilds {
     const kit = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
     if (kit.status === 'failed') throw new CompileFailedError(kit.diagnostics);
     const artifactId = `${main.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`;
-    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements: [] };
+    const { elements } = instrumentSource(input.files, input.revisionId);
+    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements };
   };
   return new CanvasBuilds({
     compiler: () => ({ compile, terminate: () => Promise.resolve() }),

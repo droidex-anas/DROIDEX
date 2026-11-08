@@ -11,7 +11,7 @@ import { sessionIsLive } from '../../lib/sessions';
 import { toast } from '../../lib/toast';
 import { canvasClient } from './canvasClient';
 import { canvasMessage, CanvasRequestError } from './client';
-import { canvasContextOf, pinOf, promptWithFramePins } from './framePins';
+import { canvasContextOf, pinOf, promptWithCanvasPins } from './framePins';
 import type { CanvasFrame, CreateFramesInput } from './protocol';
 import { variantFrames, variantPrompt, variantSource, type VariantChoice } from './variantRequests';
 
@@ -65,7 +65,7 @@ export function useVariantRequests(
       const canvasContext = canvasContextOf(pins);
       const steerId = sessionIsLive(session) ? crypto.randomUUID() : undefined;
       try {
-        sendToSession(appSessionId, promptWithFramePins(prompt, pins), { steerId, canvasContext });
+        sendToSession(appSessionId, promptWithCanvasPins(prompt, pins), { steerId, canvasContext });
       } catch (failure) {
         toast.error(`The variants were made but not requested. ${canvasMessage(failure)}`);
         return;

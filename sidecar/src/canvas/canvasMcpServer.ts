@@ -2,7 +2,13 @@ import { CanvasMcpServer } from './canvasMcpTransport.js';
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { applyDesignSystem } from './applyDesignSystem.js';
-import { agentFrame, buildReport, renderedPreview, settledFrame } from './canvasAgentReport.js';
+import {
+  agentElement,
+  agentFrame,
+  buildReport,
+  renderedPreview,
+  settledFrame,
+} from './canvasAgentReport.js';
 import { agentAnnotation } from './canvasAnnotationReport.js';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
@@ -50,6 +56,7 @@ const readSchema = z
     view: z.enum(['summary', 'design']).default('summary'),
     designId: canvasIdentifierSchema.optional(),
     revisionId: canvasIdentifierSchema.optional(),
+    elementId: canvasIdentifierSchema.optional(),
     paths: z.array(z.string().min(1).max(256)).max(16).optional(),
     offset: pageSchema.default(0),
     limit: z.number().int().min(1).max(32).default(32),
@@ -185,7 +192,7 @@ export function createCanvasMcpServer(
   const tools = [
     tool(
       'canvas_read',
-      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Pinned designs are the frames the user picked for this request and the only ones it can change. Pinned images are reference images the user attached: you see each one on the message, and canvas-asset:<assetId> places it in a design’s source. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design; under Auto, take the style from the request, then the chat’s project source, then the frames already on the canvas. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work. The same read lists the board’s annotations, each with its colour, its author, its geometry in whole board pixels — rect {x, y, width, height}, or points [{x, y}] — and the frames it is over, near, or points at with an arrow.',
+      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Pinned designs are the frames the user picked for this request and the only ones it can change. A <canvas_elements> block in the prompt lists the elements the user picked in them: change those, not the rest of the design, and read one’s exact source with view design and its design, revision and elementId. Pinned images are reference images the user attached: you see each one on the message, and canvas-asset:<assetId> places it in a design’s source. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design; under Auto, take the style from the request, then the chat’s project source, then the frames already on the canvas. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work. The same read lists the board’s annotations, each with its colour, its author, its geometry in whole board pixels — rect {x, y, width, height}, or points [{x, y}] — and the frames it is over, near, or points at with an arrow.',
       readSchema.shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
@@ -233,17 +240,25 @@ export function createCanvasMcpServer(
               'scope_expired',
               'That frame is outside this turn’s assigned frames.',
             );
-          if (!snapshot.frames.some((frame) => frame.designId === input.designId))
+          const frame = snapshot.frames.find((each) => each.designId === input.designId);
+          if (!frame)
             throw canvasError(
               'invalid_input',
               'That design is not on this canvas. Read the canvas summary again.',
             );
-          const files = await (
-            await workspace()
-          ).readFiles(snapshot.canvasId, {
-            designId: input.designId,
-            revisionId: input.revisionId,
-          });
+          const { designId, revisionId, elementId } = input;
+          const { canvasId } = snapshot;
+          const read = { scopeId: scope.scopeId, ...kit, canvasId, designId, revisionId };
+          const files = await (await workspace()).readFiles(canvasId, { designId, revisionId });
+          if (elementId) {
+            const element = agentElement(frame.build, files, revisionId, elementId);
+            if (!element)
+              throw canvasError(
+                'invalid_input',
+                'That element is not in this revision’s build. Read its source by path instead.',
+              );
+            return { ...read, element };
+          }
           const names = Object.keys(files).sort();
           const selected = input.paths ?? names.slice(input.offset, input.offset + input.limit);
           const source: Record<string, string> = {};
@@ -256,11 +271,7 @@ export function createCanvasMcpServer(
             source[path] = files[path];
           }
           return {
-            scopeId: scope.scopeId,
-            ...kit,
-            canvasId: snapshot.canvasId,
-            designId: input.designId,
-            revisionId: input.revisionId,
+            ...read,
             totalFiles: names.length,
             paths: names,
             files: source,

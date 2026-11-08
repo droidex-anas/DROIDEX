@@ -4,14 +4,27 @@ import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
 import {
   canvasContextOf,
   framePins,
-  promptWithFramePins,
+  promptWithCanvasPins,
   restoreFramePins,
   syncFramePins,
   toggleFramePins,
   unpinFrames,
   untagsFrames,
 } from './framePins';
+import type { PickedElement } from './pickedElement';
 import type { CanvasFrame } from './protocol';
+
+const pickedTitle: PickedElement = {
+  designId: 'd1',
+  revisionId: 'r1',
+  elementId: 'e1',
+  instancePath: '0/0',
+  source: { file: 'main.tsx', start: 120, end: 160, line: 7 },
+  tagName: 'h1',
+  component: 'Hero',
+  box: { x: 0, y: 0, width: 300, height: 40 },
+  text: { excerpt: 'Ship\n  faster', box: { x: 0, y: 0, width: 120, height: 40 } },
+};
 
 function frame(
   designId: string,
@@ -109,9 +122,9 @@ test('a queued request keeps the revisions it was sent with when the pins move o
   assert.equal(canvasContextOf([]), undefined);
 
   // The model is told which frames before any tool call, in the block the
-  // sidecar's canvasFramesFromPrompt splits back out on replay.
+  // sidecar's canvasPinsFromPrompt splits back out on replay.
   assert.equal(
-    promptWithFramePins('Make it bolder', queued),
+    promptWithCanvasPins('Make it bolder', queued),
     [
       'Make it bolder',
       '',
@@ -121,7 +134,29 @@ test('a queued request keeps the revisions it was sent with when the pins move o
       '</canvas_frames>',
     ].join('\n'),
   );
-  assert.equal(promptWithFramePins('Make it bolder', []), 'Make it bolder');
+  assert.equal(promptWithCanvasPins('Make it bolder', []), 'Make it bolder');
+
+  // Picked elements follow the frames, in pick order, each by the IDs canvas_read resolves.
+  const card = { ...pickedTitle, elementId: 'e2', component: null, tagName: 'section', text: null };
+  assert.equal(
+    promptWithCanvasPins(
+      'Tighten this',
+      [],
+      [
+        { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: pickedTitle },
+        { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: card },
+      ],
+    ),
+    [
+      'Tighten this',
+      '',
+      '<canvas_elements>',
+      'The user picked these elements for this request; change them, not the rest of their designs.',
+      '<element id="e1" design="d1" revision="r1" source="main.tsx:7" tag="h1" component="Hero">Ship faster</element>',
+      '<element id="e2" design="d1" revision="r1" source="main.tsx:7" tag="section"></element>',
+      '</canvas_elements>',
+    ].join('\n'),
+  );
 });
 
 test('pins follow the attached canvas, and come off by frame however they have moved', () => {

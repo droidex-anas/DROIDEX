@@ -1,7 +1,8 @@
 // What the agent is told about a frame: its identity and place, and a compact
 // account of its build with each diagnostic's file and line and the step that
 // follows. Element maps and manifest versions stay out, because they cost the
-// model thousands of tokens and answer nothing it can act on.
+// model thousands of tokens and answer nothing it can act on; an element the
+// user picked is told one at a time, when the agent asks for it.
 //
 // canvas_write waits a bounded time for the build it started and then for an
 // open preview to say whether it rendered, so an agent that broke its design
@@ -16,7 +17,13 @@ import {
   isAdherenceDiagnostic,
   isCodeQualityDiagnostic,
 } from './canvasDiagnostics.js';
-import type { CanvasDiagnostic, CanvasFrame, PreviewReport } from './protocol.js';
+import type {
+  CanvasBuildOutcome,
+  CanvasDiagnostic,
+  CanvasFrame,
+  PreviewReport,
+  SourceFiles,
+} from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 /** The build deadline plus room for a build queued behind the other slots. */
@@ -298,4 +305,27 @@ function agentDiagnostic({ code, message, file, line }: CanvasDiagnostic): Agent
 function place(diagnostic: AgentDiagnostic | undefined): string {
   if (!diagnostic?.file) return 'the source';
   return diagnostic.line ? `${diagnostic.file} line ${String(diagnostic.line)}` : diagnostic.file;
+}
+
+/**
+ * Where the revision's build found an element, with the lines that write it;
+ * undefined when that revision is not the one built or has no such element.
+ */
+export function agentElement(
+  build: CanvasBuildOutcome,
+  files: SourceFiles,
+  revisionId: string,
+  elementId: string,
+) {
+  if (build.status !== 'ready' || build.revisionId !== revisionId) return undefined;
+  const element = build.elements.find((each) => each.elementId === elementId);
+  const text = element && files[element.file];
+  if (!element || text === undefined) return undefined;
+  const { file, line, start, end, tagName, component } = element;
+  const endLine = line + text.slice(start, end).split('\n').length - 1;
+  const source = text
+    .split('\n')
+    .slice(line - 1, endLine)
+    .join('\n');
+  return { elementId, file, line, endLine, tagName, component, source };
 }

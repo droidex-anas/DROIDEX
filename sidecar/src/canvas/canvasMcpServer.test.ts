@@ -19,6 +19,7 @@ import {
 } from '../testing/canvasStorageSupport.js';
 import { saveLibraryItem } from './canvasLibrary.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
+import { instrumentSource } from './sourceElements.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
@@ -327,17 +328,28 @@ test('lost create response retries to the same canvas and invalid source paths h
     deletedPaths: [],
   });
   assert.equal(invalid.code, 'invalid_source_path');
+  const source =
+    'export default function Hey() {\n  return (\n    <h1>\n      Hey\n    </h1>\n  );\n}';
   const written = await h.call('canvas_write', {
     scopeId,
     mutationId: 'write-one',
     designId,
     expectedRevisionId: null,
-    files: { 'main.tsx': 'export default function Hey(){return <h1>Hey</h1>}' },
+    files: { 'main.tsx': source },
     deletedPaths: [],
   });
   assert.equal(written.ok, true);
-  assert.ok(written.receipt?.revisionId);
+  const revisionId = written.receipt?.revisionId;
+  assert.ok(revisionId);
   assert.equal(written.canvasId, first.created?.canvasId);
+  const [heading] = instrumentSource({ 'main.tsx': source }, revisionId).elements;
+  const read = { view: 'design', designId, revisionId, elementId: heading.elementId };
+  const picked = await h.call('canvas_read', read);
+  assert.deepEqual(
+    [picked.element?.line, picked.element?.endLine, picked.element?.source],
+    [3, 5, '    <h1>\n      Hey\n    </h1>'],
+  );
+  assert.equal((await h.call('canvas_read', { ...read, elementId: 'gone' })).code, 'invalid_input');
   assert.equal((await h.call('canvas_inspect', { designId })).ok, true);
   assert.equal(
     (await h.call('canvas_inspect', { designId, kind: 'screenshot' })).code,

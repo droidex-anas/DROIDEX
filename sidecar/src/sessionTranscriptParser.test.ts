@@ -168,7 +168,7 @@ test('a prompt wrapped in DROIDEX guidance, side-chat answers or pinned frames r
   assert.equal(event?.text, 'Use this');
   assert.deepEqual(event?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
 
-  // Pinned canvas frames follow, as the renderer's promptWithFramePins writes them.
+  // Pinned canvas frames follow, as the renderer's promptWithCanvasPins writes them.
   const withFrames = [
     withReplies,
     '',
@@ -181,6 +181,19 @@ test('a prompt wrapped in DROIDEX guidance, side-chat answers or pinned frames r
   assert.equal(pinned?.text, 'Use this');
   assert.deepEqual(pinned?.sideChatReplies, ['Sort by date first.', 'Then by name.']);
   assert.deepEqual(pinned?.canvasFrames, ['Pricing · Compact']);
+  // Picked elements come last; the bubble shows neither their block nor a chip.
+  const elements = [
+    '<canvas_elements>',
+    'The user picked these elements for this request; change them, not the rest of their designs.',
+    '<element id="e1" design="d1" revision="r1" source="main.tsx:7" tag="h1">Ship</element>',
+    '</canvas_elements>',
+  ].join('\n');
+  const [picked] = replay(userText(`${withFrames}\n\n${elements}`));
+  assert.equal(picked?.text, 'Use this');
+  assert.deepEqual(picked?.canvasFrames, ['Pricing · Compact']);
+  const [pickedOnly] = replay(userText(`Tighten this\n\n${elements}`));
+  assert.equal(pickedOnly?.text, 'Tighten this');
+  assert.equal(pickedOnly?.canvasFrames, undefined);
   // A user who only writes the tags keeps every word of it.
   const typed = 'Wrap it in <canvas_frames></canvas_frames>';
   assert.equal(replay(userText(typed))[0]?.text, typed);
