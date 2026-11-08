@@ -21,6 +21,8 @@ import {
 import { checkDesignSystemAdherence } from '../canvas/designSystemAdherence.js';
 import { readDesignSystem } from '../canvas/designSystems.js';
 import { KitPreviews } from '../canvas/kitPreviews.js';
+import { SourceElementError } from '../canvas/sourceElementError.js';
+import { instrumentSource } from '../canvas/sourceElements.js';
 import { storage } from './canvasBuildSupport.js';
 
 /** No renderer page answers a screenshot here, so capture is always refused. */
@@ -37,6 +39,7 @@ export interface Reply {
   chatAttached?: true;
   created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
   receipt?: { revisionId: string };
+  element?: { elementId: string; line: number; endLine: number; source: string };
   frames?: { designId: string }[];
   systems?: { id: string; version: number; proposal: boolean }[];
   status?: string;
@@ -144,12 +147,24 @@ function answeringBuilds(): CanvasBuilds {
     const kit = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
     if (kit.status === 'failed') throw new CompileFailedError(kit.diagnostics);
     const artifactId = `${main.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`;
-    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements: [] };
+    const elements = elementsOf(input);
+    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements };
   };
   return new CanvasBuilds({
     compiler: () => ({ compile, terminate: () => Promise.resolve() }),
     deadline: () => () => undefined,
   });
+}
+
+/** The element map, or the syntax failure the real compiler reports for unparsable source. */
+function elementsOf(input: DesignCompileInput) {
+  try {
+    return instrumentSource(input.files, input.revisionId).elements;
+  } catch (error) {
+    if (!(error instanceof SourceElementError) || error.code === 'selection_limit') throw error;
+    const { message, file, line, column } = error;
+    throw new CompileFailedError([{ code: 'syntax_error', message, file, line, column }]);
+  }
 }
 
 /** Kit examples build at once, except one that names `BROKEN`. */

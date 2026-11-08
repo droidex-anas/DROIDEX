@@ -242,22 +242,54 @@ export function canvasContextOf(
   };
 }
 
-// Mirrored by sidecar/src/canvas/canvasFramesPrompt.ts, which strips the block
+// Mirrored by sidecar/src/canvas/canvasPinsPrompt.ts, which strips the blocks
 // back out of a stored prompt so the bubble shows the frames as chips.
 const FRAMES_OPEN =
   '<canvas_frames>\nThe user pinned these canvas frames to this request; "this" and "it" mean them.';
 const FRAMES_CLOSE = '</canvas_frames>';
+const ELEMENTS_OPEN =
+  '<canvas_elements>\nThe user picked these elements for this request; change them, not the rest of their designs.';
+const ELEMENTS_CLOSE = '</canvas_elements>';
 
 /**
- * The prompt with its pinned frames named after the user's words. The turn's
- * lease already holds them, but a model that acts before it reads would not
- * know which frame "this one" is.
+ * The prompt with its pinned frames, then its picked elements, named after the
+ * user's words. The turn's lease already holds them, but a model that acts
+ * before it reads would not know which frame or element "this one" is.
  */
-export function promptWithFramePins(prompt: string, pins: readonly FramePin[] = NONE): string {
-  if (pins.length === 0) return prompt;
-  const frames = pins.map(
-    (pin) => `<frame id="${pin.designId}">${pin.name.replace(/\s+/g, ' ')}</frame>`,
-  );
-  const block = [FRAMES_OPEN, ...frames, FRAMES_CLOSE].join('\n');
-  return prompt ? `${prompt}\n\n${block}` : block;
+export function promptWithCanvasPins(
+  prompt: string,
+  pins: readonly FramePin[] = NONE,
+  elements: readonly ElementPin[] = [],
+): string {
+  const blocks = [prompt];
+  if (pins.length > 0) blocks.push([FRAMES_OPEN, ...pins.map(frameLine), FRAMES_CLOSE].join('\n'));
+  if (elements.length > 0)
+    blocks.push([ELEMENTS_OPEN, ...elements.map(elementLine), ELEMENTS_CLOSE].join('\n'));
+  return blocks.filter(Boolean).join('\n\n');
+}
+
+function frameLine(pin: FramePin): string {
+  return `<frame id="${pin.designId}">${escapeText(oneLine(pin.name))}</frame>`;
+}
+
+/** A pick by the IDs canvas_read resolves it with, where it is written, and any words it spans. */
+function elementLine({ element }: ElementPin): string {
+  const { elementId, designId, revisionId, source, tagName, component, text } = element;
+  const named = component ? ` component="${escapeAttribute(component)}"` : '';
+  const file = escapeAttribute(source.file);
+  const words = text ? escapeText(oneLine(text.excerpt)) : '';
+  return `<element id="${elementId}" design="${designId}" revision="${revisionId}" source="${file}:${String(source.line)}" tag="${tagName}"${named}>${words}</element>`;
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Escaped so a name or picked words can never close or forge a record. */
+function escapeText(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function escapeAttribute(value: string): string {
+  return escapeText(value).replaceAll('"', '&quot;');
 }

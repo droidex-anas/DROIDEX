@@ -12,7 +12,7 @@ import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
 import { sideChatPromptDisplayFromText } from './sideChatPrompt.js';
-import { canvasFramesFromPrompt } from './canvas/canvasFramesPrompt.js';
+import { canvasPinsFromPrompt } from './canvas/canvasPinsPrompt.js';
 import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
@@ -220,8 +220,8 @@ function nonAssistantBlockEvent(
 }
 
 // A stored prompt as the chat shows it: plain text, never a runnable App, and
-// without the pinned frames, the side-chat answers or the branch, design, app
-// and side-chat framing it was sent with.
+// without the pinned frames and elements, the side-chat answers or the branch,
+// design, app and side-chat framing it was sent with.
 export function userPromptDisplay(storedText: string) {
   const outer = attachedToPrompt(storedText);
   // A branch prompt carries a whole copied conversation after its request; it
@@ -245,10 +245,10 @@ export function userPromptDisplay(storedText: string) {
   };
 }
 
-// The pinned frames and side-chat answers at the end of a composed prompt, split
-// off the words they were sent with.
+// The pinned frames, picked elements and side-chat answers at the end of a
+// composed prompt, split off the words they were sent with.
 function attachedToPrompt(text: string) {
-  const withFrames = canvasFramesFromPrompt(text);
+  const withFrames = canvasPinsFromPrompt(text);
   const withReplies = sideChatRepliesFromPrompt(withFrames?.text ?? text);
   return {
     text: withReplies?.text ?? withFrames?.text ?? text,

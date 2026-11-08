@@ -20,7 +20,7 @@ import {
 } from '../../features/canvas/elementPins';
 import {
   canvasContextOf,
-  promptWithFramePins,
+  promptWithCanvasPins,
   restoreFramePins,
   unpinFrames,
   useFramePins,
@@ -127,7 +127,11 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       ),
     /** The text the agent receives: the user's words, then what goes with them. */
     compose: (prompt: string) =>
-      promptWithFramePins(promptWithSideChatReplies(prompt, sideChatReplies), framePins),
+      promptWithCanvasPins(
+        promptWithSideChatReplies(prompt, sideChatReplies),
+        framePins,
+        elementPins,
+      ),
     /** The fields the sent prompt's bubble shows them from. */
     transcript: {
       ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),

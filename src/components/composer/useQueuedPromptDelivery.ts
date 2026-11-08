@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
-import { promptWithFramePins } from '../../features/canvas/framePins';
+import { promptWithCanvasPins } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
 import {
@@ -176,7 +176,7 @@ export function queuedSend(
   // Rows queued as mentions kept their place in the chip list for the
   // preview; the text they are sent with must still leave them out.
   const mentioned = new Set(head.mentions?.map((mention) => mention.name));
-  const text = promptWithFramePins(
+  const text = promptWithCanvasPins(
     promptWithSideChatReplies(
       composePrompt(
         head.text,
@@ -186,6 +186,7 @@ export function queuedSend(
       head.sideChatReplies ?? [],
     ),
     head.framePins,
+    head.elementPins,
   );
   return {
     text,

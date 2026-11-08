@@ -155,3 +155,69 @@ test('Design names what it hovers, picks by click, shift-click and text drag, an
   await settle();
   await expect(picks).toHaveCount(0);
 });
+
+test('Design and Edit find the element under the pointer at any UI zoom', async ({ page }) => {
+  await stubGuests(page);
+  // A title over a card, split at y 38 of the design's own pixels.
+  await page.addInitScript(() => {
+    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    const card = { elementId: 'el_card', instancePath: '0', tagName: 'section' };
+    window.guestAnswer = (command, argument) => {
+      const { y } = (command === 'probe' ? argument.at : argument) as { y: number };
+      return y < 38
+        ? { ...title, rect: { x: 8, y: 8, width: 240, height: 30 }, styles: {} }
+        : { ...card, rect: { x: 0, y: 0, width: 400, height: 300 }, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1&design=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('d');
+  const hover = page.locator('[data-element-hover]');
+  /** The last press of this kind the guest heard lands at x, y of the design's own pixels. */
+  const expectPressAt = async (command: 'probe' | 'pick', x: number, y: number) => {
+    const sent = await page.evaluate(
+      (name) => window.guestCommands.findLast((each) => each.command === name),
+      command,
+    );
+    const at = (command === 'probe' ? sent?.at : sent) as { x: number; y: number };
+    expect(at.x).toBeCloseTo(x, 1);
+    expect(at.y).toBeCloseTo(y, 1);
+  };
+
+  for (const uiZoom of [1.25, 0.8]) {
+    await page.evaluate((zoom) => {
+      document.documentElement.style.setProperty('--ui-zoom', String(zoom));
+    }, uiZoom);
+    await page.clock.runFor(64);
+    const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+    const scale = drawn.width / 400;
+    const point = (x: number, y: number) => ({ x: drawn.x + x * scale, y: drawn.y + y * scale });
+    // Just either side of the split, so a point off by the UI zoom lands on the other one.
+    for (const [y, tag] of [
+      [34, 'h1'],
+      [42, 'section'],
+    ] as const) {
+      await page.mouse.move(point(20, y).x, point(20, y).y);
+      await page.clock.runFor(64);
+      await expect(hover).toHaveAttribute('data-element-hover', tag);
+    }
+    await page.mouse.click(point(20, 34).x, point(20, 34).y);
+    await page.clock.runFor(64);
+    await expectPressAt('probe', 20, 34);
+  }
+
+  // Edit picks by the same point.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('e');
+  const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const scale = drawn.width / 400;
+  await page.mouse.click(drawn.x + 20 * scale, drawn.y + 42 * scale);
+  await page.clock.runFor(100);
+  await expectPressAt('pick', 20, 42);
+});
