@@ -200,7 +200,9 @@ export const sourceElementSchema = z
     file: sourcePathSchema,
     start: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
     end: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
+    line: z.number().int().positive().max(CANVAS_LIMITS.maxFileBytes),
     tagName: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes),
+    component: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes).nullable(),
     editability: z.enum(['literal', 'computed', 'shared']),
   })
   .strict()

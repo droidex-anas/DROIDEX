@@ -104,7 +104,9 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
           file,
           start,
           end: node.end,
+          line: source.getLineAndCharacterOfPosition(start).line + 1,
           tagName: opening.tagName.text,
+          component: componentOf(node),
           editability,
         },
       });
@@ -200,6 +202,24 @@ function isShared(node: ElementNode, root: ts.Node | undefined): boolean {
     }
   }
   return true;
+}
+
+function componentOf(node: ElementNode): string | null {
+  for (let parent = node.parent; !ts.isSourceFile(parent); parent = parent.parent) {
+    if (!ts.isFunctionLike(parent)) continue;
+    const name = functionName(parent);
+    if (name && /^[A-Z]/.test(name)) return name;
+  }
+  return null;
+}
+
+/** A function's name, or the variable holding it, directly or through a wrapper such as `memo`. */
+function functionName(fn: ts.SignatureDeclaration): string | undefined {
+  if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text;
+  const holder = ts.isCallExpression(fn.parent) ? fn.parent.parent : fn.parent;
+  return ts.isVariableDeclaration(holder) && ts.isIdentifier(holder.name)
+    ? holder.name.text
+    : undefined;
 }
 
 function canReuseJsx(node: ts.Node): boolean {

@@ -44,7 +44,10 @@ function isSourceElement(value: unknown): boolean {
     count(value.end) &&
     value.end > value.start &&
     value.end <= MAX_SOURCE_FILE_BYTES &&
+    count(value.line) &&
+    value.line > 0 &&
     boundedText(value.tagName, MAX_SOURCE_FILE_BYTES) &&
+    (value.component === null || boundedText(value.component, MAX_SOURCE_FILE_BYTES)) &&
     (value.editability === 'literal' ||
       value.editability === 'computed' ||
       value.editability === 'shared')
