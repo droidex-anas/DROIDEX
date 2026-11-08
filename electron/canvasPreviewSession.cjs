@@ -52,6 +52,7 @@ async function configureCanvasPreviewSession(guestSession, serve) {
     callback(false);
   });
   guestSession.setPermissionCheckHandler(() => false);
+  guestSession.setDevicePermissionHandler(() => false);
   await guestSession.setProxy(CANVAS_PREVIEW_PROXY);
   configuredSessions.add(guestSession);
 }
