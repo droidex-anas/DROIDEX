@@ -235,25 +235,32 @@ class GuestRun implements PreviewRun {
   }
 
   setTokens(tokens: Readonly<Record<string, string>>): void {
-    if (!this.stopped && this.started) void this.ask(previewSetTokensScript(tokens));
+    if (this.canAsk()) void this.ask(previewSetTokensScript(tokens));
   }
 
   async hover(at: { x: number; y: number }): Promise<PreviewHover | null> {
-    if (this.stopped || !this.started) return null;
-    // Stopping abandons the call, so a stopped run answers null.
-    return readPreviewHover(await this.ask(previewHoverScript(at)));
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewHoverScript(at));
+    // An answer can land just before the run stops; a stopped run answers null.
+    return this.canAsk() ? readPreviewHover(answer) : null;
   }
 
   async probe(probe: PreviewProbe): Promise<PreviewFinding | null> {
-    if (this.stopped || !this.started) return null;
-    return readPreviewFinding(await this.ask(previewProbeScript(probe)));
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewProbeScript(probe));
+    return this.canAsk() ? readPreviewFinding(answer) : null;
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */
   private command(script: (sequence: number) => string): number {
     this.latestCommand += 1;
-    if (!this.stopped && this.started) void this.ask(script(this.latestCommand));
+    if (this.canAsk()) void this.ask(script(this.latestCommand));
     return this.latestCommand;
+  }
+
+  /** A guest is asked only once it has started and while this run is still its. */
+  private canAsk(): boolean {
+    return this.started && !this.stopped;
   }
 
   private release(): void {

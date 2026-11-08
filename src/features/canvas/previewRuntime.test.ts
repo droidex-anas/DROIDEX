@@ -300,6 +300,21 @@ test('a hover asks a started guest directly and answers null once the run stops'
   assert.equal(await stranded, null);
 });
 
+test('a probe answer that lands as the run stops is dropped', async () => {
+  const session = run();
+  await started(session);
+  const answer = session.preview.probe({ at: { x: 10, y: 20 } });
+  const call = session.calls[2];
+  assert.equal(call.code, 'globalThis.__droidexCanvasPreview.probe({"at":{"x":10,"y":20}})');
+  call.settle(
+    JSON.stringify({ elementId: 'el_1', instancePath: '0/1', rect: picked.rect, text: null }),
+  );
+  // One tick: the guest has answered, but the probe has not yet read it.
+  await Promise.resolve();
+  session.preview.stop();
+  assert.equal(await answer, null);
+});
+
 test('draft tokens reach a started guest as data and nothing after the run stops', async () => {
   const session = run();
   session.preview.setTokens({ '--ds-accent': 'red' });
