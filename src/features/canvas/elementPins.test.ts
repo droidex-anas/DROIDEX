@@ -118,17 +118,23 @@ test('a rebuilt frame drops the picks made in its earlier revision', () => {
   assert.equal(elementPins('chat-r').length, 0);
 });
 
-test('a chip label drops the frame, then the middle of the words, to fit', () => {
-  const pin = (frameName: string, excerpt?: string) => ({
+test('a chip label drops the frame, then the middle of the words, then of the name, to fit', () => {
+  const pin = (frameName: string, excerpt?: string, component = 'PlanCard') => ({
     canvasId: 'cv_1',
     frameName,
     frameWidth: 720,
-    element: element('d1', 'e1', excerpt),
+    element: { ...element('d1', 'e1', excerpt), component },
   });
   assert.equal(elementLabel(pin('Hero')), 'PlanCard in Hero · App.tsx:3');
   assert.equal(elementLabel(pin('Pricing', 'For trying things')), 'PlanCard · “For trying things”');
   assert.equal(
     elementLabel(pin('Pricing', 'Everything a growing team needs to ship')),
     'PlanCard · “Everythi… to ship”',
+  );
+  const long = 'SubscriptionBillingManagementPlanCard';
+  assert.equal(elementLabel(pin('Pricing', undefined, long)), 'Subscript…PlanCard · App.tsx:3');
+  assert.equal(
+    elementLabel(pin('Pricing', 'Everything a growing team needs to ship', long)),
+    'Subscri…lanCard · “Every…ship”',
   );
 });

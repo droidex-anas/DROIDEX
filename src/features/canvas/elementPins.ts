@@ -12,6 +12,8 @@ import type { CanvasFrame, CanvasSnapshot } from './protocol';
 const MAX_PINNED_ELEMENTS = 32;
 /** About the characters a chip's label fits before the chip cuts it off. */
 const LABEL_CHARS = 30;
+/** What a long name leaves the detail, so a chip still tells its picks apart. */
+const MIN_DETAIL_CHARS = 12;
 
 export interface ElementPin {
   canvasId: string;
@@ -61,15 +63,17 @@ export function elementName({ component, tagName }: PickedElement): string {
 /**
  * What a chip calls a pick: its name, its frame, and what tells it apart from
  * other picks of the element. When that is longer than a chip shows, the frame
- * goes first, then the middle of the words.
+ * goes first, then the middle of the detail, then, for a long name, the middle
+ * of the name too.
  */
 export function elementLabel({ frameName, element }: ElementPin): string {
   const name = elementName(element);
   const detail = elementDetail(element);
   const full = `${name} in ${frameName} · ${detail}`;
   if (full.length <= LABEL_CHARS) return full;
-  const short = `${name} · `;
-  return short + middleCut(detail, LABEL_CHARS - short.length);
+  const room = LABEL_CHARS - ' · '.length;
+  const shownDetail = middleCut(detail, Math.max(room - name.length, MIN_DETAIL_CHARS));
+  return `${middleCut(name, room - shownDetail.length)} · ${shownDetail}`;
 }
 
 /** What tells two picks of one element apart: the words it spans, else where it is written. */
