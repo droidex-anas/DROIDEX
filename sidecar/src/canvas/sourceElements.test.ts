@@ -268,7 +268,8 @@ const Card = memo(() => (
     {[1, 2].map((n) => <p>{n}</p>)}
   </section>
 ));
-export default () => <main><Badge /><Card /></main>;
+const Field = memo(forwardRef((props, ref) => <input ref={ref} />));
+export default () => <main><Badge /><Card /><Field /></main>;
 `,
   };
   const located = instrumentSource(files, 'r1').elements.map(({ tagName, line, component }) => [
@@ -280,7 +281,8 @@ export default () => <main><Badge /><Card /></main>;
     ['span', 2, 'Badge'],
     ['section', 5, 'Card'],
     ['p', 6, 'Card'],
-    ['main', 9, null],
+    ['input', 9, 'Field'],
+    ['main', 10, null],
   ]);
 });
 

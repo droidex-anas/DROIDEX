@@ -213,13 +213,23 @@ function componentOf(node: ElementNode): string | null {
   return null;
 }
 
-/** A function's name, or the variable holding it, directly or through a wrapper such as `memo`. */
+/**
+ * A function's name, or the variable holding it, directly or through wrappers
+ * such as `memo(forwardRef(...))`.
+ */
 function functionName(fn: ts.SignatureDeclaration): string | undefined {
   if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text;
-  const holder = ts.isCallExpression(fn.parent) ? fn.parent.parent : fn.parent;
+  let held: ts.Node = fn;
+  while (isWrapping(held.parent, held)) held = held.parent;
+  const holder = held.parent;
   return ts.isVariableDeclaration(holder) && ts.isIdentifier(holder.name)
     ? holder.name.text
     : undefined;
+}
+
+function isWrapping(parent: ts.Node, child: ts.Node): boolean {
+  if (ts.isParenthesizedExpression(parent)) return true;
+  return ts.isCallExpression(parent) && parent.arguments.some((argument) => argument === child);
 }
 
 function canReuseJsx(node: ts.Node): boolean {
