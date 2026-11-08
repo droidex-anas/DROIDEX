@@ -10,6 +10,8 @@ import type { CanvasFrame, CanvasSnapshot } from './protocol';
 
 /** The sidecar's limit on the elements one request may pin. */
 const MAX_PINNED_ELEMENTS = 32;
+/** About the characters a chip's label fits before the chip cuts it off. */
+const LABEL_CHARS = 30;
 
 export interface ElementPin {
   canvasId: string;
@@ -56,10 +58,32 @@ export function elementName({ component, tagName }: PickedElement): string {
   return component ?? `<${tagName}>`;
 }
 
+/**
+ * What a chip calls a pick: its name, its frame, and what tells it apart from
+ * other picks of the element. When that is longer than a chip shows, the frame
+ * goes first, then the middle of the words.
+ */
+export function elementLabel({ frameName, element }: ElementPin): string {
+  const name = elementName(element);
+  const detail = elementDetail(element);
+  const full = `${name} in ${frameName} · ${detail}`;
+  if (full.length <= LABEL_CHARS) return full;
+  const short = `${name} · `;
+  return short + middleCut(detail, LABEL_CHARS - short.length);
+}
+
 /** What tells two picks of one element apart: the words it spans, else where it is written. */
-export function elementDetail({ text, source }: PickedElement): string {
+function elementDetail({ text, source }: PickedElement): string {
   if (text) return `“${text.excerpt.replace(/\s+/g, ' ').trim()}”`;
   return `${source.file.split('/').at(-1) ?? source.file}:${String(source.line)}`;
+}
+
+/** `text` in at most `room` characters, its middle cut out; its ends always stay. */
+function middleCut(text: string, room: number): string {
+  if (text.length <= room) return text;
+  const kept = Math.max(room - 1, 2);
+  const head = Math.ceil(kept / 2);
+  return `${text.slice(0, head)}…${text.slice(text.length - (kept - head))}`;
 }
 
 /**

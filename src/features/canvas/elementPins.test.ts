@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canvasContextOf, syncFramePins } from './framePins';
 import {
+  elementLabel,
   elementPins,
   pickElement,
   restoreElementPins,
@@ -106,4 +107,19 @@ test('a rebuilt frame drops the picks made in its earlier revision', () => {
   restoreElementPins('chat-r', queued);
   assert.equal(elementPins('chat-r').length, 0);
   closePane();
+});
+
+test('a chip label drops the frame, then the middle of the words, to fit', () => {
+  const pin = (frameName: string, excerpt?: string) => ({
+    canvasId: 'cv_1',
+    frameName,
+    frameWidth: 720,
+    element: element('d1', 'e1', excerpt),
+  });
+  assert.equal(elementLabel(pin('Hero')), 'PlanCard in Hero · App.tsx:3');
+  assert.equal(elementLabel(pin('Pricing', 'For trying things')), 'PlanCard · “For trying things”');
+  assert.equal(
+    elementLabel(pin('Pricing', 'Everything a growing team needs to ship')),
+    'PlanCard · “Everythi… to ship”',
+  );
 });

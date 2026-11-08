@@ -10,7 +10,7 @@ import { MessageThread, MousePointerSquareDashed } from '@droidex/icons';
 import { NEW_CANVAS_KEY, useDesignSystemChoice } from '../../features/canvas/designSystemChoices';
 import { ElementCrop } from '../../features/canvas/ElementCrop';
 import {
-  elementDetail,
+  elementLabel,
   elementName,
   elementPinKey,
   restoreElementPins,
@@ -90,7 +90,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       key: `element:${elementPinKey(pin)}`,
       icon: MousePointerSquareDashed,
       thumbnail: createElement(ElementCrop, { pin }),
-      label: `${name} · ${elementDetail(pin.element)}`,
+      label: elementLabel(pin),
       removeLabel: `Remove ${name}`,
       onRemove: () => {
         unpinPicked([pin]);
