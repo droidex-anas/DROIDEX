@@ -40,17 +40,25 @@ function isSourceElement(value: unknown): boolean {
     record(value) &&
     id(value.elementId) &&
     boundedText(value.file, 256) &&
-    count(value.start) &&
-    count(value.end) &&
-    value.end > value.start &&
-    value.end <= MAX_SOURCE_FILE_BYTES &&
-    count(value.line) &&
-    value.line > 0 &&
+    isSourceSpan(value.start, value.end, value.line) &&
     boundedText(value.tagName, MAX_SOURCE_FILE_BYTES) &&
     (value.component === null || boundedText(value.component, MAX_SOURCE_FILE_BYTES)) &&
     (value.editability === 'literal' ||
       value.editability === 'computed' ||
       value.editability === 'shared')
+  );
+}
+
+/** An element's offsets and the 1-based line it starts on, all within one source file. */
+function isSourceSpan(start: unknown, end: unknown, line: unknown): boolean {
+  return (
+    count(start) &&
+    count(end) &&
+    end > start &&
+    end <= MAX_SOURCE_FILE_BYTES &&
+    count(line) &&
+    line > 0 &&
+    line <= MAX_SOURCE_FILE_BYTES
   );
 }
 
