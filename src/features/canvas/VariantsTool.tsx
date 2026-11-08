@@ -71,6 +71,8 @@ export function VariantsTool({
   const close = useCallback(() => {
     setOpen(false);
   }, []);
+  // Work that starts on the set elsewhere, such as using one of its variants, closes the options.
+  if (busy !== null && open) setOpen(false);
 
   const make = (choice: VariantChoice, of: readonly ElementPin[]) => {
     setOpen(false);
