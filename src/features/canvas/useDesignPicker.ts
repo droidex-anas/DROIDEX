@@ -124,7 +124,10 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
     asking.current = asking.current
       .then(async () => {
         const finding = await held.run.probe(probe);
-        if (asked === generation.current)
+        // A run that stopped answers null too, which must not read as a press on nothing.
+        const current = runs.get(frame.designId);
+        const sameRun = current?.run === held.run && current.revisionId === held.revisionId;
+        if (asked === generation.current && sameRun)
           answer(frame.designId, held.revisionId, finding, additive);
       })
       .catch((failure: unknown) => {
