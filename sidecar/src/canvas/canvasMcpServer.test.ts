@@ -350,6 +350,8 @@ test('lost create response retries to the same canvas and invalid source paths h
     [3, 5, '    <h1>\n      Hey\n    </h1>'],
   );
   assert.equal((await h.call('canvas_read', { ...read, elementId: 'gone' })).code, 'invalid_input');
+  const summary = await h.call('canvas_read', { elementId: heading.elementId });
+  assert.equal(summary.code, 'invalid_input');
   assert.equal((await h.call('canvas_inspect', { designId })).ok, true);
   assert.equal(
     (await h.call('canvas_inspect', { designId, kind: 'screenshot' })).code,

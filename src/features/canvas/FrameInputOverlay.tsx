@@ -17,7 +17,6 @@ import type { DesignPress } from './useDesignPicker';
 type OverlayProps = Pick<
   DesignFrameProps,
   | 'frame'
-  | 'scale'
   | 'mode'
   | 'held'
   | 'elementHovered'
@@ -38,7 +37,6 @@ const DRAG_PX = 4;
 
 export function FrameInputOverlay({
   frame,
-  scale,
   mode,
   held,
   elementHovered,
@@ -58,6 +56,7 @@ export function FrameInputOverlay({
   const designPress = useRef<{
     pointerId: number;
     from: Point;
+    screenFrom: Point;
     dragging: boolean;
     pick: DesignPress;
     popEscape: () => void;
@@ -95,6 +94,7 @@ export function FrameInputOverlay({
           designPress.current = {
             pointerId: event.pointerId,
             from: designPoint(event),
+            screenFrom: { x: event.clientX, y: event.clientY },
             dragging: false,
             pick: onDesignPress(frame),
             popEscape: pushEscapeLayer(cancelDesignPress),
@@ -125,7 +125,8 @@ export function FrameInputOverlay({
         if (pressed && pressed.pointerId !== event.pointerId) return;
         if (mode === 'design' && pressed) {
           const to = designPoint(event);
-          const travelled = Math.hypot(to.x - pressed.from.x, to.y - pressed.from.y) * scale;
+          const { screenFrom } = pressed;
+          const travelled = Math.hypot(event.clientX - screenFrom.x, event.clientY - screenFrom.y);
           if (!pressed.dragging && travelled < DRAG_PX) return;
           // A drag across text names no element under the pointer.
           if (!pressed.dragging) onHoverElement(frame, null);
