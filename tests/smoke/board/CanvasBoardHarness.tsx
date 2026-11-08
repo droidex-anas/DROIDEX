@@ -24,6 +24,12 @@ import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import type { VariantChoice } from '../../../src/features/canvas/variantRequests';
 import { variantSetSource, VariantSets } from '../../../src/features/canvas/variantSets';
 import type { EditElementInput } from '../../../src/features/canvas/elementEditProtocol';
+import {
+  pickElement,
+  syncElementPins,
+  unpinElements,
+  useElementPins,
+} from '../../../src/features/canvas/elementPins';
 import type {
   ArrangeFramesInput,
   CanvasChange,
@@ -74,6 +80,8 @@ interface BoardHarness {
   /** Closes the source drawer the way the workspace does, focus included. */
   closeSource: () => void;
   editCalls: EditElementInput[];
+  /** What Design's quick prompt handed the chat's composer. */
+  seeds: { text: string; send: boolean }[];
   /** Answers one edit with the revision it wrote, and builds that revision. */
   answerEdit: (index: number) => void;
   refuseEdit: (index: number) => void;
@@ -281,6 +289,7 @@ const annotateCalls: AnnotateCanvasInput[] = [];
 const annotateReplies: { resolve: () => void; reject: (error: Error) => void }[] = [];
 const previewClicks: string[] = [];
 const editCalls: EditElementInput[] = [];
+const seeds: { text: string; send: boolean }[] = [];
 const editReplies: {
   resolve: (receipt: WriteReceipt) => void;
   reject: (error: Error) => void;
@@ -416,11 +425,15 @@ function Harness() {
   const [width, setWidth] = useState(1000);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
   const tagged = useFramePins('chat_1');
+  const picks = useElementPins('chat_1');
   const board = useRef<CanvasBoardHandle>(null);
   const live = useRef(interaction);
   live.current = interaction;
   shown.current = snapshot;
-  useEffect(() => syncFramePins('chat_1', snapshot), [snapshot]);
+  useEffect(() => {
+    syncElementPins('chat_1', snapshot);
+    return syncFramePins('chat_1', snapshot);
+  }, [snapshot]);
   useEffect(() => {
     if (!params.has('navigator')) return undefined;
     return showBoard({
@@ -530,6 +543,7 @@ function Harness() {
       setPresence(NO_PRESENCE);
     },
     editCalls,
+    seeds,
     answerEdit: (index) => {
       const { designId } = editCalls[index].edit.element;
       const revisionId = `rev_0${String(index + 2)}`;
@@ -680,6 +694,21 @@ function Harness() {
             const frames = snapshot.frames.filter((frame) => designIds.includes(frame.designId));
             toggleFramePins('chat_1', snapshot.canvasId, frames);
           }}
+          // `?design=1` gives the board a chat to point at elements, as the chat's own canvas has.
+          design={
+            params.has('design')
+              ? {
+                  pins: picks,
+                  pick: (frame, element, additive) => {
+                    pickElement('chat_1', snapshot.canvasId, frame, element, additive);
+                  },
+                  clear: () => {
+                    unpinElements('chat_1');
+                  },
+                  seed: (text, send) => seeds.push({ text, send }),
+                }
+              : undefined
+          }
           frameActions={frameActions}
         />
         {sourceOpen && (

@@ -57,10 +57,11 @@ export async function openBoard(
 /**
  * Stands in for the preview host: every `<webview>` the board makes answers as
  * guest 41, bound to this canvas, and reports ready once `boardGuestReady` is set.
- * Pick and select commands are recorded in `guestCommands` and answered by
- * `guestAnswer`, as an element in a block parent unless it names another; a
- * hover is answered by `guestAnswer` directly, with nothing beside the element
- * unless it says, and not recorded.
+ * Pick, select and probe commands are recorded in `guestCommands` and answered
+ * by `guestAnswer`: a pick or select as an element in a block parent unless it
+ * names another, a probe directly with no text unless it says. A hover is
+ * answered by `guestAnswer` directly, with nothing beside the element unless it
+ * says, and not recorded.
  */
 export async function stubGuests(page: Page) {
   await page.addInitScript(() => {
@@ -104,6 +105,11 @@ export async function stubGuests(page: Page) {
                 element: element && { parentDisplay: 'block', ...element },
               });
               return 'sent';
+            }
+            if (call?.[1] === 'probe') {
+              window.guestCommands.push({ command: 'probe', ...argument });
+              const element = window.guestAnswer('probe', argument);
+              return JSON.stringify(element && { text: null, ...element });
             }
             if (call?.[1] === 'hover') {
               const element = window.guestAnswer('hover', argument);
