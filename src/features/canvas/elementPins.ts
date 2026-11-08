@@ -141,18 +141,16 @@ export function unpinElements(
 
 /**
  * Puts a queued prompt's elements back on the draft it is being edited in:
- * only those whose frame is still on the chat's attached board, or, before the
- * pane has shown it, those of the prompt's own canvas.
+ * only those the chat's attached board still has at the revision they were
+ * picked in. With no board on screen nothing can confirm that, so none come back.
  */
 export function restoreElementPins(appSessionId: string, pins: readonly ElementPin[]): void {
-  const canvasId = pins.at(0)?.canvasId;
-  if (canvasId === undefined) return;
+  const board = attachedBoard(appSessionId);
+  if (!board) return;
   const held = elementPins(appSessionId);
   const keys = new Set(held.map(elementPinKey));
   const merged = [...held, ...pins.filter((pin) => !keys.has(elementPinKey(pin)))];
-  const board = attachedBoard(appSessionId);
-  const next = board ? onBoard(merged, board) : merged.filter((pin) => pin.canvasId === canvasId);
-  publishChanged(appSessionId, held, next.slice(0, MAX_PINNED_ELEMENTS));
+  publishChanged(appSessionId, held, onBoard(merged, board).slice(0, MAX_PINNED_ELEMENTS));
 }
 
 /**

@@ -84,11 +84,17 @@ test('picks follow the attached canvas and go out as the turn’s element refere
   syncElementPins('chat-s', { canvasId: 'cv_1', sequence: 3, frames: [frame('d1', 'Pricing')] });
   assert.equal(elementPins('chat-s'), synced);
 
-  // An edited queued prompt brings its picks back once, as the board has them.
+  // An edited queued prompt brings its picks back once, as the shown board has them.
+  const closePane = syncFramePins('chat-s', {
+    canvasId: 'cv_1',
+    sequence: 3,
+    frames: [frame('d1', 'Pricing')],
+  });
   unpinElements('chat-s', synced);
   restoreElementPins('chat-s', sending);
   restoreElementPins('chat-s', sending);
-  assert.deepEqual(picked('chat-s'), ['e1', 'e2']);
+  assert.deepEqual(picked('chat-s'), ['e1']);
+  closePane();
 
   // A chat that moved to another canvas drops the old canvas's picks.
   syncElementPins('chat-s', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1')] });
@@ -106,7 +112,10 @@ test('a rebuilt frame drops the picks made in its earlier revision', () => {
   const closePane = syncFramePins('chat-r', rebuilt);
   restoreElementPins('chat-r', queued);
   assert.equal(elementPins('chat-r').length, 0);
+  // With the pane closed nothing can confirm a pick's revision, so none come back.
   closePane();
+  restoreElementPins('chat-r', queued);
+  assert.equal(elementPins('chat-r').length, 0);
 });
 
 test('a chip label drops the frame, then the middle of the words, to fit', () => {
