@@ -52,9 +52,10 @@ export function FrameInputOverlay({
 }: OverlayProps) {
   /**
    * Where a press in Design went down, and whether it has become a drag, until
-   * it is released. Escape while it is held lets go of it before anything else.
+   * its pointer is released. Escape while it is held lets go of it before anything else.
    */
   const designPress = useRef<{
+    pointerId: number;
     from: Point;
     dragging: boolean;
     pick: DesignPress;
@@ -93,6 +94,7 @@ export function FrameInputOverlay({
           event.currentTarget.setPointerCapture(event.pointerId);
           designPress.current?.popEscape();
           designPress.current = {
+            pointerId: event.pointerId,
             from: designPoint(event),
             dragging: false,
             pick: onDesignPress(frame),
@@ -108,6 +110,7 @@ export function FrameInputOverlay({
         press(event);
       }}
       onPointerUp={(event) => {
+        if (designPress.current?.pointerId !== event.pointerId) return;
         const pressed = endDesignPress();
         if (mode !== 'design' || !pressed) return;
         const probe = pressed.dragging
@@ -115,9 +118,12 @@ export function FrameInputOverlay({
           : { at: pressed.from };
         pressed.pick.release(probe, event.shiftKey);
       }}
-      onPointerCancel={cancelDesignPress}
+      onPointerCancel={(event) => {
+        if (designPress.current?.pointerId === event.pointerId) cancelDesignPress();
+      }}
       onPointerMove={(event) => {
         const pressed = designPress.current;
+        if (pressed && pressed.pointerId !== event.pointerId) return;
         if (mode === 'design' && pressed) {
           const to = designPoint(event);
           const travelled = Math.hypot(to.x - pressed.from.x, to.y - pressed.from.y) * scale;
