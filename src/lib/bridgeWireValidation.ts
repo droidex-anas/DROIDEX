@@ -538,6 +538,7 @@ function isCanvasActivity(value: unknown): boolean {
     stringArray(value.designIds) &&
     isOptionalString(value.canvasId) &&
     isOptionalString(value.title) &&
+    isOptionalString(value.revisionId) &&
     (value.firstArtifact === undefined || value.firstArtifact === true) &&
     (value.designSystem === undefined || isKitActivity(value.designSystem))
   );

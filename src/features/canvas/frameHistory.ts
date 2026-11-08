@@ -125,12 +125,13 @@ export class FrameHistory {
   }
 }
 
-/** One frame's versions, read again whenever its head moves. */
-export function useFrameHistory(client: HistoryClient, frame: CanvasFrame) {
+/** One frame's versions, read again whenever its head moves; none are read without a frame. */
+export function useFrameHistory(client: HistoryClient, frame: CanvasFrame | null) {
   const history = useMemo(() => new FrameHistory(client), [client]);
-  const { designId, revisionId } = frame;
+  const designId = frame?.designId;
+  const revisionId = frame?.revisionId;
   useEffect(() => {
-    if (revisionId) history.show({ designId, headRevisionId: revisionId });
+    if (designId && revisionId) history.show({ designId, headRevisionId: revisionId });
   }, [history, designId, revisionId]);
   useEffect(
     () => () => {

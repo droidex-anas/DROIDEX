@@ -392,12 +392,13 @@ for (const provider of ['claude', 'codex'] as const) {
           activity?.canvasId,
           activity?.title,
           activity?.firstArtifact,
+          activity?.revisionId,
         ]);
     assert.deepEqual(artifacts(live), [
-      ['canvas-1', 'Welcome', true],
-      ['canvas-1', undefined, undefined],
-      ['canvas-1', 'Dashboard', undefined],
-      ['canvas-1', undefined, undefined],
+      ['canvas-1', 'Welcome', true, undefined],
+      ['canvas-1', undefined, undefined, 'rev-1'],
+      ['canvas-1', 'Dashboard', undefined, undefined],
+      ['canvas-1', undefined, undefined, 'rev-2'],
     ]);
     const lazy = new SessionTranscriptReader(appSessionId, appSessionId, file.path, 'primary');
     const paged: TranscriptEvent[] = [];

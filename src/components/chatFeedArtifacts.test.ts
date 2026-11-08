@@ -25,6 +25,7 @@ function canvasTool(
   action: Activity['action'],
   designIds: string[],
   outcome: 'completed' | 'failed' = 'completed',
+  revisionId?: string,
 ): TranscriptEvent[] {
   const activity = { toolUseId, action, designIds, message: `${action} done` };
   return [
@@ -43,6 +44,7 @@ function canvasTool(
         ...activity,
         state: outcome,
         ...(outcome === 'completed' ? { canvasId: 'cv_1' } : {}),
+        ...(revisionId ? { revisionId } : {}),
       },
     }),
   ];
@@ -113,6 +115,34 @@ test('replay that batches calls before results keeps the card and the other tool
   );
   const group = items.at(-1);
   assert.deepEqual(group?.type === 'tools' && group.events, [readCall, readResult]);
+});
+
+test("each turn's card keeps the last revision that turn wrote as later turns refine it", () => {
+  const write = (toolUseId: string, revisionId: string) =>
+    canvasTool(toolUseId, 'write', ['dsg_card'], 'completed', revisionId);
+  const turns = [
+    [
+      user('Design a card'),
+      ...canvasTool('create', 'create', ['dsg_card']),
+      ...write('w1', 'rev-1'),
+    ],
+    [user('Rounder corners'), ...write('w2', 'rev-2')],
+    [user('Try a darker header'), ...write('w3a', 'rev-3a'), ...write('w3', 'rev-3')],
+    [user('Tighter spacing'), ...write('w4', 'rev-4')],
+  ].map((turn) => [...turn, answer('Updated the card.')]);
+  const pinned = (events: TranscriptEvent[]) =>
+    buildGroupedFeed(events, false).flatMap((item) =>
+      item.type === 'canvas_artifact' && item.activity.action !== 'theme'
+        ? [item.activity.revisionId]
+        : [],
+    );
+
+  // Each turn arriving live, then the whole chat replayed, leaves earlier cards where they were.
+  for (let count = 1; count <= turns.length; count++)
+    assert.deepEqual(
+      pinned(turns.slice(0, count).flat()),
+      ['rev-1', 'rev-2', 'rev-3', 'rev-4'].slice(0, count),
+    );
 });
 
 function themeTool(toolUseId: string, designSystem?: Activity['designSystem']): TranscriptEvent[] {
