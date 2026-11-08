@@ -133,20 +133,24 @@ export function restoreElementPins(appSessionId: string, pins: readonly ElementP
 
 /**
  * Keeps the chat's picks as its attached canvas now has them: a renamed frame
- * names them as it is now, and a deleted frame, or a canvas the chat has left,
- * takes its picks along. Only a change publishes.
+ * names them as it is now, and a deleted or rebuilt frame, or a canvas the chat
+ * has left, takes its picks along. Only a change publishes.
  */
 export function syncElementPins(appSessionId: string, attached: CanvasSnapshot): void {
   const held = elementPins(appSessionId);
   publishChanged(appSessionId, held, onBoard(held, attached));
 }
 
-/** The picks whose frame is on the attached board, named as that frame now is. */
+/**
+ * The picks whose frame is on the attached board at the revision they were
+ * picked in, named as that frame now is. A rebuilt frame may no longer hold the
+ * element, so its picks go.
+ */
 function onBoard(pins: readonly ElementPin[], attached: CanvasSnapshot): ElementPin[] {
   const frames = new Map(attached.frames.map((frame) => [frame.designId, frame]));
   return pins.flatMap((pin) => {
     const frame = pin.canvasId === attached.canvasId ? frames.get(pin.element.designId) : undefined;
-    if (!frame) return [];
+    if (frame?.revisionId !== pin.element.revisionId) return [];
     return [frame.name === pin.frameName ? pin : { ...pin, frameName: frame.name }];
   });
 }

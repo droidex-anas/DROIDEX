@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canvasContextOf } from './framePins';
+import { canvasContextOf, syncFramePins } from './framePins';
 import {
   elementPins,
   pickElement,
@@ -92,4 +92,18 @@ test('picks follow the attached canvas and go out as the turn’s element refere
   // A chat that moved to another canvas drops the old canvas's picks.
   syncElementPins('chat-s', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1')] });
   assert.equal(elementPins('chat-s').length, 0);
+});
+
+test('a rebuilt frame drops the picks made in its earlier revision', () => {
+  pickElement('chat-r', 'cv_1', frame('d1'), element('d1', 'e1'), false);
+  const queued = elementPins('chat-r');
+  const rebuilt = { canvasId: 'cv_1', sequence: 2, frames: [{ ...frame('d1'), revisionId: 'r2' }] };
+
+  syncElementPins('chat-r', rebuilt);
+  assert.equal(elementPins('chat-r').length, 0);
+  // Nor does an edited queued prompt bring them back.
+  const closePane = syncFramePins('chat-r', rebuilt);
+  restoreElementPins('chat-r', queued);
+  assert.equal(elementPins('chat-r').length, 0);
+  closePane();
 });
