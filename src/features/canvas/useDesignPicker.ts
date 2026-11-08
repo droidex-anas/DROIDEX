@@ -95,7 +95,8 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   if (!active && error !== '') setError('');
   useEffect(() => {
     generation.current += 1;
-  }, [active, design?.chatId]);
+    textDrag.clear();
+  }, [active, design?.chatId, textDrag.clear]);
   // Leaving Design, the board or its chat, or losing the pick it sat beside, closes it.
   const stale = prompt !== null && (anchor === undefined || prompt.chatId !== design?.chatId);
   useEffect(() => {
