@@ -197,6 +197,8 @@ test('a prompt wrapped in DROIDEX guidance, side-chat answers or pinned frames r
   // A user who only writes the tags keeps every word of it.
   const typed = 'Wrap it in <canvas_frames></canvas_frames>';
   assert.equal(replay(userText(typed))[0]?.text, typed);
+  const typedHeader = `Please explain this block:\n\n${elements.split('\n').slice(0, 2).join('\n')}\n</canvas_elements>`;
+  assert.equal(replay(userText(typedHeader))[0]?.text, typedHeader);
   // An App request wraps the composed prompt, frames included, before its guidance.
   const [app] = replay(
     userText(

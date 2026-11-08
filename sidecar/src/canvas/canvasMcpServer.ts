@@ -61,7 +61,8 @@ const readSchema = z
     offset: pageSchema.default(0),
     limit: z.number().int().min(1).max(32).default(32),
   })
-  .strict();
+  .strict()
+  .refine((input) => input.view === 'design' || !input.elementId, 'elementId needs view design.');
 const createSchema = createFramesInputSchema.extend(mutationScopeShape).strict();
 const writeSchema = z
   .object({ ...writeFilesInputSchema.innerType().shape, ...mutationScopeShape })
@@ -193,7 +194,7 @@ export function createCanvasMcpServer(
     tool(
       'canvas_read',
       'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Pinned designs are the frames the user picked for this request and the only ones it can change. A <canvas_elements> block in the prompt lists the elements the user picked in them: change those, not the rest of the design, and read one’s exact source with view design and its design, revision and elementId. Pinned images are reference images the user attached: you see each one on the message, and canvas-asset:<assetId> places it in a design’s source. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design; under Auto, take the style from the request, then the chat’s project source, then the frames already on the canvas. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work. The same read lists the board’s annotations, each with its colour, its author, its geometry in whole board pixels — rect {x, y, width, height}, or points [{x, y}] — and the frames it is over, near, or points at with an arrow.',
-      readSchema.shape,
+      readSchema.innerType().shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
           const input = readSchema.parse(raw);

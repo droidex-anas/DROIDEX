@@ -269,16 +269,27 @@ export function promptWithCanvasPins(
 }
 
 function frameLine(pin: FramePin): string {
-  return `<frame id="${pin.designId}">${oneLine(pin.name)}</frame>`;
+  return `<frame id="${pin.designId}">${escapeText(oneLine(pin.name))}</frame>`;
 }
 
 /** A pick by the IDs canvas_read resolves it with, where it is written, and any words it spans. */
 function elementLine({ element }: ElementPin): string {
   const { elementId, designId, revisionId, source, tagName, component, text } = element;
-  const named = component ? ` component="${component}"` : '';
-  return `<element id="${elementId}" design="${designId}" revision="${revisionId}" source="${source.file}:${String(source.line)}" tag="${tagName}"${named}>${text ? oneLine(text.excerpt) : ''}</element>`;
+  const named = component ? ` component="${escapeAttribute(component)}"` : '';
+  const file = escapeAttribute(source.file);
+  const words = text ? escapeText(oneLine(text.excerpt)) : '';
+  return `<element id="${elementId}" design="${designId}" revision="${revisionId}" source="${file}:${String(source.line)}" tag="${tagName}"${named}>${words}</element>`;
 }
 
 function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Escaped so a name or picked words can never close or forge a record. */
+function escapeText(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function escapeAttribute(value: string): string {
+  return escapeText(value).replaceAll('"', '&quot;');
 }

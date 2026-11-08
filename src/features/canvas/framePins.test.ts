@@ -138,6 +138,12 @@ test('a queued request keeps the revisions it was sent with when the pins move o
 
   // Picked elements follow the frames, in pick order, each by the IDs canvas_read resolves.
   const card = { ...pickedTitle, elementId: 'e2', component: null, tagName: 'section', text: null };
+  const odd = {
+    ...pickedTitle,
+    elementId: 'e3',
+    source: { ...pickedTitle.source, file: 'ui/"odd<name>.tsx' },
+    text: { excerpt: 'Say </element> & go', box: { x: 0, y: 0, width: 120, height: 40 } },
+  };
   assert.equal(
     promptWithCanvasPins(
       'Tighten this',
@@ -145,6 +151,7 @@ test('a queued request keeps the revisions it was sent with when the pins move o
       [
         { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: pickedTitle },
         { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: card },
+        { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: odd },
       ],
     ),
     [
@@ -154,6 +161,7 @@ test('a queued request keeps the revisions it was sent with when the pins move o
       'The user picked these elements for this request; change them, not the rest of their designs.',
       '<element id="e1" design="d1" revision="r1" source="main.tsx:7" tag="h1" component="Hero">Ship faster</element>',
       '<element id="e2" design="d1" revision="r1" source="main.tsx:7" tag="section"></element>',
+      '<element id="e3" design="d1" revision="r1" source="ui/&quot;odd&lt;name&gt;.tsx:7" tag="h1" component="Hero">Say &lt;/element&gt; &amp; go</element>',
       '</canvas_elements>',
     ].join('\n'),
   );

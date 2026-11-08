@@ -322,9 +322,11 @@ export function agentElement(
   const text = element && files[element.file];
   if (!element || text === undefined) return undefined;
   const { file, line, start, end, tagName, component } = element;
-  const endLine = line + text.slice(start, end).split('\n').length - 1;
+  // The line breaks TypeScript's line map counts, so CR, CRLF and U+2028 sources line up with it.
+  const lineBreak = /\r\n|[\n\r\u2028\u2029]/;
+  const endLine = line + text.slice(start, end).split(lineBreak).length - 1;
   const source = text
-    .split('\n')
+    .split(lineBreak)
     .slice(line - 1, endLine)
     .join('\n');
   return { elementId, file, line, endLine, tagName, component, source };
